@@ -236,7 +236,7 @@ Windows Audio Session API を使用してシステム音声出力をリアルタ
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit ステレオ、RTP ヘッダーなし |
 | AAC | fdk-aac | 最大 256 kbps | AAC-LC、LATM トランスポート |
 | SBC | BTstack Bluedroid | 最大約 345 kbps | A2DP 必須ベースライン |
-| LHDC V5 | lhdcv5-enc（AOSP エンコーダーの C 移植版） | 320/500/1000 kbps、ABR 160–400 kbps | 試験的。16/24 bit、5 ms フレーム、2 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
+| LHDC V5 | lhdcv5-enc（AOSP エンコーダーの C 移植版） | 400/500/900/1000 kbps、ABR 160–400 kbps | 試験的。16/24 bit、5 ms フレーム、2 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
 
 すべてのエンコーダーは `AudioEncoder` インターフェースの `encode()` と `get_frame_size()` メソッドを実装しています。
 

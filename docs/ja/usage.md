@@ -29,6 +29,7 @@ A2DPWB.exe
 - **デバイスアドレス** -- 手動入力、ペアリング済みデバイスから選択、またはプロファイル画面の **デバイスを検索**（USB アダプターで近くのデバイスを検索）。入力・貼り付けたアドレスはその場で整形されます: `AA:BB:CC:DD:EE:FF`、`aa-bb-cc-dd-ee-ff`、`AABBCCDDEEFF`、`AA BB CC DD EE FF` はどれも `AA:BB:CC:DD:EE:FF` になります
 - **コーデック選択** -- Auto / LDAC / aptX HD / aptX LL / aptX / SBC / AAC
 - **LDAC 品質** -- HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)
+- **LHDC V5 品質** -- 高音質 (1000 kbps) / 中高音質 (900 kbps) / 標準 (500 kbps) / モバイル (400 kbps)。Android と同じ 4 段階
 - **ABR** -- 不安定な接続時のアダプティブビットレート切替（LDAC と LHDC V5 で表示）
 - **プロファイル管理** -- デバイス + コーデック設定の保存・読み込み
 - **リアルタイムステータス** -- コーデック、ビットレート、接続状態
@@ -68,6 +69,9 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5（試験的）
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps（既定）
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
+
+# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps（Android と同じ 4 段階）
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
 ```
 
 ### ABR（アダプティブビットレート）
@@ -95,7 +99,7 @@ A2DPWB.exe --cli -l
 |:-----------|:-----|
 | `-d <addr>` | ヘッドホンの Bluetooth アドレス（`AA:BB:CC:DD:EE:FF`） |
 | `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`auto`（既定: `auto`） |
-| `-q <mode>` | LDAC 品質: `hq`（既定）、`sq`、`mq` |
+| `-q <mode>` | 品質: `hq`（既定）、`sq`、`mq`。LHDC V5 は `mhq`（900 kbps）も可 |
 | `-a` | ABR（LDAC と LHDC V5） |
 | `-m <mode>` | キャプチャモード: `loopback`（既定）、`virtual` |
 | `--audio-device <id>` | `-m virtual` で使うオーディオデバイスの ID |

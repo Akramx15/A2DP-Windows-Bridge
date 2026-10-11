@@ -255,7 +255,7 @@ Captures system audio output in real-time using Windows Audio Session API.
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit stereo, no RTP header |
 | AAC | fdk-aac | up to 256 kbps | AAC-LC, LATM transport |
 | SBC | BTstack Bluedroid | up to ~345 kbps | Mandatory A2DP baseline |
-| LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 320/500/1000 kbps, ABR 160–400 kbps | Experimental; 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
+| LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | Experimental; 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 
 All encoders implement the `AudioEncoder` interface with `encode()` and
 `get_frame_size()` methods.

@@ -38,6 +38,7 @@
   "codec.lhdc_v5": "LHDC V5",
   "codec.unknown": "不明",
   "quality.high": "高音質",
+  "quality.medium_high": "中高音質",
   "quality.standard": "標準",
   "quality.mobile": "モバイル",
   "device.tag_saved": "ペアリング済み",

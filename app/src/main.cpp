@@ -420,7 +420,7 @@ static void print_usage(const char *prog) {
     printf("\nOptions (CLI mode):\n");
     printf("  -c <codec>   Codec: ldac, aptxhd, aptxll, aptx, sbc, aac, lhdcv5, auto (default: auto)\n");
     printf("  -q <mode>    Quality mode: hq (990kbps), sq (660kbps), mq (330kbps)\n");
-    printf("               LDAC; LHDC V5: hq 1000, sq 500, mq 320 kbps. Default: hq\n");
+    printf("               LDAC; LHDC V5: hq 1000, mhq 900, sq 500, mq 400 kbps. Default: hq\n");
     printf("  -d <addr>    Bluetooth device address (XX:XX:XX:XX:XX:XX)\n");
     printf("               If not specified, scans for compatible devices\n");
     printf("  -a           Enable ABR (Adaptive Bit Rate; LDAC and LHDC V5)\n");
@@ -441,6 +441,7 @@ static void print_usage(const char *prog) {
 
 static EncoderQuality parse_quality(const char *mode) {
     if (_stricmp(mode, "hq") == 0) return EncoderQuality::High;
+    if (_stricmp(mode, "mhq") == 0) return EncoderQuality::MediumHigh;
     if (_stricmp(mode, "sq") == 0) return EncoderQuality::Standard;
     if (_stricmp(mode, "mq") == 0) return EncoderQuality::Mobile;
     fprintf(stderr, "Unknown quality mode '%s', using HQ\n", mode);

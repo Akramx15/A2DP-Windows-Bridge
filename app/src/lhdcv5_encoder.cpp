@@ -98,15 +98,17 @@ bool LhdcV5Encoder::init(uint16_t mtu, EncoderQuality quality,
     }
 
     /* Quality mode -> target bit rate index (clamped to the sink's limits
-     * below). ABR starts at 400 kbps regardless (LHDC_QUALITY_AUTO). */
+     * below), the four fixed levels Android offers. ABR starts at 400 kbps
+     * regardless (LHDC_QUALITY_AUTO). */
     uint32_t bitrate_inx;
     if (abr_) {
         bitrate_inx = LHDC_QUALITY_AUTO;
     } else {
         switch (quality) {
-        case EncoderQuality::Standard: bitrate_inx = LHDC_QUALITY_MID;  break; /* 500 kbps */
-        case EncoderQuality::Mobile:   bitrate_inx = LHDC_QUALITY_LOW4; break; /* 320 kbps */
-        default:                       bitrate_inx = LHDC_QUALITY_HIGH1; break; /* 1000 kbps */
+        case EncoderQuality::MediumHigh: bitrate_inx = LHDC_QUALITY_HIGH; break;  /* 900 kbps */
+        case EncoderQuality::Standard:   bitrate_inx = LHDC_QUALITY_MID;  break;  /* 500 kbps (480 at 44.1 kHz) */
+        case EncoderQuality::Mobile:     bitrate_inx = LHDC_QUALITY_LOW;  break;  /* 400 kbps */
+        default:                         bitrate_inx = LHDC_QUALITY_HIGH1; break; /* 1000 kbps */
         }
     }
 

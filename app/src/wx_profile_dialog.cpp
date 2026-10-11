@@ -403,7 +403,7 @@ void ProfileDialog::populate_from_profile(const ConnectionProfile &p) {
     set_address(wxString::FromUTF8(p.device_address));
     devname_ctrl_->SetValue(wxString::FromUTF8(p.device_name));
     codec_ctrl_->SetSelection(ProfileManager::codec_to_index(p.codec));
-    quality_ctrl_->SetSelection(ProfileManager::quality_to_index(p.quality));
+    pending_quality_ = p.quality;  /* selected by update_codec_dependent below */
     abr_ctrl_->SetValue(p.abr);
     fallback_ctrl_->SetValue(p.codec_fallback);
     max_packet_ctrl_->SetValue(p.max_media_payload);
@@ -473,6 +473,13 @@ void ProfileDialog::populate_from_profile(const ConnectionProfile &p) {
     update_format_info();
 }
 
+std::string ProfileDialog::selected_quality() const {
+    int sel = quality_ctrl_ ? quality_ctrl_->GetSelection() : wxNOT_FOUND;
+    if (sel >= 0 && sel < static_cast<int>(quality_keys_.size()))
+        return quality_keys_[sel];
+    return "hq";
+}
+
 void ProfileDialog::update_codec_dependent() {
     int codec_idx = codec_ctrl_->GetSelection();
     bool is_ldac = (codec_idx == 1);
@@ -481,8 +488,10 @@ void ProfileDialog::update_codec_dependent() {
     bool abr_enabled = (codec_idx == 0 || codec_idx == 1 || is_lhdc);
 
     /* Rebuild quality items with codec-specific bitrate info */
-    int cur_q = quality_ctrl_->GetSelection();
+    std::string cur_key = pending_quality_.empty() ? selected_quality() : pending_quality_;
+    pending_quality_.clear();
     quality_ctrl_->Clear();
+    quality_keys_ = {"hq", "sq", "mq"};
     /* Bitrates per quality: [High, Standard, Mobile] in kbps */
     switch (codec_idx) {
     case 1: /* LDAC */
@@ -500,10 +509,12 @@ void ProfileDialog::update_codec_dependent() {
         quality_ctrl_->Append(wxString::Format("%s (~240kbps)", wxString::FromUTF8(L("quality.standard"))));
         quality_ctrl_->Append(wxString::Format("%s (~150kbps)", wxString::FromUTF8(L("quality.mobile"))));
         break;
-    case 7: /* LHDC V5 (the sink may cap the maximum) */
+    case 7: /* LHDC V5: Android's four fixed levels (the sink may cap the maximum) */
+        quality_keys_ = {"hq", "mhq", "sq", "mq"};
         quality_ctrl_->Append(wxString::Format("%s (1000kbps)", wxString::FromUTF8(L("quality.high"))));
+        quality_ctrl_->Append(wxString::Format("%s (900kbps)", wxString::FromUTF8(L("quality.medium_high"))));
         quality_ctrl_->Append(wxString::Format("%s (500kbps)", wxString::FromUTF8(L("quality.standard"))));
-        quality_ctrl_->Append(wxString::Format("%s (320kbps)", wxString::FromUTF8(L("quality.mobile"))));
+        quality_ctrl_->Append(wxString::Format("%s (400kbps)", wxString::FromUTF8(L("quality.mobile"))));
         break;
     default: /* Auto or codecs without quality control */
         quality_ctrl_->Append(wxString::FromUTF8(L("quality.high")));
@@ -511,10 +522,12 @@ void ProfileDialog::update_codec_dependent() {
         quality_ctrl_->Append(wxString::FromUTF8(L("quality.mobile")));
         break;
     }
-    if (cur_q >= 0 && cur_q < quality_ctrl_->GetCount())
-        quality_ctrl_->SetSelection(cur_q);
-    else
-        quality_ctrl_->SetSelection(0);
+    /* Keep the same quality; one the new codec lacks ("mhq") falls back to High */
+    int sel = 0;
+    for (size_t i = 0; i < quality_keys_.size(); i++) {
+        if (quality_keys_[i] == cur_key) { sel = static_cast<int>(i); break; }
+    }
+    quality_ctrl_->SetSelection(sel);
 
     quality_ctrl_->Enable(quality_enabled);
     /* Codecs without ABR: hide the row instead of greying it out */
@@ -942,7 +955,7 @@ void ProfileDialog::OnSave(wxCommandEvent &) {
     if (ci >= 0 && ci < (int)(sizeof(codec_short) / sizeof(codec_short[0]))) { auto_name += " "; auto_name += codec_short[ci]; }
     p.name = auto_name;
     p.codec = ProfileManager::index_to_codec(codec_ctrl_->GetSelection());
-    p.quality = ProfileManager::index_to_quality(quality_ctrl_->GetSelection());
+    p.quality = selected_quality();
     p.abr = abr_ctrl_->GetValue();
     p.codec_fallback = fallback_ctrl_->GetValue();
 
