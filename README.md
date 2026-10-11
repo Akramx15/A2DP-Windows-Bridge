@@ -15,7 +15,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| LHDC V5 🧪 | 320/500/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### Codec support by platform (sending to headphones)
 
@@ -166,6 +166,7 @@ The graphical interface provides:
 - Device selection (paired devices, or a scan for nearby devices with the USB adapter)
 - Codec selection (Auto / LDAC / aptX HD / aptX LL / aptX / SBC / AAC)
 - LDAC quality mode (HQ 990 kbps / SQ 660 kbps / MQ 330 kbps)
+- LHDC V5 quality mode (High 1000 / Medium-High 900 / Standard 500 / Mobile 400 kbps, as on Android)
 - ABR (Adaptive Bit Rate) toggle, shown for LDAC and LHDC V5
 - Connection profile management (save / load device + codec settings)
 - Real-time status display (codec, bitrate, connection state)
@@ -190,6 +191,9 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
+
+# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
 
 # Enable ABR (Adaptive Bit Rate; LDAC and LHDC V5)
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a

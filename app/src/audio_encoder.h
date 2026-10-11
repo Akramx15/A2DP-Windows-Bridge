@@ -28,7 +28,8 @@ enum class AudioCodec {
 enum class EncoderQuality {
     High = 0,      /* LDAC: 990kbps, SBC: bitpool 53, AAC: 256kbps */
     Standard = 1,  /* LDAC: 660kbps, SBC: bitpool 35, AAC: 192kbps */
-    Mobile = 2     /* LDAC: 330kbps, SBC: bitpool 19, AAC: 128kbps */
+    Mobile = 2,    /* LDAC: 330kbps, SBC: bitpool 19, AAC: 128kbps */
+    MediumHigh = 3 /* LHDC V5 only (900kbps); other codecs treat it as High */
 };
 
 class AudioEncoder {

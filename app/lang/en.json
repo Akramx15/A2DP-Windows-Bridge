@@ -38,6 +38,7 @@
   "codec.lhdc_v5": "LHDC V5",
   "codec.unknown": "Unknown",
   "quality.high": "High",
+  "quality.medium_high": "Medium-High",
   "quality.standard": "Standard",
   "quality.mobile": "Mobile",
   "device.tag_saved": "Paired",

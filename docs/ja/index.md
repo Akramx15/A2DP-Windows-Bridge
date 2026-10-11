@@ -27,7 +27,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最大約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
-| LHDC V5 🧪 | 320/500/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 🧪 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### プラットフォーム別のコーデック対応（ヘッドホンへの送信）
 

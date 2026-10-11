@@ -26,7 +26,7 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| LHDC V5 🧪 | 320/500/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### Codec Support by Platform (Sending to Headphones)
 

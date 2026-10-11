@@ -1125,11 +1125,9 @@ void A2dpService::streaming_thread_func_inner() {
     }
 
     EncoderQuality quality = EncoderQuality::High;
-    int quality_index = ProfileManager::quality_to_index(p.quality);
-    switch (quality_index) {
-    case 1: quality = EncoderQuality::Standard; break;
-    case 2: quality = EncoderQuality::Mobile;   break;
-    }
+    if (p.quality == "mhq")     quality = EncoderQuality::MediumHigh;
+    else if (p.quality == "sq") quality = EncoderQuality::Standard;
+    else if (p.quality == "mq") quality = EncoderQuality::Mobile;
 
     /* Initialize BTstack */
     notify_state(State::Connecting, L("status.initializing_btstack"));

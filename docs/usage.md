@@ -28,6 +28,7 @@ The graphical interface provides:
 - **Device address** -- enter manually, select from paired devices, or **Scan Devices** in the profile dialog (nearby devices, found with the USB adapter). Typed or pasted addresses are formatted as you go: `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`
 - **Codec selection** -- Auto / LDAC / aptX HD / aptX LL / aptX / SBC / AAC
 - **LDAC quality** -- HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)
+- **LHDC V5 quality** -- High (1000 kbps) / Medium-High (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), the four levels Android offers
 - **ABR** -- Adaptive Bit Rate toggle for unstable connections (shown for LDAC and LHDC V5)
 - **Profile management** -- save and load device + codec configurations
 - **Real-time status** -- codec, bitrate, connection state
@@ -67,6 +68,9 @@ If the requested codec is not offered by the headphones, the CLI falls back to t
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
+
+# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
 ```
 
 ### ABR (Adaptive Bit Rate)
@@ -94,7 +98,7 @@ Device listing uses the Windows Bluetooth API via your **built-in** Bluetooth ad
 |:-------|:------------|
 | `-d <addr>` | Bluetooth address of the headphones (`AA:BB:CC:DD:EE:FF`) |
 | `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `auto` (default: `auto`) |
-| `-q <mode>` | LDAC quality: `hq` (default), `sq`, `mq` |
+| `-q <mode>` | Quality: `hq` (default), `sq`, `mq`; LHDC V5 also `mhq` (900 kbps) |
 | `-a` | ABR (LDAC and LHDC V5) |
 | `-m <mode>` | Capture mode: `loopback` (default), `virtual` |
 | `--audio-device <id>` | Audio device ID for `-m virtual` |

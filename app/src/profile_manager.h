@@ -21,7 +21,7 @@ struct ConnectionProfile {
     std::string device_address;   /* XX:XX:XX:XX:XX:XX */
     std::string device_name;
     std::string codec;            /* auto, ldac, aptxhd, aptxll, aptx, sbc, aac, lhdcv5 */
-    std::string quality;          /* hq, sq, mq */
+    std::string quality;          /* hq, sq, mq; mhq for LHDC V5 only */
     bool abr = false;
     bool codec_fallback = true;   /* use the best codec the device offers when
                                    * the chosen one is not available (not for Auto) */

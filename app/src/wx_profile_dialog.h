@@ -80,6 +80,11 @@ private:
     std::vector<AudioDeviceInfo> volume_devices_;  /* output devices for volume sync */
     std::vector<AudioAppInfo> apps_;
     std::string saved_app_exe_, saved_app_name_;  /* from the profile being edited */
+
+    /* Profile quality string of each quality_ctrl_ item (LHDC V5 adds "mhq") */
+    std::vector<std::string> quality_keys_ = {"hq", "sq", "mq"};
+    std::string pending_quality_;  /* from the profile, applied once the list is rebuilt */
+    std::string selected_quality() const;
 };
 
 #endif /* WX_PROFILE_DIALOG_H */

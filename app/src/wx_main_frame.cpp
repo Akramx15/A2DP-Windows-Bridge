@@ -490,10 +490,14 @@ void MainFrame::rebuild_profile_list() {
             else                          codec_str = p.codec.c_str();
 
             /* Quality display name with bitrate */
+            /* "mhq" (900 kbps) exists for LHDC V5 only; other codecs run it as High */
+            bool is_mhq = (p.quality == "mhq");
             const char *q_name = (p.quality == "hq") ? L("quality.high") :
                                  (p.quality == "sq") ? L("quality.standard") :
-                                 L("quality.mobile");
-            int q_idx = (p.quality == "hq") ? 0 : (p.quality == "sq") ? 1 : 2;
+                                 (p.quality == "mq") ? L("quality.mobile") :
+                                 (is_mhq && p.codec == "lhdcv5") ? L("quality.medium_high") :
+                                 L("quality.high");
+            int q_idx = (p.quality == "sq") ? 1 : (p.quality == "mq") ? 2 : 0;
             char quality_buf[64];
             bool is_441 = (p.sample_rate == 44100 || p.sample_rate == 88200);
             if (p.codec == "ldac") {
@@ -508,8 +512,11 @@ void MainFrame::rebuild_profile_list() {
                 static const char *rates[] = {"~345", "~249", "~153"};
                 snprintf(quality_buf, sizeof(quality_buf), "%s(%skbps)", q_name, rates[q_idx]);
             } else if (p.codec == "lhdcv5") {
-                static const int rates[] = {1000, 500, 320};
-                snprintf(quality_buf, sizeof(quality_buf), "%s(%dkbps)", q_name, rates[q_idx]);
+                static const int rates_48[] = {1000, 500, 400};
+                static const int rates_44[] = {1000, 480, 400};
+                /* 88.2 kHz runs as 96 kHz for LHDC V5, so only 44.1 kHz uses 480 */
+                int kbps = is_mhq ? 900 : (p.sample_rate == 44100 ? rates_44 : rates_48)[q_idx];
+                snprintf(quality_buf, sizeof(quality_buf), "%s(%dkbps)", q_name, kbps);
             } else {
                 snprintf(quality_buf, sizeof(quality_buf), "%s", q_name);
             }
