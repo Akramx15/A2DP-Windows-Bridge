@@ -3,7 +3,7 @@
  *
  * User-mode Bluetooth transport using BTstack + WinUSB.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "btstack_transport.h"

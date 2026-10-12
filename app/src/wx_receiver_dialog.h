@@ -5,7 +5,7 @@
  * local network, streams to its Bluetooth adapter by itself and shows what
  * was sent next to what arrived.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WX_RECEIVER_DIALOG_H

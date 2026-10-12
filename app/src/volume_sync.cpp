@@ -1,7 +1,7 @@
 /*
  * Volume Sync - one volume for Windows and the headphones
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "volume_sync.h"

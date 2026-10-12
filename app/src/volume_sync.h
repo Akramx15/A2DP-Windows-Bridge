@@ -11,7 +11,7 @@
  * Only the level is synced, not mute: muting the output device is how
  * the PC is kept silent while the headphones play.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef VOLUME_SYNC_H

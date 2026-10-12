@@ -1,6 +1,6 @@
 /*
  * HCI capture - on-demand HCI packet log (PacketLogger .pklg) for debug mode
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "hci_capture.h"

@@ -1,6 +1,6 @@
 /*
  * AFH host channel classification - Implementation
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "afh.h"

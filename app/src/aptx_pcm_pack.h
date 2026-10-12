@@ -13,7 +13,7 @@
  *                          "24-bit" path used for LDAC)  -> 24-bit via >> 8
  * Mono input is duplicated to L and R (aptX is always sent as stereo).
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef APTX_PCM_PACK_H

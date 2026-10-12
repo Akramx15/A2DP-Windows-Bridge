@@ -49,6 +49,8 @@ endfunction()
 # --- Executable and top-level documents ---
 copy_required("${APP_EXE}"                         "A2DPWB.exe")
 copy_required("${SRC_DIR}/LICENSE"                 "LICENSE")
+copy_required("${SRC_DIR}/LICENSE-APACHE"          "LICENSE-APACHE")
+copy_required("${SRC_DIR}/LICENSE-MIT"             "LICENSE-MIT")
 copy_required("${SRC_DIR}/THIRD_PARTY_LICENSES.md" "THIRD_PARTY_LICENSES.md")
 
 # --- Third-party license texts, taken from the pinned sources ---

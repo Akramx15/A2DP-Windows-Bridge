@@ -1,6 +1,6 @@
 /*
  * Update Checker - queries the GitHub Releases API for the latest version
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "update_checker.h"

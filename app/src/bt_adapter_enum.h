@@ -5,7 +5,7 @@
  * Provides Realtek chip metadata (PID → firmware filename) for firmware
  * download and chipset initialization.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef BT_ADAPTER_ENUM_H

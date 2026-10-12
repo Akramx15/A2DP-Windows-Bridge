@@ -3,7 +3,7 @@
  *
  * Discovers Bluetooth A2DP Sink devices using Windows Bluetooth APIs.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef BT_DEVICE_H

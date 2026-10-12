@@ -13,7 +13,7 @@
  * Output: raw aptX stream. Like classic aptX, aptX LL media packets carry NO
  *         RTP header (PipeWire a2dp-codec-aptx.c: RTP only for aptX HD).
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "aptxll_encoder.h"

@@ -5,7 +5,7 @@
  * Implementations: LdacEncoder, AptxHdEncoder, AptxLlEncoder, AptxEncoder,
  *                  SbcEncoder, AacEncoder, LhdcV5Encoder
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef AUDIO_ENCODER_H

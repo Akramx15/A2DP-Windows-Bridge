@@ -18,10 +18,10 @@ nav_order: 5
 
 ## プロジェクトライセンス
 
-A2DP Windows Bridge (A2DPWB) は **MIT License** の下でライセンスされています。[LICENSE](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE) を参照してください。
+A2DP Windows Bridge (A2DPWB) は **Apache License 2.0** と **MIT License** のデュアルライセンスです（SPDX `Apache-2.0 OR MIT`）。どちらか一方を選んで利用できます。[LICENSE](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE)、[LICENSE-APACHE](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE-APACHE)、[LICENSE-MIT](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE-MIT) を参照してください。
 
 {: .warning }
-A2DPWB のソースコードは MIT ライセンスです。ただし、配布している `A2DPWB.exe` には BTstack が含まれているため、個人的かつ非商用の目的でのみ使用・再配布できます。
+A2DPWB のソースコードは Apache-2.0 / MIT のデュアルライセンスです。ただし、配布している `A2DPWB.exe` には BTstack が含まれているため、個人的かつ非商用の目的でのみ使用・再配布できます。
 
 ## サードパーティライブラリ
 

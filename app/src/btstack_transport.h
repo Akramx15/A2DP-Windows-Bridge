@@ -5,7 +5,7 @@
  * Manages HCI, L2CAP, AVDTP, and A2DP via BTstack's event-driven API,
  * exposing synchronous methods to the caller.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef BTSTACK_TRANSPORT_H

@@ -262,9 +262,9 @@ You can manually add this entry using `regedit` if needed. To disable it manuall
 
 ## License
 
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for the full text.
+This project is dual-licensed under the **Apache License 2.0** ([LICENSE-APACHE](LICENSE-APACHE)) or the **MIT License** ([LICENSE-MIT](LICENSE-MIT)), at your option (SPDX `Apache-2.0 OR MIT`). See [LICENSE](LICENSE).
 
-> **Important:** The A2DPWB source code is MIT-licensed. The distributed `A2DPWB.exe` includes BTstack and therefore may only be used and redistributed for personal, non-commercial purposes.
+> **Important:** The A2DPWB source code is dual-licensed under Apache-2.0 or MIT. The distributed `A2DPWB.exe` includes BTstack and therefore may only be used and redistributed for personal, non-commercial purposes.
 
 Third-party libraries are used under their respective licenses. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for details.
 

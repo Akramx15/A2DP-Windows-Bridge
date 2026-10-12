@@ -10,7 +10,7 @@
  * was verified bit-exact against the AOSP Rust encoder, but it has not been
  * tested with real LHDC headphones yet.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef LHDCV5_ENCODER_H

@@ -17,10 +17,10 @@ nav_order: 6
 
 ## Project License
 
-A2DP Windows Bridge (A2DPWB) is licensed under the **MIT License**. See [LICENSE](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE).
+A2DP Windows Bridge (A2DPWB) is dual-licensed under the **Apache License 2.0** or the **MIT License**, at your option (SPDX `Apache-2.0 OR MIT`). See [LICENSE](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE), [LICENSE-APACHE](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE-APACHE) and [LICENSE-MIT](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE-MIT).
 
 {: .warning }
-The A2DPWB source code is MIT-licensed. The distributed `A2DPWB.exe` includes BTstack and therefore may only be used and redistributed for personal, non-commercial purposes.
+The A2DPWB source code is dual-licensed under Apache-2.0 or MIT. The distributed `A2DPWB.exe` includes BTstack and therefore may only be used and redistributed for personal, non-commercial purposes.
 
 ## Third-Party Libraries
 

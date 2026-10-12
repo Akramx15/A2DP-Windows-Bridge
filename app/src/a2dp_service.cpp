@@ -3,7 +3,7 @@
  *
  * Extracted from gui_app.cpp — streaming, scanning, and BTstack logic.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "a2dp_service.h"

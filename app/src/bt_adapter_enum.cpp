@@ -5,7 +5,7 @@
  * No OEM mapping tables — unknown adapters are shown as-is and the user
  * selects the Realtek chip type separately if needed.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "bt_adapter_enum.h"

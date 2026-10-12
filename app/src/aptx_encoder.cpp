@@ -14,7 +14,7 @@
  * Output: raw aptX stream. Classic aptX media packets carry NO RTP header
  *         (see BtStackTransport::send_media / CAN_SEND_MEDIA_PACKET_NOW).
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "aptx_encoder.h"

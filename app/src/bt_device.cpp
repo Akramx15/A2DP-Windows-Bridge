@@ -4,7 +4,7 @@
  * Uses Windows Bluetooth APIs to enumerate paired devices
  * and check for A2DP Sink support via SDP records.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "bt_device.h"

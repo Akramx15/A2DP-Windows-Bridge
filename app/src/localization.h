@@ -1,6 +1,6 @@
 /*
  * Localization - i18n via embedded JSON language data
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef LOCALIZATION_H

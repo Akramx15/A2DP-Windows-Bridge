@@ -3,7 +3,7 @@
  *
  * Returns the application data directory for persistent settings.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef CONFIG_PATH_H

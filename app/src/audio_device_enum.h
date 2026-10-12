@@ -4,7 +4,7 @@
  * Enumerates WASAPI render endpoints, detects virtual audio devices,
  * and provides default device switching via IPolicyConfig.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef AUDIO_DEVICE_ENUM_H

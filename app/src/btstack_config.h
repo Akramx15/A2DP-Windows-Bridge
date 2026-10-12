@@ -4,7 +4,7 @@
  * Minimal configuration for Classic Bluetooth A2DP Source
  * with high-quality codecs (LDAC, aptX HD, aptX LL) over WinUSB.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef BTSTACK_CONFIG_H

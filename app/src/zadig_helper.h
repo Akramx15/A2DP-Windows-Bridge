@@ -1,6 +1,6 @@
 /*
  * Zadig Helper - Open Zadig download page
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef ZADIG_HELPER_H

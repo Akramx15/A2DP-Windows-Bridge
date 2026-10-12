@@ -1,6 +1,6 @@
 /*
  * Profile Dialog - Create/Edit connection profiles
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WX_PROFILE_DIALOG_H

@@ -4,7 +4,7 @@
  * Stores Bluetooth link keys in a single text file so that
  * previously paired devices can reconnect without pairing mode.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef BTSTACK_LINK_KEY_DB_FILE_H

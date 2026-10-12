@@ -9,7 +9,7 @@
  * WSARecv / WSASend whose event handles are BTstack run loop data sources,
  * so all callbacks run on the BTstack thread.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include <winsock2.h>

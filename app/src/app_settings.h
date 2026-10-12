@@ -1,6 +1,6 @@
 /*
  * Application Settings - JSON-based persistent configuration
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef APP_SETTINGS_H

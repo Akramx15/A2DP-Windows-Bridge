@@ -132,6 +132,6 @@ All dependencies are included as git submodules or fetched at build time. No man
 | zlib / libpng / nanosvg | built-in copies in wxWidgets | 1.2.13.1 / 1.6.37 / as in wxWidgets | zlib / PNG Reference Library License v2 / zlib |
 
 {: .warning }
-Because BTstack is linked in, any `A2DPWB.exe` you build may only be used and redistributed for personal, non-commercial purposes, even though the A2DPWB source code itself is MIT-licensed.
+Because BTstack is linked in, any `A2DPWB.exe` you build may only be used and redistributed for personal, non-commercial purposes, even though the A2DPWB source code itself is dual-licensed under Apache-2.0 or MIT.
 
 See [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md) for full license details.

@@ -5,7 +5,7 @@
  * aptX: Qualcomm (vendor 0x0000004F, codec 0x0001), 44.1/48kHz stereo,
  * 4:1 compression of 16-bit PCM (352 kbps @ 44.1kHz, 384 kbps @ 48kHz).
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef APTX_ENCODER_H

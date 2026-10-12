@@ -1,6 +1,6 @@
 /*
  * Link Quality Dialog - live bitrate, packet loss and Bluetooth bandwidth use
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WX_LINK_QUALITY_DIALOG_H

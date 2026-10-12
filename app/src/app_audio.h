@@ -5,7 +5,7 @@
  * by its executable name, and checks whether Windows supports per-process
  * loopback capture (Application capture mode).
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef APP_AUDIO_H

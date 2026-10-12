@@ -11,7 +11,7 @@
  *         keeps the full 24-bit resolution aptX HD can carry
  * Output: aptX HD encoded frames (sent WITH an RTP header, like Android/PipeWire)
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "aptxhd_encoder.h"
