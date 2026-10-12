@@ -17,7 +17,7 @@
  * the media payload header, peer bit rate limits applied after init, and
  * the ABR policy of lhdcv5BT_enc.c (both Apache-2.0, AOSP android17-release).
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "lhdcv5_encoder.h"

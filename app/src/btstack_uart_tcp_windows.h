@@ -1,6 +1,6 @@
 /*
  * BTstack UART driver over a TCP socket (Windows) - development / testing only
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef BTSTACK_UART_TCP_WINDOWS_H

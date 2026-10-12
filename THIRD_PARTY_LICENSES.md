@@ -5,7 +5,7 @@ along with their license information and compliance obligations.
 
 > **Important — non-commercial use only for the binary**
 >
-> The A2DPWB source code is MIT-licensed. The distributed `A2DPWB.exe` includes
+> The A2DPWB source code is dual-licensed under Apache-2.0 or MIT. The distributed `A2DPWB.exe` includes
 > BTstack and therefore may only be used and redistributed for personal,
 > non-commercial purposes. See [§4 BTstack](#4-btstack-bluetooth-stack).
 
@@ -41,7 +41,9 @@ The release zip contains:
 | File | Contents |
 |------|----------|
 | `A2DPWB.exe` | The application (all libraries above statically linked) |
-| `LICENSE` | MIT License for the A2DPWB source code |
+| `LICENSE` | License notice for the A2DPWB source code (`Apache-2.0 OR MIT`) |
+| `LICENSE-APACHE` | Apache License 2.0 text (A2DPWB source code option 1) |
+| `LICENSE-MIT` | MIT License text (A2DPWB source code option 2) |
 | `THIRD_PARTY_LICENSES.md` | This document |
 | `SOURCE.txt` | Where to get the complete corresponding source: the tagged A2DPWB commit and the exact commits of every submodule / fetched dependency |
 | `licenses/BTstack-LICENSE.txt` | BTstack license (`extern/btstack/LICENSE`) |
@@ -226,7 +228,7 @@ at contact@bluekitchen-gmbh.com".
 
 ### Consequence for A2DPWB
 
-**The A2DPWB source code is MIT-licensed. The distributed `A2DPWB.exe` includes
+**The A2DPWB source code is dual-licensed under Apache-2.0 or MIT. The distributed `A2DPWB.exe` includes
 BTstack and therefore may only be used and redistributed for personal,
 non-commercial purposes.** Any commercial use requires a commercial BTstack
 license from BlueKitchen GmbH.
@@ -389,7 +391,14 @@ for details.
 ## 11. Project License
 
 The A2DP Windows Bridge (A2DPWB) project code itself (excluding third-party libraries) is licensed
-under the **MIT License**. See [`LICENSE`](LICENSE) in the project root.
+under **either the Apache License 2.0 or the MIT License, at your option**
+(SPDX `Apache-2.0 OR MIT`). See [`LICENSE`](LICENSE),
+[`LICENSE-APACHE`](LICENSE-APACHE) and [`LICENSE-MIT`](LICENSE-MIT) in the
+project root. `app/src/hci_transport_h2_winusb.c` is a modified BTstack file
+and stays under the BTstack License (§4).
+
+Versions up to and including v1.0.18-beta.2 were released under the MIT
+License only; those releases remain available under MIT.
 
 The distributed `A2DPWB.exe` is a combined work that also contains the
 libraries listed above. Because it includes BTstack, the binary may only be
@@ -404,7 +413,7 @@ media stream recorded in an A2DPWB debug-mode HCI dump. It is a developer tool:
 **it is not part of the release zip** and is only built from source
 (CMake option `A2DPWB_BUILD_TOOLS`).
 
-Its own source is MIT (§11). It statically links only these libraries, at the
+Its own source is `Apache-2.0 OR MIT` (§11). It statically links only these libraries, at the
 same pinned versions as above:
 
 | Library | Pinned version | License (SPDX) | Parts used | License verified in the pinned source |
@@ -451,8 +460,8 @@ Both are test tooling only:
   downloads them from PyPI into `tools/emu/.venv` (git-ignored), at the exact
   versions pinned in `tools/emu/requirements.txt`. Their licenses apply to
   that local environment.
-- The repository's own tools/emu and tools/linux_sink scripts are MIT
-  (§11). `emu_sink.py` and `emu_vhci.py` subclass Bumble's `Controller`, and
+- The repository's own tools/emu and tools/linux_sink scripts are
+  `Apache-2.0 OR MIT` (§11). `emu_sink.py` and `emu_vhci.py` subclass Bumble's `Controller`, and
   `a2dpwb_sink.py` uses Bumble's API, without copying Bumble code.
 
 This is the complete set that `setup_env.py` installs (`pip freeze` of
@@ -595,19 +604,19 @@ interoperability work and is marked as such in the user interface.
 
 ## License Compatibility Matrix
 
-| Component | License | Compatible with MIT? | Notes |
+| Component | License | Compatible with Apache-2.0 / MIT? | Notes |
 |-----------|---------|---------------------|-------|
-| A2DPWB (project) | MIT | — | Project license |
+| A2DPWB (project) | Apache-2.0 OR MIT | — | Project license (dual; user chooses) |
 | libldac | Apache-2.0 | Yes | Permissive; NOTICE must accompany binaries |
 | LHDC-V5-Encoder | Apache-2.0 AND BSD-3-Clause | Yes | Permissive; KISS FFT notice reproduced in §14 |
 | Bluedroid SBC | Apache-2.0 | Yes | Permissive |
-| libopenaptx | LGPL-2.1+ | Yes (with care) | Must allow library replacement / relinking |
+| libopenaptx | LGPL-2.1+ | Yes (with care) | Must allow library replacement / relinking. Apache-2.0 is compatible with (L)GPL v3, which "or later" permits |
 | fdk-aac | FDK AAC License | Yes | Source of fdk-aac must be offered free of charge; no patent license |
 | BTstack | LicenseRef-BTstack | Source: yes / Binary: **restricts it** | Non-commercial clause 4 applies to the whole distributed binary; commercial license from BlueKitchen |
 | rijndael | Public domain | Yes | — |
 | wxWidgets | wxWindows Lib Licence 3.1 | Yes | LGPL + exception (effectively permissive for binaries) |
 | zlib / libpng / nanosvg | Zlib / libpng-2.0 / Zlib | Yes | Permissive |
-| nlohmann/json | MIT | Yes | Same license |
+| nlohmann/json | MIT | Yes | Permissive |
 | Windows SDK | Proprietary | Yes (system library) | Platform dependency |
 
 ### LGPL Compliance Notes
@@ -624,7 +633,7 @@ LGPL-2.1 §6 as follows:
 2. **Prominent notice** — the About dialog shows the libopenaptx copyright
    (© 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár) and its license, and refers
    to the license texts in the `licenses/` folder and to this document.
-3. **Relinking** — the complete corresponding source of A2DPWB (MIT) and of
+3. **Relinking** — the complete corresponding source of A2DPWB (Apache-2.0 OR MIT) and of
    every library, including libopenaptx, is available from the A2DPWB GitHub
    repository at the release's tagged commit together with its submodules.
    `SOURCE.txt` in the zip lists the exact commits. With it, a user can rebuild

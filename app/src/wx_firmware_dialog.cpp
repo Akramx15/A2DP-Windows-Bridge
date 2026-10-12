@@ -5,7 +5,7 @@
  * chip selection (scans config folder for *_fw.bin + *_config.bin pairs),
  * firmware status, and manual placement instructions.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "wx_firmware_dialog.h"

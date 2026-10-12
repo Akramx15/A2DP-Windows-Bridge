@@ -4,7 +4,7 @@
  * Uses WASAPI in shared loopback mode to capture system audio output.
  * The captured PCM data is delivered via callback from a dedicated thread.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "wasapi_capture.h"

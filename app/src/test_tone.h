@@ -7,7 +7,7 @@
  * test, where a steady source keeps the measurement independent of what the
  * PC happens to play (loopback capture delivers nothing while it is silent).
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef TEST_TONE_H

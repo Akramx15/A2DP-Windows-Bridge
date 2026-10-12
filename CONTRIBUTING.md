@@ -48,4 +48,7 @@ cmake --build build --config Release
 
 ## License
 
-Contributions are provided under the [MIT License](LICENSE).
+A2DPWB is dual-licensed under the [Apache License 2.0](LICENSE-APACHE) or the
+[MIT License](LICENSE-MIT), at the user's option. Unless you explicitly state
+otherwise, any contribution you submit is provided under the same dual license
+(`Apache-2.0 OR MIT`), without any additional terms or conditions.

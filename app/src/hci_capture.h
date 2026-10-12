@@ -12,7 +12,7 @@
  * start() / stop() / status may be called from any thread; the hci_dump
  * callbacks run on the BTstack thread.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef HCI_CAPTURE_H

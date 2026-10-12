@@ -16,7 +16,7 @@
  * At least AFH_MIN_CHANNELS channels stay usable, as the specification
  * requires: channels of the weakest access points are dropped first.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef AFH_H

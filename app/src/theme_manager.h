@@ -1,6 +1,6 @@
 /*
  * Theme Manager - Dark/Light/System theme support
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef THEME_MANAGER_H

@@ -5,7 +5,7 @@
  * so all fprintf(stderr, ...) calls become OS-level no-ops.
  * These macros add timestamps and severity levels for structured output.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef DEBUG_LOG_H

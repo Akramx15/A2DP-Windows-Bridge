@@ -7,7 +7,7 @@
  * Named a2dp_sbc_encoder.h to avoid collision with BTstack's internal
  * 3rd-party/bluedroid/encoder/include/sbc_encoder.h
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef A2DP_SBC_ENCODER_H

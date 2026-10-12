@@ -3,7 +3,7 @@
  *
  * Wraps libldac (AOSP) for encoding PCM audio to LDAC frames.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef LDAC_ENCODER_H

@@ -13,7 +13,7 @@
  *
  * Process-wide like link_stats(): the connection outlives the window.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef REMOTE_SINK_CLIENT_H

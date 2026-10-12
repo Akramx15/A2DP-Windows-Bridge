@@ -4,7 +4,7 @@
  * Captures system audio output using Windows Audio Session API (WASAPI)
  * in loopback mode, providing PCM data for LDAC encoding.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WASAPI_CAPTURE_H

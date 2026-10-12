@@ -1,21 +1,28 @@
-MIT License
-
+A2DP Windows Bridge (A2DPWB)
 Copyright (c) 2026 Seiya Funaoka
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The A2DPWB source code is dual-licensed under either of
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+  * Apache License, Version 2.0 (LICENSE-APACHE or
+    http://www.apache.org/licenses/LICENSE-2.0)
+  * MIT License (LICENSE-MIT or https://opensource.org/licenses/MIT)
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+at your option.
+
+SPDX-License-Identifier: Apache-2.0 OR MIT
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in A2DPWB by you shall be dual-licensed as above,
+without any additional terms or conditions.
+
+Exceptions:
+
+  * app/src/hci_transport_h2_winusb.c is a modified copy of a BTstack file
+    and remains under the BTstack License (see THIRD_PARTY_LICENSES.md).
+  * Third-party libraries under extern/ and those fetched at build time are
+    covered by their own licenses (see THIRD_PARTY_LICENSES.md).
+
+Note: the distributed A2DPWB.exe statically links BTstack, whose license
+permits only personal, non-commercial use and redistribution. That
+restriction applies to the binary regardless of which of the two licenses
+above you choose for the A2DPWB source code.

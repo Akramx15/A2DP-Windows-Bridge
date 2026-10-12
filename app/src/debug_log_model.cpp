@@ -1,6 +1,6 @@
 /*
  * Debug Log Model Implementation
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "debug_log_model.h"

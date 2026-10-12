@@ -7,7 +7,7 @@
  * (capture drops). The GUI samples them once per second and works with
  * deltas, so nothing is ever reset.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef LINK_STATS_H

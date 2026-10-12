@@ -1,6 +1,6 @@
 /*
  * Main Frame - Primary window with menu, status, profile list
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WX_MAIN_FRAME_H

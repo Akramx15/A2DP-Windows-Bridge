@@ -1,6 +1,6 @@
 /*
  * System Integration - Windows startup
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "system_integration.h"

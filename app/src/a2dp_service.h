@@ -5,7 +5,7 @@
  * Handles BTstack init, device scanning, codec negotiation,
  * audio capture (WASAPI), encoding, and Bluetooth streaming.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef A2DP_SERVICE_H

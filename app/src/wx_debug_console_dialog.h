@@ -1,7 +1,7 @@
 /*
  * Debug Console Dialog (Debug menu) - connection flow checklist, live
  * debug.log view with filters, and clipboard copies for bug reports
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WX_DEBUG_CONSOLE_DIALOG_H

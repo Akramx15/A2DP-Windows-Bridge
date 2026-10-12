@@ -4,7 +4,7 @@
  * Stores all link keys in a single text file (link_keys.txt).
  * Format: one entry per line — "XX-XX-XX-XX-XX-XX <32-hex-key> <type>"
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "btstack_link_key_db_file.h"

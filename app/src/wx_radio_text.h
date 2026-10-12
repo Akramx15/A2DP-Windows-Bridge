@@ -1,6 +1,6 @@
 /*
  * Radio state as text for the link quality windows
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WX_RADIO_TEXT_H

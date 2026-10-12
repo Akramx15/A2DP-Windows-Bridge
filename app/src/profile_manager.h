@@ -4,7 +4,7 @@
  * Stores device + codec + quality presets as named profiles
  * for one-click Bluetooth connection.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef PROFILE_MANAGER_H

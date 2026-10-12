@@ -5,7 +5,7 @@
  * heuristics to detect virtual/loopback devices, and switches the
  * system default output via the undocumented IPolicyConfig interface.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include <initguid.h>

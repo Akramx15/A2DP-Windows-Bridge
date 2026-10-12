@@ -133,6 +133,6 @@ python tools/emu/run_test.py      # Release ビルド後に実行。全コーデ
 | zlib / libpng / nanosvg | wxWidgets 内蔵のコピー | 1.2.13.1 / 1.6.37 / wxWidgets に準拠 | zlib / PNG Reference Library License v2 / zlib |
 
 {: .warning }
-BTstack をリンクしているため、A2DPWB のソースコード自体は MIT ライセンスであっても、ビルドした `A2DPWB.exe` は個人的かつ非商用の目的でのみ使用・再配布できます。
+BTstack をリンクしているため、A2DPWB のソースコード自体は Apache-2.0 / MIT のデュアルライセンスであっても、ビルドした `A2DPWB.exe` は個人的かつ非商用の目的でのみ使用・再配布できます。
 
 ライセンスの全文は [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md) を参照してください。

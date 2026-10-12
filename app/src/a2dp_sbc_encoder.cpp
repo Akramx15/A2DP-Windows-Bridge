@@ -8,7 +8,7 @@
  * Input:  signed 16-bit PCM, interleaved
  * Output: SBC encoded frames, packed for AVDTP media transport
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include "a2dp_sbc_encoder.h"

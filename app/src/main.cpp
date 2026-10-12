@@ -16,7 +16,7 @@
  *   3. Audio encoding via selected codec
  *   4. AVDTP signaling and media streaming via BTstack + WinUSB
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #include <cstdio>

@@ -8,7 +8,7 @@
  * Input:  signed 16-bit PCM, interleaved
  * Output: LATM-framed AAC-LC encoded audio
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifdef AAC_ENCODER_AVAILABLE

@@ -1,6 +1,6 @@
 /*
  * Zadig Dialog - USB Driver Setup (download only)
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef WX_ZADIG_DIALOG_H

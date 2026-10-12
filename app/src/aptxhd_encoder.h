@@ -4,7 +4,7 @@
  * Wraps libopenaptx for encoding PCM audio to aptX HD frames.
  * aptX HD: Qualcomm codec, 48kHz/24-bit stereo, 576 kbps.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef APTXHD_ENCODER_H

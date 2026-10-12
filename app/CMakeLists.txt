@@ -215,7 +215,7 @@ target_include_directories(A2DPWB PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 # --- Release package (build/dist/A2DPWB-<ver>-win64.zip) ---
 # cmake --build build --target A2DPWB_dist --config Release
-# Assembles A2DPWB.exe, LICENSE, THIRD_PARTY_LICENSES.md, license texts copied
+# Assembles A2DPWB.exe, LICENSE(-APACHE/-MIT), THIRD_PARTY_LICENSES.md, license texts copied
 # from the pinned sources (licenses/) and SOURCE.txt (repo/submodule commits).
 find_package(Git QUIET)
 set(A2DPWB_DIST_DIR ${CMAKE_BINARY_DIR}/dist)

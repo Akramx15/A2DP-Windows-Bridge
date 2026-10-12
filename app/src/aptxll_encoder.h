@@ -4,7 +4,7 @@
  * Wraps libopenaptx for encoding PCM audio to aptX Low Latency frames.
  * aptX LL: Qualcomm codec, 44.1/48kHz 16-bit stereo, 352 kbps, ~32ms latency.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef APTXLL_ENCODER_H

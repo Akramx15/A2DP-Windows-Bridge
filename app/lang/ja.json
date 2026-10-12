@@ -149,7 +149,7 @@
   "help.author": "作成者: Seiya Funaoka",
   "help.version": "バージョン",
   "help.sponsor": "❤️ スポンサー",
-  "help.license": "ソースコード: MIT License",
+  "help.license": "ソースコード: Apache-2.0 OR MIT（デュアルライセンス）",
   "help.binary_license": "本プログラムは BTstack を含むため、個人的かつ非商用の目的でのみ使用・再配布できます。",
   "help.third_party": "このほか libldac（Apache-2.0）、libopenaptx（LGPL-2.1+、© 2017 Aurelien Jacobs、© 2018-2020 Pali Rohár）、Fraunhofer FDK AAC、Bluedroid SBC（Apache-2.0）、LHDC V5 エンコーダー（Apache-2.0、AOSP 由来。FFT は KISS FFT、BSD-3-Clause）、wxWidgets、nlohmann/json を含みます。ライセンス全文はダウンロードした zip の「licenses」フォルダにあります。",
   "help.third_party_link": "サードパーティライセンス",

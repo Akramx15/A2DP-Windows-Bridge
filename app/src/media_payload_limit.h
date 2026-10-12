@@ -11,7 +11,7 @@
  *                 span several, so a lost baseband packet loses more audio,
  *                 while saving only 1-2% overhead.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef MEDIA_PAYLOAD_LIMIT_H

@@ -5,7 +5,7 @@
  * AAC: optional A2DP codec, 44.1/48 kHz, stereo, up to 320 kbps.
  * Uses LATM transport for A2DP compatibility.
  *
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 #ifndef AAC_ENCODER_H
