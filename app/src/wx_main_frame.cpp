@@ -59,7 +59,9 @@ MainFrame::MainFrame()
     SetMinSize(wxSize(480, 400));
     /* Load settings and data */
     settings_.load();
-    Localization::instance().load(settings_.language);
+    /* A language this build lacks (settings from a newer version) shows in English */
+    if (!Localization::instance().load(settings_.language))
+        Localization::instance().load("en");
     profile_mgr_.load(settings_.legacy_max_media_payload);
     service_.load_saved_devices();
     service_.set_bt_chip_pid(settings_.bt_chip_pid);

@@ -21,6 +21,15 @@ nav_order: 2
 - **Dedicated USB Bluetooth adapter** (separate from built-in Bluetooth)
 - **Zadig** ([https://zadig.akeo.ie/](https://zadig.akeo.ie/))
 
+## Installing A2DPWB
+
+Each [release](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest) comes in two forms with the same files:
+
+- **Installer** (`A2DPWB-<version>-win64-setup.exe`): installs for the current user without administrator rights (or for all users, if chosen), adds a Start menu entry and an uninstaller, and on first install starts A2DPWB in the language chosen in setup
+- **Portable** (`A2DPWB-<version>-win64-portable.zip`): extract anywhere and run `A2DPWB.exe`
+
+Both keep settings, profiles, link keys and firmware in `%APPDATA%\A2DPWB`, so you can switch between them. Uninstalling leaves that folder in place.
+
 ## Step 1: Install WinUSB Driver
 
 A2DPWB communicates directly with a USB Bluetooth adapter via WinUSB. You need a **dedicated adapter** -- your built-in Bluetooth continues to work normally for regular Windows Bluetooth.

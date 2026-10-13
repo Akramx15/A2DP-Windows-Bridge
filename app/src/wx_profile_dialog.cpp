@@ -6,6 +6,7 @@
 #include "wx_profile_dialog.h"
 #include "localization.h"
 #include "theme_manager.h"
+#include "wx_wrap_text.h"
 #include "media_payload_limit.h"
 #include "bt_device.h"
 #include <wx/statline.h>
@@ -663,7 +664,7 @@ void ProfileDialog::update_capture_hint() {
     if (mode < 0 || mode > 2) mode = 0;
     const int wrap = FromDIP(380);
     capture_hint_->SetLabel(wxString::FromUTF8(L(hint_keys[mode])));
-    capture_hint_->Wrap(wrap);
+    wrap_text(capture_hint_, wrap);
     capture_hint_->SetForegroundColour(TM().get(ThemeColor::TextMuted));
 
     if (mode != 2) return;
@@ -679,7 +680,7 @@ void ProfileDialog::update_capture_hint() {
                                              app_audio::windows_build()));
         app_note_->SetForegroundColour(wxColour(220, 50, 50));
     }
-    app_note_->Wrap(wrap);
+    wrap_text(app_note_, wrap);
 }
 
 void ProfileDialog::refresh_app_list() {

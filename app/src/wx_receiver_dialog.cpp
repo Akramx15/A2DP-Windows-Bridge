@@ -11,6 +11,7 @@
 #include "theme_manager.h"
 #include "btstack_transport.h"
 #include "wx_radio_text.h"
+#include "wx_wrap_text.h"
 
 #include <wx/clipbrd.h>
 #include <wx/datetime.h>
@@ -37,21 +38,6 @@ const uint32_t BIT_DEPTHS[] = {0, 16, 24};
  * 679 = smallest LDAC accepts, 895 / 1005 = common in headphones */
 const uint32_t MTUS[] = {0, 672, 679, 895, 1005, 2048};
 const uint32_t BUFFERS_MS[] = {0, 100, 200, 300, 500};
-
-bool is_cjk(wxUniChar c) {
-    unsigned v = c.GetValue();
-    return (v >= 0x2E80 && v <= 0x9FFF) || (v >= 0xF900 && v <= 0xFAFF) || (v >= 0xFF00 && v <= 0xFFEF);
-}
-
-/* Characters a line should not start / end with (simple kinsoku) */
-bool no_line_start(wxUniChar c) {
-    static const wxString chars = wxString::FromUTF8("、。，．）」』】〕！？ー…・：；%)]}.,!?:;");
-    return chars.Find(c) != wxNOT_FOUND;
-}
-bool no_line_end(wxUniChar c) {
-    static const wxString chars = wxString::FromUTF8("（「『【〔([{");
-    return chars.Find(c) != wxNOT_FOUND;
-}
 
 double pct(uint64_t part, uint64_t whole) { return whole ? 100.0 * part / whole : 0.0; }
 
@@ -84,37 +70,6 @@ ReceiverDialog::Sample ReceiverDialog::take_sample() {
     r.capture_frames = s.capture_frames.load(std::memory_order_relaxed);
     r.capture_dropped = s.capture_dropped_frames.load(std::memory_order_relaxed);
     return r;
-}
-
-wxString ReceiverDialog::wrap(const wxString &text, int width) const {
-    wxString out;
-    wxArrayString paragraphs = wxSplit(text, '\n', '\0');
-    for (size_t p = 0; p < paragraphs.size(); p++) {
-        if (p) out += '\n';
-        const wxString &para = paragraphs[p];
-        wxString line;
-        int break_at = -1;  /* index in line after which it may break */
-        for (size_t i = 0; i < para.length(); i++) {
-            wxUniChar c = para[i];
-            if (!line.empty()) {
-                wxUniChar prev = line.Last();
-                bool opportunity = prev == ' ' ||
-                    ((is_cjk(prev) || is_cjk(c)) && !no_line_start(c) && !no_line_end(prev) && c != ' ');
-                if (opportunity) break_at = static_cast<int>(line.length());
-            }
-            line += c;
-            if (GetTextExtent(line).GetWidth() > width && break_at > 0) {
-                wxString head = line.Left(break_at);
-                head.Trim();
-                out += head + '\n';
-                line = line.Mid(break_at);
-                line.Trim(false);
-                break_at = -1;
-            }
-        }
-        out += line;
-    }
-    return out;
 }
 
 wxChoice *ReceiverDialog::add_choice(wxSizer *grid, const char *label_key, const wxArrayString &items,
@@ -165,7 +120,7 @@ ReceiverDialog::ReceiverDialog(MainFrame *frame)
     const int wrap_width = FromDIP(640);
     auto *vbox = new wxBoxSizer(wxVERTICAL);
 
-    auto *intro = new wxStaticText(this, wxID_ANY, wrap(U("receiver.intro"), wrap_width));
+    auto *intro = new wxStaticText(this, wxID_ANY, wrap_text(this, U("receiver.intro"), wrap_width));
     intro->SetForegroundColour(TM().get(ThemeColor::TextMuted));
     vbox->Add(intro, 0, wxLEFT | wxRIGHT | wxTOP, 16);
 
@@ -627,7 +582,7 @@ void ReceiverDialog::refresh_status() {
     }
     if (text != status_text_) {
         status_text_ = text;
-        status_->SetLabel(wrap(text, FromDIP(640)));
+        status_->SetLabel(wrap_text(this, text, FromDIP(640)));
     }
     status_->SetForegroundColour(TM().get(bad ? ThemeColor::StatusError : ThemeColor::TextPrimary));
 

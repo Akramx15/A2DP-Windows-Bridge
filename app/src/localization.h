@@ -21,7 +21,8 @@ public:
      * Returns false if the language is not available. */
     bool load(const std::string &lang_code);
 
-    /* Get translated string by key. Returns key itself if not found. */
+    /* Get translated string by key. Falls back to English, then to the key
+     * itself, when the current language lacks it. */
     const char *get(const char *key) const;
 
     /* List all embedded languages. */
@@ -36,6 +37,7 @@ public:
 private:
     Localization() = default;
     std::unordered_map<std::string, std::string> strings_;
+    std::unordered_map<std::string, std::string> fallback_; /* en */
     std::string current_lang_ = "en";
 };
 

@@ -12,6 +12,7 @@
 #include "bt_adapter_enum.h"
 #include "localization.h"
 #include "theme_manager.h"
+#include "wx_wrap_text.h"
 #include <wx/statline.h>
 #include <wx/hyperlink.h>
 #include <shellapi.h>
@@ -30,7 +31,7 @@ FirmwareDialog::FirmwareDialog(wxWindow *parent, A2dpService *service, AppSettin
     vbox->Add(adapter_label, 0, wxLEFT | wxRIGHT | wxTOP, 16);
 
     adapter_info_ = new wxStaticText(this, wxID_ANY, "", wxDefaultPosition, wxSize(480, -1));
-    adapter_info_->Wrap(480);
+    wrap_text(adapter_info_, 480);
     adapter_info_->SetForegroundColour(TM().get(ThemeColor::TextSecondary));
     vbox->Add(adapter_info_, 0, wxLEFT | wxRIGHT | wxTOP, 8);
 
@@ -52,7 +53,7 @@ FirmwareDialog::FirmwareDialog(wxWindow *parent, A2dpService *service, AppSettin
             info_text += a.display_name;
         }
         adapter_info_->SetLabel(wxString::FromUTF8(info_text));
-        adapter_info_->Wrap(480);
+        wrap_text(adapter_info_, 480);
     }
 
     vbox->Add(new wxStaticLine(this), 0, wxEXPAND | wxALL, 8);
@@ -126,12 +127,12 @@ FirmwareDialog::FirmwareDialog(wxWindow *parent, A2dpService *service, AppSettin
 
     /* ---- Firmware status ---- */
     status_text_ = new wxStaticText(this, wxID_ANY, "", wxDefaultPosition, wxSize(480, -1));
-    status_text_->Wrap(480);
+    wrap_text(status_text_, 480);
     vbox->Add(status_text_, 0, wxLEFT | wxRIGHT | wxTOP, 16);
 
     /* ---- Required files hint ---- */
     manual_hint_ = new wxStaticText(this, wxID_ANY, "", wxDefaultPosition, wxSize(480, -1));
-    manual_hint_->Wrap(480);
+    wrap_text(manual_hint_, 480);
     manual_hint_->SetForegroundColour(TM().get(ThemeColor::FirmwareHint));
     vbox->Add(manual_hint_, 0, wxLEFT | wxRIGHT | wxTOP, 8);
 
@@ -151,7 +152,7 @@ FirmwareDialog::FirmwareDialog(wxWindow *parent, A2dpService *service, AppSettin
     auto *instructions = new wxStaticText(this, wxID_ANY,
         wxString::FromUTF8(L("firmware.manual_instructions")),
         wxDefaultPosition, wxSize(480, -1));
-    instructions->Wrap(480);
+    wrap_text(instructions, 480);
     instructions->SetForegroundColour(TM().get(ThemeColor::TextSecondary));
     vbox->Add(instructions, 0, wxALL, 16);
 
@@ -233,7 +234,7 @@ void FirmwareDialog::UpdateFirmwareStatus() {
         status_text_->SetLabel(wxString::FromUTF8(L(key)));
         status_text_->SetForegroundColour(TM().get(non_realtek ? ThemeColor::FirmwareOk
                                                                : ThemeColor::FirmwareWarning));
-        status_text_->Wrap(480);
+        wrap_text(status_text_, 480);
         download_btn_->Enable(false);
         manual_hint_->SetLabel("");
     } else if (fw_name.empty() && other_vendor_ != BtChipVendor::Unknown) {
@@ -250,7 +251,7 @@ void FirmwareDialog::UpdateFirmwareStatus() {
         status_text_->SetLabel(wxString::FromUTF8(L(key)));
         status_text_->SetForegroundColour(TM().get(ok ? ThemeColor::FirmwareOk
                                                       : ThemeColor::FirmwareWarning));
-        status_text_->Wrap(480);
+        wrap_text(status_text_, 480);
         download_btn_->Enable(other_vendor_ == BtChipVendor::Intel ||
                               other_vendor_ == BtChipVendor::Broadcom);
         manual_hint_->SetLabel("");
@@ -265,7 +266,7 @@ void FirmwareDialog::UpdateFirmwareStatus() {
         download_btn_->Enable(true);
         std::string hint = fw_name + ".bin, " + cfg_name + ".bin";
         manual_hint_->SetLabel(wxString::FromUTF8(hint));
-        manual_hint_->Wrap(480);
+        wrap_text(manual_hint_, 480);
     } else {
         status_text_->SetLabel(wxString::FromUTF8(L("firmware.missing_manual")));
         status_text_->SetForegroundColour(TM().get(ThemeColor::FirmwareWarning));
@@ -273,7 +274,7 @@ void FirmwareDialog::UpdateFirmwareStatus() {
         std::string hint = std::string(L("firmware.required_files")) + "\n"
                          + fw_name + ".bin, " + cfg_name + ".bin";
         manual_hint_->SetLabel(wxString::FromUTF8(hint));
-        manual_hint_->Wrap(480);
+        wrap_text(manual_hint_, 480);
     }
 }
 

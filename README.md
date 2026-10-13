@@ -3,7 +3,7 @@
 Bluetooth A2DP audio streaming for Windows with full codec support.
 Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (experimental) LHDC V5 using a USB Bluetooth adapter in WinUSB mode — no kernel driver or test signing required.
 
-**[Download](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)** | **[Documentation](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/)**
+**[Download](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)** (installer `-setup.exe` or `-portable.zip`) | **[Documentation](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/)**
 
 ## Supported Codecs
 
@@ -101,6 +101,7 @@ flowchart TB
 | `extern/json/` | nlohmann/json — JSON parser for settings, profiles, localization |
 | `compat/` | MSVC compatibility headers for the AOSP code |
 | `cmake/` | Release packaging script |
+| `installer/` | Inno Setup script for the installer |
 | `tools/a2dp_decode/` | `a2dpwb_decode` — checks / decodes the media stream in an HCI capture (developer tool) |
 | `tools/emu/` | End-to-end test against a virtual Bluetooth sink (Python, Bumble) |
 | `tools/linux_sink/` | `a2dpwb_sink` — measuring A2DP receiver on a second PC with Linux (Python, Bumble) |
@@ -254,7 +255,7 @@ You can manually add this entry using `regedit` if needed. To disable it manuall
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones; their play/pause, next and previous buttons control playback on the PC
 - **Auto-start**: Optionally run minimized in the system tray at Windows startup
 - **Profile management**: Save and load device + codec configurations
-- **Localization**: English / Japanese UI
+- **Localization**: English, Japanese, Simplified / Traditional Chinese, Korean, German, French and Spanish UI (languages other than English and Japanese are machine-translated; corrections welcome — `python tools/check_lang.py` checks a language file against `en.json`)
 - **Realtek firmware**: Guided firmware download for Realtek adapters
 - **Diagnostics** (debug mode): debug console with the connection flow, HCI capture, peer receiver test against a Linux PC
 - **MTU-aware framing**: Optimal packet utilization for each codec
