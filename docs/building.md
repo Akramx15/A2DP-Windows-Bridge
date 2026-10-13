@@ -47,10 +47,11 @@ git submodule update --init --recursive
 A2DP-Windows-Bridge/
 ├── app/                    Application source
 │   ├── src/                C++ source files
-│   ├── lang/               Localization (en.json, ja.json)
+│   ├── lang/               Localization (en.json is the source; tools/check_lang.py checks the others)
 │   ├── resources/          Icon, manifest, resource script
 │   └── CMakeLists.txt      App build config
 ├── cmake/                  Release packaging (make_dist.cmake)
+├── installer/              Inno Setup script for the installer (A2DPWB.iss)
 ├── compat/                 MSVC compatibility headers for AOSP code
 ├── docs/                   Documentation (this site)
 ├── extern/                 Third-party libraries (git submodules)
@@ -77,6 +78,14 @@ A2DP-Windows-Bridge/
 ```bash
 cmake -B build -A x64 -DA2DPWB_BUILD_TOOLS=OFF
 ```
+
+## Release Packages
+
+```bash
+cmake --build build --target A2DPWB_dist --config Release
+```
+
+writes `build/dist/A2DPWB-<version>-win64-portable.zip` and, when [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed (`winget install JRSoftware.InnoSetup`; re-run CMake configure afterwards), `build/dist/A2DPWB-<version>-win64-setup.exe` from `installer/A2DPWB.iss`. Both contain the same files.
 
 ## Testing Without Hardware (tools/emu) {#emu}
 

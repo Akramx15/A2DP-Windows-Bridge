@@ -9,10 +9,13 @@
 #   WX_TAG        wxWidgets git tag used by FetchContent
 #   DIST_ROOT     output directory (build/dist)
 #   GIT_EXE       git executable (may be empty / NOTFOUND)
+#   ISCC_EXE      Inno Setup 6 compiler (may be empty / NOTFOUND: no installer)
+#   APP_VERSION_NUMERIC  x.y.z without suffix, for the installer's file version
 #
 # Produces:
-#   ${DIST_ROOT}/A2DPWB-${APP_VERSION}/            (unpacked package)
-#   ${DIST_ROOT}/A2DPWB-${APP_VERSION}-win64.zip
+#   ${DIST_ROOT}/A2DPWB-${APP_VERSION}/                     (unpacked package)
+#   ${DIST_ROOT}/A2DPWB-${APP_VERSION}-win64-portable.zip
+#   ${DIST_ROOT}/A2DPWB-${APP_VERSION}-win64-setup.exe      (installer/A2DPWB.iss)
 
 cmake_minimum_required(VERSION 3.16)
 
@@ -30,10 +33,11 @@ endif()
 
 set(PKG_NAME "A2DPWB-${APP_VERSION}")
 set(PKG_DIR "${DIST_ROOT}/${PKG_NAME}")
-set(ZIP_FILE "${DIST_ROOT}/${PKG_NAME}-win64.zip")
+set(ZIP_FILE "${DIST_ROOT}/${PKG_NAME}-win64-portable.zip")
+set(SETUP_FILE "${DIST_ROOT}/${PKG_NAME}-win64-setup.exe")
 
 file(REMOVE_RECURSE "${PKG_DIR}")
-file(REMOVE "${ZIP_FILE}")
+file(REMOVE "${ZIP_FILE}" "${SETUP_FILE}")
 file(MAKE_DIRECTORY "${PKG_DIR}/licenses")
 
 # copy_required(<src> <dest relative to PKG_DIR>)
@@ -150,3 +154,27 @@ if(NOT _rc EQUAL 0)
 endif()
 
 message(STATUS "Release package: ${ZIP_FILE}")
+
+# --- Installer, from the same files ---
+if(NOT ISCC_EXE OR NOT EXISTS "${ISCC_EXE}")
+    message(WARNING "A2DPWB_dist: Inno Setup 6 (ISCC.exe) not found; skipping the installer. "
+        "Install it (winget install JRSoftware.InnoSetup) and re-run CMake configure.")
+    return()
+endif()
+if(NOT APP_VERSION_NUMERIC)
+    set(APP_VERSION_NUMERIC "${APP_VERSION}")
+endif()
+file(TO_NATIVE_PATH "${PKG_DIR}" _pkg_native)
+file(TO_NATIVE_PATH "${DIST_ROOT}" _out_native)
+execute_process(
+    COMMAND "${ISCC_EXE}" /Q
+        "/DAppVersion=${APP_VERSION}"
+        "/DAppVersionNumeric=${APP_VERSION_NUMERIC}"
+        "/DPkgDir=${_pkg_native}"
+        "/DOutputDir=${_out_native}"
+        "${SRC_DIR}/installer/A2DPWB.iss"
+    RESULT_VARIABLE _rc)
+if(NOT _rc EQUAL 0 OR NOT EXISTS "${SETUP_FILE}")
+    message(FATAL_ERROR "A2DPWB_dist: Inno Setup failed to build ${SETUP_FILE}")
+endif()
+message(STATUS "Installer: ${SETUP_FILE}")
