@@ -48,10 +48,11 @@ git submodule update --init --recursive
 A2DP-Windows-Bridge/
 ├── app/                    アプリケーションソース
 │   ├── src/                C++ ソースファイル
-│   ├── lang/               ローカライゼーション (en.json, ja.json)
+│   ├── lang/               ローカライゼーション（en.json が原文。tools/check_lang.py で他言語を検査）
 │   ├── resources/          アイコン、マニフェスト、リソーススクリプト
 │   └── CMakeLists.txt      アプリビルド設定
 ├── cmake/                  リリースパッケージ作成（make_dist.cmake）
+├── installer/              インストーラーの Inno Setup スクリプト（A2DPWB.iss）
 ├── compat/                 AOSP コード用 MSVC 互換ヘッダー
 ├── docs/                   ドキュメント（このサイト）
 ├── extern/                 サードパーティライブラリ（git サブモジュール）
@@ -78,6 +79,14 @@ A2DP-Windows-Bridge/
 ```bash
 cmake -B build -A x64 -DA2DPWB_BUILD_TOOLS=OFF
 ```
+
+## リリースパッケージ
+
+```bash
+cmake --build build --target A2DPWB_dist --config Release
+```
+
+で `build/dist/A2DPWB-<バージョン>-win64-portable.zip` を作成します。[Inno Setup 6](https://jrsoftware.org/isinfo.php) がインストールされていれば（`winget install JRSoftware.InnoSetup` の後に CMake の configure を再実行）、`installer/A2DPWB.iss` から `build/dist/A2DPWB-<バージョン>-win64-setup.exe` も作成します。中身は同じファイルです。
 
 ## 実機なしでのテスト（tools/emu） {#emu}
 

@@ -213,11 +213,17 @@ configure_file(
 )
 target_include_directories(A2DPWB PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
-# --- Release package (build/dist/A2DPWB-<ver>-win64.zip) ---
+# --- Release packages (build/dist/A2DPWB-<ver>-win64-portable.zip and -setup.exe) ---
 # cmake --build build --target A2DPWB_dist --config Release
 # Assembles A2DPWB.exe, LICENSE(-APACHE/-MIT), THIRD_PARTY_LICENSES.md, license texts copied
-# from the pinned sources (licenses/) and SOURCE.txt (repo/submodule commits).
+# from the pinned sources (licenses/) and SOURCE.txt (repo/submodule commits), zips them,
+# and builds the installer (installer/A2DPWB.iss) from the same files when Inno Setup 6
+# is installed.
 find_package(Git QUIET)
+find_program(A2DPWB_ISCC ISCC
+    HINTS "$ENV{LOCALAPPDATA}/Programs/Inno Setup 6"
+          "$ENV{ProgramFiles\(x86\)}/Inno Setup 6"
+          "$ENV{ProgramFiles}/Inno Setup 6")
 set(A2DPWB_DIST_DIR ${CMAKE_BINARY_DIR}/dist)
 add_custom_target(A2DPWB_dist
     COMMAND ${CMAKE_COMMAND}
@@ -229,8 +235,10 @@ add_custom_target(A2DPWB_dist
         -DWX_TAG=${A2DPWB_WX_TAG}
         -DDIST_ROOT=${A2DPWB_DIST_DIR}
         -DGIT_EXE=${GIT_EXECUTABLE}
+        -DISCC_EXE=${A2DPWB_ISCC}
+        -DAPP_VERSION_NUMERIC=${PROJECT_VERSION}
         -P ${CMAKE_SOURCE_DIR}/cmake/make_dist.cmake
-    COMMENT "Packaging ${A2DPWB_DIST_DIR}/A2DPWB-${A2DPWB_VERSION}-win64.zip"
+    COMMENT "Packaging A2DPWB ${A2DPWB_VERSION} into ${A2DPWB_DIST_DIR}"
     VERBATIM
 )
 add_dependencies(A2DPWB_dist A2DPWB)

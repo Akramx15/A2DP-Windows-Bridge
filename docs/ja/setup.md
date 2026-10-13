@@ -22,6 +22,15 @@ nav_order: 1
 - **専用 USB Bluetooth アダプター**（内蔵 Bluetooth とは別）
 - **Zadig** ([https://zadig.akeo.ie/](https://zadig.akeo.ie/))
 
+## A2DPWB のインストール
+
+[リリース](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)ごとに、中身が同じ 2 つの形式があります。
+
+- **インストーラー版**（`A2DPWB-<バージョン>-win64-setup.exe`）：管理者権限なしで現在のユーザーにインストールします（選択すれば全ユーザー向けも可）。スタートメニューとアンインストーラーを追加し、初回インストール時はセットアップで選んだ言語で A2DPWB を起動します
+- **ポータブル版**（`A2DPWB-<バージョン>-win64-portable.zip`）：任意の場所に展開して `A2DPWB.exe` を実行します
+
+どちらも設定・プロファイル・リンクキー・ファームウェアを `%APPDATA%\A2DPWB` に保存するため、相互に切り替えられます。アンインストールしてもこのフォルダーは残ります。
+
 ## 手順 1: WinUSB ドライバーのインストール
 
 A2DPWB は WinUSB 経由で USB Bluetooth アダプターと直接通信します。**専用のアダプター**が必要です。内蔵 Bluetooth は通常の Windows Bluetooth として引き続き使用できます。
