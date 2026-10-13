@@ -1,7 +1,7 @@
 ---
 title: アーキテクチャ
 layout: default
-parent: 日本語
+parent: ホーム
 nav_order: 4
 ---
 
@@ -102,7 +102,7 @@ A2DPWB.exe
 │   ├── wx_debug_console_dialog  デバッグコンソール: ログ表示、接続フロー
 │   ├── wx_radio_text.h     RSSI / AFH の表示文字列（両ウィンドウ共通）
 │   ├── theme_manager       ライト / ダークテーマ対応
-│   └── localization        多言語化 (en, ja -- 埋め込み JSON)
+│   └── localization        多言語化 (en, ja, zh-CN, zh-TW, ko, de, fr, es -- 埋め込み JSON)
 │
 ├── コアレイヤー
 │   ├── a2dp_service        A2DP 接続ライフサイクル & ステートマシン
