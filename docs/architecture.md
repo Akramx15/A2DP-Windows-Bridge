@@ -111,7 +111,7 @@ A2DPWB.exe
 │   ├── wx_debug_console_dialog  Debug console: live log, connection flow
 │   ├── wx_radio_text.h     RSSI / AFH as text for both windows
 │   ├── theme_manager       Light / dark theme support
-│   └── localization        i18n (en, ja — embedded JSON)
+│   └── localization        i18n (en, ja, zh-CN, zh-TW, ko, de, fr, es — embedded JSON)
 │
 ├── Core Layer
 │   ├── a2dp_service        A2DP connection lifecycle & state machine

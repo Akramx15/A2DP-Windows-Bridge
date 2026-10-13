@@ -1,8 +1,9 @@
 ---
-title: 日本語
+title: ホーム
 layout: default
-nav_order: 7
+nav_order: 11
 has_children: true
+has_toc: false
 ---
 
 # A2DP Windows Bridge (A2DPWB)
@@ -126,6 +127,6 @@ A2DPWB は Windows の Bluetooth スタックを完全にバイパスします�
 - **ヘッドホン操作（AVRCP）**: ヘッドホンや Windows の音量と連動する音量スライダー、ヘッドホンの再生/一時停止・曲送り・曲戻しで PC の再生を操作（[使い方](usage#headphone-buttons) を参照）
 - **プロファイル管理**: デバイス + コーデック設定の保存・読み込み
 - **GUI + CLI**: wxWidgets グラフィカルインターフェースまたはコマンドライン操作
-- **多言語対応**: 英語 / 日本語
+- **多言語対応**: 英語、日本語、簡体字中国語、繁体字中国語、韓国語、ドイツ語、フランス語、スペイン語
 - **Realtek ファームウェア**: Realtek アダプター向けガイド付きファームウェアダウンロード
 - **診断**（デバッグモード）: デバッグコンソール、HCI キャプチャ、Linux PC を使った対向受信テスト（[使い方](usage#receiver)を参照）
