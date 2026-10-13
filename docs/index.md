@@ -125,6 +125,6 @@ A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly w
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones and the Windows volume; their play/pause, next and previous buttons control playback on the PC (see [Usage](usage#headphone-buttons))
 - **Profile management**: Save and load device + codec configurations
 - **GUI + CLI**: wxWidgets graphical interface or command-line operation
-- **Localization**: English / Japanese
+- **Localization**: English, Japanese, Simplified Chinese, Traditional Chinese, Korean, German, French, Spanish
 - **Realtek firmware**: Guided firmware download for Realtek adapters
 - **Diagnostics** (debug mode): debug console, HCI capture, peer receiver test against a Linux PC (see [Usage](usage#receiver))
