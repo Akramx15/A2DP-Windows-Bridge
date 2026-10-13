@@ -31,6 +31,10 @@ private:
 
     void OnTimer(wxTimerEvent &evt);
     void refresh();
+    void size_to_content();
+    void show_widest_values();
+    void wrap_help(int width);
+    void fit_width(int width);
     wxStaticText *add_row(wxWindow *parent, wxFlexGridSizer *grid, const char *label_key);
     wxStaticText *add_heading(wxWindow *parent, wxSizer *sizer, const char *key);
 
@@ -52,6 +56,8 @@ private:
     wxStaticText *sent_value_ = nullptr;
     wxStaticText *dropped_value_ = nullptr;
     wxStaticText *capture_value_ = nullptr;
+    wxStaticText *band_help_ = nullptr;
+    wxStaticText *loss_help_ = nullptr;
 };
 
 #endif /* WX_LINK_QUALITY_DIALOG_H */

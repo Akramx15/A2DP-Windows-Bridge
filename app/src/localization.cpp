@@ -48,6 +48,12 @@ bool Localization::load(const std::string &lang_code)
     if (!parse_lang_json(it->second, strings_))
         return false;
 
+    /* Keys a translation has not caught up with yet show in English */
+    fallback_.clear();
+    auto en = langs.find("en");
+    if (lang_code != "en" && en != langs.end())
+        parse_lang_json(en->second, fallback_);
+
     current_lang_ = lang_code;
     return true;
 }
@@ -56,6 +62,9 @@ const char *Localization::get(const char *key) const
 {
     auto it = strings_.find(key);
     if (it != strings_.end())
+        return it->second.c_str();
+    it = fallback_.find(key);
+    if (it != fallback_.end())
         return it->second.c_str();
     return key;
 }

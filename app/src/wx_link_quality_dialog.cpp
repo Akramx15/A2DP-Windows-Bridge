@@ -8,15 +8,21 @@
 #include "link_stats.h"
 #include "localization.h"
 #include "theme_manager.h"
+#include "wx_wrap_text.h"
 #include "wx_radio_text.h"
 
 #include <wx/statline.h>
+
+#include <algorithm>
+#include <iterator>
 
 #include <windows.h>
 
 namespace {
 
 const char *DIALOG_NAME = "a2dpwb_link_quality";
+const int MIN_WIDTH_DIP = 500;
+const int HELP_MARGIN = 16; /* px left and right of the help texts, like the other borders */
 
 /* Bluetooth BR/EDR baseband: 625 us slots. The best ACL packet type on an
  * EDR 3 Mbps link is 3-DH5 (5 slots, up to 1021 bytes); each packet is
@@ -142,10 +148,9 @@ LinkQualityDialog::LinkQualityDialog(MainFrame *frame)
     airtime_gauge_ = new wxGauge(this, wxID_ANY, 100, wxDefaultPosition, wxSize(-1, 10));
     g_band->Add(airtime_gauge_, 0, wxEXPAND);
     vbox->Add(g_band, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
-    auto *band_help = new wxStaticText(this, wxID_ANY, U("quality.band_help"));
-    band_help->SetForegroundColour(TM().get(ThemeColor::TextMuted));
-    band_help->Wrap(460);
-    vbox->Add(band_help, 0, wxLEFT | wxRIGHT | wxTOP, 16);
+    band_help_ = new wxStaticText(this, wxID_ANY, U("quality.band_help"));
+    band_help_->SetForegroundColour(TM().get(ThemeColor::TextMuted));
+    vbox->Add(band_help_, 0, wxLEFT | wxRIGHT | wxTOP, HELP_MARGIN);
 
     add_heading(this, vbox, "quality.section_loss");
     auto *g_loss = new_grid();
@@ -153,10 +158,9 @@ LinkQualityDialog::LinkQualityDialog(MainFrame *frame)
     dropped_value_ = add_row(this, g_loss, "quality.dropped");
     capture_value_ = add_row(this, g_loss, "quality.capture_dropped");
     vbox->Add(g_loss, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
-    auto *loss_help = new wxStaticText(this, wxID_ANY, U("quality.loss_help"));
-    loss_help->SetForegroundColour(TM().get(ThemeColor::TextMuted));
-    loss_help->Wrap(460);
-    vbox->Add(loss_help, 0, wxLEFT | wxRIGHT | wxTOP, 16);
+    loss_help_ = new wxStaticText(this, wxID_ANY, U("quality.loss_help"));
+    loss_help_->SetForegroundColour(TM().get(ThemeColor::TextMuted));
+    vbox->Add(loss_help_, 0, wxLEFT | wxRIGHT | wxTOP, HELP_MARGIN);
 
     vbox->Add(new wxStaticLine(this), 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
     auto *btn_sizer = new wxBoxSizer(wxHORIZONTAL);
@@ -182,14 +186,70 @@ LinkQualityDialog::LinkQualityDialog(MainFrame *frame)
     SetForegroundColour(TM().get(ThemeColor::TextPrimary));
 
     SetSizer(vbox);
-    SetMinSize(wxSize(500, -1));
+    size_to_content();
+    /* Moving to a monitor with another DPI rescales the fonts but keeps the
+     * line breaks, so the help texts would wrap again at narrower widths */
+    Bind(wxEVT_DPI_CHANGED, [this](wxDPIChangedEvent &e) {
+        e.Skip();
+        CallAfter([this]() { size_to_content(); });
+    });
 
     baseline_ = take_sample();
     prev_ = baseline_;
     refresh();
-    Fit();
     CentreOnParent();
     timer_.Start(1000);
+}
+
+/* Size for the longest values the current language can show, so they do
+ * not run past the right edge once streaming starts */
+void LinkQualityDialog::size_to_content() {
+    wxStaticText *values[] = {codec_value_, bitrate_value_, packets_value_, queue_value_, radio_value_,
+                              theory_value_, airtime_value_, sent_value_, dropped_value_, capture_value_};
+    wxString shown[std::size(values)];
+    for (size_t i = 0; i < std::size(values); i++) shown[i] = values[i]->GetLabel();
+
+    show_widest_values();
+    SetMinSize(wxDefaultSize);
+    wrap_help(FromDIP(MIN_WIDTH_DIP) - 2 * HELP_MARGIN);
+    fit_width(std::max(FromDIP(MIN_WIDTH_DIP), GetSizer()->ComputeFittingWindowSize(this).x));
+    SetMinSize(wxSize(GetSize().x, -1));
+
+    for (size_t i = 0; i < std::size(values); i++) values[i]->SetLabel(shown[i]);
+    Layout();
+}
+
+void LinkQualityDialog::show_widest_values() {
+    codec_value_->SetLabel(wxString::Format(U("quality.codec_value"),
+        wxString("aptX HD"), 192.0, 2u, 9999u));
+    bitrate_value_->SetLabel(wxString::Format(U("quality.bitrate_value"), 9999.0));
+    packets_value_->SetLabel(wxString::Format(U("quality.packets_value"), 999.9, 9999.0));
+    queue_value_->SetLabel(wxString::Format(U("quality.queue_value"),
+        (unsigned)MEDIA_QUEUE_PACKETS, (unsigned)MEDIA_QUEUE_PACKETS));
+    radio_value_->SetLabel(radio_text(true, -99, 79, "1, 6, 11"));
+    theory_value_->SetLabel(wxString::Format(U("quality.theory_value"),
+                                             THEORETICAL_MAX_KBPS, 100.0));
+    airtime_value_->SetLabel(wxString::Format(U("quality.airtime_value"),
+                                              100.0, LARGEST_TYPE.name, 99u));
+    sent_value_->SetLabel("99999999");
+    dropped_value_->SetLabel("99999999 (100.00%)");
+    capture_value_->SetLabel("99999 ms (100.00%)");
+}
+
+void LinkQualityDialog::wrap_help(int width) {
+    band_help_->SetLabel(U("quality.band_help"));
+    wrap_text(band_help_, width);
+    loss_help_->SetLabel(U("quality.loss_help"));
+    wrap_text(loss_help_, width);
+}
+
+/* Make the dialog width px wide, the help texts filling it */
+void LinkQualityDialog::fit_width(int width) {
+    SetSize(wxSize(width, -1));
+    wrap_help(GetClientSize().x - 2 * HELP_MARGIN);
+    Fit();
+    /* Word wrapping leaves the texts a little narrower than asked */
+    if (GetSize().x < width) SetSize(wxSize(width, GetSize().y));
 }
 
 void LinkQualityDialog::OnTimer(wxTimerEvent &) {
@@ -273,6 +333,9 @@ void LinkQualityDialog::refresh() {
 
     prev_ = now;
     have_prev_ = true;
-    if (resize) Fit();
+    /* Grow, never shrink, if a value is still wider than expected */
+    int need = GetSizer()->ComputeFittingWindowSize(this).x;
+    if (need > GetSize().x) fit_width(need);
+    else if (resize) Fit();
     else Layout();
 }

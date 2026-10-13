@@ -56,9 +56,6 @@ private:
 
     wxStaticText *value_text();
     wxChoice *add_choice(wxSizer *row, const char *label_key, const wxArrayString &items, int selection);
-    /* Wraps at `width` pixels anywhere between CJK characters and at spaces
-     * elsewhere (wxStaticText::Wrap() only breaks at spaces) */
-    wxString wrap(const wxString &text, int width) const;
     void set_value(wxStaticText *t, const wxString &text, bool bad = false);
 
     MainFrame *frame_;
@@ -77,7 +74,7 @@ private:
     bool measuring_ = false;       /* this window started the stream */
     bool service_left_idle_ = false; /* A2DPWB started working on it (Idle before that is not the end) */
     wxString failure_;             /* why the last stream this window started ended */
-    wxString status_text_;         /* last text set (Wrap() changes the label) */
+    wxString status_text_;         /* last text set (wrapping changes the label) */
     StepState step_state_[STEP_COUNT] = {};
     wxStaticText *step_text_[STEP_COUNT] = {};
     wxTextCtrl   *log_ = nullptr;

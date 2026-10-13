@@ -254,7 +254,7 @@ You can manually add this entry using `regedit` if needed. To disable it manuall
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones; their play/pause, next and previous buttons control playback on the PC
 - **Auto-start**: Optionally run minimized in the system tray at Windows startup
 - **Profile management**: Save and load device + codec configurations
-- **Localization**: English / Japanese UI
+- **Localization**: English, Japanese, Simplified / Traditional Chinese, Korean, German, French and Spanish UI (languages other than English and Japanese are machine-translated; corrections welcome — `python tools/check_lang.py` checks a language file against `en.json`)
 - **Realtek firmware**: Guided firmware download for Realtek adapters
 - **Diagnostics** (debug mode): debug console with the connection flow, HCI capture, peer receiver test against a Linux PC
 - **MTU-aware framing**: Optimal packet utilization for each codec
