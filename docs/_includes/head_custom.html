@@ -10,17 +10,19 @@
 {%- comment -%}
   The sidebar lists every language's pages; show only this page's language.
   A translation lives under its home page (/<code>/), which is shown flattened
-  so the sidebar looks the same as the English one.
+  so the sidebar looks the same as the English one. Items are matched by any
+  link inside the folder: the theme drops the href of the current page's own
+  link, so the home link alone cannot be relied on.
 {%- endcomment -%}
 {%- if lang_current == "en" %}
 {%- for l in site.languages %}{% if l.code != "en" %}
-.site-nav > .nav-list > .nav-list-item:has(> .nav-list-link[href="{{ '/' | append: l.code | append: '/' | relative_url }}"]) { display: none; }
+.site-nav > .nav-list > .nav-list-item:has(a[href^="{{ '/' | append: l.code | append: '/' | relative_url }}"]) { display: none; }
 {%- endif %}{% endfor %}
 {%- else %}
 {%- assign lang_home = "/" | append: lang_current | append: "/" | relative_url %}
-.site-nav > .nav-list > .nav-list-item:not(:has(> .nav-list-link[href="{{ lang_home }}"])) { display: none; }
-.site-nav > .nav-list > .nav-list-item > .nav-list-link[href="{{ lang_home }}"] ~ .nav-list { display: block !important; padding-left: 0 !important; }
-.site-nav > .nav-list > .nav-list-item:has(> .nav-list-link[href="{{ lang_home }}"]) > .nav-list-expander { display: none !important; }
+.site-nav > .nav-list > .nav-list-item:not(:has(a[href^="{{ lang_home }}"])) { display: none; }
+.site-nav > .nav-list > .nav-list-item:has(a[href^="{{ lang_home }}"]) > .nav-list { display: block !important; padding-left: 0 !important; }
+.site-nav > .nav-list > .nav-list-item:has(a[href^="{{ lang_home }}"]) > .nav-list-expander { display: none !important; }
 {%- endif %}
 
 .lang-menu {
@@ -44,12 +46,12 @@
   width: 1.1rem;
   height: 1.1rem;
   flex: none;
-  opacity: 0.8;
+  color: #e6e1e8;
 }
 .lang-menu select {
   color-scheme: dark;
-  color: inherit;
-  background-color: transparent;
+  color: #e6e1e8;
+  background-color: #27262b;
   border: 1px solid #44434d;
   border-radius: 4px;
   padding: 0.25rem 0.5rem;
