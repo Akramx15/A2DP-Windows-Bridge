@@ -10,9 +10,10 @@
 <script>
 (function () {
   var sel = document.getElementById('lang-select');
-  // Keep the section the reader is on: translations share heading anchors.
+  /* Keep the section the reader is on: translations share heading anchors.
+     (Block comments only: the theme joins the page into one line.) */
   sel.addEventListener('change', function () { location.href = sel.value + location.hash; });
-  // Back/forward cache would otherwise show the language that was picked last.
+  /* Back/forward cache would otherwise show the language that was picked last. */
   window.addEventListener('pageshow', function () {
     for (var i = 0; i < sel.options.length; i++) if (sel.options[i].defaultSelected) sel.selectedIndex = i;
   });
