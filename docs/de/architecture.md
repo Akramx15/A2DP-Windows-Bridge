@@ -45,6 +45,12 @@ flowchart TB
     usb -. Bluetooth .-> hp["Kopfhörer / Lautsprecher"]
 ```
 
+## Warum die Einrichtung diese Schritte braucht
+
+Mit einem eigenen Audiotreiber wäre A2DPWB eine normale Installation: Die Kopfhörer erschienen als gewöhnliches Windows-Audiogerät am eingebauten Bluetooth. Windows 10 / 11 lädt aber nur Kernelmodustreiber, die über Microsoft signiert sind, und dafür ist ein EV-Codesignaturzertifikat nötig. Solche Zertifikate kosten etwa 300–700 USD pro Jahr und werden in der Regel nur an eingetragene Unternehmen ausgegeben – zu viel für ein Einzelprojekt. A2DPWB geht deshalb den Umweg: Es nimmt Windows mit dem von Microsoft signierten WinUSB-Treiber einen ganzen USB-Bluetooth-Adapter weg und betreibt den Bluetooth-Stack selbst im Benutzermodus. Darum werden ein eigener Adapter, Zadig und (bei Realtek-Adaptern) Firmwaredateien gebraucht.
+
+Wer es einfach haben möchte: Es gibt kommerzielle Software mit signiertem Treiber, die mit dem eingebauten Bluetooth funktioniert. Ehrlich gesagt ist sie für das, was sie leistet, bemerkenswert günstig – wenn Ihnen eine einfache Einrichtung am wichtigsten ist, nehmen Sie lieber diese.
+
 ## Transport: BTstack + WinUSB
 
 Umgeht den Bluetooth-Stack von Windows vollständig, indem direkt über WinUSB (der von Microsoft

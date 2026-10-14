@@ -16,6 +16,8 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 [시작하기](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
 
+![메인 창, 연결 프로필, 연결 품질 창]({{ '/images/app_sample.jpg' | relative_url }})
+
 ---
 
 ## 지원 코덱
