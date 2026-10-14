@@ -45,6 +45,12 @@ flowchart TB
     usb -. Bluetooth .-> hp["Auriculares / altavoces"]
 ```
 
+## Por qué la instalación requiere estos pasos
+
+Con un controlador de audio propio, A2DPWB se instalaría como cualquier aplicación: los auriculares aparecerían como un dispositivo de audio normal de Windows en el Bluetooth integrado. Pero Windows 10 / 11 solo carga controladores de modo kernel firmados a través de Microsoft, y esa firma exige un certificado de firma de código EV. Estos certificados cuestan unos 300–700 USD al año y por lo general solo se emiten a empresas registradas, algo que un proyecto individual no puede asumir. Por eso A2DPWB toma el camino largo: retira a Windows un adaptador Bluetooth USB completo con el controlador WinUSB firmado por Microsoft y ejecuta él mismo la pila Bluetooth en modo usuario. Por eso se necesitan un adaptador dedicado, Zadig y (en los adaptadores Realtek) archivos de firmware.
+
+Si solo quiere que sea sencillo, existe software de pago que incluye un controlador firmado y funciona con el Bluetooth integrado. Sinceramente, para lo que hace es notablemente barato, así que si lo que más le importa es una instalación sencilla, use ese en su lugar.
+
 ## Transporte: BTstack + WinUSB
 
 Omite por completo la pila Bluetooth de Windows comunicándose directamente con un

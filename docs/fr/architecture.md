@@ -45,6 +45,12 @@ flowchart TB
     usb -. Bluetooth .-> hp["Casque / enceintes"]
 ```
 
+## Pourquoi la mise en place demande ces étapes
+
+Avec son propre pilote audio, A2DPWB s'installerait comme n'importe quelle application : le casque apparaîtrait comme un périphérique audio Windows ordinaire sur le Bluetooth intégré. Mais Windows 10 / 11 ne charge que des pilotes noyau signés par l'intermédiaire de Microsoft, et cette signature exige un certificat de signature de code EV. Ces certificats coûtent environ 300 à 700 USD par an et ne sont en général délivrés qu'à des entreprises enregistrées — trop pour un projet individuel. A2DPWB prend donc le chemin détourné : il retire à Windows tout un adaptateur Bluetooth USB grâce au pilote WinUSB signé par Microsoft et exécute lui-même la pile Bluetooth en mode utilisateur. C'est pourquoi il faut un adaptateur dédié, Zadig et (pour les adaptateurs Realtek) des fichiers de firmware.
+
+Si vous voulez simplement que ce soit facile, il existe un logiciel payant qui fournit un pilote signé et fonctionne avec le Bluetooth intégré. Honnêtement, pour ce qu'il fait, il est remarquablement bon marché : si la simplicité d'installation compte avant tout pour vous, utilisez-le plutôt.
+
 ## Transport : BTstack + WinUSB
 
 Contourne entièrement la pile Bluetooth de Windows en communiquant directement avec un

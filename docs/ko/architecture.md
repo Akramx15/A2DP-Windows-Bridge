@@ -45,6 +45,12 @@ flowchart TB
     usb -. Bluetooth .-> hp["헤드폰 / 스피커"]
 ```
 
+## 왜 이런 절차가 필요한가
+
+자체 오디오 드라이버를 만들 수 있다면 A2DPWB는 설치만 하면 됩니다. 헤드폰은 내장 Bluetooth를 그대로 쓰면서 일반 Windows 오디오 장치로 나타납니다. 하지만 Windows 10 / 11은 Microsoft의 서명을 받은 커널 모드 드라이버만 로드하며, 그 서명을 받으려면 EV 코드 서명 인증서가 필요합니다. 이 인증서는 연간 약 300–700 USD이고 원칙적으로 등록된 법인에만 발급되므로, 개인 프로젝트가 감당하기 어렵습니다. 그래서 A2DPWB는 Microsoft 서명 WinUSB 드라이버로 USB Bluetooth 어댑터를 통째로 Windows에서 분리하고, Bluetooth 스택을 사용자 모드에서 직접 실행하는 우회 방식을 택했습니다. 전용 어댑터, Zadig, (Realtek 어댑터의 경우) 펌웨어 파일이 필요한 이유입니다.
+
+간편함만 원한다면 서명된 드라이버를 제공해 내장 Bluetooth로 바로 쓸 수 있는 유료 소프트웨어도 있습니다. 솔직히 기능에 비해 매우 저렴하므로, 설정의 간편함이 가장 중요하다면 그쪽을 쓰는 것이 좋습니다.
+
 ## 전송 계층: BTstack + WinUSB
 
 WinUSB(Microsoft가 서명한 범용 USB 드라이버)를 통해 USB Bluetooth 어댑터와 직접 통신하여

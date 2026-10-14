@@ -16,6 +16,8 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 [セットアップ](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
 
+![メインウィンドウ、接続プロファイル、通信品質ウィンドウ]({{ '/images/app_sample.jpg' | relative_url }})
+
 ---
 
 ## 対応コーデック

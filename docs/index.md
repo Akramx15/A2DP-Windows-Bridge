@@ -14,6 +14,8 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and
 [Get Started](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
 
+![Main window, connection profile and link quality window]({{ '/images/app_sample.jpg' | relative_url }})
+
 ---
 
 ## Supported Codecs

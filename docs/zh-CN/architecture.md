@@ -42,6 +42,12 @@ flowchart TB
     usb -. Bluetooth .-> hp["耳机 / 音箱"]
 ```
 
+## 为什么需要这么多步骤
+
+如果能自己开发音频驱动，A2DPWB 只需安装即可使用：耳机会作为普通的 Windows 音频设备出现，并继续使用内置蓝牙。但 Windows 10 / 11 只加载经过 Microsoft 签名的内核模式驱动，而获得该签名需要 EV 代码签名证书。这种证书每年约 300–700 美元，并且通常只颁发给注册公司，个人项目难以承担。因此 A2DPWB 绕了远路：用 Microsoft 签名的 WinUSB 驱动把整个 USB 蓝牙适配器从 Windows 中分离出来，在用户模式下自行运行蓝牙协议栈。这就是需要专用适配器、Zadig 以及（Realtek 适配器的）固件文件的原因。
+
+如果只追求简单，也有提供已签名驱动、可直接使用内置蓝牙的商业软件。老实说，就其功能而言价格非常便宜，如果你最看重安装的简便，用它就好。
+
 ## 传输层：BTstack + WinUSB
 
 通过 WinUSB（Microsoft 签名的通用 USB 驱动）直接与 USB Bluetooth 适配器通信，完全绕过 Windows 的 Bluetooth 堆栈。BTstack 是一个源代码公开的 Bluetooth 堆栈（非商业许可），在用户模式下实现 HCI、L2CAP、AVDTP 和 A2DP。
