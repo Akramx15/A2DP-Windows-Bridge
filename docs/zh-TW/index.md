@@ -16,6 +16,8 @@ has_toc: false
 [開始使用](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
 
+![主視窗、連線設定檔與連線品質視窗]({{ '/images/app_sample.jpg' | relative_url }})
+
 ---
 
 ## 支援的轉碼器

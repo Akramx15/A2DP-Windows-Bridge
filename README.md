@@ -5,6 +5,8 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 
 **[Download](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)** (installer `-setup.exe` or `-portable.zip`) | **[Documentation](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/)**
 
+![Main window, connection profile and link quality window](docs/images/app_sample.jpg)
+
 ## Supported Codecs
 
 | Codec | Bitrate | Sample Rate | Bit Depth | Latency |
@@ -85,6 +87,12 @@ flowchart TB
     bt -- WinUSB API --> usb["USB Bluetooth adapter (WinUSB driver via Zadig)"]
     usb -. Bluetooth .-> hp["Headphones / speakers"]
 ```
+
+### Why the setup takes these steps
+
+With an audio driver of its own, A2DPWB could be a plain install: the headphones would show up as a normal Windows audio device on the built-in Bluetooth. But Windows 10 / 11 only loads kernel-mode drivers signed through Microsoft, and Microsoft's signing service requires an EV code signing certificate. Such certificates cost roughly USD 300–700 per year and are generally issued only to registered companies — more than an individual project can carry. A2DPWB therefore takes the long way round: it takes a whole USB Bluetooth adapter away from Windows with the Microsoft-signed WinUSB driver and runs the Bluetooth stack itself, in user mode. That is why a dedicated adapter, Zadig and (for Realtek adapters) firmware files are needed.
+
+If you just want it to be simple, there is commercial software that ships a signed driver and works with the built-in Bluetooth. Honestly, for what it does it is remarkably cheap, so if ease of setup matters most to you, use that instead.
 
 ### Components
 

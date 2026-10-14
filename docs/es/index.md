@@ -16,6 +16,8 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 [Primeros pasos](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
 
+![Ventana principal, perfil de conexión y ventana de calidad del enlace]({{ '/images/app_sample.jpg' | relative_url }})
+
 ---
 
 ## Códecs compatibles
