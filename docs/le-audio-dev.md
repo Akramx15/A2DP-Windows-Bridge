@@ -805,3 +805,50 @@ requirements as far as known, not checked against the PTS).**
 - Only verified against the Bumble emulator (whose ASCS has no
   presentation delay limits and a 100 ms latency preference), not with a
   real gaming headset.
+
+## TODO (before LE Audio can leave "experimental")
+
+Collected from the profile branches when they were merged (2026-10-16).
+Everything so far is verified only against the Bumble emulator.
+
+Verification
+- [ ] Real hardware: a Bluetooth 5.2+ adapter with ISO channels in WinUSB
+  mode (the HCI ISO path of `hci_transport_h2_winusb.c` has never run), an
+  LE Audio headset and a pair of LE Audio earbuds.
+- [ ] Run the GUI: "LE Audio (experimental)" and "Low latency (GMAP)" menu
+  items, LE devices and set members in the scan list, streaming through
+  `a2dp_service_le_audio.cpp`; classic A2DP while the LE setting is on.
+- [ ] MCP commands to real Windows players (SMTC and the media-key fallback);
+  only reading SMTC was tried.
+- [ ] Values written from memory because the specs could not be fetched:
+  TBS (Bearer Technology 0x04, Signal Strength 255, ATT error 0x80 for a long
+  read that changed, notification order, ATT 0x0D for a wrong length) and
+  GMAP (Table 3.16 preset values, UGG / UGT feature bits).
+- [ ] Untested paths: a device that lost its bond, extended advertising
+  scanning, RPAs / rotating RSIs, CSIS included by CAS.
+- [ ] Emulator: the "time stamp step(s) differ from the SDU interval" check
+  failed now and then (about 1 in 20 cases, more under load). The cause was
+  the emulator's event loop stalling 60-90 ms, not A2DPWB; the controller now
+  tolerates up to the CIG's Max Transport Latency (`le_audio/controller.py`)
+  and two full runs after that passed 27/27. Watch whether it still happens,
+  especially for the 7.5 ms GMAP cases (15 ms latency, so less tolerance).
+
+Missing features
+- [ ] Source ASEs (microphone): needed for TMAP Call Gateway, real CCP calls
+  and the GMAP `_gs` configurations.
+- [ ] Broadcast (Auracast source, TMAP BMS, GMAP BGS).
+- [ ] CSIP lock / Ordered Access, SIRK / size / rank change notifications,
+  OOB-only SIRK; after a link loss the CLI reconnects only the address it was
+  given; the 10 s member search is fixed.
+- [ ] VCP: "remember volume" per device, Mute and relative opcodes, mute
+  mirrored to Windows, Volume Flags.
+- [ ] MCP: ATT error 0x80 for long reads (`GattServer::read_offset()` /
+  `fail_read()` from the CCP branch now make it possible), fast forward /
+  rewind and seeking state, artist in the track title.
+- [ ] CCP: a real call source (softphone integration via `ccp::Backend`),
+  Join, TBS instances besides GTBS, signal strength reports.
+- [ ] Show the TMAP / GMAP roles in the UI (only logged now); TMAP
+  low-latency 48_x_1 presets are only used with `--le-preset`.
+- [ ] Core: SDU time stamps / LE Read ISO TX Sync, a better jitter buffer,
+  application capture mode, HCI init still sends BTstack's LE set-up commands
+  when the LE setting is off.
