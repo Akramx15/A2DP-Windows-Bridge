@@ -114,6 +114,8 @@
   "firmware.open_folder": "開啟設定資料夾",
   "firmware.select_chip": "請選擇您的藍牙晶片類型。",
   "firmware.missing_manual": "找不到韌體",
+  "firmware.invalid_short": "韌體檔案無效！",
+  "firmware.invalid": "%s 不是 Realtek 韌體檔案，可能儲存的是網頁而非檔案。請透過「plain」連結重新下載並取代。",
   "firmware.required_files": "必要檔案:",
   "firmware.detected_adapters": "偵測到的介面卡",
   "firmware.no_adapters": "未偵測到 USB 藍牙介面卡。",

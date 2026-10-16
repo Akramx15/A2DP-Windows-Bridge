@@ -267,6 +267,16 @@ void FirmwareDialog::UpdateFirmwareStatus() {
         std::string hint = fw_name + ".bin, " + cfg_name + ".bin";
         manual_hint_->SetLabel(wxString::FromUTF8(hint));
         wrap_text(manual_hint_, 480);
+    } else if (!service_->firmware_invalid_file().empty()) {
+        status_text_->SetLabel(wxString::Format(wxString::FromUTF8(L("firmware.invalid")),
+                               wxString::FromUTF8(service_->firmware_invalid_file())));
+        status_text_->SetForegroundColour(TM().get(ThemeColor::FirmwareWarning));
+        wrap_text(status_text_, 480);
+        download_btn_->Enable(true);
+        std::string hint = std::string(L("firmware.required_files")) + "\n"
+                         + fw_name + ".bin, " + cfg_name + ".bin";
+        manual_hint_->SetLabel(wxString::FromUTF8(hint));
+        wrap_text(manual_hint_, 480);
     } else {
         status_text_->SetLabel(wxString::FromUTF8(L("firmware.missing_manual")));
         status_text_->SetForegroundColour(TM().get(ThemeColor::FirmwareWarning));

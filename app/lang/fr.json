@@ -114,6 +114,8 @@
   "firmware.open_folder": "Ouvrir le dossier de configuration",
   "firmware.select_chip": "Sélectionnez le type de votre puce Bluetooth.",
   "firmware.missing_manual": "Firmware introuvable",
+  "firmware.invalid_short": "Fichier de firmware invalide !",
+  "firmware.invalid": "%s n'est pas un fichier de firmware Realtek : une page web a sans doute été enregistrée à la place du fichier. Téléchargez-le à nouveau avec le lien « plain » et remplacez-le.",
   "firmware.required_files": "Fichiers requis :",
   "firmware.detected_adapters": "Adaptateur détecté",
   "firmware.no_adapters": "Aucun adaptateur Bluetooth USB détecté.",

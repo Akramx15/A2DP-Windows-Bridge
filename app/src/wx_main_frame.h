@@ -129,6 +129,7 @@ private:
     void update_title();
 
     void OnOpenFirmware(wxCommandEvent &evt);
+    void update_firmware_bar();  /* shown while the firmware is missing or invalid */
     void OnOpenZadig(wxCommandEvent &evt);
     void OnOpenVBCable(wxCommandEvent &evt);
     void OnCheckUpdate(wxCommandEvent &evt);
@@ -161,6 +162,7 @@ private:
     wxButton      *disconnect_btn_ = nullptr;
     wxButton      *add_profile_btn_ = nullptr;
     wxPanel       *firmware_bar_ = nullptr;
+    wxStaticText  *firmware_bar_text_ = nullptr;
     wxPanel       *codec_panel_ = nullptr;
     wxStaticText  *codec_label_ = nullptr;
     wxStaticText  *codec_fallback_label_ = nullptr;

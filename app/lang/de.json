@@ -114,6 +114,8 @@
   "firmware.open_folder": "Konfigurationsordner öffnen",
   "firmware.select_chip": "Bluetooth-Chiptyp auswählen.",
   "firmware.missing_manual": "Firmware nicht gefunden",
+  "firmware.invalid_short": "Firmware-Datei ungültig!",
+  "firmware.invalid": "%s ist keine Realtek-Firmware-Datei: vermutlich wurde statt der Datei eine Webseite gespeichert. Über den Link „plain“ erneut herunterladen und ersetzen.",
   "firmware.required_files": "Erforderliche Dateien:",
   "firmware.detected_adapters": "Erkannter Adapter",
   "firmware.no_adapters": "Keine USB-Bluetooth-Adapter erkannt.",

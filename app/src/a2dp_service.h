@@ -98,6 +98,8 @@ public:
 
     /* ---- Firmware management ---- */
     bool is_firmware_present() const { return firmware_present_; }
+    /* Name of a firmware/config file that is there but invalid ("" if none) */
+    const std::string &firmware_invalid_file() const { return firmware_invalid_file_; }
     bool is_firmware_downloading() const { return firmware_downloading_.load(); }
     bool was_firmware_updated() { return firmware_updated_.exchange(false); }
     std::string firmware_status() const;
@@ -217,6 +219,7 @@ private:
 
     /* ---- Firmware ---- */
     bool firmware_present_ = false;
+    std::string firmware_invalid_file_;
     std::atomic<bool> firmware_downloading_{false};
     std::atomic<bool> firmware_updated_{false};
     mutable std::mutex firmware_status_mutex_;

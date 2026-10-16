@@ -303,10 +303,11 @@ void MainFrame::create_ui() {
     firmware_bar_ = new wxPanel(main_panel_);
     firmware_bar_->SetBackgroundColour(TM().get(ThemeColor::FirmwareBarBg));
     auto *fw_sizer = new wxBoxSizer(wxHORIZONTAL);
-    auto *fw_text = new wxStaticText(firmware_bar_, wxID_ANY,
-        wxString::FromUTF8(L("firmware.missing_short")));
-    fw_text->SetForegroundColour(TM().get(ThemeColor::FirmwareBarText));
-    fw_sizer->Add(fw_text, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, 8);
+    firmware_bar_text_ = new wxStaticText(firmware_bar_, wxID_ANY,
+        wxString::FromUTF8(L(service_.firmware_invalid_file().empty() ? "firmware.missing_short"
+                                                                      : "firmware.invalid_short")));
+    firmware_bar_text_->SetForegroundColour(TM().get(ThemeColor::FirmwareBarText));
+    fw_sizer->Add(firmware_bar_text_, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, 8);
     auto *fw_btn = new wxButton(firmware_bar_, ID_OPEN_FIRMWARE,
         wxString::FromUTF8(L("firmware.setup")), wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
     fw_sizer->Add(fw_btn, 0, wxALL, 2);
@@ -905,12 +906,23 @@ void MainFrame::OnToggleDebugMode(wxCommandEvent &) {
 }
 
 void MainFrame::OnOpenFirmware(wxCommandEvent &) {
+    bool was_present = service_.is_firmware_present();
     FirmwareDialog dlg(this, &service_, &settings_);
     dlg.ShowModal();
-    if (dlg.chip_changed() || service_.was_firmware_updated()) {
+    /* Files placed or replaced while the dialog was open count too: a stack
+     * started without them keeps running the ROM code */
+    bool fixed = !was_present && service_.is_firmware_present();
+    if (dlg.chip_changed() || service_.was_firmware_updated() || fixed) {
         /* Force BTstack reinit on next connect to pick up new chip/firmware */
         service_.reset_btstack();
     }
+    update_firmware_bar();
+}
+
+void MainFrame::update_firmware_bar() {
+    const char *key = service_.firmware_invalid_file().empty() ? "firmware.missing_short"
+                                                               : "firmware.invalid_short";
+    firmware_bar_text_->SetLabel(wxString::FromUTF8(L(key)));
     firmware_bar_->Show(!service_.is_firmware_present());
     main_panel_->Layout();
 }

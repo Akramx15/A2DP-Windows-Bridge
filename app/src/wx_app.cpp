@@ -12,6 +12,7 @@
 #include <wx/stdpaths.h>
 #include <wx/cmdline.h>
 #include <cstdio>
+#include <io.h>
 #include <windows.h>
 
 wxIMPLEMENT_APP_NO_MAIN(A2dpBridgeApp);
@@ -43,6 +44,11 @@ bool A2dpBridgeApp::OnInit() {
         freopen("NUL", "w", stderr);
     }
     freopen("NUL", "w", stdout);
+    if (boot_settings.debug_mode) {
+        /* BTstack's firmware loaders print to stdout ("Realtek: ...") */
+        _dup2(_fileno(stderr), _fileno(stdout));
+        setvbuf(stdout, nullptr, _IONBF, 0);
+    }
 
     ThemeManager::instance().set_mode(ThemeManager::mode_from_string(boot_settings.theme));
 
