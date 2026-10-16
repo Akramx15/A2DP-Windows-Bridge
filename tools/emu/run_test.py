@@ -26,8 +26,13 @@ a2dpwb_decode --le-audio on both sides:
   - one LC3 stream of the expected configuration on both sides, consecutive
     ISO SDU sequence numbers, no decoder problems
   - the sinks received every SDU A2DPWB sent; decoded audio identical on both
-    sides and the test tone (1 kHz left, 1.5 kHz right; mono: both)
-  - the checks of le_audio_tests/<profile>.py
+    sides and the test tone (1 kHz left, 1.5 kHz right; mono: both) in every
+    100 ms of every stream but a short gap at its start and end
+  - no SDU reached the emulated controller too late for a real one (its log
+    says "late SDU"), no underrun in A2DPWB's counters, audio (not counting
+    inserted silence) for most of the duration
+  - the checks of le_audio_tests/<profile>.py (core.py: each CIS's channel
+    allocation within the PACS locations of the sink it goes to)
 Outputs go to tools/emu/out/le-<case>/.
 """
 
@@ -88,12 +93,38 @@ def read_wav(path):
         raw = w.readframes(n)
     full = float(1 << (8 * width - 1))
     samples = [[] for _ in range(ch)]
+    if width == 2:
+        values = struct.unpack(f'<{n * ch}h', raw)
+        for c in range(ch):
+            samples[c] = [v / full for v in values[c::ch]]
+        return rate, samples
     for i in range(n * ch):
         b = raw[i * width:(i + 1) * width]
         if width == 3:
             b += b'\xff' if b[2] & 0x80 else b'\x00'
-        samples[i % ch].append(struct.unpack('<h' if width == 2 else '<i', b)[0] / full)
+        samples[i % ch].append(struct.unpack('<i', b)[0] / full)
     return rate, samples
+
+
+def tone_block(xs, rate, expected):
+    """(ok, notes) for one block of samples: each expected (frequency,
+    amplitude) there within 0.05, and > 95% of the energy in them"""
+    count = len(xs)
+    mean_sq = sum(x * x for x in xs) / count
+    energy, ok, notes = 0.0, True, []
+    for freq, amp in expected:
+        k = 2 * math.cos(2 * math.pi * freq / rate)
+        s1 = s2 = 0.0
+        for x in xs:
+            s1, s2 = x + k * s1 - s2, s1
+        tone_amp = 2 * math.sqrt(max(s1 * s1 + s2 * s2 - k * s1 * s2, 0.0)) / count
+        energy += tone_amp * tone_amp / 2
+        ok &= abs(tone_amp - amp) < 0.05
+        notes.append(f'{freq:.0f} Hz amp {tone_amp:.3f}')
+    share = energy / mean_sq if mean_sq else 0.0
+    ok &= share > 0.95
+    notes[-1] += f' ({100 * share:.1f}%)'
+    return ok, notes
 
 
 def tone_check(path, tones=None):
@@ -107,22 +138,66 @@ def tone_check(path, tones=None):
     start, count = len(channels[0]) // 2 - rate // 4, rate // 2
     notes, ok = [], True
     for xs, expected in zip(channels, tones):
-        xs = xs[start:start + count]
-        mean_sq = sum(x * x for x in xs) / count
-        energy = 0.0
-        for freq, amp in expected:
-            k = 2 * math.cos(2 * math.pi * freq / rate)
-            s1 = s2 = 0.0
-            for x in xs:
-                s1, s2 = x + k * s1 - s2, s1
-            tone_amp = 2 * math.sqrt(max(s1 * s1 + s2 * s2 - k * s1 * s2, 0.0)) / count
-            energy += tone_amp * tone_amp / 2
-            ok &= abs(tone_amp - amp) < 0.05
-            notes.append(f'{freq:.0f} Hz amp {tone_amp:.3f}')
-        share = energy / mean_sq if mean_sq else 0.0
-        ok &= share > 0.95
-        notes[-1] += f' ({100 * share:.1f}%)'
+        block_ok, block_notes = tone_block(xs[start:start + count], rate, expected)
+        ok &= block_ok
+        notes += block_notes
     return ok, ', '.join(notes)
+
+
+# LE Audio: the tone is checked in blocks of TONE_BLOCK_S over the whole
+# stream. Only the start and the end may lack it: A2DPWB sends encoded
+# silence until its jitter buffer holds a few SDU sets (5 x 10 ms) and LC3
+# needs a frame or two to settle; at the end A2DPWB stops the test tone
+# 100 ms before the stream (its buffer runs empty: silence). Up to
+# MAX_START_GAP_S / MAX_END_GAP_S are excluded there. Any other block without
+# the tone (an underrun's silence, a lost or doubled SDU) fails.
+TONE_BLOCK_S = 0.1    # whole periods of 1 kHz and 1.5 kHz
+MAX_START_GAP_S = 0.3
+MAX_END_GAP_S = 0.3
+# A2DPWB's underrun counter: the one when the test tone stops before the
+# stream (above) is not counted, i.e. underruns in the last END_UNDERRUN_S of
+# the last stream
+END_UNDERRUN_S = 0.3
+
+
+def tone_check_stream(path, tones):
+    """(ok, description) for the test tone over the whole WAV of a stream,
+    except gaps of up to MAX_START_GAP_S at the start and MAX_END_GAP_S at
+    the end"""
+    rate, channels = read_wav(path)
+    n = int(rate * TONE_BLOCK_S)
+    if len(channels) != 2 or len(channels[0]) < rate:
+        return False, f'expected >= 1 s of stereo audio, got {len(channels)} ch, {len(channels[0]) / rate:.2f} s'
+    blocks = len(channels[0]) // n
+    good, bad, notes = [], [], None
+    for b in range(blocks):
+        ok, block_notes = True, []
+        for xs, expected in zip(channels, tones):
+            block_ok, ch_notes = tone_block(xs[b * n:(b + 1) * n], rate, expected)
+            ok &= block_ok
+            block_notes += ch_notes
+        if ok:
+            good.append(b)
+            if notes is None and b >= blocks // 2:
+                notes = ', '.join(block_notes)   # a typical block, for the summary
+        else:
+            bad.append((b, ', '.join(block_notes)))
+    if not good:
+        return False, f'no {TONE_BLOCK_S * 1000:.0f} ms block with the tone in {blocks * TONE_BLOCK_S:.1f} s'
+    start_gap, end_gap = good[0] * TONE_BLOCK_S, (blocks - 1 - good[-1]) * TONE_BLOCK_S
+    bad = [x for x in bad if good[0] < x[0] < good[-1]]
+    desc = (f'{notes or "?"}; {blocks * TONE_BLOCK_S:.1f} s checked, gaps {start_gap:.1f} s at the start, '
+            f'{end_gap:.1f} s at the end')
+    problems = []
+    if start_gap > MAX_START_GAP_S + 1e-9:
+        problems.append(f'tone only from {start_gap:.1f} s (at most {MAX_START_GAP_S} s expected)')
+    if end_gap > MAX_END_GAP_S + 1e-9:
+        problems.append(f'no tone in the last {end_gap:.1f} s (at most {MAX_END_GAP_S} s expected)')
+    if bad:
+        b, block_notes = bad[0]
+        problems.append(f'{len(bad)} block(s) without the tone after it started, first at '
+                        f'{b * TONE_BLOCK_S:.1f} s: {block_notes}')
+    return not problems, '; '.join(problems + [desc])
 
 
 def start_sink(port, capture, log_path, script='emu_sink.py', extra=()):
@@ -228,6 +303,8 @@ def parse_le_report(text):
     plus the CIS lines"""
     r = parse_report(text)
     r['cis'] = re.findall(r'^  CIS 0x[0-9A-F]+ +: (.*)$', text, re.M)
+    r['wavs'] = re.findall(r'WAV\s+: (.*)$', text, re.M)   # one per stream
+    r['text'] = text
     r['packets'] = sum(int(x) for x in re.findall(r'Media packets : (\d+)', text))
     r['frames'] = sum(int(x) for x in re.findall(r'Frames\s+: (\d+)', text))
     r['audio_s'] = round(sum(float(x) for x in re.findall(r'Audio\s+: ([\d.]+) s', text)), 3)
@@ -258,13 +335,24 @@ def run_le_case(args, case, port):
                                     timeout=duration + 120).returncode
             except subprocess.TimeoutExpired:
                 rc = 'timeout'
-        if rc != 0:
+        if case.expect_error is None and rc != 0:
             failures.append(f'A2DPWB exited with {rc} (see a2dpwb.log)')
     finally:
         sink.terminate()
         sink.wait(10)
 
-    sink_captures = [sink_capture] + [os.path.join(out, f'sink-{i + 1}.pklg') for i in range(1, len(addresses))]
+    if case.expect_error is not None:
+        # A2DPWB must refuse with a clear error, not stream
+        log_text = read_text(os.path.join(out, 'a2dpwb.log'))
+        if rc == 0 or rc == 'timeout':
+            failures.append(f'A2DPWB exited with {rc}, expected an error exit')
+        if not re.search(case.expect_error, log_text):
+            failures.append(f'no error matching "{case.expect_error}" in a2dpwb.log')
+        if 'Streaming LE Audio:' in log_text:
+            failures.append('A2DPWB streamed although it should have refused')
+        return failures, f'exit {rc}'
+
+    sink_captures =[sink_capture] + [os.path.join(out, f'sink-{i + 1}.pklg') for i in range(1, len(addresses))]
     reports = {}
     for side, captures, extra in (('sent', [src_capture], []), ('received', sink_captures, ['--received'])):
         missing = [c for c in captures if not os.path.exists(c)]
@@ -284,6 +372,7 @@ def run_le_case(args, case, port):
             failures.extend(f'{side}: {p}' for p in r['problems'] or ['a2dpwb_decode reported problems'])
 
     sent, received = reports.get('sent'), reports.get('received')
+    a2dpwb_log = read_text(os.path.join(out, 'a2dpwb.log'))
     detail = ''
     if sent and received:
         missing = (sent['packets'] or 0) - (received['packets'] or 0)
@@ -291,35 +380,89 @@ def run_le_case(args, case, port):
                 or (case.lossy and not 0 <= missing <= 8 * case.streams):
             failures.append(f'sent {sent["packets"]} SDUs / {sent["frames"]} frames, '
                             f'received {received["packets"]} / {received["frames"]}')
-        if not case.lossy and (sent['audio_s'] or 0) < 0.9 * duration:
-            failures.append(f'only {sent["audio_s"]} s of audio for --duration {duration}')
         detail = f'{sent["config"]}: {sent["packets"]} SDUs, {sent["frames"]} LC3 frames, {sent["audio_s"]} s'
-        if not (sent['wav'] and received['wav']):
-            failures.append('no decoded WAV')
+        if len(sent['wavs']) != len(received['wavs']) or not received['wavs']:
+            failures.append(f'decoded WAVs: {len(sent["wavs"])} sent, {len(received["wavs"])} received')
         else:
-            with open(sent['wav'], 'rb') as a, open(received['wav'], 'rb') as b:
-                if not case.lossy and a.read() != b.read():
-                    failures.append('decoded audio differs between sent and received side')
+            if not case.lossy:
+                for a_path, b_path in zip(sent['wavs'], received['wavs']):
+                    with open(a_path, 'rb') as a, open(b_path, 'rb') as b:
+                        if a.read() != b.read():
+                            failures.append('decoded audio differs between sent and received side')
             if case.tones:
-                ok, notes = tone_check(received['wav'], case.tones)
-                detail += f' | {notes}'
-                if not ok:
-                    failures.append(f'test tone not found: {notes}')
+                # Every stream (the one set up again after a link loss too)
+                for index, path in enumerate(received['wavs']):
+                    ok, notes = tone_check_stream(path, case.tones)
+                    label = f'stream {index + 1}: ' if len(received['wavs']) > 1 else ''
+                    detail += f' | {label}{notes}'
+                    if not ok:
+                        failures.append(f'{label}test tone: {notes}')
 
-    def read(path):
-        try:
-            with open(path, encoding='utf-8', errors='replace') as f:
-                return f.read()
-        except OSError:
-            return ''
-    a2dpwb_log = read(os.path.join(out, 'a2dpwb.log'))
-    m = re.search(r'LE Audio: (\d+) SDU sets sent .*?(\d+) silence, (\d+) underruns', a2dpwb_log)
-    if m:
-        detail += f' | {m.group(2)} silence sets, {m.group(3)} underruns'
-    ctx = dict(out=out, a2dpwb_log=a2dpwb_log, sink_log=read(os.path.join(out, 'sink.log')),
+    # SDUs that reached the emulated controller too late for a real one
+    # (le_audio/controller.py logs them, its own stalls not counted)
+    late = re.findall(r'late SDU: CIS (0x[0-9A-F]+) seq \d+ reached the controller ([\d.]+) ms .*?(\d+) late SDU',
+                      read_text(os.path.join(out, 'sink.log')))
+    if late:
+        per_cis = {}
+        for h, ms, count in late:
+            n, worst = per_cis.get(h, (0, 0.0))
+            per_cis[h] = (max(n, int(count)), max(worst, float(ms)))
+        for h, (n, worst) in sorted(per_cis.items()):
+            failures.append(f'CIS {h}: {n} SDU(s) reached the controller after their SDU interval began '
+                            f'(worst {worst} ms; the queue of a real controller would have run empty)')
+
+    # A2DPWB's own counters, per stream set-up ("stopped sending", the
+    # counters start anew with each): no underrun (silence inserted while
+    # streaming), and the audio sent (not counting the silence while its
+    # buffer fills) must cover the duration
+    frame_s = (7.5 if sent and re.search(r' 7\.5 ms ', sent['config'] or '') else 10) / 1000
+    stops = le_stream_stats(a2dpwb_log, frame_s)
+    if not stops:
+        failures.append('no "LE Audio: stopped sending" statistics in a2dpwb.log')
+    else:
+        sets, silence, underruns, at_end = (sum(s[i] for s in stops) for i in range(4))
+        detail += f' | {silence} silence sets, {underruns} underruns ({at_end} as the tone stopped)'
+        if underruns - at_end > case.max_underruns:
+            failures.append(f'{underruns - at_end} underrun(s) (A2DPWB sent silence while streaming; '
+                            f'at most {case.max_underruns} allowed)')
+        if sent:
+            audio_s = (sets - silence) * frame_s
+            min_audio = case.min_audio if case.min_audio is not None else 0.6 if case.lossy else 0.9
+            if audio_s < min_audio * duration:
+                failures.append(f'only {audio_s:.2f} s of audio (without silence) for --duration {duration}')
+
+    ctx = dict(out=out, a2dpwb_log=a2dpwb_log, sink_log=read_text(os.path.join(out, 'sink.log')),
                sent=sent, received=received, sink_addresses=addresses)
     failures.extend(le_audio_tests.check(case, ctx))
     return failures, detail
+
+
+def le_stream_stats(log, frame_s):
+    """Per stream set-up of A2DPWB's log ("sending ISO SDUs" ... "stopped
+    sending: N SDU sets ..., S silence, U underruns"): (N, S, U, E), E = the
+    underruns of the last stream within END_UNDERRUN_S of its end (as its
+    "no audio for SDU set K" warnings say; the test tone stops first)"""
+    streams, warned = [], []
+    for line in log.splitlines():
+        m = re.search(r'LE Audio: no audio for SDU set (\d+)', line)
+        if m:
+            warned.append(int(m.group(1)))
+        m = re.search(r'LE Audio: stopped sending: (\d+) SDU sets .*?(\d+) silence, (\d+) underruns', line)
+        if m:
+            streams.append([int(m.group(1)), int(m.group(2)), int(m.group(3)), 0, warned])
+            warned = []
+    if streams:
+        last = streams[-1]
+        last[3] = sum(1 for k in last[4] if k >= last[0] - END_UNDERRUN_S / frame_s)
+    return [tuple(s[:4]) for s in streams]
+
+
+def read_text(path):
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            return f.read()
+    except OSError:
+        return ''
 
 
 def main_le(args):

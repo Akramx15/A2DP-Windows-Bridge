@@ -25,3 +25,13 @@ class Case:
     # A2DPWB is given only the first sink's address (-d), not the others
     # (--le-device): e.g. CSIP finds the other members of a set itself
     first_address_only: bool = False
+    # Underruns allowed (A2DPWB's jitter buffer ran empty while streaming and
+    # it sent silence). The silence before the buffer first fills, at the
+    # start and after a stream is set up again, is not an underrun.
+    max_underruns: int = 0
+    # Audio sent (SDU sets without that silence) at least this share of the
+    # duration; None: 0.9, or 0.6 for lossy cases (the link is down a while)
+    min_audio: float = None
+    # A2DPWB must not stream but exit with an error matching this regex
+    # (a2dpwb.log); nothing else is checked then
+    expect_error: str = None
