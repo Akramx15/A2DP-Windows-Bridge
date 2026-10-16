@@ -74,6 +74,12 @@ public:
     uint16_t client_config(uint16_t con, uint16_t value_handle) const;
     /* Connections that have written any CCC (for notify_all) */
     std::vector<uint16_t> clients() const;
+    /* Inside a ReadFn: offset of the read being served (> 0: Read Blob, the
+     * rest of a long read) */
+    uint16_t read_offset() const { return read_offset_; }
+    /* Inside a ReadFn: answer this read with an ATT error instead (e.g. a
+     * profile's "Value Changed During Read Long", 0x80) */
+    void fail_read(uint8_t att_error) { read_error_ = att_error; }
 
     /* ---- Core only ---- */
     void reset();            /* new stack: empty DB */
@@ -103,6 +109,8 @@ private:
     std::map<uint32_t, std::vector<uint8_t>> prepared_;   /* long writes in progress */
     bool started_ = false;
     uint16_t last_handle_ = 0;
+    uint16_t read_offset_ = 0;
+    uint8_t read_error_ = 0;
     void send_pending(uint16_t con);
     bool queue(uint16_t con, uint16_t handle, bool indication, const std::vector<uint8_t> &value);
 };

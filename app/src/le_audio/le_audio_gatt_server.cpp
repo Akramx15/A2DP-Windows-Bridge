@@ -142,7 +142,15 @@ uint16_t GattServer::read_cb(uint16_t con, uint16_t handle, uint16_t offset, uin
     if (it->second.ccc) {
         put16(value, client_config(con, it->second.value_handle));
     } else if (it->second.read) {
+        read_offset_ = offset;
+        read_error_ = 0;
         value = it->second.read(con);
+        read_offset_ = 0;
+        if (read_error_) {
+            uint8_t error = read_error_;
+            read_error_ = 0;
+            return (uint16_t)(ATT_READ_ERROR_CODE_OFFSET + error);
+        }
     }
     return att_read_callback_handle_blob(value.data(), (uint16_t)value.size(), offset, buffer, buffer_size);
 }
