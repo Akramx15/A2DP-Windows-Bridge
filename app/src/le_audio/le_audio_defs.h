@@ -113,6 +113,7 @@ constexpr uint8_t SF_CODE_48000 = 0x08;
 /* ---- Metadata LTV types ---- */
 constexpr uint8_t META_PREFERRED_CONTEXTS = 0x01;
 constexpr uint8_t META_STREAMING_CONTEXTS = 0x02;
+constexpr uint8_t META_CCID_LIST = 0x05;
 
 /* ---- ASCS ---- */
 enum class AseState : uint8_t {
