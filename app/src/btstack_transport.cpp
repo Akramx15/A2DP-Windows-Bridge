@@ -488,7 +488,8 @@ unsigned long __stdcall BtStackTransport::btstack_thread_proc(void *param) {
     }
     if (self->hci_tcp_.empty() && self->product_id_ == 0) {
         for (const auto &a : self->usb_adapters_) {
-            if (a.vendor == BtChipVendor::Intel) self->intel_loader_ = true;
+            /* One held by another program cannot be loaded either */
+            if (a.vendor == BtChipVendor::Intel && !a.in_use) self->intel_loader_ = true;
             if (a.vendor == BtChipVendor::MediaTek || a.vendor == BtChipVendor::Qualcomm) {
                 fprintf(stderr, "BTstack: WARNING %s adapter %04X:%04X — firmware loading "
                         "for this vendor is not implemented; it may not work\n",
@@ -551,6 +552,18 @@ void BtStackTransport::deinit_btstack() {
     fflush(stderr);
 }
 
+/* The whole file into `out`; false if it cannot be opened */
+static bool read_whole_file(const std::string &path, std::string &out) {
+    FILE *f = nullptr;
+    if (fopen_s(&f, path.c_str(), "rb") != 0 || !f) return false;
+    out.clear();
+    char buf[16384];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) out.append(buf, n);
+    fclose(f);
+    return true;
+}
+
 void BtStackTransport::setup_hci_and_power_on() {
     if (!hci_tcp_.empty()) {
         /* Development / testing: H4 over TCP to a virtual controller (tools/emu) */
@@ -607,11 +620,30 @@ void BtStackTransport::setup_hci_and_power_on() {
                 if (stem.empty()) return;
                 std::string alias = fw_dir + "\\" + stem;        /* no extension */
                 std::string source = alias + ".bin";              /* shipped file */
-                DWORD attrs = GetFileAttributesA(alias.c_str());
-                if (attrs != INVALID_FILE_ATTRIBUTES) return;     /* alias already exists */
-                if (GetFileAttributesA(source.c_str()) == INVALID_FILE_ATTRIBUTES) {
-                    fprintf(stderr, "BTstack: WARNING firmware source missing: %s\n", source.c_str());
+                std::string source_data, alias_data;
+                bool have_alias = read_whole_file(alias, alias_data);
+                if (!read_whole_file(source, source_data)) {
+                    if (have_alias) {
+                        fprintf(stderr, "BTstack: %s.bin missing, using %s (%zu bytes)\n",
+                                stem.c_str(), alias.c_str(), alias_data.size());
+                    } else {
+                        fprintf(stderr, "BTstack: WARNING firmware source missing: %s\n",
+                                source.c_str());
+                    }
                     return;
+                }
+                fprintf(stderr, "BTstack: %s.bin: %zu bytes\n", stem.c_str(), source_data.size());
+                if (have_alias) {
+                    if (alias_data == source_data) return;
+                    /* A copy of an older file, or a hard link to a .bin that
+                     * was replaced since: BTstack would upload the old one */
+                    fprintf(stderr, "BTstack: %s (%zu bytes) differs from %s.bin, replacing it\n",
+                            stem.c_str(), alias_data.size(), stem.c_str());
+                    if (!DeleteFileA(alias.c_str())) {
+                        fprintf(stderr, "BTstack: ERROR could not delete %s (err=%lu)\n",
+                                alias.c_str(), GetLastError());
+                        return;
+                    }
                 }
                 if (CreateHardLinkA(alias.c_str(), source.c_str(), NULL)) {
                     fprintf(stderr, "BTstack: linked %s -> %s\n", stem.c_str(), source.c_str());

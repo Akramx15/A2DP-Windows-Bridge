@@ -185,13 +185,27 @@ void dump_log_packet(uint8_t packet_type, uint8_t in, uint8_t *packet, uint16_t 
         g_setup.push_back({handle, std::move(rec)});
 }
 
+/* BTstack's firmware loaders tell only here why an upload was skipped
+ * (wrong file, size, project id...); messages start with "<file>.<line>: " */
+bool from_chipset_driver(const char *msg) {
+    const char *chip = strstr(msg, "btstack_chipset_");
+    const char *sep = strstr(msg, ": ");
+    return chip && sep && chip < sep;
+}
+
 void dump_log_message(int log_level, const char *format, va_list argptr) {
     (void)log_level;
-    if (!g_active.load()) return;
     char buf[256];
     int n = vsnprintf(buf, sizeof(buf), format, argptr);
     if (n < 0) return;
     if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;
+    /* This dump is installed in debug mode only, so these reach debug.log
+     * without an HCI capture running */
+    if (from_chipset_driver(buf)) {
+        fprintf(stderr, "BTstack: %.*s\n", n, buf);
+        fflush(stderr);
+    }
+    if (!g_active.load()) return;
     std::lock_guard<std::mutex> lock(g_mutex);
     write_locked(make_record(0xfc, (const uint8_t *)buf, (uint16_t)n));
 }
