@@ -158,7 +158,7 @@
   "help.sponsor": "❤️ 후원",
   "help.license": "소스 코드: Apache-2.0 OR MIT(이중 라이선스)",
   "help.binary_license": "이 프로그램에는 BTstack이 포함되어 있으며, BTstack은 개인적·비상업적 목적으로만 사용 및 재배포할 수 있습니다.",
-  "help.third_party": "또한 libldac(Apache-2.0), libopenaptx(LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár), Fraunhofer FDK AAC, Bluedroid SBC(Apache-2.0), LHDC V5 인코더(Apache-2.0, AOSP 기반, FFT는 KISS FFT, BSD-3-Clause), wxWidgets, nlohmann/json이 포함되어 있습니다. 라이선스 전문은 다운로드 파일의 \"licenses\" 폴더에 있습니다.",
+  "help.third_party": "또한 libldac(Apache-2.0), libopenaptx(LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár), Fraunhofer FDK AAC, Bluedroid SBC(Apache-2.0), liblc3(Apache-2.0), micro-ecc(BSD-2-Clause, © 2014 Kenneth MacKay), LHDC V5 인코더(Apache-2.0, AOSP 기반, FFT는 KISS FFT, BSD-3-Clause), wxWidgets, nlohmann/json이 포함되어 있습니다. 라이선스 전문은 다운로드 파일의 \"licenses\" 폴더에 있습니다.",
   "help.third_party_link": "타사 라이선스",
   "profile.header": "프로필",
   "profile.add": "추가",

@@ -29,6 +29,8 @@ The A2DPWB source code is dual-licensed under Apache-2.0 or MIT. The distributed
 | [BTstack](https://github.com/bluekitchen/btstack) | v1.8.1-6-g5bc5cbdbe | BTstack License (BSD-3-Clause-style with a non-commercial clause) / Commercial | User-mode Bluetooth stack |
 | Bluedroid SBC codec (bundled in BTstack) | as in BTstack | Apache-2.0 | SBC encoder |
 | rijndael (bundled in BTstack) | as in BTstack | Public domain | AES (used by BTstack) |
+| [liblc3](https://github.com/google/liblc3) (bundled in BTstack) | as in BTstack | Apache-2.0 | LC3 encoder (experimental LE Audio) |
+| micro-ecc (bundled in BTstack) | as in BTstack | BSD-2-Clause | P-256 for LE Secure Connections (experimental LE Audio) |
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC encoder |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL encoder |
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC encoder |
@@ -75,7 +77,7 @@ The fdk-aac license requires that the complete license text accompany binary red
 
 ### Developer Tool a2dpwb_decode
 
-`a2dpwb_decode` (see [Usage](usage#verify-stream)) is built from source only and is not in the release zip. It links the Bluedroid SBC decoder (Apache-2.0), fdk-aac (FDK AAC License) and libopenaptx 0.2.0 (LGPL-2.1+) at the pinned versions above, and does **not** link BTstack or libldac. See THIRD_PARTY_LICENSES.md §12.
+`a2dpwb_decode` (see [Usage](usage#verify-stream)) is built from source only and is not in the release zip. It links the Bluedroid SBC decoder (Apache-2.0), fdk-aac (FDK AAC License), libopenaptx 0.2.0 (LGPL-2.1+) and liblc3 (Apache-2.0) at the pinned versions above, and does **not** link BTstack or libldac. See THIRD_PARTY_LICENSES.md §12.
 
 ### Test Environment tools/emu and tools/linux_sink
 

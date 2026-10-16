@@ -66,6 +66,10 @@ copy_required("${EXT}/libldac/NOTICE"        "licenses/libldac-NOTICE.txt")
 # but ships no license file of its own; libldac's LICENSE is the full text.
 copy_required("${EXT}/libldac/LICENSE"       "licenses/Apache-2.0.txt")
 copy_required("${EXT}/fdk-aac/NOTICE"        "licenses/fdk-aac-NOTICE.txt")
+# LE Audio (experimental): liblc3 (Apache-2.0) and micro-ecc (BSD-2-Clause),
+# both bundled in BTstack
+copy_required("${EXT}/btstack/3rd-party/lc3-google/LICENSE"    "licenses/liblc3-LICENSE.txt")
+copy_required("${EXT}/btstack/3rd-party/micro-ecc/LICENSE.txt" "licenses/micro-ecc-LICENSE.txt")
 copy_required("${EXT}/libopenaptx/COPYING"   "licenses/libopenaptx-LGPL-2.1.txt")
 # LHDC V5 encoder (Apache-2.0; its KISS FFT part is BSD-3-Clause, reproduced
 # in THIRD_PARTY_LICENSES.md as the port ships no separate notice file)

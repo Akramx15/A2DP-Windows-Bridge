@@ -158,7 +158,7 @@
   "help.sponsor": "❤️ Sponsor",
   "help.license": "Code source : Apache-2.0 OR MIT (double licence)",
   "help.binary_license": "Ce programme inclut BTstack, qui ne peut être utilisé et redistribué qu'à des fins personnelles et non commerciales.",
-  "help.third_party": "Inclut également libldac (Apache-2.0), libopenaptx (LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár), Fraunhofer FDK AAC, Bluedroid SBC (Apache-2.0), l'encodeur LHDC V5 (Apache-2.0, dérivé d'AOSP ; FFT de KISS FFT, BSD-3-Clause), wxWidgets et nlohmann/json. Les textes des licences se trouvent dans le dossier \"licenses\" du téléchargement.",
+  "help.third_party": "Inclut également libldac (Apache-2.0), libopenaptx (LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár), Fraunhofer FDK AAC, Bluedroid SBC (Apache-2.0), liblc3 (Apache-2.0), micro-ecc (BSD-2-Clause, © 2014 Kenneth MacKay), l'encodeur LHDC V5 (Apache-2.0, dérivé d'AOSP ; FFT de KISS FFT, BSD-3-Clause), wxWidgets et nlohmann/json. Les textes des licences se trouvent dans le dossier \"licenses\" du téléchargement.",
   "help.third_party_link": "Licences tierces",
   "profile.header": "Profils",
   "profile.add": "Ajouter",

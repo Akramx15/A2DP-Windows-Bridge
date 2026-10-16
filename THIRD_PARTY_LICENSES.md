@@ -25,6 +25,8 @@ All versions below are the ones pinned in this repository (git submodules under
 | BTstack | `v1.8.1-6-g5bc5cbdbe` (commit `5bc5cbdbe`) | LicenseRef-BTstack (BSD-3-Clause-style **with a non-commercial clause**) | BlueKitchen GmbH | User-mode Bluetooth stack |
 | Bluedroid SBC codec (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/bluedroid/`) | Apache-2.0 | Broadcom Corporation; The Android Open Source Project; Open Interface North America, Inc. | SBC audio encoding (decoder also compiled; decoding in `a2dpwb_decode`, §12) |
 | rijndael (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/rijndael/`) | Public domain | Philip J. Erdelsky | AES (used by BTstack) |
+| liblc3 (lc3-google, bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/lc3-google/`) | Apache-2.0 | Google LLC | LC3 encoding for the experimental LE Audio support (decoding in `a2dpwb_decode`, §12), §15 |
+| micro-ecc (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/micro-ecc/`) | BSD-2-Clause | Kenneth MacKay | P-256 for LE Secure Connections (experimental LE Audio), §16 |
 | wxWidgets | v3.2.6 (FetchContent tag `v3.2.6`) | LGPL-2.0-or-later WITH WxWindows-exception-3.1 | Julian Smart, Robert Roebling et al | GUI framework |
 | zlib (built-in copy in wxWidgets) | 1.2.13.1 (`1.2.13.1-motley`, from wxWidgets 3.2.6) | Zlib | Jean-loup Gailly and Mark Adler | Used by wxWidgets (PNG support) |
 | libpng (built-in copy in wxWidgets) | 1.6.37 (from wxWidgets 3.2.6) | libpng-2.0 | The PNG Reference Library Authors et al. | PNG image loading in wxWidgets |
@@ -50,6 +52,8 @@ The release zip contains:
 | `licenses/libldac-LICENSE.txt` | libldac license (Apache-2.0 text, `extern/libldac/LICENSE`) |
 | `licenses/libldac-NOTICE.txt` | libldac NOTICE (`extern/libldac/NOTICE`) |
 | `licenses/Apache-2.0.txt` | Apache License 2.0 text (covers the Bluedroid SBC codec) |
+| `licenses/liblc3-LICENSE.txt` | liblc3 license (Apache-2.0 text, `extern/btstack/3rd-party/lc3-google/LICENSE`) |
+| `licenses/micro-ecc-LICENSE.txt` | micro-ecc BSD-2-Clause license (`extern/btstack/3rd-party/micro-ecc/LICENSE.txt`) |
 | `licenses/fdk-aac-NOTICE.txt` | Fraunhofer FDK AAC Codec Library license (`extern/fdk-aac/NOTICE`) |
 | `licenses/libopenaptx-LGPL-2.1.txt` | GNU LGPL 2.1 text for libopenaptx |
 | `licenses/lhdcv5-enc-LICENSE.txt` | LHDC V5 encoder license (Apache-2.0 text, `extern/lhdcv5-enc/LICENSE`); its KISS FFT notice is in §14 of this document |
@@ -421,6 +425,7 @@ same pinned versions as above:
 | Bluedroid SBC decoder | as in BTstack `5bc5cbdbe` | Apache-2.0 | `3rd-party/bluedroid/decoder` (CMake target `sbc_decoder`) | Every `decoder/srce/*.c` and `decoder/include/*.h` carries the Apache-2.0 header |
 | fdk-aac | commit `d8e6b1a` | FDK-AAC | AAC decoder (`libAACdec`, `libMpegTPDec` and shared modules) | `NOTICE` covers "encoding and decoding"; every `libAACdec` / `libMpegTPDec` source carries the same license header |
 | libopenaptx | 0.2.0 (commit `2459ed4`) | LGPL-2.1-or-later | `aptx_decode_sync()` | `COPYING` is LGPL 2.1; `openaptx.c` / `openaptx.h` headers state LGPL 2.1 or later |
+| liblc3 (lc3-google) | as in BTstack `5bc5cbdbe` | Apache-2.0 | LC3 decoder for `--le-audio` (CMake target `lc3`, the whole library) | `LICENSE` is Apache-2.0; every `src/*.c` / `include/*.h` carries the Apache-2.0 header (Google LLC) |
 
 It does **not** link BTstack (HCI / L2CAP / AVDTP parsing is its own code),
 so the BTstack non-commercial clause (§4) does not apply to it. The Bluedroid
@@ -434,8 +439,8 @@ config, frame length, frame status). No libldac code is copied.
 If you redistribute an `a2dpwb_decode.exe` binary, the obligations of §3
 (fdk-aac: license text, source code offer, no patent license; AAC decoding
 may also need a patent license), §2 (libopenaptx: LGPL-2.1 text, prominent
-notice, relinking via the source at the same commit) and §5 (Apache-2.0 text,
-notices) apply, in the same way as for `A2DPWB.exe`.
+notice, relinking via the source at the same commit) and §5 / §15 (Apache-2.0
+text, notices) apply, in the same way as for `A2DPWB.exe`.
 
 ---
 
@@ -602,6 +607,51 @@ interoperability work and is marked as such in the user interface.
 
 ---
 
+## 15. liblc3 (lc3-google, bundled in BTstack)
+
+- **Source**: `extern/btstack/3rd-party/lc3-google/` (Google's liblc3, as
+  vendored by BTstack)
+- **Version**: as contained in BTstack commit `5bc5cbdbe`
+- **License**: Apache License 2.0 (`LICENSE`, and the header of every source file)
+- **Copyright**: Copyright 2022 Google LLC
+- **SPDX**: `Apache-2.0`
+- **Usage**: LC3 encoding for the experimental LE Audio support, through
+  BTstack's `btstack_lc3_google.c` glue (which is BTstack code, §4); LC3
+  decoding in `a2dpwb_decode` (§12)
+
+liblc3 is built as its own static library (CMake target `lc3`) from all of
+`src/*.c`, unmodified. No NOTICE file is present.
+
+### Obligations
+
+- Include a copy of the Apache 2.0 license when distributing (shipped as
+  `licenses/liblc3-LICENSE.txt`)
+- Retain all copyright, patent, trademark, and attribution notices
+- Mark modified files with prominent notices if changes are made (none are)
+
+LC3 is specified by the Bluetooth SIG for LE Audio; implementing it in a
+Bluetooth product is covered by Bluetooth qualification (§10).
+
+---
+
+## 16. micro-ecc (bundled in BTstack)
+
+- **Source**: `extern/btstack/3rd-party/micro-ecc/` (`uECC.c`)
+- **Version**: as contained in BTstack commit `5bc5cbdbe`
+- **License**: BSD 2-Clause (`LICENSE.txt`)
+- **Copyright**: Copyright (c) 2014, Kenneth MacKay
+- **SPDX**: `BSD-2-Clause`
+- **Usage**: P-256 key generation and Diffie-Hellman for LE Secure
+  Connections pairing (BTstack `ENABLE_MICRO_ECC_P256`), used only by the
+  experimental LE Audio support
+
+### Obligations
+
+- Binary redistribution must reproduce the copyright notice, the conditions
+  and the disclaimer: shipped as `licenses/micro-ecc-LICENSE.txt`
+
+---
+
 ## License Compatibility Matrix
 
 | Component | License | Compatible with Apache-2.0 / MIT? | Notes |
@@ -614,6 +664,8 @@ interoperability work and is marked as such in the user interface.
 | fdk-aac | FDK AAC License | Yes | Source of fdk-aac must be offered free of charge; no patent license |
 | BTstack | LicenseRef-BTstack | Source: yes / Binary: **restricts it** | Non-commercial clause 4 applies to the whole distributed binary; commercial license from BlueKitchen |
 | rijndael | Public domain | Yes | — |
+| liblc3 | Apache-2.0 | Yes | Permissive |
+| micro-ecc | BSD-2-Clause | Yes | Permissive; notice shipped in `licenses/` |
 | wxWidgets | wxWindows Lib Licence 3.1 | Yes | LGPL + exception (effectively permissive for binaries) |
 | zlib / libpng / nanosvg | Zlib / libpng-2.0 / Zlib | Yes | Permissive |
 | nlohmann/json | MIT | Yes | Permissive |
