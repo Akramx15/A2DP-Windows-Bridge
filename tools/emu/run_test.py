@@ -248,7 +248,7 @@ def run_le_case(args, case, port):
     try:
         env = dict(os.environ, A2DPWB_CONFIG_DIR=os.path.join(out, 'config'))  # isolated bonds
         cmd = [args.a2dpwb, '--cli', '--hci-tcp', f'127.0.0.1:{port}', '--le-audio', '-d', addresses[0]]
-        for a in addresses[1:]:
+        for a in ([] if case.first_address_only else addresses[1:]):
             cmd += ['--le-device', a]
         duration = case.duration or args.duration
         cmd += ['--test-tone', '--duration', str(duration), '--hci-capture', src_capture] + case.a2dpwb_args

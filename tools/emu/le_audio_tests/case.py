@@ -22,3 +22,6 @@ class Case:
     # so sent / received only need to match up to a few SDUs, not exactly
     lossy: bool = False
     duration: int = 0         # seconds of streaming (0: run_test.py --duration)
+    # A2DPWB is given only the first sink's address (-d), not the others
+    # (--le-device): e.g. CSIP finds the other members of a set itself
+    first_address_only: bool = False
