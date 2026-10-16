@@ -114,12 +114,30 @@ endif()
 # --- BTstack Bluetooth stack (user-mode HCI/L2CAP/AVDTP via WinUSB) ---
 set(BTSTACK_ROOT ${CMAKE_SOURCE_DIR}/extern/btstack)
 
+# --- LC3 codec (Google liblc3 bundled in BTstack, Apache-2.0) ---
+# Encoder for the experimental LE Audio support; the decoder is used by
+# tools/a2dp_decode. Pure liblc3, no BTstack code (own license, see
+# THIRD_PARTY_LICENSES.md).
+set(LC3_SRC_DIR ${BTSTACK_ROOT}/3rd-party/lc3-google)
+if(EXISTS ${LC3_SRC_DIR}/src/lc3.c)
+    file(GLOB LC3_SRC ${LC3_SRC_DIR}/src/*.c)
+    add_library(lc3 STATIC ${LC3_SRC})
+    target_include_directories(lc3 PUBLIC ${LC3_SRC_DIR}/include)
+    if(MSVC)
+        target_compile_options(lc3 PRIVATE /W1 /utf-8)
+        target_compile_definitions(lc3 PRIVATE _USE_MATH_DEFINES)
+    else()
+        target_compile_options(lc3 PRIVATE -w -O2)
+    endif()
+    message(STATUS "LC3 (liblc3): Found and configured")
+endif()
+
 if(EXISTS ${BTSTACK_ROOT}/src/hci.c)
     # Core sources
     file(GLOB BTSTACK_CORE_SRC ${BTSTACK_ROOT}/src/*.c)
     # Remove optional codec/audio sources that require external dependencies
     file(GLOB BTSTACK_EXCLUDE_SRC
-        ${BTSTACK_ROOT}/src/btstack_lc3*.c
+        ${BTSTACK_ROOT}/src/btstack_lc3plus_fraunhofer.c
         ${BTSTACK_ROOT}/src/btstack_audio_generator.c
         ${BTSTACK_ROOT}/src/btstack_audio_player.c
         ${BTSTACK_ROOT}/src/btstack_audio_song.c
@@ -129,6 +147,11 @@ if(EXISTS ${BTSTACK_ROOT}/src/hci.c)
     endif()
     # Classic BT sources (A2DP, AVDTP, SDP, etc.)
     file(GLOB BTSTACK_CLASSIC_SRC ${BTSTACK_ROOT}/src/classic/*.c)
+    # LE sources for the experimental LE Audio support (SM, ATT server, GATT
+    # client, LE device DB in a TLV file). le_device_db_memory.c is replaced by
+    # le_device_db_tlv.c (both define the le_device_db API).
+    file(GLOB BTSTACK_BLE_SRC ${BTSTACK_ROOT}/src/ble/*.c)
+    list(REMOVE_ITEM BTSTACK_BLE_SRC ${BTSTACK_ROOT}/src/ble/le_device_db_memory.c)
     # Windows platform sources (run loop, WinUSB HCI transport, TLV storage)
     file(GLOB BTSTACK_WINDOWS_SRC ${BTSTACK_ROOT}/platform/windows/*.c)
     # The WinUSB HCI transport is replaced by a modified copy in app/src
@@ -138,10 +161,11 @@ if(EXISTS ${BTSTACK_ROOT}/src/hci.c)
     # PBAP client (phonebook access) is unused by the app and is the only
     # classic source that needs 3rd-party md5 / yxml.
     list(REMOVE_ITEM BTSTACK_CLASSIC_SRC ${BTSTACK_ROOT}/src/classic/pbap_client.c)
-    # 3rd-party dependencies. rijndael backs ENABLE_SOFTWARE_AES128 (SSP).
-    # micro-ecc is not needed: no LE Secure Connections / ENABLE_MICRO_ECC_P256.
+    # 3rd-party dependencies. rijndael backs ENABLE_SOFTWARE_AES128 (SSP, SM);
+    # micro-ecc the P-256 of LE Secure Connections (ENABLE_MICRO_ECC_P256).
     set(BTSTACK_3RDPARTY_SRC
         ${BTSTACK_ROOT}/3rd-party/rijndael/rijndael.c
+        ${BTSTACK_ROOT}/3rd-party/micro-ecc/uECC.c
     )
 
     # Chipset drivers (Realtek for TP-Link UB500 etc.; Broadcom PatchRAM and
@@ -155,6 +179,7 @@ if(EXISTS ${BTSTACK_ROOT}/src/hci.c)
     add_library(btstack STATIC
         ${BTSTACK_CORE_SRC}
         ${BTSTACK_CLASSIC_SRC}
+        ${BTSTACK_BLE_SRC}
         ${BTSTACK_WINDOWS_SRC}
         ${BTSTACK_3RDPARTY_SRC}
         ${BTSTACK_CHIPSET_SRC}
@@ -169,6 +194,7 @@ if(EXISTS ${BTSTACK_ROOT}/src/hci.c)
         # tinydir.h: btstack_chipset_bcm.c (HAVE_POSIX_FILE_IO) scans for .hcd
         ${BTSTACK_ROOT}/3rd-party/tinydir
         ${BTSTACK_ROOT}/3rd-party/rijndael
+        ${BTSTACK_ROOT}/3rd-party/micro-ecc
         # yxml.h only: btstack.h -> classic/pbap_client.h includes it (no yxml.c)
         ${BTSTACK_ROOT}/3rd-party/yxml
         ${BTSTACK_ROOT}/3rd-party/bluedroid/encoder/include
@@ -190,6 +216,10 @@ if(EXISTS ${BTSTACK_ROOT}/src/hci.c)
         target_compile_options(btstack PRIVATE -w)
     endif()
     target_link_libraries(btstack PUBLIC setupapi winusb ws2_32)
+    # LC3 for LE Audio (btstack_lc3_google.c wraps lc3-google)
+    if(TARGET lc3)
+        target_link_libraries(btstack PUBLIC lc3)
+    endif()
     message(STATUS "BTstack: Found and configured (WinUSB transport)")
 else()
     message(WARNING "BTstack not found at ${BTSTACK_ROOT}. "

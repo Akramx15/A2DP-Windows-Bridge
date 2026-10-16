@@ -1,8 +1,8 @@
 /*
  * btstack_config.h - BTstack compile-time configuration for A2DPWB
  *
- * Minimal configuration for Classic Bluetooth A2DP Source
- * with high-quality codecs (LDAC, aptX HD, aptX LL) over WinUSB.
+ * Classic Bluetooth A2DP Source with high-quality codecs (LDAC, aptX HD,
+ * aptX LL) over WinUSB, plus LE central / ISO for experimental LE Audio.
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -37,6 +37,27 @@
 /* Link key storage for paired devices */
 #define NVM_NUM_DEVICE_DB_ENTRIES  16
 #define NVM_NUM_LINK_KEYS          16
+
+/* LE (experimental LE Audio, app/src/le_audio/). Compiled in always, but
+ * inert unless the "LE Audio (experimental)" setting is on: only then are SM,
+ * the ATT server and the GATT client initialized. A2DPWB acts as LE central
+ * and never advertises; ENABLE_LE_PERIPHERAL is only defined because BTstack's
+ * extended advertising code (needed for extended scanning) depends on it.
+ * HCI init sends the LE setup commands BTstack issues for any dual-mode
+ * controller. */
+#define ENABLE_BLE
+#define ENABLE_LE_CENTRAL
+#define ENABLE_LE_PERIPHERAL
+#define ENABLE_LE_SECURE_CONNECTIONS
+#define ENABLE_MICRO_ECC_P256              /* software P-256 (3rd-party/micro-ecc) */
+#define ENABLE_LE_DATA_LENGTH_EXTENSION
+#define ENABLE_LE_EXTENDED_ADVERTISING     /* extended scanning when the controller has it */
+#define ENABLE_LE_ISOCHRONOUS_STREAMS      /* CIG / CIS as central, HCI ISO data */
+
+/* LE Audio limits: CIS per CIG (N devices x M sink ASEs) and the ISO SDU
+ * reassembly size (2 channels x 155 octets of LC3 48_6, plus headroom) */
+#define MAX_NR_CIS                 4
+#define HCI_ISO_PAYLOAD_SIZE       400
 
 /* A2DP explicit config: disable SBC auto-selection, allow vendor codec config.
  * Required for LDAC/aptX — BTstack's auto-mode only handles SBC. */

@@ -264,6 +264,11 @@ static int usb_acl_out_active;
 // buffer for HCI Events and ACL Packets
 static uint8_t hci_event_in_buffer[2 + 255];
 static uint8_t hci_acl_in_buffer[HCI_INCOMING_PRE_BUFFER_SIZE + HCI_ACL_BUFFER_SIZE]; 
+#ifdef ENABLE_LE_ISOCHRONOUS_STREAMS
+// A2DPWB: the bulk IN buffer also takes ISO packets (4-byte header, optional
+// 4-byte timestamp, 4-byte SDU header, payload)
+_Static_assert(HCI_ACL_BUFFER_SIZE >= 12 + HCI_ISO_PAYLOAD_SIZE, "ACL IN buffer too small for HCI ISO packets");
+#endif
 
 // transport interface state
 static int usb_transport_open;
@@ -668,6 +673,10 @@ static void usb_process_acl_in(btstack_data_source_t *ds, btstack_data_source_ca
     }
 
     // notify uppper
+    // A2DPWB: HCI ISO data from the controller arrives on this bulk IN pipe
+    // as well, in ISO packet format. It is passed up as ACL: hci.c
+    // (packet_handler) reclassifies a packet whose connection handle belongs
+    // to an ISO stream as HCI_ISO_DATA_PACKET, as Linux btusb does.
     packet_handler(HCI_ACL_DATA_PACKET, hci_acl_in_buffer, (uint16_t) bytes_read);
 
 	// re-submit transfer
@@ -1487,6 +1496,11 @@ static int usb_can_send_packet_now(uint8_t packet_type){
             return !usb_command_out_active;
         case HCI_ACL_DATA_PACKET:
             return !usb_acl_out_active;
+#ifdef ENABLE_LE_ISOCHRONOUS_STREAMS
+        // A2DPWB: HCI ISO data shares the ACL bulk OUT endpoint
+        case HCI_ISO_DATA_PACKET:
+            return !usb_acl_out_active;
+#endif
 #ifdef ENABLE_SCO_OVER_HCI
         case HCI_SCO_DATA_PACKET:
             // return 0;
@@ -1612,6 +1626,13 @@ static int usb_send_packet(uint8_t packet_type, uint8_t * packet, int size){
             return usb_send_cmd_packet(packet, size);
         case HCI_ACL_DATA_PACKET:
             return usb_send_acl_packet(packet, size);
+#ifdef ENABLE_LE_ISOCHRONOUS_STREAMS
+        // A2DPWB: USB carries HCI ISO data on the ACL bulk endpoints (Core
+        // Vol 4 Part B 2.1; Linux btusb does the same). Sent as is: the
+        // controller tells ISO from ACL by the connection handle.
+        case HCI_ISO_DATA_PACKET:
+            return usb_send_acl_packet(packet, size);
+#endif
 #ifdef ENABLE_SCO_OVER_HCI
         case HCI_SCO_DATA_PACKET:
             return usb_send_sco_packet(packet, size);
