@@ -38,9 +38,11 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace le_audio {
@@ -49,7 +51,11 @@ class Unicast;
 
 /* One advertiser seen by scan() */
 struct ScanResult {
-    LeAddr addr;
+    LeAddr addr;                      /* as advertised (connect with this) */
+    /* addr is an RPA that SM resolved with the IRK of a bond: the bonded
+     * device's identity address */
+    bool resolved = false;
+    LeAddr identity;
     std::string name;
     int8_t rssi = 0;
     uint16_t appearance = 0;
@@ -114,12 +120,17 @@ public:
     /* LE scan for duration_ms; all advertisers (ScanResult::le_audio marks
      * LE Audio devices) */
     std::vector<ScanResult> scan(uint32_t duration_ms, const Cancelled &cancelled = {});
-    /* Scan until addr is seen (to learn its address type / name) */
+    /* Scan until addr is seen (to learn its address type / name). addr may
+     * be an identity address or an RPA of a bonded device: an advertiser
+     * whose RPA resolves to the same identity matches too, and out.addr is
+     * the address it advertises now (connect with that). */
     bool find(const uint8_t addr[6], uint32_t timeout_ms, ScanResult &out, const Cancelled &cancelled = {});
 
     /* Connect, pair / encrypt, discover GATT, read PACS / ASCS. Returns the
      * device id, or -1 (error: why). An already connected device returns at
-     * once. */
+     * once. addr may be an RPA or the identity of a bonded device: the id is
+     * the same for both, and a device using RPAs is connected with the RPA
+     * it was last seen advertising (scan() / find()). */
     int connect(const LeAddr &addr, const std::string &name, uint32_t timeout_ms, std::string *error,
                 const Cancelled &cancelled = {});
     void disconnect(int device_id, uint32_t timeout_ms = 3000);
@@ -149,9 +160,11 @@ public:
     GattServer &gatt_server() { return server_; }
     /* Queue fn for the BTstack thread (any thread, no wait) */
     void post(std::function<void()> fn);
-    /* ISO buffers of the controller (LE Read Buffer Size v2) */
-    uint16_t iso_packet_length() const { return iso_len_; }
-    uint8_t iso_packet_count() const { return iso_count_; }
+    /* ISO buffers of the controller (LE Read Buffer Size v2; any thread).
+     * 0: no ISO support, start_stream() refuses (BTstack's ISO send would
+     * loop for ever) */
+    uint16_t iso_packet_length() const { return iso_len_.load(); }
+    uint8_t iso_packet_count() const { return iso_count_.load(); }
 
     /* ---- Internal (BTstack callbacks) ---- */
     void on_hci_event(uint8_t *packet, uint16_t size);
@@ -164,6 +177,19 @@ public:
 
 private:
     Core();
+    struct PostedFn;
+    static void run_posted(void *context);
+    /* RPA resolution (BTstack SM, IRKs of le_device_db) */
+    struct RpaEntry {
+        bool done = false, ok = false;
+        LeAddr identity;
+        uint32_t seen_ms = 0;               /* last advertising report, 0: never seen */
+    };
+    static uint64_t addr_key(const uint8_t addr[6]);
+    void lookup_rpa(const LeAddr &addr, bool seen);
+    bool resolved_identity(const uint8_t addr[6], LeAddr &identity) const;
+    LeAddr connect_address(const LeAudioDevice &dev, const LeAddr &given) const;
+    void on_identity(LeAudioDevice &dev, const LeAddr &identity);
     LeAudioDevice *device_for_addr(const LeAddr &addr, bool create);
     void on_adv_report(const LeAddr &addr, int8_t rssi, uint8_t event_type, bool extended,
                        const uint8_t *data, uint8_t len);
@@ -185,13 +211,25 @@ private:
     std::vector<ScanResult> scan_results_;
     bool scanning_ = false;
     int connecting_ = -1;                   /* device id of the gap_connect() in progress */
+    LeAddr connect_target_;                 /* the address gap_connect() was given */
+    std::shared_ptr<int> connect_id_;       /* connect()'s result id (moves when on_identity() merges) */
     std::function<void(bool)> connect_done_;
     std::string connect_error_;
     GattServer server_;
     Stream stream_;
     std::unique_ptr<Unicast> unicast_;
-    uint16_t iso_len_ = 0;
-    uint8_t iso_count_ = 0;
+    std::atomic<uint16_t> iso_len_{0};
+    std::atomic<uint8_t> iso_count_{0};
+    std::map<uint64_t, RpaEntry> rpa_cache_;   /* by RPA */
+
+    /* post(): queued callbacks of this session (owned). stack_deinit() moves
+     * the ones still queued to posted_dead_ (their function dropped: they do
+     * nothing if run) and stack_init() frees those, once the new run loop
+     * no longer knows them. */
+    std::mutex posted_mutex_;
+    bool posts_open_ = false;
+    std::unordered_set<PostedFn *> posted_;
+    std::vector<PostedFn *> posted_dead_;
 
     std::atomic<bool> stream_lost_{false};
     std::mutex status_mutex_;

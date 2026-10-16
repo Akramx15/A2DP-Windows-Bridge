@@ -46,14 +46,18 @@ bool connect_group(le_audio::Core &core, const std::vector<std::string> &addrs, 
             fprintf(stderr, "Invalid LE address: %s\n", a.c_str());
             return false;
         }
-        /* The address type and name come from the advertisement */
+        /* The address (an RPA of a bonded device changes: find() resolves
+         * it), its type and the name come from the advertisement */
         le_audio::ScanResult found;
         std::string name;
         if (core.find(addr.addr, 6000, found, cancelled)) {
-            addr.type = found.addr.type;
+            addr = found.addr;
             name = found.name;
             printf("Found %s \"%s\" (address type %s)%s\n", a.c_str(), name.c_str(),
                    addr.type ? "random" : "public", found.le_audio ? ", LE Audio" : "");
+            if (found.resolved && found.addr.str() != a)
+                printf("  advertising as %s now (identity %s)\n", found.addr.str().c_str(),
+                       found.identity.str().c_str());
         } else {
             printf("%s not seen advertising, connecting with a public address\n", a.c_str());
         }
