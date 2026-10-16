@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 #include <windows.h>
 
 struct IMMDeviceEnumerator;
@@ -53,6 +54,14 @@ public:
     /* Stop syncing: the device gets the volume it had before */
     void stop();
 
+    /* Test only (emulator runs): a simulated Windows volume (0-127) instead
+     * of the output device's, so a test never changes the real one */
+    struct Simulated {
+        std::function<int()> get;
+        std::function<void(int)> set;
+    };
+    void set_simulated(Simulated sim) { sim_ = std::move(sim); }
+
 private:
     bool attach();
     void detach();
@@ -68,6 +77,7 @@ private:
     int last_windows_ = -1;  /* levels last seen in sync, 0-127 */
     int last_headphones_ = -1;
     DWORD hold_until_ = 0;   /* headphones settling after a Windows change */
+    Simulated sim_;          /* test only */
 };
 
 #endif /* VOLUME_SYNC_H */

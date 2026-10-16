@@ -48,6 +48,7 @@ void VolumeSync::stop() {
 }
 
 bool VolumeSync::attach() {
+    if (sim_.get) return true;
     if (!enumerator_ &&
         FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
                                 __uuidof(IMMDeviceEnumerator),
@@ -107,6 +108,7 @@ void VolumeSync::detach() {
 }
 
 int VolumeSync::read_level() const {
+    if (sim_.get) return sim_.get();
     float scalar = 0.0f;
     if (!endpoint_ || FAILED(endpoint_->GetMasterVolumeLevelScalar(&scalar))) return -1;
     return scalar_to_level(scalar);
@@ -130,6 +132,12 @@ void VolumeSync::tick(bool enabled) {
     if (windows < 0) return;
 
     auto set_windows = [&](int level) {
+        if (sim_.set) {
+            sim_.set(level);
+            last_windows_ = read_level();
+            last_headphones_ = level;
+            return;
+        }
         if (original_ < 0.0f && FAILED(endpoint_->GetMasterVolumeLevelScalar(&original_)))
             original_ = -1.0f;
         endpoint_->SetMasterVolumeLevelScalar(level / 127.0f, nullptr);
