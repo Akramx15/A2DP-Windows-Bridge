@@ -21,6 +21,10 @@ Layouts (--layout):
            2 LE links)
   mono     one device, no location (mono), 1 sink ASE
 
+--privacy: the sinks use resolvable private addresses (a new one after each
+link went down); READY then lists their current RPAs, not the public
+(identity) addresses.
+
 Run with the Python of the tools/emu virtual environment (see setup_env.py).
 Prints "READY <host:port> sinks=<addr>[,<addr>]" once A2DPWB can connect;
 stops on SIGTERM / Ctrl+C.
@@ -36,7 +40,7 @@ from bumble.transport import open_transport
 
 import le_audio
 from le_audio.controller import LeEmuController, LeLocalLink
-from le_audio.sink import SinkContext, create_device, power_on_and_advertise
+from le_audio.sink import SinkContext, create_device, current_address, power_on_and_advertise
 
 A2DPWB_ADDRESS = '00:A2:D0:00:00:11'
 SINK_ADDRESSES = ['00:A2:D0:00:00:12', '00:A2:D0:00:00:13']
@@ -73,7 +77,7 @@ async def main(args):
     sinks = []
     for index, (name, locations, ases, counts) in enumerate(LAYOUTS[args.layout]):
         sink = SinkContext(index=index, address=SINK_ADDRESSES[index], name=name, locations=locations,
-                           sink_ases=ases, channel_counts=counts)
+                           sink_ases=ases, channel_counts=counts, privacy=args.privacy)
         create_device(link, sink, capture_path(args.capture, index))
         le_audio.configure_sink(sink, args)
         sinks.append(sink)
@@ -92,7 +96,7 @@ async def main(args):
                 main.dropped = True
                 asyncio.get_running_loop().create_task(drop())
         sinks[0].device.on('connection', on_connection)
-    print(f'READY 127.0.0.1:{args.port} sinks={",".join(s.address for s in sinks)}', flush=True)
+    print(f'READY 127.0.0.1:{args.port} sinks={",".join(current_address(s) for s in sinks)}', flush=True)
     await asyncio.get_running_loop().create_future()
 
 
@@ -105,6 +109,9 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', default='WARNING')
     parser.add_argument('--drop-link-after', type=float, metavar='SECONDS',
                         help='the first sink drops its LE link once, this long after A2DPWB connected')
+    parser.add_argument('--privacy', action='store_true',
+                        help='sinks advertise with resolvable private addresses (IRK distributed when paired) '
+                             'and take a new one whenever a link went down')
     le_audio.add_arguments(parser)
     bumble.logging.setup_basic_logging(parser.parse_known_args()[0].log_level)
     logging.getLogger('emu_le_audio').setLevel(logging.INFO)
