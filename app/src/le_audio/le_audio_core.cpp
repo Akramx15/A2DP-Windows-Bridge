@@ -326,6 +326,14 @@ void parse_ad(ScanResult &r, const uint8_t *data, uint8_t len) {
         if (u == UUID_SERVICE_ASCS || u == UUID_SERVICE_PACS || u == UUID_SERVICE_CAS ||
             u == UUID_SERVICE_TMAS || u == UUID_SERVICE_GMAS)
             r.le_audio = true;
+    /* No LE Audio UUID, but an audio appearance (Audio Sink 0x0840-0x087F,
+     * Wearable Audio Device 0x0940-0x097F, e.g. earbuds): list it as a
+     * candidate; connecting tells (no ASCS: "no sink ASE") */
+    uint16_t category = (uint16_t)(r.appearance >> 6);
+    if (!r.le_audio && r.connectable && (category == 0x021 || category == 0x025)) {
+        r.le_audio = true;
+        if (r.note.empty()) r.note = "audio appearance, LE Audio not advertised";
+    }
 }
 
 } /* namespace */

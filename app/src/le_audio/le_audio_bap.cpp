@@ -242,8 +242,15 @@ struct Unicast::Impl {
     std::function<void()> stop_done;
     btstack_timer_source_t timer = {};
     bool timer_armed = false;
-    le_audio_cig_t cig = {};
-    le_audio_cig_params_t cig_params = {};
+    /* CIG storage handed to BTstack (gap_cig_create keeps the pointers
+     * until the CIG is removed). If a removal never finishes, the storage is
+     * abandoned (leaked on purpose) instead of being reused under BTstack. */
+    std::unique_ptr<le_audio_cig_t> cig;
+    std::unique_ptr<le_audio_cig_params_t> cig_params;
+    void abandon_cig() {
+        cig.release();
+        cig_params.release();
+    }
     bool cig_exists = false;          /* created in BTstack, not removed yet */
     bool cig_pending = false;         /* gap_cig_create() waiting for GAP_SUBEVENT_CIG_CREATED */
     bool cig_removing = false;
@@ -404,7 +411,11 @@ void Unicast::enter(Phase p) {
                  "presentation delay %u us", plan_.preset.sdu_interval_us(), latency, plan_.preset.rtn,
                  phy, pd);
 
-        le_audio_cig_params_t &cp = I.cig_params;
+        if (!I.cig) {
+            I.cig.reset(new le_audio_cig_t());
+            I.cig_params.reset(new le_audio_cig_params_t());
+        }
+        le_audio_cig_params_t &cp = *I.cig_params;
         memset(&cp, 0, sizeof(cp));
         cp.cig_id = plan_.cig_id;
         cp.sdu_interval_c_to_p = plan_.preset.sdu_interval_us();
@@ -425,7 +436,17 @@ void Unicast::enter(Phase p) {
             cis.rtn_c_to_p = plan_.preset.rtn;
             cis.rtn_p_to_c = plan_.preset.rtn;
         }
-        uint8_t status = gap_cig_create(&I.cig, &I.cig_params);
+        uint8_t status = gap_cig_create(I.cig.get(), I.cig_params.get());
+        for (int tries = 0; status == ERROR_CODE_ACL_CONNECTION_ALREADY_EXISTS && tries < 3; tries++) {
+            /* BTstack still holds a CIG with this id (its removal never
+             * finished, e.g. a controller that did not report a CIS down):
+             * use another id */
+            LOG_WARN("LE Audio: CIG %u still exists in BTstack, using CIG %u", plan_.cig_id,
+                     plan_.cig_id % 4 + 1);
+            plan_.cig_id = (uint8_t)(plan_.cig_id % 4 + 1);
+            cp.cig_id = plan_.cig_id;
+            status = gap_cig_create(I.cig.get(), I.cig_params.get());
+        }
         if (status != ERROR_CODE_SUCCESS) {
             char why[80];
             snprintf(why, sizeof(why), "LE Set CIG Parameters could not start (0x%02x)", status);
@@ -580,6 +601,7 @@ void Unicast::try_remove_cig() {
         if (status != ERROR_CODE_SUCCESS) {
             LOG_WARN("LE Audio: gap_cig_remove failed (0x%02x)", status);
             I.cig_exists = false;
+            I.abandon_cig();
             finish_stop();
             return;
         }
@@ -648,10 +670,19 @@ void Unicast::on_timeout() {
     case Phase::Release:   LOG_WARN("LE Audio: Release timed out"); enter(Phase::RemoveCig); break;
     case Phase::RemoveCig:
         LOG_WARN("LE Audio: CIG removal timed out");
-        impl_->cig_pending = false;
-        impl_->cis_pending = 0;
-        if (!impl_->cig_removing) try_remove_cig();
-        else { impl_->cig_removing = false; impl_->cig_exists = false; finish_stop(); }
+        if (!impl_->cig_removing && impl_->cig_exists) {
+            /* Still waiting for a CIG / CIS event: remove it anyway */
+            impl_->cig_pending = false;
+            impl_->cis_pending = 0;
+            try_remove_cig();
+            if (phase_ == Phase::RemoveCig) impl_->arm(STOP_STEP_TIMEOUT_MS);
+        } else {
+            /* BTstack never finished removing it: leave its storage alone */
+            if (impl_->cig_removing) impl_->abandon_cig();
+            impl_->cig_removing = false;
+            impl_->cig_exists = false;
+            finish_stop();
+        }
         break;
     case Phase::Idle:
     case Phase::Streaming:
