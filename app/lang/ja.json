@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio（実験的）",
   "settings.le_audio_on": "LE Audio（実験的）を有効にしました。\n\n接続プロファイルのデバイススキャンに LE Audio デバイスが表示されます。プロファイルで「LE Audio デバイス」にチェックを入れると、A2DP の代わりに LC3 で送信します。アダプターには Bluetooth 5.2 のアイソクロナスチャネル対応が必要です。実機のヘッドホンではまだ検証していません。",
   "settings.le_audio_off": "LE Audio（実験的）を無効にしました。",
+  "settings.le_audio_deferred": "現在ストリーミング中またはスキャン中です。変更は次回のデバイススキャンまたは接続の開始時に反映されます。",
   "settings.le_low_latency": "ゲーミングヘッドセット向け低遅延（GMAP、実験的）",
   "advanced.max_packet": "最大メディアパケットサイズ（バイト）",
   "advanced.max_packet_recommended": "推奨値（%d）",

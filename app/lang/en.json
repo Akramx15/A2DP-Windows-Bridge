@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio (experimental)",
   "settings.le_audio_on": "LE Audio (experimental) is on.\n\nLE Audio devices now appear in the device scan of a connection profile. Tick \"LE Audio device\" in the profile to stream LC3 to it instead of A2DP. The adapter needs Bluetooth 5.2 with isochronous channels. Not yet tested with real headphones.",
   "settings.le_audio_off": "LE Audio (experimental) is off.",
+  "settings.le_audio_deferred": "A2DPWB is streaming or scanning right now. The change takes effect when the next device scan or connection starts.",
   "settings.le_low_latency": "Low latency for gaming headsets (GMAP, experimental)",
   "advanced.max_packet": "Max media packet size (bytes)",
   "advanced.max_packet_recommended": "Recommended (%d)",
