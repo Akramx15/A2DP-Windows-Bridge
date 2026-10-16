@@ -457,3 +457,69 @@ set member is not copied to the others; Volume Flags are only logged (a
 device without a persisted volume keeps its default, VCP 1.0 allows the
 controller to set one); VOCS (balance) / AICS not supported; not verified
 with real headsets.
+
+## CCP (call control server, GTBS)
+
+`le_audio_ccp.{h,cpp}`: the PC is the CCP **Call Control Server** and
+exposes GTBS (TBS 1.0, `0x184C`); headsets are the CCP clients. A2DPWB has no
+telephony (Windows has no generic call-state API, LE Audio here has no
+microphone / source ASE), so this is a spec-correct GTBS around an
+**in-memory call model** with a pluggable backend - not real call handling.
+
+- **Characteristics** (all encrypted-only): Bearer Provider Name
+  (`"A2DPWB"`), Bearer UCI (`"un000"`), Bearer Technology (`0x04` Wi-Fi), URI
+  Schemes Supported List (`"tel,sip"`), Bearer Signal Strength (255 =
+  unavailable) + Reporting Interval (writable, stored only), Bearer List
+  Current Calls, Content Control ID, Status Flags (0), Incoming Call Target
+  Bearer URI, Call State, Call Control Point, CP Optional Opcodes (`0x0001`:
+  Local Hold / Retrieve, no Join), Termination Reason, Incoming Call, Call
+  Friendly Name. Values that may exceed one PDU: notifications are cut to
+  ATT_MTU - 3 by the module (BTstack's `att_server_notify()` does not cut
+  them correctly), a long read whose value changes between its parts gets
+  `0x80` Value Changed During Read Long (`GattServer::read_offset()` /
+  `fail_read()`).
+- **CCID**: `ccp::GTBS_CCID` = **2**, `ccp::ccid()`; not yet in the BAP
+  Enable metadata (CCID List) - wired up with MCP's CCID mechanism.
+- **Call model** (BTstack thread): up to 4 calls, indices 1-255 counting up
+  and wrapping. Call Control Point: Accept (Incoming -> Active), Terminate
+  (any; Termination Reason 0x06), Local Hold (Incoming / Active -> Locally
+  Held, Remotely -> Locally and Remotely Held), Local Retrieve (back),
+  Originate (URI scheme from the list -> Dialing, outgoing flag); Join and
+  unknown opcodes -> Opcode Not Supported; wrong length -> ATT error 0x0D;
+  results Invalid Call Index / State Mismatch / Invalid Outgoing URI / Lack
+  Of Resources / Operation Not Possible. A call going Active puts the other
+  active calls on (local) hold. Order of notifications per change: the
+  control point result (to the writer), Termination Reason, Call State,
+  Bearer List Current Calls.
+- **Backend** (`ccp::Backend`, `ccp::set_backend()`): bearer values and the
+  headset's requests (return a result code); events back from the telephony
+  side: `incoming_call()`, `remote_alerting()`, `remote_answered()`,
+  `remote_hold()`, `call_ended()`. The default backend is the simulation
+  (allows everything). A softphone integration would implement the backend
+  and call the events through `Core::post()`.
+- **Simulation** (no `main.cpp` change; the module reads the process command
+  line): `--ccp-sim "<t>:<cmd>;..."` runs commands t seconds after the first
+  client enabled Call State notifications; `--ccp-console` reads them from
+  stdin in `--cli` mode. Commands: `incoming <uri>[|<name>[|<target uri>]]`,
+  `alerting`, `answered`, `remote-hold`, `remote-retrieve`,
+  `hangup [<index> [<reason>]]`, `status` (index default: the latest call).
+- **Emulator** (`le_audio/ccp.py`): `--ccp` makes the first sink a CCP client
+  (Bumble has no TBS profile: generic GATT client) - discover GTBS, check the
+  characteristics and properties, read all, subscribe all, then the
+  `--ccp-ops` steps (`wait-incoming`, `accept[:N]`, `terminate[:N]`,
+  `hold`, `retrieve`, `originate:<uri>`, `raw:<hex>`, `wait-end`,
+  `read-calls`, `read-race`, `interval:<s>`, `sleep:<s>`); `--ccp-mtu N`
+  caps the ATT MTU (A2DPWB negotiates 517 otherwise, so nothing would need
+  a long read). Everything is logged as `CCP: ...` in `sink.log`.
+- **Cases** (`le_audio_tests/ccp.py`): `ccp-read` (values, no calls, interval
+  write), `ccp-incoming-accept` (simulated call, long read of the friendly
+  name, Accept / Hold / Retrieve, far end hangs up -> reason 0x02),
+  `ccp-terminate` (two calls, cut notification, Value Changed During Read
+  Long, reject + end -> reason 0x06, empty list), `ccp-invalid` (bad index,
+  Join / unknown opcode, short write, bad URIs, wrong-state operations,
+  Originate -> Alerting -> Active by the simulation). Every other case
+  checks that GTBS was registered.
+- **Limitations**: no real call source or audio (no conversational
+  context, no microphone, in-band ringtone flag off); no Join; one bearer
+  (GTBS only, no extra TBS instances); signal strength never reported;
+  verified only with the Bumble client of `ccp.py`, not with real earbuds.
