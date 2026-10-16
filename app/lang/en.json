@@ -114,6 +114,8 @@
   "firmware.open_folder": "Open Config Folder",
   "firmware.select_chip": "Select your Bluetooth chip type.",
   "firmware.missing_manual": "Firmware not found",
+  "firmware.invalid_short": "Firmware file is invalid!",
+  "firmware.invalid": "%s is not a Realtek firmware file: probably a web page was saved instead of the file. Download it again with the 'plain' link and replace it.",
   "firmware.required_files": "Required files:",
   "firmware.detected_adapters": "Detected Adapter",
   "firmware.no_adapters": "No USB Bluetooth adapters detected.",

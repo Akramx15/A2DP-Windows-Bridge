@@ -114,6 +114,8 @@
   "firmware.open_folder": "打开配置文件夹",
   "firmware.select_chip": "请选择 Bluetooth 芯片类型。",
   "firmware.missing_manual": "未找到固件",
+  "firmware.invalid_short": "固件文件无效！",
+  "firmware.invalid": "%s 不是 Realtek 固件文件，可能保存的是网页而不是文件。请通过“plain”链接重新下载并替换。",
   "firmware.required_files": "所需文件：",
   "firmware.detected_adapters": "检测到的适配器",
   "firmware.no_adapters": "未检测到 USB Bluetooth 适配器。",

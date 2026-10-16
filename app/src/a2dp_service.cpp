@@ -693,28 +693,45 @@ std::string A2dpService::firmware_status() const {
     return firmware_status_text_;
 }
 
-void A2dpService::check_firmware_present() {
-    auto validate_file = [](const char *path, uint32_t min_size) -> bool {
-        FILE *f = nullptr;
-        if (fopen_s(&f, path, "rb") != 0 || !f) return false;
-        fseek(f, 0, SEEK_END);
-        long sz = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        char hdr[16] = {};
-        fread(hdr, 1, sizeof(hdr), f);
-        fclose(f);
-        if ((uint32_t)sz < min_size) return false;
-        if (memcmp(hdr, "<!doctype", 9) == 0 || memcmp(hdr, "<html", 5) == 0) return false;
-        return true;
-    };
+/* Missing, or present but not what BTstack's Realtek loader accepts: a web
+ * page saved instead of the file is the usual case (issue #66, kernel.org's
+ * preview page instead of the "plain" link) */
+enum class FwFile { Missing, Invalid, Ok };
 
-    /* Check if a file exists (any size, including 0). */
-    auto file_exists = [](const char *path) -> bool {
-        FILE *f = nullptr;
-        if (fopen_s(&f, path, "rb") != 0 || !f) return false;
-        fclose(f);
-        return true;
-    };
+static FwFile read_fw_file(const std::string &path, std::string &data) {
+    FILE *f = nullptr;
+    if (fopen_s(&f, path.c_str(), "rb") != 0 || !f) return FwFile::Missing;
+    data.clear();
+    char buf[16384];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.append(buf, n);
+    fclose(f);
+    return FwFile::Ok;
+}
+
+/* Signature "Realtech" or "RTBTCore", extension signature at the end
+ * (the checks of btstack_chipset_realtek.c) */
+static FwFile check_realtek_fw(const std::string &path) {
+    std::string d;
+    if (read_fw_file(path, d) == FwFile::Missing) return FwFile::Missing;
+    static const uint8_t ext_sig[4] = {0x51, 0x04, 0xFD, 0x77};
+    bool ok = d.size() >= 16 &&
+              (d.compare(0, 8, "Realtech") == 0 || d.compare(0, 8, "RTBTCore") == 0) &&
+              memcmp(d.data() + d.size() - 4, ext_sig, 4) == 0;
+    return ok ? FwFile::Ok : FwFile::Invalid;
+}
+
+/* Empty is fine (BTstack then uses the efuse settings), else magic 0x8723AB55 */
+static FwFile check_realtek_config(const std::string &path) {
+    std::string d;
+    if (read_fw_file(path, d) == FwFile::Missing) return FwFile::Missing;
+    static const uint8_t magic[4] = {0x55, 0xAB, 0x23, 0x87};
+    bool ok = d.empty() || (d.size() >= 6 && memcmp(d.data(), magic, 4) == 0);
+    return ok ? FwFile::Ok : FwFile::Invalid;
+}
+
+void A2dpService::check_firmware_present() {
+    firmware_invalid_file_.clear();
 
     /* Determine firmware filenames based on the chip setting (Auto takes
      * the detected Realtek adapter; Not Realtek resolves to 0). A pid of 0
@@ -755,9 +772,16 @@ void A2dpService::check_firmware_present() {
         return;
     }
 
-    /* Firmware must be valid binary >10KB. Config may be empty (BTstack uses efuse). */
-    firmware_present_ = validate_file(fw_path.c_str(), 10000)
-                     && file_exists(cfg_path.c_str());
+    FwFile fw_state = check_realtek_fw(fw_path);
+    FwFile cfg_state = check_realtek_config(cfg_path);
+    firmware_present_ = fw_state == FwFile::Ok && cfg_state == FwFile::Ok;
+    const std::string &bad = fw_state == FwFile::Invalid ? fw_path
+                           : cfg_state == FwFile::Invalid ? cfg_path : std::string();
+    if (!bad.empty()) {
+        firmware_invalid_file_ = bad.substr(bad.find_last_of('\\') + 1);
+        LOG_WARN("A2dpService: %s is not a Realtek firmware file (a saved web page?)",
+                 bad.c_str());
+    }
 }
 
 void A2dpService::download_firmware() {

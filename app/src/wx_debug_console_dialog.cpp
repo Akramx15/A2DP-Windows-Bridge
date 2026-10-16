@@ -654,6 +654,8 @@ wxString DebugConsoleDialog::diagnostics_text() const {
                                 : wxString(", firmware stem ") + wxString::FromUTF8(set.bt_chip_fw_stem));
     A2dpService &svc = frame_->service();
     out << "  Firmware files: " << (svc.is_firmware_present() ? "present" : "missing");
+    if (!svc.firmware_invalid_file().empty())
+        out << ", " << wxString::FromUTF8(svc.firmware_invalid_file()) << " is not a valid file";
     std::string fw = svc.firmware_status();
     if (!fw.empty()) out << " (" << wxString::FromUTF8(fw) << ")";
     out << "\n";

@@ -114,6 +114,8 @@
   "firmware.open_folder": "設定フォルダを開く",
   "firmware.select_chip": "Bluetooth チップの種類を選択してください。",
   "firmware.missing_manual": "ファームウェアが見つかりません",
+  "firmware.invalid_short": "ファームウェアファイルが不正です！",
+  "firmware.invalid": "%s は Realtek のファームウェアファイルではありません（ファイルではなく Web ページが保存された可能性があります）。「plain」リンクからダウンロードし直して置き換えてください。",
   "firmware.required_files": "必要なファイル:",
   "firmware.detected_adapters": "検出されたアダプタ",
   "firmware.no_adapters": "USB Bluetoothアダプタが検出されませんでした。",
