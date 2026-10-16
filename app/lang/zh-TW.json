@@ -44,6 +44,7 @@
   "device.tag_saved": "已配對",
   "device.tag_audio": "音訊",
   "device.tag_le_audio": "LE Audio",
+  "device.tag_le_audio_set": "LE Audio 組",
   "device.name_unknown": "未知",
   "device.edit_name": "編輯名稱",
   "device.edit_name_title": "編輯裝置名稱",

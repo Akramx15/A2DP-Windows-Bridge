@@ -154,7 +154,7 @@ void ProfileDialog::create_ui() {
     auto devices = service_->get_devices();
     for (auto &d : devices) {
         wxString label = wxString::Format("[%s] %s (%s)",
-            d.le_audio ? wxString::FromUTF8(L("device.tag_le_audio"))
+            d.le_audio ? wxString::FromUTF8(L(d.le_audio_set ? "device.tag_le_audio_set" : "device.tag_le_audio"))
             : d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
             d.name.empty() ? wxString::FromUTF8(L("device.name_unknown")) : wxString::FromUTF8(d.name),
             wxString::FromUTF8(d.addr_str));
@@ -822,7 +822,7 @@ void ProfileDialog::on_scan_complete() {
     auto devices = service_->get_devices();
     for (auto &d : devices) {
         wxString label = wxString::Format("[%s] %s (%s)",
-            d.le_audio ? wxString::FromUTF8(L("device.tag_le_audio"))
+            d.le_audio ? wxString::FromUTF8(L(d.le_audio_set ? "device.tag_le_audio_set" : "device.tag_le_audio"))
             : d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
             d.name.empty() ? wxString::FromUTF8(L("device.name_unknown")) : wxString::FromUTF8(d.name),
             wxString::FromUTF8(d.addr_str));

@@ -44,6 +44,7 @@
   "device.tag_saved": "Gekoppelt",
   "device.tag_audio": "Audio",
   "device.tag_le_audio": "LE Audio",
+  "device.tag_le_audio_set": "LE-Audio-Set",
   "device.name_unknown": "Unbekannt",
   "device.edit_name": "Name ändern",
   "device.edit_name_title": "Gerätenamen ändern",

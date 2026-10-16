@@ -44,6 +44,7 @@
   "device.tag_saved": "Emparejado",
   "device.tag_audio": "Audio",
   "device.tag_le_audio": "LE Audio",
+  "device.tag_le_audio_set": "Conjunto LE Audio",
   "device.name_unknown": "Desconocido",
   "device.edit_name": "Editar nombre",
   "device.edit_name_title": "Editar nombre del dispositivo",
