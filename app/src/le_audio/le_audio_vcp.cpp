@@ -99,6 +99,12 @@ struct VcsDevice {
     int want = -1;               /* Volume_Setting still to write, -1 none */
     bool want_unmute = false;
     bool retried = false;        /* the current operation was sent again after 0x80 */
+    /* While busy: the settings the operation may leave (before / after it).
+     * A Volume State seen meanwhile with any other setting was changed on
+     * the device (its buttons) and is applied once the operation is done. */
+    uint8_t op_from = 0;
+    uint8_t op_to = 0;
+    bool device_changed = false;
 };
 
 class VcpModule : public Module {
@@ -228,6 +234,13 @@ private:
                      vcp::to_level(v->setting), v->mute ? ", muted" : "", v->counter,
                      from_notification ? " (notified)" : "");
 
+        if (v->busy && !first && v->setting != v->op_from && v->setting != v->op_to && !v->device_changed) {
+            /* Not what A2DPWB's write leaves: the device changed meanwhile;
+             * applied when the write and its read are done (finish()) */
+            v->device_changed = true;
+            LOG_INFO("VCP: %s: volume changed on the device during a write of A2DPWB", v->addr.c_str());
+        }
+
         if (first) {
             if (target_ < 0) {
                 /* The first device decides: Windows takes its volume over */
@@ -242,18 +255,25 @@ private:
             sync(*v);
             return;
         }
+        /* A2DPWB's own write runs or waits: its notifications are not
+         * followed (no echo); a change of the device meanwhile is flagged
+         * above and applied by finish() */
         if (!from_notification || v->busy || v->want >= 0 || v->want_unmute) return;
         if (v->mute != old_mute)
             LOG_INFO("VCP: %s %s on the device", v->addr.c_str(), v->mute ? "muted" : "unmuted");
-        if (v->setting == target_) return;
-        /* Changed on the device (buttons): the group and Windows follow */
-        LOG_INFO("VCP: %s: volume changed on the device to %u/255 (%d/127)", v->addr.c_str(), v->setting,
-                 vcp::to_level(v->setting));
-        target_ = v->setting;
+        follow_device(*v);
+    }
+
+    /* Changed on the device (buttons): the group and Windows follow */
+    void follow_device(VcsDevice &v) {
+        if (v.setting == target_) return;
+        LOG_INFO("VCP: %s: volume changed on the device to %u/255 (%d/127)", v.addr.c_str(), v.setting,
+                 vcp::to_level(v.setting));
+        target_ = v.setting;
         publish();
         for (auto &kv : devices_) {
             VcsDevice &o = kv.second;
-            if (&o == v || (o.known && o.setting == target_ && o.want < 0)) continue;
+            if (&o == &v || (o.known && o.setting == target_ && o.want < 0)) continue;
             o.want = target_;
             sync(o);
         }
@@ -297,6 +317,9 @@ private:
         }
         if (sent_unmute) v.want_unmute = false;
         v.busy = true;
+        v.op_from = v.setting;
+        v.op_to = sent_want >= 0 ? static_cast<uint8_t>(sent_want) : v.setting;
+        v.device_changed = false;
         const int id = v.id;
         const uint16_t con = v.con;
         gatt_client::write(con, v.cp_handle, op, [this, id, con, sent_want, sent_unmute](uint8_t status) {
@@ -306,43 +329,64 @@ private:
                 x->busy = false;   /* the link is going away; on_disconnected() drops it */
                 return;
             }
-            const std::string what = sent_unmute ? std::string("Unmute")
-                                                 : "Set Absolute Volume " + std::to_string(sent_want);
-            bool retry = false;
-            if (status == 0) {
-                LOG_INFO("VCP: %s: %s done", x->addr.c_str(), what.c_str());
-                x->retried = false;
-            } else if (status == ATT_INVALID_CHANGE_COUNTER && !x->retried) {
-                LOG_WARN("VCP: %s: %s: Invalid Change Counter (0x80), reading Volume State again and retrying",
-                         x->addr.c_str(), what.c_str());
-                x->retried = true;
-                retry = true;
-            } else {
-                LOG_WARN("VCP: %s: %s failed: %s (0x%02x)", x->addr.c_str(), what.c_str(), att_error_text(status),
-                         status);
-                x->retried = false;
-            }
-            if (retry) {
-                /* Send it again unless a newer request replaced it */
-                if (sent_want >= 0 && x->want < 0) x->want = sent_want;
-                if (sent_unmute) x->want_unmute = true;
-            }
+            if (status == ATT_INVALID_CHANGE_COUNTER)
+                LOG_WARN("VCP: %s: %s: Invalid Change Counter (0x80), reading Volume State again", x->addr.c_str(),
+                         op_name(sent_want, sent_unmute).c_str());
             /* Read the state the write left (also the Change Counter) */
             gatt_client::read(con, x->state_handle,
-                              [this, id, con, status, retry](uint8_t st, const uint8_t *value, uint16_t len) {
+                              [this, id, con, status, sent_want, sent_unmute](uint8_t st, const uint8_t *value,
+                                                                              uint16_t len) {
                 VcsDevice *y = find(id, con);
                 if (!y) return;
                 if (st == 0) on_state(id, con, value, len, false);
                 y->busy = false;
                 if (st == ATT_DISCONNECTED) return;
-                if (status != 0 && !retry && y->want < 0 && y->known && y->setting != target_) {
-                    /* Given up: report what the device really plays at */
-                    target_ = y->setting;
-                    publish();
-                }
-                sync(*y);
+                finish(*y, status, sent_want, sent_unmute);
             });
         });
+    }
+
+    static std::string op_name(int sent_want, bool sent_unmute) {
+        return sent_unmute ? std::string("Unmute") : "Set Absolute Volume " + std::to_string(sent_want);
+    }
+
+    /* A Control Point operation and the read after it are done: retry it,
+     * or follow a change the device made meanwhile, then write what waits */
+    void finish(VcsDevice &v, uint8_t status, int sent_want, bool sent_unmute) {
+        const bool device = v.device_changed;
+        v.device_changed = false;
+        const std::string what = op_name(sent_want, sent_unmute);
+        bool retry = false;
+        if (status == 0) {
+            LOG_INFO("VCP: %s: %s done", v.addr.c_str(), what.c_str());
+            v.retried = false;
+        } else if (status == ATT_INVALID_CHANGE_COUNTER && device) {
+            /* The counter moved because the volume was changed on the device:
+             * that change is newer than the request, do not overwrite it */
+            LOG_INFO("VCP: %s: %s not retried: the volume was changed on the device meanwhile", v.addr.c_str(),
+                     what.c_str());
+            v.retried = false;
+        } else if (status == ATT_INVALID_CHANGE_COUNTER && !v.retried) {
+            LOG_INFO("VCP: %s: %s: retrying with change counter %u", v.addr.c_str(), what.c_str(), v.counter);
+            v.retried = true;
+            retry = true;
+        } else {
+            LOG_WARN("VCP: %s: %s failed: %s (0x%02x)", v.addr.c_str(), what.c_str(), att_error_text(status), status);
+            v.retried = false;
+        }
+        if (retry) {
+            /* Send it again unless a newer request replaced it */
+            if (sent_want >= 0 && v.want < 0) v.want = sent_want;
+            if (sent_unmute) v.want_unmute = true;
+        } else if (device && v.want < 0 && v.known) {
+            /* No newer request from Windows: the device's change wins */
+            follow_device(v);
+        } else if (status != 0 && v.want < 0 && v.known && v.setting != target_) {
+            /* Given up: report what the device really plays at */
+            target_ = v.setting;
+            publish();
+        }
+        sync(v);
     }
 
     std::map<int, VcsDevice> devices_;   /* BTstack thread, by LeAudioDevice::id */

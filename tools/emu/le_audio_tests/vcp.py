@@ -38,6 +38,19 @@ CASES = [
     Case('vcp-earbuds', 'earbuds', TWO_CIS,
          sink_args=['--vcp', '--vcp-volume', '100,140', '--vcp-press', '8:60@1'],
          a2dpwb_args=['--le-sim-volume', '64,3:90'], tags=('vcp',), duration=12),
+    # A button press while A2DPWB's own write runs: Windows -> 181 is written,
+    # right after it the headset's button sets 40 (notified while A2DPWB reads
+    # the state back). The device's change must not be lost: Windows follows
+    # (20/127), 181 is not written again
+    Case('vcp-press-during-write', 'stereo', STEREO,
+         sink_args=['--vcp', '--vcp-volume', '100', '--vcp-press-on-write', '40'],
+         a2dpwb_args=['--le-sim-volume', '64,3:90'], tags=('vcp',), duration=8),
+    # The same with the button pressed just before the write arrives: the
+    # write is rejected (0x80, stale counter) and not retried, as the device's
+    # change is newer
+    Case('vcp-press-before-write', 'stereo', STEREO,
+         sink_args=['--vcp', '--vcp-volume', '100', '--vcp-press-before-write', '40'],
+         a2dpwb_args=['--le-sim-volume', '64,3:90'], tags=('vcp',), duration=8),
 ]
 
 WROTE = re.compile(r'VCS (.+?): A2DPWB wrote (\w+)(?: (\d+))? \(counter (\d+)\): (.*)$', re.M)
@@ -88,7 +101,8 @@ def check(case, ctx):
         rejected = [w for w in writes if w[4].startswith('rejected, error 0x80')]
         if len(rejected) != 1:
             failures.append(f'expected one write rejected with 0x80, the sink saw {writes}')
-        if 'Invalid Change Counter (0x80), reading Volume State again and retrying' not in log:
+        if 'Invalid Change Counter (0x80), reading Volume State again' not in log or \
+                'Set Absolute Volume 181: retrying with change counter' not in log:
             failures.append('A2DPWB did not report the retry')
         if _accepted(writes) != [('SET_ABSOLUTE_VOLUME', 181)]:
             failures.append(f'the retry did not set volume 181: {writes}')
@@ -102,4 +116,20 @@ def check(case, ctx):
             failures.append('A2DPWB did not log the button press on the right earbud')
         if sims != [50, 30]:
             failures.append(f'simulated Windows volume steps {sims}, expected [50, 30]')
+    elif case.name in ('vcp-press-during-write', 'vcp-press-before-write'):
+        before = case.name == 'vcp-press-before-write'
+        if 'VCP: 00:A2:D0:00:00:12: volume changed on the device during a write of A2DPWB' not in log:
+            failures.append('A2DPWB did not notice the button press during its write')
+        if 'VCP: 00:A2:D0:00:00:12: volume changed on the device to 40/255 (20/127)' not in log:
+            failures.append('A2DPWB did not follow the volume set on the device (40/255)')
+        if sims != [50, 20]:
+            failures.append(f'simulated Windows volume steps {sims}, expected [50, 20]')
+        want = [] if before else [('SET_ABSOLUTE_VOLUME', 181)]
+        if _accepted(writes) != want:
+            failures.append(f'writes accepted by the sink {_accepted(writes)}, expected {want}')
+        rejected = [w for w in writes if w[4].startswith('rejected')]
+        if len(rejected) != (1 if before else 0):
+            failures.append(f'rejected writes {rejected}')
+        if before and 'not retried: the volume was changed on the device meanwhile' not in log:
+            failures.append('A2DPWB did not log why it did not retry')
     return failures

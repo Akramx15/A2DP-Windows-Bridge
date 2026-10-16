@@ -237,6 +237,28 @@ Core::instance().gatt_server().notify_all(state_, {0x01 /* playing */});
   services: `begin_service(uuid, false)` + `include_service(start, end, uuid)`.
 - Security: the `read_security` / `write_security` arguments
   (`ATT_SECURITY_ENCRYPTED` etc.); LE Audio links are encrypted anyway.
+- CCC values of **bonded** clients persist (Core Vol 3 Part G 3.3.3.3):
+  BTstack's `att_server` stores every CCC write of a bonded client in the
+  bond TLV (`le_audio_bonds.tlv`, tags `BTC` + slot, keyed by the
+  le_device_db index = the identity) and replays the values through
+  `GattServer::write_cb()` when the link is encrypted again (also after a
+  restart). `GattServer` keeps only the live values per connection; an
+  unbonded client's are gone with its link. `NVN_NUM_GATT_SERVER_CCC` is
+  256 in `btstack_config.h` (default 20; GMCS + GTBS + Service Changed are
+  23 CCCs per client). Emulator case `mcp-resume`.
+- The GATT service has Service Changed and a **Database Hash** (0x2B2A,
+  AES-CMAC over the DB as Core Vol 3 Part G 7.3.1 says, computed in
+  `GattServer::start()`; `mcp-read` checks it against a hash the emulated
+  client computes). When the stored hash (`BTDB` tag) differs - an A2DPWB
+  version that added or moved characteristics, or one from before the
+  hash - `start()` drops the stored CCC values (they belong to the old
+  handles) and every bonded client that had Service Changed indications on
+  gets a Service Changed indication (0x0001-0xFFFF) on its next encrypted
+  link (`AWS` + index tag until then), so it discovers again instead of
+  using cached handles. Keep the first handles (GAP, then Service Changed
+  and its CCC) as they are. No Robust Caching (Client Supported Features,
+  change-aware state, Database Out Of Sync): optional, and BTstack 1.8.1's
+  att_server does not do it.
 
 ## Stream configuration (`le_audio_presets.h`)
 
@@ -472,6 +494,12 @@ to the same value does not change it). ATT 0x80 Invalid Change Counter:
 Volume State is read again and the operation sent once more; a second
 failure is logged and the group volume falls back to what the device reports.
 Newer requests replace queued ones (no backlog when the slider moves).
+While a write and its read run, a Volume State (notified or read) with a
+setting that is neither the one before nor the one written is a change on
+the device (its buttons): it is applied when the operation is done (the
+group and Windows follow), and a 0x80 caused by it is not retried (the
+device's change is the newer one). A2DPWB's own notifications are not
+followed (no echo).
 
 **Scale.** `vcp::to_setting()` / `vcp::to_level()` map 0-127 <-> 0-255 with
 rounding; `to_level(to_setting(l)) == l` for every level (a `static_assert`
@@ -487,9 +515,9 @@ works for any number of members the core / CSIP connects):
 - `request_volume(level)` (any thread; posts to the BTstack thread) sets it
   and writes it to every member; a muted member is unmuted when the level is
   above 0;
-- a notification with another volume while A2DPWB has nothing of its own
-  pending on that device (its buttons) sets it, the other members get it
-  written, and `remote_volume()` reports it;
+- a notification with another volume (its buttons) sets it, the other
+  members get it written, and `remote_volume()` reports it - also when it
+  arrives while A2DPWB's own write to that device runs (applied after it);
 - `remote_volume()` is the group volume as 0-127 (an atomic), -1 while no VCS
   device is connected. Mute is not reported (VolumeSync syncs the level only).
 
@@ -514,10 +542,13 @@ keys would. Log lines: `VCP test: simulated Windows volume ...`.
 V[,V2]` initial volume per sink (default 100), `--vcp-muted`, `--vcp-press
 S:V[@N]` (sink N changes to V and notifies, S seconds after A2DPWB connected
 it), `--vcp-bump-counter S` (S seconds after the first read, the Change
-Counter moves without a notification). Cases: `vcp-set` (Windows -> headset,
-incl. Unmute), `vcp-remote` (button -> Windows, nothing written back),
-`vcp-change-counter` (0x80 -> re-read -> retry), `vcp-earbuds` (two earbuds:
-alignment, Windows -> both, button on one -> the other and Windows).
+Counter moves without a notification). `--vcp-press-on-write V` / `--vcp-press-before-write V`: a button sets V
+right after / just before A2DPWB's first Set Absolute Volume. Cases: `vcp-set`
+(Windows -> headset, incl. Unmute), `vcp-remote` (button -> Windows, nothing
+written back), `vcp-change-counter` (0x80 -> re-read -> retry),
+`vcp-earbuds` (two earbuds: alignment, Windows -> both, button on one -> the
+other and Windows), `vcp-press-during-write` / `vcp-press-before-write`
+(button during A2DPWB's write: Windows follows the device, no retry).
 
 **Limitations.** Relative volume opcodes and Mute are not used; mute on one
 set member is not copied to the others; Volume Flags are only logged (a
@@ -555,9 +586,11 @@ microphone / source ASE), so this is a spec-correct GTBS around an
   unknown opcodes -> Opcode Not Supported; wrong length -> ATT error 0x0D;
   results Invalid Call Index / State Mismatch / Invalid Outgoing URI / Lack
   Of Resources / Operation Not Possible. A call going Active puts the other
-  active calls on (local) hold. Order of notifications per change: the
-  control point result (to the writer), Termination Reason, Call State,
-  Bearer List Current Calls.
+  active calls on (local) hold. Order of notifications as Zephyr's
+  `tbs.c`: after a Call Control Point write Bearer List Current Calls, Call
+  State, Termination Reason, then the control point result (to the writer)
+  last; an incoming call: the list and Call State first, then Incoming Call
+  Target Bearer URI, Call Friendly Name, Incoming Call.
 - **Backend** (`ccp::Backend`, `ccp::set_backend()`): bearer values and the
   headset's requests (return a result code); events back from the telephony
   side: `incoming_call()`, `remote_alerting()`, `remote_answered()`,
@@ -612,7 +645,8 @@ microphone / source ASE), so this is a spec-correct GTBS around an
   the module does nothing.
 - **RSI** (`on_scan_result`): `result.rsi` (hash = bytes 0-2, prand = bytes
   3-5, least significant octet first) is checked with sih against every known
-  SIRK (results cached per RSI); a match sets `set_id`, `le_audio` and `note`
+  SIRK (results cached per RSI, the last 256 RSIs); a match sets `set_id`,
+  `le_audio` and `note`
   ("member of coordinated set N (2 devices)"). An RSI of an unknown set is
   left alone (the core logs "set member (RSI)").
 - **prepare_group** (worker): waits (6 s at most) for the CSIS reads of the
@@ -626,6 +660,17 @@ microphone / source ASE), so this is a spec-correct GTBS around an
   coordinated set N found", the stream goes to the members available
   (plan_stream then downmixes when only FL or FR is left). Log line for the
   result: "CSIP: streaming to coordinated set N, k of n members: ...".
+- **Lock / Ordered Access** (CSIP 4.6 / 4.7): when every member of the set
+  has a Set Member Lock, `prepare_group` writes Locked (0x02) to the members
+  in rank order before the stream is set up ("CSIP: coordinated set N
+  locked"); `on_stream_state` (the stream runs, or it stopped / failed)
+  releases them in reverse order, at the latest after 50 s. Lock Denied
+  (0x80: another coordinator holds a member): the members already locked
+  are released, then up to 5 attempts with a growing random back-off; after
+  that, or on any other error, the stream is set up without the lock
+  (warning). A member without the (optional) lock: ordered access without
+  locking. A lock notification Unlocked (the member's lock timeout) and a
+  disconnect (the member releases the lock) clear the module's lock state.
 - **Link loss of a member**: the core reports the stream lost; the worker
   (CLI / GUI) sets it up again with the device it was given; `prepare_group`
   picks up the members still connected and looks for the missing ones again.
@@ -646,19 +691,22 @@ microphone / source ASE), so this is a spec-correct GTBS around an
   (`--csip-size`), rank = index + 1 (`--csip-ranks 2,1`), an unlocked lock,
   and an RSI in the advertising data (the name shrinks to 3 characters to fit
   31 bytes). The CSIS is a primary service, not included by the CAS of
-  `bap.py`. `--csip-missing`: the second earbud stops advertising.
+  `bap.py`. `--csip-missing`: the second earbud stops advertising. The lock
+  has the CSIS 5.3 semantics (Bumble's is a plain value; "CSIS lock: ..." in
+  `sink.log`); `--csip-lock-deny N[@S]`: sink S (default 1) denies the first
+  N lock requests; `--csip-no-lock`: no Set Member Lock.
 - **Cases**: `csip-set` (only the first earbud's address is passed:
   `Case.first_address_only`; L to one, R to the other), `csip-encrypted-sirk`
   (ranks 2,1: the found earbud comes first), `csip-missing-member` (one CIS,
   mono downmix, warning), `csip-both-named` (both addresses given: no
   duplicates, no scan), `csip-link-loss` (the named earbud drops its link;
-  the other stays connected and is reused).
-- **Not implemented**: the lock / Ordered Access procedure (the lock is read
-  and logged only, never written: A2DPWB sets the stream up on all members
-  without locking the set first, which matters only when another
-  coordinator works on the same set at the same time), notifications of
-  SIRK / size / rank changes, OOB-only SIRKs (ATT error 0x80 is logged), more
-  than one CSIS per device, sets that need more than `MAX_NR_CIS` (4) CIS.
+  the other stays connected and is reused), `csip-lock-denied` (Lock Denied
+  twice, then the set is locked), `csip-no-lock` (no lock: streams
+  unlocked). The lock / release order at the sinks is checked in every case.
+- **Not implemented**: notifications of SIRK / size / rank changes,
+  OOB-only SIRKs (ATT error 0x83 is logged), more than one CSIS per device,
+  sets that need more than `MAX_NR_CIS` (4) CIS; the lock is only taken for
+  the stream set-up (not for stop or volume, which BAP / VCP do per device).
   Verified only against the Bumble emulator (public
   addresses; no RPAs / address resolution, no rotating RSIs).
 
@@ -674,7 +722,10 @@ GMCS (0x1849, encrypted link required): Media Player Name, Track Changed,
 Track Title, Track Duration, Track Position (also writable: seek), Playback
 Speed, Seeking Speed (always 0), Media State, Media Control Point, Opcodes
 Supported, Content Control ID (`CCID_GMCS`). Reads with offsets (Read Blob)
-are served by `GattServer`; notifications of the text values are cut to
+are served by `GattServer`; a long read of the player name or track title
+whose value changes between its parts fails with ATT 0x80 (Value Changed
+During Read Long, `GattServer::read_offset()` / `fail_read()` as in CCP);
+notifications of the text values are cut to
 ATT_MTU - 3 at a UTF-8 character boundary (BTstack's `att_server_notify`
 does not cut values longer than the MTU itself, so a module must).
 
@@ -694,8 +745,9 @@ become media keys as for AVRCP buttons (Play and Pause both the Play/Pause
 toggle) and Move Relative answers Media Player Inactive (with a player
 that cannot seek: Opcode Not Supported). Other opcodes:
 Opcode Not Supported; a wrong length: Command Cannot Be Completed; the
-"media keys" setting off: Command Cannot Be Completed; a write from a client
-that has not enabled control point notifications: ATT error 0xFD. The result
+"media keys" setting off: Command Cannot Be Completed. A write from a client
+that has not enabled control point notifications is carried out all the
+same, only without the result notification (as Zephyr's `mcs.c`). The result
 notification is sent after the ATT write response (`post()`).
 
 **Dry run**: `--mcp-dry-run`, and always with `--hci-tcp` (the emulator),
@@ -741,10 +793,17 @@ reads every characteristic, subscribes, writes `--mcp-ops` (`play`,
 `pause!` = with response, `next`, `prev`, `stop`, `move-relative:<0.01 s>`,
 `0xNN`, `raw:<hex>`) and logs reads, notifications and results.
 `--mcp-unsubscribed-write` writes Play before subscribing; `--mcp-mtu N`
-limits the sink's ATT MTU (A2DPWB negotiates it). Every sink logs the
-metadata of each ASE Enable. Cases (all with `--mcp-dry-run`): `mcp-read`,
+limits the sink's ATT MTU (A2DPWB negotiates it); `--mcp-long-read-race`
+reads the first part of the title, sends Next Track and reads the rest;
+`--mcp-resume` (with `--drop-link-after`): on the reconnection the client
+does not subscribe again and expects the notifications anyway;
+`--mcp-check-db-hash` computes the Database Hash of A2DPWB's GATT server
+from what it reads and compares. Every sink logs the metadata of each ASE
+Enable. Cases (all with `--mcp-dry-run`): `mcp-read` (+ Database Hash),
 `mcp-control` (MTU 64: long read of the title, cut notifications),
-`mcp-unsupported`, `mcp-ccid` (earbuds: CCID List [1] + Media on both).
+`mcp-unsupported` (incl. the unsubscribed Play: carried out, no
+notification), `mcp-ccid` (earbuds: CCID List [1] + Media on both),
+`mcp-long-read` (0x80), `mcp-resume` (persistent CCC of a bonded client).
 
 ### Limitations
 
@@ -752,8 +811,6 @@ metadata of each ASE Enable. Cases (all with `--mcp-dry-run`): `mcp-read`,
   running player through a harness); commands to real players (SMTC and the
   media-key fallback) were not exercised by the tests, which never control
   the PC's players.
-- No Value Changed During Read Operation (0x80) for long reads across a
-  change: `GattServer` read callbacks do not see the offset.
 - No Fast Forward / Fast Rewind / Seeking state, segments, groups, Playing
   Order, Media Player Icon, Search or OTS objects. Media Player Inactive is
   only answered for Move Relative without a session (the dry run, which
@@ -803,7 +860,10 @@ atomic read at stream set-up. In `adjust_stream_request()`, when it is on
 and every device of the group is a UGT with the Sink feature (waiting up
 to 5 s for role reads still queued), `preset_order` becomes `48_3_gr,
 48_4_gr, 48_1_gr, 48_2_gr, 32_1_gr, 32_2_gr` followed by the media presets,
-and `contexts = CONTEXT_GAME`. The PAC records still decide (a UGT that
+and `contexts = CONTEXT_GAME` - or `CONTEXT_MEDIA` when a device's
+Available Audio Contexts have Media but not Game (rather than
+`plan_stream()`'s fallback to Unspecified for the group; logged as "has no
+Game context available ...: Media context instead"). The PAC records still decide (a UGT that
 allows only 10 ms gets 48_4_gr, one that takes at most 80 octets 48_1_gr,
 ...). Otherwise the log says why (`low latency off`, `not a Unicast Game
 Terminal`, `UGT without the Sink feature`, `no GMAP role`) and the request
@@ -843,7 +903,9 @@ record (bap.py) already allows every `_gr` setting. Cases: `tmap-role`,
 `gmap-low-latency` (48_3_gr on one headset; Config QoS SDU interval 7500 us,
 RTN 1, 15 ms, 10 ms presentation delay on both captures), `gmap-earbuds`
 (the same on two earbuds), `gmap-off` (UGT, no flag: 48_6_2), `gmap-not-ugt`
-(GMAS with BGR only + flag: 48_6_2). The emulator's late-SDU tolerance is
+(GMAS with BGR only + flag: 48_6_2), `gmap-media-context` (UGT whose PACS
+has Media but not Game available, `--gmap-available-contexts 0x0006`:
+48_3_gr with the Media context). The emulator's late-SDU tolerance is
 at least 30 ms (`LATE_US`, 4 intervals at 7.5 ms). On a heavily loaded
 machine the 7.5 ms cases can still fail now and then with "time stamp
 step(s) differ from the SDU interval": both captures then show the
@@ -923,8 +985,14 @@ Verification
   only reading SMTC was tried.
 - [ ] Values written from memory because the specs could not be fetched:
   TBS (Bearer Technology 0x04, Signal Strength 255, ATT error 0x80 for a long
-  read that changed, notification order, ATT 0x0D for a wrong length) and
-  GMAP (Table 3.16 preset values, UGG / UGT feature bits).
+  read that changed, ATT 0x0D for a wrong length; the notification order now
+  follows Zephyr's `tbs.c`), MCS (ATT error 0x80 for a long read that
+  changed), CSIS error codes (0x80-0x84) and GMAP (Table 3.16 preset values,
+  UGG / UGT feature bits).
+- [ ] Service Changed after a database change and the Database Hash were
+  only exercised for the hash itself (`mcp-read`); the path for a client
+  bonded with an older A2DPWB has no emulator case (it needs a bond kept
+  across two runs with different databases).
 - [ ] Untested paths: a device that lost its bond, extended advertising
   scanning, rotating RSIs, CSIS included by CAS, RPAs on real devices
   (emulated: `privacy-rpa`).
@@ -939,14 +1007,14 @@ Missing features
 - [ ] Source ASEs (microphone): needed for TMAP Call Gateway, real CCP calls
   and the GMAP `_gs` configurations.
 - [ ] Broadcast (Auracast source, TMAP BMS, GMAP BGS).
-- [ ] CSIP lock / Ordered Access, SIRK / size / rank change notifications,
-  OOB-only SIRK; after a link loss the CLI reconnects only the address it was
-  given; the 10 s member search is fixed.
+- [ ] CSIP: SIRK / size / rank change notifications, OOB-only SIRK; after a
+  link loss the CLI reconnects only the address it was given; the 10 s
+  member search is fixed. (Lock / Ordered Access: done for the stream
+  set-up.)
 - [ ] VCP: "remember volume" per device, Mute and relative opcodes, mute
   mirrored to Windows, Volume Flags.
-- [ ] MCP: ATT error 0x80 for long reads (`GattServer::read_offset()` /
-  `fail_read()` from the CCP branch now make it possible), fast forward /
-  rewind and seeking state, artist in the track title.
+- [ ] MCP: fast forward / rewind and seeking state, artist in the track
+  title.
 - [ ] CCP: a real call source (softphone integration via `ccp::Backend`),
   Join, TBS instances besides GTBS, signal strength reports.
 - [ ] Show the TMAP / GMAP roles in the UI (only logged now); TMAP

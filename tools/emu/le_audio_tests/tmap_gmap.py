@@ -13,6 +13,8 @@ GMAS only with --gmap-role. The cases:
   gmap-off               UGT without --le-low-latency: the media preset
   gmap-not-ugt           GMAS with only Broadcast Game Receiver and
                          --le-low-latency: the media preset
+  gmap-media-context     a UGT whose PACS has Media but not Game available:
+                         48_3_gr with the Media context (not Unspecified)
 """
 
 import os
@@ -32,6 +34,9 @@ CASES = [
     Case('gmap-off', 'stereo', MEDIA, sink_args=UGT, tags=('gmap',)),
     Case('gmap-not-ugt', 'stereo', MEDIA, sink_args=['--gmap-role', '0x08'],
          a2dpwb_args=['--le-low-latency'], tags=('gmap',)),
+    Case('gmap-media-context', 'stereo', r'LC3 48000 Hz 7\.5 ms 90 octets, 2 channel\(s\) over 1 CIS',
+         sink_args=UGT + ['--gmap-available-contexts', '0x0006'], a2dpwb_args=['--le-low-latency'],
+         tags=('gmap', 'gmap_ll', 'gmap_media')),
 ]
 
 # Config QoS of the GMAP 48_3_gr setting (GMAP 1.0 Table 3.16), as
@@ -75,8 +80,11 @@ def check(case, ctx):
             failures.append('A2DPWB did not log the sink\'s GMAP Role ("GMAP: UGT")')
         if 'GMAP: low latency for' not in log:
             failures.append('the GMAP presets were not put first')
-        if not re.search(r'GMAP: streaming 48_3_gr, contexts 0x0008', log):
-            failures.append('not streaming 48_3_gr with the Game context')
+        context = '0x0004' if 'gmap_media' in case.tags else '0x0008'
+        if not re.search(r'GMAP: streaming 48_3_gr, contexts ' + context, log):
+            failures.append(f'not streaming 48_3_gr with the contexts {context}')
+        if 'gmap_media' in case.tags and 'has no Game context available (0x0006): Media context instead' not in log:
+            failures.append('A2DPWB did not log the Media context instead of Game')
         for side, text in (('sent', sent_report), ('received', received_report)):
             qos = ANY_QOS.findall(text)
             if not qos:

@@ -24,12 +24,20 @@
  *    out with a warning; the stream goes to the members available. A member
  *    that disconnects later makes the core report the stream lost; the
  *    worker sets it up again and prepare_group() looks for the member anew.
+ *  - Lock (CSIP 4.6 Lock Request / 4.7 Ordered Access): when every member
+ *    of the set exposes Set Member Lock, prepare_group() locks them in rank
+ *    order before the stream is set up (the set-wide BAP procedures run
+ *    under the lock) and on_stream_state() releases them in reverse order
+ *    once the stream runs or failed (at the latest after LOCK_HOLD_MAX_MS).
+ *    Lock Denied (0x80, another coordinator holds a member) releases what
+ *    was locked, waits a little and tries again; after LOCK_ATTEMPTS, or on
+ *    any other error, the stream is set up without the lock (warning), as
+ *    it is for a set whose members do not all support the lock (optional).
+ *    Lock notifications (the member released it by its lock timeout) and
+ *    disconnects (the member releases it) clear the module's lock state.
  *
- * Not implemented: the lock based Ordered Access procedure (the lock is read
- * and logged, never written: the stream is set up on all members without
- * locking the set, which only matters when another coordinator works on the
- * same set at the same time), notifications of SIRK / size / rank changes,
- * an OOB-only SIRK (CSIS error 0x80), more than one CSIS per device.
+ * Not implemented: notifications of SIRK / size / rank changes, an OOB-only
+ * SIRK (CSIS error 0x83, logged), more than one CSIS per device.
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -46,9 +54,12 @@
 #include <climits>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
+
+#include <windows.h>
 
 extern "C" {
 #include "btstack_config.h"
@@ -200,11 +211,26 @@ constexpr uint16_t UUID_CHAR_RANK = 0x2B87;   /* Set Member Rank */
 
 constexpr uint8_t SIRK_ENCRYPTED = 0x00;
 constexpr uint8_t SIRK_PLAINTEXT = 0x01;
-constexpr uint8_t ATT_ERROR_OOB_SIRK_ONLY = 0x80;
+constexpr uint8_t LOCK_UNLOCKED = 0x01;          /* Set Member Lock values */
+constexpr uint8_t LOCK_LOCKED = 0x02;
+constexpr uint8_t ATT_DISCONNECTED = 0x1F;       /* ATT_ERROR_HCI_DISCONNECT_RECEIVED */
+constexpr uint8_t LOCK_TIMEOUT = 0xFF;           /* no answer in LOCK_WRITE_TIMEOUT_MS (ours) */
+constexpr uint16_t PROPERTY_NOTIFY = 0x10;       /* ATT_PROPERTY_NOTIFY */
+/* CSIS application errors (CSIS 1.0.1 table 5.1) */
+constexpr uint8_t ATT_ERROR_LOCK_DENIED = 0x80;
+constexpr uint8_t ATT_ERROR_LOCK_RELEASE_NOT_ALLOWED = 0x81;
+constexpr uint8_t ATT_ERROR_INVALID_LOCK_VALUE = 0x82;
+constexpr uint8_t ATT_ERROR_OOB_SIRK_ONLY = 0x83;
+constexpr uint8_t ATT_ERROR_LOCK_ALREADY_GRANTED = 0x84;
 
 constexpr uint32_t READ_TIMEOUT_MS = 6000;      /* CSIS reads of a connected device */
 constexpr uint32_t SCAN_TIMEOUT_MS = 10000;     /* looking for the missing members */
 constexpr uint32_t CONNECT_TIMEOUT_MS = 30000;
+constexpr size_t RSI_CACHE_MAX = 256;           /* RSIs remembered (resolved or not) */
+constexpr uint32_t LOCK_WRITE_TIMEOUT_MS = 5000;
+constexpr int LOCK_ATTEMPTS = 5;                /* Lock Denied: tries before going on unlocked */
+constexpr uint32_t LOCK_BACKOFF_MS = 300;       /* times the attempt, plus up to 200 ms random */
+constexpr uint32_t LOCK_HOLD_MAX_MS = 50000;    /* released by then even without on_stream_state() */
 
 using csip::Key;
 
@@ -231,6 +257,8 @@ struct Member {
     int size = 0;               /* 0: not exposed */
     int rank = 0;               /* 0: not exposed */
     int lock = 0;               /* 0: not exposed, 1 unlocked, 2 locked */
+    uint16_t lock_handle = 0;   /* Set Member Lock value handle, 0: none */
+    bool we_locked = false;     /* A2DPWB holds this member's lock */
     int set = -1;               /* index into sets_ */
     std::vector<std::function<void(bool)>> waiters;
 };
@@ -247,6 +275,18 @@ struct Stored {
     int size = 0;
     int rank = 0;
 };
+
+/* The device an advertiser is: the identity its RPA resolved to (SM, a
+ * bonded device), else the advertised address */
+const LeAddr &scan_identity(const ScanResult &r) { return r.resolved ? r.identity : r.addr; }
+
+bool same_addr(const LeAddr &a, const LeAddr &b) { return memcmp(a.addr, b.addr, 6) == 0; }
+
+/* An advertiser is this device: its identity (LeAudioDevice::addr once SM
+ * knows it) or the address of its current link */
+bool is_device(const ScanResult &r, const LeAudioDevice &d) {
+    return same_addr(scan_identity(r), d.addr) || same_addr(r.addr, d.addr) || same_addr(r.addr, d.peer_addr);
+}
 
 /* A member as the worker sees it */
 struct Snap {
@@ -266,6 +306,7 @@ public:
         members_.clear();
         sets_.clear();
         rsi_cache_.clear();
+        rsi_order_.clear();
         crypto_ok_ = csip::self_test();
         if (crypto_ok_)
             LOG_INFO("CSIP: crypto self-check passed (sih, sef against the CSIS sample data)");
@@ -278,6 +319,17 @@ public:
         members_.clear();
         sets_.clear();
         rsi_cache_.clear();
+        rsi_order_.clear();
+        locked_.clear();
+        lock_timer_active_ = false;   /* the run loop has stopped: its timers are gone */
+    }
+
+    /* The stream runs (or its set-up ended): the set-wide procedures are
+     * done, release the lock */
+    void on_stream_state(const StreamStatus &status, bool streaming) override {
+        (void)status;
+        (void)streaming;
+        release_locks(nullptr);
     }
 
     void on_scan_result(ScanResult &result, const uint8_t *ad, uint16_t len) override {
@@ -293,7 +345,7 @@ public:
         } else {
             for (size_t i = 0; i < sets_.size() && set < 0; i++)
                 if (csip::rsi_matches(sets_[i].sirk, result.rsi.data())) set = (int)i;
-            rsi_cache_[key] = set;
+            cache_rsi(key, set);
         }
         if (set < 0) return;
         result.set_id = set;
@@ -307,10 +359,10 @@ public:
         /* find_members() waits for a member it has not connected yet */
         if (set == wanted_set_.load() && result.connectable && !member_seen_.load()) {
             for (LeAudioDevice *d : Core::instance().all_devices())
-                if (d->connected() && memcmp(d->addr.addr, result.addr.addr, 6) == 0) return;
+                if (d->connected() && is_device(result, *d)) return;
             std::lock_guard<std::mutex> lock(tried_mutex_);
             for (const LeAddr &a : tried_)
-                if (a == result.addr) return;
+                if (same_addr(a, scan_identity(result))) return;
             member_seen_.store(true);
         }
     }
@@ -333,6 +385,25 @@ public:
         for (const Opt &o : opts)
             if (const GattChar *c = dev.find_char(UUID_SERVICE_CSIS, o.uuid)) reads.push_back({c->value_handle, o.field});
         m.pending = 1 + (int)reads.size();
+        if (const GattChar *lock = dev.find_char(UUID_SERVICE_CSIS, UUID_CHAR_LOCK)) {
+            m.lock_handle = lock->value_handle;
+            if (lock->properties & PROPERTY_NOTIFY) {
+                /* The member tells when its lock changes: e.g. released by its
+                 * lock timeout while A2DPWB thought it held it */
+                gatt_client::listen(con, lock->value_handle, [this, id, con](const uint8_t *v, uint16_t n) {
+                    Member *x = member(id, con);
+                    if (!x || n < 1) return;
+                    x->lock = v[0];
+                    if (v[0] == LOCK_UNLOCKED && x->we_locked) {
+                        x->we_locked = false;
+                        LeAudioDevice *d = Core::instance().device(id);
+                        LOG_INFO("CSIP: %s released the lock A2DPWB held (lock timeout)",
+                                 d ? d->addr.str().c_str() : "?");
+                    }
+                });
+                gatt_client::subscribe(con, *lock, false);
+            }
+        }
         gatt_client::read(con, sirk->value_handle, [this, id, con](uint8_t status, const uint8_t *v, uint16_t n) {
             Member *x = member(id, con);
             if (!x) return;
@@ -357,12 +428,17 @@ public:
             LOG_INFO("CSIP: %s (rank %d of coordinated set %d) disconnected (0x%02x)", dev.addr.str().c_str(),
                      it->second.rank, it->second.set, reason);
         auto waiters = std::move(it->second.waiters);
+        /* A member releases the lock of a client that disconnects */
         members_.erase(it);
         for (auto &w : waiters) w(false);
     }
 
     void prepare_group(Core &core, std::vector<int> &ids, const std::function<bool()> &cancelled) override {
         if (ids.empty() || !crypto_ok_) return;
+        /* A lock left from a set-up that never reached on_stream_state()
+         * (e.g. planning failed) */
+        core.call([this](std::function<void(bool)> done) { release_locks([done]() { done(true); }); },
+                  LOCK_WRITE_TIMEOUT_MS * 2);
         for (int id : ids) wait_member(core, id, cancelled);
         std::vector<int> out;
         std::vector<int> sets_done;
@@ -407,6 +483,7 @@ public:
                          "what is available", (int)have.size(), size, me.set, SCAN_TIMEOUT_MS / 1000);
             LOG_INFO("CSIP: streaming to coordinated set %d, %d of %d members: %s", me.set, (int)have.size(), size,
                      list.c_str());
+            if (!(cancelled && cancelled())) lock_set(core, me.set, have, cancelled);
         }
         ids = out;
     }
@@ -417,12 +494,17 @@ private:
     std::vector<KnownSet> sets_;
     std::vector<Stored> stored_;
     std::map<uint64_t, int> rsi_cache_;    /* RSI -> set index or -1 */
+    std::deque<uint64_t> rsi_order_;        /* rsi_cache_ keys, oldest first */
     bool crypto_ok_ = false;
     /* find_members() (worker) <-> on_scan_result() (BTstack thread) */
     std::atomic<int> wanted_set_{-1};
     std::atomic<bool> member_seen_{false};
     std::mutex tried_mutex_;
-    std::vector<LeAddr> tried_;             /* connect attempts of this search */
+    std::vector<LeAddr> tried_;             /* connect attempts of this search (identities) */
+    /* Locked members (id, con) in rank order (BTstack thread) */
+    std::vector<std::pair<int, uint16_t>> locked_;
+    btstack_timer_source_t lock_timer_{};
+    bool lock_timer_active_ = false;
 
     Member *member(int id, uint16_t con) {
         auto it = members_.find(id);
@@ -503,7 +585,182 @@ private:
         /* RSIs that did not resolve may belong to the new set */
         for (auto it = rsi_cache_.begin(); it != rsi_cache_.end();)
             it = it->second < 0 ? rsi_cache_.erase(it) : std::next(it);
+        rsi_order_.erase(std::remove_if(rsi_order_.begin(), rsi_order_.end(),
+                                        [this](uint64_t k) { return rsi_cache_.count(k) == 0; }),
+                         rsi_order_.end());
         return (int)sets_.size() - 1;
+    }
+
+    /* The RSI cache keeps the last RSI_CACHE_MAX advertised RSIs: every
+     * device around advertises its own and they rotate (RPA-like, about every
+     * 15 min), so an unbounded cache would grow for as long as A2DPWB scans */
+    void cache_rsi(uint64_t key, int set) {
+        if (rsi_cache_.emplace(key, set).second) rsi_order_.push_back(key);
+        while (rsi_order_.size() > RSI_CACHE_MAX) {
+            rsi_cache_.erase(rsi_order_.front());
+            rsi_order_.pop_front();
+        }
+    }
+
+    /* ---- Lock (CSIP 4.6 / 4.7) ---- */
+
+    /* Worker: write Set Member Lock of member id; the ATT status, LOCK_TIMEOUT
+     * without an answer */
+    uint8_t write_lock(Core &core, int id, uint8_t value, const std::function<bool()> &cancelled) {
+        auto status = std::make_shared<uint8_t>(LOCK_TIMEOUT);
+        core.call([this, id, value, status](std::function<void(bool)> done) {
+            auto it = members_.find(id);
+            LeAudioDevice *d = Core::instance().device(id);
+            if (it == members_.end() || !it->second.lock_handle || !d || d->acl != it->second.con) {
+                *status = ATT_DISCONNECTED;
+                done(true);
+                return;
+            }
+            const uint16_t con = it->second.con;
+            gatt_client::write(con, it->second.lock_handle, {value},
+                               [this, id, con, value, status, done](uint8_t st) {
+                *status = st;
+                if (Member *m = member(id, con)) {
+                    if (value == LOCK_LOCKED && (st == 0 || st == ATT_ERROR_LOCK_ALREADY_GRANTED)) {
+                        m->we_locked = true;
+                        m->lock = LOCK_LOCKED;
+                        locked_.push_back({id, con});
+                    } else if (value == LOCK_UNLOCKED && st == 0) {
+                        m->we_locked = false;
+                        m->lock = LOCK_UNLOCKED;
+                    }
+                }
+                done(true);
+            });
+        }, LOCK_WRITE_TIMEOUT_MS, cancelled);
+        return *status;
+    }
+
+    static const char *lock_error(uint8_t st) {
+        switch (st) {
+        case ATT_ERROR_LOCK_DENIED: return "Lock Denied";
+        case ATT_ERROR_LOCK_RELEASE_NOT_ALLOWED: return "Lock Release Not Allowed";
+        case ATT_ERROR_INVALID_LOCK_VALUE: return "Invalid Lock Value";
+        case ATT_ERROR_LOCK_ALREADY_GRANTED: return "Lock Already Granted";
+        case ATT_DISCONNECTED: return "disconnected";
+        case LOCK_TIMEOUT: return "no answer";
+        default: return "error";
+        }
+    }
+
+    /* Worker: lock the members of a set (have: in rank order). Lock Denied:
+     * release, back off, try again. Without the lock (not supported by
+     * every member, or not granted) the stream is set up all the same. */
+    void lock_set(Core &core, int set, const std::vector<Snap> &have, const std::function<bool()> &cancelled) {
+        auto handles = std::make_shared<std::vector<uint16_t>>();
+        std::vector<int> ids;
+        for (const Snap &s : have) ids.push_back(s.id);
+        core.run([this, ids, handles]() {
+            for (int id : ids) {
+                auto it = members_.find(id);
+                handles->push_back(it == members_.end() ? 0 : it->second.lock_handle);
+            }
+        });
+        if (handles->size() != have.size() ||
+            std::any_of(handles->begin(), handles->end(), [](uint16_t h) { return h == 0; })) {
+            LOG_INFO("CSIP: coordinated set %d: not every member has a Set Member Lock: ordered access without "
+                     "locking", set);
+            return;
+        }
+        for (int attempt = 1; attempt <= LOCK_ATTEMPTS && !(cancelled && cancelled()); attempt++) {
+            std::vector<int> got;
+            uint8_t error = 0;
+            const Snap *refused = nullptr;
+            for (const Snap &s : have) {
+                uint8_t st = write_lock(core, s.id, LOCK_LOCKED, cancelled);
+                if (st == 0 || st == ATT_ERROR_LOCK_ALREADY_GRANTED) {
+                    got.push_back(s.id);
+                    continue;
+                }
+                error = st;
+                refused = &s;
+                break;
+            }
+            if (!error) {
+                core.run([this]() { start_lock_timer(); });
+                LOG_INFO("CSIP: coordinated set %d locked (%d member(s), in rank order)", set, (int)have.size());
+                return;
+            }
+            /* Release what was locked, highest rank first */
+            for (auto it = got.rbegin(); it != got.rend(); ++it) write_lock(core, *it, LOCK_UNLOCKED, {});
+            core.run([this]() {
+                locked_.erase(std::remove_if(locked_.begin(), locked_.end(),
+                                             [this](const std::pair<int, uint16_t> &l) {
+                                                 Member *m = member(l.first, l.second);
+                                                 return !m || !m->we_locked;
+                                             }), locked_.end());
+            });
+            if (error != ATT_ERROR_LOCK_DENIED) {
+                LOG_WARN("CSIP: coordinated set %d: locking %s failed: %s (0x%02x): streaming without the lock", set,
+                         refused->addr.str().c_str(), lock_error(error), error);
+                return;
+            }
+            if (attempt == LOCK_ATTEMPTS) break;
+            const uint32_t wait = LOCK_BACKOFF_MS * attempt + (uint32_t)(GetTickCount() % 200);
+            LOG_INFO("CSIP: coordinated set %d: Lock Denied by %s (another coordinator holds it): released, trying "
+                     "again in %u ms", set, refused->addr.str().c_str(), wait);
+            for (uint32_t t = 0; t < wait && !(cancelled && cancelled()); t += 50) Sleep(50);
+        }
+        LOG_WARN("CSIP: coordinated set %d: lock not granted after %d attempts: streaming without the lock", set,
+                 LOCK_ATTEMPTS);
+    }
+
+    /* BTstack thread: release every lock A2DPWB holds, highest rank first */
+    void release_locks(std::function<void()> done) {
+        if (lock_timer_active_) {
+            btstack_run_loop_remove_timer(&lock_timer_);
+            lock_timer_active_ = false;
+        }
+        auto order = std::make_shared<std::vector<std::pair<int, uint16_t>>>(locked_.rbegin(), locked_.rend());
+        locked_.clear();
+        release_next(order, 0, std::move(done));
+    }
+
+    void release_next(std::shared_ptr<std::vector<std::pair<int, uint16_t>>> order, size_t i,
+                      std::function<void()> done) {
+        for (; i < order->size(); i++) {
+            const int id = (*order)[i].first;
+            const uint16_t con = (*order)[i].second;
+            Member *m = member(id, con);
+            if (!m || !m->we_locked || !m->lock_handle) continue;   /* gone, or released by the member */
+            gatt_client::write(con, m->lock_handle, {LOCK_UNLOCKED}, [this, order, i, id, con, done](uint8_t st) {
+                Member *x = member(id, con);
+                LeAudioDevice *d = Core::instance().device(id);
+                if (x && st == 0) x->we_locked = false;
+                if (x) x->lock = LOCK_UNLOCKED;
+                if (st == 0)
+                    LOG_INFO("CSIP: %s: lock released", d ? d->addr.str().c_str() : "?");
+                else if (st != ATT_DISCONNECTED)
+                    LOG_WARN("CSIP: %s: releasing the lock failed: %s (0x%02x)", d ? d->addr.str().c_str() : "?",
+                             lock_error(st), st);
+                if (x) x->we_locked = false;
+                release_next(order, i + 1, done);
+            });
+            return;
+        }
+        if (done) done();
+    }
+
+    void start_lock_timer() {
+        if (lock_timer_active_) btstack_run_loop_remove_timer(&lock_timer_);
+        btstack_run_loop_set_timer_handler(&lock_timer_, &CsipModule::lock_timer_handler);
+        btstack_run_loop_set_timer_context(&lock_timer_, this);
+        btstack_run_loop_set_timer(&lock_timer_, LOCK_HOLD_MAX_MS);
+        btstack_run_loop_add_timer(&lock_timer_);
+        lock_timer_active_ = true;
+    }
+
+    static void lock_timer_handler(btstack_timer_source_t *ts) {
+        auto *self = static_cast<CsipModule *>(btstack_run_loop_get_timer_context(ts));
+        self->lock_timer_active_ = false;
+        if (self->locked_.empty()) return;
+        LOG_WARN("CSIP: the set is still locked %u s after locking it: releasing", LOCK_HOLD_MAX_MS / 1000);
+        self->release_locks(nullptr);
     }
 
     /* ---- Persistence: the SIRK of bonded devices ---- */
@@ -638,13 +895,23 @@ private:
         LOG_INFO("CSIP: coordinated set %d: %d of %d members connected, looking for the others (up to %u s)", set,
                  (int)have.size(), size, SCAN_TIMEOUT_MS / 1000);
         auto is_cancelled = [&cancelled]() { return cancelled && cancelled(); };
-        auto known = [&have](const LeAddr &a) {
-            return std::any_of(have.begin(), have.end(),
-                               [&a](const Snap &s) { return memcmp(s.addr.addr, a.addr, 6) == 0; });
+        /* Members already in the set by device id (an RPA of a connected
+         * member resolves to its identity, or is its current link address) */
+        auto known = [&core, &have](const ScanResult &r) {
+            auto hit = std::make_shared<bool>(false);
+            std::vector<int> ids;
+            for (const Snap &s : have) ids.push_back(s.id);
+            const ScanResult copy = r;
+            core.run([ids, copy, hit]() {
+                for (int id : ids)
+                    if (LeAudioDevice *d = Core::instance().device(id))
+                        if (is_device(copy, *d)) *hit = true;
+            });
+            return *hit;
         };
         auto was_tried = [this](const LeAddr &a) {
             std::lock_guard<std::mutex> lock(tried_mutex_);
-            return std::any_of(tried_.begin(), tried_.end(), [&a](const LeAddr &t) { return t == a; });
+            return std::any_of(tried_.begin(), tried_.end(), [&a](const LeAddr &t) { return same_addr(t, a); });
         };
         {
             std::lock_guard<std::mutex> lock(tried_mutex_);
@@ -661,10 +928,10 @@ private:
             auto results = core.scan((uint32_t)left.count(), stop_scan);
             for (const ScanResult &r : results) {
                 if ((int)have.size() >= size || is_cancelled()) break;
-                if (r.set_id != set || !r.connectable || known(r.addr) || was_tried(r.addr)) continue;
+                if (r.set_id != set || !r.connectable || known(r) || was_tried(scan_identity(r))) continue;
                 {
                     std::lock_guard<std::mutex> lock(tried_mutex_);
-                    tried_.push_back(r.addr);
+                    tried_.push_back(scan_identity(r));
                 }
                 LOG_INFO("CSIP: %s \"%s\" resolves to coordinated set %d (RSI): connecting it", r.addr.str().c_str(),
                          r.name.c_str(), set);

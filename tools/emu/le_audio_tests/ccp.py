@@ -73,23 +73,27 @@ EXPECT = {
         r'CCP: read Bearer Signal Strength Reporting Interval = 0x05',
     ],
     'ccp-incoming-accept': [
+        # Order of Zephyr's tbs.c: Call State (and the list) before the
+        # incoming call's own characteristics
+        r'CCP: notify Call State \[1 Incoming flags 0x00\]',
         rf"CCP: notify Incoming Call Target Bearer URI call 1 '{re.escape(TARGET)}'",
         # Cut to ATT_MTU - 3 = 61 bytes: index + 60 bytes of the name
         rf"CCP: notify Call Friendly Name call 1 '{re.escape(CALLER_NAME[:60])}' \(61 bytes\)",
         rf"CCP: notify Incoming Call call 1 '{re.escape(CALLER)}'",
-        r'CCP: notify Call State \[1 Incoming flags 0x00\]',
         rf'CCP: incoming call 1 from {re.escape(CALLER)}',
         rf'CCP: read Bearer List Current Calls = \[1 Incoming flags 0x00 {re.escape(CALLER)}\]',
         rf"CCP: read Incoming Call Target Bearer URI = call 1 '{re.escape(TARGET)}'",
         rf"CCP: read Call Friendly Name = call 1 '{re.escape(CALLER_NAME)}' \(64 bytes\)",
+        # After a control point write: the new Call State, then the result
+        r'CCP: notify Call State \[1 Active flags 0x00\]',
         r'CCP: notify Call Control Point Accept call 1 -> Success',
-        r'CCP: notify Call State \[1 Active flags 0x00\]',
-        r'CCP: notify Call Control Point Local Hold call 1 -> Success',
         r'CCP: notify Call State \[1 Locally Held flags 0x00\]',
-        r'CCP: notify Call Control Point Local Retrieve call 1 -> Success',
+        r'CCP: notify Call Control Point Local Hold call 1 -> Success',
         r'CCP: notify Call State \[1 Active flags 0x00\]',
-        r'CCP: notify Termination Reason call 1 reason 0x02',
+        r'CCP: notify Call Control Point Local Retrieve call 1 -> Success',
+        # The far end hangs up: Call State, then Termination Reason
         r'CCP: notify Call State \[\]',
+        r'CCP: notify Termination Reason call 1 reason 0x02',
     ],
     'ccp-terminate': [
         r'CCP: incoming call 1 from',
@@ -98,10 +102,10 @@ EXPECT = {
         rf'CCP: read Bearer List Current Calls = \[1 Active flags 0x00 {re.escape(CALLER)}, '
         rf'2 Incoming flags 0x00 {re.escape(SECOND)}\] \(76 bytes\)',
         r'CCP: read-race: Read Blob -> ATT error 0x80',
-        r'CCP: notify Call Control Point Terminate call 2 -> Success',
         r'CCP: notify Termination Reason call 2 reason 0x06',
-        r'CCP: notify Call Control Point Terminate call 1 -> Success',
+        r'CCP: notify Call Control Point Terminate call 2 -> Success',
         r'CCP: notify Termination Reason call 1 reason 0x06',
+        r'CCP: notify Call Control Point Terminate call 1 -> Success',
     ],
     'ccp-invalid': [
         r'CCP: notify Call Control Point Accept call 9 -> Invalid Call Index',
@@ -111,14 +115,15 @@ EXPECT = {
         r'CCP: CP raw 00 -> ATT error 0x0d',
         r'CCP: notify Call Control Point Originate call 0 -> Invalid Outgoing URI',
         r'CCP: notify Call Control Point Originate call 0 -> Invalid Outgoing URI',
-        r'CCP: notify Call Control Point Originate call 1 -> Success',
         r'CCP: notify Call State \[1 Dialing flags 0x01\]',
+        r'CCP: notify Call Control Point Originate call 1 -> Success',
         r'CCP: notify Call Control Point Accept call 1 -> State Mismatch',
         r'CCP: notify Call Control Point Local Retrieve call 1 -> State Mismatch',
         r'CCP: notify Call State \[1 Alerting flags 0x01\]',
         r'CCP: notify Call State \[1 Active flags 0x01\]',
         r'CCP: notify Call Control Point Local Hold call 1 -> Success',
         r'CCP: notify Call Control Point Local Retrieve call 1 -> Success',
+        r'CCP: notify Termination Reason call 1 reason 0x06',
         r'CCP: notify Call Control Point Terminate call 1 -> Success',
         r'CCP: call 1 ended, reason 0x06',
     ],

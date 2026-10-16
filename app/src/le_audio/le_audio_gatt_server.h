@@ -27,6 +27,19 @@
  * services cannot be added later. notify() / indicate() must be called on
  * the BTstack thread; they queue until ATT can send.
  *
+ * Bonded clients: the CCC values a bonded client wrote persist across
+ * connections and sessions. BTstack's att_server does that (it stores every
+ * CCC write of a bonded client in the bond TLV, keyed by the le_device_db
+ * index = the identity, and replays them through write_cb() when the link is
+ * encrypted again); the server keeps only the live values per connection
+ * (ccc_), and those of an unbonded client are gone with its link. The GATT
+ * service has Service Changed and a Database Hash (Core Vol 3 Part G 7.3,
+ * computed in start()). When the database differs from the one the stored CCC
+ * values were written for (another A2DPWB version), start() drops them and
+ * a bonded client that had Service Changed indications enabled gets a
+ * Service Changed indication (whole range) on its next encrypted link, so it
+ * discovers the services again instead of using cached handles.
+ *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
@@ -89,6 +102,7 @@ public:
     uint16_t read_cb(uint16_t con, uint16_t handle, uint16_t offset, uint8_t *buffer, uint16_t buffer_size);
     int write_cb(uint16_t con, uint16_t handle, uint16_t mode, uint16_t offset, uint8_t *buffer, uint16_t size);
     void can_send_now(uint16_t con);
+    void on_hci_event(const uint8_t *packet, uint16_t size);
 
 private:
     struct Attr {
@@ -111,6 +125,11 @@ private:
     uint16_t last_handle_ = 0;
     uint16_t read_offset_ = 0;
     uint8_t read_error_ = 0;
+    uint16_t service_changed_ = 0;                        /* value handle (CCC: + 1) */
+    uint16_t db_hash_handle_ = 0;                         /* Database Hash value handle */
+    uint8_t db_hash_[16] = {};                            /* as sent: least significant octet first */
+    void compute_db_hash();
+    void check_stored_client_configs();
     void send_pending(uint16_t con);
     bool queue(uint16_t con, uint16_t handle, bool indication, const std::vector<uint8_t> &value);
 };

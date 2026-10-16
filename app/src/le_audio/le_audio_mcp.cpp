@@ -20,8 +20,11 @@
  *                                               Track, + Move Relative if seekable
  *   Content Control ID (0x2BBA)  read           CCID_GMCS, also in the CCID List
  *                                               of a media stream's Enable metadata
- * Long values: reads with offsets are served by GattServer (Read Blob);
- * notifications are cut to ATT_MTU - 3 at a UTF-8 character boundary.
+ * Long values: reads with offsets are served by GattServer (Read Blob); a
+ * long read of the player name or track title whose value changes between
+ * its parts fails with "Value Changed During Read Long" (ATT 0x80, an MCS
+ * application error); notifications are cut to ATT_MTU - 3 at a UTF-8
+ * character boundary.
  *
  * The Windows side (player state from the System Media Transport Controls,
  * commands through them or as media keys) is in le_audio_mcp_media.cpp, on a
@@ -44,6 +47,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <map>
 
 extern "C" {
 #include "btstack_config.h"
@@ -69,6 +73,7 @@ constexpr uint16_t CHR_OPCODES_SUPPORTED = 0x2BA5;
 constexpr uint16_t CHR_CONTENT_CONTROL_ID = 0x2BBA;
 
 constexpr size_t MAX_TEXT = 512;               /* longest attribute value (ATT) */
+constexpr uint8_t ATT_ERROR_VALUE_CHANGED_DURING_READ_LONG = 0x80;   /* MCS application error */
 constexpr int32_t POSITION_JUMP = 200;         /* 2 s off the expected position: notify */
 
 /* Media Control Point Opcodes Supported bit of an opcode (MCS 3.19) */
@@ -137,17 +142,33 @@ public:
     void on_stack_deinit() override {
         media_backend().stop();
         last_ = MediaInfo();
+        long_reads_.clear();
+    }
+
+    void on_disconnected(LeAudioDevice &dev, uint8_t reason) override {
+        (void)dev;
+        (void)reason;
+        /* dev.acl is already invalid: keep the long reads of the links still up */
+        std::vector<uint16_t> up;
+        for (LeAudioDevice *d : Core::instance().all_devices())
+            if (d->acl != CON_HANDLE_INVALID) up.push_back(d->acl);
+        for (auto it = long_reads_.begin(); it != long_reads_.end();) {
+            const uint16_t con = (uint16_t)(it->first >> 16);
+            it = std::find(up.begin(), up.end(), con) == up.end() ? long_reads_.erase(it) : std::next(it);
+        }
     }
 
     void add_gatt_services(GattServer &server) override {
         const uint8_t enc = ATT_SECURITY_ENCRYPTED;
         server.begin_service(UUID_SERVICE_GMCS);
         h_name_ = server.add_characteristic(CHR_MEDIA_PLAYER_NAME, ATT_PROPERTY_READ | ATT_PROPERTY_NOTIFY,
-            [](uint16_t) { return name_value(media_backend().info(), MAX_TEXT); }, nullptr, enc, enc);
+            [this](uint16_t con) { return serve(con, h_name_, name_value(media_backend().info(), MAX_TEXT)); },
+            nullptr, enc, enc);
         h_track_changed_ = server.add_characteristic(CHR_TRACK_CHANGED, ATT_PROPERTY_NOTIFY,
             nullptr, nullptr, enc, enc);
         h_title_ = server.add_characteristic(CHR_TRACK_TITLE, ATT_PROPERTY_READ | ATT_PROPERTY_NOTIFY,
-            [](uint16_t) { return text_value(media_backend().info().title, MAX_TEXT); }, nullptr, enc, enc);
+            [this](uint16_t con) { return serve(con, h_title_, text_value(media_backend().info().title, MAX_TEXT)); },
+            nullptr, enc, enc);
         h_duration_ = server.add_characteristic(CHR_TRACK_DURATION, ATT_PROPERTY_READ | ATT_PROPERTY_NOTIFY,
             [](uint16_t) { return le32(media_backend().info().duration); }, nullptr, enc, enc);
         h_position_ = server.add_characteristic(CHR_TRACK_POSITION,
@@ -183,6 +204,26 @@ private:
     uint16_t h_name_ = 0, h_track_changed_ = 0, h_title_ = 0, h_duration_ = 0, h_position_ = 0;
     uint16_t h_speed_ = 0, h_state_ = 0, h_cp_ = 0, h_opcodes_ = 0;
     MediaInfo last_;                       /* BTstack thread: what clients were told */
+    /* Long reads: value given at offset 0, per (con << 16 | handle) */
+    std::map<uint32_t, std::vector<uint8_t>> long_reads_;
+
+    /* Read callback of a value that may be longer than one ATT PDU: remember
+     * what offset 0 returned; a later part (Read Blob) of a changed value
+     * fails with Value Changed During Read Long */
+    std::vector<uint8_t> serve(uint16_t con, uint16_t handle, std::vector<uint8_t> value) {
+        GattServer &server = Core::instance().gatt_server();
+        const uint32_t key = ((uint32_t)con << 16) | handle;
+        if (server.read_offset() == 0) {
+            long_reads_[key] = value;
+        } else {
+            auto it = long_reads_.find(key);
+            if (it != long_reads_.end() && it->second != value) {
+                LOG_INFO("MCP: 0x%04x changed during a long read by 0x%04x", handle, con);
+                server.fail_read(ATT_ERROR_VALUE_CHANGED_DURING_READ_LONG);
+            }
+        }
+        return value;
+    }
 
     static uint32_t opcodes(const MediaInfo &mi) {
         uint32_t ops = opcode_bit(OP_PLAY) | opcode_bit(OP_PAUSE) | opcode_bit(OP_STOP) |
@@ -229,8 +270,11 @@ private:
     }
 
     void reply(uint16_t con, uint8_t op, uint8_t result) {
-        LOG_INFO("MCP: control point %s (0x%02x) -> %s", opcode_name(op), op, result_name(result));
-        Core::instance().gatt_server().notify(con, h_cp_, {op, result});
+        /* A client without control point notifications gets no result (MCS:
+         * the write is still carried out) */
+        const bool sent = Core::instance().gatt_server().notify(con, h_cp_, {op, result});
+        LOG_INFO("MCP: control point %s (0x%02x) -> %s%s", opcode_name(op), op, result_name(result),
+                 sent ? "" : " (not notified: the client did not enable it)");
     }
 
     /* Result notification after the ATT write response: post() runs it in a
@@ -241,9 +285,8 @@ private:
 
     uint8_t on_control_point(uint16_t con, const uint8_t *v, uint16_t n) {
         if (n < 1) return ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH;
-        GattServer &server = Core::instance().gatt_server();
-        if (!(server.client_config(con, h_cp_) & GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION))
-            return ATT_ERROR_CLIENT_CHARACTERISTIC_CONFIGURATION_DESCRIPTOR_IMPROPERLY_CONFIGURED;
+        /* Carried out even if the client did not enable control point
+         * notifications; only the result notification is left out (reply()) */
         const uint8_t op = v[0];
         const MediaInfo mi = media_backend().info();
         LOG_INFO("MCP: control point %s (0x%02x) from 0x%04x", opcode_name(op), op, con);

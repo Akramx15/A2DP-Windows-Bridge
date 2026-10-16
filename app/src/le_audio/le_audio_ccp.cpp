@@ -422,16 +422,16 @@ void CcpModule::notify_all(uint16_t handle, const std::vector<uint8_t> &value) {
     for (uint16_t con : Core::instance().gatt_server().clients()) notify(con, handle, value);
 }
 
-/* Send what the last change left: Termination Reason(s), then Call State and
- * Bearer List Current Calls */
+/* Send what the last change left, in the order of Zephyr's tbs.c: Bearer
+ * List Current Calls and Call State, then the Termination Reason(s) */
 void CcpModule::flush() {
-    for (const auto &t : terminations_) notify_all(h_reason_, {t.first, t.second});
-    terminations_.clear();
     if (calls_dirty_) {
         calls_dirty_ = false;
-        notify_all(h_state_, state_value());
         notify_all(h_list_, list_value());
+        notify_all(h_state_, state_value());
     }
+    for (const auto &t : terminations_) notify_all(h_reason_, {t.first, t.second});
+    terminations_.clear();
 }
 
 /* ---- Call model ---- */
@@ -500,13 +500,13 @@ uint8_t CcpModule::incoming(const std::string &uri, const std::string &name, con
     if (!c.friendly_name.empty()) friendly_index_ = c.index;
     LOG_INFO("LE Audio: CCP: incoming call %u from %s%s%s", c.index, c.uri.c_str(),
              c.friendly_name.empty() ? "" : " ", c.friendly_name.c_str());
-    /* Incoming Call Target Bearer URI, Friendly Name and Incoming Call first,
-     * then Call State / the list */
+    /* The list / Call State first (the call exists), then Incoming Call
+     * Target Bearer URI, Friendly Name and Incoming Call (as Zephyr's tbs.c) */
+    calls_dirty_ = true;
+    flush();
     if (!c.target_uri.empty()) notify_all(h_target_, target_value());
     if (!c.friendly_name.empty()) notify_all(h_friendly_, friendly_value());
     notify_all(h_incoming_, incoming_value());
-    calls_dirty_ = true;
-    flush();
     log_calls("incoming call");
     return c.index;
 }
@@ -686,9 +686,10 @@ uint8_t CcpModule::on_cp(uint16_t con, const uint8_t *v, uint16_t n) {
     }
     LOG_INFO("LE Audio: CCP: control point %s (0x%02x) call %u from 0x%04x -> %s", op_name(op), op, index, con,
              result_name(result));
-    /* The result to the writer first, then what changed */
-    notify(con, h_cp_, {op, index, result});
+    /* What changed first (list, Call State, Termination Reason), the result
+     * to the writer last, as Zephyr's tbs.c does */
     flush();
+    notify(con, h_cp_, {op, index, result});
     if (result == RESULT_SUCCESS) log_calls(op_name(op));
     return 0;
 }

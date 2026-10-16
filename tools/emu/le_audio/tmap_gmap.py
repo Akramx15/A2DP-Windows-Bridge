@@ -12,10 +12,14 @@ covers all of GMAP's UGG -> UGT configurations (32_1_gr ... 48_4_gr).
 sink reads A2DPWB's TMAS / GMAS (Read By Type) and logs
 "peer TMAP Role 0x0004 (UMS)" / "peer GMAP Role 0x01 (UGG), UGG Features
 0x03" to sink.log for the run_test.py checks.
+
+--gmap-available-contexts 0xNNNN replaces the sink's Available Audio
+Contexts (PACS) after bap.py set them up, e.g. Media without Game.
 """
 
 import asyncio
 import logging
+import struct
 
 from bumble import gatt
 from bumble.device import Peer
@@ -41,9 +45,15 @@ def add_arguments(parser):
                         help='UGT Features of the GMAS (e.g. 0x3C: sink, 64 kbps sink, multiplex, multisink)')
     parser.add_argument('--tmap-read-peer', action='store_true',
                         help='read and log A2DPWB\'s TMAP / GMAP roles once it connected')
+    parser.add_argument('--gmap-available-contexts', type=lambda s: int(s, 0),
+                        help='Available Audio Contexts (sink) of the PACS instead of bap.py\'s, e.g. 0x0006 '
+                             '(Conversational + Media, no Game)')
 
 
 def configure_sink(sink, args):
+    pacs = sink.state.get('bap', {}).get('pacs')
+    if args.gmap_available_contexts is not None and pacs is not None:
+        pacs.available_audio_contexts.value = struct.pack('<HH', args.gmap_available_contexts, 0)
     if args.tmap_role:
         sink.device.add_service(TelephonyAndMediaAudioService(Role(args.tmap_role)))
     if args.gmap_role:
