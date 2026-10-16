@@ -27,7 +27,13 @@ int percent(int level) { return (level * 100 + 63) / 127; }
 
 } /* namespace */
 
-VolumeSync::VolumeSync(const std::wstring &device_id) : fixed_id_(device_id) {}
+VolumeTarget VolumeTarget::avrcp() {
+    return {[]() { return BtStackTransport::remote_volume(); },
+            [](uint8_t level) { BtStackTransport::request_volume(level); }};
+}
+
+VolumeSync::VolumeSync(const std::wstring &device_id, VolumeTarget target)
+    : target_(std::move(target)), fixed_id_(device_id) {}
 
 VolumeSync::~VolumeSync() {
     stop();
@@ -111,7 +117,7 @@ void VolumeSync::tick(bool enabled) {
         stop();
         return;
     }
-    int headphones = BtStackTransport::remote_volume();
+    int headphones = target_.remote_volume ? target_.remote_volume() : -1;
     if (headphones < 0) {
         /* No AVRCP volume (yet, or the link dropped): when it comes back,
          * Windows takes over the headphones' volume again */
@@ -143,7 +149,7 @@ void VolumeSync::tick(bool enabled) {
     }
     if (windows != last_windows_) {
         /* Volume keys, the flyout or the mixer: the headphones follow */
-        BtStackTransport::request_volume(static_cast<uint8_t>(windows));
+        if (target_.request_volume) target_.request_volume(static_cast<uint8_t>(windows));
         last_windows_ = windows;
         last_headphones_ = windows;
         hold_until_ = now + HOLD_MS;

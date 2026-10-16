@@ -28,6 +28,7 @@
 #include "bt_device.h"
 #include "localization.h"
 #include "volume_sync.h"
+#include "le_audio/le_audio_core.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -623,6 +624,11 @@ void A2dpService::load_saved_devices() {
         dev.name = sep + 1;
         dev.audio_device = true;
         dev.saved = true;
+        /* "addr|name|le": an LE Audio device (experimental) */
+        if (dev.name.size() >= 3 && dev.name.compare(dev.name.size() - 3, 3, "|le") == 0) {
+            dev.name.resize(dev.name.size() - 3);
+            dev.le_audio = true;
+        }
 
         unsigned a[6];
         if (sscanf(line, "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -634,14 +640,31 @@ void A2dpService::load_saved_devices() {
     fclose(f);
 }
 
-void A2dpService::save_device(const char *addr_str, const std::string &name) {
+void A2dpService::save_device(const char *addr_str, const std::string &name, bool le_audio) {
     std::lock_guard<std::mutex> lock(device_mutex_);
 
+    bool found = false;
     for (auto &d : device_list_) {
         if (d.addr_str == addr_str) {
             d.name = name;
             d.saved = true;
+            d.le_audio |= le_audio;
+            found = true;
             break;
+        }
+    }
+    if (!found && le_audio) {
+        /* An LE Audio device connected by address: remember it too */
+        DeviceEntry d{};
+        unsigned a[6];
+        if (sscanf_s(addr_str, "%02X:%02X:%02X:%02X:%02X:%02X", &a[0], &a[1], &a[2], &a[3], &a[4], &a[5]) == 6) {
+            for (int i = 0; i < 6; i++) d.address[i] = static_cast<uint8_t>(a[i]);
+            d.addr_str = addr_str;
+            d.name = name;
+            d.audio_device = true;
+            d.saved = true;
+            d.le_audio = true;
+            device_list_.push_back(std::move(d));
         }
     }
 
@@ -652,9 +675,14 @@ void A2dpService::save_device(const char *addr_str, const std::string &name) {
 
     for (auto &d : device_list_) {
         if (d.saved)
-            fprintf(f, "%s|%s\n", d.addr_str.c_str(), d.name.c_str());
+            fprintf(f, "%s|%s%s\n", d.addr_str.c_str(), d.name.c_str(), d.le_audio ? "|le" : "");
     }
     fclose(f);
+}
+
+void A2dpService::set_le_audio_enabled(bool enabled) {
+    le_audio_enabled_.store(enabled);
+    le_audio::Core::instance().set_enabled(enabled);
 }
 
 void A2dpService::delete_saved_device(int index) {
@@ -679,7 +707,7 @@ void A2dpService::delete_saved_device(int index) {
 
     for (auto &dd : device_list_) {
         if (dd.saved)
-            fprintf(f, "%s|%s\n", dd.addr_str.c_str(), dd.name.c_str());
+            fprintf(f, "%s|%s%s\n", dd.addr_str.c_str(), dd.name.c_str(), dd.le_audio ? "|le" : "");
     }
     fclose(f);
 }
@@ -984,9 +1012,43 @@ void A2dpService::scan_thread_func_inner() {
         }
     }
 
-    char msg[64];
+    /* LE Audio (experimental): LE scan for LE Audio devices as well */
+    size_t le_found = 0;
+    le_audio::Core &le = le_audio::Core::instance();
+    for (int i = 0; i < 30 && le.enabled() && !le.ready(); i++) Sleep(100);
+    if (le.enabled() && le.ready()) {
+        notify_state(state_.load(), L("status.le_scanning"));
+        auto le_results = le.scan(5000);
+        std::lock_guard<std::mutex> lock(device_mutex_);
+        for (const auto &r : le_results) {
+            if (!r.le_audio) continue;
+            le_found++;
+            std::string addr = r.addr.str();
+            bool exists = false;
+            for (auto &existing : device_list_) {
+                if (existing.addr_str == addr) {
+                    if (!r.name.empty()) existing.name = r.name;
+                    existing.le_audio = true;
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                DeviceEntry sd{};
+                memcpy(sd.address, r.addr.addr, 6);
+                sd.name = r.name;
+                sd.addr_str = addr;
+                sd.audio_device = true;
+                sd.saved = false;
+                sd.le_audio = true;
+                device_list_.push_back(std::move(sd));
+            }
+        }
+    }
+
+    char msg[96];
     snprintf(msg, sizeof(msg), "Scan complete: %zu device(s) found",
-             transport_->get_discovered_devices().size());
+             transport_->get_discovered_devices().size() + le_found);
     notify_state(state_.load(), msg);
 
     scanning_.store(false);
@@ -1095,6 +1157,13 @@ void A2dpService::streaming_thread_func_inner() {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     auto &p = active_profile_;
+
+    if (p.le_audio) {
+        /* LE Audio device (experimental): its own flow */
+        le_audio_streaming_thread_inner();
+        CoUninitialize();
+        return;
+    }
 
     LOG_INFO("A2dpService: streaming_thread started");
     LOG_INFO("A2dpService:   codec=%s quality=%s bit_depth=%u sample_rate=%u",

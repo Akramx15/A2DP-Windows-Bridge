@@ -43,6 +43,9 @@ struct ConnectionProfile {
     bool test_tone = false;       /* runtime only, not saved: send the test tone
                                    * (test_tone.h) instead of captured audio */
     uint16_t max_media_payload = MEDIA_PAYLOAD_LIMIT_DEFAULT; /* max media packet size (media_payload_limit.h) */
+    /* LE Audio device (experimental): stream LC3 over LE (le_audio/), not
+     * A2DP; codec / quality / bit depth do not apply */
+    bool le_audio = false;
 };
 
 class ProfileManager {

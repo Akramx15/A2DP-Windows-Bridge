@@ -17,18 +17,28 @@
 #ifndef VOLUME_SYNC_H
 #define VOLUME_SYNC_H
 
+#include <cstdint>
+#include <functional>
 #include <string>
 #include <windows.h>
 
 struct IMMDeviceEnumerator;
 struct IAudioEndpointVolume;
 
+/* Where the headphone volume lives: AVRCP absolute volume (A2DP, default)
+ * or, for LE Audio, le_audio::Core (the VCP module). Levels 0-127. */
+struct VolumeTarget {
+    std::function<int()> remote_volume;        /* -1 = unknown */
+    std::function<void(uint8_t)> request_volume;
+    static VolumeTarget avrcp();
+};
+
 class VolumeSync {
 public:
     /* device_id: the output device whose volume to sync, or empty for the
      * Windows default output device (followed when it changes). COM must be
      * initialized on the calling thread. */
-    explicit VolumeSync(const std::wstring &device_id = L"");
+    explicit VolumeSync(const std::wstring &device_id = L"", VolumeTarget target = VolumeTarget::avrcp());
     ~VolumeSync();
 
     VolumeSync(const VolumeSync &) = delete;
@@ -48,6 +58,7 @@ private:
     void detach();
     int read_level() const;  /* 0-127, -1 = unknown */
 
+    VolumeTarget target_;
     std::wstring fixed_id_;  /* empty = default output device */
     std::wstring id_;        /* device in use */
     IMMDeviceEnumerator *enumerator_ = nullptr;

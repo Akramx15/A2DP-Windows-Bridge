@@ -56,6 +56,7 @@ private:
     wxStaticText *abr_spacer_ = nullptr;  /* grid cell left of the ABR box, hidden with it */
     wxCheckBox  *abr_ctrl_ = nullptr;
     wxCheckBox  *fallback_ctrl_ = nullptr;
+    wxCheckBox  *le_audio_ctrl_ = nullptr;  /* only with LE Audio (experimental) on */
     wxChoice    *sample_rate_ctrl_ = nullptr;
     wxChoice    *bit_depth_ctrl_ = nullptr;
     wxChoice    *capture_ctrl_ = nullptr;

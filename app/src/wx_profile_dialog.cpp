@@ -154,7 +154,8 @@ void ProfileDialog::create_ui() {
     auto devices = service_->get_devices();
     for (auto &d : devices) {
         wxString label = wxString::Format("[%s] %s (%s)",
-            d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
+            d.le_audio ? wxString::FromUTF8(L("device.tag_le_audio"))
+            : d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
             d.name.empty() ? wxString::FromUTF8(L("device.name_unknown")) : wxString::FromUTF8(d.name),
             wxString::FromUTF8(d.addr_str));
         device_list_->Append(label);
@@ -174,6 +175,14 @@ void ProfileDialog::create_ui() {
                0, wxALIGN_CENTER_VERTICAL);
     devname_ctrl_ = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, wxSize(300, -1), wxTE_RICH2);
     grid2->Add(devname_ctrl_, 1, wxEXPAND);
+
+    /* LE Audio device (experimental): only offered with the setting on */
+    if (service_->le_audio_enabled()) {
+        grid2->Add(new wxStaticText(this, wxID_ANY, ""), 0);
+        le_audio_ctrl_ = new wxCheckBox(this, wxID_ANY, wxString::FromUTF8(L("profile.le_audio")));
+        le_audio_ctrl_->SetToolTip(wxString::FromUTF8(L("tooltip.le_audio")));
+        grid2->Add(le_audio_ctrl_, 0);
+    }
 
     vbox->Add(grid2, 0, wxEXPAND | wxALL, 12);
 
@@ -407,6 +416,7 @@ void ProfileDialog::populate_from_profile(const ConnectionProfile &p) {
     pending_quality_ = p.quality;  /* selected by update_codec_dependent below */
     abr_ctrl_->SetValue(p.abr);
     fallback_ctrl_->SetValue(p.codec_fallback);
+    if (le_audio_ctrl_) le_audio_ctrl_->SetValue(p.le_audio);
     max_packet_ctrl_->SetValue(p.max_media_payload);
 
     int sr_idx = (p.sample_rate == 44100) ? 1 :
@@ -736,6 +746,7 @@ void ProfileDialog::OnDeviceSelect(wxCommandEvent &) {
         auto &d = devices[sel];
         set_address(wxString::FromUTF8(d.addr_str));
         devname_ctrl_->SetValue(wxString::FromUTF8(d.name));
+        if (le_audio_ctrl_) le_audio_ctrl_->SetValue(d.le_audio);
         /* Enable edit/delete only for saved (paired) devices */
         dev_edit_btn_->Enable(d.saved);
         dev_del_btn_->Enable(d.saved);
@@ -811,7 +822,8 @@ void ProfileDialog::on_scan_complete() {
     auto devices = service_->get_devices();
     for (auto &d : devices) {
         wxString label = wxString::Format("[%s] %s (%s)",
-            d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
+            d.le_audio ? wxString::FromUTF8(L("device.tag_le_audio"))
+            : d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
             d.name.empty() ? wxString::FromUTF8(L("device.name_unknown")) : wxString::FromUTF8(d.name),
             wxString::FromUTF8(d.addr_str));
         device_list_->Append(label);
@@ -959,6 +971,11 @@ void ProfileDialog::OnSave(wxCommandEvent &) {
     p.quality = selected_quality();
     p.abr = abr_ctrl_->GetValue();
     p.codec_fallback = fallback_ctrl_->GetValue();
+    if (le_audio_ctrl_)
+        p.le_audio = le_audio_ctrl_->GetValue();
+    else if (edit_index_ >= 0 && edit_index_ < static_cast<int>(mgr_->profiles().size()))
+        p.le_audio = mgr_->profiles()[edit_index_].le_audio;  /* setting off: keep it */
+    if (p.le_audio) p.name = (p.device_name.empty() ? p.device_address : p.device_name) + " LE Audio";
 
     static const uint32_t rate_values[] = { 0, 44100, 48000, 88200, 96000 };
     int sr_sel = sample_rate_ctrl_->GetSelection();

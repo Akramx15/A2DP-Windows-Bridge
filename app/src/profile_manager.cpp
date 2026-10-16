@@ -45,6 +45,7 @@ void ProfileManager::load(uint16_t legacy_max_media_payload) {
             p.volume_sync      = item.value("volume_sync", std::string("auto"));
             p.volume_device_id = item.value("volume_device_id", std::string());
             p.volume_device_name = item.value("volume_device_name", std::string());
+            p.le_audio         = item.value("le_audio", false);
             if (p.volume_sync != "off" && (p.volume_sync != "device" || p.volume_device_id.empty()))
                 p.volume_sync = "auto";
             if (item.contains("max_media_payload")) {
@@ -88,7 +89,8 @@ void ProfileManager::save() const {
             {"volume_sync",      p.volume_sync},
             {"volume_device_id", p.volume_device_id},
             {"volume_device_name", p.volume_device_name},
-            {"max_media_payload", p.max_media_payload}
+            {"max_media_payload", p.max_media_payload},
+            {"le_audio",         p.le_audio}
         });
     }
 

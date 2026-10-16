@@ -71,6 +71,7 @@ MainFrame::MainFrame()
     service_.set_remember_volume(settings_.remember_volume);
     service_.set_saved_volumes(settings_.saved_volumes);
     service_.set_debug_mode(settings_.debug_mode);
+    service_.set_le_audio_enabled(settings_.le_audio_experimental);
     /* Debug mode changes apply after a restart; the Debug menu follows the boot state */
     debug_active_ = settings_.debug_mode;
     if (debug_active_)
@@ -226,6 +227,8 @@ void MainFrame::create_menu_bar() {
     settings_menu->Check(ID_SETTING_REMEMBER_VOLUME, settings_.remember_volume);
 
     settings_menu->AppendSeparator();
+    settings_menu->AppendCheckItem(ID_SETTING_LE_AUDIO, wxString::FromUTF8(L("settings.le_audio")));
+    settings_menu->Check(ID_SETTING_LE_AUDIO, settings_.le_audio_experimental);
     settings_menu->AppendCheckItem(ID_SETTING_DEBUG, wxString::FromUTF8(L("settings.debug_mode")));
     settings_menu->Check(ID_SETTING_DEBUG, settings_.debug_mode);
     menu_bar->Append(settings_menu, wxString::FromUTF8(L("menu.settings")));
@@ -279,6 +282,7 @@ void MainFrame::create_menu_bar() {
     Bind(wxEVT_MENU, &MainFrame::OnToggleMediaKeys, this, ID_SETTING_MEDIA_KEYS);
     Bind(wxEVT_MENU, &MainFrame::OnToggleRememberVolume, this, ID_SETTING_REMEMBER_VOLUME);
     Bind(wxEVT_MENU, &MainFrame::OnToggleDebugMode, this, ID_SETTING_DEBUG);
+    Bind(wxEVT_MENU, &MainFrame::OnToggleLeAudio, this, ID_SETTING_LE_AUDIO);
     Bind(wxEVT_MENU, &MainFrame::OnOpenLinkQuality, this, ID_OPEN_LINK_QUALITY);
 
     Bind(wxEVT_MENU, &MainFrame::OnOpenFirmware, this, ID_OPEN_FIRMWARE);
@@ -901,6 +905,22 @@ void MainFrame::OnToggleDebugMode(wxCommandEvent &) {
         wxString::FromUTF8(L(settings_.debug_mode ? "settings.debug_mode_enabled"
                                                   : "settings.debug_mode_disabled")),
         wxString::FromUTF8(L("settings.debug_mode")),
+        wxOK | wxICON_INFORMATION, this);
+}
+
+void MainFrame::OnToggleLeAudio(wxCommandEvent &) {
+    /* LE (SM, GATT, ISO) is set up when BTstack starts: restart it while
+     * idle so the change applies to the next scan / connection */
+    settings_.le_audio_experimental = !settings_.le_audio_experimental;
+    settings_.save();
+    service_.set_le_audio_enabled(settings_.le_audio_experimental);
+    if (service_.state() != A2dpService::State::Streaming &&
+        service_.state() != A2dpService::State::Connecting &&
+        service_.state() != A2dpService::State::Reconnecting && !service_.is_scanning())
+        service_.reset_btstack();
+    wxMessageBox(
+        wxString::FromUTF8(L(settings_.le_audio_experimental ? "settings.le_audio_on" : "settings.le_audio_off")),
+        wxString::FromUTF8(L("settings.le_audio")),
         wxOK | wxICON_INFORMATION, this);
 }
 

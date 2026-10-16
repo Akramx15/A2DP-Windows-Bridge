@@ -53,6 +53,7 @@ public:
         std::string addr_str;    /* "XX:XX:XX:XX:XX:XX" */
         bool        audio_device;
         bool        saved;
+        bool        le_audio = false;    /* LE Audio device (experimental) */
     };
 
     /* Stream info for display */
@@ -90,7 +91,7 @@ public:
     /* ---- Device list (thread-safe access) ---- */
     std::vector<DeviceEntry> get_devices() const;
     void load_saved_devices();
-    void save_device(const char *addr_str, const std::string &name);
+    void save_device(const char *addr_str, const std::string &name, bool le_audio = false);
     void delete_saved_device(int index);
 
     /* ---- State query ---- */
@@ -112,6 +113,11 @@ public:
 
     /* ---- Debug ---- */
     void set_debug_mode(bool enabled) { debug_mode_ = enabled; }
+
+    /* ---- LE Audio (experimental) ---- */
+    /* Takes effect when BTstack starts next (reset_btstack() while idle) */
+    void set_le_audio_enabled(bool enabled);
+    bool le_audio_enabled() const { return le_audio_enabled_.load(); }
 
     /* ---- Headphone volume ---- */
     /* Remember the headphones' volume per device address (upper case
@@ -158,6 +164,9 @@ private:
     /* ---- Streaming thread ---- */
     void streaming_thread_func();
     void streaming_thread_func_inner();
+    /* The streaming thread of an LE Audio profile (a2dp_service_le_audio.cpp) */
+    void le_audio_streaming_thread_inner();
+    std::atomic<bool> le_audio_enabled_{false};
 
     /* ---- State ---- */
     std::atomic<State> state_{State::Idle};

@@ -60,6 +60,9 @@ void AppSettings::load()
     /* Debug */
     debug_mode = j.value("debug_mode", debug_mode);
 
+    /* LE Audio (experimental) */
+    le_audio_experimental = j.value("le_audio_experimental", le_audio_experimental);
+
     /* Legacy: max media packet size before it moved into each profile */
     {
         int v = j.value("max_media_payload", static_cast<int>(legacy_max_media_payload));
@@ -105,6 +108,9 @@ void AppSettings::save() const
 
     /* Debug */
     j["debug_mode"] = debug_mode;
+
+    /* LE Audio (experimental) */
+    j["le_audio_experimental"] = le_audio_experimental;
 
     /* Bluetooth adapter */
     j["bt_chip_pid"] = static_cast<int>(bt_chip_pid);
