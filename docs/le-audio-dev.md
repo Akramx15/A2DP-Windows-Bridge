@@ -242,7 +242,8 @@ controller (H4 over TCP) and one or two sinks on a Bumble `LocalLink`:
 | `mono` | 1 sink, no location, 1 ASE |
 
 It prints `READY 127.0.0.1:P sinks=<addr>[,<addr>]`. Captures:
-`sink.pklg`, `sink-2.pklg`, ...
+`sink.pklg`, `sink-2.pklg`, ... `--drop-link-after S` makes the first sink
+drop its LE link once, S seconds after A2DPWB connected (link loss test).
 
 Profile pieces of the sinks go in `tools/emu/le_audio/<profile>.py`
 (`csip.py`, `vcp.py`, `mcp.py`, `ccp.py`, `tmap_gmap.py` exist as stubs):
@@ -271,6 +272,12 @@ Emulator facts to know:
   addresses. Both in `le_audio/controller.py`.
 - Bumble's ASCS goes to Streaming right after the CIS is up (sink ASE), and
   its pairing is Just Works with an in-memory key store (fresh per run).
+- Bumble's controller does not check LTKs (encryption is bookkeeping), so a
+  bond A2DPWB kept from an earlier run still "works" against a new emulator
+  run; the "device lost its bond" path is not covered by the emulator.
+- When an LE link drops, `LeEmuController` reports its CISes down first (as
+  real controllers do); Bumble alone did not, and BTstack then never finished
+  removing the CIG.
 - Sinks are Bumble `Device`s: `bumble.profiles.vcs`, `csip`, `mcp`, `tmap`,
   `gmap` etc. are available in the venv (Bumble 0.0.234). No new pip
   dependencies were needed so far; if you add one, pin it in
@@ -294,8 +301,8 @@ I:\A2DP-Windows-Bridge\tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py 
 ```
 
 The first runs all LE Audio cases (`stereo`, `two-ase`, `earbuds`,
-`mono-16k`, plus yours; or name them: `--le-audio stereo earbuds`), the second
-the A2DP codecs (must keep passing). Per case `<out>/le-<case>/` has
+`mono-16k`, `link-loss`, plus yours; or name them: `--le-audio stereo
+earbuds`), the second the A2DP codecs (must keep passing). Per case `<out>/le-<case>/` has
 `a2dpwb.log`, `sink.log`, the captures and `sent_report.txt` /
 `received_report.txt` from `a2dpwb_decode --le-audio`.
 
@@ -305,6 +312,14 @@ lengths, LC3 decoding, time stamp steps); the sinks received every SDU A2DPWB
 sent; decoded audio identical on both sides; the test tone (1 kHz left,
 1.5 kHz right; mono: both in each); the teardown steps in the log; then the
 checks of every `le_audio_tests/<profile>.py`.
+
+`Case` fields (`le_audio_tests/case.py`): `name, layout, config` (regex for
+the decoder's "Configuration :" line), `tones` (per WAV channel, or None),
+`sink_args`, `a2dpwb_args`, `tags`, `streams` (stream set-ups expected,
+e.g. 2 after a link loss), `lossy` (sent / received may differ by a few SDUs;
+no identical-audio check), `duration` (seconds, 0 = `--duration`).
+`a2dpwb_decode --le-audio` reports one "=== Stream" per set-up (a new CIG
+set-up on the same handles starts a new one).
 
 Add your cases and checks to `tools/emu/le_audio_tests/<profile>.py`
 (standard library only):

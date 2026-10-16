@@ -15,6 +15,10 @@ CASES = [
     # Mono sink with a forced low-latency preset (--le-preset): downmix, 16 kHz
     Case('mono-16k', 'mono', r'LC3 16000 Hz 10 ms 40 octets, 1 channel\(s\) over 1 CIS',
          tones=MONO_TONES, a2dpwb_args=['--le-preset', '16_2_1']),
+    # The sink drops the LE link 3 s after A2DPWB connected: A2DPWB tears the
+    # stream down (CIS, CIG) and sets it up again on a new link (bond reused)
+    Case('link-loss', 'stereo', r'LC3 48000 Hz 10 ms 155 octets, 2 channel\(s\) over 1 CIS',
+         sink_args=['--drop-link-after', '3'], streams=2, lossy=True, duration=14),
 ]
 
 
@@ -30,4 +34,6 @@ def check(case, ctx):
     m = re.search(r'LE Audio: (\d+) SDU sets sent .*?(\d+) underruns', log)
     if not m:
         failures.append('no LE Audio statistics line')
+    if case.name == 'link-loss' and 'LE Audio stream restored' not in log:
+        failures.append('the stream was not set up again after the link loss')
     return failures

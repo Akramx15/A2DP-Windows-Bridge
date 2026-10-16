@@ -112,6 +112,8 @@ struct WavOut {
 struct CisStream {
     uint32_t key = 0;                /* fkey(file, CIS handle) */
     int file = 0;
+    int session = 0;                 /* CIG set-ups seen before in this capture */
+    uint64_t order = 0;              /* creation order */
     uint16_t handle = 0, acl = 0;
     uint8_t ase = 0;
     AseConfig cfg;
@@ -157,6 +159,7 @@ private:
         const uint8_t *c = p + 3;
         size_t len = p[2];
         if (op == 0x2062 && len >= 15) {         /* LE Set CIG Parameters */
+            /* A new set-up: earlier streams of these handles are done */
             pending_cig_[file] = {c[0], {}};
             uint8_t count = c[14];
             for (uint8_t i = 0; i < count && 15u + 9u * (i + 1u) <= len; i++)
@@ -180,10 +183,16 @@ private:
             uint8_t cig = e[4], count = e[5];
             auto it = pending_cig_.find(file);
             if (it == pending_cig_.end() || it->second.first != cig) return;
-            for (uint8_t i = 0; i < count && i < it->second.second.size() && 6u + 2u * (i + 1u) <= len; i++)
-                cis_ids_[fkey(file, le16(e + 6 + 2 * i) & 0x0FFF)] = {cig, it->second.second[i]};
+            bool retired = false;
+            for (uint8_t i = 0; i < count && i < it->second.second.size() && 6u + 2u * (i + 1u) <= len; i++) {
+                uint32_t k = fkey(file, le16(e + 6 + 2 * i) & 0x0FFF);
+                retired |= retire(k);
+                cis_ids_[k] = {cig, it->second.second[i]};
+            }
+            if (retired) session_[file]++;
         } else if (code == 0x3E && len >= 7 && e[0] == 0x1A) {    /* LE CIS Request */
             uint16_t acl = le16(e + 1) & 0x0FFF, cis = le16(e + 3) & 0x0FFF;
+            if (retire(fkey(file, cis))) session_[file]++;
             cis_acl_[fkey(file, cis)] = acl;
             cis_ids_[fkey(file, cis)] = {e[5], e[6]};
         } else if (code == 0x05 && len >= 4) {                    /* Disconnection Complete */
@@ -285,6 +294,15 @@ private:
         }
     }
 
+    /* The stream on handle k ended (the handle is set up anew) */
+    bool retire(uint32_t k) {
+        auto it = streams_.find(k);
+        if (it == streams_.end()) return false;
+        done_.push_back(std::move(it->second));
+        streams_.erase(it);
+        return true;
+    }
+
     CisStream *stream_for(int file, uint16_t handle) {
         uint32_t k = fkey(file, handle);
         auto it = streams_.find(k);
@@ -299,6 +317,8 @@ private:
             auto s = std::make_unique<CisStream>();
             s->key = k;
             s->file = file;
+            s->session = session_[file];
+            s->order = next_order_++;
             s->handle = handle;
             s->acl = acl->second;
             s->ase = std::get<2>(a.first);
@@ -392,21 +412,33 @@ private:
     std::map<uint32_t, uint16_t> cis_acl_;                       /* fkey(CIS) -> ACL handle */
     std::map<std::tuple<int, uint16_t, uint8_t>, AseConfig> ase_;
     std::map<uint32_t, std::vector<uint8_t>> acl_rx_;
-    std::map<uint32_t, std::unique_ptr<CisStream>> streams_;
+    std::map<uint32_t, std::unique_ptr<CisStream>> streams_;   /* current, by handle */
+    std::vector<std::unique_ptr<CisStream>> done_;              /* ended (handle set up again) */
+    std::map<int, int> session_;
+    uint64_t next_order_ = 0;
     std::map<std::string, uint64_t> problems_;
 };
 
 int LeAnalyzer::finish() {
-    if (streams_.empty()) {
+    for (auto &e : streams_) done_.push_back(std::move(e.second));
+    streams_.clear();
+    std::sort(done_.begin(), done_.end(),
+              [](const std::unique_ptr<CisStream> &a, const std::unique_ptr<CisStream> &b) { return a->order < b->order; });
+    if (done_.empty()) {
         printf("\nNo LE Audio ISO data with a known ASE configuration found (%s side).\n",
                received_ ? "received" : "sent");
         printf("\nRESULT: PROBLEMS FOUND (see above)\n");
         return 1;
     }
-    /* One stream per LC3 configuration (CIG of one session) */
-    std::map<std::string, std::vector<CisStream *>> groups;
-    for (auto &e : streams_)
-        groups[strf("%s CIG %u", e.second->cfg.desc().c_str(), e.second->cfg.cig)].push_back(e.second.get());
+    /* One stream per set-up (session) and LC3 configuration, in the order
+     * they started */
+    std::vector<std::pair<std::string, std::vector<CisStream *>>> groups;
+    for (auto &e : done_) {
+        std::string key = strf("%d %s CIG %u", e->session, e->cfg.desc().c_str(), e->cfg.cig);
+        auto g = std::find_if(groups.begin(), groups.end(), [&](const auto &x) { return x.first == key; });
+        if (g == groups.end()) groups.push_back({key, {e.get()}});
+        else g->second.push_back(e.get());
+    }
 
     int index = 0;
     bool any_problem = !problems_.empty();

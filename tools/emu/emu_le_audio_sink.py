@@ -80,6 +80,18 @@ async def main(args):
     for sink in sinks:
         await power_on_and_advertise(sink)
         await le_audio.start(sink, args)
+    if args.drop_link_after:
+        # Link loss test: the first sink ends its LE link once, some time
+        # after A2DPWB connected (A2DPWB must set the stream up again)
+        def on_connection(connection):
+            async def drop():
+                await asyncio.sleep(args.drop_link_after)
+                log.info('%s: dropping the LE link (--drop-link-after)', sinks[0].name)
+                await connection.disconnect()
+            if not getattr(main, 'dropped', False):
+                main.dropped = True
+                asyncio.get_running_loop().create_task(drop())
+        sinks[0].device.on('connection', on_connection)
     print(f'READY 127.0.0.1:{args.port} sinks={",".join(s.address for s in sinks)}', flush=True)
     await asyncio.get_running_loop().create_future()
 
@@ -91,6 +103,8 @@ if __name__ == '__main__':
                                           'further sinks get -2, -3 before the extension')
     parser.add_argument('--layout', choices=sorted(LAYOUTS), default='stereo')
     parser.add_argument('--log-level', default='WARNING')
+    parser.add_argument('--drop-link-after', type=float, metavar='SECONDS',
+                        help='the first sink drops its LE link once, this long after A2DPWB connected')
     le_audio.add_arguments(parser)
     bumble.logging.setup_basic_logging(parser.parse_known_args()[0].log_level)
     logging.getLogger('emu_le_audio').setLevel(logging.INFO)

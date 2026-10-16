@@ -174,8 +174,33 @@ class LeEmuController(EmuController):
             self.iso_pending.pop(handle, None)
             self.iso_next_slot.pop(handle, None)
 
+    def on_le_disconnected(self, connection, reason):
+        # The CISes of an ACL go down with it, each with its own Disconnection
+        # Complete before the ACL's (Bumble keeps them, so BTstack would wait
+        # for them for ever)
+        for links, central in ((self.central_cis_links, True), (self.peripheral_cis_links, False)):
+            for handle, link in list(links.items()):
+                if link.acl_connection is not connection:
+                    continue
+                self.flush_iso([handle])
+                if central:
+                    link.acl_connection = None   # removed with LE Remove CIG
+                else:
+                    links.pop(handle)
+                self.send_hci_packet(hci.HCI_Disconnection_Complete_Event(
+                    status=hci.HCI_ErrorCode.SUCCESS, connection_handle=handle, reason=reason))
+        super().on_le_disconnected(connection, reason)
+
     def on_hci_disconnect_command(self, command):
-        self.flush_iso([command.connection_handle])
+        handle = command.connection_handle
+        self.flush_iso([handle])
+        link = self.central_cis_links.get(handle) or self.peripheral_cis_links.get(handle)
+        if link is not None and (link.acl_connection is None or
+                                 link.acl_connection.peer_address not in self.le_connections):
+            # A CIS whose ACL is gone (already reported down)
+            self._send_hci_command_status(hci.HCI_ErrorCode.UNKNOWN_CONNECTION_IDENTIFIER_ERROR,
+                                          command.op_code)
+            return None
         return super().on_hci_disconnect_command(command)
 
     def on_hci_le_remove_cig_command(self, command):

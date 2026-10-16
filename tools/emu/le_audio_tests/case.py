@@ -17,3 +17,8 @@ class Case:
     sink_args: list = dataclasses.field(default_factory=list)    # extra emu arguments
     a2dpwb_args: list = dataclasses.field(default_factory=list)  # extra A2DPWB arguments
     tags: tuple = ()          # profiles exercised, e.g. ('csip',)
+    streams: int = 1          # stream set-ups expected (2 when it is set up again)
+    # A link goes down on purpose: the sinks may miss the SDUs in flight then,
+    # so sent / received only need to match up to a few SDUs, not exactly
+    lossy: bool = False
+    duration: int = 0         # seconds of streaming (0: run_test.py --duration)

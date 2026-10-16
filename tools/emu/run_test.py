@@ -224,9 +224,14 @@ def run_codec(args, codec, port):
 
 
 def parse_le_report(text):
-    """a2dpwb_decode --le-audio report: as parse_report, plus the CIS lines"""
+    """a2dpwb_decode --le-audio report: as parse_report (configuration and WAV
+    of the first stream), packets / frames / audio summed over all streams,
+    plus the CIS lines"""
     r = parse_report(text)
     r['cis'] = re.findall(r'^  CIS 0x[0-9A-F]+ +: (.*)$', text, re.M)
+    r['packets'] = sum(int(x) for x in re.findall(r'Media packets : (\d+)', text))
+    r['frames'] = sum(int(x) for x in re.findall(r'Frames\s+: (\d+)', text))
+    r['audio_s'] = round(sum(float(x) for x in re.findall(r'Audio\s+: ([\d.]+) s', text)), 3)
     return r
 
 
@@ -246,11 +251,12 @@ def run_le_case(args, case, port):
         cmd = [args.a2dpwb, '--cli', '--hci-tcp', f'127.0.0.1:{port}', '--le-audio', '-d', addresses[0]]
         for a in addresses[1:]:
             cmd += ['--le-device', a]
-        cmd += ['--test-tone', '--duration', str(args.duration), '--hci-capture', src_capture] + case.a2dpwb_args
+        duration = case.duration or args.duration
+        cmd += ['--test-tone', '--duration', str(duration), '--hci-capture', src_capture] + case.a2dpwb_args
         with open(os.path.join(out, 'a2dpwb.log'), 'w', encoding='utf-8', errors='replace') as log:
             try:
                 rc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env,
-                                    timeout=args.duration + 120).returncode
+                                    timeout=duration + 120).returncode
             except subprocess.TimeoutExpired:
                 rc = 'timeout'
         if rc != 0:
@@ -271,8 +277,8 @@ def run_le_case(args, case, port):
         with open(os.path.join(out, f'{side}_report.txt'), 'w', encoding='utf-8') as f:
             f.write(text)
         r = reports[side] = parse_le_report(text)
-        if r['streams'] != 1:
-            failures.append(f'{side}: {r["streams"]} streams (expected 1)')
+        if r['streams'] != case.streams:
+            failures.append(f'{side}: {r["streams"]} streams (expected {case.streams})')
         if not re.match(case.config, r['config'] or ''):
             failures.append(f'{side}: configuration "{r["config"]}"')
         if not r['result_ok']:
@@ -281,17 +287,19 @@ def run_le_case(args, case, port):
     sent, received = reports.get('sent'), reports.get('received')
     detail = ''
     if sent and received:
-        if (sent['packets'], sent['frames']) != (received['packets'], received['frames']):
+        missing = (sent['packets'] or 0) - (received['packets'] or 0)
+        if (not case.lossy and (sent['packets'], sent['frames']) != (received['packets'], received['frames'])) \
+                or (case.lossy and not 0 <= missing <= 8 * case.streams):
             failures.append(f'sent {sent["packets"]} SDUs / {sent["frames"]} frames, '
                             f'received {received["packets"]} / {received["frames"]}')
-        if (sent['audio_s'] or 0) < 0.9 * args.duration:
-            failures.append(f'only {sent["audio_s"]} s of audio for --duration {args.duration}')
+        if not case.lossy and (sent['audio_s'] or 0) < 0.9 * duration:
+            failures.append(f'only {sent["audio_s"]} s of audio for --duration {duration}')
         detail = f'{sent["config"]}: {sent["packets"]} SDUs, {sent["frames"]} LC3 frames, {sent["audio_s"]} s'
         if not (sent['wav'] and received['wav']):
             failures.append('no decoded WAV')
         else:
             with open(sent['wav'], 'rb') as a, open(received['wav'], 'rb') as b:
-                if a.read() != b.read():
+                if not case.lossy and a.read() != b.read():
                     failures.append('decoded audio differs between sent and received side')
             if case.tones:
                 ok, notes = tone_check(received['wav'], case.tones)
