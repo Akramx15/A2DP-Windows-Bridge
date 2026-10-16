@@ -554,6 +554,109 @@ void BtStackTransport::deinit_btstack() {
     fflush(stderr);
 }
 
+/*
+ * LE Audio (experimental) off: hide the controller's LE support from BTstack.
+ *
+ * btstack_config.h compiles LE in (ENABLE_BLE, ...), and BTstack's HCI init
+ * then sets up LE on every dual-mode controller: LE Read Buffer Size, Write LE
+ * Host Supported, LE Set Event Mask, LE data length, LE Read White List Size,
+ * LE Read Maximum Advertising Data Length, LE Set Host Feature, and the Set
+ * Event Mask with the LE Meta event. Without LE Audio none of that is wanted:
+ * a controller that never answers one of them stalls init, and Write LE Host
+ * Supported makes the PC a dual-mode host to every headset. BTstack gates
+ * each of those steps on the LE Supported (Controller) feature bit or on a
+ * supported-commands bit, so clearing those bits in the controller's answers,
+ * before BTstack sees them, gives the HCI init of a build without LE. The
+ * transport is wrapped, so this works for WinUSB and H4 over TCP alike.
+ *
+ * One LE command is sent anyway: hci_run() sends LE Set Scan Parameters once
+ * HCI is working, with or without LE on the controller (ENABLE_LE_CENTRAL;
+ * the flag behind it is not reachable from outside BTstack). The wrapper
+ * answers LE commands itself, as a controller without LE would (Unknown HCI
+ * Command), and never passes them to the controller.
+ *
+ * HCI captures show the answers as BTstack saw them, and the LE commands
+ * answered here.
+ */
+static hci_transport_t le_hidden_transport;
+static const hci_transport_t *le_hidden_lower = nullptr;
+static void (*le_hidden_upper_handler)(uint8_t packet_type, uint8_t *packet, uint16_t size) = nullptr;
+static btstack_timer_source_t le_hidden_reply_timer;
+static uint16_t le_hidden_reply_opcode = 0;
+
+/* The answer to an LE command not passed to the controller: the transport's
+ * "packet sent", then Command Complete with Unknown HCI Command. Called from
+ * the run loop, not from within hci_send_cmd(). */
+static void le_hidden_reply(btstack_timer_source_t *) {
+    if (le_hidden_lower->can_send_packet_now != nullptr) {
+        /* Asynchronous transport: BTstack holds its packet buffer until this */
+        uint8_t sent[] = {HCI_EVENT_TRANSPORT_PACKET_SENT, 0};
+        le_hidden_upper_handler(HCI_EVENT_PACKET, sent, sizeof(sent));
+    }
+    uint8_t complete[] = {HCI_EVENT_COMMAND_COMPLETE, 4, 1,
+                          static_cast<uint8_t>(le_hidden_reply_opcode & 0xFF),
+                          static_cast<uint8_t>(le_hidden_reply_opcode >> 8),
+                          ERROR_CODE_UNKNOWN_HCI_COMMAND};
+    le_hidden_upper_handler(HCI_EVENT_PACKET, complete, sizeof(complete));
+}
+
+static int le_hidden_send_packet(uint8_t packet_type, uint8_t *packet, int size) {
+    if (packet_type == HCI_COMMAND_DATA_PACKET && size >= 3) {
+        uint16_t opcode = little_endian_read_16(packet, 0);
+        if ((opcode >> 10) == OGF_LE_CONTROLLER || opcode == HCI_OPCODE_HCI_WRITE_LE_HOST_SUPPORTED) {
+            /* One command at a time: BTstack waits for the answer */
+            le_hidden_reply_opcode = opcode;
+            btstack_run_loop_set_timer_handler(&le_hidden_reply_timer, &le_hidden_reply);
+            btstack_run_loop_set_timer(&le_hidden_reply_timer, 0);
+            btstack_run_loop_add_timer(&le_hidden_reply_timer);
+            return 0;
+        }
+    }
+    return le_hidden_lower->send_packet(packet_type, packet, size);
+}
+
+static void le_hidden_packet_handler(uint8_t packet_type, uint8_t *packet, uint16_t size) {
+    /* Command Complete: event code, length, num packets, opcode (2), status, return parameters */
+    if (packet_type == HCI_EVENT_PACKET && size >= 6 && packet[0] == HCI_EVENT_COMMAND_COMPLETE) {
+        uint16_t opcode = little_endian_read_16(packet, 3);
+        uint8_t *params = &packet[6];
+        if (opcode == HCI_OPCODE_HCI_READ_LOCAL_SUPPORTED_FEATURES && size >= 6 + 8) {
+            /* LMP feature bit 38: LE Supported (Controller) */
+            params[4] &= static_cast<uint8_t>(~(1u << 6));
+        } else if (opcode == HCI_OPCODE_HCI_READ_LOCAL_SUPPORTED_COMMANDS && size >= 6 + 64) {
+            /* The LE commands BTstack looks up (hci.c SUPPORTED_HCI_COMMANDS),
+             * as octet / bit: Write LE Host Supported, LE Read Remote
+             * Features, LE Write Suggested Default Data Length, LE Set Address
+             * Resolution Enable, LE Read Maximum Data Length, LE Set Default
+             * PHY, LE Set Extended Advertising Enable (checked without the LE
+             * feature bit), LE Read Buffer Size v2, LE Set Host Feature, LE
+             * Read Minimum Supported Connection Interval */
+            static const uint8_t le_commands[][2] = {
+                {24, 6}, {27, 5}, {34, 0}, {35, 1}, {35, 3}, {35, 5}, {36, 5}, {41, 5}, {44, 1}, {48, 7}};
+            for (const auto &c : le_commands)
+                params[c[0]] &= static_cast<uint8_t>(~(1u << c[1]));
+        }
+    }
+    le_hidden_upper_handler(packet_type, packet, size);
+}
+
+static void le_hidden_register_packet_handler(void (*handler)(uint8_t packet_type, uint8_t *packet, uint16_t size)) {
+    le_hidden_upper_handler = handler;
+    le_hidden_lower->register_packet_handler(&le_hidden_packet_handler);
+}
+
+/* The transport for hci_init(): with LE Audio off, `transport` with the LE
+ * support hidden from BTstack */
+static const hci_transport_t *transport_for_le_setting(const hci_transport_t *transport) {
+    if (le_audio::Core::instance().enabled()) return transport;
+    le_hidden_lower = transport;
+    le_hidden_transport = *transport;
+    le_hidden_transport.register_packet_handler = &le_hidden_register_packet_handler;
+    le_hidden_transport.send_packet = &le_hidden_send_packet;
+    fprintf(stderr, "BTstack: LE Audio off, not using the controller's LE support\n");
+    return &le_hidden_transport;
+}
+
 void BtStackTransport::setup_hci_and_power_on() {
     if (!hci_tcp_.empty()) {
         /* Development / testing: H4 over TCP to a virtual controller (tools/emu) */
@@ -562,7 +665,7 @@ void BtStackTransport::setup_hci_and_power_on() {
         tcp_config.device_name = hci_tcp_.c_str();
         fprintf(stderr, "BTstack: H4 over TCP -> %s\n", tcp_config.device_name);
         hci_transport_ = hci_transport_h4_instance_for_uart(btstack_uart_tcp_windows_instance());
-        hci_init(static_cast<const hci_transport_t *>(hci_transport_), &tcp_config);
+        hci_init(transport_for_le_setting(static_cast<const hci_transport_t *>(hci_transport_)), &tcp_config);
         /* The virtual controller is no Realtek chip, even when a Realtek
          * adapter is plugged in (it would never answer the vendor commands) */
         if (product_id_ != 0) {
@@ -572,7 +675,7 @@ void BtStackTransport::setup_hci_and_power_on() {
     } else {
         /* Initialize HCI with WinUSB transport */
         hci_transport_ = hci_transport_usb_instance();
-        hci_init(hci_transport_usb_instance(), nullptr);
+        hci_init(transport_for_le_setting(hci_transport_usb_instance()), nullptr);
     }
     hci_initialized_ = true;
 
