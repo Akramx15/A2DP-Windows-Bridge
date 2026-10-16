@@ -389,3 +389,71 @@ changing the default flow for the other cases.
 - Not verified with real LE Audio headphones or a real controller's CIS
   scheduling; extended advertising scanning is enabled but only exercised
   through BTstack's fallback to legacy scanning in the emulator.
+
+## VCP (Volume Controller)
+
+Files: `app/src/le_audio/le_audio_vcp.{h,cpp}`, `tools/emu/le_audio/vcp.py`,
+`tools/emu/le_audio_tests/vcp.py`.
+
+**Client.** `on_gatt_ready()`: for a device with VCS (0x1844) the module
+listens to and subscribes to Volume State (0x2B7D), reads it and Volume Flags
+(0x2B7F, logged only) and keeps the Control Point (0x2B7E). VOCS / AICS are
+logged when present, not used. Writes are Set Absolute Volume (0x04) and
+Unmute (0x05) with the last known Change Counter, one at a time per device,
+each followed by a read of Volume State (the new counter; Set Absolute Volume
+to the same value does not change it). ATT 0x80 Invalid Change Counter:
+Volume State is read again and the operation sent once more; a second
+failure is logged and the group volume falls back to what the device reports.
+Newer requests replace queued ones (no backlog when the slider moves).
+
+**Scale.** `vcp::to_setting()` / `vcp::to_level()` map 0-127 <-> 0-255 with
+rounding; `to_level(to_setting(l)) == l` for every level (a `static_assert`
+checks it). A request for the level the group already has writes nothing, so
+a device at e.g. 101/255 is not "corrected" to 100/255.
+
+**Group volume.** All connected devices with VCS share one volume (A2DPWB
+connects only the devices it streams to, so this is the stream group; it
+works for any number of members the core / CSIP connects):
+- the first device whose Volume State is read (the `-d` device) sets it;
+  devices read later (the other earbud, a reconnected member) are written to
+  it;
+- `request_volume(level)` (any thread; posts to the BTstack thread) sets it
+  and writes it to every member; a muted member is unmuted when the level is
+  above 0;
+- a notification with another volume while A2DPWB has nothing of its own
+  pending on that device (its buttons) sets it, the other members get it
+  written, and `remote_volume()` reports it;
+- `remote_volume()` is the group volume as 0-127 (an atomic), -1 while no VCS
+  device is connected. Mute is not reported (VolumeSync syncs the level only).
+
+**Initial volume, settings.** As with AVRCP absolute volume, the headset's
+own volume is kept on connect and VolumeSync makes Windows take it over; the
+volume is only written when Windows changes (volume keys) or to align set
+members. VolumeSync is the only path to Windows, so the profile's "Volume
+sync" choice (off / auto / device) and the test tone (no sync) apply as for
+A2DP. Not done for LE Audio yet: "Remember volume" (the per-device saved
+volume AVRCP restores on connect) - `a2dp_service_le_audio.cpp` does not save
+or restore it.
+
+**Testing without the real Windows volume.** The CLI does not run VolumeSync
+by itself. `A2DPWB --cli --le-audio ... --le-sim-volume "<level>[,<s>:<level>...]"`
+runs VolumeSync with the LE target against a simulated Windows volume
+(`VolumeSync::set_simulated()`, test only): it starts at `<level>` and changes
+to the given levels at `<s>` seconds after the stream started, as the volume
+keys would. Log lines: `VCP test: simulated Windows volume ...`.
+
+**Emulator.** `emu_le_audio_sink.py --vcp` gives every sink Bumble's VCS
+(volume flags 0x01) and logs reads / writes in `sink.log`; `--vcp-volume
+V[,V2]` initial volume per sink (default 100), `--vcp-muted`, `--vcp-press
+S:V[@N]` (sink N changes to V and notifies, S seconds after A2DPWB connected
+it), `--vcp-bump-counter S` (S seconds after the first read, the Change
+Counter moves without a notification). Cases: `vcp-set` (Windows -> headset,
+incl. Unmute), `vcp-remote` (button -> Windows, nothing written back),
+`vcp-change-counter` (0x80 -> re-read -> retry), `vcp-earbuds` (two earbuds:
+alignment, Windows -> both, button on one -> the other and Windows).
+
+**Limitations.** Relative volume opcodes and Mute are not used; mute on one
+set member is not copied to the others; Volume Flags are only logged (a
+device without a persisted volume keeps its default, VCP 1.0 allows the
+controller to set one); VOCS (balance) / AICS not supported; not verified
+with real headsets.
