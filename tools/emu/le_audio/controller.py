@@ -126,7 +126,8 @@ class LeEmuController(EmuController):
             return
         if packet.pb_flag != 0b10:
             log.warning('ISO data with PB flag %s (only complete SDUs are carried)', bin(packet.pb_flag))
-        interval_us = CIS_PARAMS.get((link.cig_id, link.cis_id), {}).get('sdu_interval', 10000)
+        params = CIS_PARAMS.get((link.cig_id, link.cis_id), {})
+        interval_us = params.get('sdu_interval', 10000)
         interval = interval_us / 1e6
         now = loop.time()
         if self.iso_t0 is None:
@@ -136,8 +137,12 @@ class LeEmuController(EmuController):
         # would have flushed those). The tolerance absorbs the timer jitter of
         # this emulation (asyncio timers fire up to ~16 ms late on Windows).
         # That jitter is in time, not intervals: at least LATE_US, so 7.5 ms
-        # SDU intervals (GMAP) get 4 intervals where 10 ms ones get 3.
-        late = max(LATE_INTERVALS, math.ceil(LATE_US / interval_us))
+        # SDU intervals (GMAP) get 4 intervals where 10 ms ones get 3. A real
+        # controller only flushes an SDU after the CIG's Max Transport
+        # Latency, so allow that much too: this emulation's event loop
+        # sometimes stalls for 60-90 ms, which is not the host being late.
+        late_us = max(LATE_US, params.get('latency_ms', 0) * 1000)
+        late = max(LATE_INTERVALS, math.ceil(late_us / interval_us))
         n_now = int(math.ceil((now - self.iso_t0) / interval - 1e-6)) - late
         n = max(self.iso_next_slot.get(handle, 0), n_now)
         self.iso_next_slot[handle] = n + 1
