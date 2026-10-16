@@ -9,13 +9,18 @@
  * set" (one SDU per CIS for the same 10 ms) goes into a small jitter buffer.
  *
  * On the BTstack thread, HCI_EVENT_CIS_CAN_SEND_NOW takes the next set and
- * sends each CIS its SDU as one HCI ISO data packet: complete SDU, sequence
- * number counting up per CIS, no time stamp (the controller schedules the
- * SDUs by sequence number into its SDU intervals). The controller paces the
- * sending through BTstack's per-CIS queue (hci_set_num_iso_packets_to_queue);
- * a host-side guard additionally keeps the sent SDUs within a few intervals
- * of real time. An empty buffer (underrun) sends encoded silence; a full one
- * drops the oldest set.
+ * sends each CIS its SDU as one HCI ISO data packet: complete SDU (never
+ * fragmented: plan_stream() only takes SDUs that fit the controller's ISO
+ * data packets), sequence number counting up per CIS, no time stamp (the
+ * controller schedules the SDUs by sequence number into its SDU intervals).
+ * A round (one set) starts at the first CIS event after every CIS that is
+ * still up got its SDU, so a CIS that went down does not stall the others.
+ * The controller paces the sending through BTstack's per-CIS queue
+ * (hci_set_num_iso_packets_to_queue, queue_depth: Unicast keeps
+ * queue_depth x CIS within the controller's ISO buffers); a host-side guard
+ * additionally keeps the sent SDUs within queue_depth + 2 intervals of real
+ * time. An empty buffer (underrun) sends encoded silence; a full one drops
+ * the oldest set.
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -65,12 +70,16 @@ public:
     void stop_sending();
     bool sending() const { return sending_; }
     void on_cis_can_send_now(const uint8_t *packet, uint16_t size);
+    /* A CIS of the stream disconnected: rounds no longer wait for it */
+    void on_cis_down(uint16_t handle);
 
     Stats stats() const;
 
 private:
     void encode_frame();                       /* audio thread: frame_ buffer full */
     void request_next();                       /* BTstack thread */
+    void request_events();
+    bool round_done() const;
     static void timer_handler(struct btstack_timer_source *ts);
     void send_sdu(size_t index, uint16_t handle);
 
@@ -106,6 +115,9 @@ private:
     bool sending_ = false;
     std::vector<uint16_t> cis_handles_;
     std::vector<uint16_t> seq_;
+    std::vector<bool> alive_;                  /* per CIS: not reported down */
+    std::vector<bool> served_;                 /* per CIS: has its SDU of the current round */
+    bool round_open_ = false;
     SduSet current_;
     uint32_t t0_ms_ = 0;
     uint64_t rounds_ = 0;

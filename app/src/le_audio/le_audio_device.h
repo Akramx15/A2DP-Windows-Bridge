@@ -28,6 +28,10 @@ struct LeAddr {
     uint8_t addr[6] = {};
     uint8_t type = 0;
     bool operator==(const LeAddr &o) const { return type == o.type && memcmp(addr, o.addr, 6) == 0; }
+    bool same_bytes(const uint8_t a[6]) const { return memcmp(addr, a, 6) == 0; }
+    /* A resolvable private address (random, top bits 0b01): it changes
+     * every few minutes; the identity behind it is found with the IRK */
+    bool is_rpa() const { return type == 1 && (addr[0] & 0xC0) == 0x40; }
     std::string str() const { return addr_to_string(addr); }
 };
 
@@ -101,7 +105,13 @@ bool parse_ase_value(const uint8_t *data, uint16_t len, Ase &ase);
 
 struct LeAudioDevice {
     int id = -1;                         /* stable while the core runs */
+    /* The identity address (public or static random) once SM learned it
+     * (pairing, or an RPA resolved with the stored IRK); before that the
+     * address it was first connected with. Devices are keyed by it, so a
+     * device using resolvable private addresses keeps its id. */
     LeAddr addr;
+    bool identity_known = false;         /* addr is the identity from SM */
+    LeAddr peer_addr;                    /* address of the current / last link (maybe an RPA) */
     std::string name;
 
     /* Link */

@@ -89,9 +89,11 @@ void ProfileManager::save() const {
             {"volume_sync",      p.volume_sync},
             {"volume_device_id", p.volume_device_id},
             {"volume_device_name", p.volume_device_name},
-            {"max_media_payload", p.max_media_payload},
-            {"le_audio",         p.le_audio}
+            {"max_media_payload", p.max_media_payload}
         });
+        /* LE Audio (experimental): only for such profiles, so profiles.json
+         * stays as before for everyone else */
+        if (p.le_audio) arr.back()["le_audio"] = true;
     }
 
     json j;

@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio (experimentell)",
   "settings.le_audio_on": "LE Audio (experimentell) ist eingeschaltet.\n\nLE-Audio-Geräte erscheinen jetzt bei der Gerätesuche eines Verbindungsprofils. Mit „LE-Audio-Gerät“ im Profil wird LC3 statt A2DP gesendet. Der Adapter braucht Bluetooth 5.2 mit isochronen Kanälen. Noch nicht mit echten Kopfhörern getestet.",
   "settings.le_audio_off": "LE Audio (experimentell) ist ausgeschaltet.",
+  "settings.le_audio_deferred": "A2DPWB streamt oder sucht gerade nach Geräten. Die Änderung gilt ab der nächsten Gerätesuche oder Verbindung.",
   "settings.le_low_latency": "Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)",
   "advanced.max_packet": "Max. Mediapaketgröße (Bytes)",
   "advanced.max_packet_recommended": "Empfohlen (%d)",

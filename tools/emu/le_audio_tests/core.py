@@ -19,6 +19,15 @@ CASES = [
     # stream down (CIS, CIG) and sets it up again on a new link (bond reused)
     Case('link-loss', 'stereo', r'LC3 48000 Hz 10 ms 155 octets, 2 channel\(s\) over 1 CIS',
          sink_args=['--drop-link-after', '3'], streams=2, lossy=True, duration=14),
+    # The sink keeps released ASEs in Releasing until the client drops the
+    # CIS: A2DPWB disconnects the CIS after Disable, so stop does not wait
+    # out the Release timeout
+    Case('release-cis', 'two-ase', r'LC3 48000 Hz 10 ms 155 octets, 2 channel\(s\) over 2 CIS',
+         sink_args=['--ascs-release-waits-for-cis'], tags=('release-cis',)),
+    # No sink context available until 3 s after the connection: Enable waits
+    # for the Available Audio Contexts notification instead of failing
+    Case('contexts-later', 'stereo', r'LC3 48000 Hz 10 ms 155 octets, 2 channel\(s\) over 1 CIS',
+         sink_args=['--available-contexts-after', '3'], tags=('contexts-later',)),
 ]
 
 
@@ -36,4 +45,11 @@ def check(case, ctx):
         failures.append('no LE Audio statistics line')
     if case.name == 'link-loss' and 'LE Audio stream restored' not in log:
         failures.append('the stream was not set up again after the link loss')
+    for timeout in ('Disable timed out', 'Release timed out', 'CIG removal timed out'):
+        if timeout in log and not case.lossy:
+            failures.append(f'teardown: {timeout}')
+    if 'release-cis' in case.tags and 'disconnecting CIS' not in log:
+        failures.append('A2DPWB did not disconnect the CIS before Release')
+    if 'contexts-later' in case.tags and 'no audio context available for Enable' not in log:
+        failures.append('A2DPWB did not wait for an available audio context')
     return failures

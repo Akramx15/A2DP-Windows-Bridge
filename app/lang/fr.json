@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio (expérimental)",
   "settings.le_audio_on": "LE Audio (expérimental) est activé.\n\nLes appareils LE Audio apparaissent désormais dans la recherche d’appareils d’un profil de connexion. Cochez « Appareil LE Audio » dans le profil pour lui envoyer du LC3 au lieu d’A2DP. L’adaptateur doit prendre en charge Bluetooth 5.2 avec les canaux isochrones. Pas encore testé avec de vrais casques.",
   "settings.le_audio_off": "LE Audio (expérimental) est désactivé.",
+  "settings.le_audio_deferred": "A2DPWB diffuse ou recherche des appareils en ce moment. La modification s’applique au début de la prochaine recherche d’appareils ou connexion.",
   "settings.le_low_latency": "Faible latence pour casques gaming (GMAP, expérimental)",
   "advanced.max_packet": "Taille max. des paquets média (octets)",
   "advanced.max_packet_recommended": "Recommandé (%d)",

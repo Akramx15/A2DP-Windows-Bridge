@@ -92,8 +92,11 @@ public:
     /* ---- Device list (thread-safe access) ---- */
     std::vector<DeviceEntry> get_devices() const;
     void load_saved_devices();
+    /* Saved devices: devices.txt (as in older versions); LE Audio devices
+     * (experimental) in le_audio_devices.txt, which older versions do not
+     * read. A dual-mode device can have a classic and an LE Audio entry. */
     void save_device(const char *addr_str, const std::string &name, bool le_audio = false);
-    void delete_saved_device(int index);
+    void delete_saved_device(const std::string &addr_str, bool le_audio);
 
     /* ---- State query ---- */
     State state() const { return state_.load(); }
@@ -116,7 +119,9 @@ public:
     void set_debug_mode(bool enabled) { debug_mode_ = enabled; }
 
     /* ---- LE Audio (experimental) ---- */
-    /* Takes effect when BTstack starts next (reset_btstack() while idle) */
+    /* The setting. Takes effect when BTstack starts next: the next scan or
+     * connection restarts a stack started with the other setting (the GUI
+     * also calls reset_btstack() when idle). */
     void set_le_audio_enabled(bool enabled);
     bool le_audio_enabled() const { return le_audio_enabled_.load(); }
 
@@ -167,7 +172,10 @@ private:
     void streaming_thread_func_inner();
     /* The streaming thread of an LE Audio profile (a2dp_service_le_audio.cpp) */
     void le_audio_streaming_thread_inner();
-    std::atomic<bool> le_audio_enabled_{false};
+    std::atomic<bool> le_audio_enabled_{false};  /* the setting */
+    /* LE Audio set up in the running BTstack (le_audio::Core enabled when
+     * it started) */
+    std::atomic<bool> le_audio_active_{false};
 
     /* ---- State ---- */
     std::atomic<State> state_{State::Idle};
@@ -185,6 +193,7 @@ private:
     mutable std::mutex device_mutex_;
     std::vector<DeviceEntry> device_list_;
     std::atomic<bool> scanning_{false};
+    void write_saved_devices() const;  /* device_mutex_ held */
 
     /* ---- BTstack transport ---- */
     std::unique_ptr<BtStackTransport> transport_;
