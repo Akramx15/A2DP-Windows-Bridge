@@ -59,6 +59,12 @@
 #define MAX_NR_CIS                 4
 #define HCI_ISO_PAYLOAD_SIZE       400
 
+/* CCC values of bonded GATT clients att_server keeps in the bond TLV, for
+ * all clients together (default 20; the oldest go first). The PC's GMCS and
+ * GTBS have 23 CCCs: room for about 11 bonded clients. At most 256 (one
+ * byte of the TLV tag). */
+#define NVN_NUM_GATT_SERVER_CCC    256
+
 /* A2DP explicit config: disable SBC auto-selection, allow vendor codec config.
  * Required for LDAC/aptX — BTstack's auto-mode only handles SBC. */
 #define ENABLE_A2DP_EXPLICIT_CONFIG

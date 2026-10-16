@@ -5,15 +5,23 @@
  */
 
 #include "le_audio_gatt_server.h"
+#include "le_audio_csip.h"
 #include "le_audio_defs.h"
 #include "debug_log.h"
 
 #include <cstring>
+#include <set>
 
 extern "C" {
 #include "btstack_config.h"
 #include "btstack.h"
+#include "btstack_tlv.h"
 }
+
+/* att_server.c's default (btstack_config.h may raise it) */
+#ifndef NVN_NUM_GATT_SERVER_CCC
+#define NVN_NUM_GATT_SERVER_CCC 20
+#endif
 
 namespace le_audio {
 
@@ -21,15 +29,39 @@ namespace {
 /* Can-send-now registrations, one per connection (stable addresses) */
 std::map<uint16_t, btstack_context_callback_registration_t> g_send_regs;
 GattServer *g_server = nullptr;
+btstack_packet_callback_registration_t g_hci_reg;
 
 void can_send_trampoline(void *context) {
     if (g_server) g_server->can_send_now((uint16_t)(uintptr_t)context);
 }
 
+void hci_trampoline(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
+    (void)channel;
+    if (packet_type == HCI_EVENT_PACKET && g_server) g_server->on_hci_event(packet, size);
+}
+
 uint32_t ckey(uint16_t con, uint16_t handle) { return ((uint32_t)con << 16) | handle; }
+
+/* BTstack's persistent CCC store (att_server.c, private there): one TLV tag
+ * 'BTC' + slot per CCC value of a bonded client, and 'BTDB' = the Database
+ * Hash they were written for */
+struct PersistentCcc {
+    uint32_t seq_nr;
+    uint16_t att_handle;
+    uint8_t value;
+    uint8_t device_index;
+};
+static_assert(sizeof(PersistentCcc) == 8, "att_server.c persistent_ccc_entry_t");
+uint32_t tag_ccc(int slot) { return ((uint32_t)'B' << 24) | ((uint32_t)'T' << 16) | ((uint32_t)'C' << 8) | (uint8_t)slot; }
+const uint32_t TAG_DB_HASH = ((uint32_t)'B' << 24) | ((uint32_t)'T' << 16) | ((uint32_t)'D' << 8) | 'B';
+/* Ours: a Service Changed indication is due for this le_device_db index */
+uint32_t tag_service_changed(int index) {
+    return ((uint32_t)'A' << 24) | ((uint32_t)'W' << 16) | ((uint32_t)'S' << 8) | (uint8_t)index;
+}
 } /* namespace */
 
 void GattServer::reset() {
+    hci_remove_event_handler(&g_hci_reg);
     attrs_.clear();
     ccc_.clear();
     pending_.clear();
@@ -111,9 +143,107 @@ void GattServer::build_base() {
                        nullptr);
     add_characteristic(UUID_CHR_APPEARANCE, ATT_PROPERTY_READ,
                        [](uint16_t) { return std::vector<uint8_t>{0x80, 0x00}; }, nullptr);
-    /* GATT: Service Changed (the DB never changes while connected) */
+    /* GATT: Service Changed (the DB never changes while connected; indicated
+     * to bonded clients after an A2DPWB update changed it), then the
+     * Database Hash (static value, filled in by start()). Keep this layout:
+     * the handles up to the Service Changed CCC must stay the same in every
+     * version, check_stored_client_configs() relies on them. */
     begin_service(UUID_SERVICE_GATT);
-    add_characteristic(UUID_CHR_SERVICE_CHANGED, ATT_PROPERTY_INDICATE, nullptr, nullptr);
+    service_changed_ = add_characteristic(UUID_CHR_SERVICE_CHANGED, ATT_PROPERTY_INDICATE, nullptr, nullptr);
+    const uint8_t zero[16] = {};
+    db_hash_handle_ = att_db_util_add_characteristic_uuid16(ORG_BLUETOOTH_CHARACTERISTIC_DATABASE_HASH,
+                                                            ATT_PROPERTY_READ, ATT_SECURITY_NONE, ATT_SECURITY_NONE,
+                                                            const_cast<uint8_t *>(zero), sizeof(zero));
+    last_handle_ = db_hash_handle_;
+}
+
+/* Database Hash (Core Vol 3 Part G 7.3): AES-CMAC with a zero key over the
+ * attributes att_db_util selects (service / include / characteristic
+ * declarations with their values, descriptors' handle and type), stored least
+ * significant octet first as BTstack's compile_gatt.py does. Written into the
+ * static value in the DB, where BTstack's att_server also looks for it. */
+void GattServer::compute_db_hash() {
+    std::vector<uint8_t> msg(att_db_util_hash_len());
+    att_db_util_hash_init();
+    for (uint8_t &b : msg) b = att_db_util_hash_get_next();
+    static const uint8_t zero_key[16] = {};
+    uint8_t mac[16];
+    csip::aes_cmac(zero_key, msg.data(), msg.size(), mac);
+    for (int i = 0; i < 16; i++) db_hash_[i] = mac[15 - i];
+    /* The DB: version byte, then per attribute size, flags, handle, UUID, value */
+    uint8_t *p = att_db_util_get_address() + 1;
+    for (uint16_t size; (size = little_endian_read_16(p, 0)) != 0; p += size) {
+        if (little_endian_read_16(p, 4) != db_hash_handle_) continue;
+        const uint16_t flags = little_endian_read_16(p, 2);
+        const uint16_t uuid_len = (flags & ATT_PROPERTY_UUID128) ? 16 : 2;
+        if (size == 6 + uuid_len + 16) memcpy(p + 6 + uuid_len, db_hash_, 16);
+        break;
+    }
+}
+
+/* Before att_server_init(): the CCC values BTstack stored for bonded clients
+ * belong to the database with the stored hash. Another database (an A2DPWB
+ * update added or moved characteristics, or a version from before the
+ * Database Hash, which stored no hash): drop them - BTstack would replay them
+ * on the old handles - and remember which clients had Service Changed
+ * indications on, to tell them on their next encrypted link. */
+void GattServer::check_stored_client_configs() {
+    const btstack_tlv_t *tlv = nullptr;
+    void *ctx = nullptr;
+    btstack_tlv_get_instance(&tlv, &ctx);
+    if (!tlv) return;
+    uint8_t stored[16];
+    const bool have = tlv->get_tag(ctx, TAG_DB_HASH, stored, sizeof(stored)) == (int)sizeof(stored);
+    if (have && memcmp(stored, db_hash_, 16) == 0) return;
+    std::set<int> clients, notify;
+    for (int slot = 0; slot < NVN_NUM_GATT_SERVER_CCC; slot++) {
+        PersistentCcc e;
+        if (tlv->get_tag(ctx, tag_ccc(slot), (uint8_t *)&e, sizeof(e)) != (int)sizeof(e)) continue;
+        clients.insert(e.device_index);
+        if (e.att_handle == service_changed_ + 1 && (e.value & GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_INDICATION))
+            notify.insert(e.device_index);
+        tlv->delete_tag(ctx, tag_ccc(slot));
+    }
+    tlv->store_tag(ctx, TAG_DB_HASH, db_hash_, sizeof(db_hash_));
+    const uint8_t due = 1;
+    for (int index : notify) tlv->store_tag(ctx, tag_service_changed(index), &due, 1);
+    if (!clients.empty())
+        LOG_INFO("LE Audio: GATT database changed since the last session (%s): client configurations of %u "
+                 "bonded client(s) dropped, Service Changed due for %u",
+                 have ? "other hash" : "no hash stored", (unsigned)clients.size(), (unsigned)notify.size());
+}
+
+void GattServer::on_hci_event(const uint8_t *packet, uint16_t size) {
+    (void)size;
+    const btstack_tlv_t *tlv = nullptr;
+    void *ctx = nullptr;
+    btstack_tlv_get_instance(&tlv, &ctx);
+    if (!tlv) return;
+    switch (hci_event_packet_get_type(packet)) {
+    case HCI_EVENT_ENCRYPTION_CHANGE:
+    case HCI_EVENT_ENCRYPTION_CHANGE_V2: {
+        if (!hci_event_encryption_change_get_encryption_enabled(packet)) break;
+        const uint16_t con = hci_event_encryption_change_get_connection_handle(packet);
+        if (gap_get_connection_type(con) != GAP_CONNECTION_LE) break;
+        const int index = sm_le_device_index(con);   /* the bond (identity), -1: not bonded */
+        if (index < 0) break;
+        uint8_t due = 0;
+        if (tlv->get_tag(ctx, tag_service_changed(index), &due, 1) != 1) break;
+        tlv->delete_tag(ctx, tag_service_changed(index));
+        /* The client had indications on (its CCC was dropped with the old
+         * database): the whole range changed */
+        ccc_[ckey(con, service_changed_)] |= GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_INDICATION;
+        LOG_INFO("LE Audio: GATT database changed since bonded client 0x%04x saw it: Service Changed", con);
+        indicate(con, service_changed_, {0x01, 0x00, 0xFF, 0xFF});
+        break;
+    }
+    case HCI_EVENT_META_GAP:
+        if (hci_event_gap_meta_get_subevent_code(packet) == GAP_SUBEVENT_BONDING_DELETED)
+            tlv->delete_tag(ctx, tag_service_changed(gap_subevent_bonding_deleted_get_index(packet)));
+        break;
+    default:
+        break;
+    }
 }
 
 static uint16_t att_read_trampoline(hci_con_handle_t con, uint16_t handle, uint16_t offset,
@@ -128,7 +258,11 @@ static int att_write_trampoline(hci_con_handle_t con, uint16_t handle, uint16_t 
 
 void GattServer::start() {
     g_server = this;
+    compute_db_hash();
+    check_stored_client_configs();
     att_server_init(att_db_util_get_address(), &att_read_trampoline, &att_write_trampoline);
+    g_hci_reg.callback = &hci_trampoline;
+    hci_add_event_handler(&g_hci_reg);
     started_ = true;
     LOG_INFO("LE Audio: GATT server started (%u attributes with callbacks, %u bytes DB)",
              (unsigned)attrs_.size(), (unsigned)att_db_util_get_size());
@@ -267,6 +401,9 @@ void GattServer::can_send_now(uint16_t con) {
 }
 
 void GattServer::on_disconnected(uint16_t con) {
+    /* The live values of this link go; a bonded client gets its CCC values
+     * back from BTstack's persistent store when it encrypts again (they are
+     * replayed through write_cb()), an unbonded one starts from none */
     pending_.erase(con);
     g_send_regs.erase(con);
     for (auto it = ccc_.begin(); it != ccc_.end();)
