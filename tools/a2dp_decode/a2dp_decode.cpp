@@ -20,6 +20,8 @@
  * (see THIRD_PARTY_LICENSES.md).
  *
  * Usage: a2dpwb_decode <capture.pklg> [-o <output prefix>] [--no-wav] [--received]
+ *        a2dpwb_decode --le-audio <capture.pklg>... [-o <prefix>] [--no-wav] [--received]
+ *        (LE Audio: LC3 over CIS, le_audio_decode.cpp)
  * Exit:  0 = no problems found, 1 = problems found, 2 = usage / file error
  */
 
@@ -921,6 +923,10 @@ private:
 
 /* ------------------------------------------------------------------------ */
 
+/* le_audio_decode.cpp */
+int le_audio_decode_main(const std::vector<std::string> &inputs, const std::string &prefix, bool write_wav,
+                         bool received);
+
 static void usage() {
     fprintf(stderr,
         "Usage: a2dpwb_decode <capture.pklg> [-o <output prefix>] [--no-wav] [--received]\n"
@@ -929,28 +935,37 @@ static void usage() {
         "HCI capture. Decoded audio is written to <prefix>.<n>.<codec>.wav\n"
         "(default prefix: the capture path without its extension).\n"
         "--received analyses the media the capturing host received instead of sent\n"
-        "(e.g. the capture of the tools/emu test sink).\n");
+        "(e.g. the capture of the tools/emu test sink).\n"
+        "\n"
+        "a2dpwb_decode --le-audio <capture.pklg>... [-o <prefix>] [--no-wav] [--received]\n"
+        "checks and decodes the LE Audio stream (LC3 over CIS) instead; several captures\n"
+        "(one per sink of a group) are read together. Audio: <prefix>.<n>.lc3.wav\n");
 }
 
 int main(int argc, char **argv) {
     std::string input, prefix;
-    bool write_wav = true, received = false;
+    std::vector<std::string> inputs;
+    bool write_wav = true, received = false, le_audio = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "-o" && i + 1 < argc) prefix = argv[++i];
         else if (a == "--no-wav") write_wav = false;
         else if (a == "--received") received = true;
+        else if (a == "--le-audio") le_audio = true;
         else if (a == "-h" || a == "--help") { usage(); return 2; }
-        else if (input.empty() && a[0] != '-') input = a;
+        else if (a[0] != '-') inputs.push_back(a);
         else { usage(); return 2; }
     }
-    if (input.empty()) { usage(); return 2; }
+    if (inputs.empty() || (inputs.size() > 1 && !le_audio)) { usage(); return 2; }
+    input = inputs[0];
     if (prefix.empty()) {
         prefix = input;
         size_t dot = prefix.find_last_of('.');
         size_t sep = prefix.find_last_of("/\\");
         if (dot != std::string::npos && (sep == std::string::npos || dot > sep)) prefix.erase(dot);
     }
+
+    if (le_audio) return le_audio_decode_main(inputs, prefix, write_wav, received);
 
     FILE *f = fopen(input.c_str(), "rb");
     if (!f) { fprintf(stderr, "Cannot open %s\n", input.c_str()); return 2; }
