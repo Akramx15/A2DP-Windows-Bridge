@@ -20,6 +20,11 @@ extern "C" {
 
 namespace le_audio {
 
+namespace {
+/* The Unicast of the Core (one), for the PACS listeners below */
+Unicast *g_unicast = nullptr;
+} /* namespace */
+
 /* ======================================================================== */
 /* PACS / ASCS read                                                          */
 /* ======================================================================== */
@@ -136,6 +141,7 @@ void read_device(Core &core, LeAudioDevice &dev, std::function<void(bool)> done)
             if (LeAudioDevice *d = dev_for()) if (n >= 4) {
                 d->available_sink_contexts = rd16(v);
                 d->available_source_contexts = rd16(v + 2);
+                if (g_unicast) g_unicast->on_available_contexts(*d);
             }
         };
         counter->begin();
@@ -261,6 +267,37 @@ struct Unicast::Impl {
     std::string fail_reason;
     uint16_t latency_ms = 0;
     uint8_t phy = PHY_2M;
+    uint8_t framing = 0;              /* CIG / Config QoS: 0 unframed, 1 framed */
+    bool waiting_contexts = false;    /* Enable waits for an available context */
+    std::vector<uint16_t> cis_connected;  /* CIS handles established, not down yet */
+    std::vector<uint16_t> cis_to_drop;    /* HCI_Disconnect still to send */
+    std::vector<uint16_t> cis_dropping;   /* HCI_Disconnect sent, waiting for the event */
+    btstack_timer_source_t drop_timer = {};
+    bool drop_armed = false;
+
+    static void drop_handler(btstack_timer_source_t *ts) {
+        auto *impl = static_cast<Impl *>(btstack_run_loop_get_timer_context(ts));
+        impl->drop_armed = false;
+        impl->self->drop_cis();
+    }
+    void drop_arm(uint32_t ms) {
+        drop_disarm();
+        btstack_run_loop_set_timer_handler(&drop_timer, &drop_handler);
+        btstack_run_loop_set_timer_context(&drop_timer, this);
+        btstack_run_loop_set_timer(&drop_timer, ms);
+        btstack_run_loop_add_timer(&drop_timer);
+        drop_armed = true;
+    }
+    void drop_disarm() {
+        if (drop_armed) btstack_run_loop_remove_timer(&drop_timer);
+        drop_armed = false;
+    }
+    static void erase(std::vector<uint16_t> &v, uint16_t h) {
+        v.erase(std::remove(v.begin(), v.end(), h), v.end());
+    }
+    static bool has(const std::vector<uint16_t> &v, uint16_t h) {
+        return std::find(v.begin(), v.end(), h) != v.end();
+    }
 
     static void timer_handler(btstack_timer_source_t *ts) {
         auto *impl = static_cast<Impl *>(btstack_run_loop_get_timer_context(ts));
@@ -300,10 +337,13 @@ const char *Unicast::phase_name(Phase p) {
 
 Unicast::Unicast(Core &core) : impl_(new Impl()), core_(core) {
     impl_->self = this;
+    g_unicast = this;
 }
 
 Unicast::~Unicast() {
     impl_->disarm();
+    impl_->drop_disarm();
+    if (g_unicast == this) g_unicast = nullptr;
 }
 
 bool Unicast::uses_handle(uint16_t handle) const {
@@ -349,6 +389,11 @@ void Unicast::start(const StreamPlan &plan, std::function<void(bool, const std::
     impl_->fail_reason.clear();
     impl_->cis_up = 0;
     impl_->cis_pending = 0;
+    impl_->waiting_contexts = false;
+    impl_->cis_connected.clear();
+    impl_->cis_to_drop.clear();
+    impl_->cis_dropping.clear();
+    impl_->drop_disarm();
     LOG_INFO("LE Audio: starting unicast stream: %s", plan_.describe().c_str());
     for (const auto &c : plan_.cis) {
         char locs[64] = "";
@@ -392,10 +437,13 @@ void Unicast::enter(Phase p) {
         uint32_t pd = plan_.preset.presentation_delay_us, lower = 0, upper = 0xFFFFFF;
         uint16_t latency = plan_.preset.max_transport_latency_ms;
         uint8_t phy = plan_.phy;
+        uint8_t framing = plan_.preset.framing;
         for (const auto &c : plan_.cis) {
             LeAudioDevice *d = core_.device(c.device_id);
             Ase *a = d ? d->ase(c.ase_id) : nullptr;
             if (!a) continue;
+            /* Preferred_Framing 0x01: unframed ISO PDUs not supported */
+            if (a->pref_framing == 0x01) framing = 1;
             if (a->pd_min_us) lower = std::max(lower, a->pd_min_us);
             if (a->pd_max_us) upper = std::min(upper, a->pd_max_us);
             if (a->pref_max_latency_ms) latency = std::min(latency, a->pref_max_latency_ms);
@@ -408,9 +456,10 @@ void Unicast::enter(Phase p) {
         plan_.phy = phy;
         I.latency_ms = latency;
         I.phy = phy;
-        LOG_INFO("LE Audio: QoS: SDU interval %u us, max latency %u ms, RTN %u, PHY 0x%02x, "
-                 "presentation delay %u us", plan_.preset.sdu_interval_us(), latency, plan_.preset.rtn,
-                 phy, pd);
+        I.framing = framing;
+        LOG_INFO("LE Audio: QoS: SDU interval %u us, %s, max latency %u ms, RTN %u, PHY 0x%02x, "
+                 "presentation delay %u us", plan_.preset.sdu_interval_us(), framing ? "framed" : "unframed",
+                 latency, plan_.preset.rtn, phy, pd);
 
         if (!I.cig) {
             I.cig.reset(new le_audio_cig_t());
@@ -423,7 +472,7 @@ void Unicast::enter(Phase p) {
         cp.sdu_interval_p_to_c = plan_.preset.sdu_interval_us();
         cp.worst_case_sca = 0;
         cp.packing = 0;
-        cp.framing = plan_.preset.framing;
+        cp.framing = I.framing;
         cp.max_transport_latency_c_to_p = latency;
         cp.max_transport_latency_p_to_c = latency;
         cp.num_cis = (uint8_t)plan_.cis.size();
@@ -469,7 +518,7 @@ void Unicast::enter(Phase p) {
                 put8(v, plan_.cig_id);
                 put8(v, c->cis_id);
                 put24(v, plan_.preset.sdu_interval_us());
-                put8(v, plan_.preset.framing);
+                put8(v, I.framing);
                 put8(v, I.phy);
                 put16(v, c->sdu_len(plan_.preset.octets));
                 put8(v, plan_.preset.rtn);
@@ -480,35 +529,10 @@ void Unicast::enter(Phase p) {
         }
         break;
 
-    case Phase::Enable: {
-        /* Metadata: Streaming Audio Contexts, plus the CCID List of the
-         * content control services the modules tie to these contexts */
-        std::vector<uint8_t> ccids;
-        for (Module *m : modules()) m->add_ccids(plan_.contexts, ccids);
-        std::sort(ccids.begin(), ccids.end());
-        ccids.erase(std::unique(ccids.begin(), ccids.end()), ccids.end());
-        std::vector<uint8_t> meta;
-        const uint8_t contexts[2] = {(uint8_t)plan_.contexts, (uint8_t)(plan_.contexts >> 8)};
-        ltv_put(meta, META_STREAMING_CONTEXTS, contexts, 2);
-        if (!ccids.empty()) {
-            ltv_put(meta, META_CCID_LIST, ccids.data(), (uint8_t)ccids.size());
-            std::string list;
-            for (uint8_t id : ccids) list += (list.empty() ? "" : ",") + std::to_string(id);
-            LOG_INFO("LE Audio: Enable metadata: contexts 0x%04x, CCID list %s", plan_.contexts, list.c_str());
-        }
-        for (auto &e : by_device(plan_)) {
-            LeAudioDevice *d = core_.device(e.first);
-            if (!d || !d->connected()) { fail("a device is not connected"); return; }
-            std::vector<uint8_t> v = {ASE_OP_ENABLE, (uint8_t)e.second.size()};
-            for (const CisPlan *c : e.second) {
-                put8(v, c->ase_id);
-                put8(v, (uint8_t)meta.size());               /* metadata length */
-                v.insert(v.end(), meta.begin(), meta.end());
-            }
-            cp_write(core_, *d, std::move(v), "Enable");
-        }
+    case Phase::Enable:
+        I.waiting_contexts = false;
+        if (!send_enable()) return;
         break;
-    }
 
     case Phase::CreateCis: {
         hci_con_handle_t cis[MAX_NR_CIS], acl[MAX_NR_CIS];
@@ -538,8 +562,17 @@ void Unicast::enter(Phase p) {
     case Phase::Streaming: {
         std::vector<uint16_t> handles;
         for (const auto &c : plan_.cis) handles.push_back(c.cis_handle);
-        uint8_t count = core_.iso_packet_count();
-        uint8_t queue = count ? (uint8_t)std::max(1, std::min(2, count / (int)handles.size())) : 2;
+        /* BTstack queues up to `queue` SDUs per CIS and sends each as one
+         * HCI ISO data packet (plan_stream() made sure none needs
+         * fragmenting): queue x CIS must stay within the controller's
+         * Total_Num_ISO_Data_Packets, which Number Of Completed Packets
+         * frees again */
+        int count = core_.iso_packet_count();
+        if (count < (int)handles.size()) {
+            fail("the adapter has fewer ISO data buffers than the stream has CIS");
+            return;
+        }
+        uint8_t queue = (uint8_t)std::min(2, count / (int)handles.size());
         hci_set_num_iso_packets_to_queue(queue);
         core_.stream().start_sending(handles, queue);
         I.starting = false;
@@ -574,6 +607,13 @@ void Unicast::enter(Phase p) {
     }
 
     case Phase::Release: {
+        /* The ASEs left Streaming (Disable): end their CIS now. Servers may
+         * keep an ASE in Releasing (or not leave QoS Configured) until the
+         * client drops the CIS (BAP 1.0.1 5.6.5 / 5.6.6); BTstack would do it
+         * only when the CIG is removed, after Release. */
+        for (uint16_t h : I.cis_connected)
+            if (!Impl::has(I.cis_to_drop, h) && !Impl::has(I.cis_dropping, h)) I.cis_to_drop.push_back(h);
+        drop_cis();
         bool any = false;
         for (auto &e : by_device(plan_)) {
             LeAudioDevice *d = core_.device(e.first);
@@ -611,6 +651,8 @@ void Unicast::try_remove_cig() {
     /* BTstack must not get gap_cig_remove() while it still waits for the
      * CIG or CIS of a running command: it would resume them afterwards */
     if (I.cig_pending || I.cis_pending > 0) return;
+    /* ... nor while our own CIS disconnections are under way */
+    if (!I.cis_to_drop.empty() || !I.cis_dropping.empty()) return;
     if (!I.cig_removing) {
         uint8_t status = gap_cig_remove(plan_.cig_id);
         if (status != ERROR_CODE_SUCCESS) {
@@ -621,6 +663,111 @@ void Unicast::try_remove_cig() {
             return;
         }
         I.cig_removing = true;
+    }
+}
+
+/* Streaming Audio Contexts for Enable from what the devices have available
+ * now (Available Audio Contexts may have changed since plan_stream()) */
+static uint16_t current_contexts(Core &core, const StreamPlan &plan) {
+    std::vector<const LeAudioDevice *> devs;
+    for (const auto &c : plan.cis) {
+        const LeAudioDevice *d = core.device(c.device_id);
+        if (d && std::find(devs.begin(), devs.end(), d) == devs.end()) devs.push_back(d);
+    }
+    return choose_streaming_contexts(devs, plan.requested_contexts);
+}
+
+std::string Unicast::contexts_text() const {
+    std::string s;
+    char buf[96];
+    snprintf(buf, sizeof(buf), "wanted 0x%04x", plan_.requested_contexts);
+    s = buf;
+    std::vector<int> seen;
+    for (const auto &c : plan_.cis) {
+        if (std::find(seen.begin(), seen.end(), c.device_id) != seen.end()) continue;
+        seen.push_back(c.device_id);
+        const LeAudioDevice *d = core_.device(c.device_id);
+        if (!d) continue;
+        snprintf(buf, sizeof(buf), ", %s has 0x%04x", d->addr.str().c_str(), d->available_sink_contexts);
+        s += buf;
+    }
+    return s;
+}
+
+/* Enable with the Streaming Audio Contexts the devices have available.
+ * False (nothing sent) while none is: waits for an Available Audio Contexts
+ * notification (on_available_contexts) until the step times out. */
+bool Unicast::send_enable() {
+    Impl &I = *impl_;
+    uint16_t contexts = current_contexts(core_, plan_);
+    if (!contexts) {
+        if (!I.waiting_contexts)
+            LOG_WARN("LE Audio: no audio context available for Enable (%s): waiting", contexts_text().c_str());
+        I.waiting_contexts = true;
+        return false;
+    }
+    I.waiting_contexts = false;
+    if (contexts != plan_.requested_contexts)
+        LOG_INFO("LE Audio: streaming context 0x%04x (0x%04x is not available)", contexts,
+                 plan_.requested_contexts);
+    plan_.contexts = contexts;
+    /* Metadata: Streaming Audio Contexts, plus the CCID List of the
+     * content control services the modules tie to these contexts */
+    std::vector<uint8_t> ccids;
+    for (Module *m : modules()) m->add_ccids(plan_.contexts, ccids);
+    std::sort(ccids.begin(), ccids.end());
+    ccids.erase(std::unique(ccids.begin(), ccids.end()), ccids.end());
+    std::vector<uint8_t> meta;
+    const uint8_t ctx_le[2] = {(uint8_t)plan_.contexts, (uint8_t)(plan_.contexts >> 8)};
+    ltv_put(meta, META_STREAMING_CONTEXTS, ctx_le, 2);
+    if (!ccids.empty()) {
+        ltv_put(meta, META_CCID_LIST, ccids.data(), (uint8_t)ccids.size());
+        std::string list;
+        for (uint8_t id : ccids) list += (list.empty() ? "" : ",") + std::to_string(id);
+        LOG_INFO("LE Audio: Enable metadata: contexts 0x%04x, CCID list %s", plan_.contexts, list.c_str());
+    }
+    for (auto &e : by_device(plan_)) {
+        LeAudioDevice *d = core_.device(e.first);
+        if (!d || !d->connected()) { fail("a device is not connected"); return false; }
+        std::vector<uint8_t> v = {ASE_OP_ENABLE, (uint8_t)e.second.size()};
+        for (const CisPlan *c : e.second) {
+            put8(v, c->ase_id);
+            put8(v, (uint8_t)meta.size());               /* metadata length */
+            v.insert(v.end(), meta.begin(), meta.end());
+        }
+        cp_write(core_, *d, std::move(v), "Enable");
+    }
+    return true;
+}
+
+void Unicast::on_available_contexts(LeAudioDevice &dev) {
+    if (phase_ != Phase::Enable || !impl_->waiting_contexts) return;
+    bool planned = false;
+    for (const auto &c : plan_.cis) planned |= c.device_id == dev.id;
+    if (planned && send_enable()) advance();
+}
+
+/* HCI_Disconnect for the CIS in cis_to_drop. BTstack has no call for a CIS
+ * of a CIG that stays (gap_disconnect only knows ACL / SCO connections);
+ * its Disconnection Complete handling sets the ISO stream idle, so the CIG
+ * removal later skips it. */
+void Unicast::drop_cis() {
+    Impl &I = *impl_;
+    I.drop_disarm();
+    while (!I.cis_to_drop.empty()) {
+        if (!hci_can_send_command_packet_now()) {
+            I.drop_arm(2);
+            return;
+        }
+        uint16_t h = I.cis_to_drop.front();
+        I.cis_to_drop.erase(I.cis_to_drop.begin());
+        uint8_t status = hci_send_cmd(&hci_disconnect, h, ERROR_CODE_REMOTE_USER_TERMINATED_CONNECTION);
+        if (status == ERROR_CODE_SUCCESS) {
+            LOG_INFO("LE Audio: disconnecting CIS 0x%04x", h);
+            I.cis_dropping.push_back(h);
+        } else {
+            LOG_WARN("LE Audio: disconnecting CIS 0x%04x failed (0x%02x)", h, status);
+        }
     }
 }
 
@@ -638,6 +785,11 @@ void Unicast::finish_stop() {
     bool was_starting = I.starting;
     phase_ = Phase::Idle;
     I.disarm();
+    I.drop_disarm();
+    I.waiting_contexts = false;
+    I.cis_connected.clear();
+    I.cis_to_drop.clear();
+    I.cis_dropping.clear();
     I.starting = false;
     core_.notify_stream_state(false);
     LOG_INFO("LE Audio: unicast stream ended");
@@ -689,6 +841,9 @@ void Unicast::on_timeout() {
             /* Still waiting for a CIG / CIS event: remove it anyway */
             impl_->cig_pending = false;
             impl_->cis_pending = 0;
+            impl_->drop_disarm();
+            impl_->cis_to_drop.clear();
+            impl_->cis_dropping.clear();
             try_remove_cig();
             if (phase_ == Phase::RemoveCig) impl_->arm(STOP_STEP_TIMEOUT_MS);
         } else {
@@ -702,6 +857,12 @@ void Unicast::on_timeout() {
     case Phase::Idle:
     case Phase::Streaming:
         break;
+    case Phase::Enable:
+        if (impl_->waiting_contexts) {
+            fail("no audio context available for the stream (" + contexts_text() + ")");
+            break;
+        }
+        [[fallthrough]];
     default: {
         std::string why = std::string("no answer in ") + phase_name(phase_);
         /* Which ASEs did not get there */
@@ -861,6 +1022,7 @@ void Unicast::on_cis_created(const uint8_t *packet, uint16_t size) {
         else LOG_WARN("LE Audio: %s", why);
     } else {
         I.cis_up++;
+        I.cis_connected.push_back(handle);
         LOG_INFO("LE Audio: CIS 0x%04x established (ISO interval %u x 1.25 ms)", handle,
                  gap_subevent_cis_created_get_iso_interval_1250us(packet));
     }
@@ -871,10 +1033,17 @@ void Unicast::on_link_lost(uint16_t handle) {
     if (!uses_handle(handle)) return;
     Impl &I = *impl_;
     for (auto &c : plan_.cis) {
-        if (c.cis_handle == handle) {
+        if (c.cis_handle != handle) continue;
+        if (Impl::has(I.cis_dropping, handle) || Impl::has(I.cis_to_drop, handle)) {
+            LOG_INFO("LE Audio: CIS 0x%04x disconnected", handle);
+        } else {
             LOG_WARN("LE Audio: CIS 0x%04x disconnected", handle);
             if (phase_ == Phase::CreateCis && I.cis_pending > 0) I.cis_pending--;
         }
+        Impl::erase(I.cis_connected, handle);
+        Impl::erase(I.cis_to_drop, handle);
+        Impl::erase(I.cis_dropping, handle);
+        core_.stream().on_cis_down(handle);
     }
     switch (phase_) {
     case Phase::Streaming:
