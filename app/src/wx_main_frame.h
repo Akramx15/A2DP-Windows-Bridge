@@ -41,6 +41,7 @@ enum {
     ID_SETTING_REMEMBER_VOLUME,
     ID_SETTING_DEBUG,
     ID_SETTING_LE_AUDIO,
+    ID_SETTING_LE_LOW_LATENCY,
     ID_OPEN_LINK_QUALITY,
     ID_DEBUG_CAPTURE_START,
     ID_DEBUG_CAPTURE_STOP,
@@ -122,6 +123,7 @@ private:
     void OnToggleRememberVolume(wxCommandEvent &evt);
     void OnToggleDebugMode(wxCommandEvent &evt);
     void OnToggleLeAudio(wxCommandEvent &evt);
+    void OnToggleLeLowLatency(wxCommandEvent &evt);
     void OnOpenLinkQuality(wxCommandEvent &evt);
     void OnDebugCaptureStart(wxCommandEvent &evt);
     void OnDebugCaptureStop(wxCommandEvent &evt);

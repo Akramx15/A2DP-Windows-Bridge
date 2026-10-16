@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio（實驗性）",
   "settings.le_audio_on": "LE Audio（實驗性）已開啟。\n\n連線設定檔的裝置掃描中現在會顯示 LE Audio 裝置。在設定檔中勾選「LE Audio 裝置」即可改用 LC3（而非 A2DP）傳送。介面卡需要支援等時通道的藍牙 5.2。尚未在實際耳機上測試。",
   "settings.le_audio_off": "LE Audio（實驗性）已關閉。",
+  "settings.le_low_latency": "遊戲耳機低延遲（GMAP，實驗性）",
   "advanced.max_packet": "媒體封包大小上限 (位元組)",
   "advanced.max_packet_recommended": "建議值 (%d)",
   "advanced.max_packet_help": "每個藍牙封包中音訊資料的上限 (%d-%d)。耳機本身的上限 (MTU) 也一律適用；A2DPWB 會採用兩者中較小的值。\n\n%d (建議值) 剛好可放入一個藍牙基頻封包。較大的值只能節省 1-2%% 的額外負荷，但遺失封包時會遺失更多音訊。自下次連線起套用。",

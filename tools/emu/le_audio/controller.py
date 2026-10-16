@@ -39,6 +39,7 @@ log = logging.getLogger('emu_le_audio')
 # controller reports them in its LE CIS Established too (one central here)
 CIS_PARAMS = {}
 LATE_INTERVALS = 3
+LATE_US = 30000      # the same tolerance in time for shorter SDU intervals
 
 
 class LeEmuController(EmuController):
@@ -134,7 +135,10 @@ class LeEmuController(EmuController):
         # the host fell behind by more than LATE_INTERVALS (a real controller
         # would have flushed those). The tolerance absorbs the timer jitter of
         # this emulation (asyncio timers fire up to ~16 ms late on Windows).
-        n_now = int(math.ceil((now - self.iso_t0) / interval - 1e-6)) - LATE_INTERVALS
+        # That jitter is in time, not intervals: at least LATE_US, so 7.5 ms
+        # SDU intervals (GMAP) get 4 intervals where 10 ms ones get 3.
+        late = max(LATE_INTERVALS, math.ceil(LATE_US / interval_us))
+        n_now = int(math.ceil((now - self.iso_t0) / interval - 1e-6)) - late
         n = max(self.iso_next_slot.get(handle, 0), n_now)
         self.iso_next_slot[handle] = n + 1
         slot = self.iso_t0 + n * interval

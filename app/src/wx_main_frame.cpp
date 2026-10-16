@@ -19,6 +19,7 @@
 #include "system_integration.h"
 #include "update_checker.h"
 #include "hci_capture.h"
+#include "le_audio/le_audio_tmap_gmap.h"
 
 #include <wx/scrolwin.h>
 #include <wx/statline.h>
@@ -72,6 +73,7 @@ MainFrame::MainFrame()
     service_.set_saved_volumes(settings_.saved_volumes);
     service_.set_debug_mode(settings_.debug_mode);
     service_.set_le_audio_enabled(settings_.le_audio_experimental);
+    le_audio::set_gmap_low_latency(settings_.le_audio_low_latency);
     /* Debug mode changes apply after a restart; the Debug menu follows the boot state */
     debug_active_ = settings_.debug_mode;
     if (debug_active_)
@@ -229,6 +231,9 @@ void MainFrame::create_menu_bar() {
     settings_menu->AppendSeparator();
     settings_menu->AppendCheckItem(ID_SETTING_LE_AUDIO, wxString::FromUTF8(L("settings.le_audio")));
     settings_menu->Check(ID_SETTING_LE_AUDIO, settings_.le_audio_experimental);
+    settings_menu->AppendCheckItem(ID_SETTING_LE_LOW_LATENCY, wxString::FromUTF8(L("settings.le_low_latency")));
+    settings_menu->Check(ID_SETTING_LE_LOW_LATENCY, settings_.le_audio_low_latency);
+    settings_menu->Enable(ID_SETTING_LE_LOW_LATENCY, settings_.le_audio_experimental);
     settings_menu->AppendCheckItem(ID_SETTING_DEBUG, wxString::FromUTF8(L("settings.debug_mode")));
     settings_menu->Check(ID_SETTING_DEBUG, settings_.debug_mode);
     menu_bar->Append(settings_menu, wxString::FromUTF8(L("menu.settings")));
@@ -283,6 +288,7 @@ void MainFrame::create_menu_bar() {
     Bind(wxEVT_MENU, &MainFrame::OnToggleRememberVolume, this, ID_SETTING_REMEMBER_VOLUME);
     Bind(wxEVT_MENU, &MainFrame::OnToggleDebugMode, this, ID_SETTING_DEBUG);
     Bind(wxEVT_MENU, &MainFrame::OnToggleLeAudio, this, ID_SETTING_LE_AUDIO);
+    Bind(wxEVT_MENU, &MainFrame::OnToggleLeLowLatency, this, ID_SETTING_LE_LOW_LATENCY);
     Bind(wxEVT_MENU, &MainFrame::OnOpenLinkQuality, this, ID_OPEN_LINK_QUALITY);
 
     Bind(wxEVT_MENU, &MainFrame::OnOpenFirmware, this, ID_OPEN_FIRMWARE);
@@ -914,6 +920,7 @@ void MainFrame::OnToggleLeAudio(wxCommandEvent &) {
     settings_.le_audio_experimental = !settings_.le_audio_experimental;
     settings_.save();
     service_.set_le_audio_enabled(settings_.le_audio_experimental);
+    if (wxMenuBar *mb = GetMenuBar()) mb->Enable(ID_SETTING_LE_LOW_LATENCY, settings_.le_audio_experimental);
     if (service_.state() != A2dpService::State::Streaming &&
         service_.state() != A2dpService::State::Connecting &&
         service_.state() != A2dpService::State::Reconnecting && !service_.is_scanning())
@@ -922,6 +929,13 @@ void MainFrame::OnToggleLeAudio(wxCommandEvent &) {
         wxString::FromUTF8(L(settings_.le_audio_experimental ? "settings.le_audio_on" : "settings.le_audio_off")),
         wxString::FromUTF8(L("settings.le_audio")),
         wxOK | wxICON_INFORMATION, this);
+}
+
+void MainFrame::OnToggleLeLowLatency(wxCommandEvent &) {
+    /* Read when the next LE Audio stream is set up */
+    settings_.le_audio_low_latency = !settings_.le_audio_low_latency;
+    settings_.save();
+    le_audio::set_gmap_low_latency(settings_.le_audio_low_latency);
 }
 
 void MainFrame::OnOpenFirmware(wxCommandEvent &) {

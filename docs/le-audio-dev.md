@@ -697,3 +697,111 @@ metadata of each ASE Enable. Cases (all with `--mcp-dry-run`): `mcp-read`,
 - Browsers and some players update the SMTC timeline rarely, so the position
   is an estimate; a player without SMTC support shows up as no session
   (Inactive) and gets media keys only.
+
+## TMAP / GMAP
+
+`le_audio_tmap_gmap.{h,cpp}`; GMAP presets in `le_audio_presets.cpp`;
+emulator `tools/emu/le_audio/tmap_gmap.py`, cases
+`tools/emu/le_audio_tests/tmap_gmap.py`.
+
+**PC side (GATT server).** TMAS (0x1855) with TMAP Role (0x2B51, uint16) =
+`0x0004` Unicast Media Sender. GMAS (0x1858) with GMAP Role (0x2C00) =
+`0x01` Unicast Game Gateway and UGG Features (0x2C01) = `0x03`. Both read
+only, no extra security. What is claimed and why:
+
+| Role / feature | Claimed | Why |
+|----------------|---------|-----|
+| TMAP UMS | yes | BAP unicast client sending media to sink ASEs |
+| TMAP CG | no | needs CCP (TBS / GTBS server) and conversational, bidirectional audio (source ASEs, the headset microphone): not implemented |
+| TMAP CT / UMR / BMR | no | the PC does not render LE Audio |
+| TMAP BMS | no | no broadcast |
+| GMAP UGG | yes | low-latency unicast to a gaming headset |
+| UGG Multiplex (bit 0) | yes | both channels of a headset as 2 LC3 frames in one SDU (2-channel ASE) |
+| UGG 96 kbps Source (bit 1) | yes | 48_3_gr / 48_4_gr can be sent |
+| UGG Multisink (bit 2) | no | about receiving audio from several CIS; no source ASEs |
+
+**Headset side (GATT client).** In `on_gatt_ready()` the module reads TMAP
+Role, GMAP Role and UGT Features (0x2C02) through the GATT client queue and
+logs `LE Audio: <addr>: TMAP: UMR, GMAP: UGT (UGT features 0x3C: sink, 64
+kbps sink, multiplex, multisink)` (or `no TMAS / GMAS`).
+`tmap_gmap_info(id)` / `tmap_gmap_summary(id)` give the result to any
+thread, e.g. for the UI. The state is per device id, dropped on disconnect
+and stack deinit.
+
+**Low latency.** Settings > "Low latency for gaming headsets (GMAP,
+experimental)" (`le_audio_low_latency`, default off; only enabled with LE
+Audio on) or `--le-low-latency` in the CLI (the CLI ignores the saved
+setting; `--le-preset` wins over the flag). `set_gmap_low_latency()` is an
+atomic read at stream set-up. In `adjust_stream_request()`, when it is on
+and every device of the group is a UGT with the Sink feature (waiting up
+to 5 s for role reads still queued), `preset_order` becomes `48_3_gr,
+48_4_gr, 48_1_gr, 48_2_gr, 32_1_gr, 32_2_gr` followed by the media presets,
+and `contexts = CONTEXT_GAME`. The PAC records still decide (a UGT that
+allows only 10 ms gets 48_4_gr, one that takes at most 80 octets 48_1_gr,
+...). Otherwise the log says why (`low latency off`, `not a Unicast Game
+Terminal`, `UGT without the Sink feature`, `no GMAP role`) and the request
+is unchanged. `on_stream_state` logs `GMAP: streaming 48_3_gr, contexts
+0x0008`.
+
+GMAP presets (GMAP 1.0 Table 3.16, UGG -> UGT, unframed, Config Codec
+target latency "low"):
+
+| Name | LC3 | Octets | SDU interval | RTN | Max transport latency | Presentation delay |
+|------|-----|--------|--------------|-----|-----------------------|--------------------|
+| 32_1_gr | 32 kHz 7.5 ms | 60 | 7500 us | 1 | 15 ms | 10 ms |
+| 32_2_gr | 32 kHz 10 ms | 80 | 10000 us | 1 | 20 ms | 10 ms |
+| 48_1_gr | 48 kHz 7.5 ms | 75 | 7500 us | 1 | 15 ms | 10 ms |
+| 48_2_gr | 48 kHz 10 ms | 100 | 10000 us | 1 | 20 ms | 10 ms |
+| 48_3_gr | 48 kHz 7.5 ms | 90 | 7500 us | 1 | 15 ms | 10 ms |
+| 48_4_gr | 48 kHz 10 ms | 120 | 10000 us | 1 | 20 ms | 10 ms |
+
+The values were taken from the GMAP 1.0 table as known to the author and
+cross-checked against Zephyr's `gmap_lc3_preset.h` from memory (no network
+access during the work): check them against the spec before relying on
+them. The core clamps the presentation delay into the ASEs' range and caps
+the latency by the servers' preference, as for every preset.
+
+7.5 ms frames: the core was already frame-duration aware (Config Codec
+Frame_Duration 0x00, SDU interval = frame duration in LE Set CIG Parameters
+and Config QoS, `btstack_lc3_google` with `BTSTACK_LC3_FRAME_DURATION_7500US`
+(360 samples at 48 kHz), the pacing in `Stream` in microseconds). The
+emulator cases stream 48_3_gr at 7500 us without changes to the core.
+
+**Emulator.** Every sink has a TMAS with TMAP Role `--tmap-role` (default
+`0x0008` UMR; `0` = none). `--gmap-role 0x02 --gmap-ugt-features 0x3C` adds a
+GMAS (UGT: sink, 64 kbps sink, multiplex, multisink). `--tmap-read-peer`: the
+sink reads A2DPWB's TMAS / GMAS after encryption and logs `peer TMAP Role
+0x0004 (UMS)` / `peer GMAP Role 0x01 (UGG), UGG Features 0x03`. The sink PAC
+record (bap.py) already allows every `_gr` setting. Cases: `tmap-role`,
+`gmap-low-latency` (48_3_gr on one headset; Config QoS SDU interval 7500 us,
+RTN 1, 15 ms, 10 ms presentation delay on both captures), `gmap-earbuds`
+(the same on two earbuds), `gmap-off` (UGT, no flag: 48_6_2), `gmap-not-ugt`
+(GMAS with BGR only + flag: 48_6_2). The emulator's late-SDU tolerance is
+at least 30 ms (`LATE_US`, 4 intervals at 7.5 ms). On a heavily loaded
+machine the 7.5 ms cases can still fail now and then with "time stamp
+step(s) differ from the SDU interval": both captures then show the
+emulator's event loop stalling for 40-80 ms (deliveries and A2DPWB's sends
+in bursts), not A2DPWB falling behind on its own.
+
+**Conformance notes (not complete; from the TMAP 1.0 / GMAP 1.0
+requirements as far as known, not checked against the PTS).**
+
+- TMAP UMS needs VCP Volume Controller and MCP Media Control Server (GMCS):
+  the VCP / MCP work packages. With GMCS, the CCID_List in the Enable
+  metadata belongs to MCP.
+- TMAP UMS is a CAP Initiator: CAP procedures beyond BAP (coordinated set
+  start / stop) come with CSIP; A2DPWB does not advertise, so no TMAS
+  service data is needed on the PC side.
+- UMS codec / QoS: the BAP 48_2 / 48_4 / 48_6 configurations exist with
+  both QoS settings (`48_x_1`, `48_x_2`); the default order uses the high
+  reliability ones (media), the low-latency ones only with `--le-preset`.
+  2M PHY is the target PHY (1M when a server prefers it); Audio Locations
+  and the server's presentation delay range / latency preference are
+  respected by the core.
+- GMAP UGG probably also requires receiving the headset's voice (the
+  `_gs` settings, UGT -> UGG) and VCP: not possible without source ASEs;
+  A2DPWB is a sink-direction-only UGG.
+- No broadcast roles (TMAP BMS, GMAP BGS).
+- Only verified against the Bumble emulator (whose ASCS has no
+  presentation delay limits and a 100 ms latency preference), not with a
+  real gaming headset.

@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio (expérimental)",
   "settings.le_audio_on": "LE Audio (expérimental) est activé.\n\nLes appareils LE Audio apparaissent désormais dans la recherche d’appareils d’un profil de connexion. Cochez « Appareil LE Audio » dans le profil pour lui envoyer du LC3 au lieu d’A2DP. L’adaptateur doit prendre en charge Bluetooth 5.2 avec les canaux isochrones. Pas encore testé avec de vrais casques.",
   "settings.le_audio_off": "LE Audio (expérimental) est désactivé.",
+  "settings.le_low_latency": "Faible latence pour casques gaming (GMAP, expérimental)",
   "advanced.max_packet": "Taille max. des paquets média (octets)",
   "advanced.max_packet_recommended": "Recommandé (%d)",
   "advanced.max_packet_help": "Limite supérieure des données audio dans chaque paquet Bluetooth (%d-%d). La limite propre du casque (MTU) s'applique toujours aussi ; A2DPWB utilise la plus petite des deux.\n\n%d (recommandé) tient dans un paquet de bande de base Bluetooth. Des valeurs plus grandes n'économisent que 1-2%% de surcharge, mais davantage d'audio est perdu lorsqu'un paquet est perdu. S'applique à partir de la prochaine connexion.",

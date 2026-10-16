@@ -9,9 +9,10 @@
  * group supports and allocates the channels to the devices' sink ASEs by
  * audio location.
  *
- * GMAP (le_audio_tmap_gmap.cpp) adds its low-latency presets with
- * add_stream_preset() in on_stack_init() and puts them first in
- * StreamRequest::preset_order from adjust_stream_request().
+ * The table also has GMAP's low-latency settings for a Unicast Game
+ * Terminal ("32_1_gr" ... "48_4_gr", GMAP 1.0 Table 3.16); GMAP
+ * (le_audio_tmap_gmap.cpp) puts them first in StreamRequest::preset_order
+ * from adjust_stream_request(). Modules may add more with add_stream_preset().
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -41,7 +42,7 @@ struct StreamPreset {
     uint32_t kbps_per_channel() const { return (uint32_t)octets * 8u * 1000u / frame_us; }
 };
 
-/* All known presets (BAP Table 5.2 media / conversational settings) */
+/* All known presets (BAP Table 5.2 settings, GMAP Table 3.16 "_gr") */
 const std::vector<StreamPreset> &stream_presets();
 /* Add or replace a preset by name (BTstack thread or before streaming) */
 void add_stream_preset(const StreamPreset &preset);

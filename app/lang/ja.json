@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio（実験的）",
   "settings.le_audio_on": "LE Audio（実験的）を有効にしました。\n\n接続プロファイルのデバイススキャンに LE Audio デバイスが表示されます。プロファイルで「LE Audio デバイス」にチェックを入れると、A2DP の代わりに LC3 で送信します。アダプターには Bluetooth 5.2 のアイソクロナスチャネル対応が必要です。実機のヘッドホンではまだ検証していません。",
   "settings.le_audio_off": "LE Audio（実験的）を無効にしました。",
+  "settings.le_low_latency": "ゲーミングヘッドセット向け低遅延（GMAP、実験的）",
   "advanced.max_packet": "最大メディアパケットサイズ（バイト）",
   "advanced.max_packet_recommended": "推奨値（%d）",
   "advanced.max_packet_help": "Bluetooth パケット 1 つに入れる音声データの上限です（%d〜%d）。ヘッドホン側の上限（MTU）も常に適用され、A2DPWB は小さい方を使います。\n\n%d（推奨）は Bluetooth のベースバンドパケット 1 つに収まる大きさです。大きくしても削減できるオーバーヘッドは 1〜2%% 程度で、パケットが失われたときに失われる音声が長くなります。次回の接続から反映されます。",

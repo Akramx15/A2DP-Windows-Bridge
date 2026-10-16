@@ -206,6 +206,7 @@
   "settings.le_audio": "LE Audio (experimental)",
   "settings.le_audio_on": "LE Audio (experimental) está activado.\n\nLos dispositivos LE Audio aparecen ahora en la búsqueda de dispositivos de un perfil de conexión. Marque «Dispositivo LE Audio» en el perfil para enviarle LC3 en lugar de A2DP. El adaptador necesita Bluetooth 5.2 con canales isócronos. Aún no se ha probado con auriculares reales.",
   "settings.le_audio_off": "LE Audio (experimental) está desactivado.",
+  "settings.le_low_latency": "Baja latencia para auriculares gaming (GMAP, experimental)",
   "advanced.max_packet": "Tamaño máx. de paquete multimedia (bytes)",
   "advanced.max_packet_recommended": "Recomendado (%d)",
   "advanced.max_packet_help": "Límite superior de datos de audio en cada paquete Bluetooth (%d-%d). También se aplica siempre el límite propio de los auriculares (MTU); A2DPWB usa el menor de los dos.\n\n%d (recomendado) cabe en un paquete de banda base Bluetooth. Los valores mayores solo ahorran un 1-2%% de sobrecarga, pero se pierde más audio cuando se pierde un paquete. Se aplica a partir de la siguiente conexión.",

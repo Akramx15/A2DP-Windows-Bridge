@@ -206,6 +206,7 @@
   "settings.le_audio": "LE 오디오 (실험적)",
   "settings.le_audio_on": "LE 오디오(실험적)를 켰습니다.\n\n이제 연결 프로필의 기기 검색에 LE 오디오 기기가 표시됩니다. 프로필에서 \"LE 오디오 기기\"를 선택하면 A2DP 대신 LC3로 전송합니다. 어댑터는 등시성 채널을 지원하는 Bluetooth 5.2가 필요합니다. 아직 실제 헤드폰으로는 테스트하지 않았습니다.",
   "settings.le_audio_off": "LE 오디오(실험적)를 껐습니다.",
+  "settings.le_low_latency": "게이밍 헤드셋용 저지연 (GMAP, 실험적)",
   "advanced.max_packet": "최대 미디어 패킷 크기(바이트)",
   "advanced.max_packet_recommended": "권장(%d)",
   "advanced.max_packet_help": "각 Bluetooth 패킷에 담는 오디오 데이터의 상한입니다(%d-%d). 헤드폰 자체의 한도(MTU)도 항상 적용되며, A2DPWB는 둘 중 작은 값을 사용합니다.\n\n%d(권장)는 Bluetooth 베이스밴드 패킷 하나에 맞습니다. 값을 키워도 오버헤드는 1-2%%만 줄고, 패킷이 손실될 때 잃는 오디오가 많아집니다. 다음 연결부터 적용됩니다.",
