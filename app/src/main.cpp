@@ -8,7 +8,7 @@
  *   - aptX (Qualcomm/APT classic, 352/384 kbps)
  *   - AAC (MPEG-2/4 AAC-LC, up to 256 kbps)
  *   - SBC (mandatory A2DP codec, up to ~345 kbps)
- *   - LHDC V5 (Savitech, up to 1000 kbps, 24-bit, experimental)
+ *   - LHDC V5 (Savitech, up to 1000 kbps, 24-bit)
  *
  * Main entry point. Orchestrates:
  *   1. Bluetooth device discovery and selection
@@ -518,7 +518,7 @@ static bool find_best_btstack_codec(const BtStackTransport::RemoteCodecCaps &cap
                    "classic aptX is used only if the device lists it too)\n");
     }
 
-    /* Priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC */
+    /* Priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC */
     if (caps.ldac)    { *selected_codec = AudioCodec::LDAC;   return true; }
     if (caps.aptx_hd) { *selected_codec = AudioCodec::AptxHD; return true; }
     if (caps.aptx_ll) { *selected_codec = AudioCodec::AptxLL; return true; }

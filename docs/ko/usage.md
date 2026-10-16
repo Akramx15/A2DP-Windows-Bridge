@@ -56,10 +56,10 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5 (experimental)
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 ```
 
-자동 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (실험적) > AAC > SBC
+자동 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 요청한 코덱을 헤드폰이 제공하지 않으면 CLI는 자동 우선순위로 대체합니다. aptX Adaptive는 절대 선택되지 않습니다. [aptX 계열과 aptX Adaptive 호환성](#aptx-compatibility)을 참조하십시오.
 
@@ -246,7 +246,7 @@ A2DPWB가 연결하면 헤드폰은 **코덱 목록**(AVDTP 스트림 엔드포�
 - **헤드폰이 기본 aptX도 제공하는 경우** -- Qualcomm이 aptX Adaptive를 aptX / aptX HD와 하위 호환된다고 홍보하기 때문에 많은 aptX Adaptive 헤드폰이 그렇습니다. 이 경우 A2DPWB는 기본 aptX를 직접 선택합니다. 이는 헤드폰 목록에 있는 별도 코덱이며, aptX Adaptive의 축소 모드가 아닙니다.
 - **헤드폰이 aptX Adaptive만 제공하는 경우** (기본 aptX, aptX HD, aptX LL 없음) -- A2DPWB로는 aptX를 사용할 수 없습니다. 자동은 우선순위에서 다음 코덱, 보통 AAC 또는 SBC를 선택합니다.
 
-자동 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (실험적) > AAC > SBC
+자동 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 ### 명시적으로 선택한 코덱을 제공하지 않는 경우 {#codec-fallback}
 

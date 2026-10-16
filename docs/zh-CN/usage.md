@@ -56,10 +56,10 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5 (experimental)
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 ```
 
-自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5（实验性）> AAC > SBC
+自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 如果耳机不提供所请求的编解码器，CLI 会退回到“自动”的优先级顺序。aptX Adaptive 永远不会被选中——请参阅 [aptX 系列与 aptX Adaptive 的兼容性](#aptx-compatibility)。
 
@@ -246,7 +246,7 @@ A2DPWB 连接时，耳机会通告一个**编解码器列表**（AVDTP 流端点
 - **耳机同时列出了经典 aptX**——许多 aptX Adaptive 耳机都是如此，因为 Qualcomm 宣传 aptX Adaptive 向下兼容 aptX / aptX HD。这种情况下 A2DPWB 会直接选择经典 aptX；它是耳机列表中独立的一种编解码器，而不是 aptX Adaptive 的降级模式。
 - **耳机只列出了 aptX Adaptive**（没有经典 aptX、aptX HD 或 aptX LL）——无法通过 A2DPWB 使用 aptX。“自动”会按优先级顺序选择下一个编解码器，通常是 AAC 或 SBC。
 
-自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5（实验性）> AAC > SBC
+自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 ### 明确指定的编解码器不可用 {#codec-fallback}
 

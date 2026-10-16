@@ -56,10 +56,10 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5 (experimental)
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 ```
 
-Prioridad de la selección automática: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC
+Prioridad de la selección automática: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 Si los auriculares no ofrecen el códec solicitado, la CLI recurre al orden de prioridad de Automático. aptX Adaptive nunca se selecciona: consulte [Familia aptX y compatibilidad con aptX Adaptive](#aptx-compatibility).
 
@@ -246,7 +246,7 @@ Cuando A2DPWB se conecta, los auriculares anuncian una **lista de códecs** (ext
 - **Los auriculares también ofrecen aptX clásico** -- Muchos auriculares aptX Adaptive lo hacen, porque Qualcomm promociona aptX Adaptive como retrocompatible con aptX / aptX HD. En ese caso A2DPWB selecciona directamente aptX clásico; es un códec independiente en la lista de los auriculares, no un modo reducido de aptX Adaptive.
 - **Los auriculares solo ofrecen aptX Adaptive** (sin aptX clásico, aptX HD ni aptX LL) -- aptX no es posible con A2DPWB. Automático elige el siguiente códec en el orden de prioridad, normalmente AAC o SBC.
 
-Prioridad de la selección automática: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC
+Prioridad de la selección automática: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 ### El códec seleccionado no está disponible {#codec-fallback}
 

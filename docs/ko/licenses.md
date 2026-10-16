@@ -33,7 +33,7 @@ A2DPWB 소스 코드는 Apache-2.0 또는 MIT 이중 라이선스입니다. 배�
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC 인코더 |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL 인코더 |
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC 인코더 |
-| [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (AOSP 인코더의 C 포팅) | commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC V5 인코더 (실험적) |
+| [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (AOSP 인코더의 C 포팅) | commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC V5 인코더 |
 | [wxWidgets](https://www.wxwidgets.org/) | 3.2.6 | wxWindows Library Licence 3.1 | GUI 프레임워크 |
 | zlib (wxWidgets 내장) | 1.2.13.1 | zlib license | 압축 (PNG 지원) |
 | libpng (wxWidgets 내장) | 1.6.37 | PNG Reference Library License v2 | PNG 이미지 |
@@ -58,7 +58,7 @@ libldac NOTICE에는 "Taking the certification process is required to use LDAC i
 
 ### LHDC 상표 및 인증
 
-LHDC는 Hi-Res Wireless Audio(HWA) 얼라이언스가 보급하는 Savitech Corp.의 코덱입니다. A2DPWB가 사용하는 인코더는 Google이 AOSP(Android 17)에 공개한 코드에서 파생된 Apache-2.0 코드이지만, Apache-2.0은 상표권을 부여하지 않으며 LHDC를 내세우는 제품은 보통 Savitech / HWA 인증을 거칩니다. A2DPWB는 인증을 받지 않았으며, LHDC V5 지원은 실험적이고 비상업적인 상호 운용성 기능입니다.
+LHDC는 Hi-Res Wireless Audio(HWA) 얼라이언스가 보급하는 Savitech Corp.의 코덱입니다. A2DPWB가 사용하는 인코더는 Google이 AOSP(Android 17)에 공개한 코드에서 파생된 Apache-2.0 코드이지만, Apache-2.0은 상표권을 부여하지 않으며 LHDC를 내세우는 제품은 보통 Savitech / HWA 인증을 거칩니다. A2DPWB는 인증을 받지 않았으며, LHDC V5 지원은 비상업적인 상호 운용성 기능입니다.
 
 ### libopenaptx 버전
 

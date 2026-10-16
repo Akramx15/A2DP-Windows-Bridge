@@ -33,7 +33,7 @@ A2DPWB 原始碼採用 Apache-2.0 或 MIT 雙重授權。發佈的 `A2DPWB.exe` 
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC 編碼器 |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL 編碼器 |
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC 編碼器 |
-| [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder)（AOSP 編碼器的 C 語言移植版） | commit 3f9d198 | Apache-2.0（FFT：BSD-3-Clause，KISS FFT） | LHDC V5 編碼器（實驗性） |
+| [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder)（AOSP 編碼器的 C 語言移植版） | commit 3f9d198 | Apache-2.0（FFT：BSD-3-Clause，KISS FFT） | LHDC V5 編碼器 |
 | [wxWidgets](https://www.wxwidgets.org/) | 3.2.6 | wxWindows Library Licence 3.1 | GUI 框架 |
 | zlib（內建於 wxWidgets） | 1.2.13.1 | zlib license | 壓縮（PNG 支援） |
 | libpng（內建於 wxWidgets） | 1.6.37 | PNG Reference Library License v2 | PNG 圖片 |
@@ -58,7 +58,7 @@ libldac 的 NOTICE 載明："Taking the certification process is required to use
 
 ### LHDC 商標與認證
 
-LHDC 是 Savitech Corp. 的轉碼器，由 Hi-Res Wireless Audio (HWA) 聯盟推廣。A2DPWB 使用的編碼器是衍生自 Google 在 AOSP（Android 17）中發佈之編碼器的 Apache-2.0 程式碼，但 Apache-2.0 不授予任何商標權，而標榜 LHDC 的產品通常需經過 Savitech / HWA 認證。A2DPWB 未經認證；LHDC V5 支援是實驗性、非商業的互通性功能。
+LHDC 是 Savitech Corp. 的轉碼器，由 Hi-Res Wireless Audio (HWA) 聯盟推廣。A2DPWB 使用的編碼器是衍生自 Google 在 AOSP（Android 17）中發佈之編碼器的 Apache-2.0 程式碼，但 Apache-2.0 不授予任何商標權，而標榜 LHDC 的產品通常需經過 Savitech / HWA 認證。A2DPWB 未經認證；LHDC V5 支援是非商業的互通性功能。
 
 ### libopenaptx 版本
 

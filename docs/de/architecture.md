@@ -262,7 +262,7 @@ Nimmt die Systemaudio-Ausgabe in Echtzeit über die Windows Audio Session API au
 | aptX | libopenaptx | 352/384 kbps (44,1/48 kHz) | 16 Bit Stereo, kein RTP-Header |
 | AAC | fdk-aac | bis 256 kbps | AAC-LC, LATM-Transport |
 | SBC | BTstack Bluedroid | bis ca. 345 kbps | Verpflichtende A2DP-Grundlage |
-| LHDC V5 | lhdcv5-enc (C-Portierung des AOSP-Encoders) | 400/500/900/1000 kbps, ABR 160–400 kbps | Experimentell; 16/24 Bit, 5-ms-Frames, 2 Byte Header der Mediennutzdaten, RTP-Header |
+| LHDC V5 | lhdcv5-enc (C-Portierung des AOSP-Encoders) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24 Bit, 5-ms-Frames, 2 Byte Header der Mediennutzdaten, RTP-Header |
 
 Alle Encoder implementieren die Schnittstelle `AudioEncoder` mit den Methoden `encode()` und
 `get_frame_size()`.
@@ -332,4 +332,4 @@ es nur; klassisches aptX wird verwendet, wenn die Senke dieses separat aufführt
   einen eigenen USB-Adapter für A2DPWB verwenden
 - Die Firmware mancher Bluetooth-Adapter begrenzt die erreichbare Bitrate
 - USB-Bluetooth-Adapter ab Version 5.0 eignen sich im Allgemeinen gut für LDAC
-- Priorität der automatischen Codec-Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimentell) > AAC > SBC
+- Priorität der automatischen Codec-Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC

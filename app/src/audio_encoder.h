@@ -21,7 +21,7 @@ enum class AudioCodec {
     SBC,
     AAC,
     Aptx,      /* classic aptX (appended: keep existing enumerator values stable) */
-    LHDCV5,    /* LHDC V5 (experimental; appended for the same reason) */
+    LHDCV5,    /* LHDC V5 (appended for the same reason) */
 };
 
 /* Quality mode (codec-specific interpretation) */

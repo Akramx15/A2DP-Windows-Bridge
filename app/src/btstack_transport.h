@@ -287,7 +287,7 @@ public:
          * is no open-source encoder */
         bool aptx_adaptive = false;
         uint8_t aptx_adaptive_seid = 0;
-        /* LHDC V5 (0x053A / 0x4C35, experimental): set when the SEP is
+        /* LHDC V5 (0x053A / 0x4C35): set when the SEP is
          * usable (V5 ver.1, 5 ms frames, a known sample rate and bit
          * depth); lhdcv5_info holds its 11 codec info bytes */
         bool lhdcv5 = false;

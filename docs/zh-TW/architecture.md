@@ -255,7 +255,7 @@ stateDiagram-v2
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16 位元立體聲、無 RTP 標頭 |
 | AAC | fdk-aac | 最高 256 kbps | AAC-LC、LATM 傳輸 |
 | SBC | BTstack Bluedroid | 最高約 345 kbps | A2DP 必備的基本轉碼器 |
-| LHDC V5 | lhdcv5-enc（AOSP 編碼器的 C 語言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 實驗性；16/24 位元、5 ms 訊框、2 位元組媒體酬載標頭、RTP 標頭 |
+| LHDC V5 | lhdcv5-enc（AOSP 編碼器的 C 語言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 16/24 位元、5 ms 訊框、2 位元組媒體酬載標頭、RTP 標頭 |
 
 所有編碼器都實作 `AudioEncoder` 介面，提供 `encode()` 與
 `get_frame_size()` 方法。
@@ -322,4 +322,4 @@ PipeWire 相同），因此整個 L2CAP MTU 都可用於 aptX 訊框。
   A2DPWB 使用專用的 USB 介面卡
 - 部分藍牙介面卡的韌體會限制可達到的位元率
 - USB 藍牙 5.0 以上的介面卡通常很適合 LDAC
-- 自動轉碼器選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5（實驗性）> AAC > SBC
+- 自動轉碼器選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC

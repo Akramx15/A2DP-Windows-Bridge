@@ -33,7 +33,7 @@ Der Quellcode von A2DPWB ist unter Apache-2.0 oder MIT doppelt lizenziert. Die v
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC-Encoder |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | Encoder für aptX / aptX HD / aptX LL |
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC-Encoder |
-| [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (C-Portierung des AOSP-Encoders) | Commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC-V5-Encoder (experimentell) |
+| [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (C-Portierung des AOSP-Encoders) | Commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC-V5-Encoder |
 | [wxWidgets](https://www.wxwidgets.org/) | 3.2.6 | wxWindows Library Licence 3.1 | GUI-Framework |
 | zlib (in wxWidgets integriert) | 1.2.13.1 | zlib license | Komprimierung (PNG-Unterstützung) |
 | libpng (in wxWidgets integriert) | 1.6.37 | PNG Reference Library License v2 | PNG-Bilder |
@@ -60,7 +60,7 @@ Im NOTICE von libldac heißt es: "Taking the certification process is required t
 
 ### LHDC-Marke und -Zertifizierung
 
-LHDC ist ein Codec der Savitech Corp., der von der Allianz Hi-Res Wireless Audio (HWA) gefördert wird. Der von A2DPWB verwendete Encoder ist Apache-2.0-Code, abgeleitet von dem Encoder, den Google in AOSP (Android 17) veröffentlicht hat. Apache-2.0 gewährt jedoch keine Markenrechte, und Produkte, die mit LHDC werben, durchlaufen normalerweise eine Zertifizierung durch Savitech / HWA. A2DPWB ist nicht zertifiziert; die Unterstützung für LHDC V5 ist eine experimentelle, nicht kommerzielle Interoperabilitätsfunktion.
+LHDC ist ein Codec der Savitech Corp., der von der Allianz Hi-Res Wireless Audio (HWA) gefördert wird. Der von A2DPWB verwendete Encoder ist Apache-2.0-Code, abgeleitet von dem Encoder, den Google in AOSP (Android 17) veröffentlicht hat. Apache-2.0 gewährt jedoch keine Markenrechte, und Produkte, die mit LHDC werben, durchlaufen normalerweise eine Zertifizierung durch Savitech / HWA. A2DPWB ist nicht zertifiziert; die Unterstützung für LHDC V5 ist eine nicht kommerzielle Interoperabilitätsfunktion.
 
 ### Version von libopenaptx
 

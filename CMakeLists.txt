@@ -78,7 +78,7 @@ else()
 endif()
 
 # --- LHDC V5 encoder (portable C port of the AOSP Rust encoder, Apache-2.0) ---
-# Experimental codec. The port's 12 sources are compiled as one static library;
+# The port's 12 sources are compiled as one static library;
 # the 192 kHz default context size (~117 KB, heap-allocated) is kept.
 set(LHDCV5_SRC_DIR ${CMAKE_SOURCE_DIR}/extern/lhdcv5-enc)
 

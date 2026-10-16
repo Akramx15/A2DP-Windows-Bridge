@@ -259,7 +259,7 @@ Windows Audio Session API를 사용하여 시스템 오디오 출력을 실시�
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16비트 스테레오, RTP 헤더 없음 |
 | AAC | fdk-aac | 최대 256 kbps | AAC-LC, LATM 전송 |
 | SBC | BTstack Bluedroid | 최대 약 345 kbps | A2DP 필수 기본 코덱 |
-| LHDC V5 | lhdcv5-enc (AOSP 인코더의 C 포팅) | 400/500/900/1000 kbps, ABR 160–400 kbps | 실험적; 16/24비트, 5 ms 프레임, 2바이트 미디어 페이로드 헤더, RTP 헤더 |
+| LHDC V5 | lhdcv5-enc (AOSP 인코더의 C 포팅) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24비트, 5 ms 프레임, 2바이트 미디어 페이로드 헤더, RTP 헤더 |
 
 모든 인코더는 `encode()`와 `get_frame_size()` 메서드를 가진
 `AudioEncoder` 인터페이스를 구현합니다.
@@ -328,4 +328,4 @@ A2DPWB는 로그에만 기록하며, 싱크가 기본 aptX를 별도로 제공�
   A2DPWB에는 전용 USB 어댑터 사용
 - 일부 Bluetooth 어댑터는 펌웨어 때문에 달성 가능한 비트레이트가 제한됨
 - USB Bluetooth 5.0 이상 어댑터는 일반적으로 LDAC에서 잘 작동함
-- 자동 코덱 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (실험적) > AAC > SBC
+- 자동 코덱 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC

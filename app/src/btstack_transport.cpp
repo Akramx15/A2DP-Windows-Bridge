@@ -1035,7 +1035,7 @@ void BtStackTransport::register_codec_endpoints() {
     }
 
 #ifdef LHDCV5_ENCODER_AVAILABLE
-    /* LHDC V5 endpoint (experimental) — 11 bytes, see LHDCV5_CAPS_P6.. */
+    /* LHDC V5 endpoint — 11 bytes, see LHDCV5_CAPS_P6.. */
     {
         static uint8_t lhdcv5_caps[LHDCV5_INFO_LEN];
         static uint8_t lhdcv5_config[LHDCV5_INFO_LEN];

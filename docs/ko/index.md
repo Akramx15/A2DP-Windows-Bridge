@@ -11,7 +11,7 @@ has_toc: false
 모든 코덱을 지원하는 Windows용 Bluetooth A2DP 오디오 스트리밍 도구
 {: .fs-6 .fw-300 }
 
-WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** 및 (실험적) **LHDC V5**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
+WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** 및 **LHDC V5**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
 
 [시작하기](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -30,7 +30,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | SBC | 최대 약 345 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### 플랫폼별 코덱 지원 (헤드폰으로 전송)
 
@@ -42,7 +42,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu 패키지에 포함되지 않음 | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| LHDC V5 | ❌ | ❌ | ❌ | 🧪 실험적 |
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 지원 · 🧪 실험적 · ❌ 미지원. 모든 열은 전송 측(PC → 헤드폰) 기준입니다. "기본"은 A2DPWB 없이 OS 자체 Bluetooth 오디오를 사용하는 경우이며, Ubuntu 열은 Ubuntu 26.04의 PipeWire 코덱 구성(`libspa-0.2-bluetooth`)입니다.
@@ -50,8 +50,8 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 {: .warning }
 **aptX HD와 aptX Low Latency는 실험적 기능입니다.** Android / PipeWire 구현을 따르며 인코딩/디코딩 왕복 테스트를 통과했지만, 실제 헤드폰에서는 아직 검증되지 않았습니다. 표의 지연 시간은 일반적인 수치이며 A2DPWB로 측정한 값이 아닙니다.
 
-{: .warning }
-**LHDC V5는 실험적 기능입니다.** Google이 Android 17(AOSP, Apache-2.0)에 추가한 LHDC V5 인코더의 C 포팅 버전을 사용합니다. 이 포팅 버전은 AOSP Rust 인코더와 비트 단위로 일치함을 확인했으며, A2DP 시그널링은 Android의 `a2dp_vendor_lhdcv5`를 따릅니다. 실제 LHDC 헤드폰에서는 아직 검증되지 않았습니다. 손실 압축 LHDC V5만 지원합니다. LHDC V2/V3(구형 헤드폰)와 무손실 "LHDC-RAW" 모드는 오픈 소스 인코더가 없습니다. 자동 모드에서 LHDC V5의 우선순위는 LDAC 및 aptX 계열보다 낮고 AAC / SBC보다 높습니다.
+{: .note }
+**LHDC V5 정보.** Google이 Android 17(AOSP, Apache-2.0)에 추가한 LHDC V5 인코더의 C 포팅 버전을 사용합니다. 이 포팅 버전은 AOSP Rust 인코더와 비트 단위로 일치함을 확인했으며, A2DP 시그널링은 Android의 `a2dp_vendor_lhdcv5`를 따릅니다. 실제 LHDC V5 헤드폰에서도 사용자가 1000 kbps / 192 kHz로 작동함을 확인했습니다([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). 손실 압축 LHDC V5만 지원합니다. LHDC V2/V3(구형 헤드폰)와 무손실 "LHDC-RAW" 모드는 오픈 소스 인코더가 없습니다. 자동 모드에서 LHDC V5의 우선순위는 LDAC 및 aptX 계열보다 낮고 AAC / SBC보다 높습니다.
 
 {: .note }
 **기본 aptX만 필요하십니까?** Windows 10의 기본 Bluetooth 스택은 이미 기본 aptX를 지원하므로(aptX HD, aptX LL, aptX Adaptive는 미지원) 이 경우 A2DPWB가 필요하지 않습니다. A2DPWB는 주로 LDAC, aptX HD, aptX Low Latency에 유용합니다.
@@ -80,6 +80,7 @@ A2DPWB 자체는 Windows 전용이며 x64 빌드만 제공됩니다. Linux 도�
 | TP-Link UB500 (Realtek RTL8761BU, 어댑터) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | 측정용 수신기 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04, 실제 무선 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ 수신 및 측정됨 |
 | 가상 링크 `tools/emu` (Bumble) | Windows 11, 무선 없음 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 | ✅ 엔드투엔드 테스트 통과 |
+| LHDC V5 헤드폰 (사용자 보고, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ 1000 kbps / 192 kHz로 재생 |
 
 Windows 10은 아직 실제 하드웨어에서 시험하지 않았습니다. 다른 어댑터는 [권장 어댑터](setup#adapters)를 참조하십시오.
 
