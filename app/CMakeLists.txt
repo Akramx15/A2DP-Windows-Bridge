@@ -75,6 +75,21 @@ add_executable(A2DPWB WIN32
     src/system_integration.cpp
     src/update_checker.cpp
     src/zadig_helper.cpp
+    # LE Audio (experimental): core, BAP unicast client, profile modules
+    src/le_audio/le_audio_util.cpp
+    src/le_audio/le_audio_gatt_client.cpp
+    src/le_audio/le_audio_gatt_server.cpp
+    src/le_audio/le_audio_presets.cpp
+    src/le_audio/le_audio_stream.cpp
+    src/le_audio/le_audio_bap.cpp
+    src/le_audio/le_audio_core.cpp
+    src/le_audio/le_audio_modules.cpp
+    src/le_audio/le_audio_csip.cpp
+    src/le_audio/le_audio_vcp.cpp
+    src/le_audio/le_audio_mcp.cpp
+    src/le_audio/le_audio_ccp.cpp
+    src/le_audio/le_audio_tmap_gmap.cpp
+    src/le_audio/le_audio_cli.cpp
     resources/app.rc
 )
 

@@ -53,6 +53,7 @@
 #include "remote_sink_client.h"
 #include "test_tone.h"
 #include "wx_app.h"
+#include "le_audio/le_audio_cli.h"
 
 /* Global state */
 static std::atomic<bool> g_running{true};
@@ -435,6 +436,11 @@ static void print_usage(const char *prog) {
     printf("               local network. Without -d, streams to that receiver\n");
     printf("  --afh <auto|off|6,11>  AFH: avoid the Wi-Fi channels heard strongly (auto), none,\n");
     printf("               or these Wi-Fi channels (default: as set in the GUI, else auto)\n");
+    printf("\nLE Audio (experimental, LC3 over LE isochronous channels):\n");
+    printf("  --le-audio   Stream to the LE Audio device -d (BAP unicast, LC3)\n");
+    printf("  --le-device <addr>  Another device of the group (e.g. the second earbud)\n");
+    printf("  --le-preset <name>  Use only this BAP configuration (e.g. 48_2_2, 16_2_1)\n");
+    printf("  --le-scan [seconds] List the LE Audio devices nearby and exit\n");
     printf("  -h           Show this help\n");
     printf("\nCodec priority (auto mode): LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC\n");
 }
@@ -997,6 +1003,9 @@ int main(int argc, char *argv[]) {
     const char *usb_path = nullptr;
     CaptureMode cli_capture_mode = CaptureMode::SystemLoopback;
     const char *cli_audio_device = nullptr;
+    /* LE Audio (experimental) */
+    bool le_audio = false;
+    LeAudioCliOptions le_options;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--cli") == 0) {
@@ -1072,6 +1081,18 @@ int main(int argc, char *argv[]) {
             g_remote_sink = argv[++i];
         } else if (strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
             g_dev.duration_s = static_cast<uint32_t>(strtoul(argv[++i], nullptr, 10));
+        } else if (strcmp(argv[i], "--le-audio") == 0) {
+            le_audio = true;
+        } else if (strcmp(argv[i], "--le-device") == 0 && i + 1 < argc) {
+            le_audio = true;
+            le_options.devices.push_back(argv[++i]);
+        } else if (strcmp(argv[i], "--le-preset") == 0 && i + 1 < argc) {
+            le_options.preset = argv[++i];
+        } else if (strcmp(argv[i], "--le-scan") == 0) {
+            le_audio = true;
+            le_options.scan_only = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-')
+                le_options.scan_seconds = static_cast<uint32_t>(strtoul(argv[++i], nullptr, 10));
         } else if (strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -1084,6 +1105,29 @@ int main(int argc, char *argv[]) {
         printf("Transport: BTstack (H4 over TCP to %s - development / testing)\n", g_dev.hci_tcp.c_str());
 
     SetConsoleCtrlHandler(console_handler, TRUE);
+
+    if (le_audio) {
+        /* LE Audio (experimental): its own flow (le_audio/le_audio_cli.cpp) */
+        if (device_addr_str[0] != '\0')
+            le_options.devices.insert(le_options.devices.begin(), device_addr_str);
+        le_options.hci_tcp = g_dev.hci_tcp;
+        le_options.hci_capture = g_dev.hci_capture;
+        le_options.test_tone = g_dev.test_tone;
+        le_options.duration_s = g_dev.duration_s;
+        le_options.capture_mode = cli_capture_mode;
+        le_options.afh = g_afh;
+        if (cli_audio_device) {
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, cli_audio_device, -1, nullptr, 0);
+            if (wlen > 0) {
+                le_options.audio_device_id.resize(wlen - 1);
+                MultiByteToWideChar(CP_UTF8, 0, cli_audio_device, -1, &le_options.audio_device_id[0], wlen);
+            }
+        }
+        le_options.running = []() { return g_running.load(); };
+        int le_result = le_audio_cli_run(le_options);
+        CoUninitialize();
+        return le_result;
+    }
 
     if (!g_remote_sink.empty()) {
         /* Find the receiver: its IP for the statistics and, without -d, its

@@ -40,6 +40,7 @@ extern "C" {
 #include "hci_capture.h"
 #include "link_stats.h"
 #include "btstack_uart_tcp_windows.h"
+#include "le_audio/le_audio_core.h"
 
 /* hci_transport_h2_winusb.c: HCI traffic with the adapter stopped for good */
 extern "C" int hci_transport_usb_failed(void);
@@ -534,6 +535,8 @@ void BtStackTransport::deinit_btstack() {
             fprintf(stderr, "BTstack: HCI not off at exit, closing the transport\n");
             static_cast<const hci_transport_t *>(hci_transport_)->close();
         }
+        /* LE Audio (experimental): SM, ATT server, GATT client, modules */
+        le_audio::Core::instance().stack_deinit();
         avrcp_target_deinit();
         avrcp_controller_deinit();
         avrcp_deinit();
@@ -712,6 +715,13 @@ void BtStackTransport::setup_hci_and_power_on() {
 
     /* Register vendor codec stream endpoints */
     register_codec_endpoints();
+
+    /* LE Audio (experimental, off by default): SM, GATT client / server,
+     * ISO. Nothing of it runs while the setting is off. */
+    if (le_audio::Core::instance().enabled()) {
+        le_audio::Core::instance().set_storage_dir(link_key_dir_);
+        le_audio::Core::instance().stack_init();
+    }
 
     /* Enable custom pre-init so Realtek chipset driver can send
      * vendor commands before HCI Reset (Phase 1: read LMP subversion).
