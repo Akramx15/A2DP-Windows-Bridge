@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(a2dpwb VERSION 1.1.0 LANGUAGES C CXX)
+project(a2dpwb VERSION 1.1.1 LANGUAGES C CXX)
 
 # Pre-release suffix such as "-beta.1", empty for a release. It is part of the
 # version the app reports and compares in its update check (1.1.0-beta.1 <

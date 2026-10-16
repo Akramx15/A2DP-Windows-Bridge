@@ -38,6 +38,8 @@ struct BtAdapterInfo {
     std::string device_path;    /* Full USB device path from SetupAPI */
     bool        vendor_class = false; /* interface 0 is FF/01/01, not E0/01/01: BTstack's
                                          transport opens it only once its VID:PID is added */
+    bool        in_use = false; /* WinUSB refused to open it: held by our BTstack or
+                                   another program, so not checked further */
 };
 
 /* Known Realtek chip family for user selection */

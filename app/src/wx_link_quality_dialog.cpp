@@ -221,7 +221,7 @@ void LinkQualityDialog::size_to_content() {
 
 void LinkQualityDialog::show_widest_values() {
     codec_value_->SetLabel(wxString::Format(U("quality.codec_value"),
-        wxString("aptX HD"), 192.0, 2u, 9999u));
+        wxString("aptX HD"), 192.0, 2u, 9999u) + U("quality.codec_capped"));
     bitrate_value_->SetLabel(wxString::Format(U("quality.bitrate_value"), 9999.0));
     packets_value_->SetLabel(wxString::Format(U("quality.packets_value"), 999.9, 9999.0));
     queue_value_->SetLabel(wxString::Format(U("quality.queue_value"),
@@ -263,9 +263,13 @@ void LinkQualityDialog::refresh() {
 
     /* ---- Stream ---- */
     if (streaming && !info.codec.empty()) {
-        codec_value_->SetLabel(wxString::Format(U("quality.codec_value"),
+        /* Say why the bit rate is below the profile's: ABR, or the device's maximum */
+        wxString codec = wxString::Format(U("quality.codec_value"),
             wxString::FromUTF8(info.codec), info.sample_rate / 1000.0,
-            (unsigned)info.channels, (unsigned)info.bitrate_kbps));
+            (unsigned)info.channels, (unsigned)info.bitrate_kbps);
+        if (info.abr) codec += U("quality.codec_abr");
+        else if (info.bitrate_capped) codec += U("quality.codec_capped");
+        codec_value_->SetLabel(codec);
     } else {
         codec_value_->SetLabel("-");
     }

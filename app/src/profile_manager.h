@@ -25,7 +25,7 @@ struct ConnectionProfile {
     bool abr = false;
     bool codec_fallback = true;   /* use the best codec the device offers when
                                    * the chosen one is not available (not for Auto) */
-    uint32_t sample_rate = 0;     /* 0=auto, 44100, 48000, 88200, 96000 */
+    uint32_t sample_rate = 0;     /* 0=auto, 44100, 48000, 88200, 96000, 192000 (LHDC V5) */
     uint32_t bit_depth = 0;       /* 0=auto, 16, 24 */
     std::string capture_mode;     /* "loopback", "virtual", "app" */
     std::string audio_device_id;  /* WASAPI device ID for virtual mode */

@@ -534,6 +534,12 @@ std::vector<BtAdapterInfo> BtAdapterEnumerator::enumerate()
         std::string service = device_string_property(dev_info, dev_data, SPDRP_SERVICE);
         std::string setup_class = device_string_property(dev_info, dev_data, SPDRP_CLASS);
         bool winusb = _stricmp(service.c_str(), "WinUSB") == 0;
+        /* WinUSB refused to open: someone holds the adapter, often our own
+         * BTstack after a scan or connection (issue #66). Its compatible ID
+         * still tells it is a Bluetooth adapter. */
+        bool in_use = !is_bt && winusb && why.rfind("open failed (error 5)", 0) == 0 &&
+                      has_bluetooth_compat_id(dev_info, dev_data);
+        if (in_use) is_bt = true;
         BtChipVendor vid_vendor = vendor_for_usb(vid, pid, realtek_pid);
         bool bt_vid = vid_vendor != BtChipVendor::Unknown &&
                       vid_vendor != BtChipVendor::Realtek &&
@@ -548,7 +554,8 @@ std::vector<BtAdapterInfo> BtAdapterEnumerator::enumerate()
             snprintf(line, sizeof(line), "BtAdapterEnumerator: USB %04X:%04X driver=%s class=%s -> %s%s%s",
                      vid, pid, service.empty() ? "(none)" : service.c_str(),
                      setup_class.empty() ? "(none)" : setup_class.c_str(),
-                     is_bt ? (vendor_class ? "adapter (vendor class FF/01/01)" : "adapter")
+                     is_bt ? (vendor_class ? "adapter (vendor class FF/01/01)"
+                              : in_use ? "adapter (in use, not opened)" : "adapter")
                            : "skipped",
                      is_bt || why.empty() ? "" : ": ", is_bt ? "" : why.c_str());
             report.push_back({warn ? 'W' : 'I', line});
@@ -562,6 +569,9 @@ std::vector<BtAdapterInfo> BtAdapterEnumerator::enumerate()
             else if (!winusb)
                 hint = "  not bound to WinUSB (Windows uses it): usable only once Zadig "
                        "replaces this driver with WinUSB";
+            else if (in_use)
+                hint = "  held by this A2DPWB's Bluetooth stack, or by another program "
+                       "(WinUSB allows one user at a time)";
             else if (why.rfind("open failed (error 5)", 0) == 0)
                 hint = "  WinUSB allows one user at a time: close any other "
                        "A2DPWB or tool holding the adapter";
@@ -576,6 +586,7 @@ std::vector<BtAdapterInfo> BtAdapterEnumerator::enumerate()
             info.realtek_pid = realtek_pid;
             info.vendor = vendor_for_usb(vid, pid, realtek_pid);
             info.vendor_class = vendor_class;
+            info.in_use = in_use;
 
             info.display_name = build_display_name(vid, pid, info.realtek_pid, info.vendor);
 

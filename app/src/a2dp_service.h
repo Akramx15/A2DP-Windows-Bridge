@@ -68,6 +68,8 @@ public:
          * (empty when the profile's codec is in use) */
         std::string requested_codec;
         bool        requested_in_use = false; /* maybe on an endpoint another device streams to */
+        bool        abr = false;              /* adaptive bit rate on (LDAC, LHDC V5) */
+        bool        bitrate_capped = false;   /* the device's maximum lowered the profile's bit rate */
     };
 
     /* ---- Callbacks (called from worker threads, must be thread-safe) ---- */
@@ -98,6 +100,8 @@ public:
 
     /* ---- Firmware management ---- */
     bool is_firmware_present() const { return firmware_present_; }
+    /* Name of a firmware/config file that is there but invalid ("" if none) */
+    const std::string &firmware_invalid_file() const { return firmware_invalid_file_; }
     bool is_firmware_downloading() const { return firmware_downloading_.load(); }
     bool was_firmware_updated() { return firmware_updated_.exchange(false); }
     std::string firmware_status() const;
@@ -217,6 +221,7 @@ private:
 
     /* ---- Firmware ---- */
     bool firmware_present_ = false;
+    std::string firmware_invalid_file_;
     std::atomic<bool> firmware_downloading_{false};
     std::atomic<bool> firmware_updated_{false};
     mutable std::mutex firmware_status_mutex_;
