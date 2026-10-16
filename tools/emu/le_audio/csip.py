@@ -1,22 +1,84 @@
-"""CSIP on the emulated sinks (stub: does nothing yet).
+"""CSIP on the emulated sinks: the sinks are the members of one coordinated set.
 
-Owner: the CSIP work package. Plan: with --sinks 2 the two sinks are the
-earbuds of one coordinated set: add bumble.profiles.csip.
-CoordinatedSetIdentificationService (same SIRK, set size 2, rank 1 / 2) to
-each sink.device, include it in a CAS (bumble.profiles.cap) instead of the
-plain CAS of bap.py, and put the RSI (AD type 0x2E,
-AdvertisingData.RESOLVABLE_SET_IDENTIFIER) into sink.adv_structures.
-Options: --csip-... (add_arguments).
+--csip-set plaintext|encrypted gives every sink a Coordinated Set
+Identification Service (bumble.profiles.csip) with the same SIRK, Coordinated
+Set Size = the number of sinks of the layout (or --csip-size), rank = sink
+index + 1 (or --csip-ranks) and an unlocked Set Member Lock, and puts a
+Resolvable Set Identifier (AD 0x2E) into its advertising data. With
+"encrypted" the SIRK characteristic returns the SIRK encrypted with the LTK of
+the link (sef, CSIS 4.5).
+
+The CSIS is a primary service here, not included by the CAS (bap.py adds a
+plain CAS before this module runs); A2DPWB looks for the CSIS among primary
+and included services alike.
+
+--csip-missing: the second sink stops advertising right after power on (a
+set member out of range): A2DPWB must stream to the first one alone.
 """
+
+import logging
+
+from bumble.core import AdvertisingData
+from bumble.profiles import csip
+
+log = logging.getLogger('emu_le_audio')
+
+# Any 16 bytes (over-the-air order); fixed so that runs are reproducible
+DEFAULT_SIRK = bytes.fromhex('a2d0b0e0c5150001a2d0b0e0c5150002')
+
+
+class LoggingCsis(csip.CoordinatedSetIdentificationService):
+    """Bumble's CSIS, logging the SIRK reads (for the checks)."""
+
+    def __init__(self, sink_name, *args, **kwargs):
+        self.sink_name = sink_name
+        super().__init__(*args, **kwargs)
+
+    async def on_sirk_read(self, connection):
+        value = await super().on_sirk_read(connection)
+        log.info('%s: CSIS SIRK read (%s)', self.sink_name,
+                 'encrypted' if value[0] == csip.SirkType.ENCRYPTED else 'plaintext')
+        return value
 
 
 def add_arguments(parser):
-    pass
+    parser.add_argument('--csip-set', choices=('plaintext', 'encrypted'),
+                        help='the sinks form a coordinated set (CSIS with this SIRK type, RSI advertised)')
+    parser.add_argument('--csip-size', type=int, default=0,
+                        help='Coordinated Set Size (default: the number of sinks of the layout)')
+    parser.add_argument('--csip-ranks', help='Set Member Rank of each sink, comma separated (default 1,2,...)')
+    parser.add_argument('--csip-missing', action='store_true',
+                        help='the second set member does not advertise (out of range)')
+
+
+def _set_size(args):
+    if args.csip_size:
+        return args.csip_size
+    import __main__  # emu_le_audio_sink.py
+    return len(getattr(__main__, 'LAYOUTS', {}).get(args.layout, [None, None]))
 
 
 def configure_sink(sink, args):
-    pass
+    if not args.csip_set:
+        return
+    ranks = [int(r) for r in args.csip_ranks.split(',')] if args.csip_ranks else []
+    rank = ranks[sink.index] if sink.index < len(ranks) else sink.index + 1
+    sirk_type = csip.SirkType.ENCRYPTED if args.csip_set == 'encrypted' else csip.SirkType.PLAINTEXT
+    size = _set_size(args)
+    service = LoggingCsis(sink.name, DEFAULT_SIRK, sirk_type, coordinated_set_size=size,
+                          set_member_lock=csip.MemberLock.UNLOCKED, set_member_rank=rank)
+    sink.device.add_service(service)
+    rsi = csip.generate_rsi(DEFAULT_SIRK)
+    sink.adv_structures.append((AdvertisingData.RESOLVABLE_SET_IDENTIFIER, rsi))
+    sink.state['csip'] = dict(service=service, rank=rank, size=size, rsi=rsi)
 
 
 async def start(sink, args):
-    pass
+    state = sink.state.get('csip')
+    if not state:
+        return
+    log.info('%s: CSIS member, %s SIRK, rank %d of %d, RSI %s', sink.name, args.csip_set, state['rank'],
+             state['size'], state['rsi'].hex())
+    if args.csip_missing and sink.index == 1:
+        await sink.device.stop_advertising()
+        log.info('%s: not advertising (--csip-missing)', sink.name)
