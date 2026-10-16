@@ -1,7 +1,8 @@
 /*
- * LE Audio (experimental) - MCP: Generic Media Control Service on the PC (stub)
+ * LE Audio (experimental) - MCP: Generic Media Control Service on the PC
  *
- * Owner: the MCP work package. See le_audio_mcp.cpp for the plan.
+ * The PC is the Media Control Server (GMCS, CCID_GMCS): see le_audio_mcp.cpp
+ * for the service and le_audio_mcp_media.h for the Windows side.
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */

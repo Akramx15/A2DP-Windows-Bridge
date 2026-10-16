@@ -88,6 +88,7 @@ add_executable(A2DPWB WIN32
     src/le_audio/le_audio_csip.cpp
     src/le_audio/le_audio_vcp.cpp
     src/le_audio/le_audio_mcp.cpp
+    src/le_audio/le_audio_mcp_media.cpp
     src/le_audio/le_audio_ccp.cpp
     src/le_audio/le_audio_tmap_gmap.cpp
     src/le_audio/le_audio_cli.cpp
@@ -97,6 +98,11 @@ add_executable(A2DPWB WIN32
 # Fixed (version-less) name: the HKCU Run autostart entry stores the exe path,
 # so a name that changes per release would break autostart after every update.
 set_target_properties(A2DPWB PROPERTIES OUTPUT_NAME "A2DPWB")
+
+# MCP: the System Media Transport Controls client uses C++/WinRT (C++20)
+if(MSVC)
+    set_source_files_properties(src/le_audio/le_audio_mcp_media.cpp PROPERTIES COMPILE_OPTIONS "/std:c++20")
+endif()
 
 target_include_directories(A2DPWB PRIVATE
     ${CMAKE_SOURCE_DIR}/extern/libldac/inc
