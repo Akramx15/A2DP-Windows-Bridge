@@ -44,6 +44,7 @@
   "device.tag_saved": "페어링됨",
   "device.tag_audio": "오디오",
   "device.tag_le_audio": "LE 오디오",
+  "device.tag_le_audio_set": "LE 오디오 세트",
   "device.name_unknown": "알 수 없음",
   "device.edit_name": "이름 편집",
   "device.edit_name_title": "장치 이름 편집",

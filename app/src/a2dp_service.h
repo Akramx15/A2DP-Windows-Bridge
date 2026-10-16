@@ -54,6 +54,7 @@ public:
         bool        audio_device;
         bool        saved;
         bool        le_audio = false;    /* LE Audio device (experimental) */
+        bool        le_audio_set = false;  /* member of a coordinated set (CSIP RSI advertised) */
     };
 
     /* Stream info for display */

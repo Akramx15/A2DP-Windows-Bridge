@@ -1020,6 +1020,7 @@ void A2dpService::scan_thread_func_inner() {
         notify_state(state_.load(), L("status.le_scanning"));
         auto le_results = le.scan(5000);
         std::lock_guard<std::mutex> lock(device_mutex_);
+        std::vector<int> sets_listed;   /* CSIP: one new entry per known coordinated set */
         for (const auto &r : le_results) {
             if (!r.le_audio) continue;
             le_found++;
@@ -1029,9 +1030,15 @@ void A2dpService::scan_thread_func_inner() {
                 if (existing.addr_str == addr) {
                     if (!r.name.empty()) existing.name = r.name;
                     existing.le_audio = true;
+                    existing.le_audio_set = !r.rsi.empty();
                     exists = true;
                     break;
                 }
+            }
+            if (!exists && r.set_id >= 0) {
+                /* Another member of this set is listed: connecting one finds the others */
+                if (std::find(sets_listed.begin(), sets_listed.end(), r.set_id) != sets_listed.end()) continue;
+                sets_listed.push_back(r.set_id);
             }
             if (!exists) {
                 DeviceEntry sd{};
@@ -1041,6 +1048,7 @@ void A2dpService::scan_thread_func_inner() {
                 sd.audio_device = true;
                 sd.saved = false;
                 sd.le_audio = true;
+                sd.le_audio_set = !r.rsi.empty();
                 device_list_.push_back(std::move(sd));
             }
         }
