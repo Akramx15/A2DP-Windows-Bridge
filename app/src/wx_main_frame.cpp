@@ -514,6 +514,9 @@ void MainFrame::rebuild_profile_list() {
             } else if (p.codec == "sbc") {
                 static const char *rates[] = {"~345", "~249", "~153"};
                 snprintf(quality_buf, sizeof(quality_buf), "%s(%skbps)", q_name, rates[q_idx]);
+            } else if (p.codec == "lhdcv5" && p.abr) {
+                /* LHDC V5 ABR ignores the quality and stays at 400 kbps or below */
+                snprintf(quality_buf, sizeof(quality_buf), "ABR(<=400kbps)");
             } else if (p.codec == "lhdcv5") {
                 static const int rates_48[] = {1000, 500, 400};
                 static const int rates_44[] = {1000, 480, 400};

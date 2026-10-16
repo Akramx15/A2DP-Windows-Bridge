@@ -145,6 +145,7 @@ bool LhdcV5Encoder::init(uint16_t mtu, EncoderQuality quality,
     rc = lhdcv5_enc_set_min_bitrate_index(handle_, min_inx);
     if (rc != LHDC_FRET_SUCCESS)
         fprintf(stderr, "LhdcV5Encoder: set_min_bitrate_index(%u) failed (%d)\n", min_inx, (int)rc);
+    peer_capped_ = !abr_ && max_inx < bitrate_inx;
 
     rc = lhdcv5_enc_get_block_size(handle_, &block_size_);
     if (rc != LHDC_FRET_SUCCESS || block_size_ == 0) {
@@ -173,9 +174,10 @@ bool LhdcV5Encoder::init(uint16_t mtu, EncoderQuality quality,
     initialized_ = true;
 
     fprintf(stderr, "LhdcV5Encoder: Initialized (rate=%u, ch=%u, %u-bit, mtu=%u, "
-            "frame=%u samples, bitrate=%u kbps%s, peer limits idx %u..%u)\n",
+            "frame=%u samples, bitrate=%u kbps%s, peer limits idx %u..%u%s)\n",
             sample_rate, channels, encoder_bits_, enc_mtu, block_size_,
-            get_bitrate_kbps(), abr_ ? " ABR" : "", min_inx, max_inx);
+            get_bitrate_kbps(), abr_ ? " ABR" : "", min_inx, max_inx,
+            peer_capped_ ? ", capped by the sink's maximum" : "");
     return true;
 }
 
@@ -311,6 +313,7 @@ void LhdcV5Encoder::shutdown() {
         handle_ = nullptr;
     }
     initialized_ = false;
+    peer_capped_ = false;
     block_size_ = 0;
     abr_table_ = nullptr;
 }

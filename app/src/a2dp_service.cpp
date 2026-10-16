@@ -1561,6 +1561,8 @@ void A2dpService::streaming_thread_func_inner() {
         if (!ldac->init_abr(100)) abr = false;
     }
     g_ctx.abr_enabled = abr;
+    bool bitrate_capped = selected_codec == AudioCodec::LHDCV5 &&
+                          static_cast<LhdcV5Encoder *>(encoder.get())->peer_capped();
 
     LOG_INFO("A2dpService: encoder initialized, bitrate=%u kbps, abr=%d",
              encoder->get_bitrate_kbps(), abr);
@@ -1582,7 +1584,8 @@ void A2dpService::streaming_thread_func_inner() {
                         encoder->get_bitrate_kbps(), sr, use_ch,
                         sr, ch, source_bits,
                         fallback_text.empty() ? std::string() : std::string(codec_name_for(requested_codec)),
-                        !fallback_text.empty() && caps.audio_sinks_in_use > 0});
+                        !fallback_text.empty() && caps.audio_sinks_in_use > 0,
+                        abr, bitrate_capped});
 
     /* Save device for future use */
     {

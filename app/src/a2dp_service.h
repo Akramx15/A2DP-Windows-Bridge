@@ -68,6 +68,8 @@ public:
          * (empty when the profile's codec is in use) */
         std::string requested_codec;
         bool        requested_in_use = false; /* maybe on an endpoint another device streams to */
+        bool        abr = false;              /* adaptive bit rate on (LDAC, LHDC V5) */
+        bool        bitrate_capped = false;   /* the device's maximum lowered the profile's bit rate */
     };
 
     /* ---- Callbacks (called from worker threads, must be thread-safe) ---- */
