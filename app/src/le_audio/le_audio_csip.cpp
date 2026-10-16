@@ -276,6 +276,18 @@ struct Stored {
     int rank = 0;
 };
 
+/* The device an advertiser is: the identity its RPA resolved to (SM, a
+ * bonded device), else the advertised address */
+const LeAddr &scan_identity(const ScanResult &r) { return r.resolved ? r.identity : r.addr; }
+
+bool same_addr(const LeAddr &a, const LeAddr &b) { return memcmp(a.addr, b.addr, 6) == 0; }
+
+/* An advertiser is this device: its identity (LeAudioDevice::addr once SM
+ * knows it) or the address of its current link */
+bool is_device(const ScanResult &r, const LeAudioDevice &d) {
+    return same_addr(scan_identity(r), d.addr) || same_addr(r.addr, d.addr) || same_addr(r.addr, d.peer_addr);
+}
+
 /* A member as the worker sees it */
 struct Snap {
     int id = -1;
@@ -347,10 +359,10 @@ public:
         /* find_members() waits for a member it has not connected yet */
         if (set == wanted_set_.load() && result.connectable && !member_seen_.load()) {
             for (LeAudioDevice *d : Core::instance().all_devices())
-                if (d->connected() && memcmp(d->addr.addr, result.addr.addr, 6) == 0) return;
+                if (d->connected() && is_device(result, *d)) return;
             std::lock_guard<std::mutex> lock(tried_mutex_);
             for (const LeAddr &a : tried_)
-                if (a == result.addr) return;
+                if (same_addr(a, scan_identity(result))) return;
             member_seen_.store(true);
         }
     }
@@ -488,7 +500,7 @@ private:
     std::atomic<int> wanted_set_{-1};
     std::atomic<bool> member_seen_{false};
     std::mutex tried_mutex_;
-    std::vector<LeAddr> tried_;             /* connect attempts of this search */
+    std::vector<LeAddr> tried_;             /* connect attempts of this search (identities) */
     /* Locked members (id, con) in rank order (BTstack thread) */
     std::vector<std::pair<int, uint16_t>> locked_;
     btstack_timer_source_t lock_timer_{};
@@ -883,13 +895,23 @@ private:
         LOG_INFO("CSIP: coordinated set %d: %d of %d members connected, looking for the others (up to %u s)", set,
                  (int)have.size(), size, SCAN_TIMEOUT_MS / 1000);
         auto is_cancelled = [&cancelled]() { return cancelled && cancelled(); };
-        auto known = [&have](const LeAddr &a) {
-            return std::any_of(have.begin(), have.end(),
-                               [&a](const Snap &s) { return memcmp(s.addr.addr, a.addr, 6) == 0; });
+        /* Members already in the set by device id (an RPA of a connected
+         * member resolves to its identity, or is its current link address) */
+        auto known = [&core, &have](const ScanResult &r) {
+            auto hit = std::make_shared<bool>(false);
+            std::vector<int> ids;
+            for (const Snap &s : have) ids.push_back(s.id);
+            const ScanResult copy = r;
+            core.run([ids, copy, hit]() {
+                for (int id : ids)
+                    if (LeAudioDevice *d = Core::instance().device(id))
+                        if (is_device(copy, *d)) *hit = true;
+            });
+            return *hit;
         };
         auto was_tried = [this](const LeAddr &a) {
             std::lock_guard<std::mutex> lock(tried_mutex_);
-            return std::any_of(tried_.begin(), tried_.end(), [&a](const LeAddr &t) { return t == a; });
+            return std::any_of(tried_.begin(), tried_.end(), [&a](const LeAddr &t) { return same_addr(t, a); });
         };
         {
             std::lock_guard<std::mutex> lock(tried_mutex_);
@@ -906,10 +928,10 @@ private:
             auto results = core.scan((uint32_t)left.count(), stop_scan);
             for (const ScanResult &r : results) {
                 if ((int)have.size() >= size || is_cancelled()) break;
-                if (r.set_id != set || !r.connectable || known(r.addr) || was_tried(r.addr)) continue;
+                if (r.set_id != set || !r.connectable || known(r) || was_tried(scan_identity(r))) continue;
                 {
                     std::lock_guard<std::mutex> lock(tried_mutex_);
-                    tried_.push_back(r.addr);
+                    tried_.push_back(scan_identity(r));
                 }
                 LOG_INFO("CSIP: %s \"%s\" resolves to coordinated set %d (RSI): connecting it", r.addr.str().c_str(),
                          r.name.c_str(), set);
