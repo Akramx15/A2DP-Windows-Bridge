@@ -59,6 +59,10 @@ thread**. All module hooks are called on it except the three marked
   locals: after a timeout the lambda may still run later.
 - `remote_volume()` / `request_volume()` may be called from any thread: keep
   their state in atomics and `post()` the GATT work.
+- A `post()`ed function still queued when the session ends
+  (`stack_deinit()`) never runs: its function object (and what it captured)
+  is dropped then, and the registration is freed at the next
+  `stack_init()`. `post()` between the two does nothing.
 
 ## Lifecycle
 
@@ -72,13 +76,18 @@ thread**. All module hooks are called on it except the three marked
    SM / ISO handlers, then **`Module::on_stack_init()`**, then the GATT server
    (GAP, GATT, **`Module::add_gatt_services()`**), `att_server_init()`.
 3. HCI working: `Core::ready()` is true; ISO buffer sizes (LE Read Buffer
-   Size v2) are in `iso_packet_length()` / `iso_packet_count()`.
+   Size v2) are in `iso_packet_length()` / `iso_packet_count()` (any
+   thread). If either is 0 the adapter has no ISO support and
+   `start_stream()` refuses ("adapter does not support LE Audio (no ISO
+   buffers)"): BTstack's ISO send would loop for ever.
 4. `connect(addr)`: `gap_connect` -> **`on_connected`** -> `sm_request_pairing`
    (re-encrypts with a bond; a bond the device lost is deleted and pairing
    repeated once) -> encrypted and no pairing in progress ->
    **`on_encrypted`** -> GATT discovery into `dev.services` -> `bap::read_device`
    (PACS, ASCS, notifications on) -> **`on_gatt_ready`** -> `connect()` returns
-   the device id.
+   the device id. On timeout / cancel the connect is cancelled; a link that
+   still comes up afterwards is disconnected at once. See "Addresses and
+   privacy" for which address is connected and how devices are keyed.
 5. `start_stream(ids, request)`: **`prepare_group`** (worker) ->
    **`adjust_stream_request`** (worker) -> `plan_stream()` -> `Stream::configure`
    -> `Unicast::start`: Config Codec -> LE Set CIG Parameters -> Config QoS ->
@@ -121,7 +130,8 @@ factory (`csip_module()` etc.) is already registered in
 | `bool request_volume(uint8_t)` | any | set the headset volume; true if handled |
 
 `LeAudioDevice` (`le_audio_device.h`): `id`, `addr` (`LeAddr`: BTstack-order
-bytes + type), `name`, `acl` (con handle, `CON_HANDLE_INVALID` when down),
+bytes + type; the identity address once known, see below), `peer_addr` (the
+address of the current / last link, maybe an RPA), `name`, `acl` (con handle, `CON_HANDLE_INVALID` when down),
 `encrypted`, `gatt_ready`, `ready`, `services` (with `find_service(uuid16)`,
 `find_char(svc, chr)`, `find_chars(svc, chr)`; secondary / included services
 are in the list with `primary == false`, `included_by`), PACS results
@@ -129,6 +139,36 @@ are in the list with `primary == false`, `included_by`), PACS results
 (`ases`, `ase_cp_handle`). Keep your own state in a
 `std::map<int /* dev.id */, ...>` and erase it in `on_disconnected()` and
 `on_stack_deinit()`.
+
+### Addresses and privacy
+
+Real earbuds advertise and connect with resolvable private addresses (RPAs)
+that change every ~15 minutes; only the identity address (public or static
+random) distributed with the IRK at pairing stays. The core uses BTstack's
+SM for this (software resolution against the IRKs in `le_device_db`; the
+controller's resolving list, `ENABLE_LE_PRIVACY_ADDRESS_RESOLUTION`, is not
+used so that it works with any 5.2 controller):
+
+- Devices are keyed by identity: `dev.addr` becomes the identity on
+  `SM_EVENT_IDENTITY_CREATED` (pairing) or
+  `SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED` (a reconnect with an RPA);
+  `dev.identity_known` says so. A device keeps its id across reconnects with
+  new RPAs (CSIP sets, the worker's ids). If a link to an RPA that was not
+  resolved yet turns out to belong to a known device, the link is moved to
+  that device before security (`Core::on_identity`).
+- While scanning every RPA advertiser is looked up
+  (`sm_address_resolution_lookup`); `ScanResult::resolved` / `identity` hold
+  the result. `find(addr)` matches the address itself, an advertiser whose
+  RPA resolves to `addr`, or (when `addr` is a saved RPA of a bonded device)
+  one that resolves to the same identity; `result.addr` is what it
+  advertises now.
+- `connect(addr)` connects with the RPA the device was last seen
+  advertising (within 5 minutes) when it knows one for that identity, else
+  with `addr`; the CLI passes `find()`'s `result.addr`.
+- Bonds of public-address devices are unchanged (identity = address).
+- Not covered: RPAs without a bond (a device can only be found again after
+  pairing gave its IRK), RSIs that change with the RPA (CSIP), the merge path
+  of `on_identity` (the CLI / GUI always `find()` first).
 
 ## GATT client: always through the queue
 
@@ -265,6 +305,9 @@ It prints `READY 127.0.0.1:P sinks=<addr>[,<addr>]`. Captures:
 released ASE in Releasing until A2DPWB drops its CIS (case `release-cis`).
 `--drop-link-after S` makes the first sink
 drop its LE link once, S seconds after A2DPWB connected (link loss test).
+`--privacy`: the sinks advertise with RPAs from a fixed IRK, distribute IRK
+and public identity when paired, take a new RPA whenever a link went down,
+and READY lists the current RPAs.
 
 Profile pieces of the sinks go in `tools/emu/le_audio/<profile>.py`
 (`csip.py`, `vcp.py`, `mcp.py`, `ccp.py`, `tmap_gmap.py` exist as stubs):
@@ -322,7 +365,9 @@ I:\A2DP-Windows-Bridge\tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py 
 ```
 
 The first runs all LE Audio cases (`stereo`, `two-ase`, `earbuds`,
-`mono-16k`, `link-loss`, `release-cis`, plus yours; or name them: `--le-audio stereo
+`mono-16k`, `link-loss`, `release-cis`, `privacy-rpa`
+(`le_audio_tests/privacy.py`: given the first RPA, paired, link dropped,
+reconnected to the new RPA with the same device id), plus yours; or name them: `--le-audio stereo
 earbuds`), the second the A2DP codecs (must keep passing). Per case `<out>/le-<case>/` has
 `a2dpwb.log`, `sink.log`, the captures and `sent_report.txt` /
 `received_report.txt` from `a2dpwb_decode --le-audio`.
@@ -392,8 +437,9 @@ changing the default flow for the other cases.
   before the first query.
 - `Core::scan()` / `find()` interrupt nothing else, but scanning while
   streaming costs radio time on a real controller.
-- `ScanResult::addr.type` matters: connect with the type the advertisement
-  showed (`find()` does that for the CLI / GUI).
+- `ScanResult::addr.type` matters: connect with the address and type the
+  advertisement showed (`find()` gives both; an RPA changes, see "Addresses
+  and privacy").
 - The device / CIS handles in captures differ between A2DPWB's and the sink's
   controller; `a2dpwb_decode --le-audio` maps them by CIG / CIS id.
 
@@ -880,7 +926,8 @@ Verification
   read that changed, notification order, ATT 0x0D for a wrong length) and
   GMAP (Table 3.16 preset values, UGG / UGT feature bits).
 - [ ] Untested paths: a device that lost its bond, extended advertising
-  scanning, RPAs / rotating RSIs, CSIS included by CAS.
+  scanning, rotating RSIs, CSIS included by CAS, RPAs on real devices
+  (emulated: `privacy-rpa`).
 - [ ] Emulator: the "time stamp step(s) differ from the SDU interval" check
   failed now and then (about 1 in 20 cases, more under load). The cause was
   the emulator's event loop stalling 60-90 ms, not A2DPWB; the controller now

@@ -44,16 +44,10 @@ void iso_trampoline(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint
     Core::instance().on_iso_packet(packet_type, packet, size);
 }
 
-/* A function for the BTstack thread (btstack_run_loop_execute_on_main_thread) */
-struct Posted {
-    btstack_context_callback_registration_t reg;
-    std::function<void()> fn;
-};
-
-void posted_callback(void *context) {
-    std::unique_ptr<Posted> p(static_cast<Posted *>(context));
-    p->fn();
-}
+/* Addresses resolved / looked up are used for connecting at most this long
+ * after they were seen (RPAs change every ~15 min); at most this many kept */
+constexpr uint32_t RPA_FRESH_MS = 5 * 60 * 1000;
+constexpr size_t RPA_CACHE_MAX = 512;
 
 std::string hex_status(const char *what, uint8_t status) {
     char buf[96];
@@ -70,6 +64,28 @@ Core &Core::instance() {
 
 Core::Core() {}
 
+/* A function for the BTstack thread (btstack_run_loop_execute_on_main_thread) */
+struct Core::PostedFn {
+    btstack_context_callback_registration_t reg;
+    std::function<void()> fn;
+};
+
+void Core::run_posted(void *context) {
+    auto *p = static_cast<PostedFn *>(context);
+    Core &c = instance();
+    std::function<void()> fn;
+    {
+        std::lock_guard<std::mutex> lock(c.posted_mutex_);
+        auto it = c.posted_.find(p);
+        /* Not ours any more: of an ended session, freed by stack_init() */
+        if (it == c.posted_.end()) return;
+        c.posted_.erase(it);
+        fn = std::move(p->fn);
+    }
+    delete p;
+    if (fn) fn();
+}
+
 void Core::set_storage_dir(const std::string &dir) {
     storage_dir_ = dir;
 }
@@ -81,6 +97,16 @@ void Core::set_storage_dir(const std::string &dir) {
 void Core::stack_init() {
     if (!enabled_.load() || initialized_.load()) return;
     LOG_INFO("LE Audio (experimental): initializing (SM, GATT client / server, ISO)");
+    {
+        /* Callbacks the previous session left queued: the run loop was
+         * initialized again since, so nothing refers to them any more */
+        std::lock_guard<std::mutex> lock(posted_mutex_);
+        for (PostedFn *p : posted_dead_) delete p;
+        posted_dead_.clear();
+        for (PostedFn *p : posted_) delete p;
+        posted_.clear();
+        posts_open_ = true;
+    }
 
     /* LE bonds: le_device_db in a TLV file next to the classic link keys */
     std::string dir = storage_dir_;
@@ -117,9 +143,11 @@ void Core::stack_init() {
     scan_results_.clear();
     scanning_ = false;
     connecting_ = -1;
+    connect_id_.reset();
     connect_done_ = nullptr;
-    iso_len_ = 0;
-    iso_count_ = 0;
+    rpa_cache_.clear();
+    iso_len_.store(0);
+    iso_count_.store(0);
     unicast_ = std::make_unique<Unicast>(*this);
 
     for (Module *m : modules()) m->on_stack_init(*this);
@@ -134,6 +162,23 @@ void Core::stack_init() {
 
 void Core::stack_deinit() {
     if (!initialized_.load()) return;
+    {
+        /* The run loop has stopped: callbacks still queued never run in this
+         * session. Drop their functions (and what they captured) now; the
+         * registrations stay allocated until the run loop is set up again. */
+        std::vector<std::function<void()>> dropped;
+        {
+            std::lock_guard<std::mutex> lock(posted_mutex_);
+            posts_open_ = false;
+            for (PostedFn *p : posted_) {
+                dropped.push_back(std::move(p->fn));
+                p->fn = nullptr;
+                posted_dead_.push_back(p);
+            }
+            posted_.clear();
+        }
+        if (!dropped.empty()) LOG_INFO("LE Audio: %u queued call(s) dropped", (unsigned)dropped.size());
+    }
     for (Module *m : modules()) m->on_stack_deinit();
     stream_.stop_sending();
     stream_.clear();
@@ -156,7 +201,9 @@ void Core::stack_deinit() {
     }
     devices_.clear();
     scan_results_.clear();
+    rpa_cache_.clear();
     connecting_ = -1;
+    connect_id_.reset();
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_ = StreamStatus();
@@ -171,11 +218,13 @@ void Core::stack_deinit() {
 /* ======================================================================== */
 
 void Core::post(std::function<void()> fn) {
-    if (!initialized_.load()) return;
-    auto *p = new Posted();
+    std::lock_guard<std::mutex> lock(posted_mutex_);
+    if (!posts_open_) return;
+    auto *p = new PostedFn();
     p->fn = std::move(fn);
-    p->reg.callback = &posted_callback;
+    p->reg.callback = &Core::run_posted;
     p->reg.context = p;
+    posted_.insert(p);
     btstack_run_loop_execute_on_main_thread(&p->reg);
 }
 
@@ -235,17 +284,129 @@ std::vector<LeAudioDevice *> Core::all_devices() {
 }
 
 LeAudioDevice *Core::device_for_addr(const LeAddr &addr, bool create) {
+    /* An RPA SM resolved stands for its identity */
+    LeAddr key = addr;
+    LeAddr identity;
+    bool resolved = resolved_identity(addr.addr, identity);
+    if (resolved) key = identity;
     for (auto &d : devices_)
-        if (memcmp(d->addr.addr, addr.addr, 6) == 0) {
-            d->addr.type = addr.type;
+        if (d->addr.same_bytes(key.addr) || d->peer_addr.same_bytes(addr.addr)) {
+            if (!d->identity_known && !resolved) d->addr.type = addr.type;
             return d.get();
         }
     if (!create) return nullptr;
     auto d = std::make_unique<LeAudioDevice>();
     d->id = (int)devices_.size();
-    d->addr = addr;
+    d->addr = key;
+    d->identity_known = resolved;
+    d->peer_addr = addr;
     devices_.push_back(std::move(d));
     return devices_.back().get();
+}
+
+/* ======================================================================== */
+/* Resolvable private addresses                                              */
+/* ======================================================================== */
+
+uint64_t Core::addr_key(const uint8_t addr[6]) {
+    uint64_t k = 0;
+    for (int i = 0; i < 6; i++) k = (k << 8) | addr[i];
+    return k;
+}
+
+void Core::lookup_rpa(const LeAddr &addr, bool seen) {
+    if (!addr.is_rpa()) return;
+    uint64_t k = addr_key(addr.addr);
+    auto it = rpa_cache_.find(k);
+    if (it == rpa_cache_.end()) {
+        if (rpa_cache_.size() >= RPA_CACHE_MAX) {
+            /* Forget the addresses that resolved to nothing */
+            for (auto e = rpa_cache_.begin(); e != rpa_cache_.end();)
+                e = e->second.done && !e->second.ok ? rpa_cache_.erase(e) : std::next(e);
+            if (rpa_cache_.size() >= RPA_CACHE_MAX) return;
+        }
+        it = rpa_cache_.emplace(k, RpaEntry()).first;
+        /* SM checks it against the IRKs of all bonds (software AES); the
+         * answer is SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED / _FAILED */
+        bd_addr_t a;
+        memcpy(a, addr.addr, 6);
+        int status = sm_address_resolution_lookup(BD_ADDR_TYPE_LE_RANDOM, a);
+        if (status != 0 && status != BTSTACK_BUSY) it->second.done = true;
+    }
+    if (seen) it->second.seen_ms = btstack_run_loop_get_time_ms();
+}
+
+bool Core::resolved_identity(const uint8_t addr[6], LeAddr &identity) const {
+    auto it = rpa_cache_.find(addr_key(addr));
+    if (it == rpa_cache_.end() || !it->second.ok) return false;
+    identity = it->second.identity;
+    return true;
+}
+
+LeAddr Core::connect_address(const LeAudioDevice &dev, const LeAddr &given) const {
+    /* The RPA the device advertised most recently (scan() / find() just
+     * before): a saved RPA or the identity is not what it answers to now */
+    const RpaEntry *best = nullptr;
+    uint64_t best_key = 0;
+    uint32_t now = btstack_run_loop_get_time_ms();
+    for (const auto &e : rpa_cache_) {
+        const RpaEntry &r = e.second;
+        if (!r.ok || !r.seen_ms || now - r.seen_ms > RPA_FRESH_MS || !r.identity.same_bytes(dev.addr.addr)) continue;
+        if (!best || (int32_t)(r.seen_ms - best->seen_ms) > 0) {
+            best = &r;
+            best_key = e.first;
+        }
+    }
+    if (!best) return given;
+    LeAddr a;
+    for (int i = 5; i >= 0; i--, best_key >>= 8) a.addr[i] = (uint8_t)best_key;
+    a.type = BD_ADDR_TYPE_LE_RANDOM;
+    return a;
+}
+
+void Core::on_identity(LeAudioDevice &dev, const LeAddr &identity) {
+    if (dev.identity_known && dev.addr == identity) return;
+    LeAudioDevice *other = nullptr;
+    for (auto &d : devices_)
+        if (d.get() != &dev && d->addr.same_bytes(identity.addr)) other = d.get();
+    if (!other || other->connected() || dev.secured) {
+        if (!(dev.addr == identity))
+            LOG_INFO("LE Audio: %s has the identity address %s (type %u)", dev.addr.str().c_str(),
+                     identity.str().c_str(), identity.type);
+        dev.addr = identity;
+        dev.identity_known = true;
+        return;
+    }
+    /* A device known under its identity came back with an address that was
+     * not resolved yet: the link belongs to the known device (its id, which
+     * CSIP and the worker hold, survives). Nothing but on_connected() has
+     * run for the link yet (security is not done). */
+    LOG_INFO("LE Audio: %s is %s (device %d): link moved to it", dev.peer_addr.str().c_str(),
+             identity.str().c_str(), other->id);
+    other->addr = identity;
+    other->identity_known = true;
+    other->peer_addr = dev.peer_addr;
+    other->acl = dev.acl;
+    other->encrypted = dev.encrypted;
+    other->pairing = dev.pairing;
+    other->pair_attempts = dev.pair_attempts;
+    other->secured = false;
+    other->gatt_ready = false;
+    other->ready = false;
+    other->last_error = 0;
+    other->services.clear();
+    if (other->name.empty()) other->name = dev.name;
+    dev.acl = CON_HANDLE_INVALID;
+    dev.encrypted = false;
+    dev.pairing = false;
+    dev.secured = false;
+    dev.gatt_ready = false;
+    dev.ready = false;
+    if (connecting_ == dev.id) {
+        connecting_ = other->id;
+        if (connect_id_) *connect_id_ = other->id;
+    }
+    for (Module *m : modules()) m->on_connected(*other);
 }
 
 std::vector<DeviceInfo> Core::devices() {
@@ -350,6 +511,8 @@ void Core::on_adv_report(const LeAddr &addr, int8_t rssi, uint8_t event_type, bo
         r = &scan_results_.back();
         r->addr = addr;
     }
+    lookup_rpa(addr, true);
+    if (!r->resolved) r->resolved = resolved_identity(addr.addr, r->identity);
     bool scan_rsp = extended ? (event_type & 0x08) != 0 : event_type == 4;
     bool connectable = extended ? (event_type & 0x01) != 0 : (event_type == 0 || event_type == 1);
     if (scan_rsp) r->scan_rsp.assign(data, data + len);
@@ -363,9 +526,10 @@ void Core::on_adv_report(const LeAddr &addr, int8_t rssi, uint8_t event_type, bo
     parse_ad(*r, r->scan_rsp.data(), (uint8_t)r->scan_rsp.size());
     for (Module *m : modules()) m->on_scan_result(*r, data, len);
     if ((fresh || !was_le_audio) && r->le_audio)
-        LOG_INFO("LE Audio: found %s (%s, type %u) RSSI %d%s%s", r->name.empty() ? "?" : r->name.c_str(),
-                 r->addr.str().c_str(), r->addr.type, r->rssi, r->rsi.empty() ? "" : ", set member (RSI)",
-                 r->note.empty() ? "" : (", " + r->note).c_str());
+        LOG_INFO("LE Audio: found %s (%s, type %u) RSSI %d%s%s%s", r->name.empty() ? "?" : r->name.c_str(),
+                 r->addr.str().c_str(), r->addr.type, r->rssi,
+                 r->resolved ? (", identity " + r->identity.str()).c_str() : "",
+                 r->rsi.empty() ? "" : ", set member (RSI)", r->note.empty() ? "" : (", " + r->note).c_str());
 }
 
 std::vector<ScanResult> Core::scan(uint32_t duration_ms, const Cancelled &cancelled) {
@@ -393,7 +557,10 @@ bool Core::find(const uint8_t addr[6], uint32_t timeout_ms, ScanResult &result, 
     if (!ready()) return false;
     LeAddr want;
     memcpy(want.addr, addr, 6);
-    run([this]() {
+    want.type = BD_ADDR_TYPE_LE_RANDOM;
+    run([this, want]() {
+        /* A saved RPA of a bonded device: look for its identity */
+        lookup_rpa(want, false);
         scan_results_.clear();
         scanning_ = true;
         gap_set_scan_params(1, 0x0030, 0x0030, 0);
@@ -405,11 +572,21 @@ bool Core::find(const uint8_t addr[6], uint32_t timeout_ms, ScanResult &result, 
     while (!*ok && std::chrono::steady_clock::now() < end && !(cancelled && cancelled())) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         run([this, want, found, ok]() {
-            for (auto &r : scan_results_)
-                if (memcmp(r.addr.addr, want.addr, 6) == 0 && (!r.name.empty() || !r.scan_rsp.empty() || r.le_audio)) {
+            LeAddr want_identity;
+            bool want_resolved = resolved_identity(want.addr, want_identity);
+            for (auto &r : scan_results_) {
+                if (!r.resolved) r.resolved = resolved_identity(r.addr.addr, r.identity);
+                bool match = r.addr.same_bytes(want.addr) ||
+                             (r.resolved && (r.identity.same_bytes(want.addr) ||
+                                             (want_resolved && r.identity.same_bytes(want_identity.addr))));
+                if (match && (!r.name.empty() || !r.scan_rsp.empty() || r.le_audio)) {
+                    if (!r.addr.same_bytes(want.addr))
+                        LOG_INFO("LE Audio: %s advertises as %s now (identity %s)", want.str().c_str(),
+                                 r.addr.str().c_str(), r.identity.str().c_str());
                     *found = r;
                     *ok = true;
                 }
+            }
         });
     }
     run([this]() {
@@ -445,6 +622,7 @@ int Core::connect(const LeAddr &addr, const std::string &name, uint32_t timeout_
         LeAudioDevice *d = device_for_addr(addr, true);
         if (!name.empty()) d->name = name;
         res->id = d->id;
+        LeAddr target = connect_address(*d, addr);
         auto finish = [this, res, done](bool ok) {
             if (!ok) res->error = connect_error_;
             done(ok);
@@ -455,13 +633,19 @@ int Core::connect(const LeAddr &addr, const std::string &name, uint32_t timeout_
         }
         connect_error_.clear();
         connecting_ = d->id;
+        connect_id_ = std::shared_ptr<int>(res, &res->id);
         connect_done_ = finish;
         if (d->connected()) return;   /* set up in progress: wait for it */
         d->pair_attempts = 0;
         d->last_error = 0;
-        uint8_t status = gap_connect(addr.addr, (bd_addr_type_t)addr.type);
+        if (!(target == addr) || !(d->addr == addr))
+            LOG_INFO("LE Audio: device %d (%s): connecting with %s (address type %u)", d->id, d->addr.str().c_str(),
+                     target.str().c_str(), target.type);
+        connect_target_ = target;
+        uint8_t status = gap_connect(target.addr, (bd_addr_type_t)target.type);
         if (status != ERROR_CODE_SUCCESS) {
             connecting_ = -1;
+            connect_id_.reset();
             connect_done_ = nullptr;
             res->error = hex_status("LE connect could not start", status);
             done(false);
@@ -469,14 +653,16 @@ int Core::connect(const LeAddr &addr, const std::string &name, uint32_t timeout_
     }, timeout_ms, cancelled);
 
     if (!ok) {
-        int id = res->id;
         if (res->error.empty())
             res->error = (cancelled && cancelled()) ? "cancelled" : "no answer (timeout)";
         LOG_WARN("LE Audio: connecting to %s failed: %s", addr.str().c_str(), res->error.c_str());
-        /* Abandon the attempt: cancel the connect or drop the link */
-        run([this, id]() {
+        /* Abandon the attempt: cancel the connect or drop the link. A link
+         * that comes up after this is dropped by on_le_connected(). */
+        run([this, res]() {
+            const int id = res->id;   /* read here: on_identity() may move it */
             if (connecting_ == id) {
                 connecting_ = -1;
+                connect_id_.reset();
                 connect_done_ = nullptr;
             }
             LeAudioDevice *d = device(id);
@@ -486,7 +672,7 @@ int Core::connect(const LeAddr &addr, const std::string &name, uint32_t timeout_
         if (error) *error = res->error;
         return -1;
     }
-    LOG_INFO("LE Audio: %s ready", addr.str().c_str());
+    LOG_INFO("LE Audio: %s ready (device %d)", addr.str().c_str(), res->id);
     return res->id;
 }
 
@@ -523,19 +709,26 @@ void Core::disconnect_all(uint32_t timeout_ms) {
 }
 
 void Core::on_le_connected(uint8_t status, uint16_t handle, const LeAddr &addr, uint8_t role) {
-    if (connecting_ < 0) {
-        if (status == ERROR_CODE_SUCCESS)
-            LOG_WARN("LE Audio: unexpected LE connection 0x%04x from %s (role %u)", handle, addr.str().c_str(), role);
+    LeAudioDevice *d = connecting_ >= 0 ? device(connecting_) : nullptr;
+    bool stray = !d || (status == ERROR_CODE_SUCCESS && (d->connected() || !connect_target_.same_bytes(addr.addr)));
+    if (stray) {
+        /* A2DPWB never advertises: this is the connect of an attempt given
+         * up (timeout / cancel) that completed before the cancel did. Nobody
+         * manages the link: drop it. */
+        if (status == ERROR_CODE_SUCCESS) {
+            LOG_WARN("LE Audio: unexpected LE connection 0x%04x with %s (role %u): disconnecting", handle,
+                     addr.str().c_str(), role);
+            gap_disconnect(handle);
+        }
         return;
     }
-    LeAudioDevice *d = device(connecting_);
-    if (!d) return;
     if (status != ERROR_CODE_SUCCESS) {
         fail_connect(*d, hex_status(status == ERROR_CODE_UNKNOWN_CONNECTION_IDENTIFIER
                                         ? "LE connection cancelled" : "LE connection failed", status));
         return;
     }
     d->acl = handle;
+    d->peer_addr = addr;
     d->encrypted = false;
     d->pairing = false;
     d->secured = false;
@@ -558,6 +751,7 @@ void Core::fail_connect(LeAudioDevice &dev, const std::string &why) {
 void Core::finish_connect(LeAudioDevice &dev, bool ok) {
     if (connecting_ != dev.id) return;
     connecting_ = -1;
+    connect_id_.reset();
     auto f = std::move(connect_done_);
     connect_done_ = nullptr;
     if (f) f(ok);
@@ -632,9 +826,10 @@ void Core::on_hci_event(uint8_t *packet, uint16_t size) {
     case BTSTACK_EVENT_STATE:
         if (btstack_event_state_get_state(packet) == HCI_STATE_WORKING) {
             hci_working_.store(true);
-            LOG_INFO("LE Audio: ready (controller ISO buffers: %u x %u bytes)", iso_count_, iso_len_);
-            if (iso_count_ == 0)
-                LOG_WARN("LE Audio: the controller reports no ISO buffers: it may not support LE Audio (CIS)");
+            LOG_INFO("LE Audio: ready (controller ISO buffers: %u x %u bytes)", iso_count_.load(), iso_len_.load());
+            if (iso_count_.load() == 0 || iso_len_.load() == 0)
+                LOG_WARN("LE Audio: the controller reports no ISO buffers: it does not support LE Audio "
+                         "streams (CIS); streaming will be refused");
         } else {
             hci_working_.store(false);
         }
@@ -643,8 +838,8 @@ void Core::on_hci_event(uint8_t *packet, uint16_t size) {
     case HCI_EVENT_COMMAND_COMPLETE: {
         uint16_t op = hci_event_command_complete_get_command_opcode(packet);
         if (op == HCI_OPCODE_HCI_LE_READ_BUFFER_SIZE_V2 && size >= 12 && packet[5] == 0) {
-            iso_len_ = little_endian_read_16(packet, 9);
-            iso_count_ = packet[11];
+            iso_len_.store(little_endian_read_16(packet, 9));
+            iso_count_.store(packet[11]);
         } else if (op == HCI_OPCODE_HCI_LE_REMOVE_CIG) {
             if (unicast_) unicast_->on_cig_removed();
         }
@@ -720,6 +915,55 @@ void Core::on_sm_event(uint8_t *packet, uint16_t size) {
     uint8_t type = hci_event_packet_get_type(packet);
     if (type < SM_EVENT_JUST_WORKS_REQUEST || type > SM_EVENT_REENCRYPTION_COMPLETE) return;
     uint16_t handle = little_endian_read_16(packet, 2);
+    switch (type) {
+    case SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED:
+    case SM_EVENT_IDENTITY_CREATED: {
+        /* An address resolved with a bond's IRK (an RPA seen while scanning,
+         * or a link), or the identity a new pairing distributed */
+        LeAddr a, identity;
+        bool created = type == SM_EVENT_IDENTITY_CREATED;
+        if (created) {
+            a.type = sm_event_identity_created_get_addr_type(packet);
+            sm_event_identity_created_get_address(packet, a.addr);
+            identity.type = sm_event_identity_created_get_identity_addr_type(packet);
+            sm_event_identity_created_get_identity_address(packet, identity.addr);
+        } else {
+            a.type = sm_event_identity_resolving_succeeded_get_addr_type(packet);
+            sm_event_identity_resolving_succeeded_get_address(packet, a.addr);
+            identity.type = sm_event_identity_resolving_succeeded_get_identity_addr_type(packet);
+            sm_event_identity_resolving_succeeded_get_identity_address(packet, identity.addr);
+        }
+        identity.type &= 0x01;
+        if (created) {
+            /* A new IRK: addresses that resolved to nothing may resolve now */
+            for (auto e = rpa_cache_.begin(); e != rpa_cache_.end();)
+                e = e->second.done && !e->second.ok ? rpa_cache_.erase(e) : std::next(e);
+        }
+        if (a.is_rpa()) {
+            RpaEntry &e = rpa_cache_[addr_key(a.addr)];
+            if (!e.ok) LOG_INFO("LE Audio: %s resolves to %s", a.str().c_str(), identity.str().c_str());
+            e.done = e.ok = true;
+            e.identity = identity;
+            for (auto &r : scan_results_)
+                if (r.addr.same_bytes(a.addr)) {
+                    r.resolved = true;
+                    r.identity = identity;
+                }
+        }
+        if (handle != HCI_CON_HANDLE_INVALID)
+            if (LeAudioDevice *x = device_by_handle(handle)) on_identity(*x, identity);
+        return;
+    }
+    case SM_EVENT_IDENTITY_RESOLVING_FAILED: {
+        bd_addr_t a;
+        sm_event_identity_resolving_failed_get_address(packet, a);
+        auto it = rpa_cache_.find(addr_key(a));
+        if (it != rpa_cache_.end() && !it->second.ok) it->second.done = true;
+        return;
+    }
+    default:
+        break;
+    }
     LeAudioDevice *d = device_by_handle(handle);
     if (!d) return;
     switch (type) {
@@ -819,6 +1063,13 @@ bool Core::start_stream(std::vector<int> device_ids, StreamRequest request, Stre
         if (error) *error = "LE Audio is not running";
         return false;
     }
+    if (iso_packet_length() == 0 || iso_packet_count() == 0) {
+        /* BTstack's ISO send would loop for ever without ISO buffers */
+        const char *why = "adapter does not support LE Audio (no ISO buffers)";
+        if (error) *error = why;
+        LOG_ERROR("LE Audio: cannot stream: %s", why);
+        return false;
+    }
     stream_lost_.store(false);
     for (Module *m : modules()) m->prepare_group(*this, device_ids, cancelled);
     for (Module *m : modules()) m->adjust_stream_request(*this, device_ids, request);
@@ -860,6 +1111,11 @@ bool Core::start_stream(std::vector<int> device_ids, StreamRequest request, Stre
     StreamPlan plan = res->plan;
     auto why = std::make_shared<std::string>();
     bool ok = call([this, plan, why](std::function<void(bool)> done) {
+        if (!unicast_) {   /* stack_deinit() ran */
+            *why = "LE Audio stopped";
+            done(false);
+            return;
+        }
         if (unicast_->busy()) {
             *why = "a stream is still being stopped";
             done(false);
