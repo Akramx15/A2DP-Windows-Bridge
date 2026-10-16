@@ -597,8 +597,8 @@ contributions of the code's licensors (here Google) and grants no trademark
 rights; the port's README notes that codec licensing / certification
 requirements should be checked before shipping a commercial product that
 advertises LHDC support. A2DPWB is a free, non-commercial application and has
-not been certified by Savitech or HWA. Its LHDC V5 support is non-commercial
-interoperability work.
+not been certified by Savitech or HWA. Its LHDC V5 support is an
+interoperability feature.
 
 ---
 
