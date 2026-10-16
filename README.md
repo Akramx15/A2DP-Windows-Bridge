@@ -1,7 +1,7 @@
 # A2DP Windows Bridge (A2DPWB)
 
 Bluetooth A2DP audio streaming for Windows with full codec support.
-Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (experimental) LHDC V5 using a USB Bluetooth adapter in WinUSB mode — no kernel driver or test signing required.
+Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or LHDC V5 using a USB Bluetooth adapter in WinUSB mode — no kernel driver or test signing required.
 
 **[Download](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)** (installer `-setup.exe` or `-portable.zip`) | **[Documentation](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/)**
 
@@ -17,7 +17,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### Codec support by platform (sending to headphones)
 
@@ -29,14 +29,14 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| LHDC V5 | ❌ | ❌ | ❌ | 🧪 experimental |
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ supported · 🧪 experimental · ❌ not supported. All columns are the sending side (PC → headphones). "Built-in" is the OS's own Bluetooth audio, without A2DPWB; the Ubuntu column is the PipeWire codec set of Ubuntu 26.04 (`libspa-0.2-bluetooth`).
 
 > **aptX HD and aptX Low Latency are experimental.** They follow the Android / PipeWire implementations and pass encode/decode round-trip tests, but have not yet been verified with real headphones. Latency values in this table are typical figures, not measured with A2DPWB.
 
-> **LHDC V5 is experimental.** It uses a C port of the LHDC V5 encoder that Google added to Android 17 (AOSP, Apache-2.0); the port was verified bit-exact against the AOSP Rust encoder over 114 configurations, and the A2DP signaling follows Android's `a2dp_vendor_lhdcv5`. It has not yet been verified with real LHDC headphones. Only lossy LHDC V5 is supported: LHDC V2/V3 (older headphones) and the lossless "LHDC-RAW" mode have no open-source encoder. In Auto mode LHDC V5 ranks below LDAC and the aptX family and above AAC / SBC.
+> **About LHDC V5.** It uses a C port of the LHDC V5 encoder that Google added to Android 17 (AOSP, Apache-2.0); the port was verified bit-exact against the AOSP Rust encoder over 114 configurations, and the A2DP signaling follows Android's `a2dp_vendor_lhdcv5`. A user verified it with real LHDC V5 headphones at 1000 kbps / 192 kHz ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). Only lossy LHDC V5 is supported: LHDC V2/V3 (older headphones) and the lossless "LHDC-RAW" mode have no open-source encoder. In Auto mode LHDC V5 ranks below LDAC and the aptX family and above AAC / SBC.
 
 > **Only need classic aptX?** Windows 10 already supports classic aptX in its built-in Bluetooth stack (not aptX HD, aptX LL or aptX Adaptive), so A2DPWB is not required for it. A2DPWB is mainly useful for LDAC, aptX HD and aptX Low Latency.
 
@@ -63,6 +63,7 @@ A2DPWB itself runs on Windows only, as an x64 build. The Linux tools need Python
 | TP-Link UB500 (Realtek RTL8761BU, adapter) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | Measuring receiver `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 over the air | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Received and measured |
 | Virtual link `tools/emu` (Bumble) | Windows 11, no radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 | ✅ End-to-end test passes |
+| LHDC V5 headphones (user report, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ Plays at 1000 kbps / 192 kHz |
 
 Windows 10 has not been tried on real hardware yet. Other adapters: see [Recommended Adapters](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup#adapters).
 
@@ -105,7 +106,7 @@ If you just want it to be simple, there is commercial software that ships a sign
 | `extern/libldac/` | AOSP libldac — LDAC encoder (git submodule) |
 | `extern/libopenaptx/` | libopenaptx — aptX / aptX HD / aptX LL encoder (git submodule) |
 | `extern/fdk-aac/` | Fraunhofer FDK AAC — AAC-LC encoder (git submodule) |
-| `extern/lhdcv5-enc/` | LHDC V5 encoder — C port of the AOSP encoder (git submodule, experimental) |
+| `extern/lhdcv5-enc/` | LHDC V5 encoder — C port of the AOSP encoder (git submodule) |
 | `extern/json/` | nlohmann/json — JSON parser for settings, profiles, localization |
 | `compat/` | MSVC compatibility headers for the AOSP code |
 | `cmake/` | Release packaging script |
@@ -224,7 +225,7 @@ All options, including AFH (`--afh`) and the peer receiver test (`--remote-sink`
 
 > **Note**: System loopback and virtual device capture use WASAPI shared mode. The capture sample rate depends on the device's format configured in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the device format to 96 kHz in Sound settings > Advanced. Application capture is converted by Windows to the rate A2DPWB asks for.
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 ### aptX family and aptX Adaptive
 
@@ -255,7 +256,7 @@ You can manually add this entry using `regedit` if needed. To disable it manuall
 
 ## Features
 
-- **Multi-codec support**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC and (experimental) LHDC V5 with automatic negotiation
+- **Multi-codec support**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC and LHDC V5 with automatic negotiation
 - **Three capture modes**: System loopback (all system audio), virtual audio device (per-app routing via VB-CABLE etc.), or one application's output (Windows 11 / Windows 10 2004+)
 - **ABR**: Adaptive Bit Rate for unstable connections (LDAC and LHDC V5)
 - **Auto-reconnect**: Reconnects on Bluetooth disconnection (up to 10 attempts); a failed connection is retried (up to 3 attempts)

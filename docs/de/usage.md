@@ -56,10 +56,10 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5 (experimentell)
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 ```
 
-Priorität bei automatischer Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimentell) > AAC > SBC
+Priorität bei automatischer Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 Bieten die Kopfhörer den angeforderten Codec nicht an, greift die CLI auf die Prioritätsreihenfolge von Automatisch zurück. aptX Adaptive wird nie ausgewählt -- siehe [aptX-Familie und Kompatibilität mit aptX Adaptive](#aptx-compatibility).
 
@@ -246,7 +246,7 @@ Beim Verbinden melden die Kopfhörer eine **Liste von Codecs** (AVDTP-Stream-End
 - **Die Kopfhörer führen zusätzlich klassisches aptX auf** -- Viele aptX-Adaptive-Kopfhörer tun das, weil Qualcomm aptX Adaptive als abwärtskompatibel zu aptX / aptX HD bewirbt. In diesem Fall wählt A2DPWB direkt klassisches aptX; es ist ein eigener Codec in der Liste der Kopfhörer, kein reduzierter Modus von aptX Adaptive.
 - **Die Kopfhörer führen nur aptX Adaptive auf** (kein klassisches aptX, aptX HD oder aptX LL) -- aptX ist mit A2DPWB nicht möglich. Automatisch wählt den nächsten Codec in der Prioritätsreihenfolge, meist AAC oder SBC.
 
-Priorität bei automatischer Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimentell) > AAC > SBC
+Priorität bei automatischer Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 ### Ausdrücklich gewählter Codec wird nicht angeboten {#codec-fallback}
 

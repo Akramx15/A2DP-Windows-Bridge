@@ -56,10 +56,10 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5 (experimental)
+A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 ```
 
-自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5（實驗性）> AAC > SBC
+自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 如果耳機不提供所要求的轉碼器，CLI 會改依「自動」的優先順序選擇。aptX Adaptive 永遠不會被選用 -- 請參閱 [aptX 系列與 aptX Adaptive 相容性](#aptx-compatibility)。
 
@@ -246,7 +246,7 @@ A2DPWB 連線時，耳機會公布一份 **轉碼器清單**（AVDTP 串流端�
 - **耳機同時列出傳統 aptX** -- 許多 aptX Adaptive 耳機都會如此，因為 Qualcomm 宣傳 aptX Adaptive 向下相容 aptX / aptX HD。此時 A2DPWB 會直接選擇傳統 aptX；它是耳機清單中的另一個轉碼器，而不是 aptX Adaptive 的降級模式。
 - **耳機只列出 aptX Adaptive**（沒有傳統 aptX、aptX HD 或 aptX LL）-- A2DPWB 無法使用 aptX。「自動」會依優先順序選擇下一個轉碼器，通常是 AAC 或 SBC。
 
-自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5（實驗性）> AAC > SBC
+自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
 
 ### 明確指定的轉碼器不在清單中 {#codec-fallback}
 

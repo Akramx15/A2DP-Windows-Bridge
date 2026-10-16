@@ -21,7 +21,7 @@ All versions below are the ones pinned in this repository (git submodules under
 | libldac (AOSP) | `android-15.0.0_r36-4-geeee1a3` (commit `eeee1a3`) | Apache-2.0 | Sony Corporation | LDAC audio encoding |
 | libopenaptx | 0.2.0 (tag `0.2.0`, commit `2459ed4`) | LGPL-2.1-or-later | Aurelien Jacobs, Pali Rohár | aptX / aptX HD / aptX LL audio encoding (decoding in `a2dpwb_decode`, §12) |
 | fdk-aac | `v2.0.3-158-gd8e6b1a` (commit `d8e6b1a`) | FDK-AAC | Fraunhofer-Gesellschaft | AAC-LC audio encoding (decoding in `a2dpwb_decode`, §12) |
-| LHDC-V5-Encoder (C port of the AOSP LHDC V5 encoder) | commit `3f9d198` | Apache-2.0; `src/lhdcv5_fft.c` BSD-3-Clause | The Android Open Source Project; Mark Borgerding (KISS FFT) | LHDC V5 audio encoding (experimental), §14 |
+| LHDC-V5-Encoder (C port of the AOSP LHDC V5 encoder) | commit `3f9d198` | Apache-2.0; `src/lhdcv5_fft.c` BSD-3-Clause | The Android Open Source Project; Mark Borgerding (KISS FFT) | LHDC V5 audio encoding, §14 |
 | BTstack | `v1.8.1-6-g5bc5cbdbe` (commit `5bc5cbdbe`) | LicenseRef-BTstack (BSD-3-Clause-style **with a non-commercial clause**) | BlueKitchen GmbH | User-mode Bluetooth stack |
 | Bluedroid SBC codec (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/bluedroid/`) | Apache-2.0 | Broadcom Corporation; The Android Open Source Project; Open Interface North America, Inc. | SBC audio encoding (decoder also compiled; decoding in `a2dpwb_decode`, §12) |
 | rijndael (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/rijndael/`) | Public domain | Philip J. Erdelsky | AES (used by BTstack) |
@@ -539,7 +539,7 @@ When changing `requirements.txt`, re-check and update this table.
   `Copyright (c) 2003-2010, Mark Borgerding. All rights reserved.` with
   `SPDX-License-Identifier: BSD-3-Clause`.
 - **SPDX**: `Apache-2.0 AND BSD-3-Clause`
-- **Usage**: LHDC V5 audio encoding (experimental). Not linked into
+- **Usage**: LHDC V5 audio encoding. Not linked into
   `a2dpwb_decode`.
 
 ### License Texts
@@ -597,8 +597,8 @@ contributions of the code's licensors (here Google) and grants no trademark
 rights; the port's README notes that codec licensing / certification
 requirements should be checked before shipping a commercial product that
 advertises LHDC support. A2DPWB is a free, non-commercial application and has
-not been certified by Savitech or HWA. Its LHDC V5 support is experimental
-interoperability work and is marked as such in the user interface.
+not been certified by Savitech or HWA. Its LHDC V5 support is non-commercial
+interoperability work.
 
 ---
 

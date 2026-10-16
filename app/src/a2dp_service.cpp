@@ -1250,7 +1250,7 @@ void A2dpService::streaming_thread_func_inner() {
         else if (caps.aptx_hd) out = AudioCodec::AptxHD;
         else if (caps.aptx_ll) out = AudioCodec::AptxLL;
         else if (caps.aptx)    out = AudioCodec::Aptx;
-        /* LHDC V5 is experimental: ranked below the tested codecs, above AAC / SBC */
+        /* LHDC V5: ranked below LDAC and the aptX family, above AAC / SBC */
         else if (caps.lhdcv5)  out = AudioCodec::LHDCV5;
         else if (caps.aac)     out = AudioCodec::AAC;
         else if (caps.sbc)     out = AudioCodec::SBC;
