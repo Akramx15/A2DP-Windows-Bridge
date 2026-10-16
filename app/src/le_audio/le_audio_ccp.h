@@ -32,9 +32,9 @@
  *   status                       log the call list
  * <index> defaults to the most recent call.
  *
- * Content Control ID: GTBS has the fixed CCID ccp::GTBS_CCID (2; MCP's GMCS
- * uses another value). ccp::ccid() returns it for the BAP Enable metadata
- * (CCID List) once that is wired up.
+ * Content Control ID: GTBS has the fixed CCID ccp::GTBS_CCID (CCID_GTBS; MCP's GMCS
+ * uses CCID_GMCS). add_ccids() puts it in the CCID List of the BAP Enable
+ * metadata for streams with the Conversational context.
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -55,8 +55,8 @@ Module *ccp_module();
 
 namespace ccp {
 
-/* Content Control ID of GTBS (unique among the PC's content control services) */
-constexpr uint8_t GTBS_CCID = 2;
+/* Content Control ID of GTBS (CCID_GTBS from le_audio_module.h) */
+constexpr uint8_t GTBS_CCID = CCID_GTBS;
 inline uint8_t ccid() { return GTBS_CCID; }
 
 /* TBS 1.0 Call State values */

@@ -147,6 +147,11 @@ public:
     void on_stack_deinit() override;
     void on_disconnected(LeAudioDevice &dev, uint8_t reason) override;
 
+    void add_ccids(uint16_t contexts, std::vector<uint8_t> &ccids) override {
+        /* GTBS controls calls: only a Conversational stream belongs to it */
+        if (contexts & CONTEXT_CONVERSATIONAL) ccids.push_back(GTBS_CCID);
+    }
+
     /* ---- Call model (BTstack thread) ---- */
     Backend *backend_ = &g_sim_backend;
     std::vector<Call> calls_;
