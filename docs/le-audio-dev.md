@@ -300,7 +300,8 @@ until the step times out ("no audio context available").
 downmix to stereo, linear resampling to the LC3 rate if needed (WASAPI is
 asked for the LC3 rate, so normally none), LC3 per channel, one SDU set per
 10 ms into a jitter buffer (queue + 3 sets before audio starts / after an
-underrun; 16 at most, the oldest dropped beyond). The BTstack thread sends on
+underrun, one more after each underrun up to queue + 7; 16 at most, the
+oldest dropped beyond). The BTstack thread sends on
 `HCI_EVENT_CIS_CAN_SEND_NOW`: complete SDUs, sequence numbers counting per
 CIS, **no time stamp** (the controller places SDUs by sequence number), up to 2
 SDUs queued per CIS (`hci_set_num_iso_packets_to_queue`; queue x CIS stays
@@ -499,7 +500,8 @@ changing the default flow for the other cases.
 - No broadcast (BIS), no BASS, no CAP procedures beyond what BAP needs; CAS is
   only advertised by the emulator.
 - SDUs without time stamps; no use of LE Read ISO TX Sync; the jitter buffer
-  is simple (fixed prefill of queue + 3 sets).
+  is simple (prefill of queue + 3 sets that only grows, by one per
+  underrun, and never shrinks back).
 - Application capture (one app) is not supported for LE Audio yet (system
   loopback, virtual device and the test tone are).
 - Not verified with real LE Audio headphones or a real controller's CIS
