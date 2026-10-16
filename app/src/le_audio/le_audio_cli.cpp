@@ -6,6 +6,7 @@
 
 #include "le_audio_cli.h"
 #include "le_audio_core.h"
+#include "le_audio_tmap_gmap.h"
 
 #include "app_settings.h"
 #include "audio_device_enum.h"
@@ -138,6 +139,11 @@ int le_audio_cli_run(const LeAudioCliOptions &o) {
 
     le_audio::StreamRequest request;
     if (!o.preset.empty()) request.preset_order = {o.preset};
+    /* GMAP low latency (only the flag, not the GUI setting); an explicit
+     * --le-preset wins */
+    le_audio::set_gmap_low_latency(o.low_latency && o.preset.empty());
+    if (o.low_latency && !o.preset.empty())
+        printf("--le-preset given: --le-low-latency is not used\n");
 
     std::vector<int> ids;
     le_audio::StreamStatus status;

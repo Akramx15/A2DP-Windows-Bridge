@@ -205,6 +205,7 @@
   "settings.le_audio": "LE Audio (experimental)",
   "settings.le_audio_on": "LE Audio (experimental) is on.\n\nLE Audio devices now appear in the device scan of a connection profile. Tick \"LE Audio device\" in the profile to stream LC3 to it instead of A2DP. The adapter needs Bluetooth 5.2 with isochronous channels. Not yet tested with real headphones.",
   "settings.le_audio_off": "LE Audio (experimental) is off.",
+  "settings.le_low_latency": "Low latency for gaming headsets (GMAP, experimental)",
   "advanced.max_packet": "Max media packet size (bytes)",
   "advanced.max_packet_recommended": "Recommended (%d)",
   "advanced.max_packet_help": "Upper limit for the audio data in each Bluetooth packet (%d-%d). The headphones' own limit (MTU) always applies too; A2DPWB uses the smaller of the two.\n\n%d (recommended) fits one Bluetooth baseband packet. Larger values save only 1-2%% overhead, but more audio is lost when a packet is lost. Applies from the next connection.",

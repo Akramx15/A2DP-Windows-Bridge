@@ -49,6 +49,8 @@ public:
     /* LE Audio (experimental, off by default): LE Audio devices in the
      * device scan, LC3 streaming for profiles marked as LE Audio */
     bool le_audio_experimental = false;
+    /* LE Audio: GMAP low-latency configurations for gaming headsets (off by default) */
+    bool le_audio_low_latency = false;
 
     /* Max media packet size from older versions, read but no longer saved:
      * it is now per profile (ConnectionProfile::max_media_payload) and only

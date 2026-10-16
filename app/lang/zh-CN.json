@@ -205,6 +205,7 @@
   "settings.le_audio": "LE Audio（实验性）",
   "settings.le_audio_on": "LE Audio（实验性）已开启。\n\n连接配置的设备扫描中现在会显示 LE Audio 设备。在配置中勾选“LE Audio 设备”即可改用 LC3（而非 A2DP）发送。适配器需要支持带等时通道的蓝牙 5.2。尚未在真实耳机上测试。",
   "settings.le_audio_off": "LE Audio（实验性）已关闭。",
+  "settings.le_low_latency": "游戏耳机低延迟（GMAP，实验性）",
   "advanced.max_packet": "最大媒体数据包大小（字节）",
   "advanced.max_packet_recommended": "推荐（%d）",
   "advanced.max_packet_help": "每个 Bluetooth 数据包中音频数据的上限（%d-%d）。耳机自身的上限（MTU）也始终适用；A2DPWB 使用两者中较小的值。\n\n%d（推荐）正好容纳一个 Bluetooth 基带数据包。更大的值只能节省 1-2%% 的开销，但丢失一个数据包时会丢失更多音频。从下次连接起生效。",

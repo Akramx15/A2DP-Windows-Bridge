@@ -62,6 +62,7 @@ void AppSettings::load()
 
     /* LE Audio (experimental) */
     le_audio_experimental = j.value("le_audio_experimental", le_audio_experimental);
+    le_audio_low_latency = j.value("le_audio_low_latency", le_audio_low_latency);
 
     /* Legacy: max media packet size before it moved into each profile */
     {
@@ -111,6 +112,7 @@ void AppSettings::save() const
 
     /* LE Audio (experimental) */
     j["le_audio_experimental"] = le_audio_experimental;
+    j["le_audio_low_latency"] = le_audio_low_latency;
 
     /* Bluetooth adapter */
     j["bt_chip_pid"] = static_cast<int>(bt_chip_pid);

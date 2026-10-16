@@ -440,6 +440,7 @@ static void print_usage(const char *prog) {
     printf("  --le-audio   Stream to the LE Audio device -d (BAP unicast, LC3)\n");
     printf("  --le-device <addr>  Another device of the group (e.g. the second earbud)\n");
     printf("  --le-preset <name>  Use only this BAP configuration (e.g. 48_2_2, 16_2_1)\n");
+    printf("  --le-low-latency    GMAP low latency (7.5 / 10 ms frames) for a gaming headset\n");
     printf("  --le-scan [seconds] List the LE Audio devices nearby and exit\n");
     printf("  -h           Show this help\n");
     printf("\nCodec priority (auto mode): LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC\n");
@@ -1088,6 +1089,8 @@ int main(int argc, char *argv[]) {
             le_options.devices.push_back(argv[++i]);
         } else if (strcmp(argv[i], "--le-preset") == 0 && i + 1 < argc) {
             le_options.preset = argv[++i];
+        } else if (strcmp(argv[i], "--le-low-latency") == 0) {
+            le_options.low_latency = true;
         } else if (strcmp(argv[i], "--le-scan") == 0) {
             le_audio = true;
             le_options.scan_only = true;
