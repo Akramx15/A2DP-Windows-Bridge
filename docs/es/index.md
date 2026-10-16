@@ -11,7 +11,7 @@ has_toc: false
 Transmisión de audio Bluetooth A2DP para Windows con compatibilidad completa de códecs.
 {: .fs-6 .fw-300 }
 
-Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** y (de forma experimental) **LHDC V5** con un adaptador Bluetooth USB en modo WinUSB, sin controlador de kernel ni firma de prueba.
+Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** y **LHDC V5** con un adaptador Bluetooth USB en modo WinUSB, sin controlador de kernel ni firma de prueba.
 
 [Primeros pasos](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -30,7 +30,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bits | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | SBC | hasta ~345 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
 
 ### Compatibilidad de códecs por plataforma (envío a los auriculares)
 
@@ -42,7 +42,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ no está en los paquetes de Ubuntu | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| LHDC V5 | ❌ | ❌ | ❌ | 🧪 experimental |
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ compatible · 🧪 experimental · ❌ no compatible. Todas las columnas corresponden al lado emisor (PC → auriculares). «Integrado» es el audio Bluetooth propio del sistema operativo, sin A2DPWB; la columna de Ubuntu es el conjunto de códecs de PipeWire en Ubuntu 26.04 (`libspa-0.2-bluetooth`).
@@ -50,8 +50,8 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 {: .warning }
 **aptX HD y aptX Low Latency son experimentales.** Siguen las implementaciones de Android / PipeWire y superan las pruebas de ida y vuelta de codificación/decodificación, pero aún no se han verificado con auriculares reales. Los valores de latencia de esta tabla son cifras típicas, no medidas con A2DPWB.
 
-{: .warning }
-**LHDC V5 es experimental.** Usa un port en C del codificador LHDC V5 que Google añadió a Android 17 (AOSP, Apache-2.0); se verificó que el port produce exactamente los mismos bits que el codificador en Rust de AOSP, y la señalización A2DP sigue `a2dp_vendor_lhdcv5` de Android. Aún no se ha verificado con auriculares LHDC reales. Solo se admite LHDC V5 con pérdida: LHDC V2/V3 (auriculares más antiguos) y el modo sin pérdida «LHDC-RAW» no tienen codificador de código abierto. En modo Automático, LHDC V5 tiene menos prioridad que LDAC y la familia aptX, y más que AAC / SBC.
+{: .note }
+**Acerca de LHDC V5.** Usa un port en C del codificador LHDC V5 que Google añadió a Android 17 (AOSP, Apache-2.0); se verificó que el port produce exactamente los mismos bits que el codificador en Rust de AOSP, y la señalización A2DP sigue `a2dp_vendor_lhdcv5` de Android. Un usuario lo verificó con auriculares LHDC V5 reales a 1000 kbps / 192 kHz ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). Solo se admite LHDC V5 con pérdida: LHDC V2/V3 (auriculares más antiguos) y el modo sin pérdida «LHDC-RAW» no tienen codificador de código abierto. En modo Automático, LHDC V5 tiene menos prioridad que LDAC y la familia aptX, y más que AAC / SBC.
 
 {: .note }
 **¿Solo necesita aptX clásico?** Windows 10 ya admite aptX clásico en su pila Bluetooth integrada (no aptX HD, aptX LL ni aptX Adaptive), así que A2DPWB no es necesario para ese códec. A2DPWB es útil sobre todo para LDAC, aptX HD y aptX Low Latency.
@@ -80,6 +80,7 @@ A2DPWB solo funciona en Windows, como compilación x64. Las herramientas de Linu
 | TP-Link UB500 (Realtek RTL8761BU, adaptador) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | Receptor de medición `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 por radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Recibido y medido |
 | Enlace virtual `tools/emu` (Bumble) | Windows 11, sin radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 | ✅ La prueba de extremo a extremo se supera |
+| Auriculares LHDC V5 (informe de un usuario, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ Se reproduce a 1000 kbps / 192 kHz |
 
 Windows 10 aún no se ha probado en hardware real. Otros adaptadores: consulte [Adaptadores recomendados](setup#adapters).
 

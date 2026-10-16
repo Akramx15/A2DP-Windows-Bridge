@@ -6,9 +6,9 @@
  * LHDC V5: Savitech codec, 44.1/48/96/192 kHz, 16/24-bit stereo, 5 ms frames,
  * 64 to 1000 kbps (A2DP) with optional adaptive bit rate (ABR).
  *
- * Experimental: follows the Android 17 (AOSP) implementation and the C port
- * was verified bit-exact against the AOSP Rust encoder, but it has not been
- * tested with real LHDC headphones yet.
+ * Follows the Android 17 (AOSP) implementation; the C port was verified
+ * bit-exact against the AOSP Rust encoder, and a user verified it with real
+ * LHDC V5 headphones (1000 kbps / 192 kHz, issue #50).
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */

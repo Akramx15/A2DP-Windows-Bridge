@@ -242,7 +242,7 @@ stateDiagram-v2
 | aptX | libopenaptx | 352/384 kbps（44.1/48 kHz） | 16-bit 立体声，无 RTP 标头 |
 | AAC | fdk-aac | 最高 256 kbps | AAC-LC，LATM 传输 |
 | SBC | BTstack Bluedroid | 最高约 345 kbps | A2DP 必备的基础编解码器 |
-| LHDC V5 | lhdcv5-enc（AOSP 编码器的 C 语言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 实验性；16/24-bit，5 ms 帧，2 字节媒体负载标头，RTP 标头 |
+| LHDC V5 | lhdcv5-enc（AOSP 编码器的 C 语言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 16/24-bit，5 ms 帧，2 字节媒体负载标头，RTP 标头 |
 
 所有编码器都实现了 `AudioEncoder` 接口，提供 `encode()` 和 `get_frame_size()` 方法。
 
@@ -289,4 +289,4 @@ AAC 和 SBC 使用 A2DP 规范中定义的标准 A2DP 编解码器 ID。
 - **建议使用第二个适配器**：内置 Bluetooth 留给 Windows 使用，专用 USB 适配器用于 A2DPWB
 - 某些 Bluetooth 适配器的固件会限制可达到的比特率
 - USB Bluetooth 5.0+ 适配器通常能很好地支持 LDAC
-- 自动选择编解码器的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5（实验性）> AAC > SBC
+- 自动选择编解码器的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC

@@ -98,7 +98,7 @@ if(TARGET openaptx)
     target_link_libraries(A2DPWB PRIVATE openaptx)
 endif()
 
-# LHDC V5 encoder (experimental)
+# LHDC V5 encoder
 if(TARGET lhdcv5_enc)
     target_link_libraries(A2DPWB PRIVATE lhdcv5_enc)
     target_compile_definitions(A2DPWB PRIVATE LHDCV5_ENCODER_AVAILABLE=1)

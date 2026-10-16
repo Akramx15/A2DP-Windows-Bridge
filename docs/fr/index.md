@@ -11,7 +11,7 @@ has_toc: false
 Diffusion audio Bluetooth A2DP pour Windows, avec tous les codecs.
 {: .fs-6 .fw-300 }
 
-Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** et (à titre expérimental) **LHDC V5** grâce à un adaptateur Bluetooth USB en mode WinUSB -- sans pilote noyau ni signature de test.
+Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** et **LHDC V5** grâce à un adaptateur Bluetooth USB en mode WinUSB -- sans pilote noyau ni signature de test.
 
 [Commencer](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -30,7 +30,7 @@ Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | jusqu'à ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### Codecs pris en charge selon la plateforme (envoi vers le casque)
 
@@ -42,7 +42,7 @@ Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ absent des paquets Ubuntu | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| LHDC V5 | ❌ | ❌ | ❌ | 🧪 expérimental |
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ pris en charge · 🧪 expérimental · ❌ non pris en charge. Toutes les colonnes concernent le côté émetteur (PC → casque). « Natif » désigne l'audio Bluetooth propre au système, sans A2DPWB ; la colonne Ubuntu correspond aux codecs PipeWire d'Ubuntu 26.04 (`libspa-0.2-bluetooth`).
@@ -50,8 +50,8 @@ Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC
 {: .warning }
 **aptX HD et aptX Low Latency sont expérimentaux.** Ils suivent les implémentations d'Android / PipeWire et réussissent les tests d'aller-retour encodage/décodage, mais n'ont pas encore été vérifiés avec un vrai casque. Les latences de ce tableau sont des valeurs typiques, non mesurées avec A2DPWB.
 
-{: .warning }
-**LHDC V5 est expérimental.** Il utilise un portage en C de l'encodeur LHDC V5 que Google a ajouté à Android 17 (AOSP, Apache-2.0) ; ce portage a été vérifié bit à bit par rapport à l'encodeur Rust d'AOSP, et la signalisation A2DP suit `a2dp_vendor_lhdcv5` d'Android. Il n'a pas encore été vérifié avec un vrai casque LHDC. Seul le LHDC V5 avec perte est pris en charge : LHDC V2/V3 (casques plus anciens) et le mode sans perte « LHDC-RAW » n'ont pas d'encodeur open source. En mode Auto, LHDC V5 passe après LDAC et la famille aptX, et avant AAC / SBC.
+{: .note }
+**À propos de LHDC V5.** Il utilise un portage en C de l'encodeur LHDC V5 que Google a ajouté à Android 17 (AOSP, Apache-2.0) ; ce portage a été vérifié bit à bit par rapport à l'encodeur Rust d'AOSP, et la signalisation A2DP suit `a2dp_vendor_lhdcv5` d'Android. Un utilisateur l'a vérifié avec un vrai casque LHDC V5 à 1000 kbps / 192 kHz ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). Seul le LHDC V5 avec perte est pris en charge : LHDC V2/V3 (casques plus anciens) et le mode sans perte « LHDC-RAW » n'ont pas d'encodeur open source. En mode Auto, LHDC V5 passe après LDAC et la famille aptX, et avant AAC / SBC.
 
 {: .note }
 **Seul l'aptX classique vous intéresse ?** Windows 10 prend déjà en charge l'aptX classique dans sa pile Bluetooth intégrée (pas aptX HD, aptX LL ni aptX Adaptive) : A2DPWB n'est donc pas nécessaire pour cela. A2DPWB sert surtout pour LDAC, aptX HD et aptX Low Latency.
@@ -80,6 +80,7 @@ A2DPWB lui-même ne fonctionne que sous Windows, en version x64. Les outils Linu
 | TP-Link UB500 (Realtek RTL8761BU, adaptateur) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | Récepteur de mesure `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 par radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Reçu et mesuré |
 | Liaison virtuelle `tools/emu` (Bumble) | Windows 11, sans radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 | ✅ Le test de bout en bout réussit |
+| Casque LHDC V5 (retour d'un utilisateur, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ Lecture à 1000 kbps / 192 kHz |
 
 Windows 10 n'a pas encore été essayé sur du vrai matériel. Autres adaptateurs : voir [Adaptateurs recommandés](setup#adapters).
 

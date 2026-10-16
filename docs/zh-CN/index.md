@@ -11,7 +11,7 @@ has_toc: false
 适用于 Windows 的 Bluetooth A2DP 音频串流工具，支持全部主流编解码器。
 {: .fs-6 .fw-300 }
 
-使用处于 WinUSB 模式的 USB Bluetooth 适配器，以 **LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC**（以及实验性的 **LHDC V5**）串流系统音频——无需内核驱动，也无需测试签名。
+使用处于 WinUSB 模式的 USB Bluetooth 适配器，以 **LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5**串流系统音频——无需内核驱动，也无需测试签名。
 
 [开始使用](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -30,7 +30,7 @@ has_toc: false
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 约 150 ms |
 | SBC | 最高约 345 kbps | 44.1/48 kHz | 16 bit | 约 150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### 各平台的编解码器支持情况（向耳机发送）
 
@@ -42,7 +42,7 @@ has_toc: false
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu 软件包中未包含 | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| LHDC V5 | ❌ | ❌ | ❌ | 🧪 实验性 |
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 支持 · 🧪 实验性 · ❌ 不支持。所有列均指发送端（PC → 耳机）。“内置”指不使用 A2DPWB 时操作系统自带的 Bluetooth 音频；Ubuntu 一列为 Ubuntu 26.04 的 PipeWire 编解码器集（`libspa-0.2-bluetooth`）。
@@ -50,8 +50,8 @@ has_toc: false
 {: .warning }
 **aptX HD 和 aptX Low Latency 为实验性功能。** 它们参照 Android / PipeWire 的实现，并通过了编码/解码往返测试，但尚未在真实耳机上验证。表中的延迟为典型值，并非使用 A2DPWB 实测。
 
-{: .warning }
-**LHDC V5 为实验性功能。** 它使用 Google 在 Android 17 中加入的 LHDC V5 编码器（AOSP，Apache-2.0）的 C 语言移植版；该移植版已与 AOSP 的 Rust 编码器做过逐位一致性验证，A2DP 信令则参照 Android 的 `a2dp_vendor_lhdcv5`。尚未在真实的 LHDC 耳机上验证。仅支持有损的 LHDC V5：LHDC V2/V3（较旧的耳机）和无损的“LHDC-RAW”模式没有开源编码器。在“自动”模式下，LHDC V5 的优先级低于 LDAC 和 aptX 系列，高于 AAC / SBC。
+{: .note }
+**关于 LHDC V5。** 它使用 Google 在 Android 17 中加入的 LHDC V5 编码器（AOSP，Apache-2.0）的 C 语言移植版；该移植版已与 AOSP 的 Rust 编码器做过逐位一致性验证，A2DP 信令则参照 Android 的 `a2dp_vendor_lhdcv5`。已有用户在真实的 LHDC V5 耳机上验证，可在 1000 kbps / 192 kHz 下运行（[#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)）。仅支持有损的 LHDC V5：LHDC V2/V3（较旧的耳机）和无损的“LHDC-RAW”模式没有开源编码器。在“自动”模式下，LHDC V5 的优先级低于 LDAC 和 aptX 系列，高于 AAC / SBC。
 
 {: .note }
 **只需要经典 aptX？** Windows 10 的内置 Bluetooth 堆栈已经支持经典 aptX（不含 aptX HD、aptX LL 和 aptX Adaptive），因此无需 A2DPWB。A2DPWB 主要用于 LDAC、aptX HD 和 aptX Low Latency。
@@ -80,6 +80,7 @@ A2DPWB 本身仅在 Windows 上运行，为 x64 版本。Linux 工具需要 Pyth
 | TP-Link UB500（Realtek RTL8761BU，适配器） | Windows 11、WinUSB、linux-firmware `rtl8761bu` | – | ✅ |
 | 测量用接收器 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04，无线传输 | SBC、AAC、aptX、aptX HD、aptX LL、LDAC | ✅ 已接收并测量 |
 | 虚拟链路 `tools/emu`（Bumble） | Windows 11，无无线电 | SBC、AAC、aptX、aptX HD、aptX LL、LDAC、LHDC V5 | ✅ 端到端测试通过 |
+| LHDC V5 耳机（用户报告，[#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)） | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ 以 1000 kbps / 192 kHz 播放 |
 
 尚未在 Windows 10 实机上试用。其他适配器请参阅[推荐适配器](setup#adapters)。
 
