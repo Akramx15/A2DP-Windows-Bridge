@@ -54,8 +54,7 @@ if not os.path.exists(VENV_PYTHON) and sys.prefix != sys.base_prefix:
     # environment this script runs in (one with bumble installed)
     VENV_PYTHON = sys.executable
 SINK_ADDRESS = '00:A2:D0:00:00:02'
-BASE_PORT = 9101
-LE_BASE_PORT = 9201
+BASE_PORT = 9101  # A2DP cases; LE Audio cases use BASE_PORT + 100
 
 CODECS = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5']
 CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
@@ -333,7 +332,7 @@ def main_le(args):
     results = []
     for index, case in enumerate(c for c in all_cases if c.name in wanted):
         print(f'--- LE Audio {case.name} ...', flush=True)
-        failures, detail = run_le_case(args, case, LE_BASE_PORT + index)
+        failures, detail = run_le_case(args, case, args.base_port + 100 + index)
         results.append((case.name, failures))
         print(f'    {"PASS" if not failures else "FAIL"}  {detail}')
         for failure in failures:
@@ -353,6 +352,8 @@ def main():
     parser.add_argument('--build-dir', default=os.path.join(REPO, 'build'))
     parser.add_argument('--config', default='Release', help='build configuration (Release / Debug)')
     parser.add_argument('--out', default=os.path.join(HERE, 'out'))
+    parser.add_argument('--base-port', type=int, default=BASE_PORT,
+                        help='first TCP port (LE Audio cases use +100); change it to run several tests at once')
     args = parser.parse_args()
     args.a2dpwb = os.path.join(args.build_dir, 'app', args.config, 'A2DPWB.exe')
     args.decoder = os.path.join(args.build_dir, 'tools', 'a2dp_decode', args.config, 'a2dpwb_decode.exe')
@@ -366,7 +367,7 @@ def main():
     results = []
     for index, codec in enumerate(args.codecs):
         print(f'--- {codec} ...', flush=True)
-        failures, detail = run_codec(args, codec, BASE_PORT + index)
+        failures, detail = run_codec(args, codec, args.base_port + index)
         results.append((codec, failures))
         print(f'    {"PASS" if not failures else "FAIL"}  {detail}')
         for failure in failures:
