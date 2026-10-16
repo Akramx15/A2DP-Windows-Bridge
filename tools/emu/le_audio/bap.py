@@ -86,9 +86,13 @@ def patch_release(sink, ascs, ase, wait_for_cis):
 
     def on_cis_disconnection(reason):
         original_disconnection(reason)
-        if waiting and ase.state == AseStateMachine.State.RELEASING:
-            waiting.clear()
-            log.info('%s: ASE %d released after the CIS was dropped', sink.name, ase.ase_id)
+        # Also without wait_for_cis: when the client drops the CIS while
+        # Bumble's release task removes the data path, that removal fails
+        # (Unknown Connection Identifier) and the ASE would stay in Releasing
+        if ase.state == AseStateMachine.State.RELEASING:
+            if waiting:
+                waiting.clear()
+                log.info('%s: ASE %d released after the CIS was dropped', sink.name, ase.ase_id)
             utils.cancel_on_event(ascs.device, 'flush', idle_later())
 
     # ASCS looks the handlers up on the instance (getattr / bound at CIS set-up)
