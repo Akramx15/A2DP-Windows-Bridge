@@ -136,7 +136,9 @@ A2DPWB.exe
 │   ├── media_payload_limit Max media packet size (range, default)
 │   ├── afh                 AFH host channel classification from the Wi-Fi scan
 │   ├── link_stats          Counters for the link quality window
-│   └── remote_sink_client  Statistics from tools/linux_sink over the network
+│   ├── remote_sink_client  Statistics from tools/linux_sink over the network
+│   └── le_audio/           LE Audio (experimental): BAP unicast client, LC3 over CIS,
+│                           GATT client queue / server, profile modules (le-audio-dev.md)
 │
 ├── Support
 │   ├── app_settings        Persistent application settings (JSON)

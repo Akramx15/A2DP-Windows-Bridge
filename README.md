@@ -40,6 +40,8 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 
 > **aptX Adaptive is not supported.** There is no open-source aptX Adaptive encoder, so A2DPWB never selects it. If your headphones also list classic aptX (many aptX Adaptive models do), A2DPWB uses aptX directly; otherwise Auto picks AAC or SBC. See [aptX family and aptX Adaptive](#aptx-family-and-aptx-adaptive) below.
 
+> **LE Audio (LC3) is experimental and off by default.** With Settings > "LE Audio (experimental)" A2DPWB also finds LE Audio devices and can stream LC3 to them as a BAP unicast client (one stereo headset or a pair of earbuds), on an adapter with Bluetooth 5.2 isochronous channels. It has only been tested against the Bumble emulator (`python tools/emu/run_test.py --le-audio`), not yet with real headphones. Developer note: [docs/le-audio-dev.md](docs/le-audio-dev.md).
+
 ## Platform Support
 
 | Component | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
