@@ -153,7 +153,9 @@ def _check_unsupported(ctx):
     failures = _client(log)
     if 'MCP: unsubscribed write accepted' not in log:
         failures.append('a control point write before subscribing was refused')
-    if 'MCP: control point PLAY (0x01) -> Success (not notified: the client did not enable it)' not in a2dpwb:
+    # The result goes out after the write response: the client's CCC write
+    # can land in between, so the result may or may not be notified
+    if 'MCP: control point PLAY (0x01) -> Success' not in a2dpwb:
         failures.append('A2DPWB did not carry out the Play written before subscribing (without notification)')
     want = [('fast-rewind', 'OPCODE_NOT_SUPPORTED'), ('first-segment', 'OPCODE_NOT_SUPPORTED'),
             ('0x77', 'OPCODE_NOT_SUPPORTED'), ('goto-track', 'OPCODE_NOT_SUPPORTED'),

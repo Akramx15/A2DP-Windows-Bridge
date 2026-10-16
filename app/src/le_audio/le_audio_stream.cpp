@@ -199,6 +199,7 @@ void Stream::start_sending(const std::vector<uint16_t> &cis_handles, uint8_t que
         /* The controller queue takes queue_depth SDU sets at once and the
          * host may run lead_ sets ahead of real time: buffer more than that */
         prefill_ = (size_t)queue_depth + 3;
+        prefill_max_ = prefill_ + 4;
     }
     /* 1 ms timer resolution for the pacing timer (as WASAPI capture does) */
     timeBeginPeriod(1);
@@ -316,9 +317,13 @@ void Stream::on_cis_can_send_now(const uint8_t *packet, uint16_t size) {
             if (!buffering_) {
                 buffering_ = true;
                 stats_.underruns++;
+                /* The audio source jitters more than the buffer covers:
+                 * buffer one more set from now on (bounded) */
+                if (prefill_ < prefill_max_) prefill_++;
                 if (stats_.underruns <= 10)
-                    LOG_WARN("LE Audio: no audio for SDU set %llu (underrun %llu), sending silence",
-                             (unsigned long long)rounds_, (unsigned long long)stats_.underruns);
+                    LOG_WARN("LE Audio: no audio for SDU set %llu (underrun %llu), sending silence; buffering %u sets",
+                             (unsigned long long)rounds_, (unsigned long long)stats_.underruns,
+                             (unsigned)prefill_);
             }
             current_ = silence_;
             stats_.silence_sets++;

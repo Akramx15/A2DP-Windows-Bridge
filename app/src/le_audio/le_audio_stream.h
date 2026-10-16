@@ -109,6 +109,7 @@ private:
     bool buffering_ = true;
     SduSet silence_;
     size_t prefill_ = 5;                       /* sets buffered before audio starts / after an underrun */
+    size_t prefill_max_ = 9;                   /* prefill_ grows by one per underrun up to this */
     static constexpr size_t CAPACITY = 16;
 
     /* BTstack thread state */
