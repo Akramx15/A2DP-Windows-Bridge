@@ -346,6 +346,10 @@ void ProfileDialog::create_ui() {
     sample_rate_ctrl_->Bind(wxEVT_CHOICE, [this](wxCommandEvent &) { update_format_info(); });
     bit_depth_ctrl_->Bind(wxEVT_CHOICE, [this](wxCommandEvent &) { update_format_info(); });
     audio_dev_ctrl_->Bind(wxEVT_CHOICE, [this](wxCommandEvent &) { update_format_info(); });
+    /* LHDC V5 ABR ignores the quality setting: grey it out while ABR is on */
+    abr_ctrl_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent &) {
+        if (codec_ctrl_->GetSelection() == 7) quality_ctrl_->Enable(!abr_ctrl_->GetValue());
+    });
 
     /* Separator + buttons */
     vbox->Add(new wxStaticLine(this), 0, wxEXPAND | wxALL, 8);
@@ -412,7 +416,8 @@ void ProfileDialog::populate_from_profile(const ConnectionProfile &p) {
     int sr_idx = (p.sample_rate == 44100) ? 1 :
                  (p.sample_rate == 48000) ? 2 :
                  (p.sample_rate == 88200) ? 3 :
-                 (p.sample_rate == 96000) ? 4 : 0;
+                 (p.sample_rate == 96000) ? 4 :
+                 (p.sample_rate == 192000) ? 5 : 0;
     /* sample_rate_ctrl_ populated by update_codec_dependent */
 
     int bd_idx = ProfileManager::bit_depth_to_index(p.bit_depth);
@@ -530,7 +535,8 @@ void ProfileDialog::update_codec_dependent() {
     }
     quality_ctrl_->SetSelection(sel);
 
-    quality_ctrl_->Enable(quality_enabled);
+    /* LHDC V5 ABR runs at 400 kbps or below whatever the quality (as Android) */
+    quality_ctrl_->Enable(quality_enabled && !(is_lhdc && abr_ctrl_->GetValue()));
     /* Codecs without ABR: hide the row instead of greying it out */
     abr_spacer_->Show(abr_enabled);
     abr_ctrl_->Show(abr_enabled);
@@ -552,6 +558,8 @@ void ProfileDialog::update_codec_dependent() {
         sample_rate_ctrl_->Append("88200 Hz");
         sample_rate_ctrl_->Append("96000 Hz");
     }
+    if (is_lhdc)
+        sample_rate_ctrl_->Append("192000 Hz");
     if (cur_sr >= 0 && cur_sr < sample_rate_ctrl_->GetCount())
         sample_rate_ctrl_->SetSelection(cur_sr);
     else
@@ -634,9 +642,9 @@ void ProfileDialog::update_format_info() {
     }
 
     /* Get currently selected profile values */
-    static const uint32_t rate_values[] = { 0, 44100, 48000, 88200, 96000 };
+    static const uint32_t rate_values[] = { 0, 44100, 48000, 88200, 96000, 192000 };
     int sr_sel = sample_rate_ctrl_->GetSelection();
-    uint32_t profile_sr = (sr_sel >= 0 && sr_sel <= 4) ? rate_values[sr_sel] : 0;
+    uint32_t profile_sr = (sr_sel >= 0 && sr_sel <= 5) ? rate_values[sr_sel] : 0;
 
     static const uint32_t bd_values[] = { 0, 16, 24 };
     int bd_sel = bit_depth_ctrl_->GetSelection();
@@ -960,9 +968,9 @@ void ProfileDialog::OnSave(wxCommandEvent &) {
     p.abr = abr_ctrl_->GetValue();
     p.codec_fallback = fallback_ctrl_->GetValue();
 
-    static const uint32_t rate_values[] = { 0, 44100, 48000, 88200, 96000 };
+    static const uint32_t rate_values[] = { 0, 44100, 48000, 88200, 96000, 192000 };
     int sr_sel = sample_rate_ctrl_->GetSelection();
-    p.sample_rate = (sr_sel >= 0 && sr_sel <= 4) ? rate_values[sr_sel] : 0;
+    p.sample_rate = (sr_sel >= 0 && sr_sel <= 5) ? rate_values[sr_sel] : 0;
 
     static const uint32_t bd_values[] = { 0, 16, 24 };
     int bd_sel = bit_depth_ctrl_->GetSelection();

@@ -62,6 +62,10 @@ public:
     /* Current target bit rate (changes under ABR) */
     uint32_t get_bitrate_kbps() const override;
 
+    /* True when the sink's maximum bit rate (P7) lowered the fixed bit rate
+     * the quality mode asked for (never under ABR). Valid after init(). */
+    bool peer_capped() const { return peer_capped_; }
+
     void shutdown() override;
 
 private:
@@ -74,6 +78,7 @@ private:
     uint32_t encoder_bits_ = 16;      /* 16 or 24: what the encoder is fed */
     uint8_t peer_p7_ = 0;             /* 0 = no limits (64..1000 kbps) */
     bool abr_ = false;
+    bool peer_capped_ = false;
     std::vector<uint8_t> packed_;     /* interleaved stereo s16le / packed s24le */
 
     /* ABR state (Android lhdcv5BT_enc.c policy) */
