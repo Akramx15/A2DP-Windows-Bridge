@@ -440,6 +440,8 @@ static void print_usage(const char *prog) {
     printf("  --le-audio   Stream to the LE Audio device -d (BAP unicast, LC3)\n");
     printf("  --le-device <addr>  Another device of the group (e.g. the second earbud)\n");
     printf("  --le-preset <name>  Use only this BAP configuration (e.g. 48_2_2, 16_2_1)\n");
+    printf("  --le-sim-volume <level>[,<s>:<level>...]  Tests: VolumeSync with a simulated Windows\n"
+           "               volume 0-127 (changed at <s> seconds); the real volume is not touched\n");
     printf("  --le-scan [seconds] List the LE Audio devices nearby and exit\n");
     printf("  -h           Show this help\n");
     printf("\nCodec priority (auto mode): LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC\n");
@@ -1088,6 +1090,8 @@ int main(int argc, char *argv[]) {
             le_options.devices.push_back(argv[++i]);
         } else if (strcmp(argv[i], "--le-preset") == 0 && i + 1 < argc) {
             le_options.preset = argv[++i];
+        } else if (strcmp(argv[i], "--le-sim-volume") == 0 && i + 1 < argc) {
+            le_options.sim_volume = argv[++i];
         } else if (strcmp(argv[i], "--le-scan") == 0) {
             le_audio = true;
             le_options.scan_only = true;

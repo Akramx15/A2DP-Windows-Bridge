@@ -31,6 +31,7 @@ struct LeAudioCliOptions {
     std::wstring audio_device_id;       /* virtual device mode */
     std::string afh;                    /* --afh */
     std::function<bool()> running;      /* false on Ctrl+C */
+    std::string sim_volume;             /* --le-sim-volume (tests): VolumeSync on a simulated Windows volume */
 };
 
 /* Returns the process exit code */

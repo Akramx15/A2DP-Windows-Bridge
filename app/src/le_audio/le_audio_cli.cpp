@@ -6,6 +6,7 @@
 
 #include "le_audio_cli.h"
 #include "le_audio_core.h"
+#include "le_audio_vcp.h"
 
 #include "app_settings.h"
 #include "audio_device_enum.h"
@@ -180,6 +181,13 @@ int le_audio_cli_run(const LeAudioCliOptions &o) {
         rc = 1;
     }
 
+    /* Test only: the headset volume synced with a simulated Windows volume */
+    le_audio::vcp::SimulatedWindowsVolume sim_volume;
+    if (!o.sim_volume.empty() && !sim_volume.parse(o.sim_volume)) {
+        fprintf(stderr, "Invalid --le-sim-volume %s\n", o.sim_volume.c_str());
+        rc = 1;
+    }
+
     auto start = std::chrono::steady_clock::now();
     auto last_print = start;
     int restarts = 0;
@@ -194,6 +202,7 @@ int le_audio_cli_run(const LeAudioCliOptions &o) {
             last_print = now;
             print_stats(core);
         }
+        if (!o.sim_volume.empty()) sim_volume.tick();
         if (core.stream_lost()) {
             /* A device or CIS went away: tear down and set it up again */
             printf("\n*** LE Audio stream lost - setting it up again ***\n");
