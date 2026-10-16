@@ -389,3 +389,74 @@ changing the default flow for the other cases.
 - Not verified with real LE Audio headphones or a real controller's CIS
   scheduling; extended advertising scanning is enabled but only exercised
   through BTstack's fallback to legacy scanning in the emulator.
+
+## CSIP (Set Coordinator)
+
+`le_audio_csip.{h,cpp}`; emulator `tools/emu/le_audio/csip.py`, cases
+`tools/emu/le_audio_tests/csip.py`.
+
+- **Read** (`on_gatt_ready`): a CSIS (0x1846; primary or included, whichever
+  `find_char` sees first) gets its SIRK (0x2B84), Coordinated Set Size
+  (0x2B85), Set Member Rank (0x2B87) and Set Member Lock (0x2B86) read. An
+  encrypted SIRK (type 0x00) is decrypted with sdf = sef (CSIS 4.5), K = the
+  LTK of the bond (`le_device_db_encryption_get`, which BTstack keeps most
+  significant octet first, as the spec writes it); without a bond it cannot
+  be decrypted (warning, the device is then not treated as a set member).
+  Devices with equal SIRKs form one set; `ScanResult::set_id` is the index of
+  the set in the module (stable for the BTstack session).
+- **Crypto**: AES-128 is BTstack's `3rd-party/rijndael` (synchronous, no HCI
+  LE Encrypt), AES-CMAC is local (RFC 4493). `csip::self_test()` checks s1,
+  sef / sdf, sih and an RSI against the CSIS 1.0.1 appendix A sample data at
+  every stack init: "CSIP: crypto self-check passed" in the log; if it fails
+  the module does nothing.
+- **RSI** (`on_scan_result`): `result.rsi` (hash = bytes 0-2, prand = bytes
+  3-5, least significant octet first) is checked with sih against every known
+  SIRK (results cached per RSI); a match sets `set_id`, `le_audio` and `note`
+  ("member of coordinated set N (2 devices)"). An RSI of an unknown set is
+  left alone (the core logs "set member (RSI)").
+- **prepare_group** (worker): waits (6 s at most) for the CSIS reads of the
+  given devices, adds members of their sets that are connected already (e.g.
+  the other earbud after a link loss of one), then scans for up to
+  `SCAN_TIMEOUT_MS` (10 s) for RSIs of the set; the scan ends early once
+  `on_scan_result` saw a member that is neither connected nor tried. Members
+  found are connected one after the other (`Core::connect`, which pairs) and
+  must read the same SIRK. The set's devices are ordered by rank (rank 1
+  first, no rank last). Missing members: warning "only 1 of 2 members of
+  coordinated set N found", the stream goes to the members available
+  (plan_stream then downmixes when only FL or FR is left). Log line for the
+  result: "CSIP: streaming to coordinated set N, k of n members: ...".
+- **Link loss of a member**: the core reports the stream lost; the worker
+  (CLI / GUI) sets it up again with the device it was given; `prepare_group`
+  picks up the members still connected and looks for the missing ones again.
+- **Persistence**: `<config dir>\le_audio_csip.txt` (identity address from
+  `le_device_db_info`, address type, SIRK, size, rank) for bonded devices,
+  rewritten on change. Loaded at stack init, entries whose bond is gone from
+  `le_device_db` are dropped. The SIRKs let a scan recognise set members
+  before anything is connected (GUI list, below); the CSIS is still read on
+  every connection.
+- **GUI** (`a2dp_service.cpp`, `wx_profile_dialog.cpp`): a scanned device that
+  advertises an RSI is tagged `device.tag_le_audio_set` ("LE Audio set")
+  instead of "LE Audio"; of a known set (SIRK from the file) only the first
+  member found gets a new list entry. `DeviceEntry::le_audio_set` is not
+  saved.
+- **Emulator** (`emu_le_audio_sink.py --layout earbuds`): `--csip-set
+  plaintext|encrypted` gives each earbud a CSIS (Bumble's, logging "CSIS SIRK
+  read (...)") with one fixed SIRK, size = sinks of the layout
+  (`--csip-size`), rank = index + 1 (`--csip-ranks 2,1`), an unlocked lock,
+  and an RSI in the advertising data (the name shrinks to 3 characters to fit
+  31 bytes). The CSIS is a primary service, not included by the CAS of
+  `bap.py`. `--csip-missing`: the second earbud stops advertising.
+- **Cases**: `csip-set` (only the first earbud's address is passed:
+  `Case.first_address_only`; L to one, R to the other), `csip-encrypted-sirk`
+  (ranks 2,1: the found earbud comes first), `csip-missing-member` (one CIS,
+  mono downmix, warning), `csip-both-named` (both addresses given: no
+  duplicates, no scan), `csip-link-loss` (the named earbud drops its link;
+  the other stays connected and is reused).
+- **Not implemented**: the lock / Ordered Access procedure (the lock is read
+  and logged only, never written: A2DPWB sets the stream up on all members
+  without locking the set first, which matters only when another
+  coordinator works on the same set at the same time), notifications of
+  SIRK / size / rank changes, OOB-only SIRKs (ATT error 0x80 is logged), more
+  than one CSIS per device, sets that need more than `MAX_NR_CIS` (4) CIS.
+  Verified only against the Bumble emulator (public
+  addresses; no RPAs / address resolution, no rotating RSIs).
