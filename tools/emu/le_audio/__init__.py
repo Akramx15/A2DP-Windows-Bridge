@@ -16,18 +16,23 @@ one of them. emu_le_audio_sink.py calls the modules; add checks for
 run_test.py in your module's own files, not in bap.py.
 """
 
-from . import bap, ccp, csip, mcp, tmap_gmap, vcp
+from . import bap, ccp, controller, csip, mcp, tmap_gmap, vcp
 
 MODULES = [bap, csip, vcp, mcp, ccp, tmap_gmap]
 
 
 def add_arguments(parser):
+    # The emulated controllers themselves (controller.py)
+    parser.add_argument('--no-iso-buffers', action='store_true',
+                        help="A2DPWB's controller has LE but no ISO buffers (LE Read Buffer Size v2: 0)")
     for module in MODULES:
         if hasattr(module, 'add_arguments'):
             module.add_arguments(parser)
 
 
 def configure_sink(sink, args):
+    if args.no_iso_buffers:
+        controller.NO_ISO_BUFFERS.add('A2DPWB')   # the controller served over H4 (emu_le_audio_sink.py)
     for module in MODULES:
         if hasattr(module, 'configure_sink'):
             module.configure_sink(sink, args)
