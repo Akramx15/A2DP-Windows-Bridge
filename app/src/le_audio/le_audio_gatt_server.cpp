@@ -251,9 +251,15 @@ void GattServer::can_send_now(uint16_t con) {
     if (it == pending_.end() || it->second.empty()) return;
     Pending p = std::move(it->second.front());
     it->second.erase(it->second.begin());
+    /* BTstack copies at most ATT_MTU-3 bytes but reports the full length as
+     * the PDU size, so an over-long value would go out with garbage: cut it
+     * (the client reads the full value if it needs it) */
+    uint16_t mtu = att_server_get_mtu(con);
+    size_t len = p.value.size();
+    if (mtu > 3 && len > (size_t)(mtu - 3)) len = mtu - 3;
     uint8_t status = p.indication
-        ? att_server_indicate(con, p.handle, p.value.data(), (uint16_t)p.value.size())
-        : att_server_notify(con, p.handle, p.value.data(), (uint16_t)p.value.size());
+        ? att_server_indicate(con, p.handle, p.value.data(), (uint16_t)len)
+        : att_server_notify(con, p.handle, p.value.data(), (uint16_t)len);
     if (status != ERROR_CODE_SUCCESS)
         LOG_WARN("LE Audio: GATT %s of 0x%04x failed (0x%02x)", p.indication ? "indication" : "notification",
                  p.handle, status);
