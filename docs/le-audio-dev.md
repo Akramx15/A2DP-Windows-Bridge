@@ -352,10 +352,22 @@ Emulator facts to know:
   the advertising data as scan response too, so there is no more room there.
   An RSI (8 bytes) still fits with a short name.
 - `LeEmuController` carries ISO data between the controllers, one SDU per
-  interval per CIS, with time stamps; it tolerates the host being up to 3
-  intervals late (`LATE_INTERVALS`, Windows timer jitter) before it moves an
-  SDU to a later interval. `LeLocalLink` fixes LE ACL routing for public
-  addresses. Both in `le_audio/controller.py`.
+  interval per CIS, with time stamps. An SDU that arrives more than 2 ms
+  after its interval began is logged as `late SDU` (the case fails: a real
+  controller's queue, 2 SDUs per CIS, would have run empty); time the
+  emulator's own event loop was stalled (a 2 ms heartbeat timer firing late)
+  is not counted, neither while the SDU waited to be read nor while the
+  completion that let A2DPWB send it was held up. Only beyond the CIG's Max
+  Transport Latency (at least 30 ms) does an SDU move to a later interval.
+  The emulator runs asyncio on the performance counter with 1 ms timers
+  (Python 3.12's monotonic clock on Windows moves in 15.6 ms steps, so SDUs
+  went out up to 16 ms early or late). `LeLocalLink` fixes LE ACL routing
+  for public addresses. Both in `le_audio/controller.py`.
+- Every HCI command gets Command Complete / Status: Set AFH Host Channel
+  Classification succeeds (A2DPWB sends it depending on the PC's Wi-Fi;
+  Bumble answered nothing and the LE connection timed out), others Bumble
+  lacks get Unknown HCI Command. `--no-iso-buffers`: A2DPWB's controller
+  reports no ISO buffers (LE Read Buffer Size v2).
 - Bumble's ASCS goes to Streaming right after the CIS is up (sink ASE), and
   its pairing is Just Works with an in-memory key store (fresh per run).
 - Bumble's controller does not check LTKs (encryption is bookkeeping), so a
@@ -398,16 +410,31 @@ Each case checks: A2DPWB exits 0; one stream of the expected configuration
 on both sides; no decoder problems (consecutive SDU sequence numbers,
 lengths, LC3 decoding, time stamp steps); the sinks received every SDU A2DPWB
 sent; decoded audio identical on both sides; the test tone (1 kHz left,
-1.5 kHz right; mono: both in each); the teardown steps in the log; then the
-checks of every `le_audio_tests/<profile>.py`.
+1.5 kHz right; mono: both in each) in every 100 ms block of every stream
+(the one set up again after a link loss too), except up to 0.3 s at its start
+(silence until A2DPWB's jitter buffer fills) and end (the test tone stops
+100 ms before the stream); no `late SDU` from the emulated controller; no
+underrun in A2DPWB's "stopped sending" counters (except one in the last
+0.3 s, as the tone stopped) and at least 90% of the duration sent as audio,
+not silence (60% for lossy cases); each CIS's Audio_Channel_Allocation
+within the PACS Sink Audio Locations of the sink it goes to (left earbud
+Front Left, right earbud Front Right; the tone check then shows each carries
+its side); the emulated controller answered every command; the teardown
+steps in the log; then the checks of every `le_audio_tests/<profile>.py`.
+Case `afh` forces the AFH host channel classification (`--afh 6,11`);
+`no-iso-buffers` expects A2DPWB to refuse a controller without ISO buffers
+with an error naming ISO.
 
 `Case` fields (`le_audio_tests/case.py`): `name, layout, config` (regex for
 the decoder's "Configuration :" line), `tones` (per WAV channel, or None),
 `sink_args`, `a2dpwb_args`, `tags`, `streams` (stream set-ups expected,
 e.g. 2 after a link loss), `lossy` (sent / received may differ by a few SDUs;
-no identical-audio check), `duration` (seconds, 0 = `--duration`).
+no identical-audio check), `duration` (seconds, 0 = `--duration`),
+`max_underruns` (0), `min_audio` (share of the duration sent as audio),
+`expect_error` (regex: A2DPWB must exit with that error instead of streaming).
 `a2dpwb_decode --le-audio` reports one "=== Stream" per set-up (a new CIG
-set-up on the same handles starts a new one).
+set-up on the same handles starts a new one); each CIS line ends with the
+capture (sink) it is in.
 
 Add your cases and checks to `tools/emu/le_audio_tests/<profile>.py`
 (standard library only):
@@ -996,12 +1023,10 @@ Verification
 - [ ] Untested paths: a device that lost its bond, extended advertising
   scanning, rotating RSIs, CSIS included by CAS, RPAs on real devices
   (emulated: `privacy-rpa`).
-- [ ] Emulator: the "time stamp step(s) differ from the SDU interval" check
-  failed now and then (about 1 in 20 cases, more under load). The cause was
-  the emulator's event loop stalling 60-90 ms, not A2DPWB; the controller now
-  tolerates up to the CIG's Max Transport Latency (`le_audio/controller.py`)
-  and two full runs after that passed 27/27. Watch whether it still happens,
-  especially for the 7.5 ms GMAP cases (15 ms latency, so less tolerance).
+- [ ] Emulator: late SDUs are now measured against each SDU interval with
+  the emulator's own stalls taken out (`late SDU`, `le_audio/controller.py`)
+  and its clock is precise; watch whether `late SDU` or the time stamp check
+  still fail now and then on a loaded machine.
 
 Missing features
 - [ ] Source ASEs (microphone): needed for TMAP Call Gateway, real CCP calls

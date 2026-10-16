@@ -13,6 +13,13 @@ between the two controllers of a LocalLink. LeEmuController adds that:
     PHY 2M) instead of zeros.
   - pending ISO deliveries are flushed before a CIS disconnects or its CIG
     is removed, so the sink receives every SDU A2DPWB sent.
+  - every command gets its Command Complete / Command Status, as from a real
+    controller: Set AFH Host Channel Classification succeeds (A2DPWB sends
+    it depending on the PC's Wi-Fi), others Bumble does not implement fail
+    with Unknown HCI Command. Bumble alone answered nothing to commands it
+    has no class for, and BTstack then waited for ever.
+  - with --no-iso-buffers (le_audio/__init__.py) the "A2DPWB" controller
+    reports no ISO buffers in LE Read Buffer Size v2 (LE without ISO).
 
 PacketLoggerSnooper also writes ISO data (PacketLogger types 0x0c / 0x0d),
 which a2dpwb_decode --le-audio reads.
@@ -35,11 +42,49 @@ from emu_sink import EmuController  # noqa: E402  (classic HCI additions, ACL bu
 
 log = logging.getLogger('emu_le_audio')
 
+
+def _precise_event_loop_timing():
+    """On Windows, asyncio's clock is time.monotonic() = GetTickCount64(),
+    which moves in 15.6 ms steps, and a timer fires when it is due within
+    that resolution: SDU deliveries (and their Number Of Completed Packets)
+    came up to ~16 ms early or late, in bursts. Use the performance counter
+    for the loop's clock and 1 ms system timer resolution for its waits, so
+    the emulated controller keeps its SDU intervals to about a millisecond.
+    Called on import, before emu_le_audio_sink.py starts its event loop."""
+    if sys.platform != 'win32':
+        return
+    import ctypes
+    asyncio.BaseEventLoop.time = lambda self: time.perf_counter()
+    original_init = asyncio.BaseEventLoop.__init__
+
+    def init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self._clock_resolution = 1e-4
+    asyncio.BaseEventLoop.__init__ = init
+    try:
+        ctypes.windll.winmm.timeBeginPeriod(1)
+    except OSError:
+        pass
+
+
+_precise_event_loop_timing()
+
 # CIG parameters set by the central, by (cig_id, cis_id): the peripheral's
 # controller reports them in its LE CIS Established too (one central here)
 CIS_PARAMS = {}
 LATE_INTERVALS = 3
 LATE_US = 30000      # the same tolerance in time for shorter SDU intervals
+# An SDU that reaches this controller more than HOST_LATE_MS after the start
+# of its SDU interval would have missed it on a real controller (whose queue,
+# 2 SDUs per CIS from A2DPWB, ran empty): logged as "late SDU" (run_test.py
+# fails the case). The time this emulation's own event loop was stalled in
+# between is not counted (see LeEmuController._heartbeat).
+HOST_LATE_MS = 2.0
+HEARTBEAT_S = 0.002
+STALL_S = 0.003      # heartbeat later than this: the event loop stalled (timer jitter is ~1.5 ms)
+LATE_LOG_MAX = 20    # late SDU lines per CIS (then every 100th)
+# Names of the controllers that report no ISO buffers (--no-iso-buffers)
+NO_ISO_BUFFERS = set()
 
 
 class LeEmuController(EmuController):
@@ -51,6 +96,33 @@ class LeEmuController(EmuController):
         self.iso_pending = {}      # CIS handle -> [(TimerHandle, deliver)]
         self.iso_t0 = None
         self.iso_count = 0
+        self.iso_late = {}         # CIS handle -> late SDUs
+        self.iso_completion_stall = {}  # CIS handle -> stall that held up its last completion (s)
+        self.stalls = []           # (from, to) loop times this event loop did not run (recent ones)
+        self.heartbeat = None
+        self.heartbeat_due = 0.0
+
+    def _heartbeat(self, due):
+        """Every HEARTBEAT_S while ISO data flows: when this timer fires more
+        than STALL_S late, the event loop did not run in between (a stall of
+        this emulation; it delays reading A2DPWB's SDUs as much)."""
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        if now - due > STALL_S:
+            self.stalls.append((due, now))
+            if len(self.stalls) > 1000:
+                del self.stalls[:500]
+        self.heartbeat_due = max(due + HEARTBEAT_S, now)
+        self.heartbeat = loop.call_at(self.heartbeat_due, self._heartbeat, self.heartbeat_due)
+
+    def stalled(self, start, end):
+        """Seconds of [start, end] this event loop was stalled. A stall still
+        going on (the heartbeat overdue: the SDU was read in the same loop
+        iteration that ended it, before the heartbeat could fire) counts too."""
+        stalls = list(self.stalls)
+        if end - self.heartbeat_due > STALL_S:
+            stalls.append((self.heartbeat_due, end))
+        return sum(max(0.0, min(end, b) - max(start, a)) for a, b in stalls if b > start)
 
     # ---- host -> controller ----
 
@@ -59,6 +131,41 @@ class LeEmuController(EmuController):
             self.on_hci_iso_data_packet(packet)
             return
         super().on_hci_packet(packet)
+
+    def on_hci_command_packet(self, command):
+        # Bumble answers synchronous commands (Command Complete) itself, also
+        # those it does not implement. For the others it relies on the
+        # handler to send Command Status, and sends nothing for a command it
+        # has no handler (or no class) for: answer those here.
+        if isinstance(command, hci.HCI_SyncCommand):
+            return super().on_hci_command_packet(command)
+        handler = getattr(self, f'on_{command.name.lower()}', None)
+        result = handler(command) if handler is not None else None
+        if handler is None:
+            log.warning('unsupported command %s: Unknown HCI Command', command.name)
+            result = hci.HCI_StatusReturnParameters(status=hci.HCI_ErrorCode.UNKNOWN_HCI_COMMAND_ERROR)
+        if result is None:
+            return None   # the handler answered
+        if isinstance(command, hci.HCI_AsyncCommand):
+            self._send_hci_command_status(result.status, command.op_code)
+        else:
+            # A command Bumble has no class for: its answer is unknown here,
+            # Command Complete (with the status) is what most commands get
+            self.send_hci_packet(hci.HCI_Command_Complete_Event(
+                num_hci_command_packets=1, command_opcode=command.op_code, return_parameters=result))
+        return None
+
+    def on_hci_set_afh_host_channel_classification_command(self, _command):
+        # Vol 4 Part E 7.3.46: Command Complete with the status only. The
+        # channel map does not matter on the virtual link.
+        return hci.HCI_StatusReturnParameters(status=hci.HCI_ErrorCode.SUCCESS)
+
+    def on_hci_le_read_buffer_size_v2_command(self, command):
+        result = super().on_hci_le_read_buffer_size_v2_command(command)
+        if self.name in NO_ISO_BUFFERS:
+            result.iso_data_packet_length = 0
+            result.total_num_iso_data_packets = 0
+        return result
 
     def on_hci_le_set_cig_parameters_command(self, command):
         for i, cis_id in enumerate(command.cis_id):
@@ -132,19 +239,46 @@ class LeEmuController(EmuController):
         now = loop.time()
         if self.iso_t0 is None:
             self.iso_t0 = now
-        # SDU interval n of the CIS: the next free one, or the current one if
-        # the host fell behind by more than LATE_INTERVALS (a real controller
-        # would have flushed those). The tolerance absorbs the timer jitter of
-        # this emulation (asyncio timers fire up to ~16 ms late on Windows).
-        # That jitter is in time, not intervals: at least LATE_US, so 7.5 ms
-        # SDU intervals (GMAP) get 4 intervals where 10 ms ones get 3. A real
+        if self.heartbeat is None:
+            self.heartbeat_due = now + HEARTBEAT_S
+            self.heartbeat = loop.call_at(self.heartbeat_due, self._heartbeat, self.heartbeat_due)
+        # SDU interval n of the CIS: the first SDU takes the next interval,
+        # then each the next free one. The host's lateness is how long after
+        # the start of that interval the SDU arrived, less the time this
+        # event loop was stalled (such stalls happen, 60-90 ms): meanwhile,
+        # as it delays reading the SDU as much, and while the last completion
+        # on the CIS was held up, as the host can only send when its queue
+        # has room. More than HOST_LATE_MS is logged as a late SDU (with 2
+        # SDUs queued per CIS, as A2DPWB does, the host has 2 intervals after
+        # a completion). Only when the host is late by more than
+        # LATE_INTERVALS does the SDU move to a later interval (a real
+        # controller would have flushed it): that is in time, not intervals,
+        # at least LATE_US (4 intervals of 7.5 ms, 3 of 10 ms), and as a real
         # controller only flushes an SDU after the CIG's Max Transport
-        # Latency, so allow that much too: this emulation's event loop
-        # sometimes stalls for 60-90 ms, which is not the host being late.
+        # Latency, that much too.
         late_us = max(LATE_US, params.get('latency_ms', 0) * 1000)
         late = max(LATE_INTERVALS, math.ceil(late_us / interval_us))
-        n_now = int(math.ceil((now - self.iso_t0) / interval - 1e-6)) - late
-        n = max(self.iso_next_slot.get(handle, 0), n_now)
+        n_now = int(math.ceil((now - self.iso_t0) / interval - 1e-6))
+        expected = self.iso_next_slot.get(handle)
+        if expected is None:
+            n = n_now
+        else:
+            n = expected
+            held_up = self.iso_completion_stall.get(handle, 0.0)
+            due = self.iso_t0 + expected * interval + held_up
+            if (now - due) * 1000 > HOST_LATE_MS:
+                stalled = self.stalled(due, now)
+                host_late = now - due - stalled
+                stalled += held_up
+                if host_late * 1e6 > late_us:
+                    n = max(expected, n_now - late)
+                if host_late * 1000 > HOST_LATE_MS:
+                    count = self.iso_late[handle] = self.iso_late.get(handle, 0) + 1
+                    if count <= LATE_LOG_MAX or count % 100 == 0:
+                        log.warning('late SDU: CIS 0x%04X seq %d reached the controller %.1f ms after its SDU '
+                                    'interval began (not counting %.1f ms this emulation stalled); '
+                                    '%d late SDU(s) on this CIS so far', handle,
+                                    packet.packet_sequence_number or 0, host_late * 1000, stalled * 1000, count)
         self.iso_next_slot[handle] = n + 1
         slot = self.iso_t0 + n * interval
         time_stamp = (n * interval_us) & 0xFFFFFFFF
@@ -156,6 +290,8 @@ class LeEmuController(EmuController):
             pending = self.iso_pending.get(handle, [])
             if entry and entry[0] in pending:
                 pending.remove(entry[0])
+            fired = loop.time()
+            self.iso_completion_stall[handle] = self.stalled(slot, fired) if fired - slot > STALL_S else 0.0
             peer, peer_link = self._peer_cis(link)
             if peer is not None and peer_link is not None:
                 peer.send_hci_packet(hci.HCI_IsoDataPacket(

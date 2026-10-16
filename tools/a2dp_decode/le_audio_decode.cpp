@@ -16,7 +16,8 @@
  * decoded with liblc3; the channels are placed by their audio location
  * (Front Left -> left, Front Right -> right, mono -> both) on a timeline of
  * SDU sequence numbers and written to <prefix>.<n>.lc3.wav (stereo, 16-bit).
- * Several captures (one per sink of a group) are read together.
+ * Several captures (one per sink of a group) are read together; each CIS
+ * line of the report names its capture (1, 2, ... in the order given).
  *
  * Like the A2DP part it does not link BTstack, only liblc3 (Apache-2.0).
  *
@@ -461,9 +462,11 @@ int LeAnalyzer::finish() {
             std::string locs;
             for (int b = 0; b < 32; b++)
                 if (s->cfg.allocation & (1u << b)) locs += strf("%s0x%x", locs.empty() ? "" : ",", 1u << b);
-            printf("  CIS 0x%03X     : ASE %u on ACL 0x%03X, location(s) %s, %llu SDUs, sequence %d-%d\n",
+            /* capture: 1-based index of the input file (which sink, --received) */
+            printf("  CIS 0x%03X     : ASE %u on ACL 0x%03X, location(s) %s, %llu SDUs, sequence %d-%d, "
+                   "capture %d\n",
                    s->handle, s->ase, s->acl, locs.empty() ? "mono" : locs.c_str(),
-                   (unsigned long long)s->sdus, s->first_seq, s->last_seq);
+                   (unsigned long long)s->sdus, s->first_seq, s->last_seq, s->file + 1);
             if (s->gaps) issues.push_back(strf("CIS 0x%03X: %llu sequence gap(s), %llu SDU(s) missing", s->handle,
                                                (unsigned long long)s->gaps, (unsigned long long)s->missing));
             if (s->bad_len) issues.push_back(strf("CIS 0x%03X: %llu SDU(s) with a wrong length", s->handle,
