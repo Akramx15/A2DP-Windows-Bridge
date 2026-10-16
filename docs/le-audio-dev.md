@@ -11,7 +11,8 @@ source): LC3 over Connected Isochronous Streams (CIS), on the same BTstack
 session and WinUSB adapter as A2DP. It is **experimental and off by
 default** (Settings > "LE Audio (experimental)", `le_audio_experimental` in
 `settings.json`; CLI `--le-audio`). With the setting off none of the LE code
-runs. It has only been verified against the Bumble emulator (`tools/emu`),
+runs and HCI init is that of a build without LE (see "LE Audio off" below).
+It has only been verified against the Bumble emulator (`tools/emu`),
 not yet with real headphones or a real 5.2 controller.
 
 This note is for the work on the LE Audio profiles beyond BAP (CSIP, VCP,
@@ -62,7 +63,8 @@ thread**. All module hooks are called on it except the three marked
 ## Lifecycle
 
 1. `Core::set_enabled(true)` before `BtStackTransport::init()` (A2dpService
-   does it from the setting, the CLI for `--le-audio`).
+   does it from the setting each time it starts BTstack,
+   `init_btstack_transport()`; the CLI for `--le-audio`).
 2. `BtStackTransport::setup_hci_and_power_on()` calls `Core::stack_init()`
    (BTstack thread, after `l2cap_init()`): LE bonds TLV
    (`<config dir>\le_audio_bonds.tlv`) for `le_device_db_tlv`, `sm_init()`
@@ -806,6 +808,39 @@ requirements as far as known, not checked against the PTS).**
   presentation delay limits and a 100 ms latency preference), not with a
   real gaming headset.
 
+## LE Audio off
+
+Users with the setting off must get the behaviour of a build without LE:
+
+- **HCI init.** `btstack_config.h` always compiles LE in, and BTstack then
+  sets up LE on any dual-mode controller (LE Read Buffer Size, Write LE Host
+  Supported, LE Set Event Mask, data length, white list size, max advertising
+  data length, LE Set Host Feature, the LE Meta bit of Set Event Mask). With
+  `Core::enabled()` false, `btstack_transport.cpp` (`transport_for_le_setting`)
+  wraps the HCI transport: it clears LE Supported (Controller) in the Read
+  Local Supported Features answer and the LE bits BTstack looks up in Read
+  Local Supported Commands, which skips every one of those steps. hci_run()
+  still sends LE Set Scan Parameters once HCI is working (its flag is set
+  without an LE check and cannot be cleared from outside); the wrapper answers
+  any LE command itself with Unknown HCI Command and never passes it on.
+  Verified on the emulator: the HCI commands of a classic run equal those of
+  develop's build (the capture shows the LE Set Scan Parameters answered by
+  the wrapper).
+- **Toggling the setting.** It takes effect when BTstack starts. While idle
+  the GUI stops BTstack at once; while streaming or scanning it says so and
+  `ensure_btstack_init()` restarts BTstack before the next scan or
+  connection. The scan waits for `Core::ready()` only when the running BTstack
+  was started with LE.
+- **Devices and profiles.** A dual-mode device has two entries in the device
+  list, classic and LE Audio (same address); an LE scan never marks a classic
+  entry. LE Audio entries are saved in `le_audio_devices.txt` (same
+  `addr|name` format), so `devices.txt` stays readable by older versions;
+  `addr|name|le` lines from earlier prototypes are still read. With the
+  setting off, LE Audio entries are not listed. Picking a device sets "LE
+  Audio device" only for a new profile; an existing profile changes kind only
+  through the check box. `profiles.json` has `le_audio` only for LE Audio
+  profiles.
+
 ## TODO (before LE Audio can leave "experimental")
 
 Collected from the profile branches when they were merged (2026-10-16).
@@ -817,7 +852,8 @@ Verification
   LE Audio headset and a pair of LE Audio earbuds.
 - [ ] Run the GUI: "LE Audio (experimental)" and "Low latency (GMAP)" menu
   items, LE devices and set members in the scan list, streaming through
-  `a2dp_service_le_audio.cpp`; classic A2DP while the LE setting is on.
+  `a2dp_service_le_audio.cpp`; classic A2DP while the LE setting is on;
+  toggling the setting while streaming; a dual-mode headset's two entries.
 - [ ] MCP commands to real Windows players (SMTC and the media-key fallback);
   only reading SMTC was tried.
 - [ ] Values written from memory because the specs could not be fetched:
@@ -850,5 +886,4 @@ Missing features
 - [ ] Show the TMAP / GMAP roles in the UI (only logged now); TMAP
   low-latency 48_x_1 presets are only used with `--le-preset`.
 - [ ] Core: SDU time stamps / LE Read ISO TX Sync, a better jitter buffer,
-  application capture mode, HCI init still sends BTstack's LE set-up commands
-  when the LE setting is off.
+  application capture mode.

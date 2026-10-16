@@ -27,6 +27,10 @@ private:
     void populate_from_profile(const ConnectionProfile &p);
     void update_codec_dependent();
     void on_scan_complete();
+    /* The device list as shown: without LE Audio entries while LE Audio
+     * (experimental) is off */
+    std::vector<A2dpService::DeviceEntry> listed_devices() const;
+    void fill_device_list();
     void OnSave(wxCommandEvent &evt);
     void OnCancel(wxCommandEvent &evt);
     void OnScan(wxCommandEvent &evt);

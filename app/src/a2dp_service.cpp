@@ -604,38 +604,97 @@ std::vector<A2dpService::DeviceEntry> A2dpService::get_devices() const {
     return device_list_;
 }
 
+namespace {
+
+/* One "XX:XX:XX:XX:XX:XX|name" line of a saved devices file */
+bool parse_saved_device_line(char *line, A2dpService::DeviceEntry &dev) {
+    char *nl = strchr(line, '\n');
+    if (nl) *nl = '\0';
+    char *sep = strchr(line, '|');
+    if (!sep || (sep - line) < 17) return false;
+
+    *sep = '\0';
+    dev.addr_str = line;
+    dev.name = sep + 1;
+    dev.audio_device = true;
+    dev.saved = true;
+
+    unsigned a[6];
+    if (sscanf_s(line, "%02X:%02X:%02X:%02X:%02X:%02X",
+               &a[0], &a[1], &a[2], &a[3], &a[4], &a[5]) != 6)
+        return false;
+    for (int i = 0; i < 6; i++) dev.address[i] = static_cast<uint8_t>(a[i]);
+    return true;
+}
+
+} /* namespace */
+
 void A2dpService::load_saved_devices() {
-    std::string path = get_config_dir() + "\\devices.txt";
-    FILE *f = nullptr;
-    fopen_s(&f, path.c_str(), "r");
-    if (!f) return;
-
-    char line[256];
     std::lock_guard<std::mutex> lock(device_mutex_);
-    while (fgets(line, sizeof(line), f)) {
-        char *nl = strchr(line, '\n');
-        if (nl) *nl = '\0';
-        char *sep = strchr(line, '|');
-        if (!sep || (sep - line) < 17) continue;
+    char line[256];
 
-        DeviceEntry dev{};
-        *sep = '\0';
-        dev.addr_str = line;
-        dev.name = sep + 1;
-        dev.audio_device = true;
-        dev.saved = true;
-        /* "addr|name|le": an LE Audio device (experimental) */
-        if (dev.name.size() >= 3 && dev.name.compare(dev.name.size() - 3, 3, "|le") == 0) {
-            dev.name.resize(dev.name.size() - 3);
-            dev.le_audio = true;
-        }
-
-        unsigned a[6];
-        if (sscanf(line, "%02X:%02X:%02X:%02X:%02X:%02X",
-                   &a[0], &a[1], &a[2], &a[3], &a[4], &a[5]) == 6) {
-            for (int i = 0; i < 6; i++) dev.address[i] = static_cast<uint8_t>(a[i]);
+    FILE *f = nullptr;
+    fopen_s(&f, (get_config_dir() + "\\devices.txt").c_str(), "r");
+    if (f) {
+        while (fgets(line, sizeof(line), f)) {
+            DeviceEntry dev{};
+            if (!parse_saved_device_line(line, dev)) continue;
+            /* "addr|name|le": an LE Audio device saved by an earlier
+             * LE Audio prototype; written to le_audio_devices.txt from now on */
+            if (dev.name.size() >= 3 && dev.name.compare(dev.name.size() - 3, 3, "|le") == 0) {
+                dev.name.resize(dev.name.size() - 3);
+                dev.le_audio = true;
+            }
             device_list_.push_back(std::move(dev));
         }
+        fclose(f);
+    }
+
+    /* LE Audio devices (experimental) */
+    f = nullptr;
+    fopen_s(&f, (get_config_dir() + "\\le_audio_devices.txt").c_str(), "r");
+    if (f) {
+        while (fgets(line, sizeof(line), f)) {
+            DeviceEntry dev{};
+            if (!parse_saved_device_line(line, dev)) continue;
+            dev.le_audio = true;
+            bool dup = false;
+            for (const auto &d : device_list_)
+                if (d.le_audio && d.addr_str == dev.addr_str) dup = true;
+            if (!dup) device_list_.push_back(std::move(dev));
+        }
+        fclose(f);
+    }
+}
+
+void A2dpService::write_saved_devices() const {
+    /* Classic devices in devices.txt as in older versions, which would show
+     * an LE Audio entry there as one more classic device */
+    FILE *f = nullptr;
+    fopen_s(&f, (get_config_dir() + "\\devices.txt").c_str(), "w");
+    if (f) {
+        for (auto &d : device_list_) {
+            if (d.saved && !d.le_audio)
+                fprintf(f, "%s|%s\n", d.addr_str.c_str(), d.name.c_str());
+        }
+        fclose(f);
+    }
+
+    /* LE Audio devices (experimental): no file unless there are some */
+    std::string le_path = get_config_dir() + "\\le_audio_devices.txt";
+    bool any_le = false;
+    for (auto &d : device_list_)
+        if (d.saved && d.le_audio) any_le = true;
+    if (!any_le) {
+        DeleteFileA(le_path.c_str());
+        return;
+    }
+    f = nullptr;
+    fopen_s(&f, le_path.c_str(), "w");
+    if (!f) return;
+    for (auto &d : device_list_) {
+        if (d.saved && d.le_audio)
+            fprintf(f, "%s|%s\n", d.addr_str.c_str(), d.name.c_str());
     }
     fclose(f);
 }
@@ -643,12 +702,12 @@ void A2dpService::load_saved_devices() {
 void A2dpService::save_device(const char *addr_str, const std::string &name, bool le_audio) {
     std::lock_guard<std::mutex> lock(device_mutex_);
 
+    /* The classic and the LE Audio entry of a dual-mode device are separate */
     bool found = false;
     for (auto &d : device_list_) {
-        if (d.addr_str == addr_str) {
+        if (d.addr_str == addr_str && d.le_audio == le_audio) {
             d.name = name;
             d.saved = true;
-            d.le_audio |= le_audio;
             found = true;
             break;
         }
@@ -668,48 +727,31 @@ void A2dpService::save_device(const char *addr_str, const std::string &name, boo
         }
     }
 
-    std::string path = get_config_dir() + "\\devices.txt";
-    FILE *f = nullptr;
-    fopen_s(&f, path.c_str(), "w");
-    if (!f) return;
-
-    for (auto &d : device_list_) {
-        if (d.saved)
-            fprintf(f, "%s|%s%s\n", d.addr_str.c_str(), d.name.c_str(), d.le_audio ? "|le" : "");
-    }
-    fclose(f);
+    write_saved_devices();
 }
 
 void A2dpService::set_le_audio_enabled(bool enabled) {
+    /* le_audio::Core follows when BTstack starts (init_btstack_transport) */
     le_audio_enabled_.store(enabled);
-    le_audio::Core::instance().set_enabled(enabled);
 }
 
-void A2dpService::delete_saved_device(int index) {
+void A2dpService::delete_saved_device(const std::string &addr_str, bool le_audio) {
     std::lock_guard<std::mutex> lock(device_mutex_);
 
-    if (index < 0 || index >= static_cast<int>(device_list_.size())) return;
-
-    auto &d = device_list_[index];
-    d.saved = false;
+    auto it = std::find_if(device_list_.begin(), device_list_.end(), [&](const DeviceEntry &d) {
+        return d.saved && d.addr_str == addr_str && d.le_audio == le_audio;
+    });
+    if (it == device_list_.end()) return;
+    it->saved = false;
 
     /* If device was only in the list because it was saved (not discovered
        via scan), remove it entirely so it disappears from the UI. */
-    if (!d.audio_device) {
-        device_list_.erase(device_list_.begin() + index);
+    if (!it->audio_device) {
+        device_list_.erase(it);
     }
 
-    /* Rewrite devices.txt without deleted entry */
-    std::string path = get_config_dir() + "\\devices.txt";
-    FILE *f = nullptr;
-    fopen_s(&f, path.c_str(), "w");
-    if (!f) return;
-
-    for (auto &dd : device_list_) {
-        if (dd.saved)
-            fprintf(f, "%s|%s%s\n", dd.addr_str.c_str(), dd.name.c_str(), dd.le_audio ? "|le" : "");
-    }
-    fclose(f);
+    /* Rewrite the files without the deleted entry */
+    write_saved_devices();
 }
 
 /* ======================================================================== */
@@ -835,6 +877,11 @@ bool A2dpService::ensure_btstack_init() {
         const char *why = nullptr;
         if (btstack_stale_.load())
             why = "the PC resumed from sleep";
+        else if (le_audio_active_.load() != le_audio_enabled_.load())
+            /* Changed while streaming or scanning: applied now, before the
+             * next scan or connection (nothing else uses BTstack here) */
+            why = le_audio_enabled_.load() ? "LE Audio (experimental) was turned on"
+                                           : "LE Audio (experimental) was turned off";
         else if (!transport_->controller_responds(CONTROLLER_PROBE_MS))
             why = "the Bluetooth adapter stopped answering";
         if (!why) return true;
@@ -902,6 +949,11 @@ bool A2dpService::init_btstack_transport() {
             transport_->set_fw_stem(bt_chip_fw_stem_);
         }
     }
+
+    /* LE Audio (experimental): set up in this BTstack only with the setting
+     * on (BtStackTransport::setup_hci_and_power_on reads it) */
+    le_audio_active_.store(le_audio_enabled_.load());
+    le_audio::Core::instance().set_enabled(le_audio_active_.load());
 
     return transport_->init(nullptr);
 }
@@ -994,7 +1046,8 @@ void A2dpService::scan_thread_func_inner() {
 
             bool exists = false;
             for (auto &existing : device_list_) {
-                if (existing.addr_str == buf) {
+                /* An LE Audio entry of the same address stays separate */
+                if (existing.addr_str == buf && !existing.le_audio) {
                     if (!d.name.empty()) existing.name = d.name;
                     exists = true;
                     break;
@@ -1012,11 +1065,16 @@ void A2dpService::scan_thread_func_inner() {
         }
     }
 
-    /* LE Audio (experimental): LE scan for LE Audio devices as well */
+    /* LE Audio (experimental): LE scan for LE Audio devices as well, when
+     * this BTstack was started with it. HCI is working (ensure_btstack_init),
+     * so le_audio::Core is ready at once or a moment later. */
     size_t le_found = 0;
     le_audio::Core &le = le_audio::Core::instance();
-    for (int i = 0; i < 30 && le.enabled() && !le.ready(); i++) Sleep(100);
-    if (le.enabled() && le.ready()) {
+    if (le_audio_active_.load()) {
+        for (int i = 0; i < 10 && !le.ready(); i++) Sleep(100);
+        if (!le.ready()) LOG_WARN("A2dpService: LE Audio not ready, LE scan skipped");
+    }
+    if (le_audio_active_.load() && le.ready()) {
         notify_state(state_.load(), L("status.le_scanning"));
         auto le_results = le.scan(5000);
         std::lock_guard<std::mutex> lock(device_mutex_);
@@ -1027,9 +1085,10 @@ void A2dpService::scan_thread_func_inner() {
             std::string addr = r.addr.str();
             bool exists = false;
             for (auto &existing : device_list_) {
-                if (existing.addr_str == addr) {
+                /* Only the LE Audio entry: a dual-mode device's classic
+                 * entry (same public address) stays a classic device */
+                if (existing.addr_str == addr && existing.le_audio) {
                     if (!r.name.empty()) existing.name = r.name;
-                    existing.le_audio = true;
                     existing.le_audio_set = !r.rsi.empty();
                     exists = true;
                     break;
@@ -1643,7 +1702,7 @@ void A2dpService::streaming_thread_func_inner() {
         {
             std::lock_guard<std::mutex> lock(device_mutex_);
             for (auto &d : device_list_) {
-                if (d.addr_str == p.device_address) {
+                if (d.addr_str == p.device_address && !d.le_audio) {
                     dev_name = d.name;
                     break;
                 }

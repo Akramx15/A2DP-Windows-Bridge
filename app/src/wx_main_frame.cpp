@@ -915,20 +915,23 @@ void MainFrame::OnToggleDebugMode(wxCommandEvent &) {
 }
 
 void MainFrame::OnToggleLeAudio(wxCommandEvent &) {
-    /* LE (SM, GATT, ISO) is set up when BTstack starts: restart it while
-     * idle so the change applies to the next scan / connection */
+    /* LE (SM, GATT, ISO) is set up when BTstack starts. While idle, stop
+     * BTstack so the next scan / connection starts it with the new setting.
+     * While streaming or scanning it keeps running as it is; the service
+     * restarts it before the next scan / connection (ensure_btstack_init). */
     settings_.le_audio_experimental = !settings_.le_audio_experimental;
     settings_.save();
     service_.set_le_audio_enabled(settings_.le_audio_experimental);
     if (wxMenuBar *mb = GetMenuBar()) mb->Enable(ID_SETTING_LE_LOW_LATENCY, settings_.le_audio_experimental);
-    if (service_.state() != A2dpService::State::Streaming &&
-        service_.state() != A2dpService::State::Connecting &&
-        service_.state() != A2dpService::State::Reconnecting && !service_.is_scanning())
+    bool busy = service_.state() == A2dpService::State::Streaming ||
+                service_.state() == A2dpService::State::Connecting ||
+                service_.state() == A2dpService::State::Reconnecting || service_.is_scanning();
+    if (!busy)
         service_.reset_btstack();
-    wxMessageBox(
-        wxString::FromUTF8(L(settings_.le_audio_experimental ? "settings.le_audio_on" : "settings.le_audio_off")),
-        wxString::FromUTF8(L("settings.le_audio")),
-        wxOK | wxICON_INFORMATION, this);
+    wxString text = wxString::FromUTF8(L(settings_.le_audio_experimental ? "settings.le_audio_on" : "settings.le_audio_off"));
+    if (busy)
+        text += wxString("\n\n") + wxString::FromUTF8(L("settings.le_audio_deferred"));
+    wxMessageBox(text, wxString::FromUTF8(L("settings.le_audio")), wxOK | wxICON_INFORMATION, this);
 }
 
 void MainFrame::OnToggleLeLowLatency(wxCommandEvent &) {

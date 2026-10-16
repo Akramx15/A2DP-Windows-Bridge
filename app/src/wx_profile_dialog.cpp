@@ -10,6 +10,7 @@
 #include "media_payload_limit.h"
 #include "bt_device.h"
 #include <wx/statline.h>
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 
@@ -151,15 +152,7 @@ void ProfileDialog::create_ui() {
     vbox->Add(device_list_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
 
     /* Populate saved devices */
-    auto devices = service_->get_devices();
-    for (auto &d : devices) {
-        wxString label = wxString::Format("[%s] %s (%s)",
-            d.le_audio ? wxString::FromUTF8(L(d.le_audio_set ? "device.tag_le_audio_set" : "device.tag_le_audio"))
-            : d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
-            d.name.empty() ? wxString::FromUTF8(L("device.name_unknown")) : wxString::FromUTF8(d.name),
-            wxString::FromUTF8(d.addr_str));
-        device_list_->Append(label);
-    }
+    fill_device_list();
 
     /* Address and device name */
     auto *grid2 = new wxFlexGridSizer(2, 8, 8);
@@ -741,12 +734,16 @@ void ProfileDialog::OnDeviceSelect(wxCommandEvent &) {
         return;
     }
 
-    auto devices = service_->get_devices();
+    auto devices = listed_devices();
     if (sel >= 0 && sel < static_cast<int>(devices.size())) {
         auto &d = devices[sel];
         set_address(wxString::FromUTF8(d.addr_str));
         devname_ctrl_->SetValue(wxString::FromUTF8(d.name));
-        if (le_audio_ctrl_) le_audio_ctrl_->SetValue(d.le_audio);
+        /* A new profile follows the entry picked (the classic or the LE
+         * Audio entry of a device). An existing profile keeps its kind: a
+         * classic profile is never turned into an LE Audio one, or back,
+         * by picking a device; only the check box changes that. */
+        if (le_audio_ctrl_ && edit_index_ < 0) le_audio_ctrl_->SetValue(d.le_audio);
         /* Enable edit/delete only for saved (paired) devices */
         dev_edit_btn_->Enable(d.saved);
         dev_del_btn_->Enable(d.saved);
@@ -757,7 +754,7 @@ void ProfileDialog::OnDeviceEditName(wxCommandEvent &) {
     int sel = device_list_->GetSelection();
     if (sel == wxNOT_FOUND) return;
 
-    auto devices = service_->get_devices();
+    auto devices = listed_devices();
     if (sel < 0 || sel >= static_cast<int>(devices.size()) || !devices[sel].saved) return;
 
     wxTextEntryDialog dlg(this,
@@ -780,7 +777,7 @@ void ProfileDialog::OnDeviceEditName(wxCommandEvent &) {
 
     if (dlg.ShowModal() == wxID_OK) {
         std::string new_name = dlg.GetValue().utf8_string();
-        service_->save_device(devices[sel].addr_str.c_str(), new_name);
+        service_->save_device(devices[sel].addr_str.c_str(), new_name, devices[sel].le_audio);
         devname_ctrl_->SetValue(dlg.GetValue());
         /* Refresh device list */
         on_scan_complete();
@@ -791,10 +788,10 @@ void ProfileDialog::OnDeviceDelete(wxCommandEvent &) {
     int sel = device_list_->GetSelection();
     if (sel == wxNOT_FOUND) return;
 
-    auto devices = service_->get_devices();
+    auto devices = listed_devices();
     if (sel < 0 || sel >= static_cast<int>(devices.size()) || !devices[sel].saved) return;
 
-    service_->delete_saved_device(sel);
+    service_->delete_saved_device(devices[sel].addr_str, devices[sel].le_audio);
     /* Refresh device list */
     on_scan_complete();
     dev_edit_btn_->Enable(false);
@@ -818,9 +815,22 @@ void ProfileDialog::on_scan_complete() {
     scan_btn_->Enable(true);
 
     /* Refresh device list */
-    device_list_->Clear();
+    fill_device_list();
+}
+
+std::vector<A2dpService::DeviceEntry> ProfileDialog::listed_devices() const {
     auto devices = service_->get_devices();
-    for (auto &d : devices) {
+    if (!service_->le_audio_enabled()) {
+        devices.erase(std::remove_if(devices.begin(), devices.end(),
+                                     [](const A2dpService::DeviceEntry &d) { return d.le_audio; }),
+                      devices.end());
+    }
+    return devices;
+}
+
+void ProfileDialog::fill_device_list() {
+    device_list_->Clear();
+    for (auto &d : listed_devices()) {
         wxString label = wxString::Format("[%s] %s (%s)",
             d.le_audio ? wxString::FromUTF8(L(d.le_audio_set ? "device.tag_le_audio_set" : "device.tag_le_audio"))
             : d.saved ? wxString::FromUTF8(L("device.tag_saved")) : wxString::FromUTF8(L("device.tag_audio")),
