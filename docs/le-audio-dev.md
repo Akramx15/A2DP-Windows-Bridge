@@ -468,7 +468,12 @@ record (bap.py) already allows every `_gr` setting. Cases: `tmap-role`,
 `gmap-low-latency` (48_3_gr on one headset; Config QoS SDU interval 7500 us,
 RTN 1, 15 ms, 10 ms presentation delay on both captures), `gmap-earbuds`
 (the same on two earbuds), `gmap-off` (UGT, no flag: 48_6_2), `gmap-not-ugt`
-(GMAS with BGR only + flag: 48_6_2).
+(GMAS with BGR only + flag: 48_6_2). The emulator's late-SDU tolerance is
+at least 30 ms (`LATE_US`, 4 intervals at 7.5 ms). On a heavily loaded
+machine the 7.5 ms cases can still fail now and then with "time stamp
+step(s) differ from the SDU interval": both captures then show the
+emulator's event loop stalling for 40-80 ms (deliveries and A2DPWB's sends
+in bursts), not A2DPWB falling behind on its own.
 
 **Conformance notes (not complete; from the TMAP 1.0 / GMAP 1.0
 requirements as far as known, not checked against the PTS).**
