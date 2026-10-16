@@ -43,6 +43,12 @@ class GattServer;
 struct ScanResult;
 struct StreamStatus;
 
+/* Content Control IDs of the PC's content control services: unique on the
+ * server, the value of their Content Control ID characteristic (0x2BBA) and
+ * what Module::add_ccids() reports for the CCID List of a stream */
+constexpr uint8_t CCID_GMCS = 0x01;   /* MCP: Generic Media Control Service */
+constexpr uint8_t CCID_GTBS = 0x02;   /* CCP: Generic Telephone Bearer Service */
+
 class Module {
 public:
     virtual ~Module() = default;
@@ -84,6 +90,12 @@ public:
     /* Unicast stream state: streaming = true once all ASEs stream (audio
      * flows), false when it stopped or was lost */
     virtual void on_stream_state(const StreamStatus &status, bool streaming) { (void)status; (void)streaming; }
+    /* Enable of a stream with these Streaming Audio Contexts (CONTEXT_*
+     * bits): append the CCIDs of this profile's content control services
+     * that belong to such a stream (MCP: GMCS for media, CCP: GTBS for
+     * calls). The core sends them, without duplicates, as the CCID List
+     * metadata (0x05) of every ASE next to the Streaming Audio Contexts. */
+    virtual void add_ccids(uint16_t contexts, std::vector<uint8_t> &ccids) { (void)contexts; (void)ccids; }
 
     /* ---- Worker thread (may block, see Core::call()) ---- */
 

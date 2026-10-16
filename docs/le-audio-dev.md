@@ -594,3 +594,106 @@ microphone / source ASE), so this is a spec-correct GTBS around an
   than one CSIS per device, sets that need more than `MAX_NR_CIS` (4) CIS.
   Verified only against the Bumble emulator (public
   addresses; no RPAs / address resolution, no rotating RSIs).
+
+## MCP: media control server (GMCS)
+
+Files: `le_audio_mcp.{h,cpp}` (the GATT side, BTstack thread),
+`le_audio_mcp_media.{h,cpp}` (the Windows side, its own thread; C++/WinRT,
+so this one file is compiled with `/std:c++20`, see `app/CMakeLists.txt`;
+`windowsapp.lib` comes in through a `#pragma comment`),
+`tools/emu/le_audio/mcp.py`, `tools/emu/le_audio_tests/mcp.py`.
+
+GMCS (0x1849, encrypted link required): Media Player Name, Track Changed,
+Track Title, Track Duration, Track Position (also writable: seek), Playback
+Speed, Seeking Speed (always 0), Media State, Media Control Point, Opcodes
+Supported, Content Control ID (`CCID_GMCS`). Reads with offsets (Read Blob)
+are served by `GattServer`; notifications of the text values are cut to
+ATT_MTU - 3 at a UTF-8 character boundary (BTstack's `att_server_notify`
+does not cut values longer than the MTU itself, so a module must).
+
+Windows side (`MediaBackend`): polls the current System Media Transport
+Controls session (`Windows.Media.Control`, the player of the volume flyout)
+once a second and after each command: player (AppInfo display name, else
+from the AUMID), Playing / Paused (Stopped, Opened, Changing = Paused;
+Closed or no session = Inactive), title, duration, position (advanced by
+the time since the session's last update), rate, seekable. Changes reach the
+BTstack thread through `Core::post()`, which notifies what changed.
+
+Control point: Play, Pause, Stop, Previous / Next Track, and Move Relative
+while the player is seekable (Opcodes Supported is notified when that
+changes). They go to the session (`TryPlayAsync` etc.; Stop falls back to
+Pause + seek to 0); without a session Play / Pause / Stop / Next / Previous
+become media keys as for AVRCP buttons (Play and Pause both the Play/Pause
+toggle) and Move Relative answers Media Player Inactive (with a player
+that cannot seek: Opcode Not Supported). Other opcodes:
+Opcode Not Supported; a wrong length: Command Cannot Be Completed; the
+"media keys" setting off: Command Cannot Be Completed; a write from a client
+that has not enabled control point notifications: ATT error 0xFD. The result
+notification is sent after the ATT write response (`post()`).
+
+**Dry run**: `--mcp-dry-run`, and always with `--hci-tcp` (the emulator),
+replaces Windows with a simulated player ("A2DPWB test player", paused,
+"Test track N ..." with a long non-ASCII title, 180 s, seekable); commands are
+logged as `MCP: dry run: PLAY (nothing sent to Windows)` and change the
+simulated state. Nothing reads or controls the PC's real media players then.
+main.cpp ignores unknown options; the module reads the flag from
+`GetCommandLineW()`.
+
+### CCID registration (for CCP and any other content control service)
+
+`le_audio_module.h`:
+
+```cpp
+constexpr uint8_t CCID_GMCS = 0x01;   // MCP
+constexpr uint8_t CCID_GTBS = 0x02;   // CCP
+virtual void add_ccids(uint16_t contexts, std::vector<uint8_t> &ccids) {}
+```
+
+At Enable, `Unicast` asks every module with the plan's Streaming Audio
+Contexts and puts the collected CCIDs (sorted, without duplicates) into each
+ASE's metadata as the CCID List LTV (0x05) after the Streaming Audio
+Contexts LTV, and logs `LE Audio: Enable metadata: contexts 0x0004, CCID
+list 1`. A content control service uses its constant as the value of its
+Content Control ID characteristic (0x2BBA) and appends it for the contexts
+it belongs to. MCP appends `CCID_GMCS` for every stream that is not purely
+Conversational; CCP would do
+
+```cpp
+void add_ccids(uint16_t contexts, std::vector<uint8_t> &ccids) override {
+    if (contexts & CONTEXT_CONVERSATIONAL) ccids.push_back(CCID_GTBS);
+}
+```
+
+New services take the next free value next to these constants.
+
+### Emulator and tests
+
+`emu_le_audio_sink.py --mcp-client` makes the first sink a Media Control
+Client (Bumble's `GenericMediaControlServiceProxy`): after encryption it
+reads every characteristic, subscribes, writes `--mcp-ops` (`play`,
+`pause!` = with response, `next`, `prev`, `stop`, `move-relative:<0.01 s>`,
+`0xNN`, `raw:<hex>`) and logs reads, notifications and results.
+`--mcp-unsubscribed-write` writes Play before subscribing; `--mcp-mtu N`
+limits the sink's ATT MTU (A2DPWB negotiates it). Every sink logs the
+metadata of each ASE Enable. Cases (all with `--mcp-dry-run`): `mcp-read`,
+`mcp-control` (MTU 64: long read of the title, cut notifications),
+`mcp-unsupported`, `mcp-ccid` (earbuds: CCID List [1] + Media on both).
+
+### Limitations
+
+- The real Windows path was only checked read-only (session state of a
+  running player through a harness); commands to real players (SMTC and the
+  media-key fallback) were not exercised by the tests, which never control
+  the PC's players.
+- No Value Changed During Read Operation (0x80) for long reads across a
+  change: `GattServer` read callbacks do not see the offset.
+- No Fast Forward / Fast Rewind / Seeking state, segments, groups, Playing
+  Order, Media Player Icon, Search or OTS objects. Media Player Inactive is
+  only answered for Move Relative without a session (the dry run, which
+  always has its simulated player, cannot produce it).
+- The Track Title is the title alone (no artist); notifications of the
+  position are sent on state changes, track changes and jumps of more than
+  2 s, not while it advances.
+- Browsers and some players update the SMTC timeline rarely, so the position
+  is an estimate; a player without SMTC support shows up as no session
+  (Inactive) and gets media keys only.

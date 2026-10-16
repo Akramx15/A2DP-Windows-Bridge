@@ -7,6 +7,7 @@
 #include "le_audio_bap.h"
 #include "le_audio_core.h"
 #include "le_audio_gatt_client.h"
+#include "le_audio_module.h"
 #include "debug_log.h"
 
 #include <algorithm>
@@ -479,21 +480,35 @@ void Unicast::enter(Phase p) {
         }
         break;
 
-    case Phase::Enable:
+    case Phase::Enable: {
+        /* Metadata: Streaming Audio Contexts, plus the CCID List of the
+         * content control services the modules tie to these contexts */
+        std::vector<uint8_t> ccids;
+        for (Module *m : modules()) m->add_ccids(plan_.contexts, ccids);
+        std::sort(ccids.begin(), ccids.end());
+        ccids.erase(std::unique(ccids.begin(), ccids.end()), ccids.end());
+        std::vector<uint8_t> meta;
+        const uint8_t contexts[2] = {(uint8_t)plan_.contexts, (uint8_t)(plan_.contexts >> 8)};
+        ltv_put(meta, META_STREAMING_CONTEXTS, contexts, 2);
+        if (!ccids.empty()) {
+            ltv_put(meta, META_CCID_LIST, ccids.data(), (uint8_t)ccids.size());
+            std::string list;
+            for (uint8_t id : ccids) list += (list.empty() ? "" : ",") + std::to_string(id);
+            LOG_INFO("LE Audio: Enable metadata: contexts 0x%04x, CCID list %s", plan_.contexts, list.c_str());
+        }
         for (auto &e : by_device(plan_)) {
             LeAudioDevice *d = core_.device(e.first);
             if (!d || !d->connected()) { fail("a device is not connected"); return; }
             std::vector<uint8_t> v = {ASE_OP_ENABLE, (uint8_t)e.second.size()};
             for (const CisPlan *c : e.second) {
                 put8(v, c->ase_id);
-                put8(v, 4);                                  /* metadata length */
-                put8(v, 3);                                  /* LTV: Streaming Audio Contexts */
-                put8(v, META_STREAMING_CONTEXTS);
-                put16(v, plan_.contexts);
+                put8(v, (uint8_t)meta.size());               /* metadata length */
+                v.insert(v.end(), meta.begin(), meta.end());
             }
             cp_write(core_, *d, std::move(v), "Enable");
         }
         break;
+    }
 
     case Phase::CreateCis: {
         hci_con_handle_t cis[MAX_NR_CIS], acl[MAX_NR_CIS];
