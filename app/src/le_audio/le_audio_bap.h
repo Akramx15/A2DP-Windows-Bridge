@@ -16,9 +16,15 @@
  *   Sink ASEs: the server's Receiver Start Ready -> Streaming
  *   ISO SDUs (Stream)
  *
- * and back: Disable -> QoS Configured, Release -> Idle, LE Remove CIG
- * (gap_cig_remove disconnects the CIS first). Each step has a timeout; a
+ * and back: Disable -> QoS Configured, HCI_Disconnect of the CIS, Release
+ * -> Idle, LE Remove CIG (gap_cig_remove). Each step has a timeout; a
  * failing step tears down what was set up and reports why.
+ *
+ * Enable carries the Streaming Audio Contexts the devices have available at
+ * that moment (requested, else Unspecified); with none available it waits
+ * for an Available Audio Contexts notification until the step times out.
+ * The CIG uses framed ISO PDUs when an ASE's Preferred_Framing says
+ * unframed is not supported.
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -72,10 +78,15 @@ public:
     void on_cis_created(const uint8_t *packet, uint16_t size);
     void on_cig_removed();
     void on_link_lost(uint16_t handle);
+    /* A device's Available Audio Contexts changed (PACS notification) */
+    void on_available_contexts(LeAudioDevice &dev);
 
 private:
     void enter(Phase p);
     void advance();
+    bool send_enable();
+    std::string contexts_text() const;
+    void drop_cis();
     void fail(const std::string &why);
     void try_remove_cig();
     void finish_stop();

@@ -5,6 +5,7 @@
  */
 
 #include "le_audio_presets.h"
+#include "le_audio_core.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -72,7 +73,10 @@ std::vector<StreamPreset> &table() {
 }
 
 /* Does one of the device's LC3 sink PAC records allow this preset with the
- * given number of channels per ASE? */
+ * given number of channels per ASE? Audio_Channel_Counts says how many
+ * channels an ASE may carry. Supported_Max_Codec_Frames_Per_SDU (default 1
+ * when absent) counts codec frames per channel in one SDU, i.e. it limits
+ * Codec_Frame_Blocks_Per_SDU (always 1 here), not the channel count. */
 bool device_supports(const LeAudioDevice &d, const StreamPreset &p, int channels_per_ase) {
     uint16_t sf_bit = sf_hz_to_cap_bit(p.sampling_hz);
     uint8_t fd_bit = p.frame_us == 7500 ? FD_BIT_7500US : FD_BIT_10000US;
@@ -82,15 +86,8 @@ bool device_supports(const LeAudioDevice &d, const StreamPreset &p, int channels
         if (!(r.caps.frame_durations & fd_bit)) continue;
         if (r.caps.max_octets && (p.octets < r.caps.min_octets || p.octets > r.caps.max_octets)) continue;
         if (!(r.caps.channel_counts & (1u << (channels_per_ase - 1)))) continue;
-        if (r.caps.max_frames_per_sdu < channels_per_ase) continue;
         return true;
     }
-    return false;
-}
-
-bool device_two_channel_ase(const LeAudioDevice &d) {
-    for (const auto &r : d.sink_pacs)
-        if (r.lc3 && (r.caps.channel_counts & 0x02) && r.caps.max_frames_per_sdu >= 2) return true;
     return false;
 }
 
@@ -120,52 +117,120 @@ std::string StreamPlan::describe() const {
     return buf;
 }
 
+uint16_t choose_streaming_contexts(const std::vector<const LeAudioDevice *> &devices, uint16_t requested) {
+    /* BAP 1.0.1 5.6.3 / PACS: Enable may only name contexts that are
+     * available on the server; Unspecified when the requested ones are not
+     * (if Unspecified is available itself) */
+    uint16_t common = requested, unspecified = CONTEXT_UNSPECIFIED;
+    for (const LeAudioDevice *d : devices) {
+        common &= d->available_sink_contexts;
+        unspecified &= d->available_sink_contexts;
+    }
+    return common ? common : unspecified;
+}
+
 bool plan_stream(const std::vector<const LeAudioDevice *> &devices, const StreamRequest &request,
                  StreamPlan &plan, std::string &why) {
     plan = StreamPlan();
     if (devices.empty()) { why = "no device"; return false; }
 
-    /* 1. ASEs and channels per device, by audio location */
-    std::vector<CisPlan> cis;
+    /* The controller's ISO buffers: every SDU must fit one HCI ISO data
+     * packet (BTstack would fragment a longer one, and its per-CIS flow
+     * control counts SDUs, not packets), and every CIS needs at least one */
+    const Core &core = Core::instance();
+    const uint16_t iso_len = core.iso_packet_length();
+    const int iso_count = core.iso_packet_count();
+    if (iso_len == 0 || iso_count == 0) {
+        why = "the Bluetooth adapter reports no ISO data buffers (no LE Audio / CIS support)";
+        return false;
+    }
+    const int max_cis = std::min(4, iso_count);    /* MAX_NR_CIS (btstack_config.h) */
+    auto fits = [iso_len](uint32_t sdu_len) { return sdu_len + 4u <= iso_len; };
+
+    std::map<int, std::vector<uint8_t>> sink_ases;
     for (const LeAudioDevice *d : devices) {
-        std::vector<uint8_t> sink_ases;
+        std::vector<uint8_t> &ids = sink_ases[d->id];
         for (const auto &a : d->ases)
-            if (a.sink) sink_ases.push_back(a.id);
-        std::sort(sink_ases.begin(), sink_ases.end());
-        if (sink_ases.empty()) {
+            if (a.sink) ids.push_back(a.id);
+        std::sort(ids.begin(), ids.end());
+        if (ids.empty()) {
             why = d->name.empty() ? d->addr.str() : d->name;
             why += ": no sink ASE (not an LE Audio sink?)";
             return false;
         }
-        uint32_t lr = d->sink_locations & (LOCATION_FRONT_LEFT | LOCATION_FRONT_RIGHT);
-        auto add = [&](uint8_t ase_id, std::vector<uint32_t> locs) {
-            CisPlan c;
-            c.device_id = d->id;
-            c.ase_id = ase_id;
-            c.acl = d->acl;
-            for (uint32_t l : locs) c.channels.push_back({l, ChannelSource::Mono});
-            cis.push_back(c);
-        };
-        if (popcount32(lr) == 2) {
-            bool two = device_two_channel_ase(*d);
-            if (two && (request.prefer_two_channel_ase || sink_ases.size() < 2))
-                add(sink_ases[0], {LOCATION_FRONT_LEFT, LOCATION_FRONT_RIGHT});
-            else if (sink_ases.size() >= 2) {
-                add(sink_ases[0], {LOCATION_FRONT_LEFT});
-                add(sink_ases[1], {LOCATION_FRONT_RIGHT});
-            } else {
-                /* Stereo device that takes one channel only: mono */
-                add(sink_ases[0], {LOCATION_FRONT_LEFT});
-            }
-        } else if (popcount32(lr) == 1) {
-            add(sink_ases[0], {lr});
-        } else {
-            add(sink_ases[0], {LOCATION_MONO});
-        }
     }
-    if (cis.size() > 4) { why = "more than 4 CIS needed"; return false; }
 
-    /* 2. Channel sources: left / right only when the group has both */
+    /* ASEs and channels of every device for preset p, by audio location;
+     * false if a device cannot take p */
+    auto layout = [&](const StreamPreset &p, std::vector<CisPlan> &cis, bool &too_long) -> bool {
+        cis.clear();
+        for (const LeAudioDevice *d : devices) {
+            const std::vector<uint8_t> &ids = sink_ases[d->id];
+            auto add = [&](uint8_t ase_id, std::vector<uint32_t> locs) {
+                CisPlan c;
+                c.device_id = d->id;
+                c.ase_id = ase_id;
+                c.acl = d->acl;
+                for (uint32_t l : locs) c.channels.push_back({l, ChannelSource::Mono});
+                cis.push_back(c);
+            };
+            bool one = device_supports(*d, p, 1);
+            bool one_fits = fits(p.octets);
+            too_long |= one && !one_fits;
+            uint32_t lr = d->sink_locations & (LOCATION_FRONT_LEFT | LOCATION_FRONT_RIGHT);
+            if (popcount32(lr) == 2) {
+                bool two_ok = device_supports(*d, p, 2);
+                bool two = two_ok && fits(2u * p.octets);
+                bool split = one && one_fits && ids.size() >= 2;
+                too_long |= two_ok && !two;
+                if (two && (request.prefer_two_channel_ase || !split))
+                    add(ids[0], {LOCATION_FRONT_LEFT, LOCATION_FRONT_RIGHT});
+                else if (split) {
+                    add(ids[0], {LOCATION_FRONT_LEFT});
+                    add(ids[1], {LOCATION_FRONT_RIGHT});
+                } else if (one && one_fits) {
+                    /* A stereo device that takes one channel only: mono (no
+                     * Audio_Channel_Allocation), so that it renders the
+                     * downmix rather than playing it on the left only */
+                    add(ids[0], {LOCATION_MONO});
+                } else {
+                    return false;
+                }
+            } else if (one && one_fits) {
+                add(ids[0], {popcount32(lr) == 1 ? lr : LOCATION_MONO});
+            } else {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    /* First preset in the requested order every device supports */
+    const StreamPreset *chosen = nullptr;
+    std::vector<CisPlan> cis;
+    bool too_long = false, too_many = false;
+    for (const auto &name : request.preset_order) {
+        const StreamPreset *p = find_stream_preset(name);
+        if (!p) continue;
+        if (!layout(*p, cis, too_long)) continue;
+        if ((int)cis.size() > max_cis) { too_many = true; continue; }
+        chosen = p;
+        break;
+    }
+    if (!chosen) {
+        char buf[160];
+        if (too_many)
+            snprintf(buf, sizeof(buf), "the group needs more CIS than the adapter can take (%d)", max_cis);
+        else if (too_long)
+            snprintf(buf, sizeof(buf), "no LC3 configuration of the devices fits the adapter's ISO packets "
+                     "(%u bytes)", iso_len);
+        else
+            snprintf(buf, sizeof(buf), "no LC3 configuration supported by all devices (sink PAC records)");
+        why = buf;
+        return false;
+    }
+
+    /* Channel sources: left / right only when the group has both */
     bool has_left = false, has_right = false;
     for (const auto &c : cis)
         for (const auto &ch : c.channels) {
@@ -180,33 +245,14 @@ bool plan_stream(const std::vector<const LeAudioDevice *> &devices, const Stream
                       : ch.allocation == LOCATION_FRONT_RIGHT ? ChannelSource::Right : ChannelSource::Mono;
     for (size_t i = 0; i < cis.size(); i++) cis[i].cis_id = (uint8_t)i;
 
-    /* 3. First preset in the requested order every device supports */
-    const StreamPreset *chosen = nullptr;
-    for (const auto &name : request.preset_order) {
-        const StreamPreset *p = find_stream_preset(name);
-        if (!p) continue;
-        bool ok = true;
-        for (const auto &c : cis) {
-            const LeAudioDevice *d = nullptr;
-            for (const LeAudioDevice *x : devices) if (x->id == c.device_id) d = x;
-            ok &= d && device_supports(*d, *p, (int)c.channels.size());
-        }
-        if (ok) { chosen = p; break; }
-    }
-    if (!chosen) {
-        why = "no LC3 configuration supported by all devices (sink PAC records)";
-        return false;
-    }
-
     plan.preset = *chosen;
     plan.cis = std::move(cis);
     plan.phy = request.target_phy;
     plan.presentation_delay_us = chosen->presentation_delay_us;
-    /* Streaming context: what was asked if the devices have it available */
-    plan.contexts = request.contexts;
-    for (const LeAudioDevice *d : devices)
-        if (d->available_sink_contexts && !(d->available_sink_contexts & request.contexts))
-            plan.contexts = CONTEXT_UNSPECIFIED;
+    /* Streaming context: checked again right before Enable (Unicast), as
+     * the available contexts may change until then */
+    plan.requested_contexts = request.contexts;
+    plan.contexts = choose_streaming_contexts(devices, request.contexts);
     return true;
 }
 

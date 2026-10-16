@@ -82,6 +82,9 @@ struct StreamPlan {
     StreamPreset preset;
     uint8_t cig_id = 1;
     uint8_t phy = PHY_2M;
+    uint16_t requested_contexts = CONTEXT_MEDIA;  /* StreamRequest::contexts */
+    /* Streaming Audio Contexts sent in Enable (choose_streaming_contexts();
+     * 0 = none available yet, Unicast waits for one before Enable) */
     uint16_t contexts = CONTEXT_MEDIA;
     uint32_t presentation_delay_us = 40000;   /* finalized after Config Codec */
     std::vector<CisPlan> cis;
@@ -90,10 +93,18 @@ struct StreamPlan {
 };
 
 /* Picks the preset and the ASE / channel allocation for devices (all
- * connected and ready). False with a reason when no common configuration
- * exists. */
+ * connected and ready; BTstack thread). Per preset in the requested order:
+ * a device with Front Left + Right gets one 2-channel ASE or two 1-channel
+ * ASEs (prefer_two_channel_ase), else one mono ASE. Every SDU must fit one
+ * HCI ISO data packet of the controller and every CIS needs an ISO buffer.
+ * False with a reason when no common configuration exists. */
 bool plan_stream(const std::vector<const LeAudioDevice *> &devices, const StreamRequest &request,
                  StreamPlan &plan, std::string &why);
+
+/* Streaming Audio Contexts for Enable: the requested contexts available on
+ * every device, else Unspecified if that is available on every device,
+ * else 0 (none: Enable must wait) */
+uint16_t choose_streaming_contexts(const std::vector<const LeAudioDevice *> &devices, uint16_t requested);
 
 /* Codec Specific Configuration LTVs of an ASE for the plan */
 std::vector<uint8_t> codec_config_ltvs(const StreamPlan &plan, const CisPlan &cis);

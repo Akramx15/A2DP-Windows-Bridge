@@ -85,8 +85,10 @@ thread**. All module hooks are called on it except the three marked
    Enable -> LE Create CIS (all CIS at once, BTstack sets up the ISO data
    paths) -> sink ASEs go Streaming by themselves (the server's Receiver
    Start Ready) -> SDUs flow -> **`on_stream_state(status, true)`**.
-6. `stop_stream()`: Disable -> Release -> `gap_cig_remove` (disconnects the
-   CIS) -> **`on_stream_state(status, false)`**. Devices stay connected.
+6. `stop_stream()`: Disable -> HCI_Disconnect of the CIS (servers may keep
+   an ASE in Releasing until the CIS is gone; BTstack has no call for this,
+   `Unicast::drop_cis()` sends the command) -> Release -> `gap_cig_remove`
+   -> **`on_stream_state(status, false)`**. Devices stay connected.
 7. A link or CIS lost while streaming: `stream_lost()` turns true once; the
    worker stops and sets the stream up again (CLI: 3 tries, GUI: 10).
    **`on_disconnected(dev, reason)`** for every LE link that goes down.
@@ -202,20 +204,32 @@ Core::instance().gatt_server().notify_all(state_, {0x01 /* playing */});
 (low latency, incl. 7.5 ms) and `16_2_2` ... `48_6_2` (high reliability,
 media). `StreamRequest::preset_order` (default `48_6_2, 48_4_2, 48_2_2,
 32_2_2, 24_2_2, 16_2_2`) is tried in order; the first preset every device's
-sink PAC records allow (sampling rate, frame duration, octets, channel count,
-frames per SDU) wins. GMAP adds presets with `add_stream_preset()` and puts
+sink PAC records allow (sampling rate, frame duration, octets, channel count)
+and whose SDUs fit one HCI ISO data packet of the controller (SDU + 4 <=
+ISO_Data_Packet_Length: BTstack would fragment a longer SDU, and its flow
+control counts SDUs, not packets) wins. Supported_Max_Codec_Frames_Per_SDU
+counts frames per channel (default 1); with Codec_Frame_Blocks_Per_SDU = 1 it
+does not limit the channels of an ASE. GMAP adds presets with `add_stream_preset()` and puts
 them first from `adjust_stream_request()`. `StreamPreset` fields: `name,
 sampling_hz, frame_us, octets, target_latency (TARGET_LATENCY_*), framing,
 rtn, max_transport_latency_ms, presentation_delay_us`.
 
-Channels: a device with Front Left + Right gets one 2-channel ASE when its
-PAC allows 2 channels and 2 frames per SDU (`prefer_two_channel_ase`), else
-two 1-channel ASEs; a device with one location gets one ASE with it; no
-location = mono. Left / right audio go to FL / FR only when the group has
+Channels (per preset): a device with Front Left + Right gets one 2-channel
+ASE when its PAC allows 2 channels and the SDU fits (`prefer_two_channel_ase`),
+else two 1-channel ASEs, else one mono ASE (no Audio_Channel_Allocation, so
+it renders the downmix on both sides); a device with one location gets one
+ASE with it; no location = mono. Left / right audio go to FL / FR only when the group has
 both; otherwise every channel carries the downmix. One CIG (id 1), CIS ids in
-plan order, at most `MAX_NR_CIS` (4). The presentation delay is clamped into
-every ASE's range; the max transport latency is capped by the servers'
-preference.
+plan order, at most `MAX_NR_CIS` (4). More CIS than the controller has ISO
+buffers fails. The presentation delay is clamped into every ASE's range; the
+max transport latency is capped by the servers' preference; framed ISO when
+an ASE's Preferred_Framing says unframed is not supported.
+
+Streaming Audio Contexts (Enable): `choose_streaming_contexts()` - the
+requested contexts available on every device, else Unspecified if that is
+available on every device. It is evaluated again right before Enable; with
+nothing available Enable waits for an Available Audio Contexts notification
+until the step times out ("no audio context available").
 
 ## Audio path
 
@@ -223,12 +237,15 @@ preference.
 `AudioCallback` signature (float32 or int16, any channel count, any rate):
 downmix to stereo, linear resampling to the LC3 rate if needed (WASAPI is
 asked for the LC3 rate, so normally none), LC3 per channel, one SDU set per
-10 ms into a jitter buffer (5 sets before audio starts / after an underrun;
-16 at most, the oldest dropped beyond). The BTstack thread sends on
+10 ms into a jitter buffer (queue + 3 sets before audio starts / after an
+underrun; 16 at most, the oldest dropped beyond). The BTstack thread sends on
 `HCI_EVENT_CIS_CAN_SEND_NOW`: complete SDUs, sequence numbers counting per
-CIS, **no time stamp** (the controller places SDUs by sequence number), 2
-SDUs queued per CIS (`hci_set_num_iso_packets_to_queue`), and a guard that
-keeps the sent sets at most a few intervals ahead of real time. Underrun ->
+CIS, **no time stamp** (the controller places SDUs by sequence number), up to 2
+SDUs queued per CIS (`hci_set_num_iso_packets_to_queue`; queue x CIS stays
+within the controller's Total_Num_ISO_Data_Packets), and a guard that keeps
+the sent sets at most queue + 2 intervals ahead of real time. A new set
+starts once every CIS that is still up got its SDU, so one CIS going down
+does not stall the others. Underrun ->
 encoded silence.
 
 ## Emulator (`tools/emu`)
@@ -244,7 +261,9 @@ controller (H4 over TCP) and one or two sinks on a Bumble `LocalLink`:
 | `mono` | 1 sink, no location, 1 ASE |
 
 It prints `READY 127.0.0.1:P sinks=<addr>[,<addr>]`. Captures:
-`sink.pklg`, `sink-2.pklg`, ... `--drop-link-after S` makes the first sink
+`sink.pklg`, `sink-2.pklg`, ... `--ascs-release-waits-for-cis` keeps a
+released ASE in Releasing until A2DPWB drops its CIS (case `release-cis`).
+`--drop-link-after S` makes the first sink
 drop its LE link once, S seconds after A2DPWB connected (link loss test).
 
 Profile pieces of the sinks go in `tools/emu/le_audio/<profile>.py`
@@ -303,7 +322,7 @@ I:\A2DP-Windows-Bridge\tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py 
 ```
 
 The first runs all LE Audio cases (`stereo`, `two-ase`, `earbuds`,
-`mono-16k`, `link-loss`, plus yours; or name them: `--le-audio stereo
+`mono-16k`, `link-loss`, `release-cis`, plus yours; or name them: `--le-audio stereo
 earbuds`), the second the A2DP codecs (must keep passing). Per case `<out>/le-<case>/` has
 `a2dpwb.log`, `sink.log`, the captures and `sent_report.txt` /
 `received_report.txt` from `a2dpwb_decode --le-audio`.
@@ -352,7 +371,7 @@ changing the default flow for the other cases.
   stub's line (one line each).
 - Shared files - touch only if unavoidable, in a small separate commit:
   `le_audio_presets.h` (e.g. a CCID field in `StreamRequest` for MCP / CCP),
-  `le_audio_bap.cpp` (`Unicast::enter(Phase::Enable)` builds the Enable
+  `le_audio_bap.cpp` (`Unicast::send_enable()` builds the Enable
   metadata), `le_audio_module.h` (a new hook: add it with an empty default
   at the end of its section). `le_audio_modules.cpp` and `le_audio/__init__.py`
   / `le_audio_tests/__init__.py` already list every profile.
@@ -385,7 +404,7 @@ changing the default flow for the other cases.
 - No broadcast (BIS), no BASS, no CAP procedures beyond what BAP needs; CAS is
   only advertised by the emulator.
 - SDUs without time stamps; no use of LE Read ISO TX Sync; the jitter buffer
-  is simple (fixed 5 sets).
+  is simple (fixed prefill of queue + 3 sets).
 - Application capture (one app) is not supported for LE Audio yet (system
   loopback, virtual device and the test tone are).
 - Not verified with real LE Audio headphones or a real controller's CIS

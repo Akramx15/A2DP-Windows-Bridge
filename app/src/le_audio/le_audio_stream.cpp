@@ -187,6 +187,9 @@ void Stream::encode_frame() {
 void Stream::start_sending(const std::vector<uint16_t> &cis_handles, uint8_t queue_depth) {
     cis_handles_ = cis_handles;
     seq_.assign(cis_handles.size(), 0);
+    alive_.assign(cis_handles.size(), true);
+    served_.assign(cis_handles.size(), false);
+    round_open_ = false;
     rounds_ = 0;
     t0_ms_ = 0;
     lead_ = (uint8_t)(queue_depth + 2);
@@ -222,7 +225,37 @@ void Stream::stop_sending() {
 void Stream::timer_handler(struct btstack_timer_source *t) {
     auto *self = static_cast<Stream *>(btstack_run_loop_get_timer_context(t));
     self->timer_armed_ = false;
-    if (self->sending_) hci_request_cis_can_send_now_events(self->cis_handles_[0]);
+    if (self->sending_) self->request_events();
+}
+
+void Stream::request_events() {
+    /* BTstack requests CAN_SEND_NOW for every CIS of the CIG from any of
+     * its handles: take one that is still up */
+    for (size_t i = 0; i < cis_handles_.size(); i++)
+        if (alive_[i]) {
+            hci_request_cis_can_send_now_events(cis_handles_[i]);
+            return;
+        }
+}
+
+void Stream::on_cis_down(uint16_t handle) {
+    if (!sending_) return;
+    bool any = false;
+    for (size_t i = 0; i < cis_handles_.size(); i++) {
+        if (cis_handles_[i] == handle) alive_[i] = false;
+        any |= alive_[i];
+    }
+    /* The round may have waited for this CIS only */
+    if (any && round_open_ && round_done()) {
+        round_open_ = false;
+        request_next();
+    }
+}
+
+bool Stream::round_done() const {
+    for (size_t i = 0; i < cis_handles_.size(); i++)
+        if (alive_[i] && !served_[i]) return false;
+    return true;
 }
 
 void Stream::request_next() {
@@ -232,7 +265,7 @@ void Stream::request_next() {
     uint32_t interval_ms = frame_us_ / 1000u ? frame_us_ / 1000u : 1u;
     uint64_t elapsed_rounds = (uint64_t)(now - t0_ms_) * 1000u / frame_us_;
     if (rounds_ < elapsed_rounds + lead_) {
-        hci_request_cis_can_send_now_events(cis_handles_[0]);
+        request_events();
         return;
     }
     /* Ahead of real time (a controller that completes SDUs early): wait */
@@ -271,8 +304,9 @@ void Stream::on_cis_can_send_now(const uint8_t *packet, uint16_t size) {
     while (index < cis_handles_.size() && cis_handles_[index] != handle) index++;
     if (index == cis_handles_.size()) return;
 
-    if (index == 0) {
-        /* First CIS of a round: the next 10 ms for all CIS */
+    if (!round_open_ || served_[index]) {
+        /* First CIS of a round (whichever CIS is up): the next 10 ms for
+         * all CIS */
         std::lock_guard<std::mutex> lock(mutex_);
         if (buffering_ && sets_.size() >= prefill_) buffering_ = false;
         if (!buffering_ && !sets_.empty()) {
@@ -291,9 +325,17 @@ void Stream::on_cis_can_send_now(const uint8_t *packet, uint16_t size) {
         }
         stats_.sets_sent++;
         rounds_++;
+        round_open_ = true;
+        std::fill(served_.begin(), served_.end(), false);
     }
     if (current_.size() == cis_handles_.size()) send_sdu(index, handle);
-    if (group_complete) request_next();
+    served_[index] = true;
+    /* BTstack's group_complete is never set while the CIG's last CIS is
+     * down: also count the CIS that are up ourselves */
+    if (group_complete || round_done()) {
+        round_open_ = false;
+        request_next();
+    }
 }
 
 Stream::Stats Stream::stats() const {
