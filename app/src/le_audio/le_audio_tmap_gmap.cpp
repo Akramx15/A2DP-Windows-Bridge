@@ -26,9 +26,10 @@
  * TMAP Role. When "Low latency (GMAP)" is on and every device of the group
  * is a UGT with the Sink feature, adjust_stream_request() puts the GMAP
  * UGG -> UGT presets (le_audio_presets.cpp) first and asks for the Game
- * context; plan_stream() still takes only what the sink PAC records allow
- * and falls back to the media presets behind them. Otherwise the request is
- * left alone (media presets, Media context).
+ * context (Media when a device has Media but not Game available);
+ * plan_stream() still takes only what the sink PAC records allow and falls
+ * back to the media presets behind them. Otherwise the request is left alone
+ * (media presets, Media context).
  *
  * State per device id under a mutex: the worker thread reads it.
  *
@@ -222,9 +223,9 @@ public:
         for (const auto &n : request.preset_order)
             if (std::find(order.begin(), order.end(), n) == order.end()) order.push_back(n);
         request.preset_order = std::move(order);
-        request.contexts = CONTEXT_GAME;
-        LOG_INFO("LE Audio: GMAP: low latency for %u Unicast Game Terminal(s): %s first, Game context",
-                 (unsigned)ids.size(), list.c_str());
+        request.contexts = game_context(core, ids);
+        LOG_INFO("LE Audio: GMAP: low latency for %u Unicast Game Terminal(s): %s first, %s context",
+                 (unsigned)ids.size(), list.c_str(), request.contexts == CONTEXT_GAME ? "Game" : "Media");
     }
 
     bool info(int id, TmapGmapInfo &out) {
@@ -236,6 +237,35 @@ public:
     }
 
 private:
+    /* Worker: the Streaming Audio Context of a GMAP stream. Game if every
+     * device has it available (or reports nothing); a device that has Media
+     * available but not Game gets Media, as close as it allows (plan_stream()
+     * would otherwise fall back to Unspecified for the whole group). */
+    static uint16_t game_context(Core &core, const std::vector<int> &ids) {
+        auto ctx = std::make_shared<uint16_t>(CONTEXT_GAME);
+        auto note = std::make_shared<std::string>();
+        core.run([ids, ctx, note]() {
+            bool game = true, media = true;
+            for (int id : ids) {
+                LeAudioDevice *d = Core::instance().device(id);
+                if (!d || !d->available_sink_contexts) continue;
+                if (!(d->available_sink_contexts & CONTEXT_GAME)) {
+                    game = false;
+                    char buf[96];
+                    snprintf(buf, sizeof(buf), "%s has no Game context available (0x%04x)", d->addr.str().c_str(),
+                             d->available_sink_contexts);
+                    if (note->empty()) *note = buf;
+                }
+                if (!(d->available_sink_contexts & CONTEXT_MEDIA)) media = false;
+            }
+            if (!game && media) *ctx = CONTEXT_MEDIA;
+        });
+        if (!note->empty())
+            LOG_INFO("LE Audio: GMAP: %s: %s", note->c_str(),
+                     *ctx == CONTEXT_MEDIA ? "Media context instead" : "left to the stream planning");
+        return *ctx;
+    }
+
     struct State {
         TmapGmapInfo info;
         int pending = 0;           /* reads queued */
