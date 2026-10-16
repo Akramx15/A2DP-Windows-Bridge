@@ -28,6 +28,13 @@ StreamPreset make(const char *name, uint32_t hz, uint16_t frame_us, uint16_t oct
     return p;
 }
 
+/* GMAP low-latency setting: unframed, RTN 1, presentation delay 10 ms */
+StreamPreset make_gr(const char *name, uint32_t hz, uint16_t frame_us, uint16_t octets, uint16_t latency_ms) {
+    StreamPreset p = make(name, hz, frame_us, octets, 1, latency_ms, TARGET_LATENCY_LOW);
+    p.presentation_delay_us = 10000;
+    return p;
+}
+
 std::vector<StreamPreset> &table() {
     const uint8_t LL = TARGET_LATENCY_LOW, HR = TARGET_LATENCY_HIGH_RELIABILITY;
     static std::vector<StreamPreset> t = {
@@ -51,6 +58,15 @@ std::vector<StreamPreset> &table() {
         make("48_2_2", 48000, 10000, 100, 13, 95, HR),
         make("48_4_2", 48000, 10000, 120, 13, 100, HR),
         make("48_6_2", 48000, 10000, 155, 13, 100, HR),
+        /* GMAP 1.0 Table 3.16, UGG -> UGT (game audio to a gaming headset):
+         * RTN 1, max transport latency 15 ms (7.5 ms frames) / 20 ms (10 ms),
+         * presentation delay 10 ms. Used by le_audio_tmap_gmap.cpp. */
+        make_gr("32_1_gr", 32000, 7500, 60, 15),
+        make_gr("32_2_gr", 32000, 10000, 80, 20),
+        make_gr("48_1_gr", 48000, 7500, 75, 15),
+        make_gr("48_2_gr", 48000, 10000, 100, 20),
+        make_gr("48_3_gr", 48000, 7500, 90, 15),
+        make_gr("48_4_gr", 48000, 10000, 120, 20),
     };
     return t;
 }
