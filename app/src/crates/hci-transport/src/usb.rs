@@ -61,6 +61,62 @@ pub struct UsbSelector {
     pub known: Vec<(u16, u16)>,
 }
 
+impl UsbSelector {
+    /// The adapter named on the command line (`-u`): a Windows device
+    /// instance ID (`USB\VID_0BDA&PID_8771\00E04C000001`), a device
+    /// interface path as v1 and SetupAPI list them
+    /// (`\\?\usb#vid_0bda&pid_8771#00e04c000001#{a5dcbf10-...}`), or a
+    /// VID:PID (`0bda:8771`, the first such adapter)
+    pub fn from_arg(arg: &str) -> Result<UsbSelector, String> {
+        let arg = arg.trim();
+        let bad = || {
+            format!(
+                "'{arg}' is not a USB device: use its instance ID (USB\\VID_xxxx&PID_xxxx\\...), \
+                 device path (\\\\?\\usb#vid_xxxx&pid_xxxx#...) or VID:PID"
+            )
+        };
+        if let Some(vp) = parse_vid_pid_pair(arg) {
+            return Ok(UsbSelector { vid_pid: Some(vp), ..Default::default() });
+        }
+        let id = if arg.starts_with(r"\\?\") || arg.starts_with(r"\\.\") {
+            instance_id_from_device_path(arg).ok_or_else(bad)?
+        } else {
+            arg.to_string()
+        };
+        let mut parts = id.split('\\');
+        let (Some(bus), Some(hw), Some(serial), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+            return Err(bad());
+        };
+        if !bus.eq_ignore_ascii_case("usb") || !hw.to_ascii_uppercase().starts_with("VID_") || serial.is_empty() {
+            return Err(bad());
+        }
+        Ok(UsbSelector { instance_id: Some(id), ..Default::default() })
+    }
+}
+
+/// `0bda:8771` (hex VID:PID)
+fn parse_vid_pid_pair(s: &str) -> Option<(u16, u16)> {
+    let (v, p) = s.split_once(':')?;
+    if v.len() != 4 || p.len() != 4 {
+        return None;
+    }
+    Some((u16::from_str_radix(v, 16).ok()?, u16::from_str_radix(p, 16).ok()?))
+}
+
+/// The device instance ID in a device interface path:
+/// `\\?\usb#vid_0bda&pid_8771#00e04c000001#{guid}` is the interface of
+/// `usb\vid_0bda&pid_8771\00e04c000001` (instance IDs compare without case)
+pub fn instance_id_from_device_path(path: &str) -> Option<String> {
+    let rest = path.strip_prefix(r"\\?\").or_else(|| path.strip_prefix(r"\\.\"))?;
+    // The interface class GUID (and an optional reference string) follows
+    // the last '#'
+    let (id, guid) = rest.rsplit_once('#')?;
+    if !guid.starts_with('{') || id.split('#').count() != 3 {
+        return None;
+    }
+    Some(id.replace('#', "\\"))
+}
+
 /// A USB device that could be a Bluetooth controller
 #[derive(Debug, Clone)]
 pub struct UsbCandidate {
@@ -452,6 +508,61 @@ fn writer_loop(
                 // Free BTstack's packet buffer anyway
                 upstream.packet_sent();
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selector_from_instance_id() {
+        let s = UsbSelector::from_arg(r"USB\VID_0BDA&PID_8771\00E04C000001").unwrap();
+        assert_eq!(s.instance_id.as_deref(), Some(r"USB\VID_0BDA&PID_8771\00E04C000001"));
+        assert!(s.vid_pid.is_none());
+        let s = UsbSelector::from_arg(r" usb\vid_0bda&pid_8771\5&1a2b3c&0&4 ").unwrap();
+        assert_eq!(s.instance_id.as_deref(), Some(r"usb\vid_0bda&pid_8771\5&1a2b3c&0&4"));
+    }
+
+    #[test]
+    fn selector_from_device_path() {
+        let s = UsbSelector::from_arg(r"\\?\usb#vid_0bda&pid_8771#00e04c000001#{a5dcbf10-6530-11d2-901f-00c04fb951ed}")
+            .unwrap();
+        assert_eq!(s.instance_id.as_deref(), Some(r"usb\vid_0bda&pid_8771\00e04c000001"));
+        assert!(
+            s.instance_id.unwrap().eq_ignore_ascii_case(r"USB\VID_0BDA&PID_8771\00E04C000001"),
+            "matches the instance ID nusb reports"
+        );
+        assert_eq!(
+            instance_id_from_device_path(
+                r"\\.\USB#VID_0A12&PID_0001#6&2C3D&0&1#{dee824ef-729b-4a0e-9c14-b7117d33a817}"
+            )
+            .as_deref(),
+            Some(r"USB\VID_0A12&PID_0001\6&2C3D&0&1")
+        );
+        assert!(instance_id_from_device_path(r"\\?\usb#vid_0bda&pid_8771#00e04c000001").is_none());
+        assert!(instance_id_from_device_path(r"usb#vid_0bda&pid_8771#x#{guid}").is_none());
+    }
+
+    #[test]
+    fn selector_from_vid_pid() {
+        let s = UsbSelector::from_arg("0bda:8771").unwrap();
+        assert_eq!(s.vid_pid, Some((0x0BDA, 0x8771)));
+        assert!(s.instance_id.is_none());
+    }
+
+    #[test]
+    fn bad_selectors() {
+        for bad in [
+            "",
+            "hello",
+            "0bda:87",
+            r"PCI\VEN_8086&DEV_A0F0\3&11583659&0&A3",
+            r"USB\VID_0BDA&PID_8771",
+            r"\\?\hid#x#{g}",
+        ] {
+            assert!(UsbSelector::from_arg(bad).is_err(), "{bad}");
         }
     }
 }

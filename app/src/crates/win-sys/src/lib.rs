@@ -4,11 +4,13 @@
 
 pub mod audio_policy;
 pub mod autostart;
+pub mod bt_paired;
 pub mod console;
 pub mod driver;
 pub mod elevation;
 pub mod media_keys;
 pub mod mmcss;
+pub mod notify;
 pub mod pipe;
 pub mod power;
 pub mod process;

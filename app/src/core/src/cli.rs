@@ -1,6 +1,11 @@
 //! The command line: `a2dpwb-core --cli -d XX:XX:XX:XX:XX:XX [options]`.
 //! The options are v1's; streaming goes through the same core service as the
 //! resident process.
+//!
+//! Without -d (and without a receiver giving its address), the first
+//! Windows-paired device whose class of device is Audio/Video is used, as v1
+//! did; -l lists the devices Windows has paired. Both read Windows' device
+//! list only: the adapter A2DPWB uses is not touched.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,12 +17,19 @@ use a2dpwb_core::{Service, ServiceEvent, ServiceOptions, SourceRequest, StreamRe
 use bt_host::HciCapture;
 use bt_host::media::clamp_media_payload_limit;
 use codec::{CodecKind, Quality};
+use hci_transport::UsbSelector;
+use win_sys::bt_paired::{self, PairedDevice};
 
 const USAGE: &str = "\
-Usage: a2dpwb-core --cli -d XX:XX:XX:XX:XX:XX [options]
+Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
 
   -d <address>          Bluetooth address of the headphones / receiver
-  -c <codec>            ldac, aptxhd, aptxll, aptx, sbc, aac, lhdcv5, auto (default)
+                        (default: the first audio device paired with Windows)
+  -l                    list the Bluetooth devices paired with Windows and exit
+  -u <adapter>          USB Bluetooth adapter to use when several have WinUSB:
+                        instance ID (USB\\VID_0BDA&PID_8771\\...), device path
+                        (\\\\?\\usb#vid_0bda&pid_8771#...) or VID:PID (0bda:8771)
+  -c <codec>           ldac, aptxhd, aptxll, aptx, sbc, aac, lhdcv5, auto (default)
   -q <quality>          hq (default), sq, mq; mhq for LHDC V5
   -a                    adaptive bit rate (LDAC, LHDC V5)
   -m <mode>             capture: loopback (default), virtual, app
@@ -41,6 +53,10 @@ Development / testing:
 
 struct Args {
     device: Option<String>,
+    /// -l: list the Windows-paired devices and exit
+    list: bool,
+    /// -u: the adapter, as given and as parsed
+    usb: Option<(String, UsbSelector)>,
     codec: Option<CodecKind>,
     quality: Quality,
     abr: bool,
@@ -62,6 +78,8 @@ struct Args {
 fn parse(args: &[String]) -> Result<Args, String> {
     let mut a = Args {
         device: None,
+        list: false,
+        usb: None,
         codec: None,
         quality: Quality::High,
         abr: false,
@@ -87,6 +105,12 @@ fn parse(args: &[String]) -> Result<Args, String> {
         match arg.as_str() {
             "--cli" => {}
             "-d" => a.device = Some(value(&mut it, "-d")?),
+            "-l" => a.list = true,
+            "-u" => {
+                let u = value(&mut it, "-u")?;
+                let selector = UsbSelector::from_arg(&u)?;
+                a.usb = Some((u.trim().to_string(), selector));
+            }
             "-c" => {
                 let c = value(&mut it, "-c")?;
                 a.codec = if c.eq_ignore_ascii_case("auto") {
@@ -142,15 +166,35 @@ pub fn run(args: &[String]) -> i32 {
             return if e.is_empty() { 0 } else { 2 };
         }
     };
+    if a.list {
+        // Windows' list only: no service, no adapter
+        return match bt_paired::paired_devices() {
+            Ok(devices) => {
+                print_paired(&devices);
+                println!("\nDone.");
+                0
+            }
+            Err(e) => {
+                eprintln!("BluetoothFindFirstDevice failed: {e}");
+                1
+            }
+        };
+    }
     let running = Arc::new(AtomicBool::new(true));
     {
         let running = running.clone();
         let _ = ctrlc::set_handler(move || running.store(false, Ordering::Release));
     }
 
-    match &a.hci_tcp {
-        Some(addr) => println!("Transport: H4 over TCP to {addr} (development / testing)"),
-        None => println!("Transport: USB (WinUSB)"),
+    match (&a.hci_tcp, &a.usb) {
+        (Some(addr), usb) => {
+            println!("Transport: H4 over TCP to {addr} (development / testing)");
+            if let Some((u, _)) = usb {
+                println!("-u {u} is not used with --hci-tcp");
+            }
+        }
+        (None, Some((u, _))) => println!("Transport: USB (WinUSB), adapter {u}"),
+        (None, None) => println!("Transport: USB (WinUSB)"),
     }
     let capture = HciCapture::new();
     if let Some(path) = &a.hci_capture
@@ -166,6 +210,9 @@ pub fn run(args: &[String]) -> i32 {
             hci_tcp: a.hci_tcp.clone(),
             capture: capture.clone(),
             afh: a.afh.clone(),
+            // WIRING(-u): once ServiceOptions has `usb: hci_transport::UsbSelector`
+            // (crates/core/src/service.rs), pass the adapter chosen with -u:
+            // usb: a.usb.as_ref().map(|(_, s)| s.clone()).unwrap_or_default(),
         },
         tx,
     );
@@ -225,9 +272,53 @@ pub fn run(args: &[String]) -> i32 {
         receiver.start(&stats_target);
     }
 
-    let Some(device) = device_arg.as_deref().and_then(bt_host::parse_addr) else {
-        eprintln!("No device: use -d XX:XX:XX:XX:XX:XX (find the address with --scan)");
-        return 1;
+    let stop = |code: i32| {
+        service.shutdown();
+        capture.stop();
+        if a.remote_sink.is_some() {
+            receiver.stop();
+        }
+        code
+    };
+    let mut device_name = String::new();
+    let device = match device_arg.as_deref() {
+        Some(d) => match parse_device_address(d) {
+            Some(addr) => addr,
+            None => {
+                eprintln!("Invalid Bluetooth address: {d}");
+                return stop(1);
+            }
+        },
+        // v1: the first Windows-paired device that is an A2DP sink by its
+        // class of device (works while the adapter has WinUSB: Windows
+        // remembers its paired devices)
+        None => {
+            println!("Scanning for Bluetooth audio devices...");
+            let devices = match bt_paired::paired_devices() {
+                Ok(devices) => devices,
+                Err(e) => {
+                    eprintln!("BluetoothFindFirstDevice failed: {e}");
+                    Vec::new()
+                }
+            };
+            print_paired(&devices);
+            match bt_paired::first_a2dp_sink(&devices) {
+                Some(d) => {
+                    println!("Auto-selected device: {} ({})", d.name, d.address_string());
+                    device_name = d.name.clone();
+                    d.address
+                }
+                None => {
+                    eprintln!(
+                        "No Bluetooth audio device found.\n\
+                         Use -d XX:XX:XX:XX:XX:XX to specify the device address.\n\
+                         (Find the address in Windows Settings > Bluetooth before switching to WinUSB,\n\
+                         or list the devices nearby with --scan)"
+                    );
+                    return stop(1);
+                }
+            }
+        }
     };
     let source = if a.test_tone {
         SourceRequest::TestTone
@@ -245,7 +336,7 @@ pub fn run(args: &[String]) -> i32 {
     println!("Target device: {}", bt_host::addr_str(&device));
     service.start_streaming(StreamRequest {
         device,
-        device_name: String::new(),
+        device_name,
         codec: a.codec,
         codec_fallback: false,
         quality: a.quality,
@@ -315,4 +406,103 @@ pub fn run(args: &[String]) -> i32 {
         receiver.stop();
     }
     code
+}
+
+/// v1's listing of the Windows-paired devices (BtDeviceDiscovery::
+/// scan_paired_devices)
+fn print_paired(devices: &[PairedDevice]) {
+    if devices.is_empty() {
+        println!("No paired Bluetooth devices found");
+        return;
+    }
+    for d in devices {
+        println!("  [{}] {} ({})", if d.is_a2dp_sink() { "A2DP" } else { "----" }, d.name, d.address_string());
+    }
+    println!(
+        "Found {} devices ({} with A2DP Sink)",
+        devices.len(),
+        devices.iter().filter(|d| d.is_a2dp_sink()).count()
+    );
+}
+
+/// A Bluetooth address as v1 took it (BtDeviceDiscovery::normalize_address):
+/// 12 hex digits, optionally with ':', '-', '.' or ' ' between the pairs
+fn parse_device_address(s: &str) -> Option<[u8; 6]> {
+    let mut digits = Vec::with_capacity(12);
+    let mut after_sep = false;
+    for c in s.trim().chars() {
+        if let Some(v) = c.to_digit(16) {
+            if digits.len() == 12 {
+                return None;
+            }
+            digits.push(v as u8);
+            after_sep = false;
+        } else if matches!(c, ':' | '-' | '.' | ' ') {
+            // Only between pairs, and not two in a row
+            if digits.is_empty() || digits.len() % 2 != 0 || after_sep {
+                return None;
+            }
+            after_sep = true;
+        } else {
+            return None;
+        }
+    }
+    if digits.len() != 12 || after_sep {
+        return None;
+    }
+    let mut a = [0u8; 6];
+    for (i, b) in a.iter_mut().enumerate() {
+        *b = digits[2 * i] << 4 | digits[2 * i + 1];
+    }
+    Some(a)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(s: &str) -> Vec<String> {
+        s.split_whitespace().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn list_and_adapter_options() {
+        let a = parse(&args("--cli -l")).unwrap();
+        assert!(a.list && a.usb.is_none() && a.device.is_none());
+
+        let a = parse(&args(r"--cli -u USB\VID_0BDA&PID_8771\00E04C000001 -d 00:11:22:33:44:55")).unwrap();
+        let (given, sel) = a.usb.unwrap();
+        assert_eq!(given, r"USB\VID_0BDA&PID_8771\00E04C000001");
+        assert_eq!(sel.instance_id.as_deref(), Some(r"USB\VID_0BDA&PID_8771\00E04C000001"));
+
+        let a = parse(&args(r"--cli -u \\?\usb#vid_0bda&pid_8771#00e04c000001#{a5dcbf10-6530-11d2-901f-00c04fb951ed}"))
+            .unwrap();
+        assert_eq!(a.usb.unwrap().1.instance_id.as_deref(), Some(r"usb\vid_0bda&pid_8771\00e04c000001"));
+
+        let a = parse(&args("--cli -u 0bda:8771")).unwrap();
+        assert_eq!(a.usb.unwrap().1.vid_pid, Some((0x0BDA, 0x8771)));
+
+        assert!(parse(&args("--cli -u nonsense")).err().unwrap_or_default().contains("not a USB device"));
+        assert_eq!(parse(&args("--cli -u")).err().as_deref(), Some("-u needs a value"));
+    }
+
+    #[test]
+    fn device_address_as_v1() {
+        let want = Some([0x00, 0x1A, 0x7D, 0xDA, 0x71, 0x13]);
+        for ok in ["00:1A:7D:DA:71:13", "00-1a-7d-da-71-13", "001A7DDA7113", "00.1A.7D.DA.71.13", " 00 1A 7D DA 71 13 "]
+        {
+            assert_eq!(parse_device_address(ok), want, "{ok}");
+        }
+        for bad in [
+            "",
+            "00:1A:7D:DA:71",
+            "00:1A:7D:DA:71:13:00",
+            "0:01A:7D:DA:71:13",
+            "00::1A7DDA7113",
+            "00:1A:7D:DA:71:13:",
+            "00:1A:7D:DA:71:1G",
+        ] {
+            assert_eq!(parse_device_address(bad), None, "{bad}");
+        }
+    }
 }

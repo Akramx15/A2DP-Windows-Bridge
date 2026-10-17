@@ -29,6 +29,7 @@ features = [
     "Win32_System_ProcessStatus",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
+    "Win32_Devices_Bluetooth",
     "Win32_Devices_FunctionDiscovery",
     "Win32_Devices_Properties",
     "Win32_Devices_DeviceAndDriverInstallation",

@@ -32,6 +32,7 @@ dependencies = [
  "codec",
  "ctrlc",
  "embed-resource",
+ "hci-transport",
  "ipc",
  "serde",
  "serde_json",
