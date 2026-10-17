@@ -8,6 +8,7 @@
  *   SBC               Bluedroid SBC decoder (BTstack 3rd-party/bluedroid)
  *   AAC               fdk-aac (LATM, muxConfigPresent=1)
  *   aptX / HD / LL    libopenaptx 0.2.0
+ *   Opus              libopus (Android's A2DP Opus, vendor 0x000000E0 / 0x0001)
  *   LDAC, LHDC V5     no open-source decoder: frame headers are validated only
  *
  * Decoded audio is written to WAV files next to the dump. The report on
@@ -41,6 +42,7 @@ extern "C" {
 #include "openaptx.h"
 }
 #include "aacdecoder_lib.h"
+#include "opus.h"
 
 /* ------------------------------------------------------------------------ */
 /* Byte helpers                                                             */
@@ -59,7 +61,7 @@ static uint32_t be32(const uint8_t *p) {
 /* Codec configuration (AVDTP Media Codec capability)                       */
 /* ------------------------------------------------------------------------ */
 
-enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5 };
+enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5, Opus };
 
 static const char *codec_name(Codec c) {
     switch (c) {
@@ -70,6 +72,7 @@ static const char *codec_name(Codec c) {
     case Codec::AptxLL: return "aptX LL";
     case Codec::LDAC:   return "LDAC";
     case Codec::LHDCV5: return "LHDC V5";
+    case Codec::Opus:   return "Opus";
     default:            return "unknown";
     }
 }
@@ -83,6 +86,7 @@ static const char *codec_file_tag(Codec c) {
     case Codec::AptxLL: return "aptxll";
     case Codec::LDAC:   return "ldac";
     case Codec::LHDCV5: return "lhdcv5";
+    case Codec::Opus:   return "opus";
     default:            return "unknown";
     }
 }
@@ -104,6 +108,8 @@ struct CodecConfig {
     /* LHDC V5: samples per 5 ms frame (240 / 480 / 960) and bit depth */
     uint32_t lhdc_frame_samples = 0;
     int lhdc_bits = 0;
+    /* Opus: samples per frame at 48 kHz (480 / 960) */
+    uint32_t opus_frame_samples = 0;
 
     /* A2DPWB sends classic aptX and aptX LL without an RTP header */
     bool has_rtp() const { return codec != Codec::Aptx && codec != Codec::AptxLL; }
@@ -241,6 +247,23 @@ static CodecConfig parse_media_codec(const uint8_t *p, size_t n) {
                 c.desc += " (INVALID: not exactly one option per field, or not V5 ver.1 / 5 ms)";
             return c;
         }
+        if (vendor == 0xE0 && vcodec == 0x0001 && vlen >= 1) {
+            /* Android a2dp_vendor_opus_constants.h: bits 2..0 channel mode
+             * (0x01 mono, 0x02 stereo, 0x04 dual mono), bits 4..3 frame
+             * duration (0x08 10 ms, 0x10 20 ms), bit 7 48 kHz */
+            c.codec = Codec::Opus;
+            int ch = single_bit_index(v[0] & 0x07, 3);
+            int dur = single_bit_index((v[0] >> 3) & 0x03, 2);
+            c.sample_rate = (v[0] & 0x80) ? 48000 : 0;
+            c.channels = ch == 0 ? 1 : ch > 0 ? 2 : 0;
+            c.opus_frame_samples = dur == 0 ? 480 : dur == 1 ? 960 : 0;
+            c.desc = strf("Opus %u Hz, %s, %s frames", c.sample_rate,
+                ch == 0 ? "mono" : ch == 1 ? "stereo" : ch == 2 ? "dual mono" : "?",
+                dur == 0 ? "10 ms" : dur == 1 ? "20 ms" : "?");
+            if (c.sample_rate == 0 || ch < 0 || dur < 0)
+                c.desc += " (INVALID: not exactly one option per field)";
+            return c;
+        }
         c.desc = strf("vendor codec 0x%08X:0x%04X (not supported by this tool)", vendor, vcodec);
         return c;
     }
@@ -331,6 +354,13 @@ public:
             aptx_ = aptx_init(cfg_.codec == Codec::AptxHD ? 1 : 0);
             if (!aptx_) issue("aptX: aptx_init failed");
             break;
+        case Codec::Opus: {
+            int err = 0;
+            if (cfg_.sample_rate == 48000 && cfg_.channels > 0)
+                opus_ = opus_decoder_create(48000, cfg_.channels, &err);
+            if (!opus_) issue(strf("Opus: opus_decoder_create failed (%d)", err));
+            break;
+        }
         default:
             break;
         }
@@ -339,6 +369,7 @@ public:
     ~Session() {
         if (aac_) aacDecoder_Close(aac_);
         if (aptx_) aptx_finish(aptx_);
+        if (opus_) opus_decoder_destroy(opus_);
     }
 
     void on_packet(double t, const uint8_t *p, size_t n) {
@@ -362,6 +393,7 @@ public:
         case Codec::AptxHD: decode_aptx(pl, pn); break;
         case Codec::LDAC:   check_ldac(pl, pn); break;
         case Codec::LHDCV5: check_lhdcv5(pl, pn); break;
+        case Codec::Opus:   decode_opus(pl, pn); break;
         default: break;
         }
     }
@@ -589,6 +621,33 @@ private:
         }
     }
 
+    /* Opus (Android a2dp_vendor_opus_encoder.cc / _decoder.cc, PipeWire
+     * a2dp-codec-opus-g.c): 1-byte media payload header (F S L bits 7..5,
+     * frame count in bits 3..0: always 1, PipeWire rejects any other), then
+     * one Opus packet of one 10 / 20 ms frame. */
+    void decode_opus(const uint8_t *p, size_t n) {
+        if (!opus_) return;
+        if (n < 2) { issue("Opus: media payload shorter than its header and a TOC byte"); return; }
+        if (p[0] & 0xE0) { issue("Opus: fragmented media payload (not used by Android)"); return; }
+        if ((p[0] & 0x0F) != 1) issue("Opus: media payload header frame count is not 1");
+        const unsigned char *pkt = p + 1;
+        opus_int32 len = (opus_int32)(n - 1);
+        int frames = opus_packet_get_nb_frames(pkt, len);
+        int samples = opus_packet_get_nb_samples(pkt, len, 48000);
+        if (frames < 1 || samples <= 0) { issue("Opus: malformed Opus packet"); return; }
+        if (frames != 1) issue("Opus: more than one Opus frame in a packet");
+        if ((uint32_t)samples != cfg_.opus_frame_samples)
+            issue("Opus: packet duration differs from the configured frame duration");
+        if (cfg_.channels == 1 && opus_packet_get_nb_channels(pkt) != 1)
+            issue("Opus: stereo packet in a mono stream");
+        std::vector<opus_int16> pcm((size_t)5760 * cfg_.channels);
+        int got = opus_decode(opus_, pkt, len, pcm.data(), 5760, 0);
+        if (got < 0) { issue(strf("Opus: decode error %d", got)); return; }
+        frames_++;
+        samples_ += (uint64_t)got;
+        wav_.write(pcm.data(), (size_t)got * cfg_.channels * sizeof(opus_int16), 48000, (uint16_t)cfg_.channels, 16);
+    }
+
     /* LHDC V5 (A2DPWB / Android a2dp_vendor_lhdcv5_encoder.cc): 2-byte media
      * payload header [frames << 2 | latency] [sequence], then frames each
      * starting with a 2-byte LE header whose low 10 bits are the encoded
@@ -649,6 +708,7 @@ private:
     HANDLE_AACDECODER aac_ = nullptr;
     bool aac_synced_ = false;
     struct aptx_context *aptx_ = nullptr;
+    OpusDecoder *opus_ = nullptr;
 
     uint64_t ldac_frame_bytes_ = 0, ldac_min_frame_ = 0, ldac_max_frame_ = 0;
     uint64_t ldac_min_fpp_ = 0, ldac_max_fpp_ = 0;

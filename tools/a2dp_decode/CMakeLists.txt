@@ -7,7 +7,7 @@
 #   cmake --build build/a2dp_decode --config Release
 #
 # Links only codec libraries (Bluedroid SBC decoder, fdk-aac, libopenaptx,
-# liblc3 for LE Audio), not BTstack. See THIRD_PARTY_LICENSES.md,
+# libopus, liblc3 for LE Audio), not BTstack. See THIRD_PARTY_LICENSES.md,
 # "Developer tool: a2dpwb_decode".
 
 cmake_minimum_required(VERSION 3.16)
@@ -22,9 +22,10 @@ set(SBC_DECODER_DIR ${BTSTACK_ROOT}/3rd-party/bluedroid/decoder)
 set(LC3_SRC_DIR ${BTSTACK_ROOT}/3rd-party/lc3-google)
 set(OPENAPTX_SRC_DIR ${EXTERN}/libopenaptx)
 set(FDK_AAC_DIR ${EXTERN}/fdk-aac)
+set(OPUS_DIR ${EXTERN}/opus)
 
 foreach(f ${SBC_DECODER_DIR}/srce/decoder-sbc.c ${LC3_SRC_DIR}/src/lc3.c ${OPENAPTX_SRC_DIR}/openaptx.c
-        ${FDK_AAC_DIR}/CMakeLists.txt)
+        ${FDK_AAC_DIR}/CMakeLists.txt ${OPUS_DIR}/CMakeLists.txt)
     if(NOT EXISTS ${f})
         message(FATAL_ERROR "${f} not found (git submodule update --init --recursive)")
     endif()
@@ -76,8 +77,16 @@ set(BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${FDK_AAC_DIR} ${CMAKE_BINARY_DIR}/fdk-aac EXCLUDE_FROM_ALL)
 
+# libopus (Xiph.Org, BSD-3-Clause): its own CMake build, static, no
+# programs / tests / DNN features
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+add_subdirectory(${OPUS_DIR} ${CMAKE_BINARY_DIR}/opus EXCLUDE_FROM_ALL)
+
 add_executable(a2dpwb_decode a2dp_decode.cpp le_audio_decode.cpp)
-target_link_libraries(a2dpwb_decode PRIVATE sbc_decoder fdk-aac openaptx lc3)
+target_link_libraries(a2dpwb_decode PRIVATE sbc_decoder fdk-aac openaptx lc3 opus)
 target_include_directories(a2dpwb_decode PRIVATE
     ${FDK_AAC_DIR}/libAACdec/include
     ${FDK_AAC_DIR}/libSYS/include

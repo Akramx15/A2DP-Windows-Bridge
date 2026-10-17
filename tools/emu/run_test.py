@@ -61,10 +61,11 @@ if not os.path.exists(VENV_PYTHON) and sys.prefix != sys.base_prefix:
 SINK_ADDRESS = '00:A2:D0:00:00:02'
 BASE_PORT = 9101  # A2DP cases; LE Audio cases use BASE_PORT + 100
 
-CODECS = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5']
+CODECS = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'opus']
 CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'sbc': r'SBC \d', 'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
+    'opus': r'Opus 48000 Hz, stereo, 20 ms',
 }
 NO_DECODER = {'ldac', 'lhdcv5'}  # frame headers are validated, audio is not decoded
 TONES = ((1000.0, 0.5), (1500.0, 0.5))  # (frequency, amplitude) per channel, as --test-tone

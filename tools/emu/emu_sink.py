@@ -4,7 +4,7 @@ Runs two Bumble virtual controllers on one in-process link:
   - controller "A2DPWB" is served as H4 over TCP; A2DPWB connects to it with
     `A2DPWB.exe --cli --hci-tcp 127.0.0.1:<port>`
   - controller "SINK" is driven by a Bumble host acting as an A2DP sink that
-    offers SBC, AAC, aptX, aptX HD, aptX LL, LDAC and LHDC V5 like a typical headset
+    offers SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 and Opus like a typical headset
 
 The sink's HCI traffic is written to a PacketLogger (.pklg) capture, so
 a2dpwb_decode --received can check what actually arrived at the sink.
@@ -123,7 +123,7 @@ class PacketLoggerSnooper(Snooper):
 
 
 # Codec of each sink_codec_capabilities() entry, in order (for --in-use)
-CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5']
+CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'opus']
 
 
 def sink_codec_capabilities():
@@ -184,6 +184,9 @@ def sink_codec_capabilities():
         # LHDC V5 (Android a2dp_vendor_lhdcv5_constants.h): 44.1 / 48 / 96 / 192 kHz,
         # 16 / 24-bit, 64..1000 kbps, V5 ver.1 with 5 ms frames, low latency offered
         vendor(0x0000053A, 0x4C35, [0x35, 0x06, 0x11, 0x40, 0x00]),
+        # Opus (Android a2dp_vendor_opus_constants.h): Android's own sink
+        # capabilities, 48 kHz (0x80), 20 ms frames (0x10), stereo (0x02)
+        vendor(0x000000E0, 0x0001, [0x92]),
     ]
 
 

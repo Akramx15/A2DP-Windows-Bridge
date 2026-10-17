@@ -108,7 +108,7 @@ jobs:
       - run: python ../../../tools/check_lang.py
 
   emulator:
-    name: Emulator end to end (7 codecs)
+    name: Emulator end to end (8 codecs)
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
