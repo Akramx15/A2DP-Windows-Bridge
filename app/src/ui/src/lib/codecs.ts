@@ -4,7 +4,7 @@
 // pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, "mhq" only
 // for LHDC V5, no quality choice for the aptX family, 48 kHz only for Opus.
 
-export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "opus" | "aac" | "sbc";
+export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "opus" | "aac" | "sbcxq" | "sbc" | "faststream";
 
 export interface QualityMode {
   id: string;
@@ -101,6 +101,20 @@ export const CODECS: CodecSpec[] = [
     hiRes: false,
   },
   {
+    // Dual channel, high bitpool (PipeWire's SBC-XQ); only on sinks whose
+    // SBC allows it
+    id: "sbcxq",
+    label: "codec.sbc_xq",
+    bars: { quality: 3, latency: 3, stability: 3 },
+    qualities: [
+      { id: "hq", label: HQ, kbps: "~552" },
+      { id: "sq", label: SQ, kbps: "~505" },
+      { id: "mq", label: MQ, kbps: "~385" },
+    ],
+    abr: false,
+    hiRes: false,
+  },
+  {
     id: "sbc",
     label: "codec.sbc",
     bars: { quality: 2, latency: 3, stability: 5 },
@@ -112,6 +126,9 @@ export const CODECS: CodecSpec[] = [
     abr: false,
     hiRes: false,
   },
+  // CSR FastStream: fixed SBC (bitpool 29, ~200 kbps), music only; never
+  // picked by Auto
+  { id: "faststream", label: "codec.faststream", bars: { quality: 1, latency: 4, stability: 4 }, qualities: [], abr: false, hiRes: false },
 ];
 
 export function codecSpec(id: string): CodecSpec {
@@ -130,6 +147,8 @@ export function codecLabelKey(name: string): string {
     aptxlowlatency: "codec.aptx_ll",
     aac: "codec.aac",
     sbc: "codec.sbc",
+    sbcxq: "codec.sbc_xq",
+    faststream: "codec.faststream",
     lhdcv5: "codec.lhdc_v5",
     lhdc: "codec.lhdc_v5",
     opus: "codec.opus",

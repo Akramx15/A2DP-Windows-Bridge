@@ -14,7 +14,9 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
+| SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
+| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
 | LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
@@ -27,7 +29,9 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (sinks whose SBC allows dual channel, bitpool ≥ 43) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
+| FastStream | ❌ | ❌ | ✅ | ✅ (music only, chosen explicitly) |
 | LHDC V5 | ❌ | ❌ | ❌ | 🧪 experimental |
 | Opus (Android's A2DP Opus) | ❌ | ❌ | not checked | 🧪 experimental |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
@@ -64,7 +68,7 @@ A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), as an x64 bu
 | Sony WH-1000XM4 (headphones) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC | ✅ Plays (the XM4 has no aptX) |
 | TP-Link UB500 (Realtek RTL8761BU, adapter) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | Measuring receiver `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 over the air | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Received and measured |
-| Virtual link `tools/emu` (Bumble) | Windows 11, no radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, Opus | ✅ End-to-end test passes |
+| Virtual link `tools/emu` (Bumble) | Windows 11, no radio | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus | ✅ End-to-end test passes |
 
 Windows 10 has not been tried on real hardware yet. Other adapters: see [Recommended Adapters](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup#adapters).
 
@@ -194,7 +198,10 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbcxq   # SBC XQ: dual channel, bitpool 47 / 43 (44.1 / 48 kHz)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c faststream   # CSR FastStream (music direction)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus         # Opus (experimental; 48 kHz, 256 kbps)
 
 # LDAC quality modes
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
@@ -224,7 +231,7 @@ All options, including AFH (`--afh`) and the peer receiver test (`--remote-sink`
 
 > **Note**: System loopback and virtual device capture use WASAPI shared mode. The capture sample rate depends on the device's format configured in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the device format to 96 kHz in Sound settings > Advanced. Application capture is converted by Windows to the rate A2DPWB asks for.
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > Opus (experimental) > AAC > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > Opus (experimental) > AAC > SBC XQ > SBC (FastStream only when chosen)
 
 ### aptX family and aptX Adaptive
 

@@ -35,6 +35,8 @@
   "codec.aptx_low_latency": "aptX Low Latency",
   "codec.aac": "AAC",
   "codec.sbc": "SBC",
+  "codec.sbc_xq": "SBC XQ",
+  "codec.faststream": "FastStream",
   "codec.lhdc_v5": "LHDC V5",
   "codec.opus": "Opus",
   "codec.unknown": "알 수 없음",

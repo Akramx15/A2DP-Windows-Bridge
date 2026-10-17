@@ -248,7 +248,7 @@ fn encoder_is_send() {
 fn peer_bitrate_limits() {
     let with = |p7: u8, quality: Quality, abr: bool| {
         let cfg = EncoderConfig {
-            peer: PeerParams { lhdcv5_bitrate_limits: p7, ..Default::default() },
+            peer: PeerParams { lhdcv5_bitrate_limits: p7, ..PeerParams::default() },
             abr,
             ..config(48000, quality, 16, MTUS[1])
         };
@@ -270,7 +270,7 @@ fn peer_bitrate_limits() {
 
     // The limits hold while encoding
     let cfg = EncoderConfig {
-        peer: PeerParams { lhdcv5_bitrate_limits: 0x20, ..Default::default() },
+        peer: PeerParams { lhdcv5_bitrate_limits: 0x20, ..PeerParams::default() },
         ..config(48000, Quality::High, 16, MTUS[1])
     };
     let mut enc = LhdcV5Encoder::new(&cfg).unwrap();

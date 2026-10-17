@@ -5,7 +5,7 @@
  */
 export type Profile = { name: string, device_address: string, device_name: string, 
 /**
- * auto, ldac, aptxhd, aptxll, aptx, sbc, aac, lhdcv5, opus
+ * auto, ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, faststream
  */
 codec: string, 
 /**

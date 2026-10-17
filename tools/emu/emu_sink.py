@@ -4,7 +4,8 @@ Runs two Bumble virtual controllers on one in-process link:
   - controller "A2DPWB" is served as H4 over TCP; A2DPWB connects to it with
     `A2DPWB.exe --cli --hci-tcp 127.0.0.1:<port>`
   - controller "SINK" is driven by a Bumble host acting as an A2DP sink that
-    offers SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 and Opus like a typical headset
+    offers SBC (SBC XQ capable), AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5,
+    FastStream and Opus like a typical headset
 
 The sink's HCI traffic is written to a PacketLogger (.pklg) capture, so
 a2dpwb_decode --received can check what actually arrived at the sink.
@@ -123,12 +124,17 @@ class PacketLoggerSnooper(Snooper):
 
 
 # Codec of each sink_codec_capabilities() entry, in order (for --in-use)
-CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'opus']
+CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus']
 
 
-def sink_codec_capabilities():
-    """Endpoints a typical high-end headset offers (all sample rates / modes)."""
+def sink_codec_capabilities(sbc_dual=True):
+    """Endpoints a typical high-end headset offers (all sample rates / modes).
+    SBC allows SBC XQ (dual channel, bitpool up to 53) unless sbc_dual is
+    False."""
     sbc = SbcMediaCodecInformation
+    sbc_modes = sbc.ChannelMode.MONO | sbc.ChannelMode.STEREO | sbc.ChannelMode.JOINT_STEREO
+    if sbc_dual:
+        sbc_modes |= sbc.ChannelMode.DUAL_CHANNEL
     aac = AacMediaCodecInformation
 
     def vendor(vendor_id, codec_id, value):
@@ -149,10 +155,7 @@ def sink_codec_capabilities():
             media_codec_information=sbc(
                 sampling_frequency=sbc.SamplingFrequency.SF_48000
                 | sbc.SamplingFrequency.SF_44100,
-                channel_mode=sbc.ChannelMode.MONO
-                | sbc.ChannelMode.DUAL_CHANNEL
-                | sbc.ChannelMode.STEREO
-                | sbc.ChannelMode.JOINT_STEREO,
+                channel_mode=sbc_modes,
                 block_length=sbc.BlockLength.BL_4
                 | sbc.BlockLength.BL_8
                 | sbc.BlockLength.BL_12
@@ -184,6 +187,10 @@ def sink_codec_capabilities():
         # LHDC V5 (Android a2dp_vendor_lhdcv5_constants.h): 44.1 / 48 / 96 / 192 kHz,
         # 16 / 24-bit, 64..1000 kbps, V5 ver.1 with 5 ms frames, low latency offered
         vendor(0x0000053A, 0x4C35, [0x35, 0x06, 0x11, 0x40, 0x00]),
+        # FastStream (PipeWire a2dp_faststream_t) as a CSR headset lists it:
+        # music (sink) and voice (source) directions, music at 44.1 / 48 kHz,
+        # voice at 16 kHz
+        vendor(0x0000000A, 0x0001, [0x03, 0x23]),
         # Opus (Android a2dp_vendor_opus_constants.h): Android's own sink
         # capabilities, 48 kHz (0x80), 20 ms frames (0x10), stereo (0x02)
         vendor(0x000000E0, 0x0001, [0x92]),
@@ -216,7 +223,9 @@ async def main(args):
 
     def on_avdtp_connection(server):
         log.info('AVDTP connection')
-        for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities()):
+        for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities(not args.sbc_no_dual)):
+            if args.codecs and name not in args.codecs:
+                continue
             sink = server.add_sink(capabilities)
             if name in args.in_use:
                 # As a multipoint headset streaming this codec to another
@@ -247,5 +256,9 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', default='WARNING')
     parser.add_argument('--in-use', nargs='*', default=[], choices=CODEC_NAMES, metavar='CODEC',
                         help='report the SEP of these codecs as in use by another device (multipoint)')
+    parser.add_argument('--codecs', nargs='+', choices=CODEC_NAMES, metavar='CODEC',
+                        help='offer only these codecs (default: all)')
+    parser.add_argument('--sbc-no-dual', action='store_true',
+                        help='SBC without dual channel (no SBC XQ)')
     bumble.logging.setup_basic_logging(parser.parse_known_args()[0].log_level)
     asyncio.run(main(parser.parse_args()))

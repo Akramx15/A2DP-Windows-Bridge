@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 use btstack_sys::consts::*;
 use btstack_sys::{AclState, App, AvdtpState, HciBackend, HciState, Source, Stack};
 use codec::CodecKind;
-use codec::caps::{ConfigRequest, Configuration, VendorCapability};
+use codec::caps::{ConfigRequest, Configuration, SbcCapabilities, VendorCapability};
+use codec::sbc::ChannelMode;
 
 use crate::events::{addr_at, addr_str, event_type, hci_error_string, le16, le24, subevent, u8_at};
 use crate::link_keys::FileLinkKeyStore;
@@ -337,7 +338,7 @@ impl HostApp {
     }
 
     pub fn set_config(&mut self, stack: &Stack, config: &Configuration) -> u8 {
-        let Some(&local) = self.endpoints.get(&config.kind) else {
+        let Some(&local) = self.endpoints.get(&codec::caps::endpoint_kind(config.kind)) else {
             return ERROR_CODE_COMMAND_DISALLOWED;
         };
         self.local_seid = local;
@@ -345,18 +346,24 @@ impl HostApp {
         self.stream_codec = Some(config.kind);
         let cid = self.a2dp_cid;
         match &config.request {
-            ConfigRequest::Sbc { sampling_frequency, mono, min_bitpool, max_bitpool } => stack.a2dp_set_config_sbc(
-                cid,
-                local,
-                config.remote_seid,
-                *sampling_frequency,
-                if *mono { AVDTP_CHANNEL_MODE_MONO } else { AVDTP_CHANNEL_MODE_JOINT_STEREO },
-                AVDTP_SBC_BLOCK_LENGTH_16,
-                AVDTP_SBC_SUBBANDS_8,
-                AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
-                *min_bitpool,
-                *max_bitpool,
-            ),
+            ConfigRequest::Sbc { sampling_frequency, channel_mode, min_bitpool, max_bitpool } => stack
+                .a2dp_set_config_sbc(
+                    cid,
+                    local,
+                    config.remote_seid,
+                    *sampling_frequency,
+                    match channel_mode {
+                        ChannelMode::Mono => AVDTP_CHANNEL_MODE_MONO,
+                        ChannelMode::DualChannel => AVDTP_CHANNEL_MODE_DUAL_CHANNEL,
+                        ChannelMode::Stereo => AVDTP_CHANNEL_MODE_STEREO,
+                        ChannelMode::JointStereo => AVDTP_CHANNEL_MODE_JOINT_STEREO,
+                    },
+                    AVDTP_SBC_BLOCK_LENGTH_16,
+                    AVDTP_SBC_SUBBANDS_8,
+                    AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
+                    *min_bitpool,
+                    *max_bitpool,
+                ),
             ConfigRequest::Aac { sampling_frequency, channels, bit_rate } => stack.a2dp_set_config_aac(
                 cid,
                 local,
@@ -808,8 +815,31 @@ impl HostApp {
             }
             Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CAPABILITY) => {
                 let seid = u8_at(p, 5).unwrap_or(0);
-                self.caps.add_sbc(seid);
-                tracing::info!("remote supports SBC (SEID {seid})");
+                // 12111111111: subevent, cid, SEID, media type, then the
+                // bitmaps and the bitpool range
+                let at = |i: usize| u8_at(p, i).unwrap_or(0);
+                let sbc = SbcCapabilities {
+                    sampling_frequency: at(7),
+                    channel_mode: at(8),
+                    block_length: at(9),
+                    subbands: at(10),
+                    allocation_method: at(11),
+                    min_bitpool: at(12),
+                    max_bitpool: at(13),
+                };
+                self.caps.add_sbc_caps(seid, sbc);
+                tracing::info!(
+                    "remote supports SBC (SEID {seid}, frequencies 0x{:X}, channel modes 0x{:X}, blocks 0x{:X}, \
+                     subbands 0x{:X}, allocation 0x{:X}, bitpool {}-{}){}",
+                    sbc.sampling_frequency,
+                    sbc.channel_mode,
+                    sbc.block_length,
+                    sbc.subbands,
+                    sbc.allocation_method,
+                    sbc.min_bitpool,
+                    sbc.max_bitpool,
+                    if sbc.allows_xq() { " - SBC XQ possible" } else { "" }
+                );
             }
             Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CAPABILITY) => {
                 let seid = u8_at(p, 5).unwrap_or(0);
@@ -820,16 +850,18 @@ impl HostApp {
                 let c = &self.caps;
                 tracing::info!(
                     "capability discovery complete (LDAC={} aptX HD={} aptX LL={} aptX={} aptX Adaptive={} [not encodable] \
-                     SBC={} AAC={} LHDC V5={} Opus={}{})",
+                     SBC={} SBC XQ={} AAC={} LHDC V5={} Opus={} FastStream={}{})",
                     c.ldac.is_some(),
                     c.aptx_hd.is_some(),
                     c.aptx_ll.is_some(),
                     c.aptx.is_some(),
                     c.aptx_adaptive,
                     c.sbc.is_some(),
+                    c.has(CodecKind::SbcXq),
                     c.aac.is_some(),
                     c.lhdcv5.is_some(),
                     c.opus.is_some(),
+                    c.faststream.is_some(),
                     if c.audio_sinks_in_use > 0 {
                         format!(", {} of {} audio sink SEP(s) in use", c.audio_sinks_in_use, c.audio_sinks)
                     } else {

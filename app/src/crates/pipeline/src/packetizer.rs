@@ -6,7 +6,8 @@
 //! LDAC and Opus carry the frame count in the low 4 bits (no fragmentation),
 //! LHDC V5 the frame count shifted left by 2 and a sequence number; the
 //! others none. LDAC and Opus send each encoder output as a packet of its
-//! own.
+//! own. FastStream packets are always three padded SBC frames (PipeWire), so
+//! a round does not flush a partly filled one ([`Packetizer::end_round`]).
 
 use bt_host::media::{MAX_MEDIA_PACKET_SIZE, MediaPacket, RTP_HEADER_SIZE};
 use codec::CodecKind;
@@ -27,8 +28,10 @@ pub struct Packetizer {
 pub fn max_raw(kind: CodecKind, mtu: u16, sample_rate: u32) -> usize {
     let mtu = mtu as usize;
     match kind {
-        CodecKind::Sbc | CodecKind::Ldac | CodecKind::Opus => mtu - 1,
+        CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac | CodecKind::Opus => mtu - 1,
         CodecKind::LhdcV5 => mtu - 2,
+        // No RTP header, no media payload header: three 72-byte frames
+        CodecKind::FastStream => (mtu + RTP_HEADER_SIZE).min(codec::sbc::FASTSTREAM_MAX_PAYLOAD),
         // aptX and aptX LL go without the RTP header: the whole L2CAP MTU is
         // payload; whole 4-byte aptX frames
         CodecKind::Aptx | CodecKind::AptxLl => {
@@ -98,13 +101,25 @@ impl Packetizer {
         sent
     }
 
+    /// The end of an encode round: sends what is collected, except a
+    /// FastStream packet that has room for more frames; returns the packets
+    /// sent (0 or 1)
+    pub fn end_round(&mut self, send: &mut dyn FnMut(&MediaPacket)) -> u32 {
+        if self.kind == CodecKind::FastStream && self.raw_len() < self.max_raw {
+            return 0;
+        }
+        self.flush(send)
+    }
+
     /// Sends what is collected; returns the packets sent (0 or 1)
     pub fn flush(&mut self, send: &mut dyn FnMut(&MediaPacket)) -> u32 {
         if self.frames == 0 {
             return 0;
         }
         match self.kind {
-            CodecKind::Sbc | CodecKind::Ldac | CodecKind::Opus => self.packet.data[0] = (self.frames & 0x0F) as u8,
+            CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac | CodecKind::Opus => {
+                self.packet.data[0] = (self.frames & 0x0F) as u8
+            }
             CodecKind::LhdcV5 => {
                 // Android A2DP_VendorBuildCodecHeaderLhdcV5: frames << 2,
                 // latency bits 1..0 = 0; then the packet sequence number
@@ -143,6 +158,40 @@ mod tests {
         assert_eq!(out[0].0.len(), 1 + 5 * 119);
         assert_eq!(out[1].1, 5 * 128);
         assert_eq!(out[2].0[0], 2);
+    }
+
+    #[test]
+    fn sbc_xq_frames_fill_the_mtu() {
+        // 200-byte SBC XQ frames (44.1k dual channel bitpool 47): 5 in 1023,
+        // with SBC's media payload header and RTP
+        let mut p = Packetizer::new(CodecKind::SbcXq, 1023, 44100);
+        let mut out = Vec::new();
+        for i in 0..6 {
+            p.push(&[0x9Cu8; 200], 1, i * 128, &mut |pk| out.push((pk.payload().to_vec(), pk.rtp)));
+        }
+        assert_eq!(out.len(), 1);
+        assert_eq!((out[0].0[0], out[0].0.len(), out[0].1), (5, 1 + 5 * 200, true));
+    }
+
+    #[test]
+    fn faststream_packets_are_three_frames() {
+        assert_eq!(max_raw(CodecKind::FastStream, 1023, 48000), 216);
+        let mut p = Packetizer::new(CodecKind::FastStream, 1023, 48000);
+        let mut out = Vec::new();
+        // Rounds of 3.75 frames (10 ms at 48 kHz): never a partial packet
+        for round in 0..8u32 {
+            let frames = if round % 4 == 3 { 3 } else { 4 };
+            for _ in 0..frames {
+                p.push(&[0x9Cu8; 72], 1, 0, &mut |pk| out.push((pk.payload().len(), pk.rtp)));
+            }
+            p.end_round(&mut |pk| out.push((pk.payload().len(), pk.rtp)));
+        }
+        // 30 frames: 10 packets of 216 bytes, no RTP, no header
+        assert_eq!(out, vec![(216, false); 10]);
+        // Other codecs flush at the end of every round
+        let mut p = Packetizer::new(CodecKind::Sbc, 1023, 48000);
+        p.push(&[0x9Cu8; 119], 1, 0, &mut |_| {});
+        assert_eq!(p.end_round(&mut |_| {}), 1);
     }
 
     #[test]

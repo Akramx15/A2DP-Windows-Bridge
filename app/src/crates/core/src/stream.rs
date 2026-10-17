@@ -403,8 +403,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
+        CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
         CodecKind::Opus => 48000,
-        CodecKind::Sbc | CodecKind::Aac if preferred != 44100 => 48000,
+        CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Aac if preferred != 44100 => 48000,
         _ => preferred,
     };
     if picked != preferred {
@@ -517,7 +518,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         abr: req.abr && matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5),
         peer: {
             let (opus_frame_ms, opus_channels) = remote.opus_stream(channels);
-            PeerParams { lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(), opus_frame_ms, opus_channels }
+            PeerParams {
+                lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
+                sbc_max_bitpool: remote.sbc_max_bitpool(),
+                opus_frame_ms,
+                opus_channels,
+            }
         },
     };
     let encoder = match codec::create(kind, &encoder_config) {

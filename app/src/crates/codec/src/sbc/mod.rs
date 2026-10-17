@@ -11,13 +11,19 @@
 //! - [`SbcFrameEncoder`]: the general encoder, any [`SbcConfig`].
 //! - [`SbcEncoder`]: the A2DP stream encoder (as v1's wrapper): 44.1 / 48
 //!   kHz, joint stereo (or mono), 16 blocks, 8 subbands, loudness, the
-//!   bitpool by [`Quality`].
+//!   bitpool by [`Quality`]; [`SbcEncoder::new_xq`] is SBC XQ: dual channel
+//!   with a high bitpool per channel ([`xq_bitpool`]).
+//! - [`FastStreamEncoder`]: CSR FastStream, SBC frames of a fixed setup.
 
 mod analysis;
 mod bit_alloc;
+mod faststream;
 mod frame;
 mod packing;
 
+pub use faststream::{
+    FASTSTREAM_BITPOOL, FASTSTREAM_FRAME_BYTES, FASTSTREAM_FRAMES_PER_PACKET, FASTSTREAM_MAX_PAYLOAD, FastStreamEncoder,
+};
 pub use frame::{Allocation, ChannelMode, SbcConfig, SbcFrameEncoder};
 
 use crate::{CodecKind, Encoded, Encoder, EncoderConfig, EncoderError, Pcm, PcmFormat, Quality};
@@ -34,22 +40,67 @@ pub fn quality_bitpool(quality: Quality) -> u8 {
     }
 }
 
+/// SBC XQ bitpool (per channel, dual channel; mono takes the same) for a
+/// quality mode and sample rate:
+/// - High: 47 at 44.1 kHz (the "SBC XQ" of Android custom ROMs and
+///   pulseaudio-modules-bt: 200-byte frames, ~551 kbps), 43 at 48 kHz (the
+///   same ~552 kbps). Three frames and the media payload header fill one
+///   2-DH5 packet, five one 3-DH5.
+/// - Standard: 43 / 39, PipeWire's SBC-XQ default (a2dp-codec-sbc.c,
+///   default_bitpool): the ~512 kbps every A2DP 1.2 sink has to take.
+/// - Mobile: 32 / 29, PipeWire's dual channel default without XQ (~385 kbps).
+pub fn xq_bitpool(quality: Quality, sample_rate: u32) -> u8 {
+    let (at_44100, at_48000) = match quality {
+        Quality::High | Quality::MediumHigh => (47, 43),
+        Quality::Standard => (43, 39),
+        Quality::Mobile => (32, 29),
+    };
+    if sample_rate == 44100 { at_44100 } else { at_48000 }
+}
+
+/// Largest SBC XQ bitpool at a sample rate (any quality): the maximum the
+/// SET_CONFIGURATION gives
+pub fn xq_max_bitpool(sample_rate: u32) -> u8 {
+    xq_bitpool(Quality::High, sample_rate)
+}
+
 /// The A2DP SBC encoder: one SBC frame (128 PCM frames) per `encode`
 pub struct SbcEncoder {
+    kind: CodecKind,
     frame: SbcFrameEncoder,
     frame_len: usize,
     sample_rate: u32,
 }
 
 impl SbcEncoder {
+    /// SBC: joint stereo (mono for one channel), the bitpool by quality
     pub fn new(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
-        let unsupported = |what: String| EncoderError::Unsupported { codec: CodecKind::Sbc, what };
+        Self::with_mode(CodecKind::Sbc, config, ChannelMode::JointStereo, quality_bitpool(config.quality))
+    }
+
+    /// SBC XQ: dual channel (mono for one channel), [`xq_bitpool`] capped at
+    /// the sink's largest bitpool
+    pub fn new_xq(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
+        let mut bitpool = xq_bitpool(config.quality, config.sample_rate);
+        if config.peer.sbc_max_bitpool >= 2 {
+            bitpool = bitpool.min(config.peer.sbc_max_bitpool);
+        }
+        Self::with_mode(CodecKind::SbcXq, config, ChannelMode::DualChannel, bitpool)
+    }
+
+    fn with_mode(
+        kind: CodecKind,
+        config: &EncoderConfig,
+        stereo_mode: ChannelMode,
+        bitpool: u8,
+    ) -> Result<SbcEncoder, EncoderError> {
+        let unsupported = |what: String| EncoderError::Unsupported { codec: kind, what };
         if config.sample_rate != 44100 && config.sample_rate != 48000 {
             return Err(unsupported(format!("sample rate {} Hz (44100 or 48000)", config.sample_rate)));
         }
         let channel_mode = match config.channels {
             1 => ChannelMode::Mono,
-            2 => ChannelMode::JointStereo,
+            2 => stereo_mode,
             n => return Err(unsupported(format!("{n} channels"))),
         };
         let frame = SbcFrameEncoder::new(SbcConfig {
@@ -58,11 +109,11 @@ impl SbcEncoder {
             blocks: BLOCKS,
             subbands: SUBBANDS,
             allocation: Allocation::Loudness,
-            bitpool: quality_bitpool(config.quality),
+            bitpool,
         })?;
         // Bitpool is never 0 here, so every frame has exactly this length
         let frame_len = frame.max_frame_len();
-        Ok(SbcEncoder { frame, frame_len, sample_rate: config.sample_rate })
+        Ok(SbcEncoder { kind, frame, frame_len, sample_rate: config.sample_rate })
     }
 
     /// Length of every SBC frame of this stream
@@ -77,7 +128,7 @@ impl SbcEncoder {
 
 impl Encoder for SbcEncoder {
     fn kind(&self) -> CodecKind {
-        CodecKind::Sbc
+        self.kind
     }
 
     fn pcm_format(&self) -> PcmFormat {
@@ -94,7 +145,7 @@ impl Encoder for SbcEncoder {
 
     fn encode(&mut self, pcm: Pcm<'_>, out: &mut [u8]) -> Result<Encoded, EncoderError> {
         let Pcm::I16(pcm) = pcm else {
-            return Err(EncoderError::Encode { codec: CodecKind::Sbc, what: "SBC takes 16-bit PCM".into() });
+            return Err(EncoderError::Encode { codec: self.kind, what: "SBC takes 16-bit PCM".into() });
         };
         let bytes = self.frame.encode(pcm, out)?;
         Ok(Encoded { bytes, frames: 1 })
@@ -231,6 +282,64 @@ mod tests {
         let e = crate::create(CodecKind::Sbc, &config(48000, 2, Quality::Standard)).unwrap();
         assert_eq!(e.kind(), CodecKind::Sbc);
         assert_eq!(e.max_output_bytes(), 83);
+    }
+
+    #[test]
+    fn xq_frame_length_and_bitrate() {
+        // (rate, channels, quality, bitpool, frame length, kbps, header byte 1)
+        let cases = [
+            (44100, 2, Quality::High, 47, 200, 551, 0b1011_0101),
+            (44100, 2, Quality::Standard, 43, 184, 507, 0b1011_0101),
+            (44100, 2, Quality::Mobile, 32, 140, 385, 0b1011_0101),
+            (48000, 2, Quality::High, 43, 184, 552, 0b1111_0101),
+            (48000, 2, Quality::Standard, 39, 168, 504, 0b1111_0101),
+            (48000, 2, Quality::Mobile, 29, 128, 384, 0b1111_0101),
+            (44100, 1, Quality::High, 47, 102, 281, 0b1011_0001),
+            (48000, 1, Quality::High, 43, 94, 282, 0b1111_0001),
+        ];
+        for (rate, ch, quality, bitpool, len, kbps, hdr) in cases {
+            let mut e = SbcEncoder::new_xq(&config(rate, ch, quality)).unwrap();
+            assert_eq!(e.kind(), CodecKind::SbcXq);
+            assert_eq!(e.bitpool(), bitpool, "{rate} {ch} {quality:?}");
+            assert_eq!(e.frame_len(), len, "{rate} {ch} {quality:?}");
+            assert_eq!(e.bitrate_kbps(), kbps, "{rate} {ch} {quality:?}");
+            let mut out = vec![0u8; len];
+            let pcm: Vec<i16> = (0..128 * ch as usize).map(|i| ((i * 7919) % 20000) as i16 - 10000).collect();
+            for _ in 0..4 {
+                assert_eq!(e.encode(Pcm::I16(&pcm), &mut out).unwrap(), Encoded { bytes: len, frames: 1 });
+                assert_eq!((out[0], out[1], out[2]), (0x9C, hdr, bitpool));
+            }
+        }
+        assert_eq!(SbcEncoder::new_xq(&config(44100, 2, Quality::MediumHigh)).unwrap().bitpool(), 47);
+        assert_eq!((xq_max_bitpool(44100), xq_max_bitpool(48000)), (47, 43));
+    }
+
+    #[test]
+    fn xq_fills_packets() {
+        // High: three frames and the media payload header in one 2-DH5 (679
+        // bytes less 4 L2CAP and 12 RTP), five in one 3-DH5 (1021 less 16)
+        for rate in [44100, 48000] {
+            let len = SbcEncoder::new_xq(&config(rate, 2, Quality::High)).unwrap().frame_len();
+            let packet = |frames: usize| 1 + frames * len;
+            assert!(packet(3) <= 679 - 16 && packet(4) > 679 - 16, "{rate}");
+            assert!(packet(5) <= 1021 - 16 && packet(6) > 1021 - 16, "{rate}");
+        }
+    }
+
+    #[test]
+    fn xq_bitpool_capped_by_the_sink() {
+        let mut c = config(44100, 2, Quality::High);
+        c.peer.sbc_max_bitpool = 45;
+        let e = SbcEncoder::new_xq(&c).unwrap();
+        assert_eq!((e.bitpool(), e.frame_len()), (45, 192));
+        c.peer.sbc_max_bitpool = 53;
+        assert_eq!(SbcEncoder::new_xq(&c).unwrap().bitpool(), 47);
+        let e = crate::create(CodecKind::SbcXq, &config(48000, 2, Quality::Standard)).unwrap();
+        assert_eq!((e.kind(), e.max_output_bytes()), (CodecKind::SbcXq, 168));
+        assert!(matches!(
+            SbcEncoder::new_xq(&config(32000, 2, Quality::High)),
+            Err(EncoderError::Unsupported { codec: CodecKind::SbcXq, .. })
+        ));
     }
 
     #[test]

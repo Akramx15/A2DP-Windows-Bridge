@@ -8,6 +8,7 @@
 //! follows Android and PipeWire.
 
 use crate::CodecKind;
+use crate::sbc::{self, ChannelMode};
 
 pub const LDAC_VENDOR_ID: u32 = 0x0000_012D; // Sony
 pub const LDAC_CODEC_ID: u16 = 0x00AA;
@@ -25,6 +26,8 @@ pub const LHDCV5_VENDOR_ID: u32 = 0x0000_053A; // Savitech
 pub const LHDCV5_CODEC_ID: u16 = 0x4C35;
 pub const OPUS_VENDOR_ID: u32 = 0x0000_00E0; // Google
 pub const OPUS_CODEC_ID: u16 = 0x0001;
+pub const FASTSTREAM_VENDOR_ID: u32 = 0x0000_000A; // CSR
+pub const FASTSTREAM_CODEC_ID: u16 = 0x0001;
 
 /// AVDTP media codec types
 pub const CODEC_TYPE_SBC: u8 = 0x00;
@@ -91,6 +94,68 @@ pub const OPUS_FREQ_48000: u8 = 0x80;
 const OPUS_CAPS: u8 = OPUS_FREQ_48000 | OPUS_FRAME_10MS | OPUS_FRAME_20MS | OPUS_CH_MONO | OPUS_CH_STEREO;
 /// Android's default configuration: 48 kHz, 20 ms, stereo
 const OPUS_CONFIG_DEFAULT: u8 = OPUS_FREQ_48000 | OPUS_FRAME_20MS | OPUS_CH_STEREO;
+// SBC codec information (A2DP 4.3.2), as BTstack's SBC capability event
+// splits it: sampling frequency 0x08 16k 0x04 32k 0x02 44.1k 0x01 48k;
+// channel mode 0x08 mono 0x04 dual 0x02 stereo 0x01 joint stereo; block
+// length 0x08 4 .. 0x01 16; subbands 0x02 4 0x01 8; allocation 0x02 SNR
+// 0x01 loudness
+const SBC_FREQ_44100: u8 = 0x02;
+const SBC_FREQ_48000: u8 = 0x01;
+const SBC_CH_DUAL: u8 = 0x04;
+const SBC_BLOCKS_16: u8 = 0x01;
+const SBC_SUBBANDS_8: u8 = 0x01;
+const SBC_ALLOC_LOUDNESS: u8 = 0x01;
+/// SBC XQ needs the sink to take at least this bitpool per channel (the
+/// lowest High / the Standard 44.1 kHz bitpool, ~507 kbps); below it the
+/// sink gets plain SBC
+pub const SBC_XQ_MIN_MAX_BITPOOL: u8 = 43;
+
+/// A remote SEP's SBC capabilities (the bitmaps of BTstack's
+/// A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CAPABILITY)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SbcCapabilities {
+    pub sampling_frequency: u8,
+    pub channel_mode: u8,
+    pub block_length: u8,
+    pub subbands: u8,
+    pub allocation_method: u8,
+    pub min_bitpool: u8,
+    pub max_bitpool: u8,
+}
+
+impl SbcCapabilities {
+    /// Dual channel with 16 blocks, 8 subbands, loudness, 44.1 or 48 kHz and
+    /// a bitpool up to at least [`SBC_XQ_MIN_MAX_BITPOOL`]
+    pub fn allows_xq(&self) -> bool {
+        self.channel_mode & SBC_CH_DUAL != 0
+            && self.block_length & SBC_BLOCKS_16 != 0
+            && self.subbands & SBC_SUBBANDS_8 != 0
+            && self.allocation_method & SBC_ALLOC_LOUDNESS != 0
+            && self.sampling_frequency & (SBC_FREQ_44100 | SBC_FREQ_48000) != 0
+            && self.max_bitpool >= SBC_XQ_MIN_MAX_BITPOOL
+            && self.min_bitpool <= SBC_XQ_MIN_MAX_BITPOOL
+    }
+}
+
+/// The local SEP a codec streams from: SBC XQ shares SBC's (it offers all
+/// channel modes and a bitpool up to 53)
+pub fn endpoint_kind(kind: CodecKind) -> CodecKind {
+    match kind {
+        CodecKind::SbcXq => CodecKind::Sbc,
+        k => k,
+    }
+}
+
+// FastStream (PipeWire a2dp-codec-caps.h, a2dp_faststream_t): 8 bytes, byte
+// 6 direction (0x01 sink = music to the headset, 0x02 source = voice back),
+// byte 7 low nibble the sink rates (0x02 44.1k, 0x01 48k), high nibble the
+// source rate (0x2 16k). A2DPWB offers and configures the sink direction
+// only.
+const FASTSTREAM_INFO_LEN: usize = 8;
+const FASTSTREAM_DIRECTION_SINK: u8 = 0x01;
+const FASTSTREAM_SINK_44100: u8 = 0x02;
+const FASTSTREAM_SINK_48000: u8 = 0x01;
+const FASTSTREAM_SINK_MASK: u8 = 0x03;
 
 fn vendor_header(vendor_id: u32, codec_id: u16) -> Vec<u8> {
     let mut v = vendor_id.to_le_bytes().to_vec();
@@ -161,7 +226,8 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &[APTX_CONFIG_DEFAULT],
         ));
     }
-    // SBC: 44.1+48k, all channel modes, 16 blocks, 8 subbands, loudness, bitpool 2..53
+    // SBC: 44.1+48k, all channel modes, 16 blocks, 8 subbands, loudness,
+    // bitpool 2..53 (SBC XQ streams from this SEP too, in dual channel)
     eps.push(LocalEndpoint {
         kind: CodecKind::Sbc,
         codec_type: CODEC_TYPE_SBC,
@@ -187,6 +253,15 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &[LHDCV5_SR_48000, LHDCV5_BITS_24, LHDCV5_CAPS_P8],
         ));
     }
+    // FastStream: music to the sink at 44.1 / 48 kHz, no voice backchannel
+    eps.push(vendor(
+        CodecKind::FastStream,
+        FASTSTREAM_VENDOR_ID,
+        FASTSTREAM_CODEC_ID,
+        FASTSTREAM_INFO_LEN,
+        &[FASTSTREAM_DIRECTION_SINK, FASTSTREAM_SINK_44100 | FASTSTREAM_SINK_48000],
+        &[FASTSTREAM_DIRECTION_SINK, FASTSTREAM_SINK_48000],
+    ));
     if CodecKind::Opus.available() {
         eps.push(vendor(
             CodecKind::Opus,
@@ -210,6 +285,8 @@ pub struct RemoteSep {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RemoteCaps {
     pub sbc: Option<RemoteSep>,
+    /// The SBC SEP's capabilities, when reported (SBC XQ needs them)
+    pub sbc_caps: Option<SbcCapabilities>,
     pub aac: Option<RemoteSep>,
     pub ldac: Option<RemoteSep>,
     pub aptx: Option<RemoteSep>,
@@ -217,6 +294,9 @@ pub struct RemoteCaps {
     pub aptx_ll: Option<RemoteSep>,
     pub lhdcv5: Option<RemoteSep>,
     pub opus: Option<RemoteSep>,
+    pub faststream: Option<RemoteSep>,
+    /// FastStream sink (music) rates: 0x02 44.1k, 0x01 48k
+    pub faststream_rates: u8,
     /// aptX family byte 6 of each (0 = not reported: assume 44.1k + 48k)
     pub aptx_caps: u8,
     pub aptxhd_caps: u8,
@@ -259,6 +339,7 @@ impl RemoteCaps {
     pub fn sep(&self, kind: CodecKind) -> Option<RemoteSep> {
         match kind {
             CodecKind::Sbc => self.sbc,
+            CodecKind::SbcXq => self.sbc.filter(|_| self.sbc_caps.is_some_and(|c| c.allows_xq())),
             CodecKind::Aac => self.aac,
             CodecKind::Ldac => self.ldac,
             CodecKind::Aptx => self.aptx,
@@ -266,11 +347,29 @@ impl RemoteCaps {
             CodecKind::AptxLl => self.aptx_ll,
             CodecKind::LhdcV5 => self.lhdcv5,
             CodecKind::Opus => self.opus,
+            CodecKind::FastStream => self.faststream,
         }
     }
 
+    /// An SBC SEP whose capabilities are not known (no SBC XQ)
     pub fn add_sbc(&mut self, seid: u8) {
         self.sbc = Some(RemoteSep { seid });
+        self.sbc_caps = None;
+    }
+
+    /// An SBC SEP with its capabilities. With several, the first that
+    /// allows SBC XQ wins, else the last.
+    pub fn add_sbc_caps(&mut self, seid: u8, caps: SbcCapabilities) {
+        if self.sbc_caps.is_some_and(|c| c.allows_xq()) && !caps.allows_xq() {
+            return;
+        }
+        self.sbc = Some(RemoteSep { seid });
+        self.sbc_caps = Some(caps);
+    }
+
+    /// The sink's largest SBC bitpool (0 = not known)
+    pub fn sbc_max_bitpool(&self) -> u8 {
+        self.sbc_caps.map_or(0, |c| c.max_bitpool)
     }
 
     pub fn add_aac(&mut self, seid: u8) {
@@ -347,6 +446,17 @@ impl RemoteCaps {
             }
             return VendorCapability::Taken(CodecKind::Opus);
         }
+        if vid == FASTSTREAM_VENDOR_ID && cid == FASTSTREAM_CODEC_ID {
+            let rates = byte(7) & FASTSTREAM_SINK_MASK;
+            if info.len() < FASTSTREAM_INFO_LEN || byte(6) & FASTSTREAM_DIRECTION_SINK == 0 || rates == 0 {
+                return VendorCapability::Ignored(CodecKind::FastStream, "no music direction at 44.1 / 48 kHz");
+            }
+            if self.faststream.is_none() {
+                self.faststream = Some(RemoteSep { seid });
+                self.faststream_rates = rates;
+            }
+            return VendorCapability::Taken(CodecKind::FastStream);
+        }
         if vid == APTX_VENDOR_ID && cid == APTX_CODEC_ID {
             let caps = byte(6);
             if info.len() >= 7 && caps & APTX_CH_STEREO == 0 {
@@ -412,6 +522,14 @@ impl RemoteCaps {
         }
     }
 
+    /// Capture rate for FastStream: 44.1 or 48 kHz as the sink lists them,
+    /// preferring `wanted` (other rates: 48k, then 44.1k)
+    pub fn pick_faststream_sample_rate(&self, wanted: u32) -> u32 {
+        let has441 = self.faststream_rates & FASTSTREAM_SINK_44100 != 0;
+        let has48 = self.faststream_rates & FASTSTREAM_SINK_48000 != 0;
+        if (wanted == 44100 && has441) || !has48 { 44100 } else { 48000 }
+    }
+
     /// Capture rate for LHDC V5: 44.1 / 48 / 96 / 192 kHz as the remote
     /// lists them, preferring `wanted` (88.2k maps to 96k)
     pub fn pick_lhdcv5_sample_rate(&self, wanted: u32) -> u32 {
@@ -453,7 +571,28 @@ impl RemoteCaps {
                 if sample_rate != 44100 && sample_rate != 48000 {
                     return Err(ConfigError::SampleRate(kind, sample_rate));
                 }
-                ConfigRequest::Sbc { sampling_frequency: sample_rate as u16, mono, min_bitpool: 2, max_bitpool: 53 }
+                ConfigRequest::Sbc {
+                    sampling_frequency: sample_rate as u16,
+                    channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::JointStereo },
+                    min_bitpool: 2,
+                    max_bitpool: 53,
+                }
+            }
+            CodecKind::SbcXq => {
+                if sample_rate != 44100 && sample_rate != 48000 {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                // Dual channel (mono for one channel). The bitpool range as
+                // PipeWire's select_config: up to the largest XQ bitpool of
+                // the rate, within the sink's range; the encoder's bitpool
+                // (by quality) is never above it.
+                let remote = self.sbc_caps.unwrap_or_default();
+                ConfigRequest::Sbc {
+                    sampling_frequency: sample_rate as u16,
+                    channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::DualChannel },
+                    min_bitpool: remote.min_bitpool.max(2),
+                    max_bitpool: sbc::xq_max_bitpool(sample_rate).min(remote.max_bitpool),
+                }
             }
             CodecKind::Aac => {
                 ConfigRequest::Aac { sampling_frequency: sample_rate, channels: channels as u8, bit_rate: 256_000 }
@@ -504,6 +643,21 @@ impl RemoteCaps {
                     info.push(if rc[14] != 0 { rc[14] } else { APTXLL_SRA_AVG_TIME });
                     info.extend_from_slice(&good.to_le_bytes());
                 }
+                ConfigRequest::Vendor(info)
+            }
+            CodecKind::FastStream => {
+                // The music direction at one rate; stereo on the wire (the
+                // encoder duplicates mono input)
+                let freq = match sample_rate {
+                    44100 => FASTSTREAM_SINK_44100,
+                    48000 => FASTSTREAM_SINK_48000,
+                    _ => 0,
+                };
+                if freq & self.faststream_rates == 0 {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                let mut info = vendor_header(FASTSTREAM_VENDOR_ID, FASTSTREAM_CODEC_ID);
+                info.extend_from_slice(&[FASTSTREAM_DIRECTION_SINK, freq]);
                 ConfigRequest::Vendor(info)
             }
             CodecKind::LhdcV5 => {
@@ -570,8 +724,9 @@ pub struct Configuration {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigRequest {
-    /// Joint stereo (mono for one channel), 16 blocks, 8 subbands, loudness
-    Sbc { sampling_frequency: u16, mono: bool, min_bitpool: u8, max_bitpool: u8 },
+    /// 16 blocks, 8 subbands, loudness; SBC joint stereo, SBC XQ dual
+    /// channel (both mono for one channel)
+    Sbc { sampling_frequency: u16, channel_mode: ChannelMode, min_bitpool: u8, max_bitpool: u8 },
     /// MPEG-2 AAC-LC, constant bit rate
     Aac { sampling_frequency: u32, channels: u8, bit_rate: u32 },
     /// Vendor codec information
@@ -698,6 +853,174 @@ mod tests {
         assert!(choose(&caps, Some(CodecKind::Ldac), false).is_err());
     }
 
+    /// A headset's SBC SEP: everything, bitpool 2..53
+    fn sbc_all() -> SbcCapabilities {
+        SbcCapabilities {
+            sampling_frequency: 0x0F,
+            channel_mode: 0x0F,
+            block_length: 0x0F,
+            subbands: 0x03,
+            allocation_method: 0x03,
+            min_bitpool: 2,
+            max_bitpool: 53,
+        }
+    }
+
+    #[test]
+    fn sbc_xq_negotiation() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        assert!(caps.has(CodecKind::SbcXq) && caps.has(CodecKind::Sbc));
+        assert_eq!(caps.sep(CodecKind::SbcXq), Some(RemoteSep { seid: 1 }));
+        assert_eq!(caps.best(), Some(CodecKind::SbcXq));
+        assert_eq!(caps.sbc_max_bitpool(), 53);
+        assert_eq!(CodecKind::from_key("SBCXQ"), Some(CodecKind::SbcXq));
+        assert_eq!((CodecKind::SbcXq.name(), CodecKind::SbcXq.media_header_len()), ("SBC XQ", 1));
+        assert!(CodecKind::SbcXq.uses_rtp());
+        // Above SBC, below AAC
+        caps.add_aac(2);
+        if CodecKind::Aac.available() {
+            assert_eq!(caps.best(), Some(CodecKind::Aac));
+        }
+
+        let c = caps.configuration(CodecKind::SbcXq, 44100, 2, 16).unwrap();
+        assert_eq!(endpoint_kind(c.kind), CodecKind::Sbc);
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 44100,
+                channel_mode: ChannelMode::DualChannel,
+                min_bitpool: 2,
+                max_bitpool: 47
+            }
+        );
+        let c = caps.configuration(CodecKind::SbcXq, 48000, 1, 16).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 48000,
+                channel_mode: ChannelMode::Mono,
+                min_bitpool: 2,
+                max_bitpool: 43
+            }
+        );
+        assert!(caps.configuration(CodecKind::SbcXq, 32000, 2, 16).is_err());
+        // Plain SBC is unchanged
+        let c = caps.configuration(CodecKind::Sbc, 48000, 2, 16).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 48000,
+                channel_mode: ChannelMode::JointStereo,
+                min_bitpool: 2,
+                max_bitpool: 53
+            }
+        );
+
+        // A sink taking up to 45: XQ capped there
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, SbcCapabilities { max_bitpool: 45, ..sbc_all() });
+        let c = caps.configuration(CodecKind::SbcXq, 44100, 2, 16).unwrap();
+        assert!(matches!(c.request, ConfigRequest::Sbc { max_bitpool: 45, .. }));
+    }
+
+    #[test]
+    fn sbc_xq_falls_back_to_sbc() {
+        let no_xq = [
+            SbcCapabilities { channel_mode: 0x0B, ..sbc_all() }, // no dual channel
+            SbcCapabilities { max_bitpool: 42, ..sbc_all() },    // bitpool too low
+            SbcCapabilities { block_length: 0x0E, ..sbc_all() }, // no 16 blocks
+            SbcCapabilities { subbands: 0x02, ..sbc_all() },     // 4 subbands only
+            SbcCapabilities { allocation_method: 0x02, ..sbc_all() }, // SNR only
+            SbcCapabilities { sampling_frequency: 0x0C, ..sbc_all() }, // 16 / 32k only
+        ];
+        for sbc in no_xq {
+            let mut caps = RemoteCaps::default();
+            caps.add_sbc_caps(1, sbc);
+            assert!(!caps.has(CodecKind::SbcXq), "{sbc:?}");
+            assert_eq!(caps.best(), Some(CodecKind::Sbc));
+            assert_eq!(
+                caps.configuration(CodecKind::SbcXq, 48000, 2, 16),
+                Err(ConfigError::NotOffered(CodecKind::SbcXq))
+            );
+            let c = choose(&caps, Some(CodecKind::SbcXq), true).unwrap();
+            assert_eq!(c.kind, CodecKind::Sbc);
+            assert_eq!(c.replaced, Some((CodecKind::SbcXq, Unavailable::NotSupported)));
+            assert!(choose(&caps, Some(CodecKind::SbcXq), false).is_err());
+        }
+        // Capabilities not known: SBC only
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(3);
+        assert!(!caps.has(CodecKind::SbcXq));
+        // A second SBC SEP without dual channel keeps the one that allows XQ
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        caps.add_sbc_caps(2, SbcCapabilities { channel_mode: 0x01, ..sbc_all() });
+        assert_eq!(caps.sep(CodecKind::SbcXq), Some(RemoteSep { seid: 1 }));
+    }
+
+    #[test]
+    fn faststream_negotiation() {
+        // A CSR headset: music 44.1 / 48 kHz plus the 16 kHz voice direction
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        let info = [0x0A, 0, 0, 0, 0x01, 0x00, 0x03, 0x23];
+        assert_eq!(caps.add_vendor(5, &info), VendorCapability::Taken(CodecKind::FastStream));
+        assert!(caps.has(CodecKind::FastStream));
+        // Never Auto's choice, not even over SBC
+        assert_eq!(caps.best(), Some(CodecKind::SbcXq));
+        let mut only = RemoteCaps::default();
+        only.add_vendor(5, &info);
+        assert_eq!(only.best(), None);
+        assert_eq!(choose(&only, Some(CodecKind::FastStream), false).unwrap().kind, CodecKind::FastStream);
+
+        let c = caps.configuration(CodecKind::FastStream, 48000, 2, 16).unwrap();
+        assert_eq!(c.remote_seid, 5);
+        assert_eq!(c.request, ConfigRequest::Vendor(vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x01]));
+        let c = caps.configuration(CodecKind::FastStream, 44100, 1, 16).unwrap();
+        assert_eq!(c.request, ConfigRequest::Vendor(vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x02]));
+        assert!(caps.configuration(CodecKind::FastStream, 32000, 2, 16).is_err());
+        assert_eq!(caps.pick_faststream_sample_rate(44100), 44100);
+        assert_eq!(caps.pick_faststream_sample_rate(96000), 48000);
+
+        // 44.1 kHz only
+        let mut caps = RemoteCaps::default();
+        caps.add_vendor(5, &[0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x02]);
+        assert_eq!(caps.pick_faststream_sample_rate(48000), 44100);
+        assert!(caps.configuration(CodecKind::FastStream, 48000, 2, 16).is_err());
+
+        // Voice only, no rate, too short: ignored; aptX LL (same vendor) is not FastStream
+        for bad in [
+            &[0x0A, 0, 0, 0, 0x01, 0x00, 0x02, 0x20][..],
+            &[0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x20],
+            &[0x0A, 0, 0, 0, 0x01, 0x00, 0x01],
+        ] {
+            let mut caps = RemoteCaps::default();
+            assert!(matches!(caps.add_vendor(5, bad), VendorCapability::Ignored(CodecKind::FastStream, _)));
+            assert!(!caps.has(CodecKind::FastStream));
+        }
+        let mut caps = RemoteCaps::default();
+        assert_eq!(
+            caps.add_vendor(6, &[0x0A, 0, 0, 0, 0x02, 0x00, 0x32, 0x00]),
+            VendorCapability::Taken(CodecKind::AptxLl)
+        );
+        assert!(!caps.has(CodecKind::FastStream));
+
+        // Fallback from FastStream goes to the best codec
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        let c = choose(&caps, Some(CodecKind::FastStream), true).unwrap();
+        assert_eq!((c.kind, c.replaced), (CodecKind::Sbc, Some((CodecKind::FastStream, Unavailable::NotSupported))));
+
+        // The local SEP: vendor header, music direction, 44.1 + 48 kHz
+        let ep = local_endpoints().into_iter().find(|e| e.kind == CodecKind::FastStream).unwrap();
+        assert_eq!(ep.caps, vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x03]);
+        assert_eq!(ep.config, vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x01]);
+        assert_eq!(CodecKind::from_key("faststream"), Some(CodecKind::FastStream));
+        assert!(!CodecKind::FastStream.uses_rtp());
+        assert_eq!(CodecKind::FastStream.media_header_len(), 0);
+    }
+
     #[test]
     fn opus_caps_and_configuration() {
         let mut caps = RemoteCaps::default();
@@ -763,7 +1086,7 @@ mod tests {
         assert_eq!(ep.caps, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x9B]);
         assert_eq!(ep.config, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x92]);
         // BTstack's static endpoint pool (MAX_NR_AVDTP_STREAM_ENDPOINTS)
-        assert!(eps.len() <= 8);
+        assert!(eps.len() <= 9);
     }
 
     #[test]

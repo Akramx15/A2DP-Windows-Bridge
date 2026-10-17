@@ -291,7 +291,7 @@ fn encode_thread(
             }
             offset += block;
         }
-        sent += packetizer.flush(&mut |p| {
+        sent += packetizer.end_round(&mut |p| {
             sink.send(p);
         });
         // Keep the rest (less than one encoder block) for the next round
