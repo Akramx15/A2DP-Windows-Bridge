@@ -115,6 +115,8 @@ export interface AdapterFirmware {
   realtek_chip: string | null;
   firmware_present: boolean | null;
   firmware_files: string[];
+  /** A file that is there but is no Realtek firmware (a saved web page) */
+  firmware_invalid?: string | null;
   vendor_note: { key: string; args: string[] } | null;
 }
 
@@ -123,6 +125,8 @@ export interface AdapterFirmware {
  * UpdateFirmwareStatus):
  * - present / missing: the Realtek files of the chosen (or, for Auto, the
  *   detected) chip, as the core checked them for the adapters
+ * - invalid: one of them is there but is no Realtek firmware, usually a web
+ *   page saved instead of the file (v1 firmware.invalid)
  * - unchecked: no adapter to check them for; from the folder scan if it
  *   lists the file, unknown for Custom (the scan leaves it out)
  * - vendor: no Realtek chip, and an adapter of a vendor the core has a note
@@ -132,6 +136,7 @@ export interface AdapterFirmware {
 export type ChipStatus =
   | { kind: "present"; files: string[] }
   | { kind: "missing"; files: string[] }
+  | { kind: "invalid"; files: string[]; file: string }
   | { kind: "unchecked"; files: string[]; present: boolean | null }
   | { kind: "vendor"; note: { key: string; args: string[] }; vendor: string }
   | { kind: "non_realtek" | "auto_no_adapter" | "auto_unrecognized" | "select_chip" };
@@ -154,6 +159,9 @@ export function chipStatus(
   // The core resolves the setting for each adapter; Auto by its own chip
   const checked = auto ? realtek : adapters.find((a) => a.firmware_present !== null);
   if (checked && checked.firmware_present !== null) {
+    if (!checked.firmware_present && checked.firmware_invalid) {
+      return { kind: "invalid", files: checked.firmware_files, file: checked.firmware_invalid };
+    }
     return { kind: checked.firmware_present ? "present" : "missing", files: checked.firmware_files };
   }
   const stem = firmwareStem(setting.bt_chip_pid, setting.bt_chip_fw_stem);
@@ -170,7 +178,9 @@ export function adapterFirmwareTag(
   setting: ChipSetting,
 ): { key: string; status: "good" | "warn" | "bad" } {
   if (a.firmware_present === true) return { key: "firmware.present", status: "good" };
-  if (a.firmware_present === false) return { key: "firmware.missing_short", status: "bad" };
+  if (a.firmware_present === false) {
+    return { key: a.firmware_invalid ? "firmware.invalid_short" : "firmware.missing_short", status: "bad" };
+  }
   if (a.vendor_note?.key === "firmware.vendor_unsupported") return { key: "ui.adapter.firmware_unsupported", status: "warn" };
   if (a.vendor_note || setting.bt_chip_pid === CHIP_NOT_REALTEK) return { key: "ui.adapter.firmware_not_realtek", status: "good" };
   return { key: "ui.adapter.firmware_choose_chip", status: "warn" };

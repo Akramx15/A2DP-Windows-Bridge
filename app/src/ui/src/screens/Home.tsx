@@ -33,8 +33,8 @@ export function captureText(p: Profile): { icon: IconName; text: string } {
   }
 }
 
-/** Adapters whose firmware files are missing from the settings folder
- *  (v1's "Firmware not found!" bar) */
+/** Adapters whose firmware files are missing from the settings folder or
+ *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
 export function adaptersMissingFirmware(snap: Snapshot): AdapterInfo[] {
   return snap.adapter.adapters.filter((a) => a.firmware_present === false);
 }
@@ -47,7 +47,7 @@ function FirmwareMissing() {
     <Show when={missing().length > 0}>
       <Banner
         kind="warn"
-        title={t("firmware.missing_manual")}
+        title={missing().some((a) => a.firmware_invalid) ? t("firmware.invalid_short") : t("firmware.missing_manual")}
         actions={
           <Button kind="strong" icon="usb_stick" onClick={() => navigate({ name: "adapter" })}>
             {t("ui.home.firmware_fix")}
@@ -57,8 +57,14 @@ function FirmwareMissing() {
         <For each={missing()}>
           {(a) => (
             <span>
-              <strong>{a.display_name}</strong> · {t("firmware.required_files")}{" "}
-              <span class="mono">{a.firmware_files.join(", ")}</span>
+              <strong>{a.display_name}</strong> ·{" "}
+              {a.firmware_invalid ? (
+                t("firmware.invalid", a.firmware_invalid)
+              ) : (
+                <>
+                  {t("firmware.required_files")} <span class="mono">{a.firmware_files.join(", ")}</span>
+                </>
+              )}
             </span>
           )}
         </For>

@@ -93,18 +93,39 @@ fn firmware_file_names() {
     assert_eq!(firmware_files(0, ""), None);
 }
 
+/// Firmware as BTstack's Realtek loader takes it: a signature at the start,
+/// the extension signature at the end
+fn realtek_firmware(signature: &[u8; 8], len: usize) -> Vec<u8> {
+    let mut fw = signature.to_vec();
+    fw.resize(len - 4, 0x42);
+    fw.extend_from_slice(&[0x51, 0x04, 0xFD, 0x77]);
+    fw
+}
+
 #[test]
 fn firmware_content_rules() {
-    let bin = [0x52u8, 0x54, 0x42, 0x54]; // "RTBT"
-    assert!(firmware_content_valid(40_000, &bin));
-    assert!(firmware_content_valid(FIRMWARE_MIN_BYTES, &bin));
-    assert!(!firmware_content_valid(FIRMWARE_MIN_BYTES - 1, &bin));
-    assert!(!firmware_content_valid(40_000, b"<!doctype html><html>"));
-    assert!(!firmware_content_valid(40_000, b"<!DOCTYPE html>"));
-    assert!(!firmware_content_valid(40_000, b"\r\n  <html lang=\"en\">"));
-    assert!(!firmware_content_valid(40_000, b"<HTML>"));
-    assert!(firmware_content_valid(40_000, b"<x"));
-    assert!(firmware_content_valid(40_000, b""));
+    assert!(firmware_content_valid(&realtek_firmware(b"RTBTCore", 40_000)));
+    assert!(firmware_content_valid(&realtek_firmware(b"Realtech", 30_000)));
+    assert!(firmware_content_valid(&realtek_firmware(b"Realtech", 16)));
+    // No signature, or no extension signature at the end
+    assert!(!firmware_content_valid(&realtek_firmware(b"RTBTCorX", 40_000)));
+    let mut cut = realtek_firmware(b"RTBTCore", 40_000);
+    cut.pop();
+    assert!(!firmware_content_valid(&cut));
+    assert!(!firmware_content_valid(b"RTBTCore"));
+    assert!(!firmware_content_valid(b""));
+    // Saved web pages (issue #66: kernel.org's page starts "<!DOCTYPE")
+    let mut page = b"<!DOCTYPE html>
+<html lang='en'>"
+        .to_vec();
+    page.resize(40_000, b' ');
+    assert!(!firmware_content_valid(&page));
+    assert!(!firmware_content_valid(&[0x42; 40_000]));
+
+    assert!(config_content_valid(b""));
+    assert!(config_content_valid(&[0x55, 0xAB, 0x23, 0x87, 0x10, 0x00]));
+    assert!(!config_content_valid(&[0x55, 0xAB, 0x23, 0x87])); // magic alone
+    assert!(!config_content_valid(b"<!DOCTYPE html>"));
 }
 
 /// A scratch folder under the target dir's temp, removed on drop
@@ -129,21 +150,39 @@ impl Drop for TempDir {
 fn firmware_presence_and_scan() {
     let tmp = TempDir::new("scan");
     let dir = &tmp.0;
-    let firmware = vec![0x42u8; 30_000];
+    let firmware = realtek_firmware(b"RTBTCore", 30_000);
     std::fs::write(dir.join("rtl8761bu_fw.bin"), &firmware).unwrap();
     std::fs::write(dir.join("rtl8761bu_config.bin"), b"").unwrap(); // empty config is fine
     std::fs::write(dir.join("RTL8723BU_FW.BIN"), &firmware).unwrap(); // unknown chip, other case
     std::fs::write(dir.join("rtl8822bu_fw.bin"), b"<!DOCTYPE html>").unwrap(); // a saved web page
+    std::fs::write(dir.join("rtl8822bu_config.bin"), [0x55, 0xAB, 0x23, 0x87, 0, 0]).unwrap();
+    std::fs::write(dir.join("rtl8821cu_fw.bin"), &firmware).unwrap();
+    std::fs::write(dir.join("rtl8821cu_config.bin"), b"<html>").unwrap(); // a page as the config
     std::fs::write(dir.join("custom_fw.bin"), &firmware).unwrap();
     std::fs::write(dir.join("_fw.bin"), &firmware).unwrap(); // no stem
     std::fs::write(dir.join("notes.txt"), b"x").unwrap();
 
+    let ok = FirmwareCheck { present: true, invalid_file: None };
+    assert_eq!(firmware_check(dir, 0x8771, ""), Some(ok));
+    assert_eq!(
+        firmware_check(dir, 0xB82C, ""),
+        Some(FirmwareCheck { present: false, invalid_file: Some("rtl8822bu_fw.bin".into()) })
+    );
+    assert_eq!(
+        firmware_check(dir, 0xC821, ""),
+        Some(FirmwareCheck { present: false, invalid_file: Some("rtl8821cu_config.bin".into()) })
+    );
+    // Missing is not invalid
+    let missing = FirmwareCheck { present: false, invalid_file: None };
+    assert_eq!(firmware_check(dir, 0, "RTL8723BU"), Some(missing.clone())); // no config
+    assert_eq!(firmware_check(dir, 0xD723, ""), Some(missing));
+    assert_eq!(firmware_check(dir, 0, ""), None);
     assert_eq!(firmware_present(dir, 0x8771, ""), Some(true));
-    assert_eq!(firmware_present(dir, 0xB82C, ""), Some(false)); // HTML, and no config
-    assert_eq!(firmware_present(dir, 0, "RTL8723BU"), Some(false)); // no config
-    assert_eq!(firmware_present(dir, 0, ""), None);
-    assert!(firmware_file_valid(&dir.join("rtl8761bu_fw.bin")));
-    assert!(!firmware_file_valid(&dir.join("missing_fw.bin")));
+    assert_eq!(firmware_present(dir, 0xB82C, ""), Some(false));
+    assert_eq!(firmware_file_state(&dir.join("rtl8761bu_fw.bin")), FileState::Ok);
+    assert_eq!(firmware_file_state(&dir.join("rtl8822bu_fw.bin")), FileState::Invalid);
+    assert_eq!(firmware_file_state(&dir.join("missing_fw.bin")), FileState::Missing);
+    assert_eq!(config_file_state(&dir.join("rtl8761bu_config.bin")), FileState::Ok);
 
     let found = scan_firmware_files(dir);
     let summary: Vec<(&str, &str, Option<u16>, bool)> =
@@ -152,7 +191,8 @@ fn firmware_presence_and_scan() {
         summary,
         [
             ("rtl8761bu", "RTL8761BU", Some(0x8771), true),
-            ("rtl8822bu", "RTL8822BU", Some(0xB82C), false),
+            ("rtl8821cu", "RTL8821CU", Some(0xC821), true),
+            ("rtl8822bu", "RTL8822BU", Some(0xB82C), true),
             ("RTL8723BU", "RTL8723BU", None, false),
         ]
     );

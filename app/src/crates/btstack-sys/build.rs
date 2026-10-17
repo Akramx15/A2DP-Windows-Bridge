@@ -94,6 +94,15 @@ fn main() {
         .flag_if_supported("/utf-8")
         .flag_if_supported("/W1");
 
+    // The Realtek driver prints why it loads which firmware ("Realtek:
+    // Using firmware ...", "Firmware already exists") with printf, to a
+    // stdout the resident process does not have: BTstack's
+    // ENABLE_PRINTF_TO_LOG sends those lines to the HCI dump log instead
+    // (HCI_DUMP_LOG_LEVEL_PRINT), for this file only
+    let mut realtek = build.clone();
+    realtek.define("ENABLE_PRINTF_TO_LOG", None).file(btstack.join("chipset/realtek/btstack_chipset_realtek.c"));
+    realtek.compile("btstack_realtek");
+
     let mut core: Vec<PathBuf> = std::fs::read_dir(btstack.join("src"))
         .unwrap()
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -104,7 +113,6 @@ fn main() {
     build.files(&core);
     build.files(CLASSIC.iter().map(|f| btstack.join("src/classic").join(f)));
     build.file(btstack.join("platform/windows/btstack_run_loop_windows.c"));
-    build.file(btstack.join("chipset/realtek/btstack_chipset_realtek.c"));
     build.file(btstack.join("chipset/bcm/btstack_chipset_bcm.c"));
     build.file(btstack.join("chipset/intel/btstack_chipset_intel_firmware.c"));
     build.file(btstack.join("3rd-party/rijndael/rijndael.c"));

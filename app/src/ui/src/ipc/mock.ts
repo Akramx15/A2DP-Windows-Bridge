@@ -60,6 +60,7 @@ const RTL: AdapterInfo = {
   realtek_chip: "RTL8761BU",
   firmware_present: true,
   firmware_files: ["rtl8761bu_fw.bin", "rtl8761bu_config.bin"],
+  firmware_invalid: null,
   vendor_note: null,
 };
 
@@ -216,9 +217,14 @@ export function adapterWithFirmware(a: AdapterInfo, s: ChipSetting, folder: read
   const detected = REALTEK_CHIPS.find((c) => c.name === a.realtek_chip)?.pid ?? 0;
   const pid = s.bt_chip_pid === CHIP_NOT_REALTEK ? 0 : isAutoChip(s) ? detected : s.bt_chip_pid;
   const stem = firmwareStem(pid, s.bt_chip_fw_stem);
-  if (stem === null) return { ...a, firmware_present: null, firmware_files: [] };
+  if (stem === null) return { ...a, firmware_present: null, firmware_files: [], firmware_invalid: null };
   const entry = folder.find((f) => f.stem.toLowerCase() === stem.toLowerCase());
-  return { ...a, firmware_present: entry?.has_config ?? false, firmware_files: [`${stem}_fw.bin`, `${stem}_config.bin`] };
+  return {
+    ...a,
+    firmware_present: entry?.has_config ?? false,
+    firmware_files: [`${stem}_fw.bin`, `${stem}_config.bin`],
+    firmware_invalid: null,
+  };
 }
 
 const RECEIVER: ReceiverInfo = {
@@ -233,10 +239,10 @@ const RECEIVER: ReceiverInfo = {
 };
 
 const CODEC_INFO: Record<string, StreamInfo> = {
-  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, source: null },
-  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, source: null },
-  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, source: null },
-  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, source: null },
+  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
+  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
+  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
+  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
 };
 
 /** What a connection to the mock's devices learns: the codecs they offer */

@@ -90,10 +90,11 @@ fn firmware_text(adapters: &[ipc::AdapterInfo]) -> Option<String> {
         .iter()
         .map(|a| {
             let files = a.firmware_files.join(", ");
-            let status = match a.firmware_present {
-                Some(true) => format!("present ({files})"),
-                Some(false) => format!("MISSING ({files})"),
-                None => "none needed".to_string(),
+            let status = match (a.firmware_present, &a.firmware_invalid) {
+                (Some(true), _) => format!("present ({files})"),
+                (Some(false), Some(bad)) => format!("INVALID: {bad} is not a valid file ({files})"),
+                (Some(false), None) => format!("MISSING ({files})"),
+                (None, _) => "none needed".to_string(),
             };
             format!("{}: {status}", a.display_name)
         })
@@ -126,6 +127,8 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
         source_bits: i.source_bits,
         requested_codec: i.requested_codec.clone(),
         requested_in_use: i.requested_in_use,
+        abr: i.abr,
+        bitrate_capped: i.bitrate_capped,
         source: core_source(i.source.as_ref()),
     });
     let firmware = firmware_text(&s.adapter.adapters);
@@ -231,12 +234,18 @@ mod tests {
             realtek_chip: Some("RTL8761BU".into()),
             firmware_present: Some(false),
             firmware_files: vec!["rtl8761bu_fw.bin".into(), "rtl8761bu_config.bin".into()],
+            firmware_invalid: None,
             vendor_note: None,
         };
         let csr = ipc::AdapterInfo { display_name: "CSR8510".into(), firmware_present: None, ..a.clone() };
+        let page = ipc::AdapterInfo { firmware_invalid: Some("rtl8761bu_fw.bin".into()), ..a.clone() };
         assert_eq!(
             firmware_text(&[a, csr]).unwrap(),
             "RTL8761BU: MISSING (rtl8761bu_fw.bin, rtl8761bu_config.bin); CSR8510: none needed"
+        );
+        assert_eq!(
+            firmware_text(&[page]).unwrap(),
+            "RTL8761BU: INVALID: rtl8761bu_fw.bin is not a valid file (rtl8761bu_fw.bin, rtl8761bu_config.bin)"
         );
         assert_eq!(firmware_text(&[]), None);
     }

@@ -268,6 +268,25 @@ fn peer_bitrate_limits() {
     assert_eq!(with(0x00, Quality::High, true), 400);
     assert_eq!(with(0x00, Quality::Mobile, true), 400);
 
+    // The device's maximum is told when it lowers the quality's bit rate,
+    // never under ABR (it stays at 400 kbps or below, as on Android)
+    let capped = |p7: u8, quality: Quality, abr: bool| {
+        let cfg = EncoderConfig {
+            peer: PeerParams { lhdcv5_bitrate_limits: p7, ..PeerParams::default() },
+            abr,
+            ..config(48000, quality, 16, MTUS[1])
+        };
+        codec::create(CodecKind::LhdcV5, &cfg).unwrap().bitrate_capped()
+    };
+    assert!(capped(0x10, Quality::High, false));
+    assert!(capped(0x20, Quality::MediumHigh, false));
+    assert!(capped(0x30, Quality::High, false));
+    assert!(!capped(0x30, Quality::MediumHigh, false)); // 900 asked, 900 allowed
+    assert!(!capped(0x10, Quality::Mobile, false));
+    assert!(!capped(0x00, Quality::High, false));
+    assert!(!capped(0x10, Quality::High, true));
+    assert!(!capped(0x00, Quality::High, true));
+
     // The limits hold while encoding
     let cfg = EncoderConfig {
         peer: PeerParams { lhdcv5_bitrate_limits: 0x20, ..PeerParams::default() },

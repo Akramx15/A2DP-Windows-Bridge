@@ -258,6 +258,14 @@ function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
         </Banner>
       );
     }
+    case "invalid":
+      return (
+        <Banner kind="warn" title={t("firmware.invalid_short")} actions={download(LINKS.firmwareRealtek)}>
+          <p>{t("firmware.invalid", st.file)}</p>
+          <p>{t("firmware.required_files")}</p>
+          {fileList(st.files)}
+        </Banner>
+      );
     case "vendor": {
       const url = vendorFirmwareUrl(st.vendor);
       return (

@@ -106,6 +106,28 @@ describe("codec cards", () => {
   });
 });
 
+describe("LHDC V5", () => {
+  it("offers 192 kHz and greys out the quality while ABR is on", async () => {
+    start("#/profiles/new");
+    fireEvent.click(await screen.findByRole("radio", { name: new RegExp(t("codec.lhdc_v5")) }));
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+    const rate = screen.getByLabelText(t("connection.sample_rate"));
+    expect(within(rate).getByRole("option", { name: /192/ })).toBeInTheDocument();
+    const quality = screen.getByLabelText(t("connection.quality"));
+    expect(quality).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: t("connection.abr") }));
+    await waitFor(() => expect(quality).toBeDisabled());
+    fireEvent.click(screen.getByRole("checkbox", { name: t("connection.abr") }));
+    await waitFor(() => expect(quality).not.toBeDisabled());
+
+    // LDAC's ABR keeps the quality, and has no 192 kHz
+    fireEvent.click(screen.getByRole("radio", { name: new RegExp(t("codec.ldac")) }));
+    fireEvent.click(screen.getByRole("checkbox", { name: t("connection.abr") }));
+    expect(screen.getByLabelText(t("connection.quality"))).not.toBeDisabled();
+    expect(within(screen.getByLabelText(t("connection.sample_rate"))).queryByRole("option", { name: /192/ })).toBeNull();
+  });
+});
+
 describe("capture source", () => {
   it("shows the capture device's format and warns when the profile differs", async () => {
     start(edit("WH-1000XM5 (LDAC)"));

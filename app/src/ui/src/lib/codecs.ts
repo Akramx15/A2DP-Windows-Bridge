@@ -1,8 +1,9 @@
 // The codecs a profile can ask for and what each allows, as v1's profile
 // dialog (app/src/wx_profile_dialog.cpp, update_codec_dependent): quality
 // modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
-// pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, "mhq" only
-// for LHDC V5, no quality choice for the aptX family, 48 kHz only for Opus.
+// pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
+// "mhq" only for LHDC V5, no quality choice for the aptX family or under LHDC
+// V5 ABR, 48 kHz only for Opus.
 
 export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "opus" | "aac" | "sbcxq" | "sbc" | "faststream";
 
@@ -70,6 +71,7 @@ export const CODECS: CodecSpec[] = [
     ],
     abr: true,
     hiRes: true,
+    rates: [0, 44100, 48000, 88200, 96000, 192000],
   },
   { id: "aptxhd", label: "codec.aptx_hd", bars: { quality: 4, latency: 3, stability: 3 }, qualities: [], abr: false, hiRes: false },
   { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
@@ -173,6 +175,20 @@ export function codecSupport(codec: string, known: readonly string[]): CodecSupp
 export function sampleRates(codec: string): number[] {
   const spec = codecSpec(codec);
   return spec.rates ?? (spec.hiRes ? [0, 44100, 48000, 88200, 96000] : [0, 44100, 48000]);
+}
+
+/** LHDC V5 ABR runs at 400 kbps or below whatever the quality (as on
+ *  Android): the quality choice is greyed out then */
+export function qualityIgnored(codec: string, abr: boolean): boolean {
+  return codec === "lhdcv5" && abr;
+}
+
+/** Why a stream's bit rate is below the profile's, appended to the codec
+ *  line: ABR (LHDC V5 stays at 400 kbps or below), or the device's maximum */
+export function bitrateNoteKey(info: { abr: boolean; bitrate_capped: boolean }): string | null {
+  if (info.abr) return "quality.codec_abr";
+  if (info.bitrate_capped) return "quality.codec_capped";
+  return null;
 }
 
 export function bitDepths(codec: string): number[] {
