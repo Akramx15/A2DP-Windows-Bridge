@@ -244,6 +244,7 @@ pub struct Snapshot {
 
 pub struct LinkSample {
     /// Milliseconds since the core started
+    #[ts(type = "number")]
     pub time_ms: u64,
     pub rssi: Option<i8>,
     pub afh_in_use: Option<u32>,
@@ -254,8 +255,10 @@ pub struct LinkSample {
     pub packets_per_second: f64,
     pub queue_depth: u32,
     /// Packets lost before the radio since the stream started
+    #[ts(type = "number")]
     pub dropped: u64,
     /// Captured frames dropped because the encoder fell behind
+    #[ts(type = "number")]
     pub capture_dropped: u64,
     /// Share of the link's air time the stream takes (3-DH5 packets)
     pub airtime: f64,
@@ -274,6 +277,7 @@ pub enum LogLevel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
 pub struct LogLine {
+    #[ts(type = "number")]
     pub time_ms: u64,
     pub level: LogLevel,
     pub target: String,
@@ -408,6 +412,7 @@ pub enum ClientMessage {
         client: String,
     },
     Request {
+        #[ts(type = "number")]
         id: u64,
         #[serde(flatten)]
         call: Method,
@@ -426,14 +431,17 @@ pub enum ServerMessage {
         reason: String,
     },
     Snapshot {
+        #[ts(type = "number")]
         rev: u64,
         state: Box<Snapshot>,
     },
     Event {
+        #[ts(type = "number")]
         rev: u64,
         event: Box<Event>,
     },
     Response {
+        #[ts(type = "number")]
         id: u64,
         #[ts(type = "unknown")]
         result: Option<serde_json::Value>,

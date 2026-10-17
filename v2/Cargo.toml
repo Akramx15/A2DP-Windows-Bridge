@@ -16,6 +16,7 @@ members = [
     "crates/ipc",
     "apps/core-service",
     "apps/driver-helper",
+    "apps/ui/src-tauri",
 ]
 
 [workspace.package]

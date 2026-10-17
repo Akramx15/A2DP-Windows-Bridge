@@ -7,7 +7,7 @@ export type LinkSample = {
 /**
  * Milliseconds since the core started
  */
-time_ms: bigint, rssi: number | null, afh_in_use: number | null, afh_usable: number | null, afh_avoided: string, 
+time_ms: number, rssi: number | null, afh_in_use: number | null, afh_usable: number | null, afh_avoided: string, 
 /**
  * Media bytes sent per second (RTP and headers included)
  */
@@ -15,11 +15,11 @@ bytes_per_second: number, packets_per_second: number, queue_depth: number,
 /**
  * Packets lost before the radio since the stream started
  */
-dropped: bigint, 
+dropped: number, 
 /**
  * Captured frames dropped because the encoder fell behind
  */
-capture_dropped: bigint, 
+capture_dropped: number, 
 /**
  * Share of the link's air time the stream takes (3-DH5 packets)
  */
