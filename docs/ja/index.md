@@ -1,8 +1,9 @@
 ---
-title: 日本語
+title: ホーム
 layout: default
-nav_order: 7
+nav_order: 11
 has_children: true
+has_toc: false
 ---
 
 # A2DP Windows Bridge (A2DPWB)

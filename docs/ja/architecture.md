@@ -1,7 +1,7 @@
 ---
 title: アーキテクチャ
 layout: default
-parent: 日本語
+parent: ホーム
 nav_order: 4
 ---
 
