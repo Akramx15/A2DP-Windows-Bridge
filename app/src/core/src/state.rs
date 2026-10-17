@@ -401,6 +401,8 @@ impl CoreState {
             // Where main.rs has the log files written
             log_dir: dir.join("logs").display().to_string(),
             capture: None,
+            // Set by logging::init, first thing in main
+            clock_ms: crate::logging::hub().clock(),
         };
         let (events, _) = broadcast::channel(256);
         let state = Arc::new(CoreState {

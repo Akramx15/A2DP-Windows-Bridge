@@ -22,4 +22,10 @@ log_dir: string,
 /**
  * A running HCI capture (diag.capture_start)
  */
-capture: CaptureState | null, };
+capture: CaptureState | null, 
+/**
+ * The core's local time of day (ms since local midnight) at time_ms 0:
+ * a line's time of day is (clock_ms + time_ms) % 86 400 000. None if
+ * the core does not know it.
+ */
+clock_ms?: number | null, };

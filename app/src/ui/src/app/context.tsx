@@ -11,7 +11,8 @@ export type RouteName = "home" | "profiles" | "diagnostics" | "adapter" | "setti
 
 export interface Route {
   name: RouteName;
-  /** profiles: "new" or the name of the profile being edited */
+  /** profiles: "new" or the name of the profile being edited; adapter:
+   *  "afh" for its channel hopping section */
   arg?: string;
 }
 
@@ -23,12 +24,14 @@ export function parseRoute(hash: string): Route {
   if (name === "profiles" && parts[1] === "edit" && parts[2] !== undefined) {
     return { name, arg: decodeURIComponent(parts.slice(2).join("/")) };
   }
+  if (name === "adapter" && parts[1] === "afh") return { name, arg: "afh" };
   return { name };
 }
 
 export function routeHash(r: Route): string {
   if (r.name === "profiles" && r.arg === "new") return "#/profiles/new";
   if (r.name === "profiles" && r.arg) return `#/profiles/edit/${encodeURIComponent(r.arg)}`;
+  if (r.name === "adapter" && r.arg === "afh") return "#/adapter/afh";
   return `#/${r.name}`;
 }
 

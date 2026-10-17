@@ -10,6 +10,7 @@ import {
   firmwareStem,
   REALTEK_CHIPS,
 } from "./chips";
+import { adapterWithFirmware, sampleSnapshot } from "../ipc/mock";
 import { firmwareUrl, LINKS, vendorFirmwareUrl } from "./links";
 
 const labels = { auto: "Auto (RTL8761BU)", nonRealtek: "Not Realtek" };
@@ -157,5 +158,23 @@ describe("firmware state", () => {
     expect(vendorFirmwareUrl("Broadcom")).toBe(LINKS.firmwareBroadcom);
     expect(vendorFirmwareUrl("CSR")).toBeNull();
     expect(firmwareUrl("Realtek")).toBe(LINKS.firmwareRealtek);
+  });
+});
+
+describe("mock core firmware state", () => {
+  const folder = [file("rtl8761bu", 0x8771), file("rtl8723du", 0xd723, false), file("rtl8723bu")];
+  const rtl = sampleSnapshot().adapter.adapters[0];
+
+  it("follows the chip setting as the core's adapter_infos", () => {
+    const pair = (stem: string) => [`${stem}_fw.bin`, `${stem}_config.bin`];
+    expect(adapterWithFirmware(rtl, setting(CHIP_AUTO), folder)).toMatchObject({ firmware_present: true, firmware_files: pair("rtl8761bu") });
+    expect(adapterWithFirmware(rtl, setting(CHIP_NOT_REALTEK), folder)).toMatchObject({ firmware_present: null, firmware_files: [] });
+    // The config file is missing
+    expect(adapterWithFirmware(rtl, setting(0xd723, "rtl8723du"), folder)).toMatchObject({ firmware_present: false });
+    // A chip known only by its files
+    expect(adapterWithFirmware(rtl, setting(CHIP_AUTO, "rtl8723bu"), folder)).toMatchObject({ firmware_present: true, firmware_files: pair("rtl8723bu") });
+    expect(adapterWithFirmware(rtl, setting(CHIP_CUSTOM, "custom"), folder)).toMatchObject({ firmware_present: false, firmware_files: pair("custom") });
+    // Auto without a detected Realtek chip: nothing to load
+    expect(adapterWithFirmware({ ...rtl, realtek_chip: null }, setting(CHIP_AUTO), folder)).toMatchObject({ firmware_present: null });
   });
 });

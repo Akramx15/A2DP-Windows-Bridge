@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LogLine } from "../ipc/types";
 import {
+  coreTimeOfDay,
   drawnRange,
   filterLog,
   formatLogLine,
@@ -110,5 +111,13 @@ describe("time of day", () => {
     const epoch = new Date(2026, 9, 17, 13, 4, 5, 6).getTime();
     expect(timeOfDay(0, epoch)).toBe("13:04:05.006");
     expect(timeOfDay(3_600_000 + 994, epoch)).toBe("14:04:06.000");
+  });
+
+  it("takes the time of day from the core's clock, past midnight too", () => {
+    const at = ((23 * 60 + 59) * 60 + 58) * 1000 + 500; // 23:59:58.500 at time 0
+    expect(coreTimeOfDay(0, at)).toBe("23:59:58.500");
+    expect(coreTimeOfDay(1_499, at)).toBe("23:59:59.999");
+    expect(coreTimeOfDay(1_500, at)).toBe("00:00:00.000");
+    expect(coreTimeOfDay(86_400_000 + 3_723_004, 0)).toBe("01:02:03.004");
   });
 });

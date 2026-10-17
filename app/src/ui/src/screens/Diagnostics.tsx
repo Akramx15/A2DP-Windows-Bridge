@@ -9,10 +9,10 @@ import { Gauge, LineChart } from "../components/charts";
 import { Button, Check, IconButton, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/icons";
-import { t, tm } from "../i18n";
+import { t } from "../i18n";
 import type { CaptureState, FlowStepView, LogLine } from "../ipc/types";
 import { codecLabelKey } from "../lib/codecs";
-import { STEPS, type Step, type StepStatus } from "../lib/flow";
+import { STEPS, type Step, type StepStatus, stepDetail } from "../lib/flow";
 import { clock, copyText, kbps, maskAddresses } from "../lib/format";
 import {
   dropsPerSample,
@@ -24,6 +24,7 @@ import {
   type LinkBaseline,
 } from "../lib/linkstats";
 import {
+  coreTimeOfDay,
   drawnRange,
   filterLog,
   formatLogLine,
@@ -46,7 +47,9 @@ const [mask, setMask] = createSignal(true);
 const [resetBase, setResetBase] = createSignal<LinkBaseline | null>(null);
 /** The capture stopped last (file size, "show in Explorer") */
 const [savedCapture, setSavedCapture] = createSignal<CaptureState | null>(null);
-/** Wall clock (ms since 1970) at the core's time 0, estimated from live samples */
+/** The core's local time of day at its time 0 (Snapshot.clock_ms) */
+const [coreClock, setCoreClock] = createSignal<number | null>(null);
+/** Without it: the wall clock (ms since 1970) at the core's time 0, estimated from live samples */
 const [epoch, setEpoch] = createSignal<number | null>(null);
 let lastCoreTime = -1;
 
@@ -57,8 +60,11 @@ function observeCoreTime(timeMs: number) {
   setEpoch((e) => nextEpoch(e, timeMs, Date.now()));
 }
 
-/** A core time as the time of day (v1), or as the core's uptime until the clock is known */
+/** A core time as the time of day (v1): from the core's clock, else from
+ *  the estimate, else as the core's uptime until the clock is known */
 function timeText(ms: number): string {
+  const c = coreClock();
+  if (c !== null) return coreTimeOfDay(ms, c);
   const e = epoch();
   return e === null ? clock(ms) : timeOfDay(ms, e);
 }
@@ -107,6 +113,8 @@ export function Diagnostics() {
   const capture = () => core.state.snap!.capture;
   const [capBusy, setCapBusy] = createSignal(false);
   const logView = createLogView();
+  // A new core process sends a new snapshot, with its own clock
+  createEffect(() => setCoreClock(core.state.snap?.clock_ms ?? null));
 
   // Live samples while the screen is open: the clock for the time of day,
   // and the link history; info lines so a step's line is there to jump to
@@ -501,7 +509,7 @@ function FlowPanel(props: { onJump: (seq: number) => void }) {
   };
   const detail = (st: Step) => {
     const x = stepOf(st);
-    const d = x ? (x.detail_msg ? tm(x.detail_msg) : x.detail) : "";
+    const d = x ? stepDetail(x) : "";
     return mask() ? maskAddresses(d) : d;
   };
   const header = () => {

@@ -39,6 +39,8 @@ describe("Adapter firmware", () => {
     };
     expect(saved.settings).toMatchObject({ bt_chip_pid: 0xfffe, bt_chip_fw_stem: "" });
     expect(await screen.findByText(/Realtek initialization is skipped/)).toBeInTheDocument();
+    // The core checks the firmware for the new chip: none needed now
+    expect(await screen.findByText("No Realtek files needed")).toBeInTheDocument();
     // The folder is scanned again after the change
     await waitFor(() => expect(calls.filter((c) => c.method === "adapter.firmware_files").length).toBeGreaterThan(1));
   });

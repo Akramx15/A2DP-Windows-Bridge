@@ -201,10 +201,10 @@ export function Select<T extends string | number>(props: {
 }
 
 /** A card section with a heading */
-export function Section(props: { title: string; actions?: JSX.Element; children: JSX.Element; class?: string }) {
+export function Section(props: { title: string; actions?: JSX.Element; children: JSX.Element; class?: string; id?: string }) {
   const id = createUniqueId();
   return (
-    <section class={`card section ${props.class ?? ""}`} aria-labelledby={id}>
+    <section id={props.id} class={`card section ${props.class ?? ""}`} aria-labelledby={id}>
       <header class="section-head">
         <h2 id={id}>{props.title}</h2>
         <Show when={props.actions}>

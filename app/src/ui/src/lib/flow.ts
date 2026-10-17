@@ -5,7 +5,8 @@
 // this tracker is the mock core's, with rules for the messages of the v2
 // core (crates/core/src/stream.rs and service.rs, crates/bt-host/src).
 
-import type { FlowView, LogLine } from "../ipc/types";
+import { englishText, tm } from "../i18n";
+import type { FlowView, LogLine, Msg } from "../ipc/types";
 
 export type StepStatus = "pending" | "running" | "done" | "warning" | "failed";
 
@@ -217,6 +218,19 @@ export class FlowTracker {
     st.time_ms = line.time_ms;
     if (detail) st.detail = detail;
   }
+}
+
+/**
+ * A step's detail in the UI language: the message the core computed for it
+ * (FlowStepView.detail_msg: the audio rate, the link's reconnects)
+ * translated, with what the core put after that message in `detail`
+ * ("2 reconnect(s) - <the line's detail>"); else the log line's own detail
+ */
+export function stepDetail(x: { detail: string; detail_msg?: Msg | null }): string {
+  if (!x.detail_msg) return x.detail;
+  const text = tm(x.detail_msg);
+  const en = englishText(x.detail_msg);
+  return x.detail.startsWith(`${en} - `) ? text + x.detail.slice(en.length) : text;
 }
 
 /** A session as the core's diag.flow answers it */

@@ -1,7 +1,7 @@
 // Adapter: the USB Bluetooth adapters with their driver and firmware,
 // WinUSB assign / restore, the chip for the firmware, and AFH.
 
-import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { type AppContext, useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
@@ -67,6 +67,10 @@ export function Adapter() {
     window.addEventListener("focus", onFocus);
   });
   onCleanup(() => window.removeEventListener("focus", onFocus));
+  // #/adapter/afh (the receiver test links there): the AFH section in view
+  createEffect(() => {
+    if (app.route().arg === "afh") document.getElementById(AFH_SECTION)?.scrollIntoView?.({ block: "start" });
+  });
 
   return (
     <div class="page">
@@ -285,6 +289,8 @@ export function parseAfhChannels(s: string): string | null {
   return [...new Set(nums)].sort((a, b) => a - b).join(",");
 }
 
+const AFH_SECTION = "adapter-afh";
+
 function AfhSection() {
   const app = useApp();
   const afh = () => app.core.state.snap!.settings.afh;
@@ -297,7 +303,7 @@ function AfhSection() {
     if (c && c !== afh()) void saveSettings(app, { afh: c });
   };
   return (
-    <Section title={t("receiver.afh")}>
+    <Section id={AFH_SECTION} title={t("receiver.afh")}>
       <p class="hint">{t("receiver.afh_tooltip")}</p>
       <Segmented
         label={t("receiver.afh")}

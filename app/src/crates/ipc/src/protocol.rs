@@ -291,6 +291,12 @@ pub struct Snapshot {
     /// A running HCI capture (diag.capture_start)
     #[serde(default)]
     pub capture: Option<CaptureState>,
+    /// The core's local time of day (ms since local midnight) at time_ms 0:
+    /// a line's time of day is (clock_ms + time_ms) % 86 400 000. None if
+    /// the core does not know it.
+    #[serde(default)]
+    #[ts(optional = nullable, type = "number | null")]
+    pub clock_ms: Option<u64>,
 }
 
 /// A running HCI capture

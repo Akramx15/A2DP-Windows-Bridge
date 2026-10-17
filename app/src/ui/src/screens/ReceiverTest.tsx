@@ -441,6 +441,12 @@ export function ReceiverTest() {
           />
           <span class="hint">{t("receiver.source_tooltip")}</span>
         </div>
+        <p class="hint">
+          {t("ui.receiver.afh_hint")}{" "}
+          <button type="button" class="link" onClick={() => app.navigate({ name: "adapter", arg: "afh" })}>
+            {t("ui.receiver.afh_open")}
+          </button>
+        </p>
       </Section>
 
       <Section title={t("receiver.settings_received")}>

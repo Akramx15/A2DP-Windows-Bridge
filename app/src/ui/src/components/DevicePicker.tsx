@@ -110,7 +110,7 @@ export function DevicePicker(props: {
                     </Show>
                   </span>
                   <Show when={d.saved}>
-                    <span class="inline" style={{ position: "relative", "z-index": 1 }}>
+                    <span class="inline device-row-actions">
                       <IconButton
                         icon="edit"
                         label={`${t("device.edit_name")}: ${label()}`}

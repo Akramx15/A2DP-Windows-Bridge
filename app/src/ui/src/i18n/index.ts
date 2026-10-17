@@ -69,6 +69,13 @@ export function tm(msg: Msg | null | undefined): string {
   return t(msg.key, ...msg.args);
 }
 
+/** The English text of a core message, as the core's Msg::english makes it
+ *  (the text fields next to a Msg, such as FlowStepView.detail) */
+export function englishText(msg: Msg): string {
+  const template = english[msg.key] ?? msg.key;
+  return msg.args.length ? printf(template, msg.args) : template;
+}
+
 /** For tests: whether a key exists in English */
 export function hasKey(key: string): boolean {
   return key in english;

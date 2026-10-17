@@ -9,6 +9,8 @@
 // ?mock=offline (update checks and receivers cannot be reached),
 // ?window=flyout (the flyout view).
 
+import { englishText } from "../i18n";
+import { CHIP_NOT_REALTEK, type ChipSetting, firmwareStem, isAutoChip, REALTEK_CHIPS } from "../lib/chips";
 import { FlowTracker, flowView } from "../lib/flow";
 import type { ConnStatus, Transport, UpdatePhase, WindowKind } from "./transport";
 import type {
@@ -173,6 +175,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     config_dir,
     log_dir: `${config_dir}\\logs`,
     capture: null,
+    clock_ms: null,
   };
 }
 
@@ -195,10 +198,28 @@ const AUDIO_APPS: AudioApp[] = [
   { exe: "foobar2000.exe", name: "foobar2000" },
 ];
 
+/** The firmware pairs in the sample settings folder (adapter.firmware_files):
+ *  a table chip, a table chip without its config file, and a chip known only
+ *  by its files */
 const FIRMWARE_FILES: FirmwareFile[] = [
   { stem: "rtl8761bu", display_name: "RTL8761BU", pid: 0x8771, has_config: true },
-  { stem: "rtl8723du", display_name: "RTL8723DU", pid: null, has_config: false },
+  { stem: "rtl8723du", display_name: "RTL8723DU", pid: 0xd723, has_config: false },
+  { stem: "rtl8723bu", display_name: "RTL8723BU", pid: null, has_config: true },
 ];
+
+/**
+ * An adapter's firmware state for a chip setting and the files in the
+ * settings folder, as the core computes it (state.rs adapter_infos with
+ * chips::resolve_chip_pid / firmware_files / firmware_present)
+ */
+export function adapterWithFirmware(a: AdapterInfo, s: ChipSetting, folder: readonly FirmwareFile[]): AdapterInfo {
+  const detected = REALTEK_CHIPS.find((c) => c.name === a.realtek_chip)?.pid ?? 0;
+  const pid = s.bt_chip_pid === CHIP_NOT_REALTEK ? 0 : isAutoChip(s) ? detected : s.bt_chip_pid;
+  const stem = firmwareStem(pid, s.bt_chip_fw_stem);
+  if (stem === null) return { ...a, firmware_present: null, firmware_files: [] };
+  const entry = folder.find((f) => f.stem.toLowerCase() === stem.toLowerCase());
+  return { ...a, firmware_present: entry?.has_config ?? false, firmware_files: [`${stem}_fw.bin`, `${stem}_config.bin`] };
+}
 
 const RECEIVER: ReceiverInfo = {
   ip: "192.168.1.42",
@@ -299,6 +320,9 @@ export class MockCore implements Transport {
   constructor(opts: MockOptions = {}) {
     this.scenario = opts.scenario ?? "normal";
     this.snap = sampleSnapshot(opts.scenario);
+    // As the core: its local time of day when its clock (time_ms) started
+    const t0 = new Date(this.startedAt);
+    this.snap.clock_ms = ((t0.getHours() * 60 + t0.getMinutes()) * 60 + t0.getSeconds()) * 1000 + t0.getMilliseconds();
     this.window = opts.window ?? "main";
     this.speed = opts.speed ?? 1;
     this.onCall = opts.onCall;
@@ -396,7 +420,9 @@ export class MockCore implements Transport {
         this.snap.settings = p.settings as Settings;
         this.emit({ kind: "settings", value: this.snap.settings });
         if (before.bt_chip_pid !== this.snap.settings.bt_chip_pid || before.bt_chip_fw_stem !== this.snap.settings.bt_chip_fw_stem) {
-          // The real core releases an idle stack so the firmware loads again
+          // As the core's reload_adapter: the firmware state for the new
+          // chip, then an idle stack is released so the firmware loads again
+          this.refreshFirmware();
           this.log("info", "a2dpwb_core_exe::state", "adapter settings changed: Bluetooth stopped, it starts again at the next use");
           if (this.snap.stream.state === "idle" || this.snap.stream.state === "error") this.setAdapter("stopped");
         }
@@ -412,7 +438,7 @@ export class MockCore implements Transport {
         this.later(900, () => this.setAdapter("ready"));
         return null;
       case "adapter.firmware_files":
-        return FIRMWARE_FILES;
+        return this.firmwareFolder();
       case "audio.devices":
         return AUDIO_DEVICES;
       case "audio.apps":
@@ -591,15 +617,49 @@ export class MockCore implements Transport {
   private flow(): FlowView {
     const v = flowView(this.tracker.session);
     const s = this.tracker.session;
+    const streaming = s !== null && s.stop_ms === null && this.snap.stream.state === "streaming";
     return {
       ...v,
       first_seq: s ? this.firstSeq : null,
-      steps: v.steps.map((st) => ({
-        ...st,
-        seq: this.stepSeq.get(st.step) ?? null,
-        time_ms: s && st.elapsed_ms !== null ? s.start_ms + st.elapsed_ms : null,
-      })),
+      steps: v.steps.map((st) => {
+        const row = {
+          ...st,
+          seq: this.stepSeq.get(st.step) ?? null,
+          time_ms: s && st.elapsed_ms !== null ? s.start_ms + st.elapsed_ms : null,
+        };
+        // The details the core computes for these rows (diag.rs): the live
+        // audio rate, and the link's reconnects or stability
+        const finished = st.status === "done" || st.status === "warning" || st.status === "failed";
+        if (st.step === "audio" && streaming && finished) {
+          const kbps = this.snap.stream.info?.bitrate_kbps ?? 0;
+          const msg = { key: "dbgc.audio_live", args: ["120", String(kbps)] };
+          return { ...row, detail: englishText(msg), detail_msg: msg };
+        }
+        if (st.step === "link" && s !== null && s.reconnects > 0) {
+          const msg = { key: "dbgc.link_reconnects", args: [String(s.reconnects)] };
+          const count = englishText(msg);
+          return { ...row, detail: row.detail ? `${count} - ${row.detail}` : count, detail_msg: msg };
+        }
+        if (st.step === "link" && s !== null && st.status === "done") {
+          const msg = { key: "dbgc.link_stable", args: [] };
+          return { ...row, detail: englishText(msg), detail_msg: msg };
+        }
+        return row;
+      }),
     };
+  }
+
+  /** The firmware pairs in the settings folder: none yet on a first run */
+  private firmwareFolder(): FirmwareFile[] {
+    return this.scenario === "fresh" ? [] : FIRMWARE_FILES;
+  }
+
+  /** The adapters' firmware state anew and the adapter event (core refresh_adapters) */
+  private refreshFirmware() {
+    const folder = this.firmwareFolder();
+    const adapters = this.snap.adapter.adapters.map((a) => adapterWithFirmware(a, this.snap.settings, folder));
+    this.snap.adapter = { ...this.snap.adapter, adapters };
+    this.emit({ kind: "adapter", value: this.snap.adapter });
   }
 
   private setAdapter(status: Snapshot["adapter"]["status"]) {

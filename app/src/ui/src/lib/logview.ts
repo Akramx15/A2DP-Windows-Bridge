@@ -80,9 +80,11 @@ export function keysBetween(lines: readonly LogLine[], a: string, b: string): st
 
 // ---- Time of day ------------------------------------------------------------
 // The core stamps lines with milliseconds since it started; v1 showed the
-// time of day. The wall clock at the core's time 0 is estimated from live
-// samples: now - time_ms is the epoch plus the delivery delay, so the
-// smallest value seen is the best estimate.
+// time of day. The core tells its local time of day at time 0
+// (Snapshot.clock_ms), which gives the exact time. Without it (an older
+// core) the wall clock at the core's time 0 is estimated from live samples:
+// now - time_ms is the epoch plus the delivery delay, so the smallest value
+// seen is the best estimate.
 
 /** The better of two epoch estimates (null: none yet) */
 export function nextEpoch(prev: number | null, timeMs: number, nowMs: number): number {
@@ -96,4 +98,17 @@ const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 export function timeOfDay(timeMs: number, epoch: number): string {
   const d = new Date(epoch + timeMs);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+const DAY_MS = 86_400_000;
+
+/** "hh:mm:ss.mmm" of core time `timeMs` from the core's own clock: `clockMs`
+ *  is its local time of day at time 0 (Snapshot.clock_ms); past midnight
+ *  the time of day starts again from 00:00 */
+export function coreTimeOfDay(timeMs: number, clockMs: number): string {
+  const t = (((clockMs + timeMs) % DAY_MS) + DAY_MS) % DAY_MS;
+  const h = Math.floor(t / 3_600_000);
+  const m = Math.floor(t / 60_000) % 60;
+  const s = Math.floor(t / 1000) % 60;
+  return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(Math.floor(t % 1000), 3)}`;
 }

@@ -1426,6 +1426,11 @@ option {
 .device-row-name {
   font-weight: 600;
 }
+/* The row's buttons above its full-size radio input, so they get the clicks */
+.device-row-actions {
+  position: relative;
+  z-index: 1;
+}
 
 .codec-grid {
   display: grid;

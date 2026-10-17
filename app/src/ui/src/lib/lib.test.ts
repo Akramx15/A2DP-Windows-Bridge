@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
 import { codecLabelKey, fitToCodec } from "./codecs";
-import { FlowTracker } from "./flow";
+import { FlowTracker, stepDetail } from "./flow";
 import { maskAddresses, parseAddress } from "./format";
 import { validateProfile } from "./profile";
 
@@ -102,6 +103,24 @@ describe("connection flow", () => {
     at(5, "bt_host::app", "signaling connection established (cid 0x0041, handle 0x000b)");
     expect(f.session!.steps.connect.status).toBe("warning");
     expect(f.session!.steps.connect.detail).toContain("after 1 failed attempt(s)");
+  });
+
+  it("shows the core's computed step details in the UI language", async () => {
+    const live = { key: "dbgc.audio_live", args: ["120", "990"] };
+    expect(stepDetail({ detail: "120 packets/s, 990 kbps", detail_msg: live })).toBe("120 packets/s, 990 kbps");
+    expect(stepDetail({ detail: "reconnecting to AA:BB", detail_msg: null })).toBe("reconnecting to AA:BB");
+    const reconnects = { key: "dbgc.link_reconnects", args: ["2"] };
+    await setLanguage("ja");
+    try {
+      expect(stepDetail({ detail: "No disconnects", detail_msg: { key: "dbgc.link_stable", args: [] } })).toBe(t("dbgc.link_stable"));
+      expect(t("dbgc.link_stable")).not.toBe("No disconnects");
+      // What the core puts after its message stays
+      expect(stepDetail({ detail: "2 reconnect(s) - reconnecting to AA:BB", detail_msg: reconnects })).toBe(
+        `${t("dbgc.link_reconnects", "2")} - reconnecting to AA:BB`,
+      );
+    } finally {
+      await setLanguage("en");
+    }
   });
 });
 

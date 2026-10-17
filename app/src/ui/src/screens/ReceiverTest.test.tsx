@@ -102,6 +102,14 @@ describe("receiver test", () => {
     expect(screen.getByRole("textbox", { name: "Receiver" })).toHaveValue("192.168.1.42");
   });
 
+  it("links to the AFH settings on the Adapter screen", async () => {
+    await open();
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.receiver.afh_open") }));
+    await screen.findByRole("heading", { level: 1, name: t("ui.nav.adapter") });
+    expect(location.hash).toBe("#/adapter/afh");
+    expect(document.getElementById("adapter-afh")).toHaveTextContent(t("receiver.afh_tooltip"));
+  });
+
   it("shows why there is no receiver", async () => {
     await open({ scenario: "offline" });
     await screen.findByText("No receiver: no receiver found on the local network. Retrying.");
