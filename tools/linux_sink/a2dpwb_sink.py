@@ -4,7 +4,8 @@
 Runs on a Linux PC with an ordinary Bluetooth adapter (built-in is fine).
 While it runs, the adapter is taken from BlueZ and driven directly through
 the kernel's HCI user channel by Bumble, which acts as an A2DP sink offering
-SBC, AAC, aptX, aptX HD, aptX LL and LDAC with an L2CAP MTU of choice
+SBC (SBC XQ capable), AAC, aptX, aptX HD, aptX LL, LDAC, Opus and FastStream
+with an L2CAP MTU of choice
 (BlueZ always uses 672 bytes, too small for LDAC). A2DPWB streams to it like
 to headphones. Nothing is played; every media packet is measured:
 
@@ -17,9 +18,10 @@ to headphones. Nothing is played; every media packet is measured:
     burst would have overflowed it (audio skipped). A source that sends
     nothing for more than 3 s (A2DPWB capturing a silent PC) is counted as a
     pause, not as a dropout
-  - frame checks (SBC / LDAC headers, aptX sync) and, where a decoder library
-    is installed, decode errors: libsbc (SBC), libfreeaptx (aptX / aptX HD /
-    aptX LL), libfdk-aac (AAC); LDAC has no open-source decoder
+  - frame checks (SBC / FastStream / LDAC headers, Opus TOC, aptX sync) and,
+    where a decoder library is installed, decode errors: libsbc (SBC, SBC XQ,
+    FastStream), libfreeaptx (aptX / aptX HD / aptX LL), libfdk-aac (AAC),
+    libopus (Opus); LDAC has no open-source decoder
   - AFH: how many of the 79 channels the link hops over (Read AFH Channel Map)
   - RSSI of the link, read from the controller. For BR/EDR this is not an
     absolute level: 0 means within the controller's golden receive range
@@ -32,7 +34,7 @@ the local network (UDP broadcast on the same port). Optional CSV log, WAV of
 the decoded audio and HCI capture for a2dpwb_decode --received.
 
 Requirements: Python 3.11+, Bumble (see requirements.txt), root for the HCI
-user channel; optional libsbc1, libfreeaptx0, libfdk-aac2. See README.md.
+user channel; optional libsbc1, libfreeaptx0, libfdk-aac2, libopus0. See README.md.
 
     sudo .venv/bin/python a2dpwb_sink.py [--adapter hci0] [--mtu 1005]
 
@@ -45,7 +47,6 @@ import ctypes
 import ctypes.util
 import datetime
 import errno
-import fcntl
 import json
 import logging
 import os
@@ -84,24 +85,54 @@ DEFAULT_MTU = 1005  # L2CAP MTU offered for AVDTP, as many headphones
 PACKET_TYPES_BR_ONLY = 0xCC18 | 0x3306
 
 SBC, AAC, APTX, APTX_HD, APTX_LL, LDAC = 'sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac'
+SBC_XQ, OPUS, FASTSTREAM = 'sbcxq', 'opus', 'faststream'
 CODEC_NAMES = {SBC: 'SBC', AAC: 'AAC', APTX: 'aptX', APTX_HD: 'aptX HD',
-               APTX_LL: 'aptX LL', LDAC: 'LDAC'}
-ALL_CODECS = [LDAC, APTX_HD, APTX_LL, APTX, AAC, SBC]
+               APTX_LL: 'aptX LL', LDAC: 'LDAC', SBC_XQ: 'SBC XQ', OPUS: 'Opus',
+               FASTSTREAM: 'FastStream'}
+ALL_CODECS = [LDAC, APTX_HD, APTX_LL, APTX, OPUS, AAC, SBC_XQ, SBC, FASTSTREAM]
+# Codecs whose frames are SBC (decoded by libsbc)
+SBC_FAMILY = (SBC, SBC_XQ, FASTSTREAM)
 # libldac encoders refuse an L2CAP MTU below 679 bytes
 LDAC_MIN_MTU = 679
+# SBC XQ is not an endpoint of its own: it is the SBC endpoint configured for
+# dual channel. A2DPWB uses it when that endpoint allows dual channel and a
+# bitpool of at least 43 (app/src/crates/codec/src/caps.rs
+# SBC_XQ_MIN_MAX_BITPOOL), and then sends bitpool 47 (44.1 kHz) / 43 (48 kHz)
+SBC_XQ_MIN_MAX_BITPOOL = 43
+# FastStream: up to three SBC frames per packet, each padded to an even length
+FASTSTREAM_FRAMES_PER_PACKET = 3
+# Opus: the only sampling rate of the A2DP Opus codec
+OPUS_RATE = 48000
 
 
 def vendor_caps(vendor_id, codec_id, value):
     return struct.pack('<IH', vendor_id, codec_id) + bytes(value)
 
 
-def endpoint_capabilities(codec, sbc_max_bitpool):
+def offered_codecs(codecs, sbc_max_bitpool):
+    """The codecs of `codecs` the sink can offer: SBC XQ needs a highest SBC
+    bitpool of at least SBC_XQ_MIN_MAX_BITPOOL."""
+    return [c for c in codecs if c != SBC_XQ or sbc_max_bitpool >= SBC_XQ_MIN_MAX_BITPOOL]
+
+
+def endpoints(codecs):
+    """The codecs that get an endpoint (SEP): SBC XQ shares SBC's."""
+    eps = [c for c in codecs if c != SBC_XQ]
+    if SBC_XQ in codecs and SBC not in eps:
+        eps.append(SBC)
+    return eps
+
+
+def endpoint_capabilities(codec, sbc_max_bitpool, sbc_xq=True):
     """(A2DP codec type, capabilities) this sink offers: every sample rate and
-    channel mode a typical high-end headset offers (as tools/emu/emu_sink.py)."""
+    channel mode a typical high-end headset offers (as tools/emu/emu_sink.py).
+    The SBC endpoint allows dual channel (SBC XQ) only with sbc_xq."""
     aptx_freq_ch = 0x32  # 44.1 kHz (0x20) | 48 kHz (0x10), stereo (0x02)
+    # 16 / 32 / 44.1 / 48 kHz; mono 0x08, dual channel 0x04, stereo 0x02, joint 0x01
+    sbc_freq_modes = 0xFF if sbc_xq else 0xFB
     return {
-        # 16/32/44.1/48 kHz, all channel modes, blocks, subbands and allocations
-        SBC: (0x00, bytes([0xFF, 0xFF, 2, sbc_max_bitpool])),
+        # all blocks, subbands and allocations
+        SBC: (0x00, bytes([sbc_freq_modes, 0xFF, 2, sbc_max_bitpool])),
         # MPEG-2/4 AAC LC, 44.1 kHz | 48 kHz, 1 | 2 channels, VBR, 320 kbps
         AAC: (0x02, bytes([0xC0, 0x01, 0x8C, 0x84, 0xE2, 0x00])),
         APTX: (0xFF, vendor_caps(0x0000004F, 0x0001, [aptx_freq_ch])),
@@ -109,6 +140,12 @@ def endpoint_capabilities(codec, sbc_max_bitpool):
         APTX_LL: (0xFF, vendor_caps(0x0000000A, 0x0002, [aptx_freq_ch, 0x00])),
         # 44.1 / 48 / 88.2 / 96 kHz, mono / dual / stereo
         LDAC: (0xFF, vendor_caps(0x0000012D, 0x00AA, [0x3C, 0x07])),
+        # Opus (Android a2dp_vendor_opus_constants.h): 48 kHz (0x80), 10 / 20 ms
+        # frames (0x08 / 0x10), mono / stereo (0x01 / 0x02)
+        OPUS: (0xFF, vendor_caps(0x000000E0, 0x0001, [0x9B])),
+        # FastStream (CSR; PipeWire a2dp_faststream_t): the music direction
+        # only (0x01; A2DPWB has no voice backchannel) at 44.1 / 48 kHz
+        FASTSTREAM: (0xFF, vendor_caps(0x0000000A, 0x0001, [0x01, 0x03])),
     }[codec]
 
 
@@ -136,6 +173,7 @@ class CodecConfig:
         self.channels = 0
         self.desc = ''
         self.ldac_sr_id = self.ldac_ch_id = None
+        self.opus_frame_ms = 0
         c = self.raw
         if codec == SBC and len(c) >= 4:
             fi, mi = single_bit(c[0] >> 4, 4), single_bit(c[0] & 0x0F, 4)
@@ -147,8 +185,11 @@ class CodecConfig:
             subbands = [8, 4][si] if si is not None else 0
             alloc = ['loudness', 'SNR'][ai] if ai is not None else '?'
             self.sbc_min_bitpool, self.sbc_max_bitpool = c[2], c[3]
-            self.desc = (f'SBC {self.sample_rate} Hz, {mode}, {blocks} blocks, {subbands} subbands, '
-                         f'{alloc}, bitpool {c[2]}-{c[3]}')
+            if mi == 2:
+                # dual channel: what A2DPWB sends as SBC XQ
+                self.codec = SBC_XQ
+            self.desc = (f'{CODEC_NAMES[self.codec]} {self.sample_rate} Hz, {mode}, {blocks} blocks, '
+                         f'{subbands} subbands, {alloc}, bitpool {c[2]}-{c[3]}')
         elif codec == AAC and len(c) >= 6:
             by_bit = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000]
             fi = single_bit((c[1] << 4) | (c[2] >> 4), 12)
@@ -172,14 +213,27 @@ class CodecConfig:
             self.channels = 1 if self.ldac_ch_id == 0 else 2
             mode = {0: 'mono', 1: 'dual channel', 2: 'stereo'}.get(self.ldac_ch_id, '?')
             self.desc = f'LDAC {self.sample_rate} Hz, {mode}'
+        elif codec == OPUS and len(c) >= 7:
+            ch, frame = c[6] & 0x07, c[6] & 0x18
+            self.sample_rate = OPUS_RATE if c[6] & 0x80 else 0
+            self.channels = {0x01: 1, 0x02: 2, 0x04: 2}.get(ch, 0)
+            self.opus_frame_ms = {0x08: 10, 0x10: 20}.get(frame, 0)
+            mode = {0x01: 'mono', 0x02: 'stereo', 0x04: 'dual mono'}.get(ch, '?')
+            self.desc = f'Opus {self.sample_rate} Hz, {mode}, {self.opus_frame_ms or "?"} ms frames'
+        elif codec == FASTSTREAM and len(c) >= 8:
+            direction = c[6]
+            self.sample_rate = {0x02: 44100, 0x01: 48000}.get(c[7] & 0x0F, 0)
+            self.channels = 2
+            dirs = {0x01: 'music', 0x02: 'voice', 0x03: 'music + voice'}.get(direction, f'0x{direction:02X}')
+            self.desc = f'FastStream {self.sample_rate} Hz, {dirs}'
         if not self.desc:
             self.desc = f'{CODEC_NAMES.get(codec, codec)} (unparsed configuration {c.hex()})'
 
     @property
     def has_rtp(self):
-        # Classic aptX and aptX LL are sent without an RTP header (as by
-        # Android, PipeWire and A2DPWB)
-        return self.codec not in (APTX, APTX_LL)
+        # Classic aptX, aptX LL and FastStream are sent without an RTP header
+        # (as by Android, PipeWire and A2DPWB)
+        return self.codec not in (APTX, APTX_LL, FASTSTREAM)
 
 
 # ---------------------------------------------------------------------------
@@ -331,10 +385,49 @@ class AacDecoder:
         self.lib.aacDecoder_Close(self.handle)
 
 
+class OpusDecoder:
+    MAX_FRAME = 5760  # samples per channel of the longest Opus packet (120 ms at 48 kHz)
+
+    lib = None
+
+    @classmethod
+    def available(cls):
+        if cls.lib is None:
+            cls.lib = load_library(['libopus.so.0', ctypes.util.find_library('opus') or 'libopus.so']) or False
+            if cls.lib:
+                cls.lib.opus_decoder_create.restype = ctypes.c_void_p
+                cls.lib.opus_decoder_create.argtypes = [ctypes.c_int32, ctypes.c_int,
+                                                        ctypes.POINTER(ctypes.c_int)]
+                cls.lib.opus_decode.restype = ctypes.c_int
+                cls.lib.opus_decode.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32,
+                                                ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+                cls.lib.opus_decoder_destroy.argtypes = [ctypes.c_void_p]
+        return bool(cls.lib)
+
+    def __init__(self, channels):
+        err = ctypes.c_int(0)
+        self.channels = channels
+        self.dec = self.lib.opus_decoder_create(OPUS_RATE, channels, ctypes.byref(err))
+        if not self.dec or err.value != 0:
+            raise RuntimeError(f'opus_decoder_create failed ({err.value})')
+        self.pcm = (ctypes.c_int16 * (self.MAX_FRAME * channels))()
+
+    def decode(self, packet):
+        """(PCM s16le interleaved, samples per channel) or (None, libopus error code)"""
+        n = self.lib.opus_decode(self.dec, bytes(packet), len(packet), self.pcm, self.MAX_FRAME, 0)
+        if n < 0:
+            return None, n
+        return bytes(memoryview(self.pcm).cast('B')[:n * self.channels * 2]), n
+
+    def close(self):
+        self.lib.opus_decoder_destroy(self.dec)
+
+
 def decoder_status():
-    return {SBC: SbcDecoder.available(), AAC: AacDecoder.available(),
+    sbc = SbcDecoder.available()
+    return {SBC: sbc, SBC_XQ: sbc, FASTSTREAM: sbc, AAC: AacDecoder.available(),
             APTX: AptxDecoder.available(), APTX_HD: AptxDecoder.available(),
-            APTX_LL: AptxDecoder.available(), LDAC: False}
+            APTX_LL: AptxDecoder.available(), LDAC: False, OPUS: OpusDecoder.available()}
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +452,31 @@ def sbc_frame_length(hdr):
     else:
         length += (subbands + blocks * bitpool + 7) // 8
     return length, blocks * subbands, rate, channels
+
+
+def opus_packet_samples(packet, rate=OPUS_RATE):
+    """Samples per channel of an Opus packet from its TOC byte (and, for
+    code 3, the frame count byte; RFC 6716 3.1), or None if malformed."""
+    if not packet:
+        return None
+    config, code = packet[0] >> 3, packet[0] & 3
+    if config < 12:    # SILK: 10 / 20 / 40 / 60 ms
+        frame = rate * [10, 20, 40, 60][config & 3] // 1000
+    elif config < 16:  # hybrid: 10 / 20 ms
+        frame = rate * [10, 20][config & 1] // 1000
+    else:              # CELT: 2.5 / 5 / 10 / 20 ms
+        frame = rate * [25, 50, 100, 200][config & 3] // 10000
+    if code == 0:
+        frames = 1
+    elif code in (1, 2):
+        frames = 2
+    elif len(packet) >= 2:
+        frames = packet[1] & 0x3F
+    else:
+        return None
+    if frames == 0 or frames * frame > rate * 120 // 1000:
+        return None
+    return frames * frame
 
 
 class WavOut:
@@ -434,8 +552,10 @@ class StreamStats:
     def _new_decoder(self):
         c = self.cfg.codec
         try:
-            if c == SBC and SbcDecoder.available():
+            if c in SBC_FAMILY and SbcDecoder.available():
                 self.decoder = SbcDecoder()
+            elif c == OPUS and self.cfg.channels and OpusDecoder.available():
+                self.decoder = OpusDecoder(self.cfg.channels)
             elif c in (APTX, APTX_HD, APTX_LL) and AptxDecoder.available():
                 self.decoder = AptxDecoder(c == APTX_HD)
             elif c == AAC and AacDecoder.available():
@@ -504,8 +624,12 @@ class StreamStats:
                 return
         before = self.samples
         codec = self.cfg.codec
-        if codec == SBC:
+        if codec in (SBC, SBC_XQ):
             self._sbc(payload)
+        elif codec == FASTSTREAM:
+            self._faststream(payload)
+        elif codec == OPUS:
+            self._opus(payload)
         elif codec == AAC:
             self._aac(payload)
         elif codec in (APTX, APTX_HD, APTX_LL):
@@ -556,34 +680,80 @@ class StreamStats:
         if p[0] & 0x80:
             self.issue('SBC: fragmented media payload (not analysed)')
             return
-        announced, off, got = p[0] & 0x0F, 1, 0
+        if self._sbc_frames(p, 1, CODEC_NAMES[self.cfg.codec]) != p[0] & 0x0F:
+            self.issue('SBC: media payload header frame count differs from frames in packet')
+
+    def _sbc_frames(self, p, off, what, pad_to_even=False):
+        """Checks (and decodes) the SBC frames in p from off; returns how
+        many there were. FastStream pads each frame to an even length."""
+        got = 0
         while off < len(p):
             info = sbc_frame_length(p[off:off + 3])
             if info is None:
                 self.frame_errors += 1
-                self.issue('SBC: frame sync 0x9C not found where a frame should start')
+                self.issue(f'{what}: frame sync 0x9C not found where a frame should start')
                 break
             length, samples, rate, channels = info
             if off + length > len(p):
                 self.frame_errors += 1
-                self.issue('SBC: frame runs past the end of the packet')
+                self.issue(f'{what}: frame runs past the end of the packet')
                 break
             if rate != self.cfg.sample_rate:
-                self.issue('SBC: frame sampling frequency differs from configuration')
+                self.issue(f'{what}: frame sampling frequency differs from configuration')
+            if self.cfg.codec == SBC_XQ and (p[off + 1] >> 2) & 3 != 1:
+                self.issue('SBC XQ: frame is not dual channel')
             frame = p[off:off + length]
             if self.decoding:
                 pcm = self.decoder.decode_frame(frame)
                 if pcm is None:
                     self.decode_errors += 1
-                    self.issue('SBC: decode error')
+                    self.issue(f'{what}: decode error')
                 elif self.wav:
                     self.wav.write(pcm, rate, channels, 2)
             got += 1
             self.frames += 1
             self.samples += samples
-            off += length
-        if got != announced:
-            self.issue('SBC: media payload header frame count differs from frames in packet')
+            off += length + (length & 1 if pad_to_even else 0)
+        return got
+
+    def _faststream(self, p):
+        # Neither a media payload header nor an RTP header: up to three SBC
+        # frames (joint stereo, 16 blocks, 8 subbands, bitpool 29), each
+        # padded to an even length (PipeWire a2dp-codec-faststream.c)
+        if not p:
+            self.issue('FastStream: empty media payload')
+            return
+        if self._sbc_frames(p, 0, 'FastStream', pad_to_even=True) > FASTSTREAM_FRAMES_PER_PACKET:
+            self.issue(f'FastStream: more than {FASTSTREAM_FRAMES_PER_PACKET} frames in a packet')
+
+    def _opus(self, p):
+        # A 1-byte media payload header (frame count in the low 4 bits: 1 from
+        # Android and A2DPWB, the only count PipeWire takes), then one Opus packet
+        if len(p) < 2:
+            self.issue('Opus: empty media payload')
+            return
+        if p[0] & 0x0F != 1:
+            self.frame_errors += 1
+            self.issue('Opus: media payload header frame count is not 1')
+        packet = p[1:]
+        samples = opus_packet_samples(packet)
+        if samples is None:
+            self.frame_errors += 1
+            self.issue('Opus: invalid TOC / frame count')
+            return
+        if self.cfg.opus_frame_ms and samples != OPUS_RATE * self.cfg.opus_frame_ms // 1000:
+            self.issue('Opus: packet duration differs from the configured frame duration')
+        self.frames += 1
+        if self.decoding:
+            pcm, n = self.decoder.decode(packet)
+            if pcm is None:
+                self.decode_errors += 1
+                self.issue(f'Opus: decode error {n}')
+            else:
+                samples = n
+                if self.wav:
+                    self.wav.write(pcm, OPUS_RATE, self.decoder.channels, 2)
+        self.samples += samples
 
     def _aac(self, p):
         self.frames += 1
@@ -915,6 +1085,7 @@ async def open_adapter(index):
     for attempt in range(10):
         try:
             with socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI) as s:
+                import fcntl  # Linux only; --transport works elsewhere too (testing)
                 fcntl.ioctl(s.fileno(), HCIDEVDOWN, index)
         except OSError as e:
             if e.errno == errno.ENODEV:
@@ -1025,7 +1196,7 @@ class Sink:
         if isinstance(codecs, list) and codecs:
             by_name = {n.lower(): c for c, n in CODEC_NAMES.items()} | {c: c for c in CODEC_NAMES}
             chosen = [by_name[str(n).lower()] for n in codecs if str(n).lower() in by_name]
-            chosen = [c for c in ALL_CODECS if c in chosen]
+            chosen = offered_codecs([c for c in ALL_CODECS if c in chosen], a.sbc_max_bitpool)
             if chosen and chosen != a.codecs:
                 a.codecs = chosen
                 changes.append('codecs ' + ', '.join(CODEC_NAMES[c] for c in chosen))
@@ -1086,7 +1257,9 @@ class Sink:
             log(f'warning: could not restrict packet types: {e}')
 
     def on_avdtp_connection(self, protocol):
-        codec_caps = {c: endpoint_capabilities(c, self.args.sbc_max_bitpool) for c in self.args.codecs}
+        a = self.args
+        codec_caps = {c: endpoint_capabilities(c, a.sbc_max_bitpool, SBC_XQ in a.codecs)
+                      for c in endpoints(a.codecs)}
         for codec, (codec_type, caps) in codec_caps.items():
             sink = protocol.add_sink(MediaCodecCapabilities(
                 media_type=AVDTP_AUDIO_MEDIA_TYPE, media_codec_type=codec_type,
@@ -1098,7 +1271,7 @@ class Sink:
             sink.on(sink.EVENT_ABORT, self.end_stream)
             sink.on(sink.EVENT_RTP_CHANNEL_CLOSE, self.end_stream)
             # Raw media: Bumble would parse every packet as RTP, but classic
-            # aptX / aptX LL carry no RTP header
+            # aptX / aptX LL and FastStream carry no RTP header
             sink.on_avdtp_packet = self.on_media
 
     def on_configured(self, sink, codec):
@@ -1109,6 +1282,7 @@ class Sink:
         cfg = CodecConfig(codec, config)
         self.end_stream()
         self.stream_seq += 1
+        codec = cfg.codec  # SBC configured for dual channel is SBC XQ
         wav = f'{self.args.wav}_{self.stream_seq}_{codec}.wav' if self.args.wav and codec != LDAC else None
         self.current = StreamStats(self.stream_seq, cfg, self.args.buffer, wav)
         log(f'configured: {cfg.desc}'
@@ -1262,7 +1436,10 @@ async def run(args):
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:  # Windows (--transport, testing): Ctrl+C ends asyncio.run
+            pass
     ticks = asyncio.create_task(sink.run_ticks())
     await stop.wait()
     ticks.cancel()
@@ -1310,6 +1487,12 @@ def main():
         parser.error('--sbc-max-bitpool must be 2-250')
     if not 48 <= args.mtu <= 65535:
         parser.error('--mtu must be 48-65535')
+    codecs = offered_codecs(args.codecs, args.sbc_max_bitpool)
+    if codecs != args.codecs:
+        print(f'SBC XQ not offered: it needs --sbc-max-bitpool {SBC_XQ_MIN_MAX_BITPOOL} or more', file=sys.stderr)
+        args.codecs = codecs
+    if not args.codecs:
+        parser.error('no codec left to offer')
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
                         format='%(asctime)s %(name)s %(levelname)s: %(message)s')
     if not args.verbose:

@@ -18,7 +18,7 @@ fi
 # stream is still measured, only frame headers are checked)
 if command -v apt-get >/dev/null 2>&1; then
     missing=""
-    for p in python3-venv libsbc1 libfreeaptx0 libfdk-aac2; do
+    for p in python3-venv libsbc1 libfreeaptx0 libfdk-aac2 libopus0; do
         dpkg -s "$p" >/dev/null 2>&1 || missing="$missing $p"
     done
     if [ -n "$missing" ]; then
@@ -31,7 +31,7 @@ if command -v apt-get >/dev/null 2>&1; then
     fi
 else
     echo "Not a Debian / Ubuntu system: install python3 venv support and, optionally," \
-         "libsbc, libfreeaptx and libfdk-aac yourself"
+         "libsbc, libfreeaptx, libfdk-aac and libopus yourself"
 fi
 
 if [ ! -x .venv/bin/python ]; then
