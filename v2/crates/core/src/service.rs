@@ -21,6 +21,69 @@ use crate::stream::{self, StreamInfo, StreamRequest, StreamState};
 const CONTROLLER_PROBE: Duration = Duration::from_secs(2);
 /// Time for a USB adapter to come back after resume before it is opened
 const RESUME_SETTLE: Duration = Duration::from_secs(3);
+/// Waiting for the resume after the adapter went away for sleep: ticks of
+/// [`RESUME_TICK`], so about a minute while the PC stays awake (a wait across
+/// sleep ends once on wake, whatever the clock says)
+const RESUME_TICK: Duration = Duration::from_millis(200);
+const RESUME_WAIT_TICKS: u32 = 300;
+
+/// Sleep and resume as the service sees them (set by the power
+/// notifications, read by the session)
+#[derive(Debug, Default)]
+pub(crate) struct PowerState {
+    /// Between the going-to-sleep notification and the resume: the adapter
+    /// goes away, so transport failures and a dropped link are expected and
+    /// nothing is restarted until the PC is back
+    suspending: AtomicBool,
+    /// The PC resumed from sleep since the stack started: the adapter lost
+    /// power or was re-enumerated, so the stack is restarted before the
+    /// next use (v1 needed an app restart)
+    stale: AtomicBool,
+    resumed_at: Mutex<Option<Instant>>,
+}
+
+impl PowerState {
+    /// The going-to-sleep notification; false when it was seen already
+    pub fn suspend(&self) -> bool {
+        !self.suspending.swap(true, Ordering::AcqRel)
+    }
+
+    /// A resume notification; true for the first of one resume (Windows
+    /// sends two), which marks the stack stale
+    pub fn resume(&self) -> bool {
+        let was_suspending = self.suspending.swap(false, Ordering::AcqRel);
+        let was_stale = self.stale.swap(true, Ordering::AcqRel);
+        let first = was_suspending || !was_stale;
+        if first {
+            *self.resumed_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+        }
+        first
+    }
+
+    /// Going to sleep: the adapter is going away
+    pub fn suspending(&self) -> bool {
+        self.suspending.load(Ordering::Acquire)
+    }
+
+    /// The running stack is left from before sleep
+    pub fn stale(&self) -> bool {
+        self.stale.load(Ordering::Acquire)
+    }
+
+    /// A new stack starts
+    fn clear_stale(&self) {
+        self.stale.store(false, Ordering::Release);
+    }
+
+    /// No resume came after all: losses count as failures again
+    fn end_suspend(&self) {
+        self.suspending.store(false, Ordering::Release);
+    }
+
+    fn resumed_at(&self) -> Option<Instant> {
+        *self.resumed_at.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServiceEvent {
@@ -47,11 +110,7 @@ pub(crate) struct Inner {
     stats: Arc<LinkStats>,
     stop: AtomicBool,
     running: AtomicBool,
-    /// The PC resumed from sleep since the stack started: the adapter lost
-    /// power or was re-enumerated, so the stack is restarted before the
-    /// next use (v1 needed an app restart)
-    pub btstack_stale: AtomicBool,
-    resumed_at: Mutex<Option<Instant>>,
+    pub power: PowerState,
     tick: (Mutex<()>, Condvar),
     state: Mutex<StreamState>,
 }
@@ -80,7 +139,7 @@ impl Inner {
     }
 
     fn wait_after_resume(&self) {
-        let Some(at) = *self.resumed_at.lock().unwrap_or_else(|e| e.into_inner()) else { return };
+        let Some(at) = self.power.resumed_at() else { return };
         let since = at.elapsed();
         if since >= RESUME_SETTLE {
             return;
@@ -171,8 +230,8 @@ impl Inner {
         if let Some(h) = slot.as_ref() {
             // A stack that stopped working stays so until it is started anew
             // (v1 issues #42, #43: only an app restart helped)
-            let why = if self.btstack_stale.load(Ordering::Acquire) {
-                Some("the PC resumed from sleep")
+            let why = if self.power.stale() {
+                Some(stream::RESUMED)
             } else if !h.controller_responds(CONTROLLER_PROBE) {
                 Some("the Bluetooth adapter stopped answering")
             } else {
@@ -187,7 +246,7 @@ impl Inner {
                 }
             }
         }
-        self.btstack_stale.store(false, Ordering::Release);
+        self.power.clear_stale();
         self.wait_after_resume();
         let h = self.start_host()?;
         *slot = Some(h.clone());
@@ -197,11 +256,44 @@ impl Inner {
     /// Shuts the stack down and starts a new one (the session thread, for a
     /// stack that stopped working or is left from before sleep)
     pub fn restart_host(self: &Arc<Self>, why: &str, max_media_payload: u16) -> Result<Arc<BtHost>, Msg> {
-        tracing::warn!("restarting BTstack: {why}");
+        if why == stream::RESUMED {
+            tracing::info!("restarting BTstack: {why}");
+        } else {
+            tracing::warn!("restarting BTstack: {why}");
+        }
         self.shutdown_host();
         let h = self.ensure_host()?;
         h.set_media_payload_limit(max_media_payload);
         Ok(h)
+    }
+
+    /// The PC is going to sleep and the stack lost (or is losing) its
+    /// adapter: shut down without the noise of a failure; after the resume
+    /// a new one starts
+    pub fn shutdown_host_for_sleep(&self) {
+        let old = self.host.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(h) = old {
+            tracing::info!("stopping BTstack until the PC resumes");
+            h.shutdown_lost();
+        }
+    }
+
+    /// Waits for the resume notification while the PC goes to sleep. Gives
+    /// up after about a minute awake without one (the stack is then
+    /// restarted as after a failure). False when the session was stopped.
+    pub fn wait_for_resume(&self) -> bool {
+        let mut ticks = 0;
+        while self.power.suspending() && !self.stop_requested() {
+            if ticks == RESUME_WAIT_TICKS {
+                tracing::warn!("no resume notification after going to sleep");
+                self.power.end_suspend();
+                bt_host::expect_transport_loss(false);
+                break;
+            }
+            self.wait_tick(RESUME_TICK);
+            ticks += 1;
+        }
+        !self.stop_requested()
     }
 
     fn shutdown_host(&self) {
@@ -265,8 +357,7 @@ impl Service {
             stats: Arc::new(LinkStats::default()),
             stop: AtomicBool::new(false),
             running: AtomicBool::new(false),
-            btstack_stale: AtomicBool::new(false),
-            resumed_at: Mutex::new(None),
+            power: PowerState::default(),
             tick: (Mutex::new(()), Condvar::new()),
             state: Mutex::new(StreamState::Idle),
         });
@@ -275,13 +366,19 @@ impl Service {
         let power = win_sys::power::PowerNotifier::new(move |e| {
             let Some(inner) = weak.upgrade() else { return };
             match e {
-                win_sys::power::PowerEvent::Suspend => tracing::info!("the PC is going to sleep"),
+                win_sys::power::PowerEvent::Suspend => {
+                    if inner.power.suspend() {
+                        tracing::info!("the PC is going to sleep");
+                        // The USB transfers get cancelled now: not an error
+                        bt_host::expect_transport_loss(true);
+                    }
+                }
                 win_sys::power::PowerEvent::Resume => {
                     // Both resume kinds may come for one resume
-                    if !inner.btstack_stale.swap(true, Ordering::AcqRel) {
+                    if inner.power.resume() {
                         tracing::info!("the PC resumed from sleep, Bluetooth will be restarted");
-                        *inner.resumed_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
                     }
+                    bt_host::expect_transport_loss(false);
                 }
             }
         });
@@ -405,5 +502,72 @@ impl Service {
 impl Drop for Service {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sleep_marks_suspending_until_resume() {
+        let p = PowerState::default();
+        assert!(!p.suspending() && !p.stale());
+        assert!(p.suspend());
+        // A repeated notification
+        assert!(!p.suspend());
+        assert!(p.suspending());
+        assert!(!p.stale());
+        assert!(p.resumed_at().is_none());
+        assert!(p.resume());
+        assert!(!p.suspending());
+        assert!(p.stale());
+        assert!(p.resumed_at().is_some());
+    }
+
+    #[test]
+    fn the_second_resume_notification_is_ignored() {
+        let p = PowerState::default();
+        p.suspend();
+        assert!(p.resume());
+        let at = p.resumed_at();
+        assert!(!p.resume());
+        assert_eq!(p.resumed_at(), at);
+        assert!(p.stale() && !p.suspending());
+    }
+
+    #[test]
+    fn a_resume_without_suspend_still_marks_the_stack_stale() {
+        let p = PowerState::default();
+        assert!(p.resume());
+        assert!(p.stale() && !p.suspending());
+    }
+
+    #[test]
+    fn a_new_sleep_counts_while_the_stack_is_still_stale() {
+        // Slept and woke, nothing used the stack since, then slept again
+        let p = PowerState::default();
+        p.suspend();
+        p.resume();
+        let first = p.resumed_at().unwrap();
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(p.suspend());
+        assert!(p.suspending() && p.stale());
+        assert!(p.resume());
+        assert!(p.resumed_at().unwrap() > first);
+    }
+
+    #[test]
+    fn a_new_stack_clears_stale_but_not_suspending() {
+        let p = PowerState::default();
+        p.suspend();
+        p.resume();
+        p.clear_stale();
+        assert!(!p.stale());
+        p.suspend();
+        p.clear_stale();
+        assert!(p.suspending());
+        p.end_suspend();
+        assert!(!p.suspending() && !p.stale());
     }
 }

@@ -500,6 +500,7 @@ impl ConnectionFlow {
             self.fill_controller_detail();
         }
 
+        let link_was_running = self.session.step(Step::Link).status == StepStatus::Running;
         match r.action {
             Action::Done => {
                 if r.step == Step::Connect && self.session.connect_retries > 0 {
@@ -530,7 +531,9 @@ impl ConnectionFlow {
         {
             self.set_step(Step::Link, StepStatus::Done, time_ms, seq, String::new());
         }
-        if r.step == Step::Link && matches!(r.action, Action::Running) {
+        // One per interruption: around sleep, both "going to sleep" and
+        // "resumed" say reconnecting
+        if r.step == Step::Link && matches!(r.action, Action::Running) && !link_was_running {
             self.session.reconnects += 1;
         }
     }
@@ -1208,6 +1211,38 @@ mod tests {
         f.feed(21_500, SVC, Level::INFO, "state Idle: Ready");
         assert_eq!(f.session().stop_ms, Some(21_500));
         assert!(!f.session().active());
+    }
+
+    #[test]
+    fn sleep_is_one_quiet_reconnect() {
+        let mut f = ConnectionFlow::new();
+        feed(&mut f, &good_session());
+        let issues = f.session().issues;
+        // As the session logs a sleep that took the adapter away
+        f.feed(10_000, SVC, Level::INFO, "the PC is going to sleep");
+        f.feed(11_500, "hci", Level::INFO, "HCI transport stopped as expected: ACL read: transfer was cancelled");
+        f.feed(11_600, STREAM, Level::INFO, "the PC is going to sleep, reconnecting after it resumes");
+        f.feed(11_601, SVC, Level::INFO, "state Reconnecting: Connection lost, reconnecting...");
+        f.feed(11_602, SVC, Level::INFO, "stopping BTstack until the PC resumes");
+        f.feed(11_603, "bt_host", Level::INFO, "the Bluetooth adapter went away, closing it without HCI power off");
+        assert_eq!(f.session().reconnects, 1);
+        assert_eq!(status(&f, Step::Link), StepStatus::Running);
+        f.feed(60_000, SVC, Level::INFO, "the PC resumed from sleep, Bluetooth will be restarted");
+        f.feed(60_100, STREAM, Level::INFO, "the PC resumed from sleep, reconnecting");
+        f.feed(63_100, SVC, Level::INFO, "state Reconnecting: Reconnect attempt 1/10...");
+        f.feed(63_101, SVC, Level::INFO, "restarting BTstack: the PC resumed from sleep");
+        f.feed(63_200, APP, Level::INFO, "hci_init done, powering on");
+        f.feed(63_500, APP, Level::INFO, "HCI ready (took 300 ms)");
+        f.feed(63_501, "bt_host", Level::INFO, "connecting to 00:1A:7D:DA:71:13");
+        f.feed(65_000, STREAM, Level::INFO, "reconnected on attempt 1");
+        let s = f.session();
+        // Going to sleep and resuming are one interruption
+        assert_eq!(s.reconnects, 1);
+        assert_eq!(s.issues, issues);
+        assert_eq!(s.step(Step::Link).status, StepStatus::Warning);
+        // The new stack does not touch the first connection's steps
+        assert_eq!(status(&f, Step::Btstack), StepStatus::Done);
+        assert_eq!(status(&f, Step::Connect), StepStatus::Done);
     }
 
     #[test]

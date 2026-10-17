@@ -3,7 +3,6 @@
 //! A2dpService::streaming_thread_func_inner, on the session thread of
 //! [`crate::Service`].
 
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -193,6 +192,56 @@ impl Drop for DefaultDeviceGuard {
             tracing::warn!("could not restore the default output device: {e}");
         }
     }
+}
+
+/// Why a stack is restarted after sleep (also in the log and the flow)
+pub(crate) const RESUMED: &str = "the PC resumed from sleep";
+const ADAPTER_STOPPED: &str = "the Bluetooth adapter stopped working";
+const RECONNECT_ATTEMPTS: u32 = 10;
+
+/// What the streaming loop does about the link
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LinkCheck {
+    Fine,
+    /// The device dropped the link: connect it again on the same stack
+    Reconnect,
+    /// The stack cannot be used any more: start a new one first
+    Restart(&'static str),
+    /// The PC is going to sleep and took the adapter (or the link) with it:
+    /// stop the stack and wait for the resume, spending no attempt
+    SleepThrough,
+}
+
+fn check_link(lost: bool, stalled: bool, stale: bool, suspending: bool) -> LinkCheck {
+    if suspending {
+        // A stack left from an earlier sleep is replaced after this one;
+        // while the adapter still works, the stream goes on
+        return if lost || stalled { LinkCheck::SleepThrough } else { LinkCheck::Fine };
+    }
+    if stale {
+        LinkCheck::Restart(RESUMED)
+    } else if stalled {
+        LinkCheck::Restart(ADAPTER_STOPPED)
+    } else if lost {
+        LinkCheck::Reconnect
+    } else {
+        LinkCheck::Fine
+    }
+}
+
+/// The PC is going to sleep: the stack is shut down quietly (the pipeline's
+/// media sink belongs to it) and the session waits for the resume. Returns
+/// why the stack is then started anew, None when the session was stopped.
+fn sleep_through(inner: &Inner, pipeline: &mut Option<Pipeline>) -> Option<&'static str> {
+    tracing::info!("the PC is going to sleep, reconnecting after it resumes");
+    if let Some(p) = pipeline.take() {
+        let _ = p.stop();
+    }
+    inner.shutdown_host_for_sleep();
+    if !inner.wait_for_resume() {
+        return None;
+    }
+    Some(if inner.power.stale() { RESUMED } else { ADAPTER_STOPPED })
 }
 
 fn connect_error(f: Option<ConnectFailure>) -> Msg {
@@ -541,29 +590,48 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         // reports no disconnect: it is started anew and the device connected
         // again on it
         let lost = host.check_disconnected();
-        let mut restart_why = if inner.btstack_stale.load(Ordering::Acquire) {
-            Some("the PC resumed from sleep")
-        } else if host.stalled() {
-            Some("the Bluetooth adapter stopped working")
-        } else {
-            None
+        let check = check_link(lost, host.stalled(), inner.power.stale(), inner.power.suspending());
+        let mut restart_why = match check {
+            LinkCheck::Fine => continue,
+            LinkCheck::Reconnect => {
+                tracing::warn!("connection lost, reconnecting");
+                None
+            }
+            LinkCheck::Restart(RESUMED) => {
+                tracing::info!("{RESUMED}, reconnecting");
+                Some(RESUMED)
+            }
+            LinkCheck::Restart(why) => {
+                tracing::warn!("{why}, reconnecting");
+                Some(why)
+            }
+            LinkCheck::SleepThrough => {
+                inner.notify(StreamState::Reconnecting, Msg::new("status.connection_lost"));
+                let Some(why) = sleep_through(inner, &mut pipeline) else { break };
+                tracing::info!("{why}, reconnecting");
+                Some(why)
+            }
         };
-        if !lost && restart_why.is_none() {
-            continue;
-        }
-        match restart_why {
-            Some(why) => tracing::warn!("{why}, reconnecting"),
-            None => tracing::warn!("connection lost, reconnecting"),
-        }
         inner.notify(StreamState::Reconnecting, Msg::new("status.connection_lost"));
 
         let mut reconnected = false;
         let mut fresh_stack = false;
-        for attempt in 1..=10u32 {
+        let mut attempt = 0u32;
+        while attempt < RECONNECT_ATTEMPTS {
             if stopped() {
                 break;
             }
-            inner.notify(StreamState::Reconnecting, Msg::with("status.reconnect_attempt", &[&attempt, &10]));
+            // Sleep that comes while reconnecting: no attempt is spent on it
+            if inner.power.suspending() {
+                let Some(why) = sleep_through(inner, &mut pipeline) else { break };
+                tracing::info!("{why}, reconnecting");
+                restart_why = Some(why);
+            }
+            attempt += 1;
+            inner.notify(
+                StreamState::Reconnecting,
+                Msg::with("status.reconnect_attempt", &[&attempt, &RECONNECT_ATTEMPTS]),
+            );
             // React to a stop within the wait
             let until = Instant::now() + Duration::from_secs(3);
             while Instant::now() < until && !stopped() {
@@ -572,11 +640,16 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             if stopped() {
                 break;
             }
+            if inner.power.suspending() {
+                // Went to sleep in the wait: the next round sleeps through
+                attempt -= 1;
+                continue;
+            }
             if restart_why.is_none() {
-                if inner.btstack_stale.load(Ordering::Acquire) {
-                    restart_why = Some("the PC resumed from sleep");
+                if inner.power.stale() {
+                    restart_why = Some(RESUMED);
                 } else if host.stalled() {
-                    restart_why = Some("the Bluetooth adapter stopped working");
+                    restart_why = Some(ADAPTER_STOPPED);
                 }
             }
             if let Some(why) = restart_why.take() {
@@ -588,6 +661,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                     Ok(h) => {
                         host = h;
                         fresh_stack = true;
+                    }
+                    Err(_) if inner.power.suspending() => {
+                        // The adapter went away for sleep meanwhile
+                        attempt -= 1;
+                        continue;
                     }
                     Err(_) => {
                         tracing::warn!("reconnect attempt {attempt} failed (no Bluetooth adapter)");
@@ -615,6 +693,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 tracing::info!("reconnected on attempt {attempt}");
                 reconnected = true;
                 break;
+            }
+            if inner.power.suspending() {
+                tracing::info!("reconnect attempt {attempt} ended by sleep, not counted");
+                attempt -= 1;
+                continue;
             }
             tracing::warn!("reconnect attempt {attempt} failed");
         }
@@ -673,5 +756,45 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     drop(default_guard);
     if !lost_for_good {
         inner.notify(StreamState::Idle, Msg::new("status.ready"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_working_link_is_left_alone() {
+        assert_eq!(check_link(false, false, false, false), LinkCheck::Fine);
+    }
+
+    #[test]
+    fn failures_while_awake_reconnect_or_restart() {
+        assert_eq!(check_link(true, false, false, false), LinkCheck::Reconnect);
+        assert_eq!(check_link(false, true, false, false), LinkCheck::Restart(ADAPTER_STOPPED));
+        assert_eq!(check_link(true, true, false, false), LinkCheck::Restart(ADAPTER_STOPPED));
+    }
+
+    #[test]
+    fn after_resume_the_stack_is_restarted() {
+        assert_eq!(check_link(false, false, true, false), LinkCheck::Restart(RESUMED));
+        assert_eq!(check_link(true, true, true, false), LinkCheck::Restart(RESUMED));
+    }
+
+    #[test]
+    fn going_to_sleep_sleeps_through_a_lost_adapter_or_link() {
+        // The hardware log of 2026-10-17: transfers cancelled after the
+        // going-to-sleep notification
+        assert_eq!(check_link(false, true, false, true), LinkCheck::SleepThrough);
+        assert_eq!(check_link(true, false, false, true), LinkCheck::SleepThrough);
+        assert_eq!(check_link(true, true, false, true), LinkCheck::SleepThrough);
+        // A stack still stale from an earlier sleep is not restarted now
+        assert_eq!(check_link(false, true, true, true), LinkCheck::SleepThrough);
+    }
+
+    #[test]
+    fn going_to_sleep_keeps_a_working_stream() {
+        assert_eq!(check_link(false, false, false, true), LinkCheck::Fine);
+        assert_eq!(check_link(false, false, true, true), LinkCheck::Fine);
     }
 }

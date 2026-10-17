@@ -18,7 +18,7 @@ mod stack;
 mod transport;
 
 pub use stack::{AclState, AvdtpState, HciState, Stack};
-pub use transport::{HciBackend, Upstream};
+pub use transport::{HciBackend, Upstream, expect_transport_loss};
 
 use std::cell::RefCell;
 use std::collections::VecDeque;

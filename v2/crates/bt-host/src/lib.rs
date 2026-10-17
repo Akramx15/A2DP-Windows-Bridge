@@ -30,6 +30,7 @@ use codec::caps::{Configuration, RemoteCaps};
 use hci_transport::{TcpH4, UsbSelector, UsbTransport};
 
 use app::{HostApp, Job, Setup};
+pub use btstack_sys::expect_transport_loss;
 pub use capture::HciCapture;
 pub use events::{addr_str, parse_addr};
 pub use media::{MediaPacket, MediaSink};
@@ -46,6 +47,9 @@ const STREAM_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A job the run loop should take at once
 const JOB_TIMEOUT: Duration = Duration::from_secs(5);
+/// Wait for the BTstack thread to end at shutdown: 10 s while the PC is awake
+const THREAD_END_STEP: Duration = Duration::from_millis(20);
+const THREAD_END_STEPS: u32 = 500;
 /// connect_retrying: attempts in all
 pub const CONNECT_ATTEMPTS: u32 = 3;
 
@@ -978,11 +982,49 @@ impl BtHost {
     /// initializing) and stops the BTstack thread. Afterwards every call
     /// fails; a new stack needs a new BtHost.
     pub fn shutdown(&self) {
-        self.stop_thread();
+        self.stop_thread(false);
     }
 
-    fn stop_thread(&self) {
+    /// Shutdown for an adapter that went away as expected (the PC is going
+    /// to sleep): no HCI power off, which cannot reach it any more, and a
+    /// thread still closing the device is left to end on its own (after
+    /// resume) without an error
+    pub fn shutdown_lost(&self) {
+        self.stop_thread(true);
+    }
+
+    fn stop_thread(&self, lost: bool) {
         let Some(thread) = self.thread.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        if lost {
+            tracing::info!("the Bluetooth adapter went away, closing it without HCI power off");
+        } else {
+            self.power_off();
+        }
+        self.remote.request_exit();
+        // The run loop deinitializes BTstack and closes the transport. The
+        // wait counts steps, not the clock: Windows' clock goes on in sleep,
+        // and the PC may sleep right in this wait
+        let mut steps = 0;
+        while !thread.is_finished() && steps < THREAD_END_STEPS {
+            std::thread::sleep(THREAD_END_STEP);
+            steps += 1;
+        }
+        if thread.is_finished() {
+            let _ = thread.join();
+        } else if lost {
+            tracing::info!("the BTstack thread is still closing the Bluetooth adapter");
+        } else {
+            tracing::error!("the BTstack thread did not end");
+        }
+        self.shared.update(|s| {
+            s.hci_ready = false;
+            s.connected = false;
+            s.streaming = false;
+        });
+        tracing::info!("BTstack shut down");
+    }
+
+    fn power_off(&self) {
         tracing::info!("powering off HCI");
         self.shared.update(|s| s.hci_off = false);
         let dispatched = self.call(Duration::from_secs(3), |_, s| {
@@ -1004,28 +1046,11 @@ impl BtHost {
             Some(false) => {}
             None => tracing::warn!("the run loop did not take the power off request"),
         }
-        self.remote.request_exit();
-        // The run loop deinitializes BTstack and closes the transport
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while !thread.is_finished() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        if thread.is_finished() {
-            let _ = thread.join();
-        } else {
-            tracing::error!("the BTstack thread did not end");
-        }
-        self.shared.update(|s| {
-            s.hci_ready = false;
-            s.connected = false;
-            s.streaming = false;
-        });
-        tracing::info!("BTstack shut down");
     }
 }
 
 impl Drop for BtHost {
     fn drop(&mut self) {
-        self.stop_thread();
+        self.stop_thread(false);
     }
 }

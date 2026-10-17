@@ -48,6 +48,7 @@ struct RxQueue {
 static RX: Mutex<RxQueue> = Mutex::new(RxQueue { packets: VecDeque::new(), free: Vec::new() });
 static SENT: AtomicU32 = AtomicU32::new(0);
 static FAILED: AtomicBool = AtomicBool::new(false);
+static LOSS_EXPECTED: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     static BACKEND: RefCell<Option<Box<dyn HciBackend>>> = const { RefCell::new(None) };
@@ -90,11 +91,26 @@ impl Upstream {
             return;
         }
         if !FAILED.swap(true, Ordering::AcqRel) {
-            tracing::error!(target: "hci", "HCI transport failed: {why}");
+            if loss_expected() {
+                tracing::info!(target: "hci", "HCI transport stopped as expected: {why}");
+            } else {
+                tracing::error!(target: "hci", "HCI transport failed: {why}");
+            }
         }
         WAKE_FLAGS.fetch_or(WAKE_APP, Ordering::AcqRel);
         post_wake();
     }
+}
+
+/// The adapter may go away now (the PC is going to sleep): a transport
+/// failure is then reported as information, not as an error. Stays set,
+/// also across runs, until cleared.
+pub fn expect_transport_loss(expected: bool) {
+    LOSS_EXPECTED.store(expected, Ordering::Release);
+}
+
+pub(crate) fn loss_expected() -> bool {
+    LOSS_EXPECTED.load(Ordering::Acquire)
 }
 
 /// Clears what a previous run left
