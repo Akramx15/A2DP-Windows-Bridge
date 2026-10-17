@@ -5,6 +5,8 @@
 //! the next round (as v1). The media payload header goes in front: SBC and
 //! LDAC carry the frame count in the low 4 bits (no fragmentation), LHDC V5
 //! the frame count shifted left by 2 and a sequence number; the others none.
+//! FastStream packets are always three padded SBC frames (PipeWire), so a
+//! round does not flush a partly filled one ([`Packetizer::end_round`]).
 
 use bt_host::media::{MAX_MEDIA_PACKET_SIZE, MediaPacket, RTP_HEADER_SIZE};
 use codec::CodecKind;
@@ -27,6 +29,8 @@ pub fn max_raw(kind: CodecKind, mtu: u16, sample_rate: u32) -> usize {
     match kind {
         CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac => mtu - 1,
         CodecKind::LhdcV5 => mtu - 2,
+        // No RTP header, no media payload header: three 72-byte frames
+        CodecKind::FastStream => (mtu + RTP_HEADER_SIZE).min(codec::sbc::FASTSTREAM_MAX_PAYLOAD),
         // aptX and aptX LL go without the RTP header: the whole L2CAP MTU is
         // payload; whole 4-byte aptX frames
         CodecKind::Aptx | CodecKind::AptxLl => {
@@ -95,6 +99,16 @@ impl Packetizer {
         sent
     }
 
+    /// The end of an encode round: sends what is collected, except a
+    /// FastStream packet that has room for more frames; returns the packets
+    /// sent (0 or 1)
+    pub fn end_round(&mut self, send: &mut dyn FnMut(&MediaPacket)) -> u32 {
+        if self.kind == CodecKind::FastStream && self.raw_len() < self.max_raw {
+            return 0;
+        }
+        self.flush(send)
+    }
+
     /// Sends what is collected; returns the packets sent (0 or 1)
     pub fn flush(&mut self, send: &mut dyn FnMut(&MediaPacket)) -> u32 {
         if self.frames == 0 {
@@ -153,6 +167,27 @@ mod tests {
         }
         assert_eq!(out.len(), 1);
         assert_eq!((out[0].0[0], out[0].0.len(), out[0].1), (5, 1 + 5 * 200, true));
+    }
+
+    #[test]
+    fn faststream_packets_are_three_frames() {
+        assert_eq!(max_raw(CodecKind::FastStream, 1023, 48000), 216);
+        let mut p = Packetizer::new(CodecKind::FastStream, 1023, 48000);
+        let mut out = Vec::new();
+        // Rounds of 3.75 frames (10 ms at 48 kHz): never a partial packet
+        for round in 0..8u32 {
+            let frames = if round % 4 == 3 { 3 } else { 4 };
+            for _ in 0..frames {
+                p.push(&[0x9Cu8; 72], 1, 0, &mut |pk| out.push((pk.payload().len(), pk.rtp)));
+            }
+            p.end_round(&mut |pk| out.push((pk.payload().len(), pk.rtp)));
+        }
+        // 30 frames: 10 packets of 216 bytes, no RTP, no header
+        assert_eq!(out, vec![(216, false); 10]);
+        // Other codecs flush at the end of every round
+        let mut p = Packetizer::new(CodecKind::Sbc, 1023, 48000);
+        p.push(&[0x9Cu8; 119], 1, 0, &mut |_| {});
+        assert_eq!(p.end_round(&mut |_| {}), 1);
     }
 
     #[test]

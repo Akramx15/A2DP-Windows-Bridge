@@ -36,6 +36,7 @@
   "codec.aac": "AAC",
   "codec.sbc": "SBC",
   "codec.sbc_xq": "SBC XQ",
+  "codec.faststream": "FastStream",
   "codec.lhdc_v5": "LHDC V5",
   "codec.unknown": "Inconnu",
   "quality.high": "Haute",

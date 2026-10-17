@@ -271,7 +271,7 @@ result. Listing adapters and their driver needs no elevation.
 **Responsibilities**:
 - Run BTstack with the USB (or TCP) HCI transport on its own thread
 - Register stream endpoints: vendor codecs (LDAC, aptX HD, aptX, aptX LL,
-  LHDC V5) plus SBC and AAC
+  LHDC V5, FastStream) plus SBC (also used by SBC XQ) and AAC
 - Register SDP records (A2DP Source, AVRCP Controller, AVRCP Target)
 - Manage SSP pairing (Just Works, General Bonding; link keys persisted)
 - Tear down a half-open connection after a connect timeout so retries work
@@ -292,7 +292,7 @@ result. Listing adapters and their driver needs no elevation.
 - `a2dp_source_stream_send_media_payload_rtp()` — Send encoded audio with an
   RTP header (LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5)
 - `a2dp_source_stream_send_media_packet()` — Send raw media packets without
-  an RTP header (aptX, aptX LL)
+  an RTP header (aptX, aptX LL, FastStream)
 
 ### Audio capture (`audio-capture`)
 
@@ -316,6 +316,7 @@ Captures audio in real time using the Windows Audio Session API.
 | AAC | fdk-aac | up to 256 kbps | AAC-LC, LATM transport |
 | SBC | Rust port of the Bluedroid encoder | up to ~345 kbps | Mandatory A2DP baseline; bit-exact with the C encoder (tested over all configurations) |
 | SBC XQ | the same SBC encoder | ~385/505/552 kbps | Dual channel, bitpool 47 / 43 at 44.1 / 48 kHz (High); only when the sink's SBC allows dual channel and a bitpool of at least 43; shares SBC's stream endpoint, media payload header and RTP header |
+| FastStream | the same SBC encoder | 198/216 kbps (44.1/48 kHz) | CSR vendor codec, music direction only (no voice backchannel): SBC joint stereo bitpool 29, frames padded to 72 bytes, 3 per packet, no media payload header and no RTP header (as PipeWire); never chosen by Auto |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | Experimental; 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 
 All encoders implement the `codec::Encoder` trait: they state the PCM
@@ -337,6 +338,7 @@ Non-standard codecs are registered as Vendor Specific in AVDTP:
 | aptX Low Latency | CSR (0x0000000A) or Qualcomm (0x000000D7) | 0x0002 |
 | aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD (detected only, never selected) |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
+| FastStream | CSR (0x0000000A) | 0x0001 |
 
 AAC and SBC use standard A2DP codec IDs defined in the A2DP specification.
 
@@ -357,6 +359,10 @@ Codec information element sizes (including the 6-byte vendor/codec ID):
   configuration and applied to the encoder, as Android does. Media packets
   carry a 2-byte payload header: frame count << 2 (latency bits 0) and a
   sequence number
+- **FastStream**: 8 bytes (PipeWire `a2dp_faststream_t`): byte 6 direction
+  (0x01 sink = music, 0x02 source = voice), byte 7 low nibble the sink rates
+  (0x2 44.1k, 0x1 48k), high nibble the source rate (0x2 16k). A2DPWB offers
+  and configures the music direction only
 
 **RTP vs no RTP**: LDAC, aptX HD, AAC, SBC and LHDC V5 media packets carry the
 12-byte RTP header. aptX and aptX LL are sent **without** an RTP header (as Android and

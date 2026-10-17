@@ -19,7 +19,7 @@ Oct 17, 2026 · @seiya ／ 改訂: 未決事項の決定を反映（同日）
 
 - 対応OSは Windows 10 (22H2) / 11 です。**x64 と ARM64 の両方を v2.0 で出します**（[ARM64](#arm64) を参照）。
 - 使い方は今と同じです。WinUSBを割り当てたUSBドングルを btstack で直接制御して、WASAPIで取り込んだシステム音声をA2DPで送ります。
-- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。v2 では SBC XQ を加えます（[v2 で加えたコーデック](#v2-で加えたコーデック)）。
+- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。v2 では SBC XQ と FastStream を加えます（[v2 で加えたコーデック](#v2-で加えたコーデック)）。
 - アプリ名（A2DP Windows Bridge / A2DPWB）とアイコンは v1 のまま変えません。
 
 **今回やらないこと**
@@ -90,7 +90,7 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | 1. FFI | `ldac-sys` / `openaptx-sys` / `fdkaac-sys` / `lhdcv5-sys` | 残すCコーデックをビルドしてFFIを提供。ライセンスの異なるライブラリをクレート単位で分けて管理する | 可 |
 | 1. FFI | `win-sys` | `windows` クレートで、Rustのライブラリが無いWin32 APIを包む。MMCSS、IPolicyConfig（既定デバイスの切り替え）、WLAN API（AFH用）、電源通知、レジストリのRunキー、メディアキー送出、**WinUSBドライバの割り当てと解除（SetupAPI / DiInstallDevice）** | 可 |
 | 2. 部品 | `hci-transport` | HCI H2（`nusb` でWinUSBを直接制御）とH4 over TCP（エミュレータ用）。現行の改造版 `hci_transport_h2_winusb.c` の復旧処理（パイプリセット、読み取り失敗からの復帰、コマンドタイムアウト、終了時のHCI Reset）を移植し、btstackには `btstack-sys` のコールバック表で接続する | 禁止 |
-| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC XQ > SBC）も担当 | 禁止 |
+| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC XQ > SBC。FastStream は明示的に選んだときだけ）も担当 | 禁止 |
 | 2. 部品 | `audio-capture` | `wasapi` クレートで取り込む。システムループバック、仮想デバイス、アプリ単位のループバック（build 19041以降）。デバイス一覧、エンドポイント音量、テストトーン | 禁止 |
 | 3. エンジン | `bt-host` | btstackのランループを専用スレッドに閉じ込め、外からはコマンドチャネルと型付きイベントだけで操作する。GAP / A2DP Source / AVRCP（絶対音量、ボタン操作）/ SDP / リンクキー / AFH / ファームウェア読み込み / pklgキャプチャ | 禁止 |
 | 3. エンジン | `pipeline` | リングバッファ、形式変換、リサンプル、ダウンミックス、エンコード、メディアペイロードの組み立て、送信ペースの制御、ABR | 禁止 |
@@ -150,6 +150,16 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 - 交渉: シンクのSBCの能力（BTstack の SBC capability イベントのビットマップと bitpool の範囲）に dual channel、16ブロック、8サブバンド、loudness、44.1 / 48 kHz があり、最大 bitpool が 43 以上のときだけ SBC XQ を提供していると見なします。設定する最大 bitpool は min(そのレートの High の bitpool, シンクの最大)、エンコーダの bitpool は品質の値をシンクの最大で抑えたものです。条件を満たさないシンクでは SBC XQ は出ず、Auto は SBC を選び、明示的に選んだ場合は代替コーデックの設定に従って SBC に切り替わるか、エラーになります。
 - Auto の優先順位は AAC の下、SBC の上です。ビット数は AAC 256 kbps より多いものの、AAC を出すシンクは AAC 向けに調整されていることが多く、ビットあたりの音質も AAC のほうが上だからです。
 - 検証: 単体テスト（フレーム長とビットレート、パケットへの収まり、交渉とフォールバック）と `tools/emu`（`sbcxq` と、SBCだけのシンクでの Auto の2ケース `auto-sbcxq` / `auto-sbc-no-xq`）。実機では未確認です。
+
+**FastStream**（キー `faststream`、表示名 "FastStream"。CSR のベンダーコーデック、vendor ID 0x0000000A / codec ID 0x0001）
+
+- PipeWire の `a2dp-codec-faststream.c` に合わせています。Codec Information は8バイトで、byte 6 が方向（0x01 シンク = ヘッドセットへの音楽、0x02 ソース = ヘッドセットからの音声）、byte 7 の下位4ビットがシンクのレート（0x2 44.1 kHz、0x1 48 kHz）、上位4ビットがソースのレート（0x2 16 kHz）です。
+- 音楽の方向だけを実装しました。ローカルのSEPは方向 0x01、レート 44.1 / 48 kHz を出し、SET_CONFIGURATION も方向 0x01 と1つのレートだけを送ります。ヘッドセットからの音声（16 kHz の SBC、PipeWire の duplex）は実装していません。
+- 中身は固定の SBC です。44.1 / 48 kHz、joint stereo、16ブロック、8サブバンド、loudness、bitpool 29（71バイトのフレーム）。各フレームを0の1バイトで偶数長の72バイトにし、1パケットに3フレーム（216バイト、48 kHz で 8 ms 分）を入れます。メディアペイロードヘッダもRTPヘッダも付けません。約 198 / 216 kbps（44.1 / 48 kHz）。品質の設定は効きません。
+- パケットはいつも3フレームにします（PipeWire の `max_frames` と同じ）。そのため FastStream だけは、エンコードの1回り（約10 ms）の終わりでも、まだ入る余地のあるパケットを送りません（`Packetizer::end_round`）。
+- シンクの能力に音楽の方向と 44.1 / 48 kHz のどちらかがあるときだけ使えます。SBC より音質が低いので Auto は選びません（SBC がないシンクでも）。明示的に選んだときだけ使います。
+- SEP が1つ増えるので、BTstack の `MAX_NR_AVDTP_STREAM_ENDPOINTS` を8にしました。
+- 検証: 単体テスト（交渉、ローカルのSEP、フレームとパディング、モノラルの複製、3フレームのパケット）と `tools/emu`（`faststream`、`faststream-44k`、FastStream と SBC だけのシンクで Auto が SBC を選ぶ `auto-not-faststream`）。`tools/a2dp_decode` は FastStream のパケットを SBC として復号し、フレームごとの設定、パディング、1パケット3フレームを確かめます。実機（CSR のヘッドセットやドングル）では未確認です。
 
 ## 音声パイプライン・スレッド設計
 
@@ -414,6 +424,8 @@ Windows 8 以降は WinUSB ドライバ（`winusb.inf`）が OS に標準で入�
 - [ ] `DiInstallDevice` による割り当てが使えない環境の扱い（フェーズ0の検証結果で決める）
 
 ## 改訂履歴
+
+- 2026-10-17（FastStream）: CSR FastStream の音楽の方向（ソース側）を `faststream` として追加した。Auto は選ばない。音声のバックチャネルは未実装。[v2 で加えたコーデック](#v2-で加えたコーデック)を参照。
 
 - 2026-10-17（SBC XQ）: SBC XQ（dual channel、高 bitpool）を独立したコーデック `sbcxq` として追加した。交渉、品質ごとの bitpool、Auto の位置は[v2 で加えたコーデック](#v2-で加えたコーデック)に記した。
 

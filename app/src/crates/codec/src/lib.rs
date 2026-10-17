@@ -38,10 +38,13 @@ pub enum CodecKind {
     AptxLl,
     Ldac,
     LhdcV5,
+    /// CSR FastStream: SBC frames (joint stereo, bitpool 29) with neither a
+    /// media payload header nor an RTP header; music direction only
+    FastStream,
 }
 
 impl CodecKind {
-    pub const ALL: [CodecKind; 8] = [
+    pub const ALL: [CodecKind; 9] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
         CodecKind::AptxLl,
@@ -50,12 +53,14 @@ impl CodecKind {
         CodecKind::Sbc,
         CodecKind::Aac,
         CodecKind::LhdcV5,
+        CodecKind::FastStream,
     ];
 
     /// The choice of "Auto", best first. LHDC V5 stays below the aptX family
     /// and above AAC / SBC, as in v1. SBC XQ goes just above SBC: it carries
     /// more bits than AAC at 256 kbps, but AAC sounds better per bit and
-    /// sinks that offer AAC are tuned for it.
+    /// sinks that offer AAC are tuned for it. FastStream is not here: it
+    /// sounds worse than SBC, so it is used only when chosen.
     pub const AUTO_PRIORITY: [CodecKind; 8] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
@@ -78,6 +83,7 @@ impl CodecKind {
             CodecKind::AptxLl => "aptX Low Latency",
             CodecKind::Ldac => "LDAC",
             CodecKind::LhdcV5 => "LHDC V5",
+            CodecKind::FastStream => "FastStream",
         }
     }
 
@@ -92,6 +98,7 @@ impl CodecKind {
             CodecKind::AptxLl => "aptxll",
             CodecKind::Ldac => "ldac",
             CodecKind::LhdcV5 => "lhdcv5",
+            CodecKind::FastStream => "faststream",
         }
     }
 
@@ -110,10 +117,10 @@ impl CodecKind {
         }
     }
 
-    /// Classic aptX and aptX LL go out without an RTP header (Android
-    /// A2DP_APTX_OFFSET, PipeWire); all others with one
+    /// Classic aptX, aptX LL and FastStream go out without an RTP header
+    /// (Android A2DP_APTX_OFFSET, PipeWire); all others with one
     pub fn uses_rtp(self) -> bool {
-        !matches!(self, CodecKind::Aptx | CodecKind::AptxLl)
+        !matches!(self, CodecKind::Aptx | CodecKind::AptxLl | CodecKind::FastStream)
     }
 
     /// Highest capture sample rate the codec takes
@@ -128,7 +135,7 @@ impl CodecKind {
     /// Whether the encoder for this codec is built in
     pub fn available(self) -> bool {
         match self {
-            CodecKind::Sbc | CodecKind::SbcXq => true,
+            CodecKind::Sbc | CodecKind::SbcXq | CodecKind::FastStream => true,
             CodecKind::Aac => cfg!(feature = "aac"),
             CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => cfg!(feature = "aptx"),
             CodecKind::Ldac => cfg!(feature = "ldac"),
@@ -305,6 +312,7 @@ pub fn create(kind: CodecKind, config: &EncoderConfig) -> Result<Box<dyn Encoder
     match kind {
         CodecKind::Sbc => Ok(Box::new(sbc::SbcEncoder::new(config)?)),
         CodecKind::SbcXq => Ok(Box::new(sbc::SbcEncoder::new_xq(config)?)),
+        CodecKind::FastStream => Ok(Box::new(sbc::FastStreamEncoder::new(config)?)),
         #[cfg(feature = "aac")]
         CodecKind::Aac => Ok(Box::new(aac::AacEncoder::new(config)?)),
         #[cfg(feature = "aptx")]

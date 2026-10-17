@@ -6,6 +6,8 @@
  * codec, extracts the outgoing media packets and decodes them:
  *
  *   SBC               Bluedroid SBC decoder (BTstack 3rd-party/bluedroid)
+ *   FastStream        the same SBC decoder (frames padded to even length,
+ *                     three per packet, no RTP / media payload header)
  *   AAC               fdk-aac (LATM, muxConfigPresent=1)
  *   aptX / HD / LL    libopenaptx 0.2.0
  *   LDAC, LHDC V5     no open-source decoder: frame headers are validated only
@@ -59,7 +61,7 @@ static uint32_t be32(const uint8_t *p) {
 /* Codec configuration (AVDTP Media Codec capability)                       */
 /* ------------------------------------------------------------------------ */
 
-enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5 };
+enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5, FastStream };
 
 static const char *codec_name(Codec c) {
     switch (c) {
@@ -70,6 +72,7 @@ static const char *codec_name(Codec c) {
     case Codec::AptxLL: return "aptX LL";
     case Codec::LDAC:   return "LDAC";
     case Codec::LHDCV5: return "LHDC V5";
+    case Codec::FastStream: return "FastStream";
     default:            return "unknown";
     }
 }
@@ -83,6 +86,7 @@ static const char *codec_file_tag(Codec c) {
     case Codec::AptxLL: return "aptxll";
     case Codec::LDAC:   return "ldac";
     case Codec::LHDCV5: return "lhdcv5";
+    case Codec::FastStream: return "faststream";
     default:            return "unknown";
     }
 }
@@ -105,8 +109,8 @@ struct CodecConfig {
     uint32_t lhdc_frame_samples = 0;
     int lhdc_bits = 0;
 
-    /* A2DPWB sends classic aptX and aptX LL without an RTP header */
-    bool has_rtp() const { return codec != Codec::Aptx && codec != Codec::AptxLL; }
+    /* A2DPWB sends classic aptX, aptX LL and FastStream without an RTP header */
+    bool has_rtp() const { return codec != Codec::Aptx && codec != Codec::AptxLL && codec != Codec::FastStream; }
 };
 
 /* Exactly one bit must be set in a configuration (not capability) field. */
@@ -241,6 +245,27 @@ static CodecConfig parse_media_codec(const uint8_t *p, size_t n) {
                 c.desc += " (INVALID: not exactly one option per field, or not V5 ver.1 / 5 ms)";
             return c;
         }
+        if (vendor == 0x0A && vcodec == 0x0001 && vlen >= 2) {
+            /* FastStream (PipeWire a2dp_faststream_t): direction 0x01 sink
+             * (music) | 0x02 source (voice); byte 7 low nibble sink rate
+             * 0x2 44.1k / 0x1 48k, high nibble source rate 0x2 16k. The
+             * music stream is SBC joint stereo, 16 blocks, 8 subbands,
+             * loudness, bitpool 29. */
+            c.codec = Codec::FastStream;
+            c.channels = 2;
+            uint8_t sink = v[1] & 0x0F;
+            c.sample_rate = sink == 0x02 ? 44100 : sink == 0x01 ? 48000 : 0;
+            c.sbc_mode = SBC_JOINT_STEREO;
+            c.sbc_blocks = 16;
+            c.sbc_subbands = 8;
+            c.sbc_alloc = SBC_LOUDNESS;
+            c.sbc_min_bitpool = c.sbc_max_bitpool = 29;
+            c.desc = strf("FastStream %u Hz, direction 0x%02X (%s), source rate bits 0x%X",
+                c.sample_rate, v[0], v[0] == 0x01 ? "music" : v[0] == 0x03 ? "music + voice" : "?", v[1] >> 4);
+            if (c.sample_rate == 0 || !(v[0] & 0x01))
+                c.desc += " (INVALID: not exactly one sink rate, or no music direction)";
+            return c;
+        }
         c.desc = strf("vendor codec 0x%08X:0x%04X (not supported by this tool)", vendor, vcodec);
         return c;
     }
@@ -317,6 +342,7 @@ public:
         wav_.set_path(wav_path);
         switch (cfg_.codec) {
         case Codec::SBC:
+        case Codec::FastStream:
             if (OI_CODEC_SBC_DecoderReset(&sbc_, sbc_data_, sizeof(sbc_data_), SBC_MAX_CHANNELS,
                                           (OI_UINT8)(cfg_.channels == 1 ? 1 : 2), FALSE) != OI_OK)
                 issue("SBC: decoder reset failed");
@@ -356,6 +382,7 @@ public:
 
         switch (cfg_.codec) {
         case Codec::SBC:    decode_sbc(pl, pn); break;
+        case Codec::FastStream: decode_faststream(pl, pn); break;
         case Codec::AAC:    decode_aac(pl, pn); break;
         case Codec::Aptx:
         case Codec::AptxLL:
@@ -498,6 +525,59 @@ private:
             wav_.write(pcm, pcm_bytes, fi.frequency, fi.nrof_channels, 16);
         }
         if (got != announced) issue("SBC: media payload header frame count differs from frames in packet");
+    }
+
+    /* One SBC frame at p (n bytes available): decoded, checked against the
+     * configuration and written to the WAV. Returns its length (A2DP 12.9),
+     * 0 on an error. */
+    size_t decode_one_sbc_frame(const uint8_t *p, size_t n, const char *codec) {
+        if (n < 4 || p[0] != 0x9C) { issue(strf("%s: SBC sync word 0x9C not found where a frame should start", codec)); return 0; }
+        static const int blocks_by_bits[4] = {4, 8, 12, 16};
+        int blocks = blocks_by_bits[(p[1] >> 4) & 3], mode = (p[1] >> 2) & 3, subbands = (p[1] & 1) ? 8 : 4;
+        int ch = mode == 0 ? 1 : 2, bitpool = p[2];
+        size_t bits = mode == 3 ? (size_t)subbands + (size_t)blocks * bitpool
+                    : mode == 2 ? (size_t)blocks * bitpool : (size_t)blocks * ch * bitpool;
+        size_t len = 4 + (4 * (size_t)subbands * ch) / 8 + (bits + 7) / 8;
+        if (len > n) { issue(strf("%s: SBC frame runs past the end of the packet", codec)); return 0; }
+        const OI_BYTE *data = p;
+        OI_UINT32 left = (OI_UINT32)len;
+        OI_INT16 pcm[SBC_MAX_CHANNELS * SBC_MAX_BANDS * SBC_MAX_BLOCKS];
+        OI_UINT32 pcm_bytes = sizeof(pcm);
+        OI_STATUS st = OI_CODEC_SBC_DecodeFrame(&sbc_, &data, &left, pcm, &pcm_bytes);
+        if (st != OI_OK) { issue(strf("%s: SBC decode error (OI_STATUS %d)", codec, (int)st)); return 0; }
+        if (left != 0) issue(strf("%s: SBC decoder did not take the whole frame", codec));
+        frames_++;
+        const OI_CODEC_SBC_FRAME_INFO &fi = sbc_.common.frameInfo;
+        if (fi.frequency != cfg_.sample_rate) issue(strf("%s: frame sampling frequency differs from configuration", codec));
+        if (fi.mode != cfg_.sbc_mode) issue(strf("%s: frame channel mode differs from configuration", codec));
+        if (fi.nrof_blocks != cfg_.sbc_blocks) issue(strf("%s: frame block length differs from configuration", codec));
+        if (fi.nrof_subbands != cfg_.sbc_subbands) issue(strf("%s: frame subbands differ from configuration", codec));
+        if (fi.alloc != cfg_.sbc_alloc) issue(strf("%s: frame allocation method differs from configuration", codec));
+        if (fi.bitpool < cfg_.sbc_min_bitpool || fi.bitpool > cfg_.sbc_max_bitpool)
+            issue(strf("%s: frame bitpool outside the configured range", codec));
+        samples_ += (uint64_t)fi.nrof_blocks * fi.nrof_subbands;
+        wav_.write(pcm, pcm_bytes, fi.frequency, fi.nrof_channels, 16);
+        return len;
+    }
+
+    /* FastStream (PipeWire a2dp-codec-faststream.c): no media payload
+     * header; SBC frames each padded with a zero byte to an even length;
+     * A2DPWB sends three per packet as PipeWire. */
+    void decode_faststream(const uint8_t *p, size_t n) {
+        size_t off = 0;
+        uint64_t got = 0;
+        while (off < n) {
+            size_t len = decode_one_sbc_frame(p + off, n - off, "FastStream");
+            if (len == 0) break;
+            off += len;
+            got++;
+            if (len % 2) {
+                if (off >= n) { issue("FastStream: odd-length frame without its padding byte"); break; }
+                if (p[off] != 0) issue("FastStream: padding byte after an odd-length frame is not 0");
+                off++;
+            }
+        }
+        if (got != 3) issue("FastStream: packet does not carry 3 frames (PipeWire's packets do)");
     }
 
     void decode_aac(const uint8_t *p, size_t n) {

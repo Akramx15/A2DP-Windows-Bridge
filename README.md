@@ -16,6 +16,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
+| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
 | LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
 ### Codec support by platform (sending to headphones)
@@ -29,6 +30,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
 | SBC XQ | ❌ | ❌ | ✅ | ✅ (sinks whose SBC allows dual channel, bitpool ≥ 43) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
+| FastStream | ❌ | ❌ | ✅ | ✅ (music only, chosen explicitly) |
 | LHDC V5 | ❌ | ❌ | ❌ | 🧪 experimental |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
@@ -193,6 +195,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbcxq   # SBC XQ: dual channel, bitpool 47 / 43 (44.1 / 48 kHz)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c faststream   # CSR FastStream (music direction)
 
 # LDAC quality modes
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
@@ -222,7 +225,7 @@ All options, including AFH (`--afh`) and the peer receiver test (`--remote-sink`
 
 > **Note**: System loopback and virtual device capture use WASAPI shared mode. The capture sample rate depends on the device's format configured in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the device format to 96 kHz in Sound settings > Advanced. Application capture is converted by Windows to the rate A2DPWB asks for.
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC XQ > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC XQ > SBC (FastStream only when chosen)
 
 ### aptX family and aptX Adaptive
 

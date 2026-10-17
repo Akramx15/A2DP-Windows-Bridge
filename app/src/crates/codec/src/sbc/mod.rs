@@ -13,12 +13,17 @@
 //!   kHz, joint stereo (or mono), 16 blocks, 8 subbands, loudness, the
 //!   bitpool by [`Quality`]; [`SbcEncoder::new_xq`] is SBC XQ: dual channel
 //!   with a high bitpool per channel ([`xq_bitpool`]).
+//! - [`FastStreamEncoder`]: CSR FastStream, SBC frames of a fixed setup.
 
 mod analysis;
 mod bit_alloc;
+mod faststream;
 mod frame;
 mod packing;
 
+pub use faststream::{
+    FASTSTREAM_BITPOOL, FASTSTREAM_FRAME_BYTES, FASTSTREAM_FRAMES_PER_PACKET, FASTSTREAM_MAX_PAYLOAD, FastStreamEncoder,
+};
 pub use frame::{Allocation, ChannelMode, SbcConfig, SbcFrameEncoder};
 
 use crate::{CodecKind, Encoded, Encoder, EncoderConfig, EncoderError, Pcm, PcmFormat, Quality};

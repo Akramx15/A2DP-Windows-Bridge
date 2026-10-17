@@ -403,6 +403,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
+        CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
         CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Aac if preferred != 44100 => 48000,
         _ => preferred,
     };

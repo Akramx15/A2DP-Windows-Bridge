@@ -63,13 +63,14 @@ if not os.path.exists(VENV_PYTHON) and sys.prefix != sys.base_prefix:
 SINK_ADDRESS = '00:A2:D0:00:00:02'
 BASE_PORT = 9101  # A2DP cases; LE Audio cases use BASE_PORT + 100
 
-CODECS = ['sbc', 'sbcxq', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5']
+CODECS = ['sbc', 'sbcxq', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream']
 CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'sbc': r'SBC \d+ Hz, joint stereo, 16 blocks, 8 subbands, loudness, bitpool 2-53$',
     # SBC XQ: dual channel up to bitpool 47 (44.1 kHz) / 43 (48 kHz)
     'sbcxq': r'SBC (44100 Hz, dual channel, .*bitpool 2-47|48000 Hz, dual channel, .*bitpool 2-43)$',
     'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
+    'faststream': r'FastStream \d+ Hz, direction 0x01 \(music\)',   # no voice backchannel
 }
 NO_DECODER = {'ldac', 'lhdcv5'}  # frame headers are validated, audio is not decoded
 # Further cases: name -> (A2DPWB -c, emu_sink.py arguments, the codec expected,
@@ -78,6 +79,9 @@ NEGOTIATION = {
     'sbcxq-44k': ('sbcxq', [], 'sbcxq', ['--rate', '44100']),            # bitpool 47
     'auto-sbcxq': ('auto', ['--codecs', 'sbc'], 'sbcxq', []),            # Auto takes SBC XQ over SBC
     'auto-sbc-no-xq': ('auto', ['--codecs', 'sbc', '--sbc-no-dual'], 'sbc', []),  # no dual channel: SBC
+    'faststream-44k': ('faststream', [], 'faststream', ['--rate', '44100']),
+    # Auto never takes FastStream, even over SBC
+    'auto-not-faststream': ('auto', ['--codecs', 'sbc', 'faststream', '--sbc-no-dual'], 'sbc', []),
 }
 TONES = ((1000.0, 0.5), (1500.0, 0.5))  # (frequency, amplitude) per channel, as --test-tone
 

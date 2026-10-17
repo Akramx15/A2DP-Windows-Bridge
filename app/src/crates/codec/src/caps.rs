@@ -24,6 +24,8 @@ pub const APTXAD_VENDOR_ID: u32 = 0x0000_00D7;
 pub const APTXAD_CODEC_ID: u16 = 0x00AD;
 pub const LHDCV5_VENDOR_ID: u32 = 0x0000_053A; // Savitech
 pub const LHDCV5_CODEC_ID: u16 = 0x4C35;
+pub const FASTSTREAM_VENDOR_ID: u32 = 0x0000_000A; // CSR
+pub const FASTSTREAM_CODEC_ID: u16 = 0x0001;
 
 /// AVDTP media codec types
 pub const CODEC_TYPE_SBC: u8 = 0x00;
@@ -127,6 +129,17 @@ pub fn endpoint_kind(kind: CodecKind) -> CodecKind {
     }
 }
 
+// FastStream (PipeWire a2dp-codec-caps.h, a2dp_faststream_t): 8 bytes, byte
+// 6 direction (0x01 sink = music to the headset, 0x02 source = voice back),
+// byte 7 low nibble the sink rates (0x02 44.1k, 0x01 48k), high nibble the
+// source rate (0x2 16k). A2DPWB offers and configures the sink direction
+// only.
+const FASTSTREAM_INFO_LEN: usize = 8;
+const FASTSTREAM_DIRECTION_SINK: u8 = 0x01;
+const FASTSTREAM_SINK_44100: u8 = 0x02;
+const FASTSTREAM_SINK_48000: u8 = 0x01;
+const FASTSTREAM_SINK_MASK: u8 = 0x03;
+
 fn vendor_header(vendor_id: u32, codec_id: u16) -> Vec<u8> {
     let mut v = vendor_id.to_le_bytes().to_vec();
     v.extend_from_slice(&codec_id.to_le_bytes());
@@ -223,6 +236,15 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &[LHDCV5_SR_48000, LHDCV5_BITS_24, LHDCV5_CAPS_P8],
         ));
     }
+    // FastStream: music to the sink at 44.1 / 48 kHz, no voice backchannel
+    eps.push(vendor(
+        CodecKind::FastStream,
+        FASTSTREAM_VENDOR_ID,
+        FASTSTREAM_CODEC_ID,
+        FASTSTREAM_INFO_LEN,
+        &[FASTSTREAM_DIRECTION_SINK, FASTSTREAM_SINK_44100 | FASTSTREAM_SINK_48000],
+        &[FASTSTREAM_DIRECTION_SINK, FASTSTREAM_SINK_48000],
+    ));
     eps
 }
 
@@ -244,6 +266,9 @@ pub struct RemoteCaps {
     pub aptx_hd: Option<RemoteSep>,
     pub aptx_ll: Option<RemoteSep>,
     pub lhdcv5: Option<RemoteSep>,
+    pub faststream: Option<RemoteSep>,
+    /// FastStream sink (music) rates: 0x02 44.1k, 0x01 48k
+    pub faststream_rates: u8,
     /// aptX family byte 6 of each (0 = not reported: assume 44.1k + 48k)
     pub aptx_caps: u8,
     pub aptxhd_caps: u8,
@@ -291,6 +316,7 @@ impl RemoteCaps {
             CodecKind::AptxHd => self.aptx_hd,
             CodecKind::AptxLl => self.aptx_ll,
             CodecKind::LhdcV5 => self.lhdcv5,
+            CodecKind::FastStream => self.faststream,
         }
     }
 
@@ -372,6 +398,17 @@ impl RemoteCaps {
             }
             return VendorCapability::Taken(CodecKind::LhdcV5);
         }
+        if vid == FASTSTREAM_VENDOR_ID && cid == FASTSTREAM_CODEC_ID {
+            let rates = byte(7) & FASTSTREAM_SINK_MASK;
+            if info.len() < FASTSTREAM_INFO_LEN || byte(6) & FASTSTREAM_DIRECTION_SINK == 0 || rates == 0 {
+                return VendorCapability::Ignored(CodecKind::FastStream, "no music direction at 44.1 / 48 kHz");
+            }
+            if self.faststream.is_none() {
+                self.faststream = Some(RemoteSep { seid });
+                self.faststream_rates = rates;
+            }
+            return VendorCapability::Taken(CodecKind::FastStream);
+        }
         if vid == APTX_VENDOR_ID && cid == APTX_CODEC_ID {
             let caps = byte(6);
             if info.len() >= 7 && caps & APTX_CH_STEREO == 0 {
@@ -424,6 +461,14 @@ impl RemoteCaps {
         } else {
             wanted
         }
+    }
+
+    /// Capture rate for FastStream: 44.1 or 48 kHz as the sink lists them,
+    /// preferring `wanted` (other rates: 48k, then 44.1k)
+    pub fn pick_faststream_sample_rate(&self, wanted: u32) -> u32 {
+        let has441 = self.faststream_rates & FASTSTREAM_SINK_44100 != 0;
+        let has48 = self.faststream_rates & FASTSTREAM_SINK_48000 != 0;
+        if (wanted == 44100 && has441) || !has48 { 44100 } else { 48000 }
     }
 
     /// Capture rate for LHDC V5: 44.1 / 48 / 96 / 192 kHz as the remote
@@ -539,6 +584,21 @@ impl RemoteCaps {
                     info.push(if rc[14] != 0 { rc[14] } else { APTXLL_SRA_AVG_TIME });
                     info.extend_from_slice(&good.to_le_bytes());
                 }
+                ConfigRequest::Vendor(info)
+            }
+            CodecKind::FastStream => {
+                // The music direction at one rate; stereo on the wire (the
+                // encoder duplicates mono input)
+                let freq = match sample_rate {
+                    44100 => FASTSTREAM_SINK_44100,
+                    48000 => FASTSTREAM_SINK_48000,
+                    _ => 0,
+                };
+                if freq & self.faststream_rates == 0 {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                let mut info = vendor_header(FASTSTREAM_VENDOR_ID, FASTSTREAM_CODEC_ID);
+                info.extend_from_slice(&[FASTSTREAM_DIRECTION_SINK, freq]);
                 ConfigRequest::Vendor(info)
             }
             CodecKind::LhdcV5 => {
@@ -822,6 +882,68 @@ mod tests {
         caps.add_sbc_caps(1, sbc_all());
         caps.add_sbc_caps(2, SbcCapabilities { channel_mode: 0x01, ..sbc_all() });
         assert_eq!(caps.sep(CodecKind::SbcXq), Some(RemoteSep { seid: 1 }));
+    }
+
+    #[test]
+    fn faststream_negotiation() {
+        // A CSR headset: music 44.1 / 48 kHz plus the 16 kHz voice direction
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        let info = [0x0A, 0, 0, 0, 0x01, 0x00, 0x03, 0x23];
+        assert_eq!(caps.add_vendor(5, &info), VendorCapability::Taken(CodecKind::FastStream));
+        assert!(caps.has(CodecKind::FastStream));
+        // Never Auto's choice, not even over SBC
+        assert_eq!(caps.best(), Some(CodecKind::SbcXq));
+        let mut only = RemoteCaps::default();
+        only.add_vendor(5, &info);
+        assert_eq!(only.best(), None);
+        assert_eq!(choose(&only, Some(CodecKind::FastStream), false).unwrap().kind, CodecKind::FastStream);
+
+        let c = caps.configuration(CodecKind::FastStream, 48000, 2, 16).unwrap();
+        assert_eq!(c.remote_seid, 5);
+        assert_eq!(c.request, ConfigRequest::Vendor(vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x01]));
+        let c = caps.configuration(CodecKind::FastStream, 44100, 1, 16).unwrap();
+        assert_eq!(c.request, ConfigRequest::Vendor(vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x02]));
+        assert!(caps.configuration(CodecKind::FastStream, 32000, 2, 16).is_err());
+        assert_eq!(caps.pick_faststream_sample_rate(44100), 44100);
+        assert_eq!(caps.pick_faststream_sample_rate(96000), 48000);
+
+        // 44.1 kHz only
+        let mut caps = RemoteCaps::default();
+        caps.add_vendor(5, &[0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x02]);
+        assert_eq!(caps.pick_faststream_sample_rate(48000), 44100);
+        assert!(caps.configuration(CodecKind::FastStream, 48000, 2, 16).is_err());
+
+        // Voice only, no rate, too short: ignored; aptX LL (same vendor) is not FastStream
+        for bad in [
+            &[0x0A, 0, 0, 0, 0x01, 0x00, 0x02, 0x20][..],
+            &[0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x20],
+            &[0x0A, 0, 0, 0, 0x01, 0x00, 0x01],
+        ] {
+            let mut caps = RemoteCaps::default();
+            assert!(matches!(caps.add_vendor(5, bad), VendorCapability::Ignored(CodecKind::FastStream, _)));
+            assert!(!caps.has(CodecKind::FastStream));
+        }
+        let mut caps = RemoteCaps::default();
+        assert_eq!(
+            caps.add_vendor(6, &[0x0A, 0, 0, 0, 0x02, 0x00, 0x32, 0x00]),
+            VendorCapability::Taken(CodecKind::AptxLl)
+        );
+        assert!(!caps.has(CodecKind::FastStream));
+
+        // Fallback from FastStream goes to the best codec
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        let c = choose(&caps, Some(CodecKind::FastStream), true).unwrap();
+        assert_eq!((c.kind, c.replaced), (CodecKind::Sbc, Some((CodecKind::FastStream, Unavailable::NotSupported))));
+
+        // The local SEP: vendor header, music direction, 44.1 + 48 kHz
+        let ep = local_endpoints().into_iter().find(|e| e.kind == CodecKind::FastStream).unwrap();
+        assert_eq!(ep.caps, vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x03]);
+        assert_eq!(ep.config, vec![0x0A, 0, 0, 0, 0x01, 0x00, 0x01, 0x01]);
+        assert_eq!(CodecKind::from_key("faststream"), Some(CodecKind::FastStream));
+        assert!(!CodecKind::FastStream.uses_rtp());
+        assert_eq!(CodecKind::FastStream.media_header_len(), 0);
     }
 
     #[test]

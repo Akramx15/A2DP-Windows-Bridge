@@ -4,7 +4,7 @@
 // pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, "mhq" only
 // for LHDC V5, no quality choice for the aptX family.
 
-export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "aac" | "sbcxq" | "sbc";
+export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "aac" | "sbcxq" | "sbc" | "faststream";
 
 export interface QualityMode {
   id: string;
@@ -110,6 +110,9 @@ export const CODECS: CodecSpec[] = [
     abr: false,
     hiRes: false,
   },
+  // CSR FastStream: fixed SBC (bitpool 29, ~200 kbps), music only; never
+  // picked by Auto
+  { id: "faststream", label: "codec.faststream", bars: { quality: 1, latency: 4, stability: 4 }, qualities: [], abr: false, hiRes: false },
 ];
 
 export function codecSpec(id: string): CodecSpec {
@@ -129,6 +132,7 @@ export function codecLabelKey(name: string): string {
     aac: "codec.aac",
     sbc: "codec.sbc",
     sbcxq: "codec.sbc_xq",
+    faststream: "codec.faststream",
     lhdcv5: "codec.lhdc_v5",
     lhdc: "codec.lhdc_v5",
   };

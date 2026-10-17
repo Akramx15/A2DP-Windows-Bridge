@@ -158,6 +158,7 @@ describe("profiles", () => {
     expect(codecLabelKey("aptX HD")).toBe("codec.aptx_hd");
     expect(codecLabelKey("LHDC V5")).toBe("codec.lhdc_v5");
     expect(codecLabelKey("SBC XQ")).toBe("codec.sbc_xq");
+    expect(codecLabelKey("FastStream")).toBe("codec.faststream");
     expect(codecLabelKey("Ldac")).toBe("codec.ldac");
   });
 

@@ -36,6 +36,7 @@
   "codec.aac": "AAC",
   "codec.sbc": "SBC",
   "codec.sbc_xq": "SBC XQ",
+  "codec.faststream": "FastStream",
   "codec.lhdc_v5": "LHDC V5",
   "codec.unknown": "알 수 없음",
   "quality.high": "높음",

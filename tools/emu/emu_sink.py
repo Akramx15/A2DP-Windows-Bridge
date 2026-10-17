@@ -4,8 +4,8 @@ Runs two Bumble virtual controllers on one in-process link:
   - controller "A2DPWB" is served as H4 over TCP; A2DPWB connects to it with
     `A2DPWB.exe --cli --hci-tcp 127.0.0.1:<port>`
   - controller "SINK" is driven by a Bumble host acting as an A2DP sink that
-    offers SBC (SBC XQ capable), AAC, aptX, aptX HD, aptX LL, LDAC and LHDC V5 like
-    a typical headset
+    offers SBC (SBC XQ capable), AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 and
+    FastStream like a typical headset
 
 The sink's HCI traffic is written to a PacketLogger (.pklg) capture, so
 a2dpwb_decode --received can check what actually arrived at the sink.
@@ -124,7 +124,7 @@ class PacketLoggerSnooper(Snooper):
 
 
 # Codec of each sink_codec_capabilities() entry, in order (for --in-use)
-CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5']
+CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream']
 
 
 def sink_codec_capabilities(sbc_dual=True):
@@ -187,6 +187,10 @@ def sink_codec_capabilities(sbc_dual=True):
         # LHDC V5 (Android a2dp_vendor_lhdcv5_constants.h): 44.1 / 48 / 96 / 192 kHz,
         # 16 / 24-bit, 64..1000 kbps, V5 ver.1 with 5 ms frames, low latency offered
         vendor(0x0000053A, 0x4C35, [0x35, 0x06, 0x11, 0x40, 0x00]),
+        # FastStream (PipeWire a2dp_faststream_t) as a CSR headset lists it:
+        # music (sink) and voice (source) directions, music at 44.1 / 48 kHz,
+        # voice at 16 kHz
+        vendor(0x0000000A, 0x0001, [0x03, 0x23]),
     ]
 
 
