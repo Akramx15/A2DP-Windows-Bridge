@@ -30,10 +30,7 @@ use super::core::LeCtx;
 /// Status of the operations still queued or running when a link goes down
 pub const ATT_ERROR_HCI_DISCONNECT_RECEIVED: u8 = 0x1F;
 
-/// ATT_PROPERTY_* of a characteristic declaration
-pub const PROPERTY_READ: u16 = 0x02;
-pub const PROPERTY_WRITE_WITHOUT_RESPONSE: u16 = 0x04;
-pub const PROPERTY_WRITE: u16 = 0x08;
+/// ATT_PROPERTY_* of a characteristic declaration (those the core checks)
 pub const PROPERTY_NOTIFY: u16 = 0x10;
 pub const PROPERTY_INDICATE: u16 = 0x20;
 
@@ -84,8 +81,6 @@ pub(crate) trait GattBackend {
     fn read_long(&self, con: u16, value_handle: u16) -> u8;
     /// With response; a long write when the value does not fit the MTU
     fn write(&self, con: u16, value_handle: u16, value: &[u8]) -> u8;
-    /// No completion event
-    fn write_without_response(&self, con: u16, value_handle: u16, value: &[u8]) -> u8;
     fn write_ccc(&self, con: u16, chr: &GattChar, configuration: u16) -> u8;
     fn discover_primary(&self, con: u16) -> u8;
     fn find_included(&self, con: u16, start_handle: u16, end_handle: u16) -> u8;
@@ -99,10 +94,6 @@ impl GattBackend for Stack {
 
     fn write(&self, con: u16, value_handle: u16, value: &[u8]) -> u8 {
         self.gatt_write_value(con, value_handle, value)
-    }
-
-    fn write_without_response(&self, con: u16, value_handle: u16, value: &[u8]) -> u8 {
-        self.gatt_write_without_response(con, value_handle, value)
     }
 
     fn write_ccc(&self, con: u16, chr: &GattChar, configuration: u16) -> u8 {
@@ -144,12 +135,14 @@ impl Completion {
     /// Runs the callback (notifications: the listeners)
     pub(crate) fn run(self, ctx: &mut LeCtx<'_>) {
         match self {
-            Completion::Value { done, status, value, .. } => {
+            Completion::Value { done, status, value, handle } => {
+                tracing::trace!("LE Audio: GATT read of 0x{handle:04x} done (0x{status:02x})");
                 if let Some(f) = done {
                     f(ctx, status, &value)
                 }
             }
-            Completion::Done { done, status, .. } => {
+            Completion::Done { done, status, handle } => {
+                tracing::trace!("LE Audio: GATT operation on 0x{handle:04x} done (0x{status:02x})");
                 if let Some(f) = done {
                     f(ctx, status)
                 }
@@ -198,10 +191,6 @@ enum Op {
         value: Vec<u8>,
         done: Option<GattDone>,
     },
-    WriteNoRsp {
-        handle: u16,
-        value: Vec<u8>,
-    },
     Subscribe {
         chr: GattChar,
         config: u16,
@@ -231,7 +220,6 @@ impl Op {
                 b.read_long(con, *handle)
             }
             Op::Write { handle, value, .. } => b.write(con, *handle, value),
-            Op::WriteNoRsp { handle, value } => b.write_without_response(con, *handle, value),
             Op::Subscribe { chr, config, .. } => b.write_ccc(con, chr, *config),
             Op::Discover { .. } => b.discover_primary(con),
             Op::Barrier { .. } => ERROR_CODE_SUCCESS,
@@ -240,7 +228,7 @@ impl Op {
 
     /// Completes without a QUERY_COMPLETE event
     fn immediate(&self) -> bool {
-        matches!(self, Op::WriteNoRsp { .. } | Op::Barrier { .. })
+        matches!(self, Op::Barrier { .. })
     }
 
     /// A GATT event of the running query (not QUERY_COMPLETE)
@@ -341,12 +329,6 @@ impl Op {
             Op::Subscribe { chr, done, .. } => Completion::Done { done, status, handle: chr.value_handle },
             Op::Discover { services, done, .. } => Completion::Discovered { done, status, services },
             Op::Barrier { done } => Completion::Done { done, status, handle: 0 },
-            Op::WriteNoRsp { handle, .. } => {
-                if status != ERROR_CODE_SUCCESS {
-                    tracing::warn!("LE Audio: write without response to 0x{handle:04x} failed (0x{status:02x})");
-                }
-                return None;
-            }
         })
     }
 }
@@ -382,11 +364,6 @@ impl GattClient {
         self.enqueue(con, Op::Write { handle: value_handle, value, done });
     }
 
-    /// Write without response, in order with the queued operations
-    pub fn write_without_response(&mut self, con: u16, value_handle: u16, value: Vec<u8>) {
-        self.enqueue(con, Op::WriteNoRsp { handle: value_handle, value });
-    }
-
     /// Enable notifications (or indications) of a characteristic: writes its
     /// CCC descriptor. Values arrive at the [`GattClient::listen`]
     /// callbacks.
@@ -415,6 +392,7 @@ impl GattClient {
     }
 
     /// Operations queued or running on `con`
+    #[cfg(test)]
     pub fn pending(&self, con: u16) -> usize {
         self.conns.get(&con).map_or(0, |c| c.queue.len())
     }
@@ -590,9 +568,6 @@ mod tests {
         fn write(&self, con: u16, h: u16, v: &[u8]) -> u8 {
             self.answer(format!("write {con:x} {h:x} {v:?}"))
         }
-        fn write_without_response(&self, con: u16, h: u16, v: &[u8]) -> u8 {
-            self.answer(format!("wwr {con:x} {h:x} {v:?}"))
-        }
         fn write_ccc(&self, con: u16, chr: &GattChar, cfg: u16) -> u8 {
             self.answer(format!("ccc {con:x} {:x} {cfg}", chr.value_handle))
         }
@@ -635,12 +610,11 @@ mod tests {
         g.attach(0x41);
         read(&mut g, 0x40, 0x10);
         g.write(0x40, 0x11, vec![1, 2], None);
-        g.write_without_response(0x40, 0x12, vec![3]);
         read(&mut g, 0x40, 0x13);
         read(&mut g, 0x41, 0x20);
         // Nothing starts before the core pumps (the caller's hook returned)
         assert!(b.calls().is_empty());
-        assert_eq!(g.pending(0x40), 4);
+        assert_eq!(g.pending(0x40), 3);
         g.pump_all(&b);
         let mut calls = b.calls();
         calls.sort();
@@ -656,11 +630,10 @@ mod tests {
             Completion::Value { status: 0, value, handle: 0x10, .. } => assert_eq!(value, &[0xAA, 0xBB]),
             _ => panic!("expected the read's value"),
         }
-        // Then the write; its completion starts the write without response
-        // (immediate) and the next read at once
+        // Then the write; its completion starts the next read at once
         assert_eq!(b.calls(), ["write 40 11 [1, 2]"]);
         g.on_event(&b, &complete(0x40, 0));
-        assert_eq!(b.calls(), ["wwr 40 12 [3]", "read 40 13"]);
+        assert_eq!(b.calls(), ["read 40 13"]);
         assert_eq!(summaries(&mut g), [(0x11, 0)]);
         assert_eq!(g.pending(0x40), 1);
         // An event of another connection does not complete this one

@@ -203,6 +203,7 @@ impl BtHost {
         let hooks = self.le.hooks();
         let cancelled = || self.le_cancelled();
         for h in &hooks {
+            tracing::debug!("LE Audio: {}: preparing the group", h.name());
             h.prepare_group(self, &mut devices, &cancelled);
         }
         for h in &hooks {
@@ -321,18 +322,6 @@ impl BtHost {
     /// until cancelled; false on timeout / cancel / done(false).
     pub(crate) fn le_call(&self, timeout: Duration, f: impl FnOnce(&mut LeCtx<'_>, LeDone) + Send + 'static) -> bool {
         self.le_wait(timeout, true, f)
-    }
-
-    /// Runs `f` on the BTstack thread without waiting
-    pub(crate) fn le_post(&self, f: impl FnOnce(&mut LeCtx<'_>) + Send + 'static) {
-        if !self.le_on {
-            return;
-        }
-        self.post(move |app, stack| {
-            if let Some(le) = app.le.as_mut().filter(|le| le.initialized()) {
-                le.run(stack, f);
-            }
-        });
     }
 
     /// le_call with or without the cancel (teardown waits are not

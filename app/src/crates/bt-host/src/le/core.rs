@@ -36,6 +36,7 @@ use super::gatt_client::{GattChar, GattClient, GattService};
 use super::gatt_server::{AttRead, AttWrite, GattServer, WriteAction};
 use super::iso_send::IsoSender;
 use super::module::{LeGroupHooks, LeModule, LeModuleSetup};
+use super::modules::tmap_gmap::TmapGmapModule;
 use super::{LeAddr, LeConfig, LeDeviceId, LeDeviceInfo, LeScanResult, LeStreamRequest, LeStreamStats, LeStreamStatus};
 use crate::Controls;
 use crate::app::{HostApp, Job};
@@ -70,8 +71,6 @@ pub struct LeDevice {
     pub encrypted: bool,
     /// SM pairing in progress
     pub pairing: bool,
-    /// An LTK was stored when we connected
-    pub bonded_before: bool,
     pub pair_attempts: u32,
     /// Security done, discovery started
     pub secured: bool,
@@ -111,7 +110,6 @@ impl LeDevice {
             acl: CON_HANDLE_INVALID,
             encrypted: false,
             pairing: false,
-            bonded_before: false,
             pair_attempts: 0,
             secured: false,
             gatt_ready: false,
@@ -158,6 +156,7 @@ impl LeDevice {
         self.ases.iter().find(|a| a.id == ase_id)
     }
 
+    #[cfg(test)]
     pub fn ase_mut(&mut self, ase_id: u8) -> Option<&mut Ase> {
         self.ases.iter_mut().find(|a| a.id == ase_id)
     }
@@ -323,10 +322,6 @@ impl<'a> LeCtx<'a> {
     /// find_stream_preset)
     pub fn presets(&self) -> &PresetTable {
         &self.core.presets
-    }
-
-    pub fn presets_mut(&mut self) -> &mut PresetTable {
-        &mut self.core.presets
     }
 
     /// ISO buffers of the controller (LE Read Buffer Size v2):
@@ -1156,7 +1151,7 @@ impl<'a> LeCtx<'a> {
             });
         }
         let (packet_length, packet_count) = self.iso_buffers();
-        plan_stream(&devs, request, &self.core.presets, IsoLimits { packet_length, packet_count })
+        plan_stream(&devs, request, self.presets(), IsoLimits { packet_length, packet_count })
     }
 
     /// le_start_stream's BAP part: `done(true)` once audio may flow
@@ -1209,8 +1204,9 @@ impl<'a> LeCtx<'a> {
     }
 
     /// For BtHost::le_devices (v1 Core::devices)
-    pub(crate) fn device_infos(&self) -> Vec<LeDeviceInfo> {
-        self.core
+    pub(crate) fn device_infos(&mut self) -> Vec<LeDeviceInfo> {
+        let mut list: Vec<LeDeviceInfo> = self
+            .core
             .devices
             .iter()
             .map(|d| LeDeviceInfo {
@@ -1233,8 +1229,15 @@ impl<'a> LeCtx<'a> {
                     })
                     .collect::<Vec<_>>()
                     .join("; "),
+                roles: String::new(),
             })
-            .collect()
+            .collect();
+        if let Some(m) = self.module_mut::<TmapGmapModule>() {
+            for d in &mut list {
+                d.roles = m.info(d.id).map(|i| i.summary()).unwrap_or_default();
+            }
+        }
+        list
     }
 
     // ======================================================================
@@ -1557,10 +1560,13 @@ impl LeCore {
                 poster: self.poster.clone(),
             };
             let mut hooks = Vec::new();
+            let mut names = Vec::new();
             for e in super::modules::create_all(&mut setup) {
+                names.push(e.module.name());
                 self.modules.push(Some(e.module));
                 hooks.extend(e.hooks);
             }
+            tracing::debug!("LE Audio: modules {}", names.join(", "));
             *self.shared.hooks.lock().unwrap_or_else(|e| e.into_inner()) = hooks;
         }
 

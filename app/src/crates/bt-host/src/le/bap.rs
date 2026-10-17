@@ -443,14 +443,17 @@ fn all_ases(env: &dyn UnicastEnv, plan: &StreamPlan, stopping: bool, pred: impl 
 }
 
 impl Unicast {
+    #[cfg(test)]
     pub fn phase(&self) -> Phase {
         self.phase
     }
 
+    #[cfg(test)]
     pub fn plan(&self) -> Option<&StreamPlan> {
         self.plan.as_ref()
     }
 
+    #[cfg(test)]
     pub fn streaming(&self) -> bool {
         self.phase == Phase::Streaming
     }

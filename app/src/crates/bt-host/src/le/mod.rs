@@ -27,11 +27,6 @@
 //! - [`modules`]: CSIP, VCP, MCP, CCP, TMAP / GMAP (registered in that
 //!   order)
 
-// The module-facing API (LeCtx, GattClient, GattServer, LePoster, the
-// module hooks) is used by the profile modules, which are inert stubs until
-// WP5 implements them: remove this then.
-#![allow(dead_code)]
-
 pub mod api;
 pub mod bap;
 pub mod core;
@@ -184,6 +179,9 @@ pub struct LeStreamStats {
     /// Sets dropped, buffer full
     pub overflows: u64,
     pub send_errors: u64,
+    /// Sets the buffer fills before sending audio (queue + 3, growing to
+    /// queue + 7 after underruns)
+    pub prefill: u32,
 }
 
 /// A device as the worker sees it (a copy; v1 DeviceInfo)
@@ -199,6 +197,9 @@ pub struct LeDeviceInfo {
     pub sink_ases: usize,
     /// Short summary of the sink PAC records
     pub pacs: String,
+    /// TMAP / GMAP roles as read ("TMAP: UMR, GMAP: UGT (...)"); empty
+    /// while unknown or without TMAS / GMAS
+    pub roles: String,
 }
 
 /// The encode thread's end of the stream's SDU jitter buffer

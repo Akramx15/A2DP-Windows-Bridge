@@ -105,6 +105,8 @@ pub struct IsoSender {
     /// sets_sent, sdus_sent, send_errors (the rest is the queue's)
     counters: SendCounters,
     queue_stats: QueueStats,
+    /// The jitter buffer's prefill (sets)
+    prefill: usize,
     /// Send guard waits: how many, the run loop time the current one is
     /// due, and how late the timer fired at most (ms)
     guard_waits: u64,
@@ -141,6 +143,7 @@ impl IsoSender {
         self.t0_ms = None;
         self.counters = SendCounters::default();
         self.queue_stats = QueueStats::default();
+        self.prefill = self.queue.as_ref().map_or(0, |q| q.lock().unwrap_or_else(|e| e.into_inner()).prefill());
         self.guard_waits = 0;
         self.guard_due_ms = None;
         self.guard_late_ms = 0;
@@ -163,6 +166,7 @@ impl IsoSender {
         if let Some(q) = &self.queue {
             let mut q = q.lock().unwrap_or_else(|e| e.into_inner());
             self.queue_stats = q.stats();
+            self.prefill = q.prefill();
             let current = std::mem::take(&mut self.current);
             if !current.is_empty() {
                 q.recycle(current);
@@ -181,6 +185,7 @@ impl IsoSender {
         }
     }
 
+    #[cfg(test)]
     pub fn sending(&self) -> bool {
         self.sending
     }
@@ -243,6 +248,7 @@ impl IsoSender {
                 q.recycle(old);
             }
             self.queue_stats = q.stats();
+            self.prefill = q.prefill();
         }
         if let Some(u) = underrun {
             tracing::warn!("{u}");
@@ -291,6 +297,7 @@ impl IsoSender {
             underruns: c.underruns,
             overflows: c.overflows,
             send_errors: c.send_errors,
+            prefill: self.prefill as u32,
         }
     }
 

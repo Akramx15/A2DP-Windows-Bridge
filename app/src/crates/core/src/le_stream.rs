@@ -478,6 +478,7 @@ mod tests {
             underruns: 1,
             overflows: 2,
             send_errors: 0,
+            prefill: 5,
         };
         assert_eq!(
             le_stats_line(&s),

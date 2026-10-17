@@ -45,8 +45,7 @@ pub trait LeModule: Any {
     fn name(&self) -> &'static str;
 
     /// A BTstack session with LE Audio starts: SM, GATT client and the core
-    /// are up, HCI is not powered on yet. Add presets
-    /// (`ctx.presets_mut().add(...)`) here.
+    /// are up, HCI is not powered on yet.
     fn on_stack_init(&mut self, _ctx: &mut LeCtx<'_>) {}
 
     /// Add the PC's GATT services of this profile; runs after

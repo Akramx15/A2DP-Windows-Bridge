@@ -50,7 +50,6 @@ pub const ATT_PROPERTY_INDICATE: u16 = 0x20;
 /// Security of a read / write (BTstack ATT_SECURITY_*)
 pub const ATT_SECURITY_NONE: u8 = 0;
 pub const ATT_SECURITY_ENCRYPTED: u8 = 1;
-pub const ATT_SECURITY_AUTHENTICATED: u8 = 2;
 
 /// att_server.c's NVN_NUM_GATT_SERVER_CCC (btstack_config.h)
 const NVN_NUM_GATT_SERVER_CCC: u32 = 256;
@@ -107,11 +106,6 @@ impl GattServerBuilder<'_> {
         self.server.add_service(uuid, primary)
     }
 
-    /// Includes an already added service (its start / end handle)
-    pub fn include_service(&mut self, start_handle: u16, end_handle: u16, uuid16: u16) {
-        self.server.add_include(start_handle, end_handle, uuid16);
-    }
-
     /// Adds a characteristic; returns its value handle (CCC: + 1 with
     /// NOTIFY / INDICATE). `properties`: ATT_PROPERTY_*; `read_security` /
     /// `write_security`: ATT_SECURITY_*.
@@ -119,7 +113,7 @@ impl GattServerBuilder<'_> {
         self.server.add_char(uuid, properties, read_security, write_security, Some(self.owner), None)
     }
 
-    /// Ends the service; returns its end handle (for include_service)
+    /// Ends the service; returns its end handle
     pub fn end_service(&mut self) -> u16 {
         self.server.last_handle
     }
@@ -129,7 +123,6 @@ impl GattServerBuilder<'_> {
 #[derive(Debug, Clone)]
 enum DbOp {
     Service { uuid: AttUuid, primary: bool, handle: u16 },
-    Include { start: u16, end: u16, uuid16: u16, handle: u16 },
     Char { uuid: AttUuid, properties: u16, read_security: u8, write_security: u8, value: Option<Vec<u8>>, handle: u16 },
 }
 
@@ -188,13 +181,6 @@ impl GattServer {
     /// As [`GattServer::notify`], for indications
     pub fn indicate(&mut self, con: u16, value_handle: u16, value: &[u8]) -> bool {
         self.queue(con, value_handle, true, value)
-    }
-
-    /// To every connected client that enabled it
-    pub fn notify_all(&mut self, value_handle: u16, value: &[u8]) {
-        for con in self.clients() {
-            self.notify(con, value_handle, value);
-        }
     }
 
     /// The CCC value `con` wrote for `value_handle` (0 = none)
@@ -278,11 +264,6 @@ impl GattServer {
         handle
     }
 
-    fn add_include(&mut self, start: u16, end: u16, uuid16: u16) {
-        let handle = self.take_handles(1);
-        self.ops.push(DbOp::Include { start, end, uuid16, handle });
-    }
-
     /// A characteristic: declaration, value (dynamic unless `value` is a
     /// static one), CCC for NOTIFY / INDICATE. Returns the value handle.
     fn add_char(
@@ -328,9 +309,6 @@ impl GattServer {
                 }
                 DbOp::Service { uuid: AttUuid::Uuid128(u), primary, handle } => {
                     (*handle, stack.att_db_add_service_uuid128(&msb_first(u), *primary))
-                }
-                DbOp::Include { start, end, uuid16, handle } => {
-                    (*handle, stack.att_db_add_included_service(*start, *end, *uuid16))
                 }
                 DbOp::Char { uuid, properties, read_security, write_security, value, handle } => {
                     let flags = if value.is_some() { *properties } else { *properties | ATT_PROPERTY_DYNAMIC };
@@ -459,6 +437,7 @@ impl GattServer {
         self.owners.get(&value_handle).copied()
     }
 
+    #[cfg(test)]
     pub(crate) fn attr(&self, handle: u16) -> Option<Attr> {
         self.attrs.get(&handle).copied()
     }
