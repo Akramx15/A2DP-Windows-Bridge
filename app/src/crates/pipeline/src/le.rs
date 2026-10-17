@@ -46,6 +46,10 @@ impl SduSink for LeSduSink {
     fn push(&self, set: SduSet) {
         LeSduSink::push(self, set);
     }
+
+    fn spare(&self) -> Option<SduSet> {
+        LeSduSink::spare(self)
+    }
 }
 
 /// The jitter buffer itself (bt-host's SharedSduQueue; tests)

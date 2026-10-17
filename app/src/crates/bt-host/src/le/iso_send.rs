@@ -20,9 +20,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use btstack_sys::Stack;
 use btstack_sys::consts::ERROR_CODE_SUCCESS;
 use btstack_sys::events;
+use btstack_sys::{HighTimerResolution, Stack};
 use le_audio::sdu_queue::{QueueStats, SduSet, SendCounters, SendGuard};
 
 use super::LeStreamStats;
@@ -86,6 +86,9 @@ impl IsoOut for Stack {
 #[derive(Default)]
 pub struct IsoSender {
     sending: bool,
+    /// 1 ms system timer resolution while sending (as v1), so that the
+    /// guard timer and time_ms() don't move in 15.6 ms steps
+    timer_resolution: Option<HighTimerResolution>,
     cis_handles: Vec<u16>,
     seq: Vec<u16>,
     /// Per CIS: not reported down
@@ -143,6 +146,7 @@ impl IsoSender {
         self.guard_late_ms = 0;
         self.publish();
         out.set_queue(queue_depth);
+        self.timer_resolution = Some(HighTimerResolution::new());
         self.sending = true;
         tracing::info!("LE Audio: sending ISO SDUs on {} CIS (queue {queue_depth})", cis_handles.len());
         self.request_next(out);
@@ -154,6 +158,7 @@ impl IsoSender {
             return;
         }
         self.sending = false;
+        self.timer_resolution = None;
         out.timer_stop();
         if let Some(q) = &self.queue {
             let mut q = q.lock().unwrap_or_else(|e| e.into_inner());

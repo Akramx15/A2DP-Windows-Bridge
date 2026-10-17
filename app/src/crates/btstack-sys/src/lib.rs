@@ -34,11 +34,13 @@ pub mod events;
 mod ffi;
 mod le;
 mod stack;
+mod timer_resolution;
 mod transport;
 
 pub use att::AttWriteRequest;
 pub use le::{CigParams, CisParams, ConnectionType, LeDbEntry, LeEncryption};
 pub use stack::{AclState, AvdtpState, HciState, Stack};
+pub use timer_resolution::HighTimerResolution;
 pub use transport::{
     HciBackend, LE_HIDDEN_COMMAND_BITS, LE_SUPPORTED_FEATURE, Upstream, expect_transport_loss,
     le_hidden_command_complete, le_hidden_intercept, le_hidden_patch_event,
