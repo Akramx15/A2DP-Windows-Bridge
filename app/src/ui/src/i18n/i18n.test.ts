@@ -35,16 +35,16 @@ describe("translations", () => {
     expect(t("no.such.key")).toBe("no.such.key");
   });
 
-  it("loads a language and falls back to English for missing keys", async () => {
+  it("loads a language and falls back to English for an unknown one", async () => {
     await setLanguage("ja");
     expect(lang()).toBe("ja");
     expect(t("ui.nav.home")).toBe("ホーム");
     await setLanguage("de");
-    // German has no v2 UI keys yet: English
-    expect(t("ui.nav.home")).toBe("Home");
+    expect(t("ui.nav.home")).toBe("Start");
     expect(t("connection.connect")).not.toBe("");
     await setLanguage("xx");
     expect(lang()).toBe("en");
+    expect(t("ui.nav.home")).toBe("Home");
   });
 
   it("lists every language file", async () => {
