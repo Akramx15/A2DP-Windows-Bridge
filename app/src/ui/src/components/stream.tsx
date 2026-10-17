@@ -6,9 +6,9 @@ import { createMemo, createSignal, onCleanup, Show, type JSX } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { t, tm } from "../i18n";
 import { codecLabelKey } from "../lib/codecs";
-import { khz, kbps, percentToVolume, volumePercent } from "../lib/format";
+import { copyText, khz, kbps, percentToVolume, volumePercent } from "../lib/format";
 import { firmwareUrl } from "../lib/links";
-import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, StreamState } from "../ipc/types";
+import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamState } from "../ipc/types";
 import { Sparkline } from "./charts";
 import { Banner, Button, Dialog } from "./controls";
 import { Icon } from "./Icon";
@@ -167,6 +167,44 @@ export function CodecBadge(props: { compact?: boolean }) {
   );
 }
 
+/** What a running stream captures (StreamInfo.source), in words: the
+ *  profile's application name when the executable is the profile's */
+export function sourceText(src: SourceInfo, profile: Profile | null): { icon: IconName; text: string; waiting: boolean } {
+  switch (src.kind) {
+    case "tone":
+      return { icon: "music_note_2", text: t("receiver.source_tone"), waiting: false };
+    case "virtual":
+      return { icon: "desktop_speaker", text: src.name || t("capture.virtual"), waiting: false };
+    case "app": {
+      const known = profile && profile.app_exe && profile.app_exe.toLowerCase() === src.name.toLowerCase() ? profile.app_name : "";
+      const name = known || src.name || t("capture.app");
+      return { icon: "window_apps", text: src.waiting ? t("ui.source.waiting", name) : name, waiting: src.waiting };
+    }
+    default:
+      return { icon: "speaker_2", text: t("capture.loopback"), waiting: false };
+  }
+}
+
+/** The capture source of the stream on screen: the core's while it
+ *  streams, otherwise null */
+export function CaptureSource(props: { profile: Profile | null; class?: string }) {
+  const { core } = useApp();
+  const src = () => core.state.snap?.stream.info?.source ?? null;
+  return (
+    <Show when={src()}>
+      {(s) => {
+        const v = () => sourceText(s(), props.profile);
+        return (
+          <span class={`capture-source ${props.class ?? ""}`} classList={{ "st-warn": v().waiting }} title={`${t("capture.mode")}: ${v().text}`}>
+            <Icon name={v().waiting ? "warning" : v().icon} />
+            <span class="ellipsis">{v().text}</span>
+          </span>
+        );
+      }}
+    </Show>
+  );
+}
+
 export type QualityLevel = 0 | 1 | 2 | 3 | 4;
 
 /** Samples (at 4 a second) the quality looks back over for drops: 10 s */
@@ -312,6 +350,19 @@ export function useFixes() {
   return { fixFor, dialog };
 }
 
+/** The text "copy the error" puts on the clipboard: the message, and the
+ *  code of a failed request (what an issue report needs) */
+export function errorCopyText(message: Msg, code?: string | null): string {
+  const text = tm(message) || message.key;
+  return code ? `${text}\n[${code}]` : text;
+}
+
+/** Copies an error's text (v1 copied the status text on click) */
+export async function copyError(app: { notify: (text: string, kind?: "info" | "error") => void }, message: Msg, code?: string | null) {
+  const ok = await copyText(errorCopyText(message, code));
+  app.notify(ok ? t("ui.error.copied") : t("dbgc.copy_failed"), ok ? "info" : "error");
+}
+
 /** An error with its cause and the button that fixes it */
 export function ErrorPanel(props: { code?: string | null; message: Msg; title?: string }) {
   const app = useApp();
@@ -331,13 +382,23 @@ export function ErrorPanel(props: { code?: string | null; message: Msg; title?: 
         kind="error"
         title={props.title ?? t("status.error")}
         actions={
-          <Show when={fix()}>
-            {(f) => (
-              <Button kind="strong" icon={f().icon} busy={busy()} onClick={run}>
-                {f().label}
-              </Button>
-            )}
-          </Show>
+          <>
+            <Show when={fix()}>
+              {(f) => (
+                <Button kind="strong" icon={f().icon} busy={busy()} onClick={run}>
+                  {f().label}
+                </Button>
+              )}
+            </Show>
+            <Button
+              kind="subtle"
+              icon="copy"
+              title={t("error.click_to_copy_hint")}
+              onClick={() => void copyError(app, props.message, props.code)}
+            >
+              {t("ui.error.copy")}
+            </Button>
+          </>
         }
       >
         {tm(props.message)}

@@ -18,6 +18,8 @@ import { Settings } from "../screens/Settings";
 import { Setup, needsSetup } from "../screens/Setup";
 import { applyTheme } from "../theme";
 import { AppProvider, useApp, type RouteName } from "./context";
+import { CaptureSign, UpdateNotice } from "./indicators";
+import "./shell.css";
 
 export function App(props: { core: Core }) {
   const core = props.core;
@@ -115,9 +117,11 @@ function MainWindow() {
   onCleanup(releaseLogs);
 
   // "Minimize to System Tray": the tray icon is the core's, so minimizing
-  // only has to take the window off the taskbar
+  // only has to take the window off the taskbar. The core says once that
+  // A2DPWB still runs in the tray (closing the window does the same, in
+  // src-tauri/src/windows.rs)
   core.transport.onMinimized(() => {
-    if (core.state.snap?.settings.minimize_to_tray) void core.transport.hideWindow();
+    if (core.state.snap?.settings.minimize_to_tray) void hideToTray(core);
   });
 
   return (
@@ -167,9 +171,13 @@ function MainWindow() {
                 )}
               </For>
             </ul>
+            <CaptureSign />
             <StatusPill />
           </nav>
           <main class="content" id="main" tabindex="-1" lang={lang()}>
+            <div class="app-notices">
+              <UpdateNotice />
+            </div>
             <Switch>
               <Match when={route().name === "home"}>
                 <Home />
@@ -193,6 +201,13 @@ function MainWindow() {
       <NoticeLine />
     </Gate>
   );
+}
+
+/** Hides the main window to the tray and lets the core show its one-time
+ *  "still running in the tray" balloon */
+export async function hideToTray(core: Core): Promise<void> {
+  await core.transport.hideWindow();
+  await core.request("app.hidden_to_tray").catch(() => {});
 }
 
 /** Always visible (design principle 2): stream state, codec, bitrate */

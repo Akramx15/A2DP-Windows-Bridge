@@ -4,13 +4,16 @@
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
+import { CaptureSign } from "../app/indicators";
 import { Button, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import { ProfileSwitcher } from "../components/ProfileSwitcher";
 import {
+  CaptureSource,
   CodecBadge,
   ConnectButton,
+  copyError,
   currentProfile,
   QualityIndicator,
   Ring,
@@ -73,6 +76,12 @@ export function Flyout() {
         <CodecBadge compact />
         <QualityIndicator />
       </div>
+      <Show when={stream().info?.source || snap().capture}>
+        <div class="fly-meta">
+          <CaptureSource profile={profile()} />
+          <CaptureSign onOpen={() => void openMain("diagnostics")} />
+        </div>
+      </Show>
 
       <Show when={error()}>
         {(e) => {
@@ -81,6 +90,11 @@ export function Flyout() {
             <div class="fly-error" role="alert">
               <Icon name="error_circle" />
               <span class="fly-error-text">{tm(e().message)}</span>
+              <IconButton
+                icon="copy"
+                label={t("error.click_to_copy_hint")}
+                onClick={() => void copyError(app, e().message, e().code)}
+              />
               <Show when={fix()}>
                 {(f) => (
                   <Button
@@ -108,6 +122,12 @@ export function Flyout() {
       </Show>
 
       <footer class="fly-foot">
+        <Show when={snap().update.available}>
+          <Button kind="subtle" icon="arrow_sync" onClick={() => void openMain("settings")}>
+            {t("update.available_title")}
+          </Button>
+          <span class="spacer" />
+        </Show>
         <Button icon="open" onClick={() => void openMain()}>
           {t("ui.flyout.open_app")}
         </Button>

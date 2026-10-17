@@ -1,16 +1,16 @@
 // First-run setup, shown when there is no profile or no adapter on WinUSB:
 // 1 choose the adapter, 2 driver and firmware (WinUSB with one button),
-// 3 find the headphones and create a profile, 4 connect and hear a test
-// tone.
+// 3 find the headphones and create a profile, 4 hear the core's test tone
+// on them.
 
-import { createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { Banner, Button, Field } from "../components/controls";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
-import { CodecBadge, ConnectButton, Ring, WinusbDialog } from "../components/stream";
+import { CaptureSource, CodecBadge, ConnectButton, currentProfile, Ring, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
-import type { AdapterInfo, Snapshot } from "../ipc/types";
+import type { AdapterInfo, ParamsOf, Profile, Snapshot, StreamState } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
 import { newProfile, normalizeProfile, validateProfile } from "../lib/profile";
 import { driverText } from "./Adapter";
@@ -92,7 +92,7 @@ export function Setup() {
             <StepDevice profileName={profileName()} onCreated={setProfileName} />
           </Match>
           <Match when={step() === 3}>
-            <StepTest />
+            <StepTest profileName={profileName()} />
           </Match>
         </Switch>
       </section>
@@ -310,53 +310,84 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
   );
 }
 
-/** Left 1 kHz, right 1.5 kHz (v1's test tone), played to Windows' output for a few seconds */
-function playTestTone(): (() => void) | null {
-  const Ctx = (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext;
-  if (!Ctx) return null;
-  const ctx = new Ctx();
-  const merger = ctx.createChannelMerger(2);
-  const gain = ctx.createGain();
-  gain.gain.value = 0.12;
-  merger.connect(gain).connect(ctx.destination);
-  const oscs = [1000, 1500].map((f, ch) => {
-    const o = ctx.createOscillator();
-    o.frequency.value = f;
-    o.connect(merger, 0, ch);
-    o.start();
-    o.stop(ctx.currentTime + 3);
-    return o;
-  });
-  const stop = () => {
-    oscs.forEach((o) => {
-      try {
-        o.stop();
-      } catch {
-        // already stopped
-      }
-    });
-    void ctx.close();
+/** stream.start_custom for the core's test tone (left 1 kHz, right
+ *  1.5 kHz, as v1's) to a profile's headphones, with its sound settings */
+export function toneParams(p: Profile): ParamsOf<"stream.start_custom"> {
+  return {
+    device: p.device_address,
+    device_name: p.device_name || null,
+    codec: p.codec,
+    quality: p.quality,
+    sample_rate: p.sample_rate || null,
+    bit_depth: p.bit_depth || null,
+    source: "tone",
+    max_media_payload: p.max_media_payload || null,
+    abr: p.abr,
+    codec_fallback: p.codec_fallback,
   };
-  oscs[0].onended = stop;
-  return stop;
 }
 
-function StepTest() {
+const ACTIVE: StreamState[] = ["connecting", "reconnecting", "streaming"];
+
+function StepTest(props: { profileName: string | null }) {
   const app = useApp();
-  const stream = () => app.core.state.snap!.stream;
-  const [playing, setPlaying] = createSignal(false);
-  let stopTone: (() => void) | null = null;
-  onCleanup(() => stopTone?.());
-  const tone = () => {
-    stopTone?.();
-    stopTone = playTestTone();
-    if (!stopTone) return;
-    setPlaying(true);
-    setTimeout(() => setPlaying(false), 3000);
+  const { core } = app;
+  const snap = () => core.state.snap!;
+  const stream = () => snap().stream;
+  const profile = () => snap().profiles.find((p) => p.name === props.profileName) ?? currentProfile(snap());
+  // The tone this step started (until stopped, failed or ended)
+  const [ours, setOurs] = createSignal(false);
+  const [busy, setBusy] = createSignal(false);
+  // Why the tone could not be played: the fallback message
+  const [failed, setFailed] = createSignal<string | null>(null);
+  const playing = () => ours() && ACTIVE.includes(stream().state);
+
+  createEffect(
+    on(
+      () => stream().state,
+      (st) => {
+        if (!ours()) return;
+        if (st === "error") {
+          setFailed(tm(stream().message) || t("status.error"));
+          setOurs(false);
+        } else if (st === "idle") {
+          setOurs(false);
+        }
+      },
+      { defer: true },
+    ),
+  );
+
+  const play = async () => {
+    const p = profile();
+    if (!p) return;
+    setBusy(true);
+    setFailed(null);
+    try {
+      // The profile's own stream (or anything else) gives way to the tone
+      if (ACTIVE.includes(stream().state)) await core.request("stream.stop");
+      await core.request("stream.start_custom", toneParams(p));
+      setOurs(true);
+    } catch (e) {
+      setFailed(errorText(e));
+    } finally {
+      setBusy(false);
+    }
   };
+  const stop = async () => {
+    setBusy(true);
+    await app.run(() => core.request("stream.stop"));
+    setOurs(false);
+    setBusy(false);
+  };
+  // Leaving the step (Back, Finish, Skip) ends the tone
+  onCleanup(() => {
+    if (playing()) core.request("stream.stop").catch(() => {});
+  });
+
   return (
     <div class="stack">
-      <p>{t("ui.setup.test_intro")}</p>
+      <p>{t("ui.setup.test_intro_tone")}</p>
       <div class="test-row">
         <Ring state={stream().state} volume={stream().volume} size="small">
           <Icon name="headphones" />
@@ -367,16 +398,35 @@ function StepTest() {
             {tm(stream().message) || t(`status.${stream().state}`)}
           </span>
           <CodecBadge />
+          <CaptureSource profile={profile()} />
         </div>
       </div>
-      <ConnectButton onError={(e) => app.notify(errorText(e), "error")} />
-      <Show when={stream().state === "streaming"}>
-        <div class="inline">
-          <Button icon="music_note_2" busy={playing()} onClick={tone}>
-            {t("ui.setup.play_tone")}
+      <div class="inline">
+        <Show
+          when={playing()}
+          fallback={
+            <Button kind="strong" icon="music_note_2" busy={busy()} disabled={!profile()} onClick={play}>
+              {t("ui.setup.play_tone")}
+            </Button>
+          }
+        >
+          <Button icon="stop" busy={busy()} onClick={stop}>
+            {t("receiver.stop")}
           </Button>
-          <span class="hint">{t("ui.setup.tone_hint")}</span>
-        </div>
+        </Show>
+        <Show when={playing() && stream().state === "streaming"}>
+          <span class="hint">{t("ui.setup.tone_playing_hint")}</span>
+        </Show>
+      </div>
+      <Show when={failed()}>
+        {(why) => (
+          <>
+            <Banner kind="warn" title={t("status.error")}>
+              {t("ui.setup.tone_failed", why())}
+            </Banner>
+            <ConnectButton onError={(e) => app.notify(errorText(e), "error")} />
+          </>
+        )}
       </Show>
     </div>
   );

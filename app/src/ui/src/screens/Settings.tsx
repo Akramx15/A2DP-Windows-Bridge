@@ -2,11 +2,12 @@
 // developer mode, the settings folder, about.
 
 import { createSignal, Match, onMount, Show, Switch } from "solid-js";
-import { useApp } from "../app/context";
+import { errorText, useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Dialog, Field, Section, Segmented, Select, Toggle } from "../components/controls";
-import { LANGUAGES, t } from "../i18n";
+import { LANGUAGES, t, tm } from "../i18n";
 import type { UpdatePhase } from "../ipc/transport";
+import { IpcError, type Msg } from "../ipc/types";
 import { LINKS } from "../lib/links";
 
 export function Settings() {
@@ -28,10 +29,14 @@ export function Settings() {
   const mb = (bytes: number) => (bytes / 1048576).toFixed(1);
 
   const checkNow = async () => {
-    await app.run(async () => {
+    try {
       const u = await core.request("app.check_update");
       if (!u.available) app.notify(t("update.uptodate", u.current_version));
-    });
+    } catch (e) {
+      // A failed check stays in the section (UpdateState.error) with the
+      // link to the releases page; other failures (no core) are a notice
+      if (IpcError.from(e).code !== "update.failed") app.notify(errorText(e), "error");
+    }
   };
 
   return (
@@ -70,10 +75,13 @@ export function Settings() {
 
       <Section title={t("ui.settings.startup")}>
         <Toggle label={t("settings.start_with_windows")} checked={s().start_with_windows} onChange={(v) => set({ start_with_windows: v })} />
+        {/* At logon: on starts A2DPWB with --background (only the tray
+            icon), off opens the window; it applies only with Windows */}
         <Toggle
           label={t("ui.settings.start_minimized")}
-          hint={t("ui.settings.start_minimized_hint")}
+          hint={t("ui.settings.start_minimized_logon")}
           checked={s().start_minimized}
+          disabled={!s().start_with_windows}
           onChange={(v) => set({ start_minimized: v })}
         />
         <Toggle label={t("settings.minimize_to_tray")} checked={s().minimize_to_tray} onChange={(v) => set({ minimize_to_tray: v })} />
@@ -92,6 +100,9 @@ export function Settings() {
           </Button>
         }
       >
+        <Show when={!update().checking && update().error}>
+          {(err) => <UpdateCheckFailed message={err()} />}
+        </Show>
         <Show when={update().available}>
           {(u) => (
             <Banner
@@ -232,5 +243,23 @@ export function Settings() {
         <p>{t("ui.settings.quit_confirm")}</p>
       </Dialog>
     </div>
+  );
+}
+
+/** A failed update check (update.error) and the way out: the releases page */
+export function UpdateCheckFailed(props: { message: Msg }) {
+  const { core } = useApp();
+  return (
+    <Banner
+      kind="error"
+      title={t("update.check")}
+      actions={
+        <Button icon="open" onClick={() => void core.transport.openUrl(LINKS.releases)}>
+          {t("ui.update.open_releases")}
+        </Button>
+      }
+    >
+      {tm(props.message) || t("update.error")}
+    </Banner>
   );
 }

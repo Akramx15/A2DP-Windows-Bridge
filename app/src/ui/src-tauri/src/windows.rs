@@ -120,6 +120,9 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             let _ = window.hide();
+            if window.label() == MAIN {
+                hidden_to_tray(window);
+            }
         }
         WindowEvent::Focused(false) if window.label() == FLYOUT => {
             let _ = window.hide();
@@ -132,6 +135,20 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
         }
         _ => {}
     }
+}
+
+/// The main window went to the tray (closed, or minimized with "Minimize
+/// to System Tray", which the frontend does): the core shows its one-time
+/// "still running in the tray" balloon
+fn hidden_to_tray(window: &tauri::Window) {
+    let Some(ipc) = window.try_state::<std::sync::Arc<crate::connection::Ipc>>() else {
+        return;
+    };
+    let ipc = ipc.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        // Not connected: nothing to tell, the core is not running
+        let _ = ipc.request(MAIN, "app.hidden_to_tray", None).await;
+    });
 }
 
 /// A second `a2dpwb.exe` (from the tray or the Start menu) only forwards
