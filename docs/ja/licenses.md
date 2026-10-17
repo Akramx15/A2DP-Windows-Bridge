@@ -35,6 +35,7 @@ A2DPWB のソースコードは Apache-2.0 / MIT のデュアルライセンス�
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL エンコーダー |
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC エンコーダー |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder)（AOSP エンコーダーの C 移植版） | commit 3f9d198 | Apache-2.0（FFT 部分は BSD-3-Clause、KISS FFT） | LHDC V5 エンコーダー（試験的） |
+| [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus エンコーダー |
 | Rust のクレート: [Tauri](https://tauri.app/) 2.12、tokio、serde、windows、nusb、wasapi、tray-icon など | `Cargo.lock` | ほとんどが Apache-2.0 / MIT。ほかに BSD、ISC、Zlib、Unicode-3.0、CDLA-Permissive-2.0、MPL-2.0 | ウィンドウ、トレイ、IPC、USB、音声、更新 |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | ウィンドウの UI ライブラリ |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Tauri の JavaScript 側 |
@@ -84,7 +85,7 @@ Rust のクレートのライセンスは、リリースのビルド時に確認
 
 ### 開発者向けツール a2dpwb_decode
 
-`a2dpwb_decode`（[使い方](usage#verify-stream)を参照）はソースからのみビルドするツールで、リリースには含まれません。上記の固定バージョンの Bluedroid SBC デコーダー（Apache-2.0）、fdk-aac（FDK AAC License）、libopenaptx 0.2.0（LGPL-2.1+）、liblc3（Apache-2.0、BTstack に同梱）をリンクし、BTstack と libldac は**リンクしません**。詳しくは THIRD_PARTY_LICENSES.md の §14 を参照してください。
+`a2dpwb_decode`（[使い方](usage#verify-stream)を参照）はソースからのみビルドするツールで、リリースには含まれません。上記の固定バージョンの Bluedroid SBC デコーダー（Apache-2.0）、fdk-aac（FDK AAC License）、libopenaptx 0.2.0（LGPL-2.1+）、libopus（BSD-3-Clause）、liblc3（Apache-2.0、BTstack に同梱）をリンクし、BTstack と libldac は**リンクしません**。詳しくは THIRD_PARTY_LICENSES.md の §14 を参照してください。
 
 ### テスト環境 tools/emu と tools/linux_sink
 

@@ -67,7 +67,8 @@ A2DP-Windows-Bridge/
 │   ├── libldac/            AOSP LDAC エンコーダ
 │   ├── libopenaptx/        aptX / aptX HD / aptX LL エンコーダ
 │   ├── fdk-aac/            Fraunhofer AAC エンコーダ
-│   └── lhdcv5-enc/         LHDC V5 エンコーダ
+│   ├── lhdcv5-enc/         LHDC V5 エンコーダ
+│   └── opus/               libopus（Opus エンコーダ）
 └── tools/
     ├── a2dp_decode/        a2dpwb_decode: HCI キャプチャ（.pklg）内のメディアストリームを検査 / デコード
     ├── emu/                仮想 Bluetooth シンクを相手にしたエンドツーエンドテスト（Python）
@@ -145,6 +146,7 @@ C のライブラリは git サブモジュールです。Rust のクレート�
 | libopenaptx | git サブモジュール | 0.2.0（更新しないこと） | LGPL-2.1+ |
 | fdk-aac | git サブモジュール | v2.0.3-158-gd8e6b1a | FDK AAC License |
 | LHDC V5 エンコーダ | git サブモジュール | 固定したコミット | Apache-2.0 |
+| libopus | git サブモジュール | v1.5.2 | BSD-3-Clause |
 | Tauri、SolidJS、Rust のクレート | Cargo / pnpm | `Cargo.lock`、`pnpm-lock.yaml` | MIT / Apache-2.0 など（リリースの `licenses/rust-crates.txt`） |
 
 {: .warning }

@@ -51,7 +51,7 @@ flowchart TB
     subgraph core["a2dpwb-core.exe (resident, user mode)"]
         ctl["Tray menu / IPC server / CLI (--cli)"] --> svc["Core service: connection state machine, codec selection, profiles, reconnect"]
         svc --> cap["WASAPI capture"]
-        cap -- PCM --> enc["Encoder pipeline: LDAC / aptX family / LHDC V5 / AAC / SBC"]
+        cap -- PCM --> enc["Encoder pipeline: LDAC / aptX family / LHDC V5 / Opus / AAC / SBC"]
         enc --> bt["BTstack: HCI / L2CAP / AVDTP / A2DP / AVRCP"]
     end
     ui <-->|"per-user named pipe"| ctl
@@ -144,7 +144,7 @@ code; all other crates have `#![forbid(unsafe_code)]`.
 | Layer | Crate | Does |
 |:------|:------|:-----|
 | 1. FFI | `btstack-sys` | Builds BTstack with `cc` (MSVC), hand-written FFI declarations and safe wrappers, `btstack_config.h`. BTstack may only be called on its run loop thread: the `!Send` `Stack` token enforces it |
-| 1. FFI | `ldac-sys`, `openaptx-sys`, `fdkaac-sys`, `lhdcv5-sys` | Build the C encoders and expose them; one crate per library, so each license stays separate |
+| 1. FFI | `ldac-sys`, `openaptx-sys`, `fdkaac-sys`, `lhdcv5-sys`, `opus-sys` | Build the C encoders and expose them; one crate per library, so each license stays separate |
 | 1. FFI | `win-sys` | Win32 APIs without a Rust library: MMCSS, the default audio device (IPolicyConfig), the WLAN API (AFH), power notifications, the Run key, media keys, the pipe's DACL, elevation, and the WinUSB driver assignment (SetupAPI) |
 | 2. Parts | `hci-transport` | HCI over USB ("H2") with `nusb`, and H4 over TCP to a virtual controller (`tools/emu`) |
 | 2. Parts | `codec` | The `Encoder` trait, the SBC encoder (Rust port of Bluedroid's), safe wrappers of the C encoders, Codec Information parsing and the codec choice |
@@ -271,7 +271,7 @@ result. Listing adapters and their driver needs no elevation.
 **Responsibilities**:
 - Run BTstack with the USB (or TCP) HCI transport on its own thread
 - Register stream endpoints: vendor codecs (LDAC, aptX HD, aptX, aptX LL,
-  LHDC V5) plus SBC and AAC
+  LHDC V5, Opus) plus SBC and AAC
 - Register SDP records (A2DP Source, AVRCP Controller, AVRCP Target)
 - Manage SSP pairing (Just Works, General Bonding; link keys persisted)
 - Tear down a half-open connection after a connect timeout so retries work
@@ -290,7 +290,7 @@ result. Listing adapters and their driver needs no elevation.
 - `a2dp_source_establish_stream()` — Connect to A2DP sink
 - `a2dp_source_set_config_other()` — Configure vendor-specific codec
 - `a2dp_source_stream_send_media_payload_rtp()` — Send encoded audio with an
-  RTP header (LDAC, aptX HD, AAC, SBC, LHDC V5)
+  RTP header (LDAC, aptX HD, AAC, SBC, LHDC V5, Opus)
 - `a2dp_source_stream_send_media_packet()` — Send raw media packets without
   an RTP header (aptX, aptX LL)
 
@@ -316,6 +316,7 @@ Captures audio in real time using the Windows Audio Session API.
 | AAC | fdk-aac | up to 256 kbps | AAC-LC, LATM transport |
 | SBC | Rust port of the Bluedroid encoder | up to ~345 kbps | Mandatory A2DP baseline; bit-exact with the C encoder (tested over all configurations) |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | Experimental; 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
+| Opus | libopus 1.5.2 | 128/192/256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
 
 All encoders implement the `codec::Encoder` trait: they state the PCM
 format and the number of frames one call consumes, and return codec frames.
@@ -336,6 +337,7 @@ Non-standard codecs are registered as Vendor Specific in AVDTP:
 | aptX Low Latency | CSR (0x0000000A) or Qualcomm (0x000000D7) | 0x0002 |
 | aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD (detected only, never selected) |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
+| Opus | Google (0x000000E0) | 0x0001 |
 
 AAC and SBC use standard A2DP codec IDs defined in the A2DP specification.
 
@@ -356,8 +358,14 @@ Codec information element sizes (including the 6-byte vendor/codec ID):
   configuration and applied to the encoder, as Android does. Media packets
   carry a 2-byte payload header: frame count << 2 (latency bits 0) and a
   sequence number
+- **Opus**: 7 bytes (Android `a2dp_vendor_opus_constants.h`): byte 6 bits
+  2..0 channel mode (0x01 mono, 0x02 stereo, 0x04 dual mono), bits 4..3
+  frame duration (0x08 10 ms, 0x10 20 ms), bit 7 48 kHz. A2DPWB offers mono
+  and stereo, 10 and 20 ms, and configures 20 ms stereo (mono only for mono
+  input to a sink that has it). Media packets carry one Opus packet behind
+  a 1-byte payload header (frame count 1 in the low 4 bits)
 
-**RTP vs no RTP**: LDAC, aptX HD, AAC, SBC and LHDC V5 media packets carry the
+**RTP vs no RTP**: LDAC, aptX HD, AAC, SBC, LHDC V5 and Opus media packets carry the
 12-byte RTP header. aptX and aptX LL are sent **without** an RTP header (as Android and
 PipeWire do), so the whole L2CAP MTU is available for aptX frames.
 
@@ -406,4 +414,4 @@ formats as v1:
   dedicated USB adapter for A2DPWB
 - Some Bluetooth adapters' firmware limits achievable bitrate
 - USB Bluetooth 5.0+ adapters generally work well for LDAC
-- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC
+- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > Opus (experimental) > AAC > SBC

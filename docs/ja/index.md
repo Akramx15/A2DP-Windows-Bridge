@@ -10,7 +10,7 @@ has_children: true
 Windows 向け Bluetooth A2DP オーディオストリーミングツール（全コーデック対応）
 {: .fs-6 .fw-300 }
 
-USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC**（および試験的に **LHDC V5**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
+USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC**（および試験的に **LHDC V5**、**Opus**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
 
 [セットアップ](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -28,6 +28,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最大約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | LHDC V5 🧪 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### プラットフォーム別のコーデック対応（ヘッドホンへの送信）
 
@@ -40,6 +41,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | AAC | ❌ | ✅ | ❌ Ubuntu のパッケージに含まれない | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | LHDC V5 | ❌ | ❌ | ❌ | 🧪 実験的 |
+| Opus（Android の A2DP Opus） | ❌ | ❌ | 未確認 | 🧪 実験的 |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 対応 · 🧪 実験的 · ❌ 非対応。どの列も送信側（PC → ヘッドホン）です。「標準」は A2DPWB を使わない OS 自身の Bluetooth オーディオで、Ubuntu の列は Ubuntu 26.04 の PipeWire（`libspa-0.2-bluetooth`）が持つコーデックです。
@@ -49,6 +51,9 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 
 {: .warning }
 **LHDC V5 は実験的な対応です。** Google が Android 17（AOSP、Apache-2.0）に追加した LHDC V5 エンコーダーの C 移植版を使用しています。移植版は AOSP の Rust 版エンコーダーとビット単位で一致することを確認済みで、A2DP のシグナリングは Android の `a2dp_vendor_lhdcv5` に合わせています。実機の LHDC ヘッドホンでの検証はまだです。対応するのはロッシーの LHDC V5 のみで、LHDC V2/V3（従来機）とロスレスの「LHDC-RAW」にはオープンソースのエンコーダーがありません。自動選択では LHDC V5 は LDAC・aptX 系より下、AAC・SBC より上に位置します。
+
+{: .warning }
+**Opus は実験的な対応です。** Android の A2DP Opus ベンダーコーデック（Android 13 以降、ベンダー ID 0x000000E0 Google）で、48 kHz・20 ms フレーム・ステレオ 256 kbps（Android が要求する値。標準 192、モバイル 128 kbps）を libopus 1.5.2 でエンコードします。仮想シンクとのエンドツーエンドテストには合格していますが、実際の Opus 対応ヘッドホンでは未確認です。自動選択では LHDC V5 の下、AAC / SBC の上です。
 
 {: .note }
 **クラシック aptX だけが目的なら**、Windows 10 標準の Bluetooth スタックがクラシック aptX に対応しています（aptX HD・aptX LL・aptX Adaptive は非対応）。その場合 A2DPWB は不要です。A2DPWB が主に役立つのは LDAC・aptX HD・aptX Low Latency です。
@@ -76,7 +81,7 @@ A2DPWB 本体は Windows 専用（Windows 10 22H2 または Windows 11）で、x
 | Sony WH-1000XM4（ヘッドホン） | Windows 11 + TP-Link UB500 | LDAC、AAC、SBC | ✅ 再生できる（XM4 は aptX 非対応） |
 | TP-Link UB500（Realtek RTL8761BU、アダプター） | Windows 11、WinUSB、linux-firmware の `rtl8761bu` | – | ✅ |
 | 測定用受信機 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04（実際の無線） | SBC、AAC、aptX、aptX HD、aptX LL、LDAC | ✅ 受信・測定できる |
-| 仮想リンク `tools/emu`（Bumble） | Windows 11、無線なし | SBC、AAC、aptX、aptX HD、aptX LL、LDAC、LHDC V5 | ✅ エンドツーエンドテストに合格 |
+| 仮想リンク `tools/emu`（Bumble） | Windows 11、無線なし | SBC、AAC、aptX、aptX HD、aptX LL、LDAC、LHDC V5、Opus | ✅ エンドツーエンドテストに合格 |
 
 Windows 10 の実機ではまだ試していません。その他のアダプターは[推奨アダプター](setup#adapters)を参照してください。
 
@@ -108,7 +113,7 @@ flowchart TD
     s2["仮想デバイス"]
     s3["アプリ（プロセスループバック）"]
     s1 & s2 & s3 --> cap["WASAPI ループバックキャプチャ (PCM)"]
-    cap --> enc["オーディオエンコーダー: LDAC / aptX 系 / LHDC V5 / AAC / SBC"]
+    cap --> enc["オーディオエンコーダー: LDAC / aptX 系 / LHDC V5 / Opus / AAC / SBC"]
     enc --> bt["BTstack: A2DP Source → AVDTP → L2CAP → HCI"]
     bt --> usb["WinUSB → USB Bluetooth アダプター"]
     usb -.-> hp["ヘッドホン"]
@@ -118,7 +123,7 @@ A2DPWB は Windows の Bluetooth スタックを完全にバイパスします�
 
 ## 主な機能
 
-- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5（試験的）（自動ネゴシエーション対応）
+- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5・Opus（試験的）（自動ネゴシエーション対応）
 - **3 つのキャプチャモード**: システムループバック、仮想オーディオデバイスルーティング、または 1 つのアプリの出力
 - **ウィンドウ・トレイ・CLI**: セットアップと診断はウィンドウ、毎日の接続はトレイのフライアウトとメニュー、ほかにコマンドライン（[使い方](usage)を参照）
 - **アプリ内で WinUSB を割り当て**: アダプターへの WinUSB ドライバーの割り当てと元のドライバーへの復元。Zadig は不要です（[セットアップ](setup#winusb)を参照）

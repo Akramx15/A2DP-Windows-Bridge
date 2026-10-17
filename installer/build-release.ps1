@@ -118,6 +118,7 @@ $docs = [ordered]@{
     'licenses/fdk-aac-NOTICE.txt'          = Join-Path $ext 'fdk-aac/NOTICE'
     'licenses/libopenaptx-LGPL-2.1.txt'    = Join-Path $ext 'libopenaptx/COPYING'
     'licenses/lhdcv5-enc-LICENSE.txt'      = Join-Path $ext 'lhdcv5-enc/LICENSE'
+    'licenses/opus-COPYING.txt'            = Join-Path $ext 'opus/COPYING'
     'licenses/fluentui-system-icons.txt'   = Join-Path $ui 'LICENSES/fluentui-system-icons.txt'
     'licenses/solid-js-LICENSE.txt'        = Join-Path $ui 'node_modules/solid-js/LICENSE'
     'licenses/tauri-apps-api-LICENSE-MIT.txt' = Join-Path $ui 'node_modules/@tauri-apps/api/LICENSE-MIT'

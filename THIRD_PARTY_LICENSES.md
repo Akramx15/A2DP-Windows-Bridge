@@ -28,6 +28,7 @@ repository. The Rust crates are pinned in `Cargo.lock`, the JavaScript packages 
 | rijndael (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/rijndael/`) | Public domain | Philip J. Erdelsky | AES (used by BTstack) | `a2dpwb-core.exe` |
 | tinydir (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/tinydir/`) | BSD-2-Clause | tinydir authors | Directory listing in BTstack's Broadcom chipset driver | `a2dpwb-core.exe` |
 | LHDC-V5-Encoder (C port of the AOSP LHDC V5 encoder) | commit `3f9d198` | Apache-2.0; `src/lhdcv5_fft.c` BSD-3-Clause | The Android Open Source Project; Mark Borgerding (KISS FFT) | LHDC V5 audio encoding (experimental), §8 | `a2dpwb-core.exe` |
+| libopus | 1.5.2 (tag `v1.5.2`, commit `ddbe483`) | BSD-3-Clause | Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon | Opus audio encoding (decoding in `a2dpwb_decode`, §14), §16 | `a2dpwb-core.exe` |
 | Rust crates (Tauri 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ...) | `Cargo.lock` | Apache-2.0, MIT and other permissive licenses; MPL-2.0 for a few (§9) | their authors | Everything written in Rust that is not A2DPWB's own | all three programs |
 | SolidJS (`solid-js`) | 1.9.17 | MIT | Ryan Carniato | UI library of the window | `a2dpwb.exe` |
 | `@tauri-apps/api` | 2.12.4 | Apache-2.0 OR MIT | Tauri Apps Contributors | JavaScript side of Tauri | `a2dpwb.exe` |
@@ -62,6 +63,7 @@ The installer (`A2DPWB-<version>-win64-setup.exe`) installs, and the portable zi
 | `licenses/fdk-aac-NOTICE.txt` | Fraunhofer FDK AAC Codec Library license (`extern/fdk-aac/NOTICE`) |
 | `licenses/libopenaptx-LGPL-2.1.txt` | GNU LGPL 2.1 text for libopenaptx (`extern/libopenaptx/COPYING`) |
 | `licenses/lhdcv5-enc-LICENSE.txt` | LHDC V5 encoder license (Apache-2.0 text, `extern/lhdcv5-enc/LICENSE`); its KISS FFT notice is in §8 of this document |
+| `licenses/opus-COPYING.txt` | libopus license (BSD-3-Clause, `extern/opus/COPYING`) |
 | `licenses/fluentui-system-icons.txt` | Fluent UI System Icons MIT license (`app/src/ui/LICENSES/fluentui-system-icons.txt`) |
 | `licenses/solid-js-LICENSE.txt` | SolidJS MIT license (from the `solid-js` package) |
 | `licenses/tauri-apps-api-LICENSE-MIT.txt` | `@tauri-apps/api` MIT license (from the package; it is also available under Apache-2.0, `licenses/Apache-2.0.txt`) |
@@ -610,6 +612,7 @@ same pinned versions as above:
 | fdk-aac | commit `d8e6b1a` | FDK-AAC | AAC decoder (`libAACdec`, `libMpegTPDec` and shared modules) | `NOTICE` covers "encoding and decoding"; every `libAACdec` / `libMpegTPDec` source carries the same license header |
 | libopenaptx | 0.2.0 (commit `2459ed4`) | LGPL-2.1-or-later | `aptx_decode_sync()` | `COPYING` is LGPL 2.1; `openaptx.c` / `openaptx.h` headers state LGPL 2.1 or later |
 | liblc3 (lc3-google) | as in BTstack `5bc5cbdbe` | Apache-2.0 | LC3 decoder for `--le-audio` (CMake target `lc3`, the whole library) | `LICENSE` is Apache-2.0; every `src/*.c` / `include/*.h` carries the Apache-2.0 header (Google LLC) |
+| libopus | 1.5.2 (commit `ddbe483`) | BSD-3-Clause | Opus decoder (its own CMake build, `add_subdirectory(extern/opus)`, target `opus`) | `COPYING` is BSD-3-Clause; the `celt/`, `silk/` and `src/` sources carry the same BSD license header |
 
 It does **not** link BTstack (HCI / L2CAP / AVDTP parsing is its own code),
 so the BTstack non-commercial clause (§4) does not apply to it. The Bluedroid
@@ -624,8 +627,8 @@ If you redistribute an `a2dpwb_decode.exe` binary, the obligations of §3
 (fdk-aac: license text, source code offer, no patent license; AAC decoding
 may also need a patent license), §2 (libopenaptx: LGPL-2.1 text, prominent
 notice, relinking via the source at the same commit) and §5 (Apache-2.0
-text, notices; also for liblc3, Copyright 2022 Google LLC) apply, in the same way as for
-`a2dpwb-core.exe`.
+text, notices; also for liblc3, Copyright 2022 Google LLC) and §16 (libopus:
+the BSD-3-Clause notice) apply, in the same way as for `a2dpwb-core.exe`.
 
 ---
 
@@ -709,6 +712,73 @@ When changing `requirements.txt`, re-check and update this table.
 
 ---
 
+## 16. libopus (Xiph.Org Opus Codec)
+
+- **Source**: <https://github.com/xiph/opus> (mirror of <https://gitlab.xiph.org/xiph/opus>)
+- **Version**: 1.5.2 (tag `v1.5.2`, commit `ddbe483`)
+- **Path in project**: `extern/opus/` (git submodule)
+- **License**: BSD-3-Clause (`COPYING`, shipped as `licenses/opus-COPYING.txt`)
+- **SPDX**: `BSD-3-Clause`
+- **Usage**: Opus audio encoding for Android's A2DP Opus vendor codec. The
+  crate `opus-sys` compiles its floating-point C sources (the lists in its
+  `*.mk` files; no DNN features) unmodified and links them statically into
+  `a2dpwb-core.exe`. `a2dpwb_decode` links its decoder (§14).
+
+### License Text
+
+```
+Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic,
+                    Jean-Marc Valin, Timothy B. Terriberry,
+                    CSIRO, Gregory Maxwell, Mark Borgerding,
+                    Erik de Castro Lopo, Mozilla, Amazon
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+- Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+- Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+- Neither the name of Internet Society, IETF or IETF Trust, nor the
+names of specific contributors, may be used to endorse or promote
+products derived from this software without specific prior written
+permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
+OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+### Obligations
+
+- Reproduce the copyright notice, the conditions and the disclaimer with
+  binary distributions (shipped as `licenses/opus-COPYING.txt`, and above)
+- Do not use the names of the Internet Society, IETF, IETF Trust or the
+  contributors to endorse or promote A2DPWB
+
+### Patents
+
+`COPYING` states that Opus is subject to royalty-free patent licenses from
+the Xiph.Org Foundation, Microsoft Corporation and Broadcom Corporation
+(IETF IPR declarations 1524, 1914 and 1526; `LICENSE_PLEASE_READ.txt` lists
+further declarations). These licenses come with the conditions stated in the
+declarations themselves (e.g. a defensive termination clause); A2DPWB adds
+no terms of its own.
+
+---
+
 ## License Compatibility Matrix
 
 | Component | License | Compatible with Apache-2.0 / MIT? | Notes |
@@ -716,6 +786,7 @@ When changing `requirements.txt`, re-check and update this table.
 | A2DPWB (project) | Apache-2.0 OR MIT | — | Project license (dual; user chooses) |
 | libldac | Apache-2.0 | Yes | Permissive; NOTICE must accompany binaries |
 | LHDC-V5-Encoder | Apache-2.0 AND BSD-3-Clause | Yes | Permissive; KISS FFT notice reproduced in §8 |
+| libopus | BSD-3-Clause | Yes | Permissive; notice shipped as `licenses/opus-COPYING.txt` (§16) |
 | Bluedroid SBC encoder (Rust port) | Apache-2.0 | Yes | Permissive |
 | libopenaptx | LGPL-2.1+ | Yes (with care) | Must allow library replacement / relinking. Apache-2.0 is compatible with (L)GPL v3, which "or later" permits |
 | fdk-aac | FDK AAC License | Yes | Source of fdk-aac must be offered free of charge; no patent license |

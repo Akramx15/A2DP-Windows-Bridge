@@ -1,6 +1,6 @@
 # cargo-deny: licences and advisories of the Rust dependencies.
 # The C libraries built by the -sys crates (BTstack, libldac, libopenaptx
-# 0.2.0, fdk-aac, the LHDC V5 encoder) are not cargo dependencies; their
+# 0.2.0, fdk-aac, the LHDC V5 encoder, libopus) are not cargo dependencies; their
 # terms are in THIRD_PARTY_LICENSES.md.
 
 [graph]

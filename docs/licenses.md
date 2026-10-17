@@ -34,6 +34,7 @@ The A2DPWB source code is dual-licensed under Apache-2.0 or MIT. The distributed
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL encoder |
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC encoder |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (C port of the AOSP encoder) | commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC V5 encoder (experimental) |
+| [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus encoder |
 | Rust crates: [Tauri](https://tauri.app/) 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ... | `Cargo.lock` | Mostly Apache-2.0 / MIT; also BSD, ISC, Zlib, Unicode-3.0, CDLA-Permissive-2.0 and MPL-2.0 | Window, tray, IPC, USB, audio, updates |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | UI library of the window |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | JavaScript side of Tauri |
@@ -81,7 +82,7 @@ The licenses of the Rust crates are checked when a release is built: `cargo-abou
 
 ### Developer Tool a2dpwb_decode
 
-`a2dpwb_decode` (see [Usage](usage#verify-stream)) is built from source only and is not in the release. It links the Bluedroid SBC decoder (Apache-2.0), fdk-aac (FDK AAC License), libopenaptx 0.2.0 (LGPL-2.1+) and liblc3 (Apache-2.0, bundled in BTstack) at the pinned versions above, and does **not** link BTstack or libldac. See THIRD_PARTY_LICENSES.md §14.
+`a2dpwb_decode` (see [Usage](usage#verify-stream)) is built from source only and is not in the release. It links the Bluedroid SBC decoder (Apache-2.0), fdk-aac (FDK AAC License), libopenaptx 0.2.0 (LGPL-2.1+), libopus (BSD-3-Clause) and liblc3 (Apache-2.0, bundled in BTstack) at the pinned versions above, and does **not** link BTstack or libldac. See THIRD_PARTY_LICENSES.md §14.
 
 ### Test Environment tools/emu and tools/linux_sink
 

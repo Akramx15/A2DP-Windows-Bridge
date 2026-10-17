@@ -115,9 +115,10 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5 (experimental)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 ```
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > Opus (experimental) > AAC > SBC
 
 If the requested codec is not offered by the headphones, the CLI stops with an error that says why; use `-c auto` (the default) to take the best codec they offer. aptX Adaptive is never selected -- see [aptX Family and aptX Adaptive Compatibility](#aptx-compatibility).
 
@@ -155,7 +156,7 @@ Put the headphones into pairing mode first.
 | Option | Description |
 |:-------|:------------|
 | `-d <addr>` | Bluetooth address of the headphones / receiver (`AA:BB:CC:DD:EE:FF`) |
-| `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `auto` (default: `auto`) |
+| `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `auto` (default: `auto`) |
 | `-q <mode>` | Quality: `hq` (default), `sq`, `mq`; LHDC V5 also `mhq` (900 kbps) |
 | `-a` | ABR (LDAC and LHDC V5) |
 | `-m <mode>` | Capture mode: `loopback` (default), `virtual`, `app` |
@@ -307,7 +308,7 @@ When A2DPWB connects, the headphones advertise a **list of codecs** (AVDTP strea
 - **The headphones also list classic aptX** -- Many aptX Adaptive headphones do, because Qualcomm markets aptX Adaptive as backward compatible with aptX / aptX HD. In that case A2DPWB selects classic aptX directly; it is a separate codec in the headphones' list, not a reduced mode of aptX Adaptive.
 - **The headphones list only aptX Adaptive** (no classic aptX, aptX HD or aptX LL) -- aptX is not possible with A2DPWB. Auto picks the next codec in the priority order, typically AAC or SBC.
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > Opus (experimental) > AAC > SBC
 
 ### Explicitly Selected Codec Not Offered {#codec-fallback}
 
@@ -348,7 +349,7 @@ The same lines are in the log files in the config folder (`%APPDATA%\A2DPWB\logs
 remote supports aptX (SEID ..., [...])
 remote supports aptX Adaptive (SEID ...) - never selected (no open encoder); classic aptX is used only if the remote lists it
 remote vendor codec 0x........./0x.... (SEID ...) - unsupported
-capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true [not encodable] SBC=true AAC=true LHDC V5=false)
+capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)
 ```
 
 - `aptX=true` -- classic aptX is available (even if `aptX Adaptive=true` too).

@@ -19,7 +19,7 @@ Oct 17, 2026 · @seiya ／ 改訂: 未決事項の決定を反映（同日）
 
 - 対応OSは Windows 10 (22H2) / 11 です。**x64 と ARM64 の両方を v2.0 で出します**（[ARM64](#arm64) を参照）。
 - 使い方は今と同じです。WinUSBを割り当てたUSBドングルを btstack で直接制御して、WASAPIで取り込んだシステム音声をA2DPで送ります。
-- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。
+- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。v2 では Android の A2DP Opus（試験的）を加えます（[Opus](#opus) を参照）。
 - アプリ名（A2DP Windows Bridge / A2DPWB）とアイコンは v1 のまま変えません。
 
 **今回やらないこと**
@@ -87,10 +87,10 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | 層 | クレート（ディレクトリ） | 責務 | unsafe |
 | --- | --- | --- | --- |
 | 1. FFI | `btstack-sys` | btstackを `cc` でビルドし、FFI宣言と安全なラッパーを提供。`btstack_config.h` もここに置く。btstackを呼べるのはランループのスレッドだけ、という制約を型（`!Send` の `Stack` トークン）で強制する | 可 |
-| 1. FFI | `ldac-sys` / `openaptx-sys` / `fdkaac-sys` / `lhdcv5-sys` | 残すCコーデックをビルドしてFFIを提供。ライセンスの異なるライブラリをクレート単位で分けて管理する | 可 |
+| 1. FFI | `ldac-sys` / `openaptx-sys` / `fdkaac-sys` / `lhdcv5-sys` / `opus-sys` | 残すCコーデックをビルドしてFFIを提供。ライセンスの異なるライブラリをクレート単位で分けて管理する | 可 |
 | 1. FFI | `win-sys` | `windows` クレートで、Rustのライブラリが無いWin32 APIを包む。MMCSS、IPolicyConfig（既定デバイスの切り替え）、WLAN API（AFH用）、電源通知、レジストリのRunキー、メディアキー送出、**WinUSBドライバの割り当てと解除（SetupAPI / DiInstallDevice）** | 可 |
 | 2. 部品 | `hci-transport` | HCI H2（`nusb` でWinUSBを直接制御）とH4 over TCP（エミュレータ用）。現行の改造版 `hci_transport_h2_winusb.c` の復旧処理（パイプリセット、読み取り失敗からの復帰、コマンドタイムアウト、終了時のHCI Reset）を移植し、btstackには `btstack-sys` のコールバック表で接続する | 禁止 |
-| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC）も担当 | 禁止 |
+| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC）も担当 | 禁止 |
 | 2. 部品 | `audio-capture` | `wasapi` クレートで取り込む。システムループバック、仮想デバイス、アプリ単位のループバック（build 19041以降）。デバイス一覧、エンドポイント音量、テストトーン | 禁止 |
 | 3. エンジン | `bt-host` | btstackのランループを専用スレッドに閉じ込め、外からはコマンドチャネルと型付きイベントだけで操作する。GAP / A2DP Source / AVRCP（絶対音量、ボタン操作）/ SDP / リンクキー / AFH / ファームウェア読み込み / pklgキャプチャ | 禁止 |
 | 3. エンジン | `pipeline` | リングバッファ、形式変換、リサンプル、ダウンミックス、エンコード、メディアペイロードの組み立て、送信ペースの制御、ABR | 禁止 |
@@ -139,6 +139,7 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | btstack | Windowsで使えるClassic Bluetooth（A2DP / AVDTP / AVRCP）のホストスタックで、実用水準のRust実装はない |
 | libldac / lhdcv5-enc | 仕様が公開されておらず、参照実装を使う以外にない |
 | fdk-aac | AACエンコーダでこれを超える品質のRust実装はない |
+| libopus | Opusの参照実装。Rustの純粋な実装は品質・速度ともに及ばない（v2で追加、BSD-3-Clause） |
 | libopenaptx 0.2.0 | Rustへの移植自体は難しくない。ただし移植版もLGPL-2.1の派生物になり、ライセンスの扱いは変わらない。なので当面は独立した `-sys` クレートに閉じ込めておく |
 
 ## 音声パイプライン・スレッド設計
@@ -349,12 +350,29 @@ Windows 8 以降は WinUSB ドライバ（`winusb.inf`）が OS に標準で入�
 - 割り当て中は Windows の Bluetooth からそのドングルが消えることを、実行前の確認画面で説明します。
 - **検証（フェーズ0）**: 手元の RTL8761BU で、割り当て → `nusb` で開ける → 解除 → Windows の Bluetooth に戻る、を確認します。`DiInstallDevice` が手動選択のドライバを拒む環境があれば、代わりに「`winusb.inf` を Include / Needs する小さなINF + カタログ」を作る方法を検討します（その場合は署名が要るので、libwdi と同じ問題が出ます。最後の手段として libwdi を DLL で同梱し、上の LGPL の条件を守ります）。
 
+## Opus
+
+Android 13 で入った A2DP の Opus ベンダーコーデック（AOSP `system/stack/a2dp/a2dp_vendor_opus*.cc`、ベンダー ID 0x000000E0 Google、コーデック ID 0x0001）を、試験的に v2 で加えます。エンコーダは libopus 1.5.2（`extern/opus`、BSD-3-Clause）で、`opus-sys` クレートが `*.mk` のソース一覧から浮動小数点版を `cc` でビルドします。SIMD 用のソースと実行時の CPU 判定は使わないので、x64 と ARM64 で同じビルドになります。
+
+| 項目 | 値 | 根拠 |
+| --- | --- | --- |
+| Codec Information | 7 バイト。バイト 6 のビット 2..0 がチャネルモード（0x01 モノラル、0x02 ステレオ、0x04 デュアルモノ）、ビット 4..3 がフレーム長（0x08 10 ms、0x10 20 ms）、ビット 7 が 48 kHz | `a2dp_vendor_opus_constants.h`、PipeWire `OPUS_G_*` |
+| 提供する能力 | 48 kHz、10 / 20 ms、モノラル / ステレオ（0x9B） | |
+| 設定 | 48 kHz、20 ms（シンクが 10 ms だけのときは 10 ms）、ステレオ（モノラル入力でシンクがモノラルを持つときだけモノラル）。デュアルモノだけのシンクは使わない | Android の既定値 0x92。PipeWire も 20 ms とステレオを優先 |
+| ビットレート | 高音質 256 kbps、標準 192 kbps、モバイル 128 kbps（ステレオ。モノラルは半分）。1 フレームがメディアペイロードに収まるよう上限を掛ける | Android `A2DP_VendorGetBitRateOpus` は 256 / 128 kbps。PipeWire（`a2dp-codec-opus-g.c`）も 1 チャネル 128 kbps |
+| エンコーダ設定 | `OPUS_APPLICATION_AUDIO`、制約付き VBR（libopus の既定。Android は変更しない）、複雑度 10（libopus と PipeWire の既定。Android は 5） | `a2dp_vendor_opus_encoder.cc` |
+| パケット | RTP ヘッダー + 1 バイトのメディアペイロードヘッダー（下位 4 ビットがフレーム数 = 1）+ Opus パケット 1 つ（1 フレーム）。`opus_encode` にはペイロードの残りを上限として渡す | `A2DP_BuildMediaPayloadHeaderOpus`。PipeWire のデコーダはフレーム数 1 以外を受け付けない |
+
+Android の `tA2DP_OPUS_ENCODER_PARAMS::bitrate` は `uint16_t` なので、256000 は 59392（約 59 kbps）に切り詰められて `OPUS_SET_BITRATE` に渡っています。A2DPWB はこの不具合を真似せず、Android が意図した値を使います。PipeWire 独自の「Opus 05」（ベンダー 0x05F1、サラウンドや双方向に対応）は対応する実機が PipeWire 同士に限られるので、今回は入れません。
+
+Auto の優先順位は LHDC V5 の下、AAC の上です。256 kbps の Opus は同じビットレートの AAC と同等以上で、コーデックの遅延も小さい（20 ms のフレームと 6.5 ms の先読みで 26.5 ms。AAC-LC は約 43 ms）一方、シンク側の実装は新しく数も少ないため、実績のある LDAC / aptX 系 / LHDC V5 よりは下に置きます。
+
 ## ARM64
 
 **決定: v2.0 で x64 と ARM64 の両方を出します。**
 
 - Rust 側は `aarch64-pc-windows-msvc` ターゲットでそのままビルドできます。`nusb`、`wasapi`、`windows`、Tauri（WebView2）は ARM64 に対応しています。
-- C のライブラリ（btstack、fdk-aac、libldac、libopenaptx、lhdcv5-enc）は `cc` で MSVC の ARM64 ツールチェーン（VS の「MSVC v143 ARM64 ビルドツール」）を使ってコンパイルします。x86 専用の組み込み関数を使っている箇所がないかをフェーズ1で確認します。
+- C のライブラリ（btstack、fdk-aac、libldac、libopenaptx、lhdcv5-enc、libopus）は `cc` で MSVC の ARM64 ツールチェーン（VS の「MSVC v143 ARM64 ビルドツール」）を使ってコンパイルします。x86 専用の組み込み関数を使っている箇所がないかをフェーズ1で確認します。
 - CI は GitHub Actions の `windows-11-arm` ランナーでビルドと単体テストを回します。エミュレータの結合テスト（Python + Bumble）は x64 だけで回します。
 - 実機での確認は ARM64 の PC と USB ドングルが要るので、ベータ版の利用者に協力してもらいます（リリース前のチェックリストに入れます）。
 

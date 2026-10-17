@@ -47,7 +47,7 @@ flowchart TB
     subgraph core["a2dpwb-core.exe（常駐、ユーザーモード）"]
         ctl["トレイのメニュー / IPC サーバー / CLI (--cli)"] --> svc["コアサービス: 接続の状態機械、コーデック選択、プロファイル、再接続"]
         svc --> cap["WASAPI キャプチャ"]
-        cap -- PCM --> enc["エンコード経路: LDAC / aptX 系 / LHDC V5 / AAC / SBC"]
+        cap -- PCM --> enc["エンコード経路: LDAC / aptX 系 / LHDC V5 / Opus / AAC / SBC"]
         enc --> bt["BTstack: HCI / L2CAP / AVDTP / A2DP / AVRCP"]
     end
     ui <-->|"ユーザーごとの名前付きパイプ"| ctl
@@ -116,7 +116,7 @@ USB トランスポートには、v1 で実機のアダプターのために入�
 | 層 | クレート | 役割 |
 |:---|:---------|:-----|
 | 1. FFI | `btstack-sys` | BTstack を `cc`（MSVC）でビルドし、手書きの FFI 宣言と安全なラッパー、`btstack_config.h` を持つ。BTstack を呼べるのはランループのスレッドだけで、`!Send` の `Stack` トークンでこれを強制する |
-| 1. FFI | `ldac-sys`、`openaptx-sys`、`fdkaac-sys`、`lhdcv5-sys` | C のエンコーダーをビルドして提供する。ライブラリごとに 1 クレートにして、ライセンスを分けて管理する |
+| 1. FFI | `ldac-sys`、`openaptx-sys`、`fdkaac-sys`、`lhdcv5-sys`、`opus-sys` | C のエンコーダーをビルドして提供する。ライブラリごとに 1 クレートにして、ライセンスを分けて管理する |
 | 1. FFI | `win-sys` | Rust のライブラリがない Win32 API: MMCSS、既定のオーディオデバイス（IPolicyConfig）、WLAN API（AFH）、電源通知、Run キー、メディアキー、パイプの DACL、昇格、WinUSB ドライバーの割り当て（SetupAPI） |
 | 2. 部品 | `hci-transport` | `nusb` による HCI over USB（"H2"）と、仮想コントローラー（`tools/emu`）への H4 over TCP |
 | 2. 部品 | `codec` | `Encoder` トレイト、SBC エンコーダー（Bluedroid 版の Rust 移植）、C エンコーダーの安全なラッパー、Codec Information の解析とコーデックの選択 |
@@ -209,7 +209,7 @@ Windows 8 以降には、Microsoft 署名済みの WinUSB ドライバー（`win
 
 **責務**:
 - USB（または TCP）の HCI トランスポートで BTstack を専用スレッドで動かす
-- ストリームエンドポイントの登録: ベンダーコーデック（LDAC、aptX HD、aptX、aptX LL、LHDC V5）と SBC、AAC
+- ストリームエンドポイントの登録: ベンダーコーデック（LDAC、aptX HD、aptX、aptX LL、LHDC V5、Opus）と SBC、AAC
 - SDP レコードの登録（A2DP Source、AVRCP Controller、AVRCP Target）
 - SSP ペアリングの管理（Just Works、General Bonding、リンクキーを永続化）
 - 接続タイムアウト後は半開きの接続を切断し、再試行できるようにする
@@ -224,7 +224,7 @@ Windows 8 以降には、Microsoft 署名済みの WinUSB ドライバー（`win
 - `a2dp_source_create_stream_endpoint()` -- コーデックエンドポイントの登録
 - `a2dp_source_establish_stream()` -- A2DP シンクへの接続
 - `a2dp_source_set_config_other()` -- ベンダー固有コーデックの設定
-- `a2dp_source_stream_send_media_payload_rtp()` -- RTP ヘッダー付きでエンコード済み音声を送信（LDAC、aptX HD、AAC、SBC、LHDC V5）
+- `a2dp_source_stream_send_media_payload_rtp()` -- RTP ヘッダー付きでエンコード済み音声を送信（LDAC、aptX HD、AAC、SBC、LHDC V5、Opus）
 - `a2dp_source_stream_send_media_packet()` -- RTP ヘッダーなしの生メディアパケットを送信（aptX、aptX LL）
 
 ### 音声の取り込み（`audio-capture`）
@@ -245,6 +245,7 @@ Windows Audio Session API でオーディオをリアルタイムに取り込み
 | AAC | fdk-aac | 最大 256 kbps | AAC-LC、LATM トランスポート |
 | SBC | Bluedroid エンコーダーの Rust 移植 | 最大約 345 kbps | A2DP 必須ベースライン。C 版とビット単位で一致（全設定でテスト） |
 | LHDC V5 | lhdcv5-enc（AOSP エンコーダーの C 移植版） | 400/500/900/1000 kbps、ABR 160–400 kbps | 試験的。16/24 bit、5 ms フレーム、2 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
+| Opus | libopus 1.5.2 | 128/192/256 kbps（ステレオ。モノラルは半分） | 試験的。Android の A2DP Opus: 48 kHz、20 ms フレーム（シンクが 10 ms だけならそれ）、メディアペイロードに収まる上限付きの制約付き VBR、1 パケット 1 フレーム、1 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
 
 すべてのエンコーダーは `codec::Encoder` トレイトを実装しています。入力の PCM 形式と 1 回に使うフレーム数を示し、コーデックのフレームを返します。
 
@@ -262,6 +263,7 @@ libopenaptx は 4 ステレオサンプル単位のパック済み 24-bit リト
 | aptX Low Latency | CSR (0x0000000A) または Qualcomm (0x000000D7) | 0x0002 |
 | aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD（検出のみ、選択されない） |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
+| Opus | Google (0x000000E0) | 0x0001 |
 
 AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用します。
 
@@ -272,7 +274,7 @@ AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用�
 - **aptX LL**: 8 バイト。シンクが拡張（"new caps"）フラグを立てている場合は 17 バイト。A2DPWB は aptX LL エンドポイントを 1 つだけ登録し、シンクが使用した Vendor ID でストリームを設定します
 - **LHDC V5**（試験的）: 11 バイト（Android `a2dp_vendor_lhdcv5_constants.h`）。バイト 6 がサンプルレート（0x20 44.1k、0x10 48k、0x04 96k、0x01 192k）、バイト 7 がビット深度（0x04 16 bit、0x02 24 bit）とシンクの最小/最大ビットレート制限、バイト 8 がコーデックサブバージョン（0x01 = V5 ver.1）と 0x10 = 5 ms フレーム、バイト 9-10 がオプション機能（低遅延、ロスレス、JAS、AR、META。A2DPWB はいずれも提示しません）。ステレオのみ。シンクのビットレート制限は Android と同様に設定へそのまま返し、エンコーダーにも適用します。メディアパケットには 2 バイトのペイロードヘッダー（フレーム数 << 2、遅延ビットは 0、続いてシーケンス番号）が付きます
 
-**RTP ヘッダーの有無**: LDAC・aptX HD・AAC・SBC・LHDC V5 のメディアパケットには 12 バイトの RTP ヘッダーが付きます。aptX と aptX LL は（Android や PipeWire と同様に）RTP ヘッダー**なし**で送信するため、L2CAP MTU 全体を aptX フレームに使えます。
+**RTP ヘッダーの有無**: LDAC・aptX HD・AAC・SBC・LHDC V5・Opus のメディアパケットには 12 バイトの RTP ヘッダーが付きます。aptX と aptX LL は（Android や PipeWire と同様に）RTP ヘッダー**なし**で送信するため、L2CAP MTU 全体を aptX フレームに使えます。
 
 **aptX Adaptive** にはオープンソースのエンコーダーがない（libopenaptx も未実装）ため、A2DPWB は登録も選択もしません。シンクが通知した場合はログに記録するだけで、シンクがクラシック aptX を別途通知していればそちらを使用します。
 
@@ -306,4 +308,4 @@ AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用�
 - **セカンドアダプター推奨**: Windows には内蔵 Bluetooth、A2DPWB には専用 USB アダプターを使用
 - 一部の Bluetooth アダプターのファームウェアは達成可能なビットレートを制限する場合がある
 - USB Bluetooth 5.0 以上のアダプターは LDAC に適している
-- 自動コーデック選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5（試験的） > AAC > SBC
+- 自動コーデック選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5（試験的） > Opus（試験的） > AAC > SBC
