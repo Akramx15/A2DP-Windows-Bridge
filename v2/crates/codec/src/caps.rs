@@ -113,7 +113,14 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
         LocalEndpoint { kind, codec_type: CODEC_TYPE_VENDOR, caps, config }
     };
     if CodecKind::Ldac.available() {
-        eps.push(vendor(CodecKind::Ldac, LDAC_VENDOR_ID, LDAC_CODEC_ID, 8, &[LDAC_FREQ_ALL, LDAC_CH_ALL], &[0x10, 0x01]));
+        eps.push(vendor(
+            CodecKind::Ldac,
+            LDAC_VENDOR_ID,
+            LDAC_CODEC_ID,
+            8,
+            &[LDAC_FREQ_ALL, LDAC_CH_ALL],
+            &[0x10, 0x01],
+        ));
     }
     if CodecKind::AptxHd.available() {
         eps.push(vendor(
@@ -206,7 +213,10 @@ pub enum VendorCapability {
     /// do not encode)
     Ignored(CodecKind, &'static str),
     AptxAdaptive,
-    Unknown { vendor_id: u32, codec_id: u16 },
+    Unknown {
+        vendor_id: u32,
+        codec_id: u16,
+    },
     TooShort,
 }
 
@@ -355,7 +365,9 @@ impl RemoteCaps {
             192000 if has(LHDCV5_SR_192000) => return 192000,
             _ => {}
         }
-        for (bit, rate) in [(LHDCV5_SR_48000, 48000), (LHDCV5_SR_44100, 44100), (LHDCV5_SR_96000, 96000), (LHDCV5_SR_192000, 192000)] {
+        for (bit, rate) in
+            [(LHDCV5_SR_48000, 48000), (LHDCV5_SR_44100, 44100), (LHDCV5_SR_96000, 96000), (LHDCV5_SR_192000, 192000)]
+        {
             if has(bit) {
                 return rate;
             }
@@ -364,7 +376,13 @@ impl RemoteCaps {
     }
 
     /// The SET_CONFIGURATION for a stream of `kind`
-    pub fn configuration(&self, kind: CodecKind, sample_rate: u32, channels: u32, bits_per_sample: u8) -> Result<Configuration, ConfigError> {
+    pub fn configuration(
+        &self,
+        kind: CodecKind,
+        sample_rate: u32,
+        channels: u32,
+        bits_per_sample: u8,
+    ) -> Result<Configuration, ConfigError> {
         let Some(sep) = self.sep(kind) else {
             return Err(ConfigError::NotOffered(kind));
         };
@@ -377,7 +395,9 @@ impl RemoteCaps {
                 }
                 ConfigRequest::Sbc { sampling_frequency: sample_rate as u16, mono, min_bitpool: 2, max_bitpool: 53 }
             }
-            CodecKind::Aac => ConfigRequest::Aac { sampling_frequency: sample_rate, channels: channels as u8, bit_rate: 256_000 },
+            CodecKind::Aac => {
+                ConfigRequest::Aac { sampling_frequency: sample_rate, channels: channels as u8, bit_rate: 256_000 }
+            }
             CodecKind::Ldac => {
                 let freq = match sample_rate {
                     44100 => 0x20,
@@ -499,7 +519,10 @@ pub enum ConfigError {
 pub enum Unavailable {
     /// The codec may be on a SEP another device streams to (multipoint):
     /// BTstack does not query SEPs in use
-    SepInUse { in_use: u8, total: u8 },
+    SepInUse {
+        in_use: u8,
+        total: u8,
+    },
     /// The sink offers only aptX Adaptive, which has no open encoder
     AdaptiveOnly,
     NotSupported,
@@ -515,7 +538,11 @@ pub struct Choice {
 
 /// Picks the codec for `requested` (None = Auto). Without `fallback`, a
 /// requested codec the device does not offer is an error.
-pub fn choose(caps: &RemoteCaps, requested: Option<CodecKind>, fallback: bool) -> Result<Choice, Option<(CodecKind, Unavailable)>> {
+pub fn choose(
+    caps: &RemoteCaps,
+    requested: Option<CodecKind>,
+    fallback: bool,
+) -> Result<Choice, Option<(CodecKind, Unavailable)>> {
     let Some(wanted) = requested else {
         return caps.best().map(|kind| Choice { kind, replaced: None }).ok_or(None);
     };

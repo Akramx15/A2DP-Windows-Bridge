@@ -64,9 +64,8 @@ const SBC_ENCODER: &[&str] = &[
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let btstack = env::var_os("BTSTACK_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| manifest.join("../../../extern/btstack"));
+    let btstack =
+        env::var_os("BTSTACK_DIR").map(PathBuf::from).unwrap_or_else(|| manifest.join("../../../extern/btstack"));
     // std::path::absolute, not canonicalize: MSVC does not take \\?\ paths
     let btstack = std::path::absolute(&btstack).unwrap();
     assert!(

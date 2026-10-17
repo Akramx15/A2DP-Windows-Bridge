@@ -433,7 +433,14 @@ impl Stack {
         (n > 0).then_some(n as u16)
     }
 
-    pub fn a2dp_send_media_payload_rtp(&self, a2dp_cid: u16, local_seid: u8, marker: u8, timestamp: u32, payload: &[u8]) -> u8 {
+    pub fn a2dp_send_media_payload_rtp(
+        &self,
+        a2dp_cid: u16,
+        local_seid: u8,
+        marker: u8,
+        timestamp: u32,
+        payload: &[u8],
+    ) -> u8 {
         if payload.len() > u16::MAX as usize {
             return crate::consts::ERROR_CODE_INVALID_HCI_COMMAND_PARAMETERS;
         }

@@ -258,7 +258,8 @@ pub mod sbc_reference {
             bitpool: i32,
         ) -> Encoder {
             // SAFETY: plain values; returns an owned, heap-allocated state.
-            let p = unsafe { ffi::a2dpwb_sbc_ref_new(sample_rate, channel_mode, blocks, subbands, allocation, bitpool) };
+            let p =
+                unsafe { ffi::a2dpwb_sbc_ref_new(sample_rate, channel_mode, blocks, subbands, allocation, bitpool) };
             assert!(!p.is_null());
             Encoder(p)
         }

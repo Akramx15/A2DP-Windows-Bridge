@@ -150,6 +150,7 @@ unsafe extern "C" {
         allocation: c_int,
         bitpool: c_int,
     ) -> *mut core::ffi::c_void;
-    pub fn a2dpwb_sbc_ref_encode(state: *mut core::ffi::c_void, pcm: *const i16, out: *mut u8, out_cap: c_int) -> c_int;
+    pub fn a2dpwb_sbc_ref_encode(state: *mut core::ffi::c_void, pcm: *const i16, out: *mut u8, out_cap: c_int)
+    -> c_int;
     pub fn a2dpwb_sbc_ref_free(state: *mut core::ffi::c_void);
 }

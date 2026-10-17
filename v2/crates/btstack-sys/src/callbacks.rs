@@ -61,7 +61,9 @@ fn dispatch(stack: &Stack, event: Pending) -> bool {
 
 fn deliver(app: &mut dyn App, stack: &Stack, event: Pending) {
     match event {
-        Pending::Packet(source, packet_type, channel, data) => app.on_packet(stack, source, packet_type, channel, &data),
+        Pending::Packet(source, packet_type, channel, data) => {
+            app.on_packet(stack, source, packet_type, channel, &data)
+        }
         Pending::Timer(id) => app.on_timer(stack, id),
         Pending::Intel(result) => app.on_intel_firmware(stack, result),
     }
