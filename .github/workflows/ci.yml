@@ -59,6 +59,12 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # a2dpwb.exe embeds the built UI (app/src/ui/dist, frontendDist in
+      # tauri.conf.json); the ui job builds it, here an empty folder lets
+      # the Rust side compile
+      - name: Placeholder for the UI build
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force app/src/ui/dist | Out-Null
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
