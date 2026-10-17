@@ -1,0 +1,13 @@
+[package]
+name = "hci-transport"
+description = "HCI transports for BTstack: WinUSB (nusb) and H4 over TCP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+btstack-sys.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

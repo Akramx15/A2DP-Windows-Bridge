@@ -1,0 +1,28 @@
+[package]
+name = "codec"
+description = "A2DP codecs: the Encoder trait, the Rust SBC encoder, wrappers of the C encoders, codec information and capability negotiation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["ldac", "aptx", "aac", "lhdcv5"]
+ldac = ["dep:ldac-sys"]
+aptx = ["dep:openaptx-sys"]
+aac = ["dep:fdkaac-sys"]
+lhdcv5 = ["dep:lhdcv5-sys"]
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+ldac-sys = { path = "../ldac-sys", optional = true }
+openaptx-sys = { path = "../openaptx-sys", optional = true }
+fdkaac-sys = { path = "../fdkaac-sys", optional = true }
+lhdcv5-sys = { path = "../lhdcv5-sys", optional = true }
+
+[dev-dependencies]
+btstack-sys = { workspace = true, features = ["sbc-reference"] }
+proptest = "1"
+
+[lints]
+workspace = true

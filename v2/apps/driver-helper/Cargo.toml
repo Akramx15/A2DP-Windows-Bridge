@@ -1,0 +1,12 @@
+[package]
+name = "a2dpwb-driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "a2dpwb-driver"
+path = "src/main.rs"
+
+[lints]
+workspace = true
