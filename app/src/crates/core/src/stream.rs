@@ -148,7 +148,7 @@ impl Sink for SharedInput {
     }
 }
 
-fn input_format(f: Format) -> InputFormat {
+pub(crate) fn input_format(f: Format) -> InputFormat {
     InputFormat {
         sample_rate: f.sample_rate,
         channels: f.channels,
@@ -227,7 +227,7 @@ impl ActiveSource {
 
 /// Restores the default output device when the session ends (virtual
 /// device mode switched it)
-struct DefaultDeviceGuard(Option<String>);
+pub(crate) struct DefaultDeviceGuard(pub(crate) Option<String>);
 
 impl Drop for DefaultDeviceGuard {
     fn drop(&mut self) {

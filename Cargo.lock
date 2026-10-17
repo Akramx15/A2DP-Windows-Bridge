@@ -11,6 +11,7 @@ dependencies = [
  "codec",
  "hci-transport",
  "if-addrs",
+ "le-audio",
  "pipeline",
  "semver",
  "serde",
@@ -20,6 +21,7 @@ dependencies = [
  "tracing",
  "ureq",
  "win-sys",
+ "windows",
 ]
 
 [[package]]

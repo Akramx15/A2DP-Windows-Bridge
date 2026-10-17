@@ -16,8 +16,17 @@
 //! session thread and reopens the endpoint when the default output device
 //! changes (device choice [`EndpointChoice::Default`]). Both sides are traits
 //! ([`Headphones`], [`EndpointProvider`]) so the logic is tested with fakes.
+//!
+//! LE Audio (experimental): the headphone side is the LE core's volume (the
+//! VCP module, [`LeHeadphones`]); `--le-sim-volume` runs the same sync
+//! against a simulated Windows volume ([`SimulatedWindowsVolume`], v1
+//! le_audio::vcp::SimulatedWindowsVolume) for the emulator tests.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
+
+use le_audio::vcp_scale::SimVolumeSpec;
 
 use crate::stream::{SourceRequest, VolumeSync};
 
@@ -45,6 +54,20 @@ impl Headphones for bt_host::BtHost {
     }
 }
 
+/// LE Audio (experimental): the headset volume through the LE core's
+/// modules (VCP), on the 0..127 scale of AVRCP
+pub struct LeHeadphones<'a>(pub &'a bt_host::BtHost);
+
+impl Headphones for LeHeadphones<'_> {
+    fn remote_volume(&self) -> Option<u8> {
+        self.0.le_remote_volume()
+    }
+
+    fn request_volume(&self, volume: u8) {
+        self.0.le_request_volume(volume);
+    }
+}
+
 /// The Windows side: the master volume of one output device
 pub trait Endpoint {
     /// The endpoint ID this volume belongs to
@@ -54,6 +77,11 @@ pub trait Endpoint {
     fn volume(&self) -> Option<f32>;
     /// Sets the master volume scalar; false if it failed
     fn set_volume(&self, scalar: f32) -> bool;
+    /// The volume it had is given back when syncing stops (not for the
+    /// simulated volume, as in v1)
+    fn restores(&self) -> bool {
+        true
+    }
 }
 
 /// Opens [`Endpoint`]s and tells which device is the default output
@@ -282,6 +310,7 @@ impl<P: EndpointProvider> VolumeSyncer<P> {
     fn detach(&mut self) {
         if let Some(a) = self.attached.take()
             && let Some(original) = a.original
+            && a.endpoint.restores()
         {
             // Outside streaming the device plays on its own again: give it
             // its previous volume back
@@ -314,6 +343,134 @@ impl<P: EndpointProvider> VolumeSyncer<P> {
 impl<P: EndpointProvider> Drop for VolumeSyncer<P> {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// The endpoint ID of the simulated Windows volume
+pub const SIMULATED_DEVICE: &str = "simulated";
+
+/// Test only: one simulated output device, the default one, whose volume
+/// (0..127) lives in memory; the real Windows volume is never touched. Clones
+/// share the volume.
+#[derive(Debug, Clone, Default)]
+pub struct SimulatedEndpoints {
+    level: Rc<Cell<u8>>,
+}
+
+impl SimulatedEndpoints {
+    pub fn new(level: u8) -> SimulatedEndpoints {
+        SimulatedEndpoints { level: Rc::new(Cell::new(level.min(127))) }
+    }
+
+    /// The simulated Windows volume (0..127)
+    pub fn level(&self) -> u8 {
+        self.level.get()
+    }
+
+    /// A change made "in Windows" (the volume keys)
+    pub fn set_level(&self, level: u8) {
+        self.level.set(level.min(127));
+    }
+}
+
+/// The simulated device's volume ([`SimulatedEndpoints`])
+#[derive(Debug)]
+pub struct SimulatedEndpoint {
+    level: Rc<Cell<u8>>,
+}
+
+impl Endpoint for SimulatedEndpoint {
+    fn device_id(&self) -> &str {
+        SIMULATED_DEVICE
+    }
+
+    fn volume(&self) -> Option<f32> {
+        Some(level_to_scalar(self.level.get()))
+    }
+
+    fn set_volume(&self, scalar: f32) -> bool {
+        let level = scalar_to_level(scalar);
+        self.level.set(level);
+        // The emulator tests read these lines (tools/emu/le_audio_tests/vcp.py)
+        tracing::info!("VCP test: simulated Windows volume set to {level}/127 (by VolumeSync)");
+        true
+    }
+
+    fn restores(&self) -> bool {
+        false
+    }
+}
+
+impl EndpointProvider for SimulatedEndpoints {
+    type Endpoint = SimulatedEndpoint;
+
+    fn default_device(&self) -> Option<String> {
+        Some(SIMULATED_DEVICE.into())
+    }
+
+    fn open(&self, device_id: &str) -> Result<SimulatedEndpoint, String> {
+        if device_id == SIMULATED_DEVICE {
+            Ok(SimulatedEndpoint { level: self.level.clone() })
+        } else {
+            Err(format!("no simulated device {device_id}"))
+        }
+    }
+}
+
+/// Test only (`--cli --le-audio --le-sim-volume <spec>`, v1
+/// le_audio::vcp::SimulatedWindowsVolume): VolumeSync with the headset
+/// against a simulated Windows volume that starts at `spec.start` and
+/// changes to each step's level at its time after the first tick (the
+/// volume keys), so the emulator tests exercise the real sync logic.
+pub struct SimulatedWindowsVolume {
+    spec: SimVolumeSpec,
+    endpoints: SimulatedEndpoints,
+    syncer: Option<VolumeSyncer<SimulatedEndpoints>>,
+    started: Option<Instant>,
+    next: usize,
+}
+
+impl SimulatedWindowsVolume {
+    pub fn new(spec: SimVolumeSpec) -> SimulatedWindowsVolume {
+        let endpoints = SimulatedEndpoints::new(spec.start);
+        SimulatedWindowsVolume { spec, endpoints, syncer: None, started: None, next: 0 }
+    }
+
+    /// From `--le-sim-volume "<level>[,<seconds>:<level>...]"`; None if
+    /// malformed
+    pub fn parse(spec: &str) -> Option<SimulatedWindowsVolume> {
+        SimVolumeSpec::parse(spec).map(SimulatedWindowsVolume::new)
+    }
+
+    /// The simulated Windows volume now (0..127)
+    pub fn level(&self) -> u8 {
+        self.endpoints.level()
+    }
+
+    /// Call every 100-200 ms while streaming; the first call starts it
+    pub fn tick(&mut self, headphones: &dyn Headphones) {
+        self.tick_at(headphones, Instant::now());
+    }
+
+    fn tick_at(&mut self, headphones: &dyn Headphones, now: Instant) {
+        let level = self.endpoints.level();
+        let started = *self.started.get_or_insert_with(|| {
+            tracing::info!("VCP test: simulated Windows volume {level}/127 (the real Windows volume is not used)");
+            now
+        });
+        let elapsed = now.saturating_duration_since(started).as_millis();
+        while let Some(&(at_ms, level)) = self.spec.steps.get(self.next) {
+            if elapsed < u128::from(at_ms) {
+                break;
+            }
+            self.endpoints.set_level(level);
+            tracing::info!("VCP test: simulated Windows volume changed to {}/127 (volume keys)", level.min(127));
+            self.next += 1;
+        }
+        let endpoints = &self.endpoints;
+        let syncer =
+            self.syncer.get_or_insert_with(|| VolumeSyncer::with_provider(endpoints.clone(), EndpointChoice::Default));
+        syncer.tick_at(true, headphones, now);
     }
 }
 
@@ -637,6 +794,69 @@ mod tests {
         d.volume.borrow_mut().insert("gone".into(), 1.0);
         s.tick_at(true, &hp, Instant::now());
         assert_eq!(d.level("gone"), 40);
+    }
+
+    #[test]
+    fn simulated_volume_takes_the_headset_volume_then_follows_its_steps() {
+        // --le-sim-volume 64,3:90 against a headset at 50/127 (VCP 100/255)
+        let spec = SimVolumeSpec { start: 64, steps: vec![(3000, 90)] };
+        let mut sim = SimulatedWindowsVolume::new(spec);
+        let hp = FakeHeadphones::at(50);
+        let t0 = Instant::now();
+        sim.tick_at(&hp, t0);
+        // Windows takes the headset's volume over, nothing is written
+        assert_eq!(sim.level(), 50);
+        assert!(hp.requests.borrow().is_empty());
+        sim.tick_at(&hp, t0 + Duration::from_millis(2900));
+        assert!(hp.requests.borrow().is_empty());
+        // The volume keys at 3 s: the headset follows
+        sim.tick_at(&hp, t0 + Duration::from_millis(3000));
+        assert_eq!(sim.level(), 90);
+        assert_eq!(*hp.requests.borrow(), vec![90]);
+        hp.confirm();
+        sim.tick_at(&hp, t0 + Duration::from_millis(4500));
+        assert_eq!(*hp.requests.borrow(), vec![90]);
+        // A button on the headset: the simulated Windows volume follows
+        hp.volume.set(Some(100));
+        sim.tick_at(&hp, t0 + Duration::from_millis(4700));
+        assert_eq!(sim.level(), 100);
+        assert_eq!(*hp.requests.borrow(), vec![90]);
+    }
+
+    #[test]
+    fn simulated_volume_from_the_command_line() {
+        // As the emulator cases give it
+        let sim = SimulatedWindowsVolume::parse("64,3:90").unwrap();
+        assert_eq!(sim.level(), 64);
+        assert_eq!(sim.spec.steps, [(3000, 90)]);
+        assert!(SimulatedWindowsVolume::parse("64").is_some());
+        assert!(SimulatedWindowsVolume::parse("200").is_none());
+        assert!(SimulatedWindowsVolume::parse("64,x").is_none());
+    }
+
+    #[test]
+    fn simulated_volume_waits_for_the_headset_volume() {
+        let mut sim = SimulatedWindowsVolume::new(SimVolumeSpec { start: 64, steps: Vec::new() });
+        let hp = FakeHeadphones::default();
+        sim.tick_at(&hp, Instant::now());
+        assert_eq!(sim.level(), 64);
+        hp.volume.set(Some(20));
+        sim.tick_at(&hp, Instant::now());
+        assert_eq!(sim.level(), 20);
+        assert!(hp.requests.borrow().is_empty());
+    }
+
+    #[test]
+    fn simulated_endpoints_are_not_restored() {
+        let sim = SimulatedEndpoints::new(64);
+        assert_eq!(sim.default_device().as_deref(), Some(SIMULATED_DEVICE));
+        assert!(sim.open("other").is_err());
+        let hp = FakeHeadphones::at(30);
+        let mut s = VolumeSyncer::with_provider(sim.clone(), EndpointChoice::Default);
+        s.tick_at(true, &hp, Instant::now());
+        assert_eq!(sim.level(), 30);
+        s.stop();
+        assert_eq!(sim.level(), 30);
     }
 
     #[test]
