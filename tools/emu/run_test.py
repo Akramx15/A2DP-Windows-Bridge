@@ -69,6 +69,10 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'sbc': r'SBC \d+ Hz, joint stereo, 16 blocks, 8 subbands, loudness, bitpool 2-53$',
     # SBC XQ: dual channel up to bitpool 47 (44.1 kHz) / 43 (48 kHz)
     'sbcxq': r'SBC (44100 Hz, dual channel, .*bitpool 2-47|48000 Hz, dual channel, .*bitpool 2-43)$',
+    # Sinks with a low max bitpool: the configuration (and every frame,
+    # a2dpwb_decode checks) stays within it
+    'sbc-bp35': r'SBC \d+ Hz, joint stereo, 16 blocks, 8 subbands, loudness, bitpool 2-35$',
+    'sbcxq-bp45': r'SBC 44100 Hz, dual channel, 16 blocks, 8 subbands, loudness, bitpool 2-45$',
     'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
     'faststream': r'FastStream \d+ Hz, direction 0x01 \(music\)',   # no voice backchannel
@@ -81,6 +85,9 @@ NEGOTIATION = {
     'sbcxq-44k': ('sbcxq', [], 'sbcxq', ['--rate', '44100']),            # bitpool 47
     'auto-sbcxq': ('auto', ['--codecs', 'sbc'], 'sbcxq', []),            # Auto takes SBC XQ over SBC
     'auto-sbc-no-xq': ('auto', ['--codecs', 'sbc', '--sbc-no-dual'], 'sbc', []),  # no dual channel: SBC
+    # Max bitpool 35: SBC capped there; Auto does not take SBC XQ (needs 43)
+    'auto-sbc-bp35': ('auto', ['--codecs', 'sbc', '--sbc-max-bitpool', '35'], 'sbc-bp35', []),
+    'sbcxq-bp45': ('sbcxq', ['--sbc-max-bitpool', '45'], 'sbcxq-bp45', ['--rate', '44100']),
     'faststream-44k': ('faststream', [], 'faststream', ['--rate', '44100']),
     # Auto never takes FastStream, even over SBC
     'auto-not-faststream': ('auto', ['--codecs', 'sbc', 'faststream', '--sbc-no-dual'], 'sbc', []),

@@ -127,7 +127,7 @@ class PacketLoggerSnooper(Snooper):
 CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus']
 
 
-def sink_codec_capabilities(sbc_dual=True):
+def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53):
     """Endpoints a typical high-end headset offers (all sample rates / modes).
     SBC allows SBC XQ (dual channel, bitpool up to 53) unless sbc_dual is
     False."""
@@ -164,7 +164,7 @@ def sink_codec_capabilities(sbc_dual=True):
                 allocation_method=sbc.AllocationMethod.LOUDNESS
                 | sbc.AllocationMethod.SNR,
                 minimum_bitpool_value=2,
-                maximum_bitpool_value=53,
+                maximum_bitpool_value=sbc_max_bitpool,
             ),
         ),
         MediaCodecCapabilities(
@@ -223,7 +223,7 @@ async def main(args):
 
     def on_avdtp_connection(server):
         log.info('AVDTP connection')
-        for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities(not args.sbc_no_dual)):
+        for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities(not args.sbc_no_dual, args.sbc_max_bitpool)):
             if args.codecs and name not in args.codecs:
                 continue
             sink = server.add_sink(capabilities)
@@ -260,5 +260,7 @@ if __name__ == '__main__':
                         help='offer only these codecs (default: all)')
     parser.add_argument('--sbc-no-dual', action='store_true',
                         help='SBC without dual channel (no SBC XQ)')
+    parser.add_argument('--sbc-max-bitpool', type=int, default=53,
+                        help='largest SBC bitpool the sink takes (default 53)')
     bumble.logging.setup_basic_logging(parser.parse_known_args()[0].log_level)
     asyncio.run(main(parser.parse_args()))

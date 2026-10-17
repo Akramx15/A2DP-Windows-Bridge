@@ -520,6 +520,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             let (opus_frame_ms, opus_channels) = remote.opus_stream(channels);
             PeerParams {
                 lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
+                sbc_min_bitpool: remote.sbc_min_bitpool(),
                 sbc_max_bitpool: remote.sbc_max_bitpool(),
                 opus_frame_ms,
                 opus_channels,

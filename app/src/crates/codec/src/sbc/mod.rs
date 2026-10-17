@@ -64,6 +64,16 @@ pub fn xq_max_bitpool(sample_rate: u32) -> u8 {
     xq_bitpool(Quality::High, sample_rate)
 }
 
+/// `wanted` within the sink's SBC bitpool range when it is known (as the
+/// SET_CONFIGURATION's range, `caps::RemoteCaps::sbc_bitpool_range`)
+fn sink_bitpool(wanted: u8, config: &EncoderConfig) -> u8 {
+    let (min, max) = (config.peer.sbc_min_bitpool, config.peer.sbc_max_bitpool);
+    if max < 2 {
+        return wanted;
+    }
+    wanted.min(max).max(min.min(max)).max(2)
+}
+
 /// The A2DP SBC encoder: one SBC frame (128 PCM frames) per `encode`
 pub struct SbcEncoder {
     kind: CodecKind,
@@ -74,17 +84,16 @@ pub struct SbcEncoder {
 
 impl SbcEncoder {
     /// SBC: joint stereo (mono for one channel), the bitpool by quality
+    /// within the sink's range
     pub fn new(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
-        Self::with_mode(CodecKind::Sbc, config, ChannelMode::JointStereo, quality_bitpool(config.quality))
+        let bitpool = sink_bitpool(quality_bitpool(config.quality), config);
+        Self::with_mode(CodecKind::Sbc, config, ChannelMode::JointStereo, bitpool)
     }
 
-    /// SBC XQ: dual channel (mono for one channel), [`xq_bitpool`] capped at
-    /// the sink's largest bitpool
+    /// SBC XQ: dual channel (mono for one channel), [`xq_bitpool`] within
+    /// the sink's range
     pub fn new_xq(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
-        let mut bitpool = xq_bitpool(config.quality, config.sample_rate);
-        if config.peer.sbc_max_bitpool >= 2 {
-            bitpool = bitpool.min(config.peer.sbc_max_bitpool);
-        }
+        let bitpool = sink_bitpool(xq_bitpool(config.quality, config.sample_rate), config);
         Self::with_mode(CodecKind::SbcXq, config, ChannelMode::DualChannel, bitpool)
     }
 
@@ -324,6 +333,33 @@ mod tests {
             assert!(packet(3) <= 679 - 16 && packet(4) > 679 - 16, "{rate}");
             assert!(packet(5) <= 1021 - 16 && packet(6) > 1021 - 16, "{rate}");
         }
+    }
+
+    #[test]
+    fn sbc_bitpool_within_the_sink_range() {
+        // (sink min, sink max, quality) -> bitpool
+        for (min, max, quality, want) in [
+            (0, 0, Quality::High, 53), // not known
+            (2, 53, Quality::High, 53),
+            (2, 35, Quality::High, 35),
+            (2, 35, Quality::Standard, 35),
+            (2, 35, Quality::Mobile, 19),
+            (2, 250, Quality::High, 53),
+            (25, 40, Quality::Mobile, 25),
+        ] {
+            let mut c = config(48000, 2, quality);
+            c.peer.sbc_min_bitpool = min;
+            c.peer.sbc_max_bitpool = max;
+            let mut e = SbcEncoder::new(&c).unwrap();
+            assert_eq!(e.bitpool(), want, "{min}-{max} {quality:?}");
+            let mut out = vec![0u8; e.frame_len()];
+            e.encode(Pcm::I16(&[0; 256]), &mut out).unwrap();
+            assert_eq!(out[2], want);
+        }
+        // 35: 83-byte frames, as Standard
+        let mut c = config(48000, 2, Quality::High);
+        c.peer.sbc_max_bitpool = 35;
+        assert_eq!(SbcEncoder::new(&c).unwrap().frame_len(), 83);
     }
 
     #[test]

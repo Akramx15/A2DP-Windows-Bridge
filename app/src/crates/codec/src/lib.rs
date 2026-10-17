@@ -240,7 +240,9 @@ impl Pcm<'_> {
 pub struct PeerParams {
     /// LHDC V5: the sink's bit rate limits (codec info byte 7, bits 7..4)
     pub lhdcv5_bitrate_limits: u8,
-    /// SBC XQ: the sink's largest SBC bitpool (0 = not known)
+    /// SBC / SBC XQ: the sink's SBC bitpool range (0 = not known); the
+    /// encoder keeps its bitpool within it
+    pub sbc_min_bitpool: u8,
     pub sbc_max_bitpool: u8,
     /// Opus: the frame duration configured, 10 or 20 ms (0 = 20)
     pub opus_frame_ms: u8,

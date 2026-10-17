@@ -109,6 +109,8 @@ const SBC_ALLOC_LOUDNESS: u8 = 0x01;
 /// lowest High / the Standard 44.1 kHz bitpool, ~507 kbps); below it the
 /// sink gets plain SBC
 pub const SBC_XQ_MIN_MAX_BITPOOL: u8 = 43;
+/// The local SBC SEP's largest bitpool
+const SBC_MAX_BITPOOL: u8 = 53;
 
 /// A remote SEP's SBC capabilities (the bitmaps of BTstack's
 /// A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CAPABILITY)
@@ -372,6 +374,20 @@ impl RemoteCaps {
         self.sbc_caps.map_or(0, |c| c.max_bitpool)
     }
 
+    /// The sink's smallest SBC bitpool (0 = not known)
+    pub fn sbc_min_bitpool(&self) -> u8 {
+        self.sbc_caps.map_or(0, |c| c.min_bitpool)
+    }
+
+    /// The bitpool range of an SBC / SBC XQ SET_CONFIGURATION: up to `cap`
+    /// within the sink's range (as PipeWire's select_config); 2..cap when
+    /// the sink's capabilities are not known
+    pub fn sbc_bitpool_range(&self, cap: u8) -> (u8, u8) {
+        let (min, max) = self.sbc_caps.map_or((2, cap), |c| (c.min_bitpool, c.max_bitpool));
+        let max = cap.min(max).max(2);
+        (min.max(2).min(max), max)
+    }
+
     pub fn add_aac(&mut self, seid: u8) {
         self.aac = Some(RemoteSep { seid });
     }
@@ -571,11 +587,14 @@ impl RemoteCaps {
                 if sample_rate != 44100 && sample_rate != 48000 {
                     return Err(ConfigError::SampleRate(kind, sample_rate));
                 }
+                // Up to 53 (the local SEP's maximum) within the sink's range;
+                // the encoder's bitpool is capped the same way
+                let (min_bitpool, max_bitpool) = self.sbc_bitpool_range(SBC_MAX_BITPOOL);
                 ConfigRequest::Sbc {
                     sampling_frequency: sample_rate as u16,
                     channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::JointStereo },
-                    min_bitpool: 2,
-                    max_bitpool: 53,
+                    min_bitpool,
+                    max_bitpool,
                 }
             }
             CodecKind::SbcXq => {
@@ -586,12 +605,12 @@ impl RemoteCaps {
                 // PipeWire's select_config: up to the largest XQ bitpool of
                 // the rate, within the sink's range; the encoder's bitpool
                 // (by quality) is never above it.
-                let remote = self.sbc_caps.unwrap_or_default();
+                let (min_bitpool, max_bitpool) = self.sbc_bitpool_range(sbc::xq_max_bitpool(sample_rate));
                 ConfigRequest::Sbc {
                     sampling_frequency: sample_rate as u16,
                     channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::DualChannel },
-                    min_bitpool: remote.min_bitpool.max(2),
-                    max_bitpool: sbc::xq_max_bitpool(sample_rate).min(remote.max_bitpool),
+                    min_bitpool,
+                    max_bitpool,
                 }
             }
             CodecKind::Aac => {
@@ -922,6 +941,32 @@ mod tests {
         caps.add_sbc_caps(1, SbcCapabilities { max_bitpool: 45, ..sbc_all() });
         let c = caps.configuration(CodecKind::SbcXq, 44100, 2, 16).unwrap();
         assert!(matches!(c.request, ConfigRequest::Sbc { max_bitpool: 45, .. }));
+    }
+
+    #[test]
+    fn sbc_uses_the_sinks_bitpool_range() {
+        // Not known (no capabilities): 2..53
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        assert_eq!(caps.sbc_bitpool_range(53), (2, 53));
+        let c = caps.configuration(CodecKind::Sbc, 48000, 2, 16).unwrap();
+        assert!(matches!(c.request, ConfigRequest::Sbc { min_bitpool: 2, max_bitpool: 53, .. }));
+        // (sink min, sink max) -> configured (min, max)
+        for ((smin, smax), want) in [
+            ((2, 53), (2, 53)),
+            ((2, 35), (2, 35)),
+            ((2, 250), (2, 53)),
+            ((10, 40), (10, 40)),
+            ((0, 0), (2, 2)),
+            ((60, 70), (53, 53)),
+        ] {
+            let mut caps = RemoteCaps::default();
+            caps.add_sbc_caps(1, SbcCapabilities { min_bitpool: smin, max_bitpool: smax, ..sbc_all() });
+            assert_eq!((caps.sbc_min_bitpool(), caps.sbc_max_bitpool()), (smin, smax));
+            let c = caps.configuration(CodecKind::Sbc, 44100, 2, 16).unwrap();
+            let ConfigRequest::Sbc { min_bitpool, max_bitpool, channel_mode, .. } = c.request else { panic!() };
+            assert_eq!(((min_bitpool, max_bitpool), channel_mode), (want, ChannelMode::JointStereo), "{smin}-{smax}");
+        }
     }
 
     #[test]

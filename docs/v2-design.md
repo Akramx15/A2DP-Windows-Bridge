@@ -148,9 +148,9 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 
 - SBC を dual channel、16ブロック、8サブバンド、loudness で、チャネルごとに高い bitpool を使って送ります。メディアペイロードヘッダ（フレーム数1バイト）とRTPヘッダはSBCと同じです。ローカルのSEPはSBCのもの（全チャネルモード、bitpool 2〜53）を共用し、SET_CONFIGURATION で dual channel を選びます。
 - bitpool（`codec::sbc::xq_bitpool`）: High は 44.1 kHz で 47（200バイトのフレーム、約551 kbps。Androidのカスタムロムや pulseaudio-modules-bt の "SBC XQ" と同じ）、48 kHz で 43（約552 kbps、同じビットレート）。Standard は PipeWire の SBC-XQ の既定値（`a2dp-codec-sbc.c` の `default_bitpool`）の 43 / 39（約505 kbps、A2DP 1.2 のシンクが必ず受けられる 512 kbps 以内）、Mobile は PipeWire の XQ でない dual channel の既定値 32 / 29（約385 kbps）。High のフレームは、ヘッダ込みで 2-DH5 に3つ、3-DH5 に5つ入ります（1023バイトのパケット上限で1001 / 921バイト）。dual channel の bitpool の上限はチャネルごとに 16 × サブバンド数 = 128 なので、どれも制限の内側です。
-- 交渉: シンクのSBCの能力（BTstack の SBC capability イベントのビットマップと bitpool の範囲）に dual channel、16ブロック、8サブバンド、loudness、44.1 / 48 kHz があり、最大 bitpool が 43 以上のときだけ SBC XQ を提供していると見なします。設定する最大 bitpool は min(そのレートの High の bitpool, シンクの最大)、エンコーダの bitpool は品質の値をシンクの最大で抑えたものです。条件を満たさないシンクでは SBC XQ は出ず、Auto は SBC を選び、明示的に選んだ場合は代替コーデックの設定に従って SBC に切り替わるか、エラーになります。
+- 交渉: シンクのSBCの能力（BTstack の SBC capability イベントのビットマップと bitpool の範囲）に dual channel、16ブロック、8サブバンド、loudness、44.1 / 48 kHz があり、最大 bitpool が 43 以上のときだけ SBC XQ を提供していると見なします。設定する bitpool の範囲は max(2, シンクの最小) 〜 min(そのレートの High の bitpool, シンクの最大)、エンコーダの bitpool は品質の値をシンクの範囲に収めたものです。通常の SBC も同じようにシンクの範囲を使います（範囲は max(2, シンクの最小) 〜 min(53, シンクの最大)。能力が分からないときは 2 〜 53）。条件を満たさないシンクでは SBC XQ は出ず、Auto は SBC を選び、明示的に選んだ場合は代替コーデックの設定に従って SBC に切り替わるか、エラーになります。
 - Auto の優先順位は AAC の下、SBC の上です。ビット数は AAC 256 kbps より多いものの、AAC を出すシンクは AAC 向けに調整されていることが多く、ビットあたりの音質も AAC のほうが上だからです。
-- 検証: 単体テスト（フレーム長とビットレート、パケットへの収まり、交渉とフォールバック）と `tools/emu`（`sbcxq` と、SBCだけのシンクでの Auto の2ケース `auto-sbcxq` / `auto-sbc-no-xq`）。実機では未確認です。
+- 検証: 単体テスト（フレーム長とビットレート、パケットへの収まり、交渉とフォールバック）と `tools/emu`（`sbcxq` と、SBCだけのシンクでの Auto の2ケース `auto-sbcxq` / `auto-sbc-no-xq`、最大 bitpool の低いシンクの `auto-sbc-bp35` / `sbcxq-bp45`）。実機では未確認です。
 
 **FastStream**（キー `faststream`、表示名 "FastStream"。CSR のベンダーコーデック、vendor ID 0x0000000A / codec ID 0x0001）
 
