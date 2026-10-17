@@ -1,4 +1,7 @@
-# Build output
+# Build output (Cargo, the UI, the decoder tool's CMake build)
+/target/
+node_modules/
+dist/
 build/
 out/
 x64/

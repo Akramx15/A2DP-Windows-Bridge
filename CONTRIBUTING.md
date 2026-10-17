@@ -22,9 +22,10 @@ For detailed setup instructions, see the [GitHub Pages](https://seiyafunaokajp.g
 
 **Requirements:**
 
-- Windows 10/11 (x64)
-- Visual Studio 2022 or later with C++ desktop workload
-- CMake 3.16+
+- Windows 10/11 (x64 or ARM64)
+- Rust (stable, 1.90 or later)
+- Visual Studio 2022 or later with C++ desktop workload (for the C libraries)
+- Node.js 22 and pnpm (for the UI)
 - Git
 
 **Build:**
@@ -32,11 +33,12 @@ For detailed setup instructions, see the [GitHub Pages](https://seiyafunaokajp.g
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
-cmake -B build -A x64
-cmake --build build --config Release
+cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
+cd app/src/ui && pnpm install && pnpm build && cd ../../..
+cargo build --release -p a2dpwb-ui
 ```
 
-> The first build takes several minutes because CMake FetchContent downloads and compiles wxWidgets.
+**Before a pull request:** `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and in `app/src/ui` `pnpm exec tsc --noEmit` and `pnpm exec vitest run`. The design is described in [docs/v2-design.md](docs/v2-design.md) (Japanese).
 
 ## Pull Requests
 

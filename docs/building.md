@@ -17,23 +17,26 @@ nav_order: 4
 
 ## Requirements
 
-- **Visual Studio 2022 or later** with "Desktop development with C++" workload
-- **CMake** 3.16+
-- **Git** (for submodules and wxWidgets FetchContent)
+- **Rust** (stable, 1.90 or later) via [rustup](https://rustup.rs/)
+- **Visual Studio 2022 or later** (or its Build Tools) with the "Desktop development with C++" workload: the C libraries (BTstack, the codecs) are compiled with MSVC
+- **Node.js** 22 and **pnpm** for the UI (`corepack enable` provides pnpm)
+- **Git** (for the submodules)
+- For ARM64 builds: the Visual Studio component "MSVC v143 - VS 2022 C++ ARM64 build tools" and `rustup target add aarch64-pc-windows-msvc`
 
 ## Quick Build
 
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
-cmake -B build -A x64
-cmake --build build --config Release
+cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
+cd app/src/ui
+pnpm install
+pnpm build
+cd ../../..
+cargo build --release -p a2dpwb-ui
 ```
 
-The executable is output to `build/app/Release/A2DPWB.exe`.
-
-{: .note }
-The first build takes several minutes because CMake FetchContent downloads and compiles wxWidgets (v3.2.6).
+The programs are written to `target/release/`: `a2dpwb-core.exe` (the resident core: Bluetooth, audio, tray), `a2dpwb.exe` (the window) and `a2dpwb-driver.exe` (the elevated helper that assigns / restores the WinUSB driver). Keep the three in one folder; `a2dpwb-core.exe --cli` streams without the window.
 
 ## If You Already Cloned Without `--recursive`
 
@@ -45,61 +48,64 @@ git submodule update --init --recursive
 
 ```
 A2DP-Windows-Bridge/
-├── app/                    Application source
-│   ├── src/                C++ source files
+├── app/
+│   ├── src/
+│   │   ├── core/           a2dpwb-core.exe: resident core, tray, IPC server, --cli
+│   │   ├── ui/             a2dpwb.exe: Tauri 2 + SolidJS (pnpm dev runs it in a browser with a mock core)
+│   │   ├── driver/         a2dpwb-driver.exe: WinUSB assign / restore (elevated)
+│   │   └── crates/         Libraries: btstack-sys, hci-transport, bt-host, codec, the codec -sys crates,
+│   │                       pipeline, audio-capture, win-sys, core (a2dpwb-core), ipc
 │   ├── lang/               Localization (en.json is the source; tools/check_lang.py checks the others)
-│   ├── resources/          Icon, manifest, resource script
-│   └── CMakeLists.txt      App build config
-├── cmake/                  Release packaging (make_dist.cmake)
-├── installer/              Inno Setup script for the installer (A2DPWB.iss)
-├── compat/                 MSVC compatibility headers for AOSP code
-├── docs/                   Documentation (this site)
-├── extern/                 Third-party libraries (git submodules)
+│   └── resources/          Icon and manifest
+├── Cargo.toml              Cargo workspace
+├── installer/              Release script, NSIS hooks, updater notes (installer/README.md)
+├── compat/                 MSVC compatibility headers for the AOSP code
+├── docs/                   Documentation (this site) and the design document (v2-design.md)
+├── extern/                 Third-party C libraries (git submodules)
 │   ├── btstack/            BTstack Bluetooth stack
 │   ├── libldac/            AOSP LDAC encoder
 │   ├── libopenaptx/        aptX / aptX HD / aptX LL encoder
 │   ├── fdk-aac/            Fraunhofer AAC encoder
-│   └── json/               nlohmann/json (header-only)
-├── tools/
-│   ├── a2dp_decode/        a2dpwb_decode: checks / decodes the media stream in an HCI capture (.pklg)
-│   ├── emu/                End-to-end test against a virtual Bluetooth sink (Python)
-│   └── linux_sink/         a2dpwb_sink: measuring A2DP receiver on Linux (Python, Bumble)
-├── CMakeLists.txt          Root build config
-└── build.bat.example       Build helper script (copy to build.bat, set the CMake path)
+│   └── lhdcv5-enc/         LHDC V5 encoder
+└── tools/
+    ├── a2dp_decode/        a2dpwb_decode: checks / decodes the media stream in an HCI capture (.pklg)
+    ├── emu/                End-to-end test against a virtual Bluetooth sink (Python)
+    └── linux_sink/         a2dpwb_sink: measuring A2DP receiver on Linux (Python, Bumble)
 ```
 
-## Build Options
-
-| CMake Option | Default | Description |
-|:-------------|:--------|:------------|
-| `LDAC_SOFT_FLOAT` | `OFF` | Use software floating point for libldac |
-| `A2DPWB_BUILD_TOOLS` | `ON` | Build developer tools (`a2dpwb_decode`, see [Usage](usage#verify-stream)). Not part of the release package |
+## Tests
 
 ```bash
-cmake -B build -A x64 -DA2DPWB_BUILD_TOOLS=OFF
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cd app/src/ui && pnpm exec tsc --noEmit && pnpm exec vitest run
+python tools/check_lang.py
 ```
 
 ## Release Packages
 
-```bash
-cmake --build build --target A2DPWB_dist --config Release
+```powershell
+pwsh installer/build-release.ps1 -Arch x64
 ```
 
-writes `build/dist/A2DPWB-<version>-win64-portable.zip` and, when [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed (`winget install JRSoftware.InnoSetup`; re-run CMake configure afterwards), `build/dist/A2DPWB-<version>-win64-setup.exe` from `installer/A2DPWB.iss`. Both contain the same files.
+writes the installer (`A2DPWB-<version>-win64-setup.exe`), the portable zip and the updater manifest to `target/dist`. Signing the in-app updates and the other details are in `installer/README.md`.
 
 ## Testing Without Hardware (tools/emu) {#emu}
 
-`tools/emu` streams every codec from A2DPWB to a virtual Bluetooth sink on the same PC, with no adapter or headphones. It runs on Windows only and needs **Python 3.11 or later** in addition to the build requirements.
+`tools/emu` streams every codec from A2DPWB to a virtual Bluetooth sink on the same PC, with no adapter or headphones. It runs on Windows only and needs **Python 3.11 or later** and **CMake** (bundled with Visual Studio) for the decoder tool.
 
 ```bash
-python tools/emu/setup_env.py     # once: creates tools/emu/.venv with pinned packages
-python tools/emu/run_test.py      # after a Release build; about 35 s for all codecs
+python tools/emu/setup_env.py                       # once: creates tools/emu/.venv with pinned packages
+cmake -S tools/a2dp_decode -B build/a2dp_decode     # once: the decoder tool
+cmake --build build/a2dp_decode --config Release
+cargo build --release -p a2dpwb-core-exe
+python tools/emu/run_test.py                        # about 35 s for all codecs
 ```
 
 How it works:
 
 - `emu_sink.py` runs two [Bumble](https://github.com/google/bumble) virtual controllers on an in-process link. One is served as H4 over TCP (`127.0.0.1`) for A2DPWB. The other is used by a Bumble A2DP sink that offers SBC, AAC, aptX, aptX HD, aptX LL and LDAC, and records its HCI traffic.
-- `run_test.py` runs `A2DPWB.exe --cli` for each codec with development options: `--hci-tcp` (virtual controller instead of WinUSB), `--test-tone` (1 kHz left / 1.5 kHz right instead of system audio), `--duration`, `--hci-capture`. The environment variable `A2DPWB_CONFIG_DIR` points A2DPWB at a separate config folder, so pairing with the virtual sink never touches your real link keys.
+- `run_test.py` runs `a2dpwb-core.exe --cli` for each codec with development options: `--hci-tcp` (virtual controller instead of WinUSB), `--test-tone` (1 kHz left / 1.5 kHz right instead of system audio), `--duration`, `--hci-capture`. The environment variable `A2DPWB_CONFIG_DIR` points A2DPWB at a separate config folder, so pairing with the virtual sink never touches your real link keys.
 - Both HCI captures are then checked with `a2dpwb_decode` (the sink side with `--received`).
 
 A codec passes when all of these hold:
@@ -114,33 +120,33 @@ A codec passes when all of these hold:
 | `--codecs sbc aac ...` | Test only these codecs (`sbc aac aptx aptxhd aptxll ldac`, default: all) |
 | `--duration <s>` | Seconds of streaming per codec (default 5) |
 | `--max-packet <bytes>` | Passed to A2DPWB (max media packet size, see [Usage](usage)) |
-| `--build-dir`, `--config` | Where to find `A2DPWB.exe` / `a2dpwb_decode.exe` (default `build`, `Release`) |
+| `--a2dpwb <exe>` | The core to test (default `target/release/a2dpwb-core.exe`) |
+| `--decoder <exe>` | The decoder tool (default `build/a2dp_decode/Release/a2dpwb_decode.exe`) |
 | `--out <dir>` | Output folder (default `tools/emu/out`) |
 
 For each codec, `tools/emu/out/<codec>/` holds the captures (`a2dpwb.pklg`, `sink.pklg`), logs, the `a2dpwb_decode` reports and the decoded WAV files. The exit code is 0 when every codec passed.
 
 {: .note }
-The virtual link has no radio: it checks encoding, packetization, AVDTP / L2CAP signalling and interoperability with an independent Bluetooth stack (Bumble), but not radio conditions, timing on real hardware or how real headphones play the audio. The Bumble packages are test tooling only and are not part of A2DPWB (see THIRD_PARTY_LICENSES.md §13).
+The virtual link has no radio: it checks encoding, packetization, AVDTP / L2CAP signalling and interoperability with an independent Bluetooth stack (Bumble), but not radio conditions, timing on real hardware or how real headphones play the audio. The Bumble packages are test tooling only and are not part of A2DPWB (see THIRD_PARTY_LICENSES.md).
 
 `emu_vhci.py` does the same towards the Linux Bluetooth stack: on Linux it attaches a virtual adapter to BlueZ through `/dev/vhci`, which the measuring receiver `tools/linux_sink` then takes like a real adapter - it can be tested without hardware, optionally with lost or held-back media packets (`--drop`, `--stall`). See `tools/linux_sink/README.md`.
 
 ## Dependencies
 
-All dependencies are included as git submodules or fetched at build time. No manual installation required.
+The C libraries are git submodules; Rust crates and the UI's npm packages are fetched by Cargo and pnpm (versions pinned in `Cargo.lock` and `app/src/ui/pnpm-lock.yaml`; `cargo deny check` checks their licences).
 
 | Library | Method | Pinned version | License |
 |:--------|:-------|:---------------|:--------|
 | BTstack | git submodule | v1.8.1-6-g5bc5cbdbe | BTstack License (BSD-3-Clause-style with a non-commercial clause) |
-| Bluedroid SBC codec | bundled in BTstack (`3rd-party/bluedroid`) | as in BTstack | Apache-2.0 |
+| Bluedroid SBC codec | encoder ported to Rust; the decoder (tests, tools) from BTstack's copy | as in BTstack | Apache-2.0 |
 | rijndael | bundled in BTstack (`3rd-party/rijndael`) | as in BTstack | Public domain |
 | libldac (AOSP) | git submodule | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 |
 | libopenaptx | git submodule | 0.2.0 (do not update) | LGPL-2.1+ |
 | fdk-aac | git submodule | v2.0.3-158-gd8e6b1a | FDK AAC License |
-| nlohmann/json | git submodule (header-only) | 3.12.0 | MIT |
-| wxWidgets | CMake FetchContent | v3.2.6 | wxWindows Library Licence 3.1 |
-| zlib / libpng / nanosvg | built-in copies in wxWidgets | 1.2.13.1 / 1.6.37 / as in wxWidgets | zlib / PNG Reference Library License v2 / zlib |
+| LHDC V5 encoder | git submodule | as pinned | Apache-2.0 |
+| Tauri, SolidJS, Rust crates | Cargo / pnpm | `Cargo.lock`, `pnpm-lock.yaml` | MIT / Apache-2.0 and others (`licenses/rust-crates.txt` in the release) |
 
 {: .warning }
-Because BTstack is linked in, any `A2DPWB.exe` you build may only be used and redistributed for personal, non-commercial purposes, even though the A2DPWB source code itself is dual-licensed under Apache-2.0 or MIT.
+Because BTstack is linked in, any A2DPWB you build may only be used and redistributed for personal, non-commercial purposes, even though the A2DPWB source code itself is dual-licensed under Apache-2.0 or MIT.
 
 See [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md) for full license details.

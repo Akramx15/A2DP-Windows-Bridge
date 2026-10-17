@@ -4,7 +4,7 @@
     python tools/emu/run_test.py [--codecs sbc aac ...] [--duration 5]
 
 For each codec: starts emu_sink.py (Bumble virtual link + A2DP sink), runs
-A2DPWB.exe --cli with a test tone over H4/TCP, then checks both HCI captures
+a2dpwb-core.exe --cli with a test tone over H4/TCP, then checks both HCI captures
 with a2dpwb_decode:
   - A2DPWB streams the requested codec and a2dpwb_decode finds no problem,
     on the sent side and on the received side
@@ -492,17 +492,17 @@ def main():
                         help='run the LE Audio (experimental) cases instead (default: all of them)')
     parser.add_argument('--duration', type=int, default=5, help='seconds of streaming per codec')
     parser.add_argument('--max-packet', type=int, help='passed to A2DPWB --max-packet (default: its own)')
-    parser.add_argument('--build-dir', default=os.path.join(REPO, 'build'))
+    parser.add_argument('--build-dir', default=os.path.join(REPO, 'build'),
+                        help="the decoder tool's CMake builds (cmake -S tools/a2dp_decode -B build/a2dp_decode)")
     parser.add_argument('--config', default='Release', help='build configuration (Release / Debug)')
-    parser.add_argument('--a2dpwb', help='A2DPWB executable to test (default: <build-dir>/app/<config>/A2DPWB.exe; '
-                        'v2: v2/target/release/a2dpwb-core.exe)')
-    parser.add_argument('--decoder', help='a2dpwb_decode executable (default: from --build-dir)')
+    parser.add_argument('--a2dpwb', help='A2DPWB core executable to test (default: target/release/a2dpwb-core.exe)')
+    parser.add_argument('--decoder', help='a2dpwb_decode executable (default: <build-dir>/a2dp_decode/<config>)')
     parser.add_argument('--out', default=os.path.join(HERE, 'out'))
     parser.add_argument('--base-port', type=int, default=BASE_PORT,
                         help='first TCP port (LE Audio cases use +100); change it to run several tests at once')
     args = parser.parse_args()
-    args.a2dpwb = args.a2dpwb or os.path.join(args.build_dir, 'app', args.config, 'A2DPWB.exe')
-    args.decoder = args.decoder or os.path.join(args.build_dir, 'tools', 'a2dp_decode', args.config, 'a2dpwb_decode.exe')
+    args.a2dpwb = args.a2dpwb or os.path.join(REPO, 'target', args.config.lower(), 'a2dpwb-core.exe')
+    args.decoder = args.decoder or os.path.join(args.build_dir, 'a2dp_decode', args.config, 'a2dpwb_decode.exe')
     for path, hint in ((VENV_PYTHON, 'run: python tools/emu/setup_env.py'),
                        (args.a2dpwb, 'build A2DPWB'), (args.decoder, 'build a2dpwb_decode')):
         if not os.path.exists(path):

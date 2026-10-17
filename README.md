@@ -92,18 +92,19 @@ flowchart TB
 
 | Directory | Description |
 |-----------|-------------|
-| `app/src/` | Application: GUI (wxWidgets) + CLI, audio capture, encoding, Bluetooth transport |
-| `app/lang/` | Localization files (JSON, embedded at build time) |
-| `app/resources/` | Application icon, manifest, resource script |
+| `app/src/core/` | `a2dpwb-core.exe`: resident core (Bluetooth, audio, tray, IPC server, `--cli`) |
+| `app/src/ui/` | `a2dpwb.exe`: the window (Tauri 2 + SolidJS) |
+| `app/src/driver/` | `a2dpwb-driver.exe`: assigns / restores the WinUSB driver (elevated) |
+| `app/src/crates/` | Rust libraries: BTstack bindings, HCI transports, Bluetooth host, codecs, audio pipeline, capture, Win32, core logic, IPC |
+| `app/lang/` | Localization files (JSON) |
+| `app/resources/` | Application icon and manifest |
 | `extern/btstack/` | BTstack — user-mode Bluetooth stack (git submodule) |
 | `extern/libldac/` | AOSP libldac — LDAC encoder (git submodule) |
 | `extern/libopenaptx/` | libopenaptx — aptX / aptX HD / aptX LL encoder (git submodule) |
 | `extern/fdk-aac/` | Fraunhofer FDK AAC — AAC-LC encoder (git submodule) |
 | `extern/lhdcv5-enc/` | LHDC V5 encoder — C port of the AOSP encoder (git submodule, experimental) |
-| `extern/json/` | nlohmann/json — JSON parser for settings, profiles, localization |
 | `compat/` | MSVC compatibility headers for the AOSP code |
-| `cmake/` | Release packaging script |
-| `installer/` | Inno Setup script for the installer |
+| `installer/` | Release script (installer, portable zip, updater manifest) |
 | `tools/a2dp_decode/` | `a2dpwb_decode` — checks / decodes the media stream in an HCI capture (developer tool) |
 | `tools/emu/` | End-to-end test against a virtual Bluetooth sink (Python, Bumble) |
 | `tools/linux_sink/` | `a2dpwb_sink` — measuring A2DP receiver on a second PC with Linux (Python, Bumble) |
@@ -111,9 +112,7 @@ flowchart TB
 ## Prerequisites
 
 - **Windows 10/11** (x64)
-- **Visual Studio 2022 or later** with C++ desktop workload
-- **CMake** 3.16+
-- **Git** (for submodules and wxWidgets FetchContent)
+- To build: **Rust**, **Visual Studio 2022 or later** with the C++ desktop workload, **Node.js** 22 with **pnpm**, **Git** (see [Building](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/building))
 - **Dedicated USB Bluetooth adapter** (separate from built-in Bluetooth)
 - **Zadig** (<https://zadig.akeo.ie/>) to install WinUSB driver on the adapter
 
@@ -147,13 +146,12 @@ Realtek-based USB Bluetooth adapters (e.g., TP-Link UB500, RTL8761BU dongles) re
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
-cmake -B build -A x64
-cmake --build build --config Release
+cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
+cd app/src/ui && pnpm install && pnpm build && cd ../../..
+cargo build --release -p a2dpwb-ui
 ```
 
-The executable is output to `build/app/Release/A2DPWB.exe`.
-
-> **Note**: The first build takes several minutes because CMake FetchContent downloads and compiles wxWidgets.
+The programs (`a2dpwb-core.exe`, `a2dpwb.exe`, `a2dpwb-driver.exe`) are written to `target/release/`. See [Building](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/building) for tests, release packages and the emulator test.
 
 ## Usage
 
