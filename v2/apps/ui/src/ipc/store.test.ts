@@ -12,6 +12,8 @@ function fakeTransport() {
   let answerSnapshot: (s: unknown) => void = () => {};
   let deliver: (m: ServerMessage) => void = () => {};
   let status: (s: ConnStatus) => void = () => {};
+  // Answers of other methods, set by the test
+  const answers: Record<string, unknown> = {};
   const transport: Transport = {
     window: "main",
     mica: false,
@@ -23,7 +25,7 @@ function fakeTransport() {
     async call(method, params) {
       calls.push({ method, params });
       if (method === "state.snapshot") return new Promise((r) => (answerSnapshot = r));
-      return null;
+      return answers[method] ?? null;
     },
     async showMain() {},
     async hideWindow() {},
@@ -42,6 +44,7 @@ function fakeTransport() {
   return {
     transport,
     calls,
+    answers,
     send: (m: ServerMessage) => deliver(m),
     status: (s: ConnStatus) => status(s),
     event: (rev: number, event: Event) => deliver({ type: "event", rev, event }),
@@ -152,7 +155,6 @@ describe("core store", () => {
     });
     expect(core.logs()).toHaveLength(1);
     expect(core.link()).toHaveLength(1);
-    expect(core.flow()?.steps.start.status).toBe("done");
     // ...and the next state event is still in order
     f.event(6, { kind: "scanning", value: true });
     expect(f.calls.filter((c) => c.method === "state.snapshot")).toHaveLength(0);
@@ -170,15 +172,47 @@ describe("core store", () => {
     expect(f.calls).toHaveLength(0);
     f.status({ state: "connected", server: "core" });
     await tick();
-    expect(f.calls.map((c) => c.method)).toEqual(["state.snapshot", "diag.subscribe"]);
-    expect(f.calls[1].params).toEqual({ logs: "debug", link: true });
+    const subs = () => f.calls.filter((c) => c.method === "diag.subscribe").map((c) => c.params);
+    expect(f.calls.map((c) => c.method)).toEqual(["state.snapshot", "diag.subscribe", "diag.recent_logs"]);
+    expect(subs()).toEqual([{ logs: "debug", link: true }]);
     releaseDebug();
     releaseLink();
     await tick();
-    expect(f.calls[2]).toEqual({ method: "diag.subscribe", params: { logs: "info", link: false } });
+    expect(subs()[1]).toEqual({ logs: "info", link: false });
     releaseLogs();
     await tick();
-    expect(f.calls[3]).toEqual({ method: "diag.subscribe", params: { logs: null, link: false } });
+    expect(subs()[2]).toEqual({ logs: null, link: false });
+  });
+
+  it("puts the core's kept lines before the live ones, once each", async () => {
+    const f = fakeTransport();
+    const core = createRoot(() => createCore(f.transport));
+    await tick();
+    const line = (time_ms: number, message: string) => ({ time_ms, level: "info" as const, target: "t", message });
+    f.answers["diag.recent_logs"] = [line(1, "a"), line(2, "b"), line(3, "c")];
+    f.status({ state: "connected", server: "core" });
+    core.wantLogs("info");
+    // A live line that is also among the kept ones, and a newer one
+    f.event(0, { kind: "log", value: line(3, "c") });
+    f.event(0, { kind: "log", value: line(4, "d") });
+    await tick();
+    await tick();
+    expect(core.logs().map((l) => l.message)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("asks the core for the connection flow while a view wants it", async () => {
+    const f = fakeTransport();
+    const core = createRoot(() => createCore(f.transport));
+    await tick();
+    f.answers["diag.flow"] = { session: 1, start_ms: 0, stop_ms: null, reconnects: 0, steps: [] };
+    f.status({ state: "connected", server: "core" });
+    const release = core.wantFlow();
+    await tick();
+    expect(core.flow()?.session).toBe(1);
+    release();
+    const asked = f.calls.filter((c) => c.method === "diag.flow").length;
+    await new Promise((r) => setTimeout(r, 1100));
+    expect(f.calls.filter((c) => c.method === "diag.flow").length).toBe(asked);
   });
 
   it("turns request failures into IpcError", async () => {

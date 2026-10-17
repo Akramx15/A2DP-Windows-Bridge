@@ -13,12 +13,12 @@
 
 import { batch, createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { FlowTracker, type FlowSession } from "../lib/flow";
 import type { ConnStatus, Transport } from "./transport";
 import {
   IpcError,
   type ArgsOf,
   type Event,
+  type FlowView,
   type LinkSample,
   type LogLevel,
   type LogLine,
@@ -53,8 +53,9 @@ export function createCore(transport: Transport) {
   const [linkTick, setLinkTick] = createSignal(0);
   const logBuf: LogLine[] = [];
   const [logTick, setLogTick] = createSignal(0);
-  const tracker = new FlowTracker();
-  const [flowTick, setFlowTick] = createSignal(0);
+  /** Lines up to this time were cleared: the kept lines do not bring them back */
+  let logsClearedAt = -1;
+  const [flow, setFlow] = createSignal<FlowView | null>(null);
 
   /** A state.snapshot on its way: the revision when asked, and the state events since */
   let pending: { from: number | null; events: { rev: number; ev: Event }[] } | null = null;
@@ -112,7 +113,6 @@ export function createCore(transport: Transport) {
         logBuf.push(ev.value);
         if (logBuf.length > LOG_KEEP) logBuf.splice(0, logBuf.length - LOG_KEEP);
         setLogTick((n) => n + 1);
-        if (tracker.feed(ev.value)) setFlowTick((n) => n + 1);
         return;
     }
   }
@@ -194,6 +194,7 @@ export function createCore(transport: Transport) {
       // A window opened after Hello missed the snapshot; on a fresh
       // connection the core sends one too (harmless)
       lastSent = undefined;
+      lastLogs = null;
       resync();
       pushSubscription();
     }
@@ -206,7 +207,24 @@ export function createCore(transport: Transport) {
   const linkWants = new Set<symbol>();
   const logWants = new Map<symbol, LogLevel>();
   let lastSent: string | undefined;
+  /** The log level of the last subscription sent */
+  let lastLogs: LogLevel | null = null;
   let pushQueued = false;
+
+  const lineKey = (l: LogLine) => `${l.time_ms}\u0000${l.target}\u0000${l.message}`;
+
+  /** Puts the core's kept lines before the live ones (the live lines that
+   *  came in meanwhile may be among them) */
+  function mergeRecent(recent: LogLine[]) {
+    const kept = recent.filter((l) => l.time_ms > logsClearedAt);
+    const last = kept.length > 0 ? kept[kept.length - 1].time_ms : -1;
+    const seen = new Set(kept.filter((l) => l.time_ms === last).map(lineKey));
+    const live = logBuf.filter((l) => l.time_ms > last || (l.time_ms === last && !seen.has(lineKey(l))));
+    logBuf.length = 0;
+    logBuf.push(...kept, ...live);
+    if (logBuf.length > LOG_KEEP) logBuf.splice(0, logBuf.length - LOG_KEEP);
+    setLogTick((n) => n + 1);
+  }
 
   function windowHidden() {
     return typeof document !== "undefined" && document.visibilityState === "hidden";
@@ -228,10 +246,21 @@ export function createCore(transport: Transport) {
       }
       const key = JSON.stringify({ logs, link });
       if (key === lastSent || state.conn.state !== "connected") return;
+      const before = lastLogs;
       lastSent = key;
-      request("diag.subscribe", { logs, link }).catch(() => {
-        lastSent = undefined;
-      });
+      lastLogs = logs;
+      request("diag.subscribe", { logs, link })
+        .then(() => {
+          // Lines logged while nobody listened (the window was closed, or
+          // opened later): the core keeps the recent ones
+          if (logs !== null && (before === null || LEVELS.indexOf(logs) > LEVELS.indexOf(before))) {
+            return request("diag.recent_logs", { level: logs }).then((r) => mergeRecent(r ?? []));
+          }
+        })
+        .catch(() => {
+          lastSent = undefined;
+          lastLogs = null;
+        });
     });
   }
 
@@ -261,6 +290,36 @@ export function createCore(transport: Transport) {
     };
   }
 
+  // ---- The connection flow (diag.flow) -----------------------------------
+  // The core follows every log line; a view asks for its flow while mounted
+
+  const FLOW_REFRESH_MS = 1000;
+  let flowWants = 0;
+  let flowTimer: ReturnType<typeof setInterval> | null = null;
+
+  function refreshFlow() {
+    if (state.conn.state !== "connected" || windowHidden()) return;
+    request("diag.flow")
+      .then(setFlow)
+      .catch(() => {});
+  }
+
+  /** Keeps flow() current while the caller lives; returns the release */
+  function wantFlow(): () => void {
+    flowWants++;
+    if (flowWants === 1) {
+      refreshFlow();
+      flowTimer = setInterval(refreshFlow, FLOW_REFRESH_MS);
+    }
+    return () => {
+      flowWants--;
+      if (flowWants === 0 && flowTimer !== null) {
+        clearInterval(flowTimer);
+        flowTimer = null;
+      }
+    };
+  }
+
   void transport.start(onMessage, onStatus);
 
   return {
@@ -278,14 +337,13 @@ export function createCore(transport: Transport) {
       return logBuf;
     },
     clearLogs() {
+      if (logBuf.length > 0) logsClearedAt = logBuf[logBuf.length - 1].time_ms;
       logBuf.length = 0;
       setLogTick((n) => n + 1);
     },
-    /** The latest connection attempt (reactive) */
-    flow: (): FlowSession | null => {
-      flowTick();
-      return tracker.session;
-    },
+    /** The core's connection flow, while someone wants it (reactive) */
+    flow,
+    wantFlow,
     wantLink,
     wantLogs,
   };

@@ -11,6 +11,7 @@ import type { Device as BDevice } from "./bindings/Device";
 import type { DiagInfo as BDiagInfo } from "./bindings/DiagInfo";
 import type { ErrorInfo as BErrorInfo } from "./bindings/ErrorInfo";
 import type { Event as BEvent } from "./bindings/Event";
+import type { FlowView as BFlowView } from "./bindings/FlowView";
 import type { LinkSample as BLinkSample } from "./bindings/LinkSample";
 import type { LogLine as BLogLine } from "./bindings/LogLine";
 import type { Method as BMethod } from "./bindings/Method";
@@ -45,6 +46,7 @@ export type Device = Wire<BDevice>;
 export type DiagInfo = Wire<BDiagInfo>;
 export type ErrorInfo = Wire<BErrorInfo>;
 export type Event = Wire<BEvent>;
+export type FlowView = Wire<BFlowView>;
 export type LinkSample = Wire<BLinkSample>;
 export type LogLine = Wire<BLogLine>;
 export type Method = Wire<BMethod>;
@@ -72,6 +74,8 @@ interface Results {
   "audio.apps": AudioApp[];
   "diag.capture_start": string;
   "diag.info": DiagInfo;
+  "diag.flow": FlowView;
+  "diag.recent_logs": LogLine[];
   "app.check_update": UpdateState;
 }
 

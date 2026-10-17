@@ -8,9 +8,9 @@ import { LineChart } from "../components/charts";
 import { Button, Check, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/icons";
-import { t } from "../i18n";
+import { t, tm } from "../i18n";
 import type { LogLevel, LogLine } from "../ipc/types";
-import { STEPS, type StepStatus } from "../lib/flow";
+import { STEPS, type Step, type StepStatus } from "../lib/flow";
 import { clock, copyText, kbps, maskAddresses } from "../lib/format";
 import { ReceiverTest } from "./ReceiverTest";
 
@@ -149,10 +149,9 @@ function LinkPanel() {
         <LineChart
           title={t("ui.diag.rssi")}
           values={samples().map((s) => s.rssi)}
-          min={-30}
+          min={-40}
           max={10}
           format={(v) => `${v > 0 ? "+" : ""}${Math.round(v)} dB`}
-          status={(v) => (v >= -5 ? "good" : v >= -12 ? "warn" : "bad")}
         />
         <LineChart
           title={t("quality.bitrate")}
@@ -219,16 +218,24 @@ const STATUS_ICON: Record<StepStatus, IconName | null> = {
 
 function FlowPanel() {
   const app = useApp();
-  const session = () => app.core.flow();
-  const statusText = (s: StepStatus) =>
-    s === "done" ? t("dbgc.status.done") : s === "pending" ? t("dbgc.status.pending") : t(`dbgc.status.${s}`);
+  onCleanup(app.core.wantFlow());
+  // The core's flow; no session yet: none
+  const session = () => {
+    const f = app.core.flow();
+    return f && f.session > 0 ? f : null;
+  };
+  const stepOf = (st: Step) => session()?.steps.find((x) => x.step === st);
+  const statusText = (s: StepStatus) => t(`dbgc.status.${s}`);
+  const elapsed = (ms: number | null | undefined) => (ms == null ? "" : `+${(ms / 1000).toFixed(3)} s`);
+  const detail = (st: Step) => {
+    const x = stepOf(st);
+    return x ? (x.detail_msg ? tm(x.detail_msg) : x.detail) : "";
+  };
   const copyFlow = async () => {
-    const s = session();
-    if (!s) return;
+    if (!session()) return;
     const lines = STEPS.map((st) => {
-      const x = s.steps[st];
-      const at = x.time_ms === null ? "" : `+${((x.time_ms - s.start_ms) / 1000).toFixed(3)} s`;
-      return `${t(`dbgc.step.${st}`)}\t${statusText(x.status)}\t${at}\t${x.detail}`;
+      const x = stepOf(st);
+      return `${t(`dbgc.step.${st}`)}\t${statusText((x?.status ?? "pending") as StepStatus)}\t${elapsed(x?.elapsed_ms)}\t${detail(st)}`;
     });
     const ok = await copyText(maskAddresses(lines.join("\n")));
     app.notify(ok ? t("dbgc.copied", lines.length) : t("dbgc.copy_failed"), ok ? "info" : "error");
@@ -237,7 +244,7 @@ function FlowPanel() {
     <div>
       <div class="panel-head">
         <span class="muted">
-          {session() ? t("dbgc.session", session()!.id, clock(session()!.start_ms)) : t("dbgc.no_session")}
+          {session() ? t("dbgc.session", session()!.session, clock(session()!.start_ms)) : t("dbgc.no_session")}
           {session()?.stop_ms != null ? t("dbgc.session_stopped", clock(session()!.stop_ms!)) : ""}
         </span>
         <Button icon="copy" kind="subtle" disabled={!session()} onClick={copyFlow}>
@@ -247,8 +254,7 @@ function FlowPanel() {
       <ol class="flow">
         <For each={STEPS}>
           {(st) => {
-            const step = () => session()?.steps[st];
-            const status = () => step()?.status ?? "pending";
+            const status = () => (stepOf(st)?.status ?? "pending") as StepStatus;
             return (
               <li class={`flow-step st-${status()}`}>
                 <span class="flow-icon" aria-hidden="true">
@@ -258,13 +264,9 @@ function FlowPanel() {
                 </span>
                 <span class="flow-name">{t(`dbgc.step.${st}`)}</span>
                 <span class="flow-status">{statusText(status())}</span>
-                <span class="flow-time num">
-                  {step()?.time_ms != null && session() ? `+${((step()!.time_ms! - session()!.start_ms) / 1000).toFixed(3)} s` : ""}
-                </span>
-                <span class="flow-detail" title={step()?.detail}>
-                  {st === "link" && session() && session()!.reconnects > 0
-                    ? t("dbgc.link_reconnects", session()!.reconnects)
-                    : step()?.detail}
+                <span class="flow-time num">{elapsed(stepOf(st)?.elapsed_ms)}</span>
+                <span class="flow-detail" title={detail(st)}>
+                  {detail(st)}
                 </span>
               </li>
             );

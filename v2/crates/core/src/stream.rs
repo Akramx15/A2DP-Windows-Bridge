@@ -43,6 +43,17 @@ pub enum SourceRequest {
     TestTone,
 }
 
+impl std::fmt::Display for SourceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceRequest::SystemLoopback => f.write_str("system output"),
+            SourceRequest::VirtualDevice { name, .. } => write!(f, "virtual device \"{name}\""),
+            SourceRequest::Application { exe } => write!(f, "app {exe}"),
+            SourceRequest::TestTone => f.write_str("test tone"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VolumeSync {
     Off,
@@ -199,11 +210,11 @@ fn connect_error(f: Option<ConnectFailure>) -> Msg {
 pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let addr = bt_host::addr_str(&req.device);
     tracing::info!(
-        "stream: device {addr} codec {:?} quality {:?} bit depth {:?} rate {:?} source {:?}",
-        req.codec,
+        "stream: device {addr} codec {} quality {:?} bit depth {} rate {} source {}",
+        req.codec.map_or("auto", |c| c.name()),
         req.quality,
-        req.bit_depth,
-        req.sample_rate,
+        req.bit_depth.map_or("auto".into(), |b| format!("{b}-bit")),
+        req.sample_rate.map_or("device's".into(), |r| format!("{r} Hz")),
         req.source
     );
     let stopped = || inner.stop_requested();

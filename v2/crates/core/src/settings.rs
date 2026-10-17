@@ -86,6 +86,15 @@ pub struct Settings {
     pub other: BTreeMap<String, serde_json::Value>,
 }
 
+/// "dark", "light" or "system"; anything else is dark, as v1 read it
+pub fn normalize_theme(theme: &str) -> &'static str {
+    match theme {
+        "light" => "light",
+        "system" => "system",
+        _ => "dark",
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {
@@ -125,6 +134,7 @@ impl Settings {
         match serde_json::from_str::<Settings>(&text) {
             Ok(mut s) => {
                 s.saved_volumes.retain(|_, v| (0..=127).contains(v));
+                s.theme = normalize_theme(&s.theme).into();
                 s
             }
             Err(e) => {
@@ -173,5 +183,16 @@ mod tests {
         // v1 wrote no schema; save() writes the current one (migrate.rs)
         assert_eq!(out["schema_version"], 1);
         assert!(out.get("max_media_payload").is_none());
+    }
+
+    #[test]
+    fn unknown_theme_is_dark_as_in_v1() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-theme-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (v1, v2) in [("white", "dark"), ("light", "light"), ("system", "system"), ("", "dark")] {
+            std::fs::write(Settings::path(&dir), format!(r#"{{"theme":"{v1}"}}"#)).unwrap();
+            assert_eq!(Settings::load(&dir).theme, v2, "{v1}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

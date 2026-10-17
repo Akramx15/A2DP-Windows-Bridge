@@ -38,6 +38,38 @@ fn main() {
     std::process::exit(code);
 }
 /// The text of "copy diagnostic info"
+/// The connection flow for the diagnostics view (diag.flow)
+pub(crate) fn flow_view(state: &state::CoreState) -> ipc::FlowView {
+    use a2dpwb_core::StreamState as S;
+    let flow = logging::hub().flow();
+    let sess = flow.session();
+    let now = match state.snapshot().1.stream.state {
+        ipc::StreamState::Idle => S::Idle,
+        ipc::StreamState::Connecting => S::Connecting,
+        ipc::StreamState::Streaming => S::Streaming,
+        ipc::StreamState::Reconnecting => S::Reconnecting,
+        ipc::StreamState::Error => S::Error,
+    };
+    let steps = flow
+        .rows(Some(now), None)
+        .into_iter()
+        .map(|r| ipc::FlowStepView {
+            step: r.step.key().trim_start_matches("dbgc.step.").into(),
+            status: r.status.key().trim_start_matches("dbgc.status.").into(),
+            elapsed_ms: r.elapsed_ms,
+            detail: r.detail,
+            detail_msg: r.detail_msg.map(|m| ipc::Msg { key: m.key.into(), args: m.args }),
+        })
+        .collect();
+    ipc::FlowView {
+        session: sess.id,
+        start_ms: sess.start_ms,
+        stop_ms: sess.stop_ms,
+        reconnects: sess.reconnects,
+        steps,
+    }
+}
+
 pub(crate) fn diag_text(state: &state::CoreState) -> String {
     use a2dpwb_core::diag;
     let (_, s) = state.snapshot();

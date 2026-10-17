@@ -5,11 +5,14 @@
 import type { Transport } from "./ipc/transport";
 
 /** Applies `theme`; returns the cleanup (stops following the system) */
-export function applyTheme(theme: string, transport: Transport): () => void {
+export function applyTheme(setting: string, transport: Transport): () => void {
+  // Anything but "light" and "system" is dark, as v1 read it (v1 files may
+  // say e.g. "white"); the window frame gets the same value
+  const theme = setting === "light" || setting === "system" ? setting : "dark";
   const root = document.documentElement;
   const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
   const set = () => {
-    const dark = theme === "dark" || (theme !== "light" && (media?.matches ?? true));
+    const dark = theme === "dark" || (theme === "system" && (media?.matches ?? true));
     root.dataset.theme = dark ? "dark" : "light";
   };
   set();

@@ -373,6 +373,14 @@ pub enum Method {
     /// -> DiagInfo (text for "copy diagnostic info")
     #[serde(rename = "diag.info")]
     DiagInfo,
+    /// -> FlowView: the connection flow as the core followed it (every log
+    /// line, also while no window was open)
+    #[serde(rename = "diag.flow")]
+    DiagFlow,
+    /// -> LogLine[]: the kept lines at `level` and above, oldest first, for
+    /// a log view that opens after they were logged
+    #[serde(rename = "diag.recent_logs")]
+    DiagRecentLogs { level: LogLevel },
     /// -> UpdateState
     #[serde(rename = "app.check_update")]
     AppCheckUpdate,
@@ -406,6 +414,38 @@ pub struct AudioApp {
 
 pub struct DiagInfo {
     pub text: String,
+}
+
+/// The connection flow of the diagnostics view: the steps of the current
+/// (or last) streaming session
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct FlowView {
+    /// 1, 2, ... since the core started; 0 = no session yet
+    pub session: u32,
+    #[ts(type = "number")]
+    pub start_ms: u64,
+    #[ts(type = "number | null")]
+    pub stop_ms: Option<u64>,
+    pub reconnects: u32,
+    /// In order: start, btstack, connect, caps, codec, capture, config,
+    /// encoder, stream, audio, link
+    pub steps: Vec<FlowStepView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct FlowStepView {
+    /// "start", "btstack", ... "link"
+    pub step: String,
+    /// "pending", "running", "done", "warning" or "failed"
+    pub status: String,
+    /// Since the session started
+    #[ts(type = "number | null")]
+    pub elapsed_ms: Option<u64>,
+    /// English; `detail_msg` translates it where the core computed it
+    pub detail: String,
+    pub detail_msg: Option<Msg>,
 }
 
 // ---------------------------------------------------------------------------

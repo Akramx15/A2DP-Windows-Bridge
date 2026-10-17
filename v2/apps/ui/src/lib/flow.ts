@@ -1,10 +1,11 @@
 // The connection flow of the Diagnostics screen: eleven steps from "start"
-// to "connection upkeep", each with a status, derived from the core's log
-// lines as v1's debug console did (app/src/debug_log_model.cpp). The rules
-// match the messages of the v2 core (crates/core/src/stream.rs and
-// service.rs, crates/bt-host/src); keep them in sync when those change.
+// to "connection upkeep", each with a status, derived from the log lines as
+// v1's debug console did (app/src/debug_log_model.cpp). The real core
+// follows every line itself (crates/core/src/diag.rs, method diag.flow);
+// this tracker is the mock core's, with rules for the messages of the v2
+// core (crates/core/src/stream.rs and service.rs, crates/bt-host/src).
 
-import type { LogLine } from "../ipc/types";
+import type { FlowView, LogLine } from "../ipc/types";
 
 export type StepStatus = "pending" | "running" | "done" | "warning" | "failed";
 
@@ -36,12 +37,16 @@ export interface FlowSession {
   stop_ms: number | null;
   steps: Record<Step, FlowStep>;
   reconnects: number;
+  /** Failed connection attempts before the signaling connection came up */
+  connect_retries: number;
 }
 
-type Action = "done" | "running" | "warning" | "failed" | "detail";
+type Action = "done" | "running" | "warning" | "failed" | "detail" | "retry";
 
 interface Rule {
   step: Step;
+  /** Only lines of this log target (or its submodules) */
+  target?: string;
   /** Substring of the message, or a pattern where a substring would also
    *  match other lines ("capture: " is in "HCI capture: started") */
   needle: string | RegExp;
@@ -51,6 +56,8 @@ interface Rule {
 }
 
 const RULES: Rule[] = [
+  // Before "connecting to ", which it contains
+  { step: "link", needle: "reconnecting to ", action: "detail", detail: "whole" },
   { step: "btstack", needle: "state Connecting: Initializing BTstack", action: "running", detail: "none" },
   { step: "btstack", needle: "controller: ", action: "detail", detail: "after" },
   { step: "btstack", needle: "Realtek firmware likely NOT loaded", action: "warning", detail: "whole" },
@@ -61,12 +68,17 @@ const RULES: Rule[] = [
   { step: "connect", needle: "connecting to ", action: "running", detail: "after" },
   { step: "connect", needle: "HCI ACL connection established", action: "detail", detail: "whole" },
   { step: "connect", needle: "signaling connection established", action: "done", detail: "whole" },
-  { step: "connect", needle: "signaling connection failed", action: "failed", detail: "whole" },
-  { step: "connect", needle: "Connection failed, trying again", action: "warning", detail: "whole" },
+  // A failed attempt is retried; the state Error line blames the step if
+  // none succeeds
+  { step: "connect", needle: "signaling connection failed", action: "detail", detail: "whole" },
+  { step: "connect", target: "bt_host", needle: /^connection attempt \d+\/\d+ failed/, action: "retry", detail: "whole" },
   { step: "caps", needle: "capability discovery complete", action: "done", detail: "after" },
   { step: "codec", needle: "codec fallback: ", action: "warning", detail: "after" },
   { step: "codec", needle: "codec selected: ", action: "done", detail: "after" },
-  { step: "capture", needle: /^audio capture: /, action: "failed", detail: "after" },
+  // audio_capture's own "audio capture: loopback of ..." describes the
+  // source; the stream's "audio capture: ..." is the failure
+  { step: "capture", target: "audio_capture", needle: /^audio capture: /, action: "detail", detail: "after" },
+  { step: "capture", target: "a2dpwb_core::stream", needle: /^audio capture: /, action: "failed", detail: "after" },
   { step: "capture", needle: "capturing app ", action: "detail", detail: "after" },
   { step: "capture", needle: /^capture: /, action: "done", detail: "after" },
   { step: "config", needle: "codec configured", action: "running", detail: "after" },
@@ -86,6 +98,10 @@ const RULES: Rule[] = [
 const START = "stream: device ";
 const STOP = "streaming stopped";
 const ERROR_STATE = "state Error: ";
+
+function targetMatches(target: string, prefix: string): boolean {
+  return target === prefix || target.startsWith(prefix + "::");
+}
 
 function afterNeedle(text: string, needle: string | RegExp): string {
   let rest = "";
@@ -125,6 +141,7 @@ export class FlowTracker {
         stop_ms: null,
         steps: emptySteps(),
         reconnects: 0,
+        connect_retries: 0,
       };
       this.set("start", "done", line, afterNeedle(t, START));
       return true;
@@ -143,10 +160,22 @@ export class FlowTracker {
       return true;
     }
     for (const r of RULES) {
+      if (r.target && !targetMatches(line.target, r.target)) continue;
       if (typeof r.needle === "string" ? !t.includes(r.needle) : !r.needle.test(t)) continue;
       const detail = r.detail === "after" ? afterNeedle(t, r.needle) : r.detail === "whole" ? t : "";
+      // While reconnecting, the steps keep the first connection's results:
+      // what goes wrong in an attempt belongs to the upkeep step
+      if (s.steps.link.status === "running" && r.step !== "link") {
+        if (r.action === "failed" || r.action === "warning") s.steps.link.detail = t;
+        return true;
+      }
       if (r.action === "detail") {
         if (detail) s.steps[r.step].detail = detail;
+      } else if (r.action === "retry") {
+        s.connect_retries++;
+        if (detail) s.steps[r.step].detail = detail;
+      } else if (r.step === "connect" && r.action === "done" && s.connect_retries > 0) {
+        this.set(r.step, "warning", line, `${detail} (after ${s.connect_retries} failed attempt(s))`);
       } else {
         this.set(r.step, r.action, line, detail);
       }
@@ -188,4 +217,25 @@ export class FlowTracker {
     st.time_ms = line.time_ms;
     if (detail) st.detail = detail;
   }
+}
+
+/** A session as the core's diag.flow answers it */
+export function flowView(s: FlowSession | null): FlowView {
+  if (!s) return { session: 0, start_ms: 0, stop_ms: null, reconnects: 0, steps: [] };
+  return {
+    session: s.id,
+    start_ms: s.start_ms,
+    stop_ms: s.stop_ms,
+    reconnects: s.reconnects,
+    steps: STEPS.map((step) => {
+      const st = s.steps[step];
+      return {
+        step,
+        status: st.status,
+        elapsed_ms: st.time_ms === null ? null : st.time_ms - s.start_ms,
+        detail: st.detail,
+        detail_msg: null,
+      };
+    }),
+  };
 }

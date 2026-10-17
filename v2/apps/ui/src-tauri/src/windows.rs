@@ -170,10 +170,11 @@ pub fn start_idle_exit(app: AppHandle) {
 
 /// Title bar and Mica follow the app's theme ("system": Windows' own)
 pub fn set_theme(app: &AppHandle, theme: &str) {
+    // As the page reads it: anything but light and system is dark
     let t = match theme {
         "light" => Some(Theme::Light),
-        "dark" => Some(Theme::Dark),
-        _ => None,
+        "system" => None,
+        _ => Some(Theme::Dark),
     };
     for w in app.webview_windows().values() {
         let _ = w.set_theme(t);

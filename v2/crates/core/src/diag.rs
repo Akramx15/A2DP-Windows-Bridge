@@ -484,6 +484,15 @@ impl ConnectionFlow {
             DetailFrom::Whole => message.to_string(),
         };
 
+        // While reconnecting, the steps keep the first connection's results:
+        // what goes wrong in an attempt belongs to the upkeep step
+        if r.step != Step::Link && self.session.step(Step::Link).status == StepStatus::Running {
+            if matches!(r.action, Action::Failed | Action::Warning) {
+                self.set_detail(Step::Link, message.to_string());
+            }
+            return;
+        }
+
         // A stack that was already up from an earlier attempt logs no init:
         // connecting means it is there
         if r.step == Step::Connect && self.session.step(Step::Btstack).status == StepStatus::Pending {
@@ -1180,9 +1189,14 @@ mod tests {
         feed(&mut f, &good_session());
         f.feed(10_000, STREAM, Level::WARN, "connection lost, reconnecting");
         f.feed(10_001, SVC, Level::INFO, "state Reconnecting: Connection lost");
+        f.feed(12_999, APP, Level::WARN, "signaling connection failed (0x67)");
+        f.feed(12_999, APP, Level::WARN, "stream establishment failed (0x67)");
         f.feed(13_000, STREAM, Level::WARN, "reconnect attempt 1 failed");
         f.feed(16_000, "bt_host", Level::INFO, "reconnecting to 00:1A:7D:DA:71:13");
         f.feed(16_500, STREAM, Level::INFO, "reconnected on attempt 2");
+        // A failed attempt does not touch the first connection's steps
+        assert_eq!(status(&f, Step::Connect), StepStatus::Done);
+        assert_eq!(status(&f, Step::Config), StepStatus::Done);
         f.feed(20_000, STREAM, Level::WARN, "the PC resumed from sleep, reconnecting");
         let s = f.session();
         assert_eq!(s.reconnects, 2);

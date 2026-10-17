@@ -576,6 +576,12 @@ impl CoreState {
             Method::DiagInfo => {
                 Ok(serde_json::to_value(DiagInfo { text: crate::diag_text(self) }).unwrap_or(Value::Null))
             }
+            Method::DiagFlow => Ok(serde_json::to_value(crate::flow_view(self)).unwrap_or(Value::Null)),
+            Method::DiagRecentLogs { level } => {
+                let mut lines = crate::logging::hub().recent();
+                lines.retain(|l| l.level <= level);
+                Ok(serde_json::to_value(lines).unwrap_or(Value::Null))
+            }
             Method::AppCheckUpdate => {
                 blocking(Box::new(|me| Ok(serde_json::to_value(me.check_update()).unwrap_or(Value::Null)))).await
             }

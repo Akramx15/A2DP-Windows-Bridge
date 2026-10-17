@@ -934,9 +934,13 @@ option {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
-  max-width: 56rem;
+  max-width: 72rem;
   margin: 0 auto;
   padding: var(--s6) var(--s6) var(--s8);
+}
+/* Tables, graphs and the log use whatever width the window has */
+.page.diagnostics {
+  max-width: none;
 }
 .page-head {
   display: flex;
@@ -1741,7 +1745,8 @@ option {
   padding-left: 2rem;
 }
 .log {
-  height: 24rem;
+  /* Grows with the window: the rest of the screen above it is ~19rem */
+  height: max(16rem, calc(100vh - 19rem));
   overflow: auto;
   padding: var(--s2) 0;
   border: 1px solid var(--border);

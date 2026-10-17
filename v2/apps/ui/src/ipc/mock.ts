@@ -7,6 +7,7 @@
 // on Windows' Bluetooth driver), ?mock=error (the last connection failed),
 // ?window=flyout (the flyout view).
 
+import { FlowTracker, flowView } from "../lib/flow";
 import type { ConnStatus, Transport, UpdatePhase, WindowKind } from "./transport";
 import type {
   AdapterInfo,
@@ -195,6 +196,9 @@ export class MockCore implements Transport {
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private linkTimer: ReturnType<typeof setInterval> | null = null;
   private logs: LogLevel | null = null;
+  /** Every line, as the core keeps them, and the flow it follows */
+  private kept: LogLine[] = [];
+  private tracker = new FlowTracker();
   private clock = 0;
   private startedAt = Date.now();
   private capturing: string | null = null;
@@ -303,6 +307,13 @@ export class MockCore implements Transport {
         return null;
       case "diag.info":
         return { text: this.diagText() };
+      case "diag.flow":
+        return flowView(this.tracker.session);
+      case "diag.recent_logs": {
+        const order: LogLevel[] = ["error", "warn", "info", "debug", "trace"];
+        const max = order.indexOf(p.level as LogLevel);
+        return this.kept.filter((l) => order.indexOf(l.level) <= max);
+      }
       case "app.check_update": {
         this.snap.update = { ...this.snap.update, checking: true };
         this.emit({ kind: "update", value: this.snap.update });
@@ -399,8 +410,11 @@ export class MockCore implements Transport {
 
   private log(level: LogLevel, target: string, message: string) {
     const order: LogLevel[] = ["error", "warn", "info", "debug", "trace"];
-    if (this.logs === null || order.indexOf(level) > order.indexOf(this.logs)) return;
     const line: LogLine = { time_ms: this.now(), level, target, message };
+    this.kept.push(line);
+    if (this.kept.length > 2000) this.kept.shift();
+    this.tracker.feed(line);
+    if (this.logs === null || order.indexOf(level) > order.indexOf(this.logs)) return;
     // Log lines take no revision of their own (as the core sends them)
     this.onMessage({ type: "event", rev: this.rev, event: { kind: "log", value: line } });
   }

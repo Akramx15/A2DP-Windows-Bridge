@@ -62,6 +62,47 @@ describe("connection flow", () => {
     f.feed(line(14, "streaming stopped, cleaning up"));
     expect(f.session!.stop_ms).toBe(14);
   });
+
+  it("keeps the first connection's steps through a reconnect with a failed attempt", () => {
+    const f = new FlowTracker();
+    const at = (time_ms: number, target: string, message: string, level: LogLine["level"] = "info") =>
+      f.feed({ time_ms, target, level, message });
+    at(1, "a2dpwb_core::stream", "stream: device 58:18:62:02:7A:D7 codec LDAC");
+    at(2, "bt_host", "HCI ready after 69 ms");
+    at(3, "bt_host", "connecting to 58:18:62:02:7A:D7");
+    at(4, "bt_host", "signaling connection established (cid 0x0041, handle 0x0001)");
+    at(5, "a2dpwb_core::stream", "codec selected: LDAC");
+    at(6, "audio_capture::loopback", 'audio capture: loopback of "CABLE Input": mix 96000 Hz 2 ch 32 bit');
+    at(7, "a2dpwb_core::stream", "capture: 96000 Hz, 2 channel(s), F32 -> 2 channel(s)");
+    at(8, "bt_host::app", "stream established (local 1, remote 3, mtu 895)");
+    at(9, "a2dpwb_core::service", "state Streaming: Streaming");
+    expect(f.session!.steps.capture.status).toBe("done");
+
+    at(20, "a2dpwb_core::stream", "connection lost, reconnecting", "warn");
+    at(21, "bt_host", "reconnecting to 58:18:62:02:7A:D7");
+    at(40, "bt_host::app", "signaling connection failed (0x67)", "warn");
+    at(40, "bt_host::app", "stream establishment failed (0x67)", "warn");
+    at(40, "a2dpwb_core::stream", "reconnect attempt 1 failed", "warn");
+    at(43, "bt_host", "reconnecting to 58:18:62:02:7A:D7");
+    at(44, "a2dpwb_core::stream", "reconnected on attempt 2");
+    const s = f.session!;
+    expect(s.steps.connect.status).toBe("done");
+    expect(s.steps.config.status).toBe("done");
+    expect(s.steps.link.status).toBe("warning");
+    expect(s.reconnects).toBe(1);
+  });
+
+  it("shows a connection that needed a second attempt as a warning", () => {
+    const f = new FlowTracker();
+    const at = (time_ms: number, target: string, message: string) => f.feed({ time_ms, target, level: "info", message });
+    at(1, "a2dpwb_core::stream", "stream: device AA:BB:CC:DD:EE:FF");
+    at(2, "bt_host", "connecting to AA:BB:CC:DD:EE:FF");
+    at(3, "bt_host::app", "signaling connection failed (0x04)");
+    at(4, "bt_host", "connection attempt 1/3 failed (PageTimeout), trying again");
+    at(5, "bt_host::app", "signaling connection established (cid 0x0041, handle 0x000b)");
+    expect(f.session!.steps.connect.status).toBe("warning");
+    expect(f.session!.steps.connect.detail).toContain("after 1 failed attempt(s)");
+  });
 });
 
 describe("profiles", () => {
