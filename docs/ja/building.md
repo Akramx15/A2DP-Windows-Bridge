@@ -39,6 +39,8 @@ cargo build --release -p a2dpwb-ui
 
 `target/release/` に次の 3 つができます。`a2dpwb-core.exe`（常駐するコア。Bluetooth、音声、タスクトレイ）、`a2dpwb.exe`（ウィンドウ）、`a2dpwb-driver.exe`（WinUSB ドライバの割り当てと解除をする、管理者権限のヘルパー）。3 つは同じフォルダに置いてください。`a2dpwb-core.exe --cli` ならウィンドウなしで配信できます。
 
+**一括ビルド**: `pwsh ./build.ps1`（PowerShell 7）で同じことができます。最初に Rust、Node.js、pnpm、サブモジュールがそろっているかを確かめ、`node_modules` がなければ `pnpm install` も実行します。スイッチ: `-Debug`（開発プロファイル、`target/debug/`）、`-Test`（続けて「テスト」のチェック）、`-Decoder`（デコーダツールも）、`-Emu`（[実機なしでのテスト](#emu)も）、`-Release -Arch x64`（リリーススクリプトのみ。「リリースパッケージ」参照）。
+
 ## `--recursive` なしでクローン済みの場合
 
 ```bash

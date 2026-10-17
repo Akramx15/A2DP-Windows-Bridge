@@ -168,7 +168,7 @@ cd app/src/ui && pnpm install && pnpm build && cd ../../..
 cargo build --release -p a2dpwb-ui
 ```
 
-The programs (`a2dpwb-core.exe`, `a2dpwb.exe`, `a2dpwb-driver.exe`) are written to `target/release/`. See [Building](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/building) for tests, release packages and the emulator test.
+The programs (`a2dpwb-core.exe`, `a2dpwb.exe`, `a2dpwb-driver.exe`) are written to `target/release/`. Or in one step with PowerShell 7: `pwsh ./build.ps1` (`-Test` adds the checks, `-Emu` the emulator test, `-Release` the release packages). See [Building](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/building) for tests, release packages and the emulator test.
 
 ## Usage
 

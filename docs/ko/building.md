@@ -39,6 +39,8 @@ cargo build --release -p a2dpwb-ui
 
 프로그램은 `target/release/`에 생성됩니다. `a2dpwb-core.exe`(상주 코어: Bluetooth, 오디오, 트레이), `a2dpwb.exe`(창), `a2dpwb-driver.exe`(WinUSB 드라이버를 할당 / 복원하는, 관리자 권한으로 실행되는 도우미)입니다. 세 프로그램은 같은 폴더에 두십시오. `a2dpwb-core.exe --cli`는 창 없이 스트리밍합니다.
 
+**한 번에 빌드:** `pwsh ./build.ps1`(PowerShell 7)로 위 과정을 한 번에 실행할 수 있습니다. 먼저 Rust, Node.js, pnpm, 서브모듈이 있는지 확인하고, `node_modules`가 없으면 `pnpm install`도 실행합니다. 스위치: `-Debug`(개발 프로필, `target/debug/`), `-Test`(이어서 테스트 항목의 검사), `-Decoder`(디코더 도구도 빌드), `-Emu`([하드웨어 없이 테스트](#emu)도 실행), `-Release -Arch x64`(릴리스 스크립트만 실행, 릴리스 패키지 항목 참조).
+
 ## `--recursive` 없이 이미 클론한 경우
 
 ```bash

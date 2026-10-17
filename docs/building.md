@@ -38,6 +38,8 @@ cargo build --release -p a2dpwb-ui
 
 The programs are written to `target/release/`: `a2dpwb-core.exe` (the resident core: Bluetooth, audio, tray), `a2dpwb.exe` (the window) and `a2dpwb-driver.exe` (the elevated helper that assigns / restores the WinUSB driver). Keep the three in one folder; `a2dpwb-core.exe --cli` streams without the window.
 
+**In one step:** `pwsh ./build.ps1` (PowerShell 7) does the same. It first checks that Rust, Node.js, pnpm and the submodules are there, and runs `pnpm install` when `node_modules` is missing. Switches: `-Debug` (dev profile, `target/debug/`), `-Test` (then the checks under Tests), `-Decoder` (also the decoder tool), `-Emu` (also the [emulator test](#emu)), `-Release -Arch x64` (only the release script, see Release Packages).
+
 ## If You Already Cloned Without `--recursive`
 
 ```bash
