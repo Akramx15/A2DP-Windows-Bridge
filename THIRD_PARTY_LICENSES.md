@@ -84,8 +84,8 @@ Not distributed:
   A2DPWB assigns WinUSB with Windows' own SetupAPI and inbox `winusb.inf`, not
   with libwdi.
 - **Microsoft Visual C++ runtime** — the programs link the MSVC runtime
-  dynamically; the runtime DLLs are not shipped (they are installed on Windows
-  or via Microsoft's Visual C++ Redistributable).
+  statically (§11), so no runtime DLL is shipped and the Visual C++
+  Redistributable is not needed.
 - **WebView2 Runtime** — installed by Windows or by the bootstrapper, not copied
   into A2DPWB's folder.
 
@@ -543,9 +543,11 @@ installer embeds Microsoft's WebView2 bootstrapper
 (`MicrosoftEdgeWebview2Setup.exe`, redistributable under Microsoft's WebView2
 distribution terms) and runs it only when the runtime is missing.
 
-`a2dpwb.exe` links the Visual C++ runtime statically (Tauri's default);
-`a2dpwb-core.exe` and `a2dpwb-driver.exe` link it dynamically
-(`VCRUNTIME140.dll`, not shipped).
+All three programs link the Visual C++ runtime statically (`+crt-static` in
+`.cargo/config.toml`; the C libraries are compiled with `/MT`), so they do not
+need `VCRUNTIME140.dll` or the Visual C++ Redistributable. `a2dpwb-core.exe` and
+`a2dpwb-driver.exe` also contain the Universal CRT; `a2dpwb.exe` uses Tauri's
+static VC runtime with the Universal CRT that is part of Windows 10 and later.
 
 ### Obligations
 
