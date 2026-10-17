@@ -246,8 +246,8 @@ export function ProfileEditor(props: { original: string | null }) {
             />
           </Show>
           <Show when={p.capture_mode === "app"}>
-            {/* v1 capture.app_unsupported. Only the core knows the build for
-                sure (it refuses the stream on an older Windows); the UI asks
+            {/* Whether this Windows can capture one app: only the core knows
+                the build for sure (it refuses the stream on an older Windows); the UI asks
                 the WebView's client hints and shows a hint without them */}
             <Show
               when={appSupport() === "no"}
