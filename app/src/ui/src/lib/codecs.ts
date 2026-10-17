@@ -120,6 +120,20 @@ export function codecLabelKey(name: string): string {
   return map[n] ?? "";
 }
 
+/**
+ * Whether a device offers a codec, from the codec keys the core learnt when
+ * it last connected (Device.codecs: "ldac", "aac", ...; empty: not known
+ * until the first connection). Auto takes what the device offers.
+ */
+export type CodecSupport = "offered" | "not_offered" | "unknown";
+
+export function codecSupport(codec: string, known: readonly string[]): CodecSupport {
+  if (known.length === 0) return "unknown";
+  if (codec === "auto") return "offered";
+  const id = codec.toLowerCase();
+  return known.some((k) => k.toLowerCase() === id) ? "offered" : "not_offered";
+}
+
 export function sampleRates(codec: string): number[] {
   return codecSpec(codec).hiRes ? [0, 44100, 48000, 88200, 96000] : [0, 44100, 48000];
 }

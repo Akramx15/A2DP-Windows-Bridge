@@ -1,9 +1,10 @@
 // The profile editor: device, codec (cards comparing quality, latency and
-// stability), capture source, volume sync, and the details behind
-// "Advanced". The defaults give the best sound; the advanced values only
-// offer what the chosen codec can do (lib/codecs.ts).
+// stability, and whether the device offered it when it last connected),
+// capture source (with the capture device's format), volume sync, and the
+// details behind "Advanced". The defaults give the best sound; the advanced
+// values only offer what the chosen codec can do (lib/codecs.ts).
 
-import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
 import { errorText, useApp } from "../app/context";
 import { Banner, Button, Check, Field, IconButton, Section, Segmented, Select, Toggle } from "../components/controls";
@@ -15,15 +16,27 @@ import {
   bitDepths,
   CODECS,
   codecSpec,
+  codecSupport,
   fitToCodec,
   PACKET_DEFAULT,
   PACKET_MAX,
   PACKET_MIN,
   sampleRates,
   type CodecSpec,
+  type CodecSupport,
 } from "../lib/codecs";
 import { LINKS } from "../lib/links";
-import { newProfile, normalizeProfile, validateProfile, type Problem, type ProfileProblems } from "../lib/profile";
+import {
+  appCaptureSupport,
+  captureDevice,
+  formatMismatch,
+  knownCodecs,
+  newProfile,
+  normalizeProfile,
+  validateProfile,
+  type Problem,
+  type ProfileProblems,
+} from "../lib/profile";
 
 const tp = (p: Problem | undefined) => (p ? t(p.key, ...(p.args ?? [])) : null);
 
@@ -65,7 +78,8 @@ export function ProfileEditor(props: { original: string | null }) {
     on(
       () => [p.capture_mode, p.volume_sync] as const,
       ([mode, sync]) => {
-        if ((mode === "virtual" || sync === "device") && devices() === null) void loadDevices();
+        // Loopback and virtual device: the capture device's format line
+        if ((mode !== "app" || sync === "device") && devices() === null) void loadDevices();
         if (mode === "app" && apps() === null) void loadApps();
       },
     ),
@@ -104,6 +118,10 @@ export function ProfileEditor(props: { original: string | null }) {
 
   const spec = () => codecSpec(p.codec);
   const virtualDevices = createMemo(() => (devices() ?? []).filter((d) => d.is_virtual));
+  // What the device offered when it last connected (empty: not known yet)
+  const known = createMemo(() => knownCodecs(snap().devices, p.device_address));
+  const support = (id: string) => codecSupport(id, known());
+  const [appSupport] = createResource(appCaptureSupport);
 
   return (
     <div class="page editor">
@@ -141,8 +159,25 @@ export function ProfileEditor(props: { original: string | null }) {
 
         <Section title={t("connection.codec")}>
           <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")} title={t("tooltip.codec")}>
-            <For each={CODECS}>{(c) => <CodecCard spec={c} selected={p.codec === c.id} onPick={() => pickCodec(c)} />}</For>
+            <For each={CODECS}>
+              {(c) => (
+                <CodecCard
+                  spec={c}
+                  selected={p.codec === c.id}
+                  support={c.id === "auto" ? null : support(c.id)}
+                  onPick={() => pickCodec(c)}
+                />
+              )}
+            </For>
           </div>
+          <Show when={p.device_address && known().length === 0}>
+            <p class="hint">{t("ui.profile.codecs_unknown")}</p>
+          </Show>
+          <Show when={support(p.codec) === "not_offered"}>
+            <Banner kind="warn" title={t("error.codec_not_supported", t(spec().label))}>
+              {p.codec_fallback ? t("ui.profile.codec_fallback_on") : t("ui.profile.codec_fallback_off")}
+            </Banner>
+          </Show>
           <Check
             label={t("connection.codec_fallback")}
             title={t("tooltip.codec_fallback")}
@@ -171,6 +206,7 @@ export function ProfileEditor(props: { original: string | null }) {
                 ? t("capture.hint_app")
                 : t("capture.hint_loopback")}
           </p>
+          <CaptureFormat profile={p} devices={devices()} />
           <Show when={p.capture_mode === "virtual"}>
             <Field label={t("capture.audio_device")} hint={t("tooltip.audio_device")} error={tp(problems().audio_device)}>
               {(id, described) => (
@@ -209,6 +245,19 @@ export function ProfileEditor(props: { original: string | null }) {
             />
           </Show>
           <Show when={p.capture_mode === "app"}>
+            {/* v1 capture.app_unsupported. Only the core knows the build for
+                sure (it refuses the stream on an older Windows); the UI asks
+                the WebView's client hints and shows a hint without them */}
+            <Show
+              when={appSupport() === "no"}
+              fallback={
+                <Show when={appSupport() !== "yes"}>
+                  <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
+                </Show>
+              }
+            >
+              <Banner kind="warn">{t("ui.profile.app_capture_unsupported")}</Banner>
+            </Show>
             <Field label={t("capture.app_select")} hint={t("capture.app_hint")} error={tp(problems().app)}>
               {(id, described) => (
                 <div class="inline">
@@ -216,13 +265,19 @@ export function ProfileEditor(props: { original: string | null }) {
                     id={id}
                     describedBy={described}
                     value={p.app_exe}
+                    disabled={appSupport() === "no"}
                     options={appOptions(apps(), p)}
                     onChange={(v) => {
                       const a = (apps() ?? []).find((x) => x.exe === v);
                       setP({ app_exe: v, app_name: a?.name ?? v });
                     }}
                   />
-                  <IconButton icon="arrow_sync" label={t("capture.app_refresh")} onClick={() => void loadApps()} />
+                  <IconButton
+                    icon="arrow_sync"
+                    label={t("capture.app_refresh")}
+                    disabled={appSupport() === "no"}
+                    onClick={() => void loadApps()}
+                  />
                 </div>
               )}
             </Field>
@@ -388,7 +443,7 @@ function volumeDevices(devices: AudioDevice[] | null, p: Profile): { id: string;
 }
 
 /** One codec choice with its three comparison bars */
-function CodecCard(props: { spec: CodecSpec; selected: boolean; onPick: () => void }) {
+function CodecCard(props: { spec: CodecSpec; selected: boolean; support: CodecSupport | null; onPick: () => void }) {
   const bar = (label: string, v: number) => (
     <div class="cbar">
       <span class="cbar-label">{label}</span>
@@ -401,6 +456,17 @@ function CodecCard(props: { spec: CodecSpec; selected: boolean; onPick: () => vo
     <label class="codec-card" classList={{ on: props.selected }}>
       <input type="radio" name="codec" value={props.spec.id} checked={props.selected} onChange={() => props.onPick()} />
       <span class="codec-card-name">{t(props.spec.label)}</span>
+      {/* The wrapper keeps the tag its own size in the card's column */}
+      <Show when={props.support !== "unknown" && props.support}>
+        {(s) => (
+          <span>
+            <span class="tag">
+              <Icon name={s() === "offered" ? "checkmark" : "dismiss"} />
+              {s() === "offered" ? t("ui.profile.codec_offered") : t("ui.profile.codec_not_offered")}
+            </span>
+          </span>
+        )}
+      </Show>
       <Show when={props.spec.bars} fallback={<span class="muted codec-card-desc">{t("ui.codec.auto_desc")}</span>}>
         {(b) => (
           <>
@@ -411,5 +477,37 @@ function CodecCard(props: { spec: CodecSpec; selected: boolean; onPick: () => vo
         )}
       </Show>
     </label>
+  );
+}
+
+/**
+ * The format Windows mixes the captured device in, red when the profile
+ * asks for another rate or bit depth (v1 capture.device_format)
+ */
+function CaptureFormat(props: { profile: Profile; devices: AudioDevice[] | null }) {
+  const device = () => captureDevice(props.profile, props.devices ?? []);
+  return (
+    <Show when={device()}>
+      {(d) => {
+        const off = () => formatMismatch(props.profile, d());
+        const text = () => t("capture.device_format", d().mix_rate ?? 0, d().mix_bits ?? 0);
+        const which = () =>
+          [off().rate ? t("connection.sample_rate") : "", off().bits ? t("connection.bit_depth") : ""]
+            .filter((x) => x)
+            .join(", ");
+        return (
+          <Show when={d().mix_rate !== null && d().mix_bits !== null}>
+            <Show when={off().rate || off().bits} fallback={<p class="hint">{text()}</p>}>
+              <p class="field-error">
+                <Icon name="warning" />
+                <span>
+                  {text()}. {t("ui.profile.format_differs", which())}
+                </span>
+              </p>
+            </Show>
+          </Show>
+        );
+      }}
+    </Show>
   );
 }

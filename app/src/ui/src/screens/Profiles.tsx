@@ -6,7 +6,8 @@ import { useApp } from "../app/context";
 import { Button, Dialog, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
-import { codecSpec } from "../lib/codecs";
+import { codecSpec, codecSupport } from "../lib/codecs";
+import { knownCodecs } from "../lib/profile";
 import { captureText } from "./Home";
 import { ProfileEditor } from "./ProfileEditor";
 
@@ -64,6 +65,13 @@ function ProfileList() {
                   </div>
                   <div class="profile-card-meta">
                     <span class="tag">{t(codecSpec(p.codec).label)}</span>
+                    {/* The device did not offer this codec when it last connected */}
+                    <Show when={codecSupport(p.codec, knownCodecs(snap().devices, p.device_address)) === "not_offered"}>
+                      <span class="tag">
+                        <Icon name="warning" />
+                        {t("ui.profile.codec_not_offered")}
+                      </span>
+                    </Show>
                     <span class="tag">
                       <Icon name={captureText(p).icon} />
                       {captureText(p).text}

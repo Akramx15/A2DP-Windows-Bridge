@@ -1007,15 +1007,17 @@ impl CoreState {
                     let list: Vec<AudioDevice> = audio_capture::render_devices()
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|d| AudioDevice {
-                            mix_rate: audio_capture::mix_rate(Some(&d.id)),
-                            // audio-capture tells the mix rate only
-                            mix_channels: None,
-                            mix_bits: None,
-                            id: d.id,
-                            name: d.name,
-                            is_default: d.is_default,
-                            is_virtual: d.is_virtual,
+                        .map(|d| {
+                            let mix = audio_capture::mix_format(Some(&d.id));
+                            AudioDevice {
+                                mix_rate: mix.map(|m| m.rate),
+                                mix_channels: mix.map(|m| m.channels),
+                                mix_bits: mix.map(|m| m.bits),
+                                id: d.id,
+                                name: d.name,
+                                is_default: d.is_default,
+                                is_virtual: d.is_virtual,
+                            }
                         })
                         .collect();
                     Ok(json(&list))

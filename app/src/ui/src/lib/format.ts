@@ -28,14 +28,27 @@ export function maskAddresses(text: string): string {
 }
 
 /**
+ * Full-width characters an IME types ("ＡＣ：８０") as their ASCII forms,
+ * as v1 (ascii_from_fullwidth), plus the dashes a Japanese IME gives for
+ * "-" ("ー", "−")
+ */
+export function asciiFromFullwidth(s: string): string {
+  return s.replace(/[\uFF01-\uFF5E\u3000\u30FC\u2010-\u2015\u2212]/g, (c) => {
+    const v = c.charCodeAt(0);
+    if (v >= 0xff01 && v <= 0xff5e) return String.fromCharCode(v - 0xfee0);
+    return v === 0x3000 ? " " : "-";
+  });
+}
+
+/**
  * A Bluetooth address as typed: 12 hex digits, optionally in pairs
- * separated by colons, hyphens or spaces (v1 accepted the same). Returns
- * "AA:BB:CC:DD:EE:FF" or null.
+ * separated by colons, hyphens, dots or spaces, also full-width (v1
+ * accepted the same). Returns "AA:BB:CC:DD:EE:FF" or null.
  */
 export function parseAddress(input: string): string | null {
-  const s = input.trim();
-  if (!/^[0-9A-Fa-f]{2}([:\- ]?[0-9A-Fa-f]{2}){5}$/.test(s)) return null;
-  const hex = s.replace(/[:\- ]/g, "").toUpperCase();
+  const s = asciiFromFullwidth(input).trim();
+  if (!/^[0-9A-Fa-f]{2}([:\-. ]?[0-9A-Fa-f]{2}){5}$/.test(s)) return null;
+  const hex = s.replace(/[:\-. ]/g, "").toUpperCase();
   return (hex.match(/.{2}/g) ?? []).join(":");
 }
 

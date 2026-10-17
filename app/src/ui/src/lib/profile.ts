@@ -1,7 +1,7 @@
 // A new profile's defaults and the checks before profile.save. The values
 // are those of v1's profile dialog; the core checks again.
 
-import type { Profile } from "../ipc/types";
+import type { AudioDevice, Device, Profile } from "../ipc/types";
 import { PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
 import { parseAddress } from "./format";
 
@@ -19,7 +19,8 @@ export function newProfile(): Profile {
     capture_mode: "loopback",
     audio_device_id: "",
     audio_device_name: "",
-    auto_switch_device: false,
+    // As v1 and the core: follow the virtual device as the default output
+    auto_switch_device: true,
     app_exe: "",
     app_name: "",
     volume_sync: "auto",
@@ -59,4 +60,77 @@ export function validateProfile(p: Profile, taken: readonly string[]): ProfilePr
 /** The profile as it is saved: trimmed name, normalised address */
 export function normalizeProfile(p: Profile): Profile {
   return { ...p, name: p.name.trim(), device_address: parseAddress(p.device_address) ?? p.device_address.trim() };
+}
+
+/** The codec keys a device offered when it last connected (empty: not known) */
+export function knownCodecs(devices: readonly Device[], address: string): string[] {
+  const a = parseAddress(address);
+  if (!a) return [];
+  return devices.find((d) => d.address.toUpperCase() === a)?.codecs ?? [];
+}
+
+/**
+ * The render device a capture mode records: the default output device
+ * (loopback), the chosen virtual device, or none (application capture:
+ * Windows converts to the rate asked for)
+ */
+export function captureDevice(
+  p: Pick<Profile, "capture_mode" | "audio_device_id">,
+  devices: readonly AudioDevice[],
+): AudioDevice | null {
+  if (p.capture_mode === "loopback") return devices.find((d) => d.is_default) ?? null;
+  if (p.capture_mode === "virtual") return devices.find((d) => d.id === p.audio_device_id) ?? null;
+  return null;
+}
+
+/**
+ * Which of the profile's sample rate and bit depth differ from the capture
+ * device's format (v1 update_format_info; Auto never differs)
+ */
+export function formatMismatch(
+  p: Pick<Profile, "sample_rate" | "bit_depth">,
+  d: Pick<AudioDevice, "mix_rate" | "mix_bits">,
+): { rate: boolean; bits: boolean } {
+  return {
+    rate: p.sample_rate !== 0 && d.mix_rate !== null && p.sample_rate !== d.mix_rate,
+    bits: p.bit_depth !== 0 && d.mix_bits !== null && p.bit_depth !== d.mix_bits,
+  };
+}
+
+/** A device name the core saves: not empty, on one line, without "|" */
+export function validDeviceName(name: string): boolean {
+  const n = name.trim();
+  return n.length > 0 && !/[\r\n|]/.test(n);
+}
+
+/** Whether this Windows can capture one application (build 19041 or later) */
+export type AppCaptureSupport = "yes" | "no" | "unknown";
+
+/**
+ * From User-Agent Client Hints: on Windows the major of platformVersion is
+ * the UniversalApiContract version, 10 from Windows 10 version 2004 (build
+ * 19041) and 13+ on Windows 11; 1-8 are the earlier Windows 10 versions.
+ * Unknown elsewhere or without the hints (the core still refuses the
+ * stream with error.app_capture_unsupported).
+ */
+export function appCaptureSupportFrom(platform: string | undefined, platformVersion: string | undefined): AppCaptureSupport {
+  if (platform !== "Windows" || !platformVersion) return "unknown";
+  const major = Number.parseInt(platformVersion, 10);
+  if (!Number.isFinite(major)) return "unknown";
+  return major >= 10 ? "yes" : "no";
+}
+
+interface UaData {
+  getHighEntropyValues(hints: string[]): Promise<{ platform?: string; platformVersion?: string }>;
+}
+
+export async function appCaptureSupport(): Promise<AppCaptureSupport> {
+  const ua = (globalThis.navigator as { userAgentData?: UaData } | undefined)?.userAgentData;
+  if (!ua?.getHighEntropyValues) return "unknown";
+  try {
+    const v = await ua.getHighEntropyValues(["platformVersion"]);
+    return appCaptureSupportFrom(v.platform, v.platformVersion);
+  } catch {
+    return "unknown";
+  }
 }

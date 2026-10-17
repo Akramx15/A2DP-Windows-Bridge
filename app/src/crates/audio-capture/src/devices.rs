@@ -1,6 +1,6 @@
 //! Render devices: the list (with v1's virtual device heuristic), the
-//! default device, its mix rate, switching the default (IPolicyConfig) and
-//! the endpoint volume primitives of volume sync.
+//! default device, its mix rate and format, switching the default
+//! (IPolicyConfig) and the endpoint volume primitives of volume sync.
 //!
 //! Every function initialises COM on the calling thread for its own
 //! duration (MTA, or whatever apartment the thread already has).
@@ -99,6 +99,46 @@ pub fn mix_rate(device_id: Option<&str>) -> Option<u32> {
     let client = device.get_iaudioclient().ok()?;
     let mix = client.get_mixformat().ok()?;
     Some(mix.get_samplespersec())
+}
+
+/// A render device's shared-mode format, for the profile editor's "capture
+/// device" line and its warning when a profile asks for another rate or bit
+/// depth (v1 capture.device_format)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MixFormat {
+    /// The mix rate: what a loopback capture delivers without resampling
+    pub rate: u32,
+    pub channels: u16,
+    /// Valid bits per sample of the format chosen in Windows' Sound
+    /// settings (PKEY_AudioEngine_DeviceFormat, as v1 showed), else of the
+    /// mix format (32: the engine mixes in float)
+    pub bits: u16,
+}
+
+/// [`MixFormat`] of a render device (None = the default one). None if the
+/// device cannot be opened.
+pub fn mix_format(device_id: Option<&str>) -> Option<MixFormat> {
+    let _com = com().ok()?;
+    let enumerator = DeviceEnumerator::new().ok()?;
+    let device = match device_id {
+        Some(id) => enumerator.get_device(id).ok()?,
+        None => enumerator.get_default_device(&Direction::Render).ok()?,
+    };
+    let client = device.get_iaudioclient().ok()?;
+    let mix = client.get_mixformat().ok()?;
+    let bits =
+        device.get_device_format().ok().map_or(0, |f| valid_bits(f.get_validbitspersample(), f.get_bitspersample()));
+    Some(MixFormat {
+        rate: mix.get_samplespersec(),
+        channels: mix.get_nchannels(),
+        bits: if bits > 0 { bits } else { valid_bits(mix.get_validbitspersample(), mix.get_bitspersample()) },
+    })
+}
+
+/// wValidBitsPerSample, which a plain WAVEFORMATEX leaves at 0 (its
+/// container size counts then)
+fn valid_bits(valid: u16, container: u16) -> u16 {
+    if valid > 0 && valid <= container { valid } else { container }
 }
 
 /// v1 AudioDeviceEnumerator::is_virtual_device: name patterns first, then
@@ -229,8 +269,31 @@ mod tests {
             vol.muted().unwrap();
         }
         assert_eq!(mix_rate(Some("no such device")), None);
+        assert_eq!(mix_format(Some("no such device")), None);
         let err = EndpointVolume::open(Some("no such device")).unwrap_err();
         assert!(matches!(err, CaptureError::DeviceNotFound(_)), "{err}");
+    }
+
+    #[test]
+    fn mix_format_matches_mix_rate() {
+        // No output device (a CI runner): nothing to compare
+        let Some(f) = mix_format(None) else {
+            assert_eq!(mix_rate(None), None);
+            return;
+        };
+        assert_eq!(Some(f.rate), mix_rate(None));
+        assert!(f.channels >= 1, "{f:?}");
+        assert!(matches!(f.bits, 8 | 16 | 20 | 24 | 32 | 64), "{f:?}");
+        if let Some(def) = default_render_device() {
+            assert_eq!(mix_format(Some(&def)), Some(f));
+        }
+    }
+
+    #[test]
+    fn valid_bits_falls_back_to_the_container() {
+        assert_eq!(valid_bits(24, 32), 24);
+        assert_eq!(valid_bits(0, 16), 16);
+        assert_eq!(valid_bits(32, 24), 24);
     }
 
     #[test]
