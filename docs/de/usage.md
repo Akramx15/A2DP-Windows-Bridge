@@ -72,7 +72,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 | Start | **Mit Windows starten** (siehe [Mit Windows starten](#autostart)) |
 | Kopfhörer | **Kopfhörertasten steuern die Wiedergabe** (siehe [Kopfhörertasten](#headphone-buttons)), **Kopfhörerlautstärke merken** (siehe [Lautstärke](#volume)) |
 | Updates | **Nach Updates suchen**, **Beim Start nach Updates suchen**, **Vorabversionen bei der Updatesuche einbeziehen** (bietet auch Betaversionen an), **Jetzt aktualisieren** (siehe [Updates](#updates)) |
-| Erweitert | **Entwicklermodus** (fügt der Diagnose den Empfängertest und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
+| Erweitert | **LE Audio (experimentell)** und **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** (siehe [LE Audio](#le-audio)), **Entwicklermodus** (fügt der Diagnose den Empfängertest und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
 | Info über A2DPWB | Version, Lizenz, Lizenzen von Drittanbietern, **A2DPWB beenden** |
 
 ### Einrichtung beim ersten Start
@@ -428,6 +428,24 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose eine Registerkarte **Pe
 Beide Seiten zählen die Pakete eines Streams ab dessen erstem Paket, sodass gesendete und empfangene Pakete verglichen werden können: Sie sollten gleich sein. Bluetooth überträgt verlorene Funkpakete innerhalb der Controller erneut, und A2DPWB gibt ein Paket nicht auf, solange die Verbindung besteht; eine schlechte Funkverbindung zeigt sich daher beim Empfänger als Lücken, Jitter und Aussetzer statt als verlorene Pakete. Kommt die Verbindung nicht nach, werden auf der Sendeseite Pakete vor dem Senden verworfen. Die Anzahl der Neuübertragungen ist auf keiner der beiden Seiten verfügbar.
 
 Der Adapter des Empfängers steht dessen eigenem Bluetooth-Stack nicht zur Verfügung, solange das Werkzeug läuft. Die Suche verwendet einen UDP-Broadcast auf Port 51201, daher müssen sich beide PCs im selben Netzwerksegment befinden (andernfalls geben Sie die Adresse ein). Alle Optionen und das Statistikprotokoll finden Sie in `tools/linux_sink/README.md`.
+
+## LE Audio (experimentell) {#le-audio}
+
+A2DPWB kann auch an LE-Audio-Kopfhörer und -Ohrhörer streamen (LC3 über verbundene isochrone Streams, BAP Unicast), mit Lautstärke des Headsets (VCP), Medientasten (MCP), beiden Ohrhörern eines Paars (CSIP) und einem Modus mit niedriger Latenz für Gaming-Headsets (GMAP). Diese Funktion ist **experimentell und standardmäßig aus**. Sie wurde nur mit einem Bluetooth-Emulator getestet, **noch nicht mit echten LE-Audio-Kopfhörern**, und funktioniert mit Ihren vielleicht nicht; verwenden Sie zum normalen Hören die klassischen A2DP-Profile.
+
+Voraussetzungen:
+
+- Ein USB-Bluetooth-Adapter mit **Bluetooth 5.2 oder neuer, der isochrone Kanäle (ISO) unterstützt**, mit WinUSB wie für A2DP. Ein Adapter ohne ISO wird mit „adapter does not support LE Audio (no ISO buffers)“ abgelehnt.
+- Kopfhörer oder Ohrhörer mit LE Audio (LC3); bei manchen muss LE Audio zuerst in der eigenen App eingeschaltet werden.
+
+So geht es:
+
+1. **Einstellungen > Erweitert > LE Audio (experimentell)** einschalten. Bluetooth startet bei der nächsten Suche oder Verbindung mit LE (während des Streamens oder Suchens wartet die Änderung bis dahin).
+2. Die Kopfhörer in den Kopplungsmodus versetzen und in einem Profil nach Geräten suchen. LE-Audio-Geräte tragen die Markierung **LE Audio**, ein Ohrhörerpaar **LE-Audio-Set** (einen der beiden wählen: A2DPWB findet den anderen). Kopfhörer, die auch A2DP können, erscheinen zweimal, einmal je Art.
+3. Im Profil **LE-Audio-Gerät (experimentell, LC3)** ankreuzen. Codec und Qualität sind nicht wählbar (A2DPWB wählt die beste LC3-Konfiguration, die die Kopfhörer annehmen), und nur die Aufnahme System-Loopback und virtuelles Gerät ist möglich.
+4. Optional: **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** im selben Abschnitt verwendet ab der nächsten Verbindung kürzere LC3-Frames mit Headsets, die die Spiele-Rolle von GMAP unterstützen.
+
+Im CLI-Modus streamt `--le-audio -d <Adresse>` an ein LE-Audio-Gerät, `--le-device <Adresse>` fügt ein weiteres Gerät der Gruppe hinzu (den zweiten Ohrhörer), `--le-scan` listet die LE-Audio-Geräte in der Nähe auf, und `--le-low-latency` / `--le-preset <Name>` wählen die Konfiguration (`a2dpwb-core.exe --cli -h` zeigt alle LE-Optionen).
 
 ## Updates {#updates}
 

@@ -72,7 +72,7 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene además una p
 | Inicio | **Iniciar con Windows** (consulte [Iniciar con Windows](#autostart)) |
 | Auriculares | **Botones de los auriculares controlan la reproducción** (consulte [Botones de los auriculares](#headphone-buttons)), **Recordar volumen de los auriculares** (consulte [Volumen](#volume)) |
 | Actualizaciones | **Buscar actualizaciones**, **Buscar actualizaciones al iniciar**, **Incluir versiones preliminares al buscar actualizaciones** (también ofrece versiones beta), **Actualizar ahora** (consulte [Actualizaciones](#updates)) |
-| Avanzado | **Modo de desarrollador** (añade la prueba con receptor a Diagnóstico y más detalles al registro; no requiere reiniciar), **Carpeta de configuración** con **Abrir carpeta de configuración**, **Ejecutar la configuración inicial** |
+| Avanzado | **LE Audio (experimental)** y **Baja latencia para auriculares gaming (GMAP, experimental)** (consulte [LE Audio](#le-audio)), **Modo de desarrollador** (añade la prueba con receptor a Diagnóstico y más detalles al registro; no requiere reiniciar), **Carpeta de configuración** con **Abrir carpeta de configuración**, **Ejecutar la configuración inicial** |
 | Acerca de A2DPWB | Versión, licencia, licencias de terceros, **Salir de A2DPWB** |
 
 ### Configuración inicial
@@ -428,6 +428,24 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene una pestaña 
 Ambos lados cuentan los paquetes de un flujo desde su primer paquete, de modo que se pueden comparar los paquetes enviados y recibidos: deberían coincidir. Bluetooth retransmite dentro de los controladores los paquetes de radio perdidos, y A2DPWB no abandona un paquete mientras el enlace está activo, así que un enlace de radio deficiente se manifiesta como huecos, jitter y cortes en el receptor, no como paquetes perdidos; cuando el enlace no da abasto, los paquetes se descartan antes del envío en el lado emisor. Ninguno de los dos lados puede conocer el número de retransmisiones.
 
 Mientras la herramienta se ejecuta, la pila Bluetooth del propio receptor no puede usar su adaptador. La búsqueda usa una difusión UDP en el puerto 51201, así que ambos PC deben estar en el mismo segmento de red (si no, escriba la dirección). Consulte `tools/linux_sink/README.md` para ver todas las opciones y el protocolo de estadísticas.
+
+## LE Audio (experimental) {#le-audio}
+
+A2DPWB también puede transmitir a auriculares LE Audio (LC3 sobre flujos isócronos conectados, BAP unicast), con el volumen del auricular (VCP), los botones multimedia (MCP), los dos auriculares de un par (CSIP) y un modo de baja latencia para auriculares gaming (GMAP). Esta función es **experimental y está desactivada por defecto**. Solo se ha probado con un emulador de Bluetooth, **todavía no con auriculares LE Audio reales**, y puede que no funcione con los suyos; para el uso diario, use los perfiles A2DP clásicos.
+
+Qué se necesita:
+
+- Un adaptador Bluetooth USB con **Bluetooth 5.2 o posterior que admita canales isócronos (ISO)**, con WinUSB asignado como para A2DP. Un adaptador sin ISO se rechaza con «adapter does not support LE Audio (no ISO buffers)».
+- Auriculares compatibles con LE Audio (LC3); algunos necesitan activar antes LE Audio en su propia aplicación.
+
+Cómo usarlo:
+
+1. Active **Configuración > Avanzado > LE Audio (experimental)**. Bluetooth se inicia con LE en la siguiente búsqueda o conexión (durante una transmisión o búsqueda, el cambio espera hasta entonces).
+2. Ponga los auriculares en modo de emparejamiento y busque dispositivos en un perfil. Los dispositivos LE Audio llevan la etiqueta **LE Audio**, un par de auriculares **Conjunto LE Audio** (elija cualquiera de los dos: A2DPWB encuentra el otro). Unos auriculares que también admiten A2DP aparecen dos veces, una por tipo.
+3. Marque **Dispositivo LE Audio (experimental, LC3)** en el perfil. No se elige códec ni calidad (A2DPWB elige la mejor configuración LC3 que aceptan los auriculares) y solo están disponibles las capturas Loopback del sistema y Dispositivo virtual.
+4. Opcional: **Baja latencia para auriculares gaming (GMAP, experimental)**, en la misma sección, usa tramas LC3 más cortas con los auriculares que admiten el rol de juego de GMAP, a partir de la siguiente conexión.
+
+En el modo CLI, `--le-audio -d <dirección>` transmite a un dispositivo LE Audio, `--le-device <dirección>` añade otro dispositivo del grupo (el segundo auricular), `--le-scan` lista los dispositivos LE Audio cercanos, y `--le-low-latency` / `--le-preset <nombre>` eligen la configuración (`a2dpwb-core.exe --cli -h` muestra todas las opciones LE).
 
 ## Actualizaciones {#updates}
 

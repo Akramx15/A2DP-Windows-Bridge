@@ -8,8 +8,9 @@
 //!   timers, other modules); it must not block;
 //! - optionally a shared part, [`LeGroupHooks`] (`Send + Sync`), for the
 //!   worker hooks (may block, with timeouts; reach the BTstack thread with
-//!   `BtHost::le_run` / `le_call` / `le_post`) and the any-thread volume
-//!   hooks. The two parts share state through an `Arc` the module creates.
+//!   `BtHost::le_run` / `le_call`, or post with the module's [`LePoster`])
+//!   and the any-thread volume hooks. The two parts share state through an
+//!   `Arc` the module creates.
 //!
 //! All hooks have empty defaults; override only what the profile needs.
 //! Modules live as long as their BtHost; `on_stack_init` /
