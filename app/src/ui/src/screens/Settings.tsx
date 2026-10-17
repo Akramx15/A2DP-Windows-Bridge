@@ -3,7 +3,7 @@
 
 import { createSignal, For, Match, onMount, Show, Switch } from "solid-js";
 import { errorText, useApp } from "../app/context";
-import { saveSettings } from "../app/settings";
+import { applySettings, saveSettings } from "../app/settings";
 import { Banner, Button, Dialog, Field, Section, Segmented, Select, Toggle } from "../components/controls";
 import { LANGUAGES, t, tm } from "../i18n";
 import type { UpdatePhase } from "../ipc/transport";
@@ -30,13 +30,13 @@ export function Settings() {
 
   // LE Audio (experimental): v1's message after the toggle, with the note
   // that a running stream or scan keeps the old setting until the next one
+  // (the core says so: settings.set's le_audio_deferred)
   const [leNote, setLeNote] = createSignal<string[] | null>(null);
-  const toggleLeAudio = (on: boolean) => {
-    const st = snap().stream.state;
-    const busy = snap().scanning || st === "connecting" || st === "streaming" || st === "reconnecting";
-    set({ le_audio_experimental: on });
+  const toggleLeAudio = async (on: boolean) => {
+    const applied = await applySettings(app, { le_audio_experimental: on });
+    if (!applied) return;
     const text = t(on ? "settings.le_audio_on" : "settings.le_audio_off").split("\n\n");
-    setLeNote(busy ? [...text, t("settings.le_audio_deferred")] : text);
+    setLeNote(applied.le_audio_deferred ? [...text, t("settings.le_audio_deferred")] : text);
   };
 
   const checkNow = async () => {

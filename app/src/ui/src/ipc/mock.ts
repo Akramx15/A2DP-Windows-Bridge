@@ -491,6 +491,7 @@ export class MockCore implements Transport {
           le_audio_low_latency: next.le_audio_low_latency ?? before.le_audio_low_latency,
         };
         this.emit({ kind: "settings", value: this.snap.settings });
+        let le_audio_deferred = false;
         if (before.le_audio_experimental !== this.snap.settings.le_audio_experimental) {
           // As v1: LE is set up when BTstack starts; an idle one stops so that
           // the next scan or connection starts it with the setting
@@ -499,6 +500,7 @@ export class MockCore implements Transport {
           const on = this.snap.settings.le_audio_experimental ? "on" : "off";
           this.log("info", "a2dpwb_core_exe::state", `LE Audio (experimental) ${on}${busy ? ": takes effect at the next scan or connection" : ""}`);
           if (!busy && this.snap.adapter.status !== "stopped") this.setAdapter("stopped");
+          le_audio_deferred = busy;
         }
         if (before.bt_chip_pid !== this.snap.settings.bt_chip_pid || before.bt_chip_fw_stem !== this.snap.settings.bt_chip_fw_stem) {
           // As the core's reload_adapter: the firmware state for the new
@@ -507,7 +509,7 @@ export class MockCore implements Transport {
           this.log("info", "a2dpwb_core_exe::state", "adapter settings changed: Bluetooth stopped, it starts again at the next use");
           if (this.snap.stream.state === "idle" || this.snap.stream.state === "error") this.setAdapter("stopped");
         }
-        return null;
+        return { le_audio_deferred };
       }
       case "adapter.list":
         return this.snap.adapter.adapters;

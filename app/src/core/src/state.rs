@@ -11,13 +11,16 @@ use a2dpwb_core::diag::AudioRates;
 use a2dpwb_core::profiles::{self, Profile as CoreProfile};
 use a2dpwb_core::receiver::{self, ReceiverClient};
 use a2dpwb_core::settings::Settings as CoreSettings;
-use a2dpwb_core::{Service, ServiceEvent, SourceRequest, StreamRequest, StreamState as CoreStreamState, devices};
+use a2dpwb_core::{
+    LeStreamDetails, ScannedDevice, Service, ServiceEvent, SourceRequest, StreamRequest,
+    StreamState as CoreStreamState, devices,
+};
 use bt_host::LinkStats;
 use bt_host::chips::{self, ChipVendor};
 use ipc::{
     AdapterInfo, AdapterState, AdapterStatus, AudioApp, AudioDevice, CaptureState, Device, DiagInfo, DriverKind,
-    ErrorInfo, Event, FirmwareFile, LinkTotals, Method, Msg, Profile, ReceiverConnection, ReceiverState, Settings,
-    Snapshot, SourceInfo, StreamState, StreamStatus, UpdateState,
+    ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, Method, Msg, Profile, ReceiverConnection, ReceiverState,
+    Settings, SettingsApplied, Snapshot, SourceInfo, StreamState, StreamStatus, UpdateState,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -109,7 +112,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         volume_device_id: p.volume_device_id.clone(),
         volume_device_name: p.volume_device_name.clone(),
         max_media_payload: p.max_media_payload.unwrap_or(legacy),
-        le_audio: false,
+        le_audio: p.le_audio,
     }
 }
 
@@ -135,6 +138,7 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.volume_device_id = p.volume_device_id.clone();
     c.volume_device_name = p.volume_device_name.clone();
     c.max_media_payload = Some(bt_host::media::clamp_media_payload_limit(p.max_media_payload as u32));
+    c.le_audio = p.le_audio;
     c
 }
 
@@ -154,8 +158,8 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         bt_chip_fw_stem: s.bt_chip_fw_stem.clone(),
         afh: s.afh.clone(),
         remote_sink: s.remote_sink.clone(),
-        le_audio_experimental: false,
-        le_audio_low_latency: false,
+        le_audio_experimental: s.le_audio_experimental,
+        le_audio_low_latency: s.le_audio_low_latency,
     }
 }
 
@@ -175,6 +179,8 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.bt_chip_fw_stem = s.bt_chip_fw_stem.clone();
     c.afh = s.afh.clone();
     c.remote_sink = s.remote_sink.clone();
+    c.le_audio_experimental = s.le_audio_experimental;
+    c.le_audio_low_latency = s.le_audio_low_latency;
     c
 }
 
@@ -257,10 +263,12 @@ fn warn_invalid_firmware(config_dir: &Path, invalid: &[(String, String)]) {
     }
 }
 
-/// The saved devices, then the scanned ones; with the codecs each offered
+/// The saved devices (classic, then LE Audio), then the scanned ones; with
+/// the codecs each classic device offered. An entry is its address AND its
+/// kind: a dual-mode device can be listed twice, classic and LE Audio.
 fn saved_devices(config_dir: &Path, scanned: &[Device], codecs: &BTreeMap<String, Vec<String>>) -> Vec<Device> {
-    let mut list: Vec<Device> = devices::load(config_dir)
-        .into_iter()
+    let saved = devices::load(config_dir).into_iter().chain(devices::load_le(config_dir));
+    let mut list: Vec<Device> = saved
         .map(|d| Device {
             address: d.address,
             name: d.name,
@@ -268,14 +276,15 @@ fn saved_devices(config_dir: &Path, scanned: &[Device], codecs: &BTreeMap<String
             audio: true,
             rssi: None,
             codecs: Vec::new(),
-            le_audio: false,
+            le_audio: d.le_audio,
             le_audio_set: false,
         })
         .collect();
     for s in scanned {
-        match list.iter_mut().find(|d| d.address.eq_ignore_ascii_case(&s.address)) {
+        match list.iter_mut().find(|d| d.le_audio == s.le_audio && d.address.eq_ignore_ascii_case(&s.address)) {
             Some(d) => {
                 d.rssi = s.rssi;
+                d.le_audio_set |= s.le_audio_set;
                 if d.name.is_empty() {
                     d.name = s.name.clone();
                 }
@@ -283,12 +292,45 @@ fn saved_devices(config_dir: &Path, scanned: &[Device], codecs: &BTreeMap<String
             None => list.push(s.clone()),
         }
     }
-    for d in &mut list {
+    for d in list.iter_mut().filter(|d| !d.le_audio) {
         if let Some(c) = codecs.get(&d.address.to_uppercase()) {
             d.codecs = c.clone();
         }
     }
     list
+}
+
+/// A scan's entry as the UI lists it (not saved yet)
+fn scanned_device(d: &ScannedDevice) -> Device {
+    Device {
+        address: d.address.clone(),
+        name: d.name.clone(),
+        saved: false,
+        audio: d.audio,
+        rssi: Some(d.rssi),
+        codecs: Vec::new(),
+        le_audio: d.le_audio,
+        le_audio_set: d.le_audio_set,
+    }
+}
+
+/// The codec the UI shows for an LE Audio (experimental) stream
+const LE_CODEC: &str = "LC3";
+
+/// The service's state message while a scan's LE Audio part runs
+const LE_SCANNING_KEY: &str = "status.le_scanning";
+
+/// StreamInfo.le of an LE Audio (experimental) stream
+fn to_ipc_le_stream(d: &LeStreamDetails) -> LeStreamInfo {
+    LeStreamInfo {
+        preset: d.preset.clone(),
+        frame_us: d.frame_us,
+        octets: d.octets,
+        cis: d.cis,
+        devices: d.devices,
+        low_latency: d.low_latency,
+        summary: d.summary.clone(),
+    }
 }
 
 /// The cumulative media counters, those when the current stream started,
@@ -558,6 +600,12 @@ impl CoreState {
         let mut devices_changed = false;
         match e {
             ServiceEvent::State(state, m) => {
+                // The scan's LE Audio part runs while the state says so
+                // (Service::scan_devices; the next message ends it)
+                let le_scanning = m.key == LE_SCANNING_KEY;
+                if le_scanning != s.le_scanning {
+                    self.publish(Event::LeScanning(le_scanning));
+                }
                 stream.state = match state {
                     CoreStreamState::Idle => StreamState::Idle,
                     CoreStreamState::Connecting => StreamState::Connecting,
@@ -592,8 +640,10 @@ impl CoreState {
                 devices_changed = state == CoreStreamState::Error;
             }
             ServiceEvent::StreamInfo(i) => {
+                // LE Audio (experimental): what the stream was set up with
+                let le = self.service.le_stream().map(|d| to_ipc_le_stream(&d));
                 stream.info = Some(ipc::StreamInfo {
-                    codec: i.codec,
+                    codec: if le.is_some() { LE_CODEC.into() } else { i.codec },
                     bitrate_kbps: i.bitrate_kbps,
                     sample_rate: i.sample_rate,
                     channels: i.channels,
@@ -605,7 +655,7 @@ impl CoreState {
                     abr: i.abr,
                     bitrate_capped: i.bitrate_capped,
                     source: Some(to_ipc_source(&i.source)),
-                    le: None,
+                    le,
                 });
                 // The device was saved when it connected
                 devices_changed = true;
@@ -968,35 +1018,32 @@ impl CoreState {
             Method::DeviceScan { seconds } => {
                 blocking(Box::new(move |me| {
                     me.publish(Event::Scanning(true));
-                    let r = me.service.scan(seconds.clamp(3, 30));
+                    // Classic, then (LE Audio on) the LE Audio devices
+                    let r = me.service.scan_devices(seconds.clamp(3, 30));
+                    if me.with_snapshot(|s| s.le_scanning) {
+                        me.publish(Event::LeScanning(false));
+                    }
                     me.publish(Event::Scanning(false));
                     let found = r.map_err(|m| ErrorInfo { code: "adapter.init_failed".into(), message: msg(&m) })?;
-                    let scanned: Vec<Device> = found
-                        .iter()
-                        .map(|d| Device {
-                            address: bt_host::addr_str(&d.addr),
-                            name: d.name.clone(),
-                            saved: false,
-                            audio: d.is_audio(),
-                            rssi: Some(d.rssi),
-                            codecs: Vec::new(),
-                            le_audio: false,
-                            le_audio_set: false,
-                        })
-                        .collect();
+                    let scanned: Vec<Device> = found.iter().map(scanned_device).collect();
                     let list = saved_devices(&me.config_dir(), &scanned, &me.service.device_codecs());
                     me.publish(Event::Devices(list.clone()));
                     Ok(json(&list))
                 }))
                 .await
             }
-            Method::DeviceForget { address, .. } => {
-                devices::remove(&self.config_dir(), &address)
-                    .map_err(|_| err("device.forget_failed", "error.device_forget"))?;
+            Method::DeviceForget { address, le_audio } => {
+                let dir = self.config_dir();
+                let r = if le_audio == Some(true) {
+                    devices::remove_le(&dir, &address)
+                } else {
+                    devices::remove(&dir, &address)
+                };
+                r.map_err(|_| err("device.forget_failed", "error.device_forget"))?;
                 self.refresh_devices();
                 Ok(Value::Null)
             }
-            Method::DeviceRename { address, name, .. } => {
+            Method::DeviceRename { address, name, le_audio } => {
                 let name = name.trim();
                 let Some(addr) = bt_host::parse_addr(&address) else {
                     return Err(err("device.invalid_address", "error.invalid_address_format"));
@@ -1004,8 +1051,13 @@ impl CoreState {
                 if name.is_empty() || name.contains(['\n', '\r', '|']) {
                     return Err(bad_request("device.invalid_name", "device.rename", format!("name \"{name}\"")));
                 }
-                devices::save(&self.config_dir(), &bt_host::addr_str(&addr), name)
-                    .map_err(|_| err("device.rename_failed", "error.device_rename"))?;
+                let (dir, address) = (self.config_dir(), bt_host::addr_str(&addr));
+                let r = if le_audio == Some(true) {
+                    devices::save_le(&dir, &address, name)
+                } else {
+                    devices::save(&dir, &address, name)
+                };
+                r.map_err(|_| err("device.rename_failed", "error.device_rename"))?;
                 self.refresh_devices();
                 Ok(Value::Null)
             }
@@ -1018,13 +1070,19 @@ impl CoreState {
                 let key = original_name.as_deref().unwrap_or(&profile.name).to_string();
                 let pos = list.iter().position(|p| p.name == key);
                 let merged = merge_profile(pos.map(|i| &list[i]), &profile);
-                // The profile's device joins the saved ones (as a
-                // connection saves it)
+                // The profile's device joins the saved ones of its kind (as
+                // a connection saves it)
                 let address = merged.device_address.clone();
-                if !devices::load(&dir).iter().any(|d| d.address == address)
-                    && let Err(e) = devices::save(&dir, &address, &merged.device_name)
-                {
-                    tracing::warn!("cannot save the device {address}: {e}");
+                let known = if merged.le_audio { devices::load_le(&dir) } else { devices::load(&dir) };
+                if !known.iter().any(|d| d.address == address) {
+                    let r = if merged.le_audio {
+                        devices::save_le(&dir, &address, &merged.device_name)
+                    } else {
+                        devices::save(&dir, &address, &merged.device_name)
+                    };
+                    if let Err(e) = r {
+                        tracing::warn!("cannot save the device {address}: {e}");
+                    }
                 }
                 match pos {
                     Some(i) => list[i] = merged,
@@ -1062,11 +1120,15 @@ impl CoreState {
                         })?;
                     }
                     let chip = chip_changed(&base, &merged);
+                    let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
                     me.save_settings(merged)?;
                     if chip {
                         me.reload_adapter();
                     }
-                    Ok(Value::Null)
+                    // LE Audio on / off waits for the next scan or connection
+                    // while the stack is in use (v1's deferred text)
+                    let le_audio_deferred = le_toggled && me.service.le_audio_deferred();
+                    Ok(json(&SettingsApplied { le_audio_deferred }))
                 }))
                 .await
             }
@@ -1510,6 +1572,108 @@ mod tests {
         assert_eq!(list[0].codecs, ["sbc", "ldac"]);
         assert!(list[0].saved && !list[1].saved && list[1].codecs.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn le_audio_profiles_and_settings_map_both_ways() {
+        let core = CoreProfile {
+            name: "Buds LE Audio".into(),
+            device_address: "C0:11:22:33:44:55".into(),
+            le_audio: true,
+            ..CoreProfile::default()
+        };
+        let ui = to_ipc_profile(&core, 679);
+        assert!(ui.le_audio);
+        assert!(merge_profile(None, &ui).le_audio);
+        // The UI turns it off: the stored profile follows
+        let classic = Profile { le_audio: false, ..ui };
+        assert!(!merge_profile(Some(&core), &classic).le_audio);
+
+        let base = CoreSettings::default();
+        let ui = to_ipc_settings(&base);
+        assert!(!ui.le_audio_experimental && !ui.le_audio_low_latency);
+        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, ..ui };
+        let merged = merge_settings(&base, &on);
+        assert!(merged.le_audio_experimental && merged.le_audio_low_latency);
+        assert_eq!(to_ipc_settings(&merged), on);
+    }
+
+    #[test]
+    fn le_audio_devices_are_their_own_entries() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-state-le-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A dual-mode headset saved as both kinds
+        devices::save(&dir, "AA:BB:CC:DD:EE:FF", "Phones").unwrap();
+        devices::save_le(&dir, "AA:BB:CC:DD:EE:FF", "Phones LE").unwrap();
+        let scan = [
+            ScannedDevice {
+                address: "AA:BB:CC:DD:EE:FF".into(),
+                name: "Phones".into(),
+                rssi: -50,
+                class_of_device: 0x240404,
+                audio: true,
+                le_audio: false,
+                le_audio_set: false,
+            },
+            ScannedDevice {
+                address: "AA:BB:CC:DD:EE:FF".into(),
+                name: "Phones".into(),
+                rssi: -55,
+                class_of_device: 0,
+                audio: true,
+                le_audio: true,
+                le_audio_set: false,
+            },
+            ScannedDevice {
+                address: "C0:11:22:33:44:55".into(),
+                name: "Earbuds".into(),
+                rssi: -60,
+                class_of_device: 0,
+                audio: true,
+                le_audio: true,
+                le_audio_set: true,
+            },
+        ];
+        let scanned: Vec<Device> = scan.iter().map(scanned_device).collect();
+        assert!(scanned[2].le_audio && scanned[2].le_audio_set && !scanned[2].saved);
+        assert_eq!(scanned[2].rssi, Some(-60));
+        let mut codecs = BTreeMap::new();
+        codecs.insert("AA:BB:CC:DD:EE:FF".to_string(), vec!["sbc".to_string()]);
+        let list = saved_devices(&dir, &scanned, &codecs);
+        let kinds: Vec<(&str, bool, bool)> = list.iter().map(|d| (d.name.as_str(), d.le_audio, d.saved)).collect();
+        // Merged by address AND kind: each saved entry got its own scan result
+        assert_eq!(kinds, [("Phones", false, true), ("Phones LE", true, true), ("Earbuds", true, false)]);
+        assert_eq!((list[0].rssi, list[1].rssi), (Some(-50), Some(-55)));
+        assert!(list[2].le_audio_set);
+        // Codecs are the classic entry's
+        assert_eq!(list[0].codecs, ["sbc"]);
+        assert!(list[1].codecs.is_empty());
+        // Forgetting the LE Audio entry keeps the classic one
+        devices::remove_le(&dir, "AA:BB:CC:DD:EE:FF").unwrap();
+        let list = saved_devices(&dir, &[], &codecs);
+        assert_eq!(list.len(), 1);
+        assert!(!list[0].le_audio);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn le_stream_details_reach_the_ui() {
+        let d = LeStreamDetails {
+            preset: "48_3_gr".into(),
+            frame_us: 7500,
+            octets: 75,
+            cis: 2,
+            devices: 2,
+            low_latency: true,
+            summary: "LC3 48 kHz 7.5 ms 75 octets (80 kbps/ch), 2 ch over 2 CIS, 48_3_gr".into(),
+        };
+        let le = to_ipc_le_stream(&d);
+        assert_eq!((le.preset.as_str(), le.frame_us, le.octets, le.cis, le.devices), ("48_3_gr", 7500, 75, 2, 2));
+        assert!(le.low_latency);
+        assert_eq!(le.summary, d.summary);
+        assert_eq!(LE_CODEC, "LC3");
+        assert_eq!(a2dpwb_core::Msg::new(LE_SCANNING_KEY).key, "status.le_scanning");
     }
 
     #[test]

@@ -29,6 +29,7 @@ import type { ReceiverState as BReceiverState } from "./bindings/ReceiverState";
 import type { ReceiverStats as BReceiverStats } from "./bindings/ReceiverStats";
 import type { ServerMessage as BServerMessage } from "./bindings/ServerMessage";
 import type { Settings as BSettings } from "./bindings/Settings";
+import type { SettingsApplied as BSettingsApplied } from "./bindings/SettingsApplied";
 import type { Snapshot as BSnapshot } from "./bindings/Snapshot";
 import type { SourceInfo as BSourceInfo } from "./bindings/SourceInfo";
 import type { StreamInfo as BStreamInfo } from "./bindings/StreamInfo";
@@ -79,6 +80,7 @@ export type ReceiverState = Wire<BReceiverState>;
 export type ReceiverStats = Wire<BReceiverStats>;
 export type ServerMessage = Wire<BServerMessage>;
 export type Settings = Wire<BSettings>;
+export type SettingsApplied = Wire<BSettingsApplied>;
 export type StreamInfo = Wire<BStreamInfo>;
 export type StreamStatus = Wire<BStreamStatus>;
 export type UpdateState = Wire<BUpdateState>;
@@ -108,6 +110,7 @@ interface Results {
   "receiver.connect": ReceiverState;
   "receiver.status": ReceiverState;
   "app.check_update": UpdateState;
+  "settings.set": SettingsApplied;
 }
 
 export type ResultOf<M extends MethodName> = M extends keyof Results ? Results[M] : null;

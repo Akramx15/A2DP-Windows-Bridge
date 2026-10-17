@@ -668,6 +668,7 @@ pub enum Method {
     ProfileDelete { name: String },
     #[serde(rename = "profile.set_active")]
     ProfileSetActive { name: String },
+    /// -> SettingsApplied (the settings come back as an event too)
     #[serde(rename = "settings.set")]
     SettingsSet { settings: Box<Settings> },
     /// -> AdapterInfo[] (also as an event)
@@ -784,6 +785,17 @@ pub struct AudioDevice {
 pub struct AudioApp {
     pub exe: String,
     pub name: String,
+}
+
+/// What settings.set did besides saving the settings
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+
+pub struct SettingsApplied {
+    /// LE Audio (experimental) was turned on or off while BTstack is in
+    /// use (streaming or scanning): the change applies at the next scan or
+    /// connection (v1's settings.le_audio_deferred)
+    #[serde(default)]
+    pub le_audio_deferred: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
