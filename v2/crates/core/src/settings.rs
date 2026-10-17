@@ -8,8 +8,13 @@ use serde::{Deserialize, Serialize};
 
 use bt_host::media::{MEDIA_PAYLOAD_LIMIT_DEFAULT, clamp_media_payload_limit};
 
+/// settings.json's format: 1 is v1's (which wrote no schema_version), 2 is
+/// v2's (see migrate.rs)
 pub const SCHEMA_VERSION: u32 = 2;
 
+fn v1_schema() -> u32 {
+    1
+}
 fn default_language() -> String {
     "en".into()
 }
@@ -26,6 +31,8 @@ fn default_afh() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
+    /// Missing in v1's files
+    #[serde(default = "v1_schema")]
     pub schema_version: u32,
     #[serde(default = "default_language")]
     pub language: String,
@@ -163,7 +170,8 @@ mod tests {
         assert_eq!(s.other.get("le_audio_experimental"), Some(&serde_json::Value::Bool(true)));
         let out = serde_json::to_value(&s).unwrap();
         assert_eq!(out["window_x"], 10);
-        assert_eq!(out["schema_version"], SCHEMA_VERSION);
+        // v1 wrote no schema; save() writes the current one (migrate.rs)
+        assert_eq!(out["schema_version"], 1);
         assert!(out.get("max_media_payload").is_none());
     }
 }

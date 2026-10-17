@@ -18,8 +18,6 @@ use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIc
 
 use crate::state::{CoreState, TrayView};
 
-/// Instance guard of v2's core (per user session)
-const CORE_MUTEX: &str = "Local\\A2DPWB_v2_Core";
 /// Profiles listed in the tray menu (as v1)
 const TRAY_PROFILES: usize = 10;
 
@@ -120,7 +118,7 @@ async fn link_sampler(state: Arc<CoreState>) {
 
 pub fn run(args: &[String]) -> i32 {
     let background = args.iter().any(|a| a == "--background" || a == "--minimized");
-    let _instance = match win_sys::single_instance::SingleInstance::acquire(CORE_MUTEX) {
+    let _instance = match win_sys::single_instance::SingleInstance::acquire(&ipc::core_mutex_name()) {
         Ok(Some(g)) => g,
         Ok(None) => {
             // Already running: a start from the shortcut opens the UI

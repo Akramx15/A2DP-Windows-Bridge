@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ConnStatus, Transport, WindowKind } from "./transport";
+import type { ConnStatus, Transport, UpdatePhase, WindowKind } from "./transport";
 import type { ServerMessage } from "./types";
 
 interface UiInfo {
@@ -37,6 +37,11 @@ export async function createTauriTransport(): Promise<Transport> {
     setTheme: (theme) => invoke("set_theme", { theme }),
     onNavigate(cb) {
       void listen<string>("ui://navigate", (e) => cb(e.payload));
+    },
+    updateStatus: () => invoke<UpdatePhase>("update_status"),
+    updateInstall: (manifestUrl) => invoke("update_install", { manifestUrl }),
+    onUpdatePhase(cb) {
+      void listen<UpdatePhase>("update://phase", (e) => cb(e.payload));
     },
     onMinimized(cb) {
       void (async () => {

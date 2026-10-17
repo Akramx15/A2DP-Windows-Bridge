@@ -8,6 +8,7 @@
 pub mod adapter;
 pub mod devices;
 pub mod messages;
+pub mod migrate;
 pub mod paths;
 pub mod profiles;
 mod service;

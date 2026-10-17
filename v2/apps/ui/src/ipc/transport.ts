@@ -11,6 +11,15 @@ export type ConnStatus =
 
 export type WindowKind = "main" | "flyout";
 
+/** The in-app update (src-tauri/src/update.rs) */
+export type UpdatePhase =
+  | { state: "unavailable"; reason: "portable" | "unsigned" }
+  | { state: "idle" }
+  | { state: "downloading"; version: string; downloaded: number; total: number | null }
+  | { state: "waiting"; version: string }
+  | { state: "installing"; version: string }
+  | { state: "failed"; code: string; detail: string };
+
 export interface Transport {
   readonly window: WindowKind;
   /** The window has the Mica backdrop: keep the page background translucent */
@@ -32,4 +41,10 @@ export interface Transport {
   onNavigate(cb: (route: string) => void): void;
   /** The window was minimized */
   onMinimized(cb: () => void): void;
+
+  updateStatus(): Promise<UpdatePhase>;
+  /** Downloads the release of `manifestUrl` (UpdateInfo.manifest_url) and
+   *  installs it once nothing streams; the app restarts */
+  updateInstall(manifestUrl: string): Promise<void>;
+  onUpdatePhase(cb: (p: UpdatePhase) => void): void;
 }

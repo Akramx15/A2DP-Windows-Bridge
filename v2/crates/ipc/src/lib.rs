@@ -18,9 +18,31 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 /// Frames larger than this are refused (a snapshot is a few kB)
 pub const MAX_FRAME: usize = 4 << 20;
 
+/// Development: `A2DPWB_INSTANCE=<name>` gives a core its own pipe and
+/// instance mutex, so that it runs beside the installed one (together with
+/// `A2DPWB_CONFIG_DIR` for a test folder). Letters, digits, '-' and '_' (up
+/// to 32); anything else is ignored. Empty for the normal instance.
+pub fn instance_suffix() -> String {
+    match std::env::var("A2DPWB_INSTANCE") {
+        Ok(v)
+            if !v.is_empty()
+                && v.len() <= 32
+                && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') =>
+        {
+            format!("-{v}")
+        }
+        _ => String::new(),
+    }
+}
+
 /// The user's pipe, from the user's SID string (S-1-5-21-...)
 pub fn pipe_name(user_sid: &str) -> String {
-    format!(r"\\.\pipe\a2dpwb-{user_sid}")
+    format!(r"\\.\pipe\a2dpwb-{user_sid}{}", instance_suffix())
+}
+
+/// The mutex the resident core holds while it runs (per logon session)
+pub fn core_mutex_name() -> String {
+    format!(r"Local\A2DPWB_v2_Core{}", instance_suffix())
 }
 
 #[derive(Debug, thiserror::Error)]

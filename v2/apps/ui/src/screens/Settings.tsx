@@ -1,11 +1,12 @@
 // Settings: language, theme, startup, updates, headphone buttons, volume,
 // developer mode, the settings folder, about.
 
-import { createSignal, Show } from "solid-js";
+import { createSignal, Match, onMount, Show, Switch } from "solid-js";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Dialog, Field, Section, Segmented, Select, Toggle } from "../components/controls";
 import { LANGUAGES, t } from "../i18n";
+import type { UpdatePhase } from "../ipc/transport";
 import { LINKS } from "../lib/links";
 
 export function Settings() {
@@ -16,6 +17,15 @@ export function Settings() {
   const set = (patch: Parameters<typeof saveSettings>[1]) => void saveSettings(app, patch);
   const [quitting, setQuitting] = createSignal(false);
   const update = () => snap().update;
+  // The in-app update (installed copies); otherwise the release page
+  const [phase, setPhase] = createSignal<UpdatePhase>({ state: "unavailable", reason: "portable" });
+  onMount(() => {
+    core.transport.onUpdatePhase(setPhase);
+    void core.transport.updateStatus().then(setPhase, () => {});
+  });
+  const canInstall = () => phase().state === "idle" || phase().state === "failed";
+  const installUpdate = (manifestUrl: string) => app.run(() => core.transport.updateInstall(manifestUrl));
+  const mb = (bytes: number) => (bytes / 1048576).toFixed(1);
 
   const checkNow = async () => {
     await app.run(async () => {
@@ -88,12 +98,47 @@ export function Settings() {
               kind="info"
               title={t("update.available_title")}
               actions={
-                <Button kind="strong" icon="open" onClick={() => core.transport.openUrl(u().url)}>
-                  {t("ui.settings.open_download")}
-                </Button>
+                <>
+                  <Show when={canInstall()}>
+                    <Button kind="strong" icon="arrow_sync" onClick={() => installUpdate(u().manifest_url)}>
+                      {t("ui.update.install")}
+                    </Button>
+                  </Show>
+                  <Button
+                    kind={phase().state === "unavailable" ? "strong" : undefined}
+                    icon="open"
+                    onClick={() => core.transport.openUrl(u().url)}
+                  >
+                    {t("ui.settings.open_download")}
+                  </Button>
+                </>
               }
             >
               {t("ui.settings.update_available", u().version, update().current_version)}
+              <Switch>
+                <Match when={phase().state === "unavailable" && phase()}>
+                  {(p) => {
+                    const reason = (p() as Extract<UpdatePhase, { state: "unavailable" }>).reason;
+                    return <div class="hint">{t(reason === "unsigned" ? "ui.update.unsigned" : "ui.update.portable")}</div>;
+                  }}
+                </Match>
+                <Match when={phase().state === "downloading" && phase()}>
+                  {(p) => {
+                    const d = p() as Extract<UpdatePhase, { state: "downloading" }>;
+                    const progress = d.total ? `${mb(d.downloaded)} / ${mb(d.total)} MB` : `${mb(d.downloaded)} MB`;
+                    return <div class="hint">{t("ui.update.downloading", d.version || u().version, progress)}</div>;
+                  }}
+                </Match>
+                <Match when={phase().state === "waiting" && phase()}>
+                  {(p) => <div class="hint">{t("ui.update.waiting", (p() as { version: string }).version)}</div>}
+                </Match>
+                <Match when={phase().state === "installing" && phase()}>
+                  {(p) => <div class="hint">{t("ui.update.installing", (p() as { version: string }).version)}</div>}
+                </Match>
+                <Match when={phase().state === "failed" && phase()}>
+                  {(p) => <div class="hint">{t("ui.update.failed", (p() as { code: string }).code)}</div>}
+                </Match>
+              </Switch>
             </Banner>
           )}
         </Show>

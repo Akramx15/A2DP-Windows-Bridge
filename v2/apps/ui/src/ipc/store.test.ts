@@ -33,6 +33,11 @@ function fakeTransport() {
     async setTheme() {},
     onNavigate() {},
     onMinimized() {},
+    async updateStatus() {
+      return { state: "idle" };
+    },
+    async updateInstall() {},
+    onUpdatePhase() {},
   };
   return {
     transport,

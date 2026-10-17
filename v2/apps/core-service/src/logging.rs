@@ -48,6 +48,10 @@ pub const KEEP_FILES: usize = 7;
 /// dropped
 #[cfg_attr(not(test), allow(dead_code))]
 pub const SUBSCRIBER_QUEUE: usize = 1024;
+/// Lines waiting for the file writer before new ones are dropped. The
+/// queue is allocated in full up front: tracing-appender's default (128 000
+/// lines) alone is 4 MB of the resident core's memory.
+const FILE_QUEUE_LINES: usize = 8192;
 const FILE_PREFIX: &str = "a2dpwb-core";
 
 /// Where the logs go
@@ -114,7 +118,9 @@ pub fn init(opts: &LogOptions) -> LogGuard {
     let mut file_error = None;
     let (file_layer, file_guard) = match opts.dir.as_deref().map(file_appender) {
         Some(Ok(appender)) => {
-            let (writer, guard) = tracing_appender::non_blocking(appender);
+            let (writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
+                .buffered_lines_limit(FILE_QUEUE_LINES)
+                .finish(appender);
             let layer = tracing_subscriber::fmt::layer().with_writer(writer).with_ansi(false).with_timer(timer);
             (Some(layer), Some(guard))
         }

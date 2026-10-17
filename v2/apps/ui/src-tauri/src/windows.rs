@@ -153,7 +153,9 @@ pub fn start_idle_exit(app: AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
             let any_visible = app.webview_windows().values().any(|w| w.is_visible().unwrap_or(false));
-            if any_visible {
+            // A downloaded update waits in this process for the stream to end
+            let updating = app.try_state::<std::sync::Arc<crate::update::Updates>>().is_some_and(|u| u.busy());
+            if any_visible || updating {
                 hidden_since = None;
                 continue;
             }

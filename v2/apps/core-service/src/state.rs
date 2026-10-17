@@ -583,6 +583,16 @@ impl CoreState {
                 self.quit();
                 Ok(Value::Null)
             }
+            Method::AppQuitForUpdate => match self.service.state() {
+                CoreStreamState::Connecting | CoreStreamState::Streaming | CoreStreamState::Reconnecting => {
+                    Err(err("app.streaming", "ui.update.streaming"))
+                }
+                CoreStreamState::Idle | CoreStreamState::Error => {
+                    tracing::info!("exiting for an update");
+                    self.quit();
+                    Ok(Value::Null)
+                }
+            },
         }
     }
 
@@ -593,7 +603,12 @@ impl CoreState {
         self.publish(Event::Update(UpdateState { checking: true, ..s.update.clone() }));
         let prereleases = self.service.settings().include_prereleases;
         let available = match update::check(update::current_version(), prereleases) {
-            Ok(r) => r.map(|r| ipc::UpdateInfo { version: r.version, url: r.url, prerelease: r.prerelease }),
+            Ok(r) => r.map(|r| ipc::UpdateInfo {
+                manifest_url: update::manifest_url(&r.tag),
+                version: r.version,
+                url: r.url,
+                prerelease: r.prerelease,
+            }),
             Err(e) => {
                 tracing::warn!("update check failed: {e}");
                 s.update.available.clone()

@@ -254,6 +254,8 @@ pub struct Service {
 
 impl Service {
     pub fn new(opts: ServiceOptions, events: Sender<ServiceEvent>) -> Service {
+        // A folder v1 used is backed up and brought to v2's schema first
+        crate::migrate::prepare(&opts.config_dir);
         let settings = Settings::load(&opts.config_dir);
         let inner = Arc::new(Inner {
             opts,

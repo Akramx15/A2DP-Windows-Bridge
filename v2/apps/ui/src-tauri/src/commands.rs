@@ -11,6 +11,7 @@ use serde_json::Value;
 use tauri::{AppHandle, State, WebviewWindow};
 
 use crate::connection::{Ipc, Status};
+use crate::update::{self, Phase, Updates};
 use crate::windows;
 
 /// Sends a request to the core -> its result, or the core's ErrorInfo
@@ -90,4 +91,18 @@ pub fn reveal_path(path: String) -> Result<(), String> {
         return Err(format!("{path} does not exist"));
     }
     tauri_plugin_opener::reveal_item_in_dir(p).map_err(|e| e.to_string())
+}
+
+/// The in-app update's state (also sent as `update://phase`)
+#[tauri::command]
+pub fn update_status(updates: State<'_, Arc<Updates>>) -> Phase {
+    updates.phase()
+}
+
+/// Downloads the update of `manifest_url` (UpdateInfo.manifest_url) and
+/// installs it as soon as nothing streams. Only this repository's release
+/// manifests are accepted.
+#[tauri::command]
+pub fn update_install(app: AppHandle, manifest_url: String) -> Result<(), String> {
+    update::start(&app, manifest_url)
 }

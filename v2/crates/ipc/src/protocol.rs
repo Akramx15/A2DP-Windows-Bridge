@@ -219,8 +219,12 @@ pub struct UpdateState {
 
 pub struct UpdateInfo {
     pub version: String,
+    /// The release page
     pub url: String,
     pub prerelease: bool,
+    /// The updater manifest attached to the release (latest.json): the UI
+    /// installs from it when it is an installed copy with an updater key
+    pub manifest_url: String,
 }
 
 /// The whole state
@@ -375,6 +379,11 @@ pub enum Method {
     /// Ends the core (streaming stops)
     #[serde(rename = "app.quit")]
     AppQuit,
+    /// Ends the core so that the UI can install an update, unless it
+    /// streams or connects (error `app.streaming`): an update never cuts
+    /// the audio
+    #[serde(rename = "app.quit_for_update")]
+    AppQuitForUpdate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

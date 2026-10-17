@@ -10,7 +10,7 @@
 //! frontend's (src/ipc/store.ts).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -66,6 +66,9 @@ pub struct Ipc {
     next_id: AtomicU64,
     /// diag.subscribe per window label; the core gets their union
     subscriptions: Mutex<HashMap<String, Subscription>>,
+    /// An update stops the core (update.rs): its Bye does not end the UI,
+    /// and it is not started again
+    updating: AtomicBool,
 }
 
 /// A poisoned lock only means another thread panicked while holding it;
@@ -102,7 +105,16 @@ impl Ipc {
             pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             subscriptions: Mutex::new(HashMap::new()),
+            updating: AtomicBool::new(false),
         })
+    }
+
+    pub fn set_updating(&self, on: bool) {
+        self.updating.store(on, Ordering::Release);
+    }
+
+    fn updating(&self) -> bool {
+        self.updating.load(Ordering::Acquire)
     }
 
     pub fn status(&self) -> Status {
@@ -239,6 +251,8 @@ async fn run(app: AppHandle, ipc: Arc<Ipc>) {
         *lock(&ipc.out) = None;
         ipc.fail_pending();
         match ended {
+            // The update's installer runs next and starts the UI again
+            Ended::Bye if ipc.updating() => tokio::time::sleep(Duration::from_millis(300)).await,
             Ended::Bye => {
                 app.exit(0);
                 return;
@@ -263,6 +277,7 @@ async fn connect(app: &AppHandle, ipc: &Ipc, name: &str) -> NamedPipeClient {
                 tokio::time::sleep(Duration::from_millis(50)).await;
                 continue;
             }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && ipc.updating() => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let due = spawned.is_none_or(|t| t.elapsed() >= CORE_RESPAWN_INTERVAL);
                 if due {
@@ -285,8 +300,8 @@ async fn connect(app: &AppHandle, ipc: &Ipc, name: &str) -> NamedPipeClient {
     }
 }
 
-/// Starts `a2dpwb-core.exe --background` from a2dpwb.exe's folder.
-/// (The installer will ship it as a Tauri sidecar in the same folder.)
+/// Starts `a2dpwb-core.exe --background` from a2dpwb.exe's folder (the
+/// installer puts it there as a Tauri sidecar)
 fn spawn_core() -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     // The core outlives the UI: no console, not in our process group (a

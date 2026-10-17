@@ -7,7 +7,7 @@
 // on Windows' Bluetooth driver), ?mock=error (the last connection failed),
 // ?window=flyout (the flyout view).
 
-import type { ConnStatus, Transport, WindowKind } from "./transport";
+import type { ConnStatus, Transport, UpdatePhase, WindowKind } from "./transport";
 import type {
   AdapterInfo,
   AudioApp,
@@ -25,7 +25,7 @@ import type {
   StreamInfo,
 } from "./types";
 
-export type MockScenario = "normal" | "fresh" | "error";
+export type MockScenario = "normal" | "fresh" | "error" | "update";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -137,7 +137,19 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     profiles,
     active_profile: fresh ? null : "WH-1000XM5 (LDAC)",
     settings: sampleSettings(),
-    update: { checking: false, available: null, current_version: "2.0.0-alpha.1" },
+    update: {
+      checking: false,
+      available:
+        scenario === "update"
+          ? {
+              version: "2.0.0-beta.1",
+              url: "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/tag/v2.0.0-beta.1",
+              prerelease: true,
+              manifest_url: "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/download/v2.0.0-beta.1/latest.json",
+            }
+          : null,
+      current_version: "2.0.0-alpha.1",
+    },
     config_dir: "C:\\Users\\you\\AppData\\Roaming\\A2DPWB",
   };
 }
@@ -188,6 +200,8 @@ export class MockCore implements Transport {
   private capturing: string | null = null;
   private dropped = 0;
   private navigate: (route: string) => void = () => {};
+  private updatePhase: UpdatePhase = { state: "idle" };
+  private onPhase: (p: UpdatePhase) => void = () => {};
 
   constructor(opts: MockOptions = {}) {
     this.snap = sampleSnapshot(opts.scenario);
@@ -322,6 +336,34 @@ export class MockCore implements Transport {
     this.navigate = cb;
   }
   onMinimized() {}
+
+  async updateStatus() {
+    return this.updatePhase;
+  }
+  /** Downloads in a second, then installs once nothing streams */
+  async updateInstall(manifestUrl: string) {
+    const version = /download\/v?([^/]+)\/latest\.json$/.exec(manifestUrl)?.[1] ?? "?";
+    const total = 9_400_000;
+    const set = (p: UpdatePhase) => {
+      this.updatePhase = p;
+      this.onPhase(p);
+    };
+    for (let i = 1; i <= 5; i++) {
+      this.later(i * 200, () => set({ state: "downloading", version, downloaded: (total * i) / 5, total }));
+    }
+    const install = () => {
+      if (this.snap.stream.state === "idle" || this.snap.stream.state === "error") {
+        set({ state: "installing", version });
+      } else {
+        set({ state: "waiting", version });
+        this.later(1000, install);
+      }
+    };
+    this.later(1100, install);
+  }
+  onUpdatePhase(cb: (p: UpdatePhase) => void) {
+    this.onPhase = cb;
+  }
 
   /** Stops every timer (tests) */
   dispose() {

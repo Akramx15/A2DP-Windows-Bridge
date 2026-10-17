@@ -11,7 +11,10 @@
 
 mod commands;
 mod connection;
+mod update;
 mod windows;
+
+use tauri::Manager;
 
 fn main() {
     let flyout = std::env::args().any(|a| a == "--flyout");
@@ -20,6 +23,9 @@ fn main() {
         // Must be the first plugin: a second launch ends before anything
         // else starts
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| windows::on_second_instance(app, &args)))
+        // Its commands are not open to the webview (capabilities): updates
+        // go through update.rs only
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(ipc.clone())
         .invoke_handler(tauri::generate_handler![
             commands::ipc_request,
@@ -31,10 +37,13 @@ fn main() {
             commands::open_url,
             commands::open_folder,
             commands::reveal_path,
+            commands::update_status,
+            commands::update_install,
         ])
         .on_window_event(windows::on_window_event)
         .setup(move |app| {
             let handle = app.handle().clone();
+            app.manage(update::Updates::new(&handle));
             connection::start(handle.clone(), ipc);
             if flyout {
                 windows::show_flyout(&handle)?;

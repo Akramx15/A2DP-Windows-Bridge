@@ -137,3 +137,21 @@ describe("every screen renders", () => {
     expect(await screen.findByRole("link", { name: "ホーム" })).toBeInTheDocument();
   });
 });
+
+describe("update", () => {
+  it("installs at once when nothing streams", async () => {
+    start("#/settings", { scenario: "update" });
+    fireEvent.click(await screen.findByRole("button", { name: "Update now" }));
+    await screen.findByText(/Installing version 2\.0\.0-beta\.1/);
+  });
+
+  it("waits for the stream to stop", async () => {
+    start("#/settings", { scenario: "update" });
+    await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(mock!["snap"].stream.state).toBe("streaming"));
+    fireEvent.click(await screen.findByRole("button", { name: "Update now" }));
+    await screen.findByText(/It is installed when streaming stops/);
+    await mock!.call("stream.stop");
+    await screen.findByText(/Installing version 2\.0\.0-beta\.1/, {}, { timeout: 3000 });
+  });
+});

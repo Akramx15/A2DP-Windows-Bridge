@@ -2,6 +2,7 @@
 //! for the UI). `--cli` runs the command line instead (same core, no tray
 //! and no IPC). A GUI-subsystem program: the resident process opens no
 //! console window; `--cli` attaches to the console it was started from.
+//! `--quit` asks a running core to exit (the installer uses it).
 
 #![forbid(unsafe_code)]
 #![windows_subsystem = "windows"]
@@ -9,12 +10,18 @@
 mod cli;
 mod driver;
 mod logging;
+mod quit;
 mod resident;
 mod server;
 mod state;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--quit") {
+        // Neither logs nor the settings folder: only the running core's
+        win_sys::console::attach_parent();
+        std::process::exit(quit::run());
+    }
     let cli_mode = args.iter().any(|a| a == "--cli");
     if cli_mode {
         win_sys::console::attach_parent();

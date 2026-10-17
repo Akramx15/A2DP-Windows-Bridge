@@ -34,6 +34,8 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 pub struct Release {
     /// e.g. "2.0.1" (the tag without its leading 'v')
     pub version: String,
+    /// The tag as published, e.g. "v2.0.1"
+    pub tag: String,
     /// Its release page (html_url)
     pub url: String,
     pub prerelease: bool,
@@ -102,7 +104,15 @@ fn release_of(j: &Value) -> Option<Release> {
         .get("prerelease")
         .and_then(Value::as_bool)
         .unwrap_or_else(|| parse_version(&version).is_some_and(|v| !v.pre.is_empty()));
-    Some(Release { version, url, prerelease })
+    Some(Release { version, tag: tag.to_string(), url, prerelease })
+}
+
+/// The updater manifest of a release: every release (pre-release or not)
+/// carries its own latest.json (installer/build-release.ps1), so the
+/// pre-release channel never sees a manifest of the stable one's and the
+/// other way round
+pub fn manifest_url(tag: &str) -> String {
+    format!("https://github.com/{REPO}/releases/download/{tag}/latest.json")
 }
 
 /// The answer of `/releases/latest`
@@ -237,9 +247,14 @@ mod tests {
             r,
             Release {
                 version: "1.1.0".into(),
+                tag: "v1.1.0".into(),
                 url: "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/tag/v1.1.0".into(),
                 prerelease: false
             }
+        );
+        assert_eq!(
+            manifest_url(&r.tag),
+            "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/download/v1.1.0/latest.json"
         );
         // No html_url: the releases page
         assert_eq!(parse_latest(r#"{"tag_name":"v1.0.0"}"#).unwrap().url, RELEASES_PAGE);
