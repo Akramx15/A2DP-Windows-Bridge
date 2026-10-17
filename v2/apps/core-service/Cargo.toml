@@ -1,5 +1,6 @@
 [package]
 name = "a2dpwb-core-exe"
+description = "a2dpwb-core.exe: the resident A2DPWB process (tray, IPC) and the command line"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,6 +8,14 @@ license.workspace = true
 [[bin]]
 name = "a2dpwb-core"
 path = "src/main.rs"
+
+[dependencies]
+a2dpwb-core.workspace = true
+bt-host.workspace = true
+codec.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+ctrlc = "3"
 
 [lints]
 workspace = true

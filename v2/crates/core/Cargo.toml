@@ -1,8 +1,24 @@
 [package]
 name = "a2dpwb-core"
+description = "A2DPWB's core: the streaming state machine, Bluetooth stack lifecycle, profiles, settings, devices"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[lib]
+name = "a2dpwb_core"
+
+[dependencies]
+bt-host.workspace = true
+hci-transport.workspace = true
+codec.workspace = true
+pipeline.workspace = true
+audio-capture.workspace = true
+win-sys.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

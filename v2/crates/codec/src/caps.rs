@@ -103,7 +103,7 @@ pub struct LocalEndpoint {
 /// The endpoints of the built-in codecs, in v1's order (endpoint slots)
 pub fn local_endpoints() -> Vec<LocalEndpoint> {
     let mut eps = Vec::new();
-    let mut vendor = |kind: CodecKind, vid: u32, cid: u16, len: usize, caps_tail: &[u8], config_tail: &[u8]| {
+    let vendor = |kind: CodecKind, vid: u32, cid: u16, len: usize, caps_tail: &[u8], config_tail: &[u8]| {
         let mut caps = vendor_header(vid, cid);
         caps.extend_from_slice(caps_tail);
         caps.resize(len, 0);
@@ -556,10 +556,8 @@ pub fn choose(
     } else {
         Unavailable::NotSupported
     };
-    if fallback {
-        if let Some(kind) = caps.best() {
-            return Ok(Choice { kind, replaced: Some((wanted, why)) });
-        }
+    if fallback && let Some(kind) = caps.best() {
+        return Ok(Choice { kind, replaced: Some((wanted, why)) });
     }
     Err(Some((wanted, why)))
 }

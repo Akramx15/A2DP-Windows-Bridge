@@ -541,13 +541,11 @@ impl Stack {
         // SAFETY: on the BTstack thread after the run loop has stopped; each
         // deinit only for what was initialized.
         unsafe {
-            if init & INIT_HCI != 0 {
-                if ffi::a2dpwb_hci_get_state() != 0 {
-                    // Power off did not finish: release the device anyway, or
-                    // the next open in this process finds it busy
-                    tracing::warn!(target: "btstack", "HCI not off at exit, closing the transport");
-                    transport::close();
-                }
+            if init & INIT_HCI != 0 && ffi::a2dpwb_hci_get_state() != 0 {
+                // Power off did not finish: release the device anyway, or
+                // the next open in this process finds it busy
+                tracing::warn!(target: "btstack", "HCI not off at exit, closing the transport");
+                transport::close();
             }
             if init & INIT_AVRCP != 0 {
                 ffi::avrcp_target_deinit();

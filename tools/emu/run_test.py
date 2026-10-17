@@ -494,12 +494,15 @@ def main():
     parser.add_argument('--max-packet', type=int, help='passed to A2DPWB --max-packet (default: its own)')
     parser.add_argument('--build-dir', default=os.path.join(REPO, 'build'))
     parser.add_argument('--config', default='Release', help='build configuration (Release / Debug)')
+    parser.add_argument('--a2dpwb', help='A2DPWB executable to test (default: <build-dir>/app/<config>/A2DPWB.exe; '
+                        'v2: v2/target/release/a2dpwb-core.exe)')
+    parser.add_argument('--decoder', help='a2dpwb_decode executable (default: from --build-dir)')
     parser.add_argument('--out', default=os.path.join(HERE, 'out'))
     parser.add_argument('--base-port', type=int, default=BASE_PORT,
                         help='first TCP port (LE Audio cases use +100); change it to run several tests at once')
     args = parser.parse_args()
-    args.a2dpwb = os.path.join(args.build_dir, 'app', args.config, 'A2DPWB.exe')
-    args.decoder = os.path.join(args.build_dir, 'tools', 'a2dp_decode', args.config, 'a2dpwb_decode.exe')
+    args.a2dpwb = args.a2dpwb or os.path.join(args.build_dir, 'app', args.config, 'A2DPWB.exe')
+    args.decoder = args.decoder or os.path.join(args.build_dir, 'tools', 'a2dp_decode', args.config, 'a2dpwb_decode.exe')
     for path, hint in ((VENV_PYTHON, 'run: python tools/emu/setup_env.py'),
                        (args.a2dpwb, 'build A2DPWB'), (args.decoder, 'build a2dpwb_decode')):
         if not os.path.exists(path):

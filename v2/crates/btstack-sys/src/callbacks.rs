@@ -215,10 +215,10 @@ extern "C" fn a2dpwb_rs_log_packet(packet_type: u8, incoming: u8, packet: *const
         // SAFETY: HCI dump passes a buffer of `len` bytes valid during the call.
         let data = unsafe { std::slice::from_raw_parts(packet, len as usize) };
         LOGGER.with(|l| {
-            if let Ok(mut l) = l.try_borrow_mut() {
-                if let Some(logger) = l.as_mut() {
-                    logger(packet_type, incoming != 0, data);
-                }
+            if let Ok(mut l) = l.try_borrow_mut()
+                && let Some(logger) = l.as_mut()
+            {
+                logger(packet_type, incoming != 0, data);
             }
         });
     })
