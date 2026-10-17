@@ -80,7 +80,9 @@ not secret; once it is final it may also be committed as `plugins.updater.pubkey
 - `/KEEPV1` on the command line leaves v1, a running v1 and the Run value alone. Only for testing
   v2 beside v1: both use the same settings folder and cannot use the adapter at the same time.
   For example, a throwaway install: `A2DPWB-<ver>-win64-setup.exe /S /NS /KEEPV1 /D=C:\temp\a2dpwb-test`
-  (`/NS`: no shortcuts; `/D` must come last). Remove it with its `uninstall.exe /S`.
+  (`/NS`: no shortcuts; `/D` must come last). Remove it with its `uninstall.exe /S`, then delete
+  `HKCU\Software\Seiya Funaoka\A2DP Windows Bridge`: Tauri's uninstaller keeps that folder there,
+  and the next install would offer it again.
 
 ## Portable copy
 
