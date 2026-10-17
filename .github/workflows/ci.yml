@@ -68,7 +68,7 @@ jobs:
       - name: No unsafe outside the FFI crates
         shell: pwsh
         run: |
-          $allowed = 'btstack-sys','ldac-sys','openaptx-sys','fdkaac-sys','lhdcv5-sys','win-sys'
+          $allowed = 'btstack-sys','ldac-sys','openaptx-sys','fdkaac-sys','lhdcv5-sys','opus-sys','win-sys'
           $src = (Resolve-Path app/src).Path
           $bad = Get-ChildItem $src -Recurse -Filter *.rs |
             Where-Object { $_.FullName -notmatch '\\(node_modules|target)\\' } |
