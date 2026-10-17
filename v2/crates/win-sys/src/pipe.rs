@@ -76,7 +76,8 @@ pub fn create_server(name: &str, first: bool) -> std::io::Result<NamedPipeServer
     options.first_pipe_instance(first).reject_remote_clients(true);
     // SAFETY: attrs is a valid SECURITY_ATTRIBUTES whose descriptor lives
     // until after the call (CreateNamedPipeW copies it).
-    let server = unsafe { options.create_with_security_attributes_raw(name, std::ptr::from_mut(&mut attrs).cast::<c_void>()) };
+    let server =
+        unsafe { options.create_with_security_attributes_raw(name, std::ptr::from_mut(&mut attrs).cast::<c_void>()) };
     // SAFETY: allocated by ConvertStringSecurityDescriptorToSecurityDescriptorW.
     unsafe { LocalFree(Some(HLOCAL(sd.0))) };
     server

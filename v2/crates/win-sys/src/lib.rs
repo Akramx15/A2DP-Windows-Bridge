@@ -4,6 +4,7 @@
 
 pub mod audio_policy;
 pub mod autostart;
+pub mod console;
 pub mod driver;
 pub mod elevation;
 pub mod media_keys;

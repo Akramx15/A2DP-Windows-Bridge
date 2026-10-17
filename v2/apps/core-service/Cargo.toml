@@ -13,9 +13,23 @@ path = "src/main.rs"
 a2dpwb-core.workspace = true
 bt-host.workspace = true
 codec.workspace = true
+ipc.workspace = true
+win-sys.workspace = true
+audio-capture.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 ctrlc = "3"
+# logging.rs: daily log files, local timestamps
+tracing-appender = "0.2"
+time = { version = "0.3", features = ["local-offset"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "time", "macros", "io-util"] }
+tray-icon = "0.26"
+tao = "0.37"
+
+[build-dependencies]
+embed-resource = "3"
 
 [lints]
 workspace = true

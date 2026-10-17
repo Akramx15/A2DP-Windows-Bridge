@@ -300,6 +300,30 @@ impl Service {
         self.inner.stats.clone()
     }
 
+    pub fn config_dir(&self) -> &std::path::Path {
+        &self.inner.opts.config_dir
+    }
+
+    pub fn capture(&self) -> &HciCapture {
+        &self.inner.opts.capture
+    }
+
+    /// Replaces the settings (saved by the caller) and applies what affects
+    /// a running stack
+    pub fn set_settings(&self, settings: Settings) {
+        if let Some(h) = self.host() {
+            h.set_media_keys(settings.media_keys);
+            h.set_afh_policy(self.inner.opts.afh.as_deref().unwrap_or(&settings.afh));
+        }
+        *self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()) = settings;
+    }
+
+    /// Stops the stack, releasing the adapter (e.g. before its driver is
+    /// changed); the next use starts a new one
+    pub fn release_adapter(&self) {
+        self.shutdown();
+    }
+
     pub fn settings(&self) -> Settings {
         self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }

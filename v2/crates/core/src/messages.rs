@@ -35,6 +35,31 @@ impl fmt::Display for Msg {
     }
 }
 
+/// Text of `key` in `lang` (en, ja, de, fr, es, ko, zh-CN, zh-TW), English
+/// when it has no translation, `default` when not even English has it. For
+/// the few texts the core shows itself (tray menu, notifications).
+pub fn translate(lang: &str, key: &str, default: &str) -> String {
+    static LANGS: OnceLock<HashMap<&'static str, HashMap<String, String>>> = OnceLock::new();
+    let langs = LANGS.get_or_init(|| {
+        let files: [(&str, &str); 7] = [
+            ("ja", include_str!("../../../../app/lang/ja.json")),
+            ("de", include_str!("../../../../app/lang/de.json")),
+            ("fr", include_str!("../../../../app/lang/fr.json")),
+            ("es", include_str!("../../../../app/lang/es.json")),
+            ("ko", include_str!("../../../../app/lang/ko.json")),
+            ("zh-CN", include_str!("../../../../app/lang/zh-CN.json")),
+            ("zh-TW", include_str!("../../../../app/lang/zh-TW.json")),
+        ];
+        files.iter().map(|(l, text)| (*l, serde_json::from_str(text).unwrap_or_default())).collect()
+    });
+    langs
+        .get(lang)
+        .and_then(|m| m.get(key))
+        .or_else(|| english_strings().get(key))
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
+}
+
 fn english_strings() -> &'static HashMap<String, String> {
     static STRINGS: OnceLock<HashMap<String, String>> = OnceLock::new();
     STRINGS.get_or_init(|| serde_json::from_str(include_str!("../../../../app/lang/en.json")).unwrap_or_default())

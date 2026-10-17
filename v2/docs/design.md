@@ -95,7 +95,7 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | 3. エンジン | `bt-host` | btstackのランループを専用スレッドに閉じ込め、外からはコマンドチャネルと型付きイベントだけで操作する。GAP / A2DP Source / AVRCP（絶対音量、ボタン操作）/ SDP / リンクキー / AFH / ファームウェア読み込み / pklgキャプチャ | 禁止 |
 | 3. エンジン | `pipeline` | リングバッファ、形式変換、リサンプル、ダウンミックス、エンコード、メディアペイロードの組み立て、送信ペースの制御、ABR | 禁止 |
 | 4. コア | `core`（パッケージ名 `a2dpwb-core`） | 状態機械（アダプタ・デバイス・ストリーム）、自動再接続、スリープ復帰、プロファイル、設定、音量同期、更新チェック、受信機テストのクライアント、統計の集計 | 禁止 |
-| 4. コア | `ipc` | コアとUIで共有するプロトコル型（serde）とNamed Pipe通信。`specta` でTypeScriptの型を自動生成する | 禁止 |
+| 4. コア | `ipc` | コアとUIで共有するプロトコル型（serde）とNamed Pipe通信。`ts-rs` でTypeScriptの型を自動生成する（`cargo test -p ipc export_bindings`） | 禁止 |
 | 5. 実行ファイル | `a2dpwb-core.exe`（`apps/core-service`） | 常駐プロセス。コア、タスクトレイ（`tray-icon`）、IPCサーバー。`--cli` でも同じ `core` を使うので、現行版のような重複ロジックはなくなる | 禁止 |
 | 5. 実行ファイル | `a2dpwb.exe`（`apps/ui`） | Tauri 2のUI。バックエンドはIPCクライアントだけを持ち、フロントは **SolidJS** + TypeScript + Vite | 禁止 |
 | 5. 実行ファイル | `a2dpwb-driver.exe`（`apps/driver-helper`） | 管理者権限で一時起動する昇格ヘルパー。`win-sys::driver` を呼んでWinUSBを割り当て / 解除して終了する | 禁止 |
@@ -404,4 +404,5 @@ Windows 8 以降は WinUSB ドライバ（`winusb.inf`）が OS に標準で入�
 
 ## 改訂履歴
 
+- 2026-10-17（実装に合わせた変更）: TypeScriptの型生成は `specta`（2.0 がまだ RC）ではなく `ts-rs` を使う。Named Pipe は tokio の非同期パイプ（同じ接続で読み書きを同時に行うため。同期ハンドルでは読み取り中の書き込みが待たされる）で、ユーザーだけに絞るDACLは `win-sys::pipe` で付ける。トレイは `tray-icon` を `tao` のイベントループで動かす（右クリックのネイティブメニュー、左クリックでUIのフライアウト）。`a2dpwb-core.exe` は GUI サブシステムで、`--cli` のときだけ呼び出し元のコンソールにつなぐ。
 - 2026-10-17: 未決事項の決定を反映。フロントエンドを SolidJS に変更。ARM64 を v2.0 の対象に追加。アプリ内でのWinUSB割り当て / 解除（SetupAPI、昇格ヘルパー `a2dpwb-driver.exe`）を追加し、libwdi を使わない理由を記録。作業ブランチを `feat/v2-rust` から `develop-2.0`（`feat/le-audio` から分岐）に変更。FFI を bindgen から手書き + Cシムに変更（libclang を不要にするため）。`core` クレートのパッケージ名を `a2dpwb-core` に。移行計画の4フェーズと完了条件を表にした。

@@ -47,7 +47,6 @@ pub struct ErrorInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "snake_case")]
-
 pub enum AdapterStatus {
     /// No stack running (started on the first scan or connection)
     #[default]
@@ -59,7 +58,6 @@ pub enum AdapterStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
-
 pub enum DriverKind {
     /// WinUSB: usable by A2DPWB
     Winusb,
@@ -117,7 +115,6 @@ pub struct Device {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 #[serde(rename_all = "snake_case")]
-
 pub enum StreamState {
     #[default]
     Idle,
@@ -266,7 +263,6 @@ pub struct LinkSample {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
-
 pub enum LogLevel {
     Error,
     Warn,
@@ -287,7 +283,6 @@ pub struct LogLine {
 /// One part of the state changed, or a subscribed stream produced data
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-
 pub enum Event {
     Adapter(AdapterState),
     Devices(Vec<Device>),
@@ -315,7 +310,6 @@ pub enum Event {
 /// are noted per method; `null` where none.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "method", content = "params")]
-
 pub enum Method {
     /// -> Snapshot
     #[serde(rename = "state.snapshot")]
@@ -335,13 +329,13 @@ pub enum Method {
     DeviceForget { address: String },
     /// Adds or replaces a profile (`original_name`: the one renamed)
     #[serde(rename = "profile.save")]
-    ProfileSave { profile: Profile, original_name: Option<String> },
+    ProfileSave { profile: Box<Profile>, original_name: Option<String> },
     #[serde(rename = "profile.delete")]
     ProfileDelete { name: String },
     #[serde(rename = "profile.set_active")]
     ProfileSetActive { name: String },
     #[serde(rename = "settings.set")]
-    SettingsSet { settings: Settings },
+    SettingsSet { settings: Box<Settings> },
     /// -> AdapterInfo[] (also as an event)
     #[serde(rename = "adapter.list")]
     AdapterList,
@@ -407,7 +401,6 @@ pub struct DiagInfo {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-
 pub enum ClientMessage {
     Hello {
         protocol: u32,
@@ -423,7 +416,6 @@ pub enum ClientMessage {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-
 pub enum ServerMessage {
     Welcome {
         protocol: u32,

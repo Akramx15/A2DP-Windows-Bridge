@@ -496,6 +496,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         return inner.notify(StreamState::Error, Msg::new("error.audio_capture_start"));
     };
 
+    // Headphone volume and a Windows volume act as one (volume_sync.rs)
+    let mut volume = crate::volume_sync::EndpointChoice::for_stream(&req.volume_sync, &req.source)
+        .map(crate::volume_sync::VolumeSyncer::new);
+
     // ---- streaming ----
     let mut pipeline = Some(pipeline);
     let mut app_ticks = 0u32;
@@ -504,6 +508,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         inner.wait_tick(Duration::from_millis(200));
         if stopped() {
             break;
+        }
+        if let Some(v) = volume.as_mut() {
+            v.tick(true, &*host);
         }
         inner.remember_volume(&addr, host.remote_volume());
 
@@ -645,6 +652,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         && let Some(s) = p.stop()
     {
         host.return_media_sink(s);
+    }
+    if let Some(mut v) = volume.take() {
+        v.stop();
     }
     host.stop_stream();
     host.disconnect();

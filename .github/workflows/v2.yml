@@ -1,0 +1,128 @@
+# A2DPWB v2 (v2/): checks on every pull request and push, the emulator
+# end-to-end test on pushes to develop-2.0, nightly and on demand.
+name: v2
+
+on:
+  pull_request:
+    paths: ["v2/**", "extern/**", "app/lang/**", "tools/emu/**", ".github/workflows/v2.yml"]
+  push:
+    branches: [develop-2.0]
+    paths: ["v2/**", "extern/**", "app/lang/**", "tools/emu/**", ".github/workflows/v2.yml"]
+  schedule:
+    - cron: "0 18 * * *" # 03:00 JST
+  workflow_dispatch:
+
+concurrency:
+  group: v2-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Unit tests
+        run: cargo test --workspace
+      - name: No unsafe outside the FFI crates
+        shell: pwsh
+        run: |
+          $allowed = 'btstack-sys','ldac-sys','openaptx-sys','fdkaac-sys','lhdcv5-sys','win-sys'
+          $bad = Get-ChildItem crates, apps -Recurse -Filter *.rs |
+            Where-Object { $_.FullName -notmatch '\\(node_modules|target)\\' } |
+            Where-Object { $crate = ($_.FullName -split '\\(crates|apps)\\')[2].Split('\')[0]; $allowed -notcontains $crate } |
+            Select-String -Pattern '\bunsafe\s*(\{|fn|impl|extern)' -List
+          if ($bad) { $bad | ForEach-Object { Write-Host $_ }; exit 1 }
+
+  licenses:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: v2/Cargo.toml
+
+  ui:
+    runs-on: windows-latest
+    if: hashFiles('v2/apps/ui/package.json') != ''
+    defaults:
+      run:
+        working-directory: v2/apps/ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: v2/apps/ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm exec vitest run
+      - run: python ../../../tools/check_lang.py
+        working-directory: v2/apps/ui
+
+  emulator:
+    name: Emulator end to end (7 codecs)
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Bumble environment
+        run: python tools/emu/setup_env.py
+      - name: a2dpwb_decode (v1's decoder tool)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          cmake --build build --config Release --target a2dpwb_decode
+      - name: a2dpwb-core.exe
+        working-directory: v2
+        run: cargo build --release -p a2dpwb-core-exe
+      - name: run_test.py
+        run: >
+          tools/emu/.venv/Scripts/python.exe tools/emu/run_test.py
+          --a2dpwb v2/target/release/a2dpwb-core.exe
+          --decoder build/tools/a2dp_decode/Release/a2dpwb_decode.exe
+          --out emu-out
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: emu-out
+          path: emu-out

@@ -17,3 +17,7 @@ pub mod stream;
 pub use messages::Msg;
 pub use service::{Service, ServiceEvent, ServiceOptions};
 pub use stream::{SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync};
+pub mod diag;
+pub mod receiver;
+pub mod update;
+pub mod volume_sync;
