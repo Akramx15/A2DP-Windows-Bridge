@@ -39,6 +39,7 @@ impl LeGroupHooks for CsipHooks {
     }
 }
 
-pub fn create(setup: &mut LeModuleSetup) -> LeModuleEntry {
-    todo!("Step 0 skeleton")
+pub fn create(_setup: &mut LeModuleSetup) -> LeModuleEntry {
+    // Inert until WP5 implements the profile (WP4: no behaviour)
+    LeModuleEntry { module: Box::new(CsipModule {}), hooks: Some(std::sync::Arc::new(CsipHooks {})) }
 }

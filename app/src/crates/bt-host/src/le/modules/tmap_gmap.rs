@@ -46,8 +46,9 @@ pub struct TmapGmapModule {}
 impl TmapGmapModule {
     /// What was read of a device; None while unknown (not connected / not
     /// read yet)
-    pub fn info(&self, device: LeDeviceId) -> Option<TmapGmapInfo> {
-        todo!("Step 0 skeleton")
+    pub fn info(&self, _device: LeDeviceId) -> Option<TmapGmapInfo> {
+        // Inert until WP5 implements the profile
+        None
     }
 }
 
@@ -66,6 +67,7 @@ impl LeGroupHooks for TmapGmapHooks {
     }
 }
 
-pub fn create(setup: &mut LeModuleSetup) -> LeModuleEntry {
-    todo!("Step 0 skeleton")
+pub fn create(_setup: &mut LeModuleSetup) -> LeModuleEntry {
+    // Inert until WP5 implements the profile (WP4: no behaviour)
+    LeModuleEntry { module: Box::new(TmapGmapModule {}), hooks: Some(std::sync::Arc::new(TmapGmapHooks {})) }
 }

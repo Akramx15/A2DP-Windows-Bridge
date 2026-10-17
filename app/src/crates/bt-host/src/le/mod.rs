@@ -27,9 +27,10 @@
 //! - [`modules`]: CSIP, VCP, MCP, CCP, TMAP / GMAP (registered in that
 //!   order)
 
-// Step 0 skeleton: nothing calls into the LE code yet. Remove once WP4
-// wires the LE core into HostApp / BtHost.
-#![allow(dead_code, unused_variables)]
+// The module-facing API (LeCtx, GattClient, GattServer, LePoster, the
+// module hooks) is used by the profile modules, which are inert stubs until
+// WP5 implements them: remove this then.
+#![allow(dead_code)]
 
 pub mod api;
 pub mod bap;
@@ -64,7 +65,7 @@ impl LeAddr {
     /// A resolvable private address (random, top bits 0b01): it changes
     /// every few minutes; the identity behind it is found with the IRK
     pub fn is_rpa(&self) -> bool {
-        todo!("Step 0 skeleton")
+        self.addr_type == LeAddr::RANDOM && self.addr[0] & 0xC0 == 0x40
     }
 }
 
@@ -208,9 +209,19 @@ pub struct LeSduSink {
 }
 
 impl LeSduSink {
+    pub(crate) fn new(queue: Arc<Mutex<SduQueue>>) -> LeSduSink {
+        LeSduSink { queue }
+    }
+
     /// One SDU per CIS for the next frame interval, in plan order
     pub fn push(&self, set: SduSet) {
-        todo!("Step 0 skeleton")
+        self.queue.lock().unwrap_or_else(|e| e.into_inner()).push(set);
+    }
+
+    /// A set to encode the next frame into (one the sender has sent and
+    /// given back), so that no round allocates; None: allocate one
+    pub fn spare(&self) -> Option<SduSet> {
+        self.queue.lock().unwrap_or_else(|e| e.into_inner()).spare()
     }
 }
 
