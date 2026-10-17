@@ -2,7 +2,7 @@
 
 Runs two Bumble virtual controllers on one in-process link:
   - controller "A2DPWB" is served as H4 over TCP; A2DPWB connects to it with
-    `A2DPWB.exe --cli --hci-tcp 127.0.0.1:<port>`
+    `a2dpwb-core.exe --cli --hci-tcp 127.0.0.1:<port>`
   - controller "SINK" is driven by a Bumble host acting as an A2DP sink that
     offers SBC (SBC XQ capable), AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5,
     FastStream and Opus like a typical headset
