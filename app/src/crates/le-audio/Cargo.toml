@@ -1,0 +1,11 @@
+[package]
+name = "le-audio"
+description = "LE Audio (experimental), the pure logic: assigned numbers, LTVs, PACS / ASCS values, presets, stream planning, CSIP crypto, VCP scale, CCP / MCP models, GATT Database Hash, SDU jitter buffer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

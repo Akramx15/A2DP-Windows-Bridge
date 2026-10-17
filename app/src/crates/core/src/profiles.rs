@@ -148,6 +148,7 @@ impl Profile {
             max_media_payload: clamp_media_payload_limit(
                 self.max_media_payload.unwrap_or(legacy_max_media_payload) as u32
             ),
+            le: None,
         })
     }
 }

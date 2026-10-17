@@ -7,6 +7,7 @@
 
 pub mod adapter;
 pub mod devices;
+mod le_stream;
 pub mod link;
 pub mod messages;
 pub mod migrate;

@@ -32,6 +32,9 @@ pub struct StreamRequest {
     pub source: SourceRequest,
     pub volume_sync: VolumeSync,
     pub max_media_payload: u16,
+    /// LE Audio (experimental) instead of A2DP: the le_stream session
+    /// streams to `device` and these extra devices. None: A2DP.
+    pub le: Option<bt_host::LeRequest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

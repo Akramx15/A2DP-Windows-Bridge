@@ -14,6 +14,7 @@ mod app;
 pub mod capture;
 pub mod chips;
 pub mod events;
+mod le;
 pub mod link_keys;
 pub mod media;
 mod shared;
@@ -33,6 +34,10 @@ use app::{HostApp, Job, Setup};
 pub use btstack_sys::expect_transport_loss;
 pub use capture::HciCapture;
 pub use events::{addr_str, parse_addr};
+pub use le::{
+    LeAddr, LeConfig, LeDeviceId, LeDeviceInfo, LeRequest, LeScanResult, LeSduSink, LeStreamRequest, LeStreamStarted,
+    LeStreamStats, LeStreamStatus,
+};
 pub use media::{MediaPacket, MediaSink};
 use shared::{Shared, Wait};
 pub use stats::{LinkRadio, LinkStats};
@@ -98,6 +103,8 @@ pub struct HostConfig {
     pub media_payload_limit: u16,
     pub capture: HciCapture,
     pub afh: Option<Box<dyn AfhSource>>,
+    /// LE Audio (experimental); None: LE stays off and hidden
+    pub le_audio: Option<LeConfig>,
 }
 
 impl HostConfig {
@@ -113,6 +120,7 @@ impl HostConfig {
             media_payload_limit: media::MEDIA_PAYLOAD_LIMIT_DEFAULT,
             capture: HciCapture::new(),
             afh: None,
+            le_audio: None,
         }
     }
 }
@@ -308,6 +316,7 @@ impl BtHost {
                         media_payload_limit: _,
                         capture,
                         afh,
+                        le_audio: _,
                     } = config;
                     let failed_shared = shared.clone();
                     let result = btstack_sys::run(move |stack, remote| {

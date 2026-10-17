@@ -344,6 +344,7 @@ pub fn run(args: &[String]) -> i32 {
         source,
         volume_sync: VolumeSync::Off,
         max_media_payload: a.max_packet,
+        le: None,
     });
 
     let mut streaming_since: Option<Instant> = None;
