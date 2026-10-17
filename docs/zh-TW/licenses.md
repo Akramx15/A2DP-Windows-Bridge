@@ -30,6 +30,8 @@ A2DPWB 原始碼採用 Apache-2.0 或 MIT 雙重授權。發佈的 `a2dpwb-core.
 | [BTstack](https://github.com/bluekitchen/btstack) | v1.8.1-6-g5bc5cbdbe | BTstack License（類似 BSD-3-Clause，附非商業條款）/ 商業授權 | 使用者模式藍牙堆疊 |
 | rijndael（隨附於 BTstack） | 同 BTstack | 公眾領域 | AES（BTstack 使用） |
 | tinydir（隨附於 BTstack） | 同 BTstack | BSD-2-Clause | BTstack 的 Broadcom 晶片組驅動程式中的目錄列舉 |
+| liblc3（lc3-google，隨附於 BTstack） | 同 BTstack | Apache-2.0 | LC3 編碼器（LE Audio，實驗性） |
+| micro-ecc（隨附於 BTstack） | 同 BTstack | BSD-2-Clause | LE Secure Connections 配對所用的 P-256（LE Audio，實驗性） |
 | Bluedroid SBC 編碼器（移植為 Rust） | 移植自 BTstack 隨附的副本 | Apache-2.0 | SBC 編碼器 |
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC 編碼器 |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL 編碼器 |
