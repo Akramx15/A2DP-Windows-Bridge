@@ -1,39 +1,148 @@
-// Diagnostics: live link graphs, the eleven-step connection flow, the log
-// with level and text filters, HCI capture, "copy diagnostic info", and in
-// developer mode the receiver test.
+// Diagnostics: live link graphs and v1's link quality figures, the
+// eleven-step connection flow, the log with level, text and attempt
+// filters, HCI capture, "copy diagnostic info", and in developer mode the
+// receiver test.
 
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
 import { errorText, useApp } from "../app/context";
-import { LineChart } from "../components/charts";
-import { Button, Check, Select } from "../components/controls";
+import { Gauge, LineChart } from "../components/charts";
+import { Button, Check, IconButton, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/icons";
 import { t, tm } from "../i18n";
-import type { LogLevel, LogLine } from "../ipc/types";
+import type { CaptureState, FlowStepView, LogLine } from "../ipc/types";
+import { codecLabelKey } from "../lib/codecs";
 import { STEPS, type Step, type StepStatus } from "../lib/flow";
 import { clock, copyText, kbps, maskAddresses } from "../lib/format";
+import {
+  dropsPerSample,
+  EDR3_MAX_KBPS,
+  formatBytes,
+  gaugeValue,
+  lossStats,
+  takeBaseline,
+  type LinkBaseline,
+} from "../lib/linkstats";
+import {
+  drawnRange,
+  filterLog,
+  formatLogLine,
+  keysBetween,
+  logKey,
+  nextEpoch,
+  timeOfDay,
+  type LevelFilter,
+} from "../lib/logview";
 import { ReceiverTest } from "./ReceiverTest";
 
 type Tab = "link" | "flow" | "log" | "receiver";
+
+// ---- Window-wide view state (kept while the window lives, so it is still
+// there when the user comes back to the screen) ----------------------------
+
+/** Mask Bluetooth addresses in the log and in every copy */
+const [mask, setMask] = createSignal(true);
+/** The link counters when Reset was pressed */
+const [resetBase, setResetBase] = createSignal<LinkBaseline | null>(null);
+/** The capture stopped last (file size, "show in Explorer") */
+const [savedCapture, setSavedCapture] = createSignal<CaptureState | null>(null);
+/** Wall clock (ms since 1970) at the core's time 0, estimated from live samples */
+const [epoch, setEpoch] = createSignal<number | null>(null);
+let lastCoreTime = -1;
+
+function observeCoreTime(timeMs: number) {
+  // The core's clock went back: a new core process
+  if (timeMs + 1000 < lastCoreTime) setEpoch(null);
+  lastCoreTime = timeMs;
+  setEpoch((e) => nextEpoch(e, timeMs, Date.now()));
+}
+
+/** A core time as the time of day (v1), or as the core's uptime until the clock is known */
+function timeText(ms: number): string {
+  const e = epoch();
+  return e === null ? clock(ms) : timeOfDay(ms, e);
+}
+
+/** The log view's filters and selection (they outlive the log tab) */
+function createLogView() {
+  const [level, setLevel] = createSignal<LevelFilter>("info");
+  const [query, setQuery] = createSignal("");
+  const [attemptOnly, setAttemptOnly] = createSignal(false);
+  const [follow, setFollow] = createSignal(true);
+  const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set());
+  const [anchor, setAnchor] = createSignal<string | null>(null);
+  /** The line jumped to from the flow (highlighted) */
+  const [focusKey, setFocusKey] = createSignal<string | null>(null);
+  /** A jump from the flow waiting for its line (LogLine.seq) */
+  const [jump, setJump] = createSignal<{ seq: number } | null>(null);
+  return {
+    level,
+    setLevel,
+    query,
+    setQuery,
+    attemptOnly,
+    setAttemptOnly,
+    follow,
+    setFollow,
+    selected,
+    setSelected,
+    anchor,
+    setAnchor,
+    focusKey,
+    setFocusKey,
+    jump,
+    setJump,
+  };
+}
+type LogView = ReturnType<typeof createLogView>;
+
+/** How long a jump waits for its line (the debug lines come after a resubscription) */
+const JUMP_WAIT_MS = 3000;
 
 export function Diagnostics() {
   const app = useApp();
   const { core } = app;
   const [tab, setTab] = createSignal<Tab>("link");
   const dev = () => core.state.snap!.settings.developer_mode;
-  const [capture, setCapture] = createSignal<string | null>(null);
+  const capture = () => core.state.snap!.capture;
   const [capBusy, setCapBusy] = createSignal(false);
+  const logView = createLogView();
+
+  // Live samples while the screen is open: the clock for the time of day,
+  // and the link history; info lines so a step's line is there to jump to
+  onCleanup(core.wantLink());
+  onCleanup(core.wantLogs("info"));
+  createEffect(
+    on(
+      core.link,
+      (s) => {
+        const last = s[s.length - 1];
+        if (last) observeCoreTime(last.time_ms);
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      () => core.state.conn.state,
+      (s) => {
+        if (s !== "connected") setEpoch(null);
+      },
+      { defer: true },
+    ),
+  );
 
   const toggleCapture = async () => {
     setCapBusy(true);
     try {
-      if (capture()) {
-        const path = capture()!;
-        await core.request("diag.capture_stop");
-        setCapture(null);
-        app.notify(t("ui.diag.capture_saved", path));
+      const running = capture();
+      if (running) {
+        const done = (await core.request("diag.capture_stop")) ?? running;
+        setSavedCapture(done);
+        app.notify(t("ui.diag.capture_saved", `${done.path} (${formatBytes(done.bytes)})`));
       } else {
-        setCapture(await core.request("diag.capture_start"));
+        setSavedCapture(null);
+        await core.request("diag.capture_start");
       }
     } catch (e) {
       app.notify(t("debug.capture_failed", errorText(e)), "error");
@@ -44,11 +153,22 @@ export function Diagnostics() {
 
   const copyInfo = async () => {
     try {
-      const info = await core.request("diag.info");
+      const info = await core.request("diag.info", { mask: mask() });
       app.notify((await copyText(info.text)) ? t("ui.diag.copied") : t("dbgc.copy_failed"), "info");
     } catch (e) {
       app.notify(errorText(e), "error");
     }
+  };
+
+  const jumpTo = (seq: number) => {
+    const j = { seq };
+    logView.setJump(j);
+    setTab("log");
+    setTimeout(() => {
+      if (logView.jump() !== j) return;
+      logView.setJump(null);
+      app.notify(t("ui.diag.line_gone"), "error");
+    }, JUMP_WAIT_MS);
   };
 
   const tabs = (): { id: Tab; label: string; icon: IconName }[] => [
@@ -78,6 +198,7 @@ export function Diagnostics() {
       <header class="page-head">
         <h1>{t("ui.nav.diagnostics")}</h1>
         <div class="head-actions">
+          <Check label={t("dbgc.mask")} title={t("dbgc.mask_tip")} checked={mask()} onChange={setMask} />
           <Button icon={capture() ? "stop" : "record"} busy={capBusy()} onClick={toggleCapture} classList={{ recording: !!capture() }}>
             {capture() ? t("debug.capture_stop") : t("debug.capture_start")}
           </Button>
@@ -87,10 +208,28 @@ export function Diagnostics() {
         </div>
       </header>
       <Show when={capture()}>
-        <p class="capture-line" role="status">
-          <span class="dot rec" aria-hidden="true" />
-          {t("ui.diag.capturing")} <span class="mono">{capture()}</span>
-        </p>
+        {(c) => (
+          <p class="capture-line" role="status">
+            <span class="dot rec" aria-hidden="true" />
+            {t("ui.diag.capturing")} <span class="mono capture-path">{c().path}</span>
+            <span class="num capture-size">{formatBytes(c().bytes)}</span>
+          </p>
+        )}
+      </Show>
+      <Show when={!capture() && savedCapture()}>
+        {(c) => (
+          <div class="capture-line capture-saved" role="status">
+            <Icon name="checkmark_circle" />
+            <span class="capture-saved-text">
+              {t("ui.diag.capture_saved", "")}
+              <span class="mono capture-path">{c().path}</span> <span class="num capture-size">({formatBytes(c().bytes)})</span>
+            </span>
+            <Button icon="folder_open" kind="subtle" onClick={() => void core.transport.revealPath(c().path)}>
+              {t("ui.diag.show_in_explorer")}
+            </Button>
+            <IconButton icon="dismiss" label={t("modal.close")} onClick={() => setSavedCapture(null)} />
+          </div>
+        )}
       </Show>
       <div class="tabs" role="tablist" aria-label={t("ui.nav.diagnostics")} onKeyDown={onTabKey}>
         <For each={tabs()}>
@@ -116,10 +255,10 @@ export function Diagnostics() {
           <LinkPanel />
         </Show>
         <Show when={tab() === "flow"}>
-          <FlowPanel />
+          <FlowPanel onJump={jumpTo} />
         </Show>
         <Show when={tab() === "log"}>
-          <LogPanel />
+          <LogPanel view={logView} />
         </Show>
         <Show when={tab() === "receiver" && dev()}>
           <ReceiverTest />
@@ -129,17 +268,100 @@ export function Diagnostics() {
   );
 }
 
+// ---- Link ------------------------------------------------------------------
+
+function Row(props: { label: string; value: string; class?: string; children?: JSX.Element }) {
+  return (
+    <div class="lq-row">
+      <dt>{props.label}</dt>
+      <dd class={`num ${props.class ?? ""}`}>
+        <span>{props.value}</span>
+        {props.children}
+      </dd>
+    </div>
+  );
+}
+
+const DASH = "–";
+
 function LinkPanel() {
   const { core } = useApp();
   onCleanup(core.wantLink());
   const samples = () => core.link();
-  const streaming = () => core.state.snap!.stream.state === "streaming";
+  const stream = () => core.state.snap!.stream;
+  const streaming = () => stream().state === "streaming";
   const last = () => samples()[samples().length - 1];
-  // Drops per sample (the counters run since the stream started)
-  const drops = createMemo(() => {
+  const drops = createMemo(() => dropsPerSample(samples()));
+  // Capture drops in ms after the stream stopped: the last known rate
+  const rate = createMemo(() => {
     const s = samples();
-    return s.map((x, i) => (i === 0 ? 0 : Math.max(0, x.dropped - s[i - 1].dropped + (x.capture_dropped - s[i - 1].capture_dropped))));
+    for (let i = s.length - 1; i >= 0; i--) if (s[i].source_rate) return s[i].source_rate!;
+    return stream().info?.source_sample_rate ?? 0;
   });
+  const loss = createMemo(() => {
+    const s = last();
+    return s ? lossStats(s, resetBase(), rate()) : null;
+  });
+
+  const codec = () => {
+    const i = stream().info;
+    if (!streaming() || !i) return DASH;
+    const key = codecLabelKey(i.codec);
+    return t("quality.codec_value", key ? t(key) : i.codec, i.sample_rate / 1000, i.channels, i.bitrate_kbps);
+  };
+  /** The last sample while packets go out (the "last second" rows) */
+  const sending = () => {
+    const s = last();
+    return streaming() && s && s.packets_per_second > 0 ? s : null;
+  };
+  const live = () => (streaming() ? (last() ?? null) : null);
+  const queueClass = () => {
+    const s = live();
+    if (!s) return "";
+    const f = s.queue_depth / (s.queue_capacity || 64);
+    return f < 0.25 ? "st-good" : f < 0.5 ? "st-warn" : "st-bad";
+  };
+  const queueText = () => {
+    const s = live();
+    if (!s) return DASH;
+    return s.queue_capacity ? t("quality.queue_value", s.queue_depth, s.queue_capacity) : String(s.queue_depth);
+  };
+  const packetsText = () => {
+    const s = sending();
+    if (!s) return DASH;
+    return s.avg_packet_bytes != null
+      ? t("quality.packets_value", s.packets_per_second, s.avg_packet_bytes)
+      : `${s.packets_per_second.toFixed(1)} /s`;
+  };
+  const rssiText = () => {
+    const s = live();
+    return !s || s.rssi === null ? DASH : `${s.rssi > 0 ? "+" : ""}${s.rssi} dB`;
+  };
+  const afhText = () => {
+    const s = live();
+    if (!s) return DASH;
+    const parts: string[] = [];
+    if (s.afh_in_use !== null) parts.push(t("radio.afh", s.afh_in_use));
+    if (s.afh_usable !== null) parts.push(t("ui.diag.afh_usable", s.afh_usable));
+    if (parts.length === 0) return DASH;
+    return parts.join(t("radio.separator")) + (s.afh_usable !== null && s.afh_avoided ? t("radio.afh_avoid", s.afh_avoided) : "");
+  };
+  const theoryPct = () => {
+    const s = sending();
+    return s && s.bandwidth_share != null ? s.bandwidth_share * 100 : null;
+  };
+  const airPct = () => {
+    const s = sending();
+    return s ? s.airtime * 100 : null;
+  };
+  const airHigh = () => (airPct() ?? 0) >= 80;
+  const airText = () => {
+    const s = sending();
+    const p = airPct();
+    if (!s || p === null) return DASH;
+    return s.acl_packet ? t("quality.airtime_value", p, s.acl_packet.name, s.acl_packet.slots) : `${p.toFixed(1)} %`;
+  };
+
   return (
     <div>
       <Show when={!streaming()}>
@@ -174,39 +396,82 @@ function LinkPanel() {
           status={(v) => (v === 0 ? "good" : v < 3 ? "warn" : "bad")}
         />
       </div>
-      <Show when={last()}>
-        {(s) => (
-          <dl class="stats">
-            <div>
-              <dt>{t("quality.airtime")}</dt>
-              <dd class={`num ${s().airtime > 0.8 ? "st-warn" : ""}`}>{(s().airtime * 100).toFixed(1)} %</dd>
-            </div>
-            <div>
-              <dt>{t("quality.packets")}</dt>
-              <dd class="num">{s().packets_per_second.toFixed(1)} /s</dd>
-            </div>
-            <div>
-              <dt>{t("quality.radio")}</dt>
-              <dd class="num">
-                {s().afh_in_use === null ? "–" : t("radio.afh", s().afh_in_use!)}
-                {s().afh_avoided ? t("radio.afh_avoid", s().afh_avoided) : ""}
-              </dd>
-            </div>
-            <div>
-              <dt>{t("quality.dropped")}</dt>
-              <dd class="num">{s().dropped}</dd>
-            </div>
-            <div>
-              <dt>{t("quality.capture_dropped")}</dt>
-              <dd class="num">{s().capture_dropped}</dd>
-            </div>
+
+      <div class="lq-groups">
+        <section class="card lq-group" aria-labelledby="lq-send">
+          <h2 id="lq-stream">{t("quality.section_stream")}</h2>
+          <dl class="lq-rows" aria-labelledby="lq-stream">
+            <Row label={t("quality.codec")} value={codec()} />
           </dl>
-        )}
-      </Show>
-      <p class="hint">{t("quality.band_help")}</p>
+          <h2 id="lq-send">{t("quality.section_send")}</h2>
+          <dl class="lq-rows" aria-labelledby="lq-send">
+            <Row label={t("quality.bitrate")} value={sending() ? t("quality.bitrate_value", kbps(sending()!.bytes_per_second)) : DASH} />
+            <Row label={t("quality.packets")} value={packetsText()} />
+            <Row label={t("quality.queue")} class={queueClass()} value={queueText()} />
+            <Row label={t("ui.diag.rssi")} value={rssiText()} />
+            <Row label={t("ui.diag.afh")} value={afhText()} />
+          </dl>
+        </section>
+
+        <section class="card lq-group" aria-labelledby="lq-band">
+          <h2 id="lq-band">{t("quality.section_band")}</h2>
+          <dl class="lq-rows">
+            <Row label={t("quality.theory")} value={theoryPct() === null ? DASH : t("quality.theory_value", EDR3_MAX_KBPS, theoryPct()!)}>
+              <Gauge value={theoryPct() === null ? null : gaugeValue(theoryPct())} label={t("quality.theory")} />
+            </Row>
+            <Row label={t("quality.airtime")} class={airHigh() ? "st-bad" : ""} value={airText()}>
+              <Gauge
+                value={airPct() === null ? null : gaugeValue(airPct())}
+                label={t("quality.airtime")}
+                status={airHigh() ? "bad" : undefined}
+              />
+            </Row>
+          </dl>
+          <p class="hint">{t("quality.band_help")}</p>
+        </section>
+
+        <section class="card lq-group" aria-labelledby="lq-loss">
+          <div class="lq-group-head">
+            <h2 id="lq-loss">
+              {loss()?.sinceReset ? t("ui.diag.loss_since_reset", timeText(resetBase()!.time_ms)) : t("ui.diag.loss_since_stream")}
+            </h2>
+            <Button icon="arrow_reset" kind="subtle" disabled={!last()?.counters} onClick={() => setResetBase(takeBaseline(last()))}>
+              {t("quality.reset")}
+            </Button>
+          </div>
+          <Show
+            when={loss()}
+            fallback={
+              <dl class="lq-rows">
+                <Row label={t("quality.dropped")} value={last() ? String(last()!.dropped) : DASH} />
+                <Row label={t("quality.capture_dropped")} value={last() ? String(last()!.capture_dropped) : DASH} />
+              </dl>
+            }
+          >
+            {(l) => (
+              <dl class="lq-rows">
+                <Row label={t("quality.sent_total")} value={String(l().sent)} />
+                <Row
+                  label={t("quality.dropped")}
+                  class={l().dropped > 0 ? "st-bad" : ""}
+                  value={`${l().dropped} (${l().dropPct.toFixed(2)}%)`}
+                />
+                <Row
+                  label={t("quality.capture_dropped")}
+                  class={l().captureDropped > 0 ? "st-bad" : ""}
+                  value={`${l().captureMs === null ? String(l().captureDropped) : `${l().captureMs!.toFixed(0)} ms`} (${l().capturePct.toFixed(2)}%)`}
+                />
+              </dl>
+            )}
+          </Show>
+          <p class="hint">{t("quality.loss_help")}</p>
+        </section>
+      </div>
     </div>
   );
 }
+
+// ---- Flow ------------------------------------------------------------------
 
 const STATUS_ICON: Record<StepStatus, IconName | null> = {
   pending: null,
@@ -216,7 +481,7 @@ const STATUS_ICON: Record<StepStatus, IconName | null> = {
   failed: "error_circle",
 };
 
-function FlowPanel() {
+function FlowPanel(props: { onJump: (seq: number) => void }) {
   const app = useApp();
   onCleanup(app.core.wantFlow());
   // The core's flow; no session yet: none
@@ -224,29 +489,47 @@ function FlowPanel() {
     const f = app.core.flow();
     return f && f.session > 0 ? f : null;
   };
-  const stepOf = (st: Step) => session()?.steps.find((x) => x.step === st);
+  const stepOf = (st: Step): FlowStepView | undefined => session()?.steps.find((x) => x.step === st);
   const statusText = (s: StepStatus) => t(`dbgc.status.${s}`);
   const elapsed = (ms: number | null | undefined) => (ms == null ? "" : `+${(ms / 1000).toFixed(3)} s`);
+  /** Time of day of the line that set the step */
+  const stepTime = (x: FlowStepView | undefined) => {
+    if (!x) return "";
+    const s = session();
+    const ms = x.time_ms ?? (x.elapsed_ms != null && s ? s.start_ms + x.elapsed_ms : null);
+    return ms == null ? "" : timeText(ms);
+  };
   const detail = (st: Step) => {
     const x = stepOf(st);
-    return x ? (x.detail_msg ? tm(x.detail_msg) : x.detail) : "";
+    const d = x ? (x.detail_msg ? tm(x.detail_msg) : x.detail) : "";
+    return mask() ? maskAddresses(d) : d;
+  };
+  const header = () => {
+    const s = session();
+    if (!s) return t("dbgc.no_session");
+    return (
+      t("dbgc.session", s.session, timeText(s.start_ms)) + (s.stop_ms != null ? t("dbgc.session_stopped", timeText(s.stop_ms)) : "")
+    );
   };
   const copyFlow = async () => {
     if (!session()) return;
     const lines = STEPS.map((st) => {
       const x = stepOf(st);
-      return `${t(`dbgc.step.${st}`)}\t${statusText((x?.status ?? "pending") as StepStatus)}\t${elapsed(x?.elapsed_ms)}\t${detail(st)}`;
+      const status = statusText((x?.status ?? "pending") as StepStatus);
+      return [t(`dbgc.step.${st}`), status, stepTime(x), elapsed(x?.elapsed_ms), detail(st)].join("\t");
     });
-    const ok = await copyText(maskAddresses(lines.join("\n")));
-    app.notify(ok ? t("dbgc.copied", lines.length) : t("dbgc.copy_failed"), ok ? "info" : "error");
+    const text = [header(), ...lines].join("\n");
+    const ok = await copyText(mask() ? maskAddresses(text) : text);
+    app.notify(ok ? t("dbgc.copied", lines.length + 1) : t("dbgc.copy_failed"), ok ? "info" : "error");
+  };
+  const jump = (st: Step) => {
+    const seq = stepOf(st)?.seq;
+    if (seq != null) props.onJump(seq);
   };
   return (
     <div>
       <div class="panel-head">
-        <span class="muted">
-          {session() ? t("dbgc.session", session()!.session, clock(session()!.start_ms)) : t("dbgc.no_session")}
-          {session()?.stop_ms != null ? t("dbgc.session_stopped", clock(session()!.stop_ms!)) : ""}
-        </span>
+        <span class="muted">{header()}</span>
         <Button icon="copy" kind="subtle" disabled={!session()} onClick={copyFlow}>
           {t("dbgc.copy_flow")}
         </Button>
@@ -255,8 +538,9 @@ function FlowPanel() {
         <For each={STEPS}>
           {(st) => {
             const status = () => (stepOf(st)?.status ?? "pending") as StepStatus;
+            const seq = () => stepOf(st)?.seq ?? null;
             return (
-              <li class={`flow-step st-${status()}`}>
+              <li class={`flow-step st-${status()}`} classList={{ "has-line": seq() !== null }} onDblClick={() => jump(st)}>
                 <span class="flow-icon" aria-hidden="true">
                   <Show when={STATUS_ICON[status()]} fallback={<span class="flow-dot" />}>
                     {(i) => <Icon name={i()} />}
@@ -264,58 +548,71 @@ function FlowPanel() {
                 </span>
                 <span class="flow-name">{t(`dbgc.step.${st}`)}</span>
                 <span class="flow-status">{statusText(status())}</span>
+                <span class="flow-clock num">{stepTime(stepOf(st))}</span>
                 <span class="flow-time num">{elapsed(stepOf(st)?.elapsed_ms)}</span>
                 <span class="flow-detail" title={detail(st)}>
                   {detail(st)}
+                </span>
+                <span class="flow-jump">
+                  <Show when={seq() !== null}>
+                    <IconButton icon="arrow_right" label={t("ui.diag.show_line")} onClick={() => jump(st)} />
+                  </Show>
                 </span>
               </li>
             );
           }}
         </For>
       </ol>
+      <p class="hint">{t("dbgc.flow_hint")}</p>
     </div>
   );
 }
 
-const LEVEL_FILTERS: { value: LogLevel | "all"; label: string }[] = [
+// ---- Log -------------------------------------------------------------------
+
+const LEVEL_FILTERS: { value: LevelFilter; label: string }[] = [
   { value: "all", label: "dbgc.level_all" },
   { value: "info", label: "dbgc.level_info" },
   { value: "warn", label: "dbgc.level_warn" },
   { value: "error", label: "dbgc.level_error" },
 ];
-const ORDER: LogLevel[] = ["error", "warn", "info", "debug", "trace"];
 /** Lines drawn at most (the filter and copy see all kept lines) */
 const LOG_SHOWN = 1500;
 
-function LogPanel() {
+/** The user has selected text inside `el` (a native copy then copies that) */
+function textSelectedIn(el: HTMLElement | undefined): boolean {
+  const sel = typeof window !== "undefined" ? window.getSelection() : null;
+  return !!el && !!sel && !sel.isCollapsed && sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).commonAncestorContainer);
+}
+
+function LogPanel(props: { view: LogView }) {
   const app = useApp();
   const { core } = app;
-  const [level, setLevel] = createSignal<LogLevel | "all">("info");
-  const [query, setQuery] = createSignal("");
-  const [mask, setMask] = createSignal(true);
-  const [follow, setFollow] = createSignal(true);
-  // "All" shows debug lines: ask the core for them while this is open
-  let release = core.wantLogs("debug");
-  onCleanup(() => release());
-  const setLevelAndSubscribe = (l: LogLevel | "all") => {
-    setLevel(l);
-    release();
-    release = core.wantLogs(l === "all" ? "debug" : "info");
-  };
-
-  const filtered = createMemo(() => {
-    const q = query().trim().toLowerCase();
-    const max = level() === "all" ? ORDER.length : ORDER.indexOf(level() as LogLevel) + 1;
-    return core.logs().filter(
-      (l) => ORDER.indexOf(l.level) < max && (!q || l.message.toLowerCase().includes(q) || l.target.toLowerCase().includes(q)),
-    );
+  const v = props.view;
+  onCleanup(core.wantFlow());
+  // "All" shows debug lines: ask the core for them while that is chosen
+  createEffect(() => {
+    const release = core.wantLogs(v.level() === "all" ? "debug" : "info");
+    onCleanup(release);
   });
-  const shown = createMemo(() => filtered().slice(-LOG_SHOWN));
+
+  const attempt = () => (v.attemptOnly() ? core.flow() : null);
+  const filtered = createMemo(() => filterLog(core.logs(), { level: v.level(), query: v.query(), attempt: attempt() }));
+  const focusIndex = createMemo(() => {
+    const k = v.focusKey();
+    if (v.follow() || k === null) return null;
+    return filtered().findIndex((l) => logKey(l) === k);
+  });
+  const shown = createMemo(() => {
+    const [a, b] = drawnRange(filtered().length, LOG_SHOWN, focusIndex());
+    return filtered().slice(a, b);
+  });
   const text = (l: LogLine) => (mask() ? maskAddresses(l.message) : l.message);
+  const lineText = (l: LogLine) => formatLogLine(l, timeText(l.time_ms), mask());
 
   let box: HTMLDivElement | undefined;
   const scrollDown = () => {
-    if (follow() && box) box.scrollTop = box.scrollHeight;
+    if (v.follow() && box) box.scrollTop = box.scrollHeight;
   };
   // Follow new lines
   createEffect(() => {
@@ -323,20 +620,99 @@ function LogPanel() {
     queueMicrotask(scrollDown);
   });
 
-  const copy = async () => {
-    const lines = filtered().map((l) => `${clock(l.time_ms)} ${l.level.toUpperCase().padEnd(5)} ${l.target}: ${text(l)}`);
-    const ok = await copyText(lines.join("\n"));
-    app.notify(ok ? t("dbgc.copied", lines.length) : t("dbgc.copy_failed"), ok ? "info" : "error");
+  // A jump from the flow: find the line (a debug line comes with the
+  // "all" subscription), make the filters show it, select and scroll to it
+  createEffect(() => {
+    const j = v.jump();
+    if (!j) return;
+    const line = core.logs().find((l) => l.seq === j.seq);
+    untrack(() => {
+      if (!line) {
+        if (v.level() !== "all") v.setLevel("all");
+        return;
+      }
+      if (filterLog([line], { level: v.level(), query: v.query(), attempt: attempt() }).length === 0) {
+        v.setLevel("all");
+        v.setQuery("");
+        v.setAttemptOnly(false);
+      }
+      const k = logKey(line);
+      v.setFollow(false);
+      v.setSelected(new Set([k]));
+      v.setAnchor(k);
+      v.setFocusKey(k);
+      v.setJump(null);
+      requestAnimationFrame(() => {
+        box?.querySelector<HTMLElement>(".log-line.jumped")?.scrollIntoView?.({ block: "center" });
+        box?.focus();
+      });
+    });
+  });
+
+  const notifyCopied = (ok: boolean, n: number) => app.notify(ok ? t("dbgc.copied", n) : t("dbgc.copy_failed"), ok ? "info" : "error");
+
+  const copyShown = async () => {
+    const lines = filtered().map(lineText);
+    notifyCopied(await copyText(lines.join("\n")), lines.length);
   };
+  const copySelected = async () => {
+    const sel = v.selected();
+    const lines = core
+      .logs()
+      .filter((l) => sel.has(logKey(l)))
+      .map(lineText);
+    if (lines.length === 0) return;
+    notifyCopied(await copyText(lines.join("\n")), lines.length);
+  };
+
+  const onLineClick = (e: MouseEvent, l: LogLine) => {
+    // Dragging over text selects text, not lines
+    if (textSelectedIn(box)) return;
+    const k = logKey(l);
+    if (e.shiftKey && v.anchor() !== null) {
+      v.setSelected(new Set(keysBetween(filtered(), v.anchor()!, k)));
+    } else if (e.ctrlKey || e.metaKey) {
+      const next = new Set(v.selected());
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      v.setSelected(next);
+      v.setAnchor(k);
+    } else {
+      v.setSelected(new Set([k]));
+      v.setAnchor(k);
+    }
+    v.setFocusKey(null);
+    // Selecting an older line stops following new ones (v1)
+    const list = filtered();
+    if (list.length && logKey(list[list.length - 1]) !== k) v.setFollow(false);
+  };
+
+  const onLogKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && v.selected().size > 0) {
+      v.setSelected(new Set<string>());
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === "a") {
+      e.preventDefault();
+      v.setSelected(new Set(filtered().map(logKey)));
+    } else if (k === "c" && !textSelectedIn(box) && v.selected().size > 0) {
+      e.preventDefault();
+      void copySelected();
+    }
+  };
+
+  const logDir = () => core.state.snap!.log_dir;
 
   return (
     <div class="log-panel">
       <div class="log-tools">
         <Select
           label={t("dbgc.col_level")}
-          value={level()}
+          value={v.level()}
           options={LEVEL_FILTERS.map((f) => ({ value: f.value, label: t(f.label) }))}
-          onChange={setLevelAndSubscribe}
+          onChange={v.setLevel}
         />
         <div class="search">
           <Icon name="search" />
@@ -345,35 +721,60 @@ function LogPanel() {
             class="input"
             placeholder={t("dbgc.search_hint")}
             aria-label={t("dbgc.search_hint")}
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
+            value={v.query()}
+            onInput={(e) => v.setQuery(e.currentTarget.value)}
           />
         </div>
-        <Check label={t("dbgc.mask")} title={t("dbgc.mask_tip")} checked={mask()} onChange={setMask} />
-        <Check label={t("dbgc.autoscroll")} checked={follow()} onChange={setFollow} />
+        <Check label={t("dbgc.session_only")} checked={v.attemptOnly()} onChange={v.setAttemptOnly} />
+        <Check label={t("dbgc.autoscroll")} checked={v.follow()} onChange={v.setFollow} />
         <span class="muted num">{t("dbgc.count", filtered().length, core.logs().length)}</span>
-        <Button icon="copy" kind="subtle" onClick={copy}>
+      </div>
+      <div class="log-tools">
+        <Button icon="copy" kind="subtle" disabled={v.selected().size === 0} onClick={copySelected}>
+          {t("dbgc.copy_selected")}
+        </Button>
+        <Button icon="copy" kind="subtle" onClick={copyShown}>
           {t("dbgc.copy_log")}
         </Button>
-        <Button icon="delete" kind="subtle" onClick={() => core.clearLogs()}>
+        <Button
+          icon="delete"
+          kind="subtle"
+          onClick={() => {
+            core.clearLogs();
+            v.setSelected(new Set<string>());
+            v.setFocusKey(null);
+          }}
+        >
           {t("ui.diag.clear")}
         </Button>
+        <span class="log-tools-gap" />
+        <Button icon="folder_open" kind="subtle" disabled={!logDir()} onClick={() => void core.transport.openFolder(logDir())}>
+          {t("ui.diag.open_logs")}
+        </Button>
       </div>
-      <div class="log" ref={box} role="log" aria-live="off" tabindex="0" aria-label={t("dbgc.section_log")}>
+      <div class="log" ref={box} role="log" aria-live="off" tabindex="0" aria-label={t("dbgc.section_log")} onKeyDown={onLogKey}>
         <Show when={shown().length > 0} fallback={<p class="muted empty-line">{t("ui.diag.no_log")}</p>}>
           <For each={shown()}>
-            {(l) => (
-              <div class={`log-line lv-${l.level}`}>
-                <span class="log-time num">{clock(l.time_ms)}</span>
-                <span class="log-level">{l.level.toUpperCase()}</span>
-                <span class="log-target">{l.target}</span>
-                <span class="log-msg">{text(l)}</span>
-              </div>
-            )}
+            {(l) => {
+              const k = logKey(l);
+              return (
+                <div
+                  class={`log-line lv-${l.level}`}
+                  classList={{ selected: v.selected().has(k), jumped: v.focusKey() === k }}
+                  onClick={(e) => onLineClick(e, l)}
+                >
+                  <span class="log-time num" title={clock(l.time_ms)}>
+                    {timeText(l.time_ms)}
+                  </span>
+                  <span class="log-level">{l.level.toUpperCase()}</span>
+                  <span class="log-target">{l.target}</span>
+                  <span class="log-msg">{text(l)}</span>
+                </div>
+              );
+            }}
           </For>
         </Show>
       </div>
     </div>
   );
 }
-

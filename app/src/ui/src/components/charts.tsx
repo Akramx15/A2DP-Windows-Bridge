@@ -46,6 +46,24 @@ export function Sparkline(props: { values: readonly (number | null)[]; min?: num
   );
 }
 
+/** A horizontal bar for a share of 0..100 % (Diagnostics' bandwidth rows) */
+export function Gauge(props: { value: number | null; label: string; status?: "good" | "warn" | "bad" }) {
+  const v = () => (props.value === null || !Number.isFinite(props.value) ? 0 : Math.min(100, Math.max(0, props.value)));
+  return (
+    <div
+      class={`gauge ${props.status ? `st-${props.status}` : ""}`}
+      role="meter"
+      aria-label={props.label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(v())}
+      aria-valuetext={props.value === null ? "–" : `${v().toFixed(1)} %`}
+    >
+      <span class="gauge-fill" style={{ width: `${v()}%` }} />
+    </div>
+  );
+}
+
 /** A labelled live chart (Diagnostics) */
 export function LineChart(props: {
   title: string;
