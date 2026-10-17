@@ -776,6 +776,17 @@ impl Environment {
     }
 }
 
+/// Why the bit rate is below the profile's: ABR, or the device's maximum
+fn bitrate_note(i: &StreamInfo) -> &'static str {
+    if i.abr {
+        " (ABR)"
+    } else if i.bitrate_capped {
+        " (limited by the device's maximum bit rate)"
+    } else {
+        ""
+    }
+}
+
 /// One adapter for the diagnostics: name, VID:PID, driver
 pub fn adapter_line(a: &crate::adapter::Adapter) -> String {
     let d = &a.device;
@@ -913,11 +924,12 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         Some(i) if d.state == StreamState::Streaming => {
             let _ = writeln!(
                 out,
-                "  {} {} Hz {} ch, {} kbps; source {} Hz {} ch {} bit",
+                "  {} {} Hz {} ch, {} kbps{}; source {} Hz {} ch {} bit",
                 i.codec,
                 i.sample_rate,
                 i.channels,
                 i.bitrate_kbps,
+                bitrate_note(i),
                 i.source_sample_rate,
                 i.source_channels,
                 i.source_bits
@@ -1340,6 +1352,8 @@ mod tests {
             source_bits: 32,
             requested_codec: None,
             requested_in_use: false,
+            abr: false,
+            bitrate_capped: false,
             source: crate::stream::SourceInfo { kind: "app", name: "Spotify.exe".into(), waiting: true },
         };
         let stats = LinkStats::default();

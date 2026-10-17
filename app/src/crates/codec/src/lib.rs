@@ -321,6 +321,12 @@ pub trait Encoder: Send {
     /// Current bit rate in kbps
     fn bitrate_kbps(&self) -> u32;
 
+    /// The device's maximum bit rate lowered the fixed bit rate the quality
+    /// mode asked for (LHDC V5 only; never under ABR)
+    fn bitrate_capped(&self) -> bool {
+        false
+    }
+
     /// Adaptive bit rate step with the send queue depth (packets waiting);
     /// called by the encode thread when [`EncoderConfig::abr`] is set
     fn abr_adjust(&mut self, _queue_depth: u32) {}

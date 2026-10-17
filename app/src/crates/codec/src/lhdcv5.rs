@@ -59,6 +59,8 @@ pub struct LhdcV5Encoder {
     /// s24le, one frame
     packed: Vec<u8>,
     abr: Option<Abr>,
+    /// The sink's maximum bit rate (P7) is below the quality mode's
+    peer_capped: bool,
 }
 
 /// Sink capability P7[5:4] -> encoder quality index
@@ -70,6 +72,13 @@ fn peer_max_bitrate_index(p7: u8) -> u32 {
         0x30 => ffi::LHDC_QUALITY_HIGH, // 900 kbps
         _ => ffi::LHDC_QUALITY_HIGH1,   // 1000 kbps = no upper limit
     }
+}
+
+/// Whether the sink's maximum bit rate (P7) lowers the fixed bit rate index
+/// a quality mode asks for. Never under ABR: it stays at 400 kbps or below
+/// whatever the quality, as on Android.
+fn peer_caps_bitrate(abr: bool, bitrate_inx: u32, p7: u8) -> bool {
+    !abr && peer_max_bitrate_index(p7) < bitrate_inx
 }
 
 /// Sink capability P7[7:6] -> encoder quality index
@@ -170,6 +179,7 @@ impl LhdcV5Encoder {
         // failure leaves the encoder's own limits (as v1)
         let p7 = config.peer.lhdcv5_bitrate_limits;
         let (mut max_inx, min_inx) = (peer_max_bitrate_index(p7), peer_min_bitrate_index(p7));
+        let peer_capped = peer_caps_bitrate(config.abr, bitrate_inx, p7);
         // The encoder never splits a frame: one that does not fit the MTU
         // goes out whole, over the sink's MTU, and is dropped. Only 1000 kbps
         // at 44.1 kHz with the smallest MTUs gets there (a 5 ms frame sized
@@ -204,10 +214,18 @@ impl LhdcV5Encoder {
             Abr { table, index: table.len() - 1, down_count: 0, down_sum: 0, up_count: 0, up_sum: 0 }
         });
 
-        let encoder =
-            LhdcV5Encoder { enc, format, channels: config.channels as usize, block_size, enc_mtu, packed, abr };
+        let encoder = LhdcV5Encoder {
+            enc,
+            format,
+            channels: config.channels as usize,
+            block_size,
+            enc_mtu,
+            packed,
+            abr,
+            peer_capped,
+        };
         tracing::info!(
-            "LHDC V5: initialized (rate={}, ch={}, {}-bit, mtu={}, frame={} samples, bitrate={} kbps{}, peer limits idx {}..{})",
+            "LHDC V5: initialized (rate={}, ch={}, {}-bit, mtu={}, frame={} samples, bitrate={} kbps{}, peer limits idx {}..{}{})",
             config.sample_rate,
             config.channels,
             encoder_bits,
@@ -216,7 +234,8 @@ impl LhdcV5Encoder {
             encoder.bitrate_kbps(),
             if config.abr { " ABR" } else { "" },
             min_inx,
-            max_inx
+            max_inx,
+            if peer_capped { ", capped by the sink's maximum" } else { "" }
         );
         Ok(encoder)
     }
@@ -296,6 +315,10 @@ impl Encoder for LhdcV5Encoder {
     /// The current target bit rate (changes under ABR)
     fn bitrate_kbps(&self) -> u32 {
         self.enc.last_bitrate()
+    }
+
+    fn bitrate_capped(&self) -> bool {
+        self.peer_capped
     }
 
     /// ABR policy of Android's lhdcv5BT_enc.c (lhdcv5_enc_abr_adjust_bitrate).

@@ -7,6 +7,15 @@ export type StreamInfo = { codec: string, bitrate_kbps: number, sample_rate: num
  */
 requested_codec: string | null, requested_in_use: boolean, 
 /**
+ * Adaptive bit rate on (LDAC, LHDC V5): LHDC V5 then stays at 400
+ * kbps or below whatever the quality
+ */
+abr: boolean, 
+/**
+ * The device's maximum bit rate lowered the profile's (LHDC V5)
+ */
+bitrate_capped: boolean, 
+/**
  * Where the audio comes from
  */
 source: SourceInfo | null, };

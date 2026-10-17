@@ -11,7 +11,7 @@ import { Icon } from "../components/Icon";
 import type { IconName } from "../components/icons";
 import { t } from "../i18n";
 import type { CaptureState, FlowStepView, LogLine } from "../ipc/types";
-import { codecLabelKey } from "../lib/codecs";
+import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { STEPS, type Step, type StepStatus, stepDetail } from "../lib/flow";
 import { clock, copyText, kbps, maskAddresses } from "../lib/format";
 import {
@@ -315,7 +315,8 @@ function LinkPanel() {
     const i = stream().info;
     if (!streaming() || !i) return DASH;
     const key = codecLabelKey(i.codec);
-    return t("quality.codec_value", key ? t(key) : i.codec, i.sample_rate / 1000, i.channels, i.bitrate_kbps);
+    const note = bitrateNoteKey(i);
+    return t("quality.codec_value", key ? t(key) : i.codec, i.sample_rate / 1000, i.channels, i.bitrate_kbps) + (note ? t(note) : "");
   };
   /** The last sample while packets go out (the "last second" rows) */
   const sending = () => {

@@ -89,6 +89,10 @@ pub struct AdapterInfo {
     pub firmware_present: Option<bool>,
     /// The firmware file names it needs ("rtl8761bu_fw.bin")
     pub firmware_files: Vec<String>,
+    /// One of them that is there but is no Realtek firmware (a saved web
+    /// page): firmware.invalid
+    #[serde(default)]
+    pub firmware_invalid: Option<String>,
     /// What to tell about other vendors' firmware (firmware.vendor_intel,
     /// _broadcom, _csr, _unsupported); None for Realtek and unknown chips
     #[serde(default)]
@@ -160,6 +164,13 @@ pub struct StreamInfo {
     /// The profile's codec, when the device did not offer it (fallback)
     pub requested_codec: Option<String>,
     pub requested_in_use: bool,
+    /// Adaptive bit rate on (LDAC, LHDC V5): LHDC V5 then stays at 400
+    /// kbps or below whatever the quality
+    #[serde(default)]
+    pub abr: bool,
+    /// The device's maximum bit rate lowered the profile's (LHDC V5)
+    #[serde(default)]
+    pub bitrate_capped: bool,
     /// Where the audio comes from
     #[serde(default)]
     pub source: Option<SourceInfo>,

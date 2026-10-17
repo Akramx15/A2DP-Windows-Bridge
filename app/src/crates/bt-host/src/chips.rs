@@ -23,9 +23,6 @@ pub const CUSTOM_CHIP_PID: u16 = 0xFFFF;
 /// the detected adapter), 0 with a stem = firmware files of a chip not in
 /// the table, else a Realtek PID or CUSTOM_CHIP_PID.
 pub const NON_REALTEK_CHIP_PID: u16 = 0xFFFE;
-/// A firmware file smaller than this is not real firmware (an error page
-/// or a truncated download); the real ones are tens of KB
-pub const FIRMWARE_MIN_BYTES: u64 = 10_000;
 
 /// A Realtek chip family
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,37 +242,88 @@ pub fn firmware_files(chip_pid: u16, fw_stem: &str) -> Option<(String, String)> 
     (!fw_stem.is_empty()).then(|| (format!("{fw_stem}_fw.bin"), format!("{fw_stem}_config.bin")))
 }
 
-/// The firmware rule: at least FIRMWARE_MIN_BYTES and not an HTML page (a
-/// "download" of GitHub's page instead of the raw file is the usual
-/// mistake). v1 compared "<!doctype" / "<html" case-sensitively, which let
-/// "<!DOCTYPE html>" through; this ignores case and leading whitespace.
-pub fn firmware_content_valid(size: u64, head: &[u8]) -> bool {
-    if size < FIRMWARE_MIN_BYTES {
-        return false;
-    }
-    let start = head.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(head.len());
-    let head = &head[start..];
-    let starts_with = |p: &[u8]| head.len() >= p.len() && head[..p.len()].eq_ignore_ascii_case(p);
-    !(starts_with(b"<!doctype") || starts_with(b"<html"))
+/// Signatures BTstack's Realtek loader checks (btstack_chipset_realtek.c):
+/// the firmware starts with one of these ...
+const FW_SIGNATURES: [&[u8; 8]; 2] = [b"Realtech", b"RTBTCore"];
+/// ... and ends with the extension signature
+const FW_EXTENSION_SIGNATURE: [u8; 4] = [0x51, 0x04, 0xFD, 0x77];
+/// A config file starts with 0x8723AB55 (little-endian)
+const CONFIG_MAGIC: [u8; 4] = [0x55, 0xAB, 0x23, 0x87];
+
+/// A firmware or config file in the settings folder: missing, or there but
+/// not what BTstack's Realtek loader accepts. A web page saved instead of
+/// the file is the usual case (issue #66: kernel.org's preview page instead
+/// of the "plain" link).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileState {
+    Missing,
+    Invalid,
+    Ok,
 }
 
-/// `firmware_content_valid` for a file (false if it cannot be read)
-pub fn firmware_file_valid(path: &Path) -> bool {
-    use std::io::Read;
-    let Ok(mut f) = std::fs::File::open(path) else { return false };
-    let Ok(meta) = f.metadata() else { return false };
-    let mut head = [0u8; 64];
-    let n = f.read(&mut head).unwrap_or(0);
-    firmware_content_valid(meta.len(), &head[..n])
+/// Realtek firmware as BTstack accepts it: "Realtech" or "RTBTCore" at the
+/// start, the extension signature at the end. v1 only rejected files under
+/// 10 KB or starting with "<!doctype" (case-sensitively, so the
+/// "<!DOCTYPE html>" of kernel.org's page passed).
+pub fn firmware_content_valid(data: &[u8]) -> bool {
+    data.len() >= 16
+        && FW_SIGNATURES.iter().any(|sig| data.starts_with(*sig))
+        && data.ends_with(&FW_EXTENSION_SIGNATURE)
+}
+
+/// A Realtek config file: empty (BTstack then uses the chip's efuse), or
+/// starting with its magic
+pub fn config_content_valid(data: &[u8]) -> bool {
+    data.is_empty() || (data.len() >= 6 && data.starts_with(&CONFIG_MAGIC))
+}
+
+fn file_state(path: &Path, valid: fn(&[u8]) -> bool) -> FileState {
+    match std::fs::read(path) {
+        Ok(data) if valid(&data) => FileState::Ok,
+        Ok(_) => FileState::Invalid,
+        Err(_) => FileState::Missing,
+    }
+}
+
+/// [`firmware_content_valid`] for a file
+pub fn firmware_file_state(path: &Path) -> FileState {
+    file_state(path, firmware_content_valid)
+}
+
+/// [`config_content_valid`] for a file
+pub fn config_file_state(path: &Path) -> FileState {
+    file_state(path, config_content_valid)
+}
+
+/// The firmware of a chip setting, as [`firmware_check`] found it
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirmwareCheck {
+    /// Both files there and valid
+    pub present: bool,
+    /// Name of a file that is there but invalid (the firmware first)
+    pub invalid_file: Option<String>,
 }
 
 /// Whether the firmware for a chip setting is in `dir` (v1
-/// check_firmware_present): the firmware file valid, the config file
-/// present (it may be empty: BTstack then uses the chip's efuse). None if
-/// the setting names no Realtek firmware to check.
-pub fn firmware_present(dir: &Path, chip_pid: u16, fw_stem: &str) -> Option<bool> {
+/// check_firmware_present): the firmware and the config file there and
+/// valid. None if the setting names no Realtek firmware to check.
+pub fn firmware_check(dir: &Path, chip_pid: u16, fw_stem: &str) -> Option<FirmwareCheck> {
     let (fw, cfg) = firmware_files(chip_pid, fw_stem)?;
-    Some(firmware_file_valid(&dir.join(fw)) && dir.join(cfg).is_file())
+    let fw_state = firmware_file_state(&dir.join(&fw));
+    let cfg_state = config_file_state(&dir.join(&cfg));
+    let invalid_file = if fw_state == FileState::Invalid {
+        Some(fw)
+    } else if cfg_state == FileState::Invalid {
+        Some(cfg)
+    } else {
+        None
+    };
+    Some(FirmwareCheck { present: fw_state == FileState::Ok && cfg_state == FileState::Ok, invalid_file })
+}
+
+/// [`firmware_check`]'s verdict alone
+pub fn firmware_present(dir: &Path, chip_pid: u16, fw_stem: &str) -> Option<bool> {
+    firmware_check(dir, chip_pid, fw_stem).map(|c| c.present)
 }
 
 /// A firmware pair found in the config folder

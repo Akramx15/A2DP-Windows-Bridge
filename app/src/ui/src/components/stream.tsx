@@ -5,10 +5,10 @@
 import { createMemo, createSignal, onCleanup, Show, type JSX } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { t, tm } from "../i18n";
-import { codecLabelKey } from "../lib/codecs";
+import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { copyText, khz, kbps, percentToVolume, volumePercent } from "../lib/format";
 import { firmwareUrl } from "../lib/links";
-import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamState } from "../ipc/types";
+import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState } from "../ipc/types";
 import { Sparkline } from "./charts";
 import { Banner, Button, Dialog } from "./controls";
 import { Icon } from "./Icon";
@@ -143,6 +143,11 @@ export function CodecBadge(props: { compact?: boolean }) {
     const key = codecLabelKey(i.codec);
     return key ? t(key) : i.codec;
   };
+  // "400 kbps — ABR on": why the bit rate is below the profile's
+  const bitrateNote = (i: StreamInfo) => {
+    const key = bitrateNoteKey(i);
+    return key ? `${i.bitrate_kbps} kbps${t(key)}` : undefined;
+  };
   const fallbackHelp = () => {
     const i = info();
     if (!i?.requested_codec) return "";
@@ -157,7 +162,14 @@ export function CodecBadge(props: { compact?: boolean }) {
             <Icon name="warning" class="st-warn" title={fallbackHelp()} />
           </Show>
           <strong>{name()}</strong>
-          <span class="num">{i().bitrate_kbps} kbps</span>
+          <span class="num" title={bitrateNote(i())}>
+            {i().bitrate_kbps} kbps
+          </span>
+          <Show when={i().abr}>
+            <span class="muted" title={t("tooltip.abr")}>
+              ABR
+            </span>
+          </Show>
           <Show when={!props.compact}>
             <span class="num">{khz(i().sample_rate)} kHz</span>
           </Show>

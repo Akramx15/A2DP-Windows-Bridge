@@ -40,6 +40,8 @@ const SBC: StreamInfo = {
   source_bits: 32,
   requested_codec: null,
   requested_in_use: false,
+  abr: false,
+  bitrate_capped: false,
   source: null,
 };
 

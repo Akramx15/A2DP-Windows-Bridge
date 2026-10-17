@@ -32,6 +32,11 @@ firmware_present: boolean | null,
  */
 firmware_files: Array<string>, 
 /**
+ * One of them that is there but is no Realtek firmware (a saved web
+ * page): firmware.invalid
+ */
+firmware_invalid: string | null, 
+/**
  * What to tell about other vendors' firmware (firmware.vendor_intel,
  * _broadcom, _csr, _unsupported); None for Realtek and unknown chips
  */

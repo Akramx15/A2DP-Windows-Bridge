@@ -232,13 +232,27 @@ extern "C" fn a2dpwb_rs_log_message(level: c_int, message: *const c_char) {
         }
         // SAFETY: vsnprintf in shim.c produced a NUL-terminated string.
         let text = unsafe { CStr::from_ptr(message) }.to_string_lossy();
-        // HCI_DUMP_LOG_LEVEL_DEBUG 0, _INFO 1, _ERROR 2
+        // HCI_DUMP_LOG_LEVEL_DEBUG 0, _INFO 1, _ERROR 2, _PRINT 3 (the
+        // Realtek driver's printf, see build.rs)
         match level {
             2 => tracing::warn!(target: "btstack", "{text}"),
+            3 => tracing::info!(target: "btstack", "{}", text.trim_end()),
+            1 if from_chipset_driver(&text) => tracing::info!(target: "btstack", "{text}"),
             1 => tracing::debug!(target: "btstack", "{text}"),
             _ => tracing::trace!(target: "btstack", "{text}"),
         }
     })
+}
+
+/// A log line of BTstack's firmware loaders ("btstack_chipset_realtek.c.972:
+/// Wrong signature. Quit!"): the only place that tells why an upload was
+/// skipped (wrong file, size, project id...), so it goes to the log file
+/// at the default level
+pub(crate) fn from_chipset_driver(msg: &str) -> bool {
+    match (msg.find("btstack_chipset_"), msg.find(": ")) {
+        (Some(chip), Some(sep)) => chip < sep,
+        _ => false,
+    }
 }
 
 // ---- Link key store ----
@@ -324,4 +338,19 @@ extern "C" fn a2dpwb_rs_lk_at(index: c_int, addr: *mut u8, key: *mut u8, key_typ
             None => 0,
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::from_chipset_driver;
+
+    #[test]
+    fn chipset_driver_lines() {
+        assert!(from_chipset_driver("btstack_chipset_realtek.c.972: Wrong signature. Quit!"));
+        assert!(from_chipset_driver("btstack_chipset_bcm.c.120: Using firmware: x.hcd"));
+        assert!(!from_chipset_driver("hci.c.4321: hci_power_control: 1"));
+        // The name later in the message is no source file prefix
+        assert!(!from_chipset_driver("l2cap.c.10: see btstack_chipset_realtek"));
+        assert!(!from_chipset_driver("btstack_chipset_realtek"));
+    }
 }

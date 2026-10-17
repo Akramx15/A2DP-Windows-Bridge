@@ -217,7 +217,7 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
             <Match when={a().firmware_present === false}>
               <Banner
                 kind="warn"
-                title={t("firmware.missing_manual")}
+                title={a().firmware_invalid ? t("firmware.invalid_short") : t("firmware.missing_manual")}
                 actions={
                   <>
                     <Button icon="open" onClick={() => app.core.transport.openUrl(firmwareUrl(a().vendor))}>
@@ -232,6 +232,7 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
                   </>
                 }
               >
+                <Show when={a().firmware_invalid}>{(file) => <p>{t("firmware.invalid", file())}</p>}</Show>
                 <p>
                   {t("firmware.required_files")} <span class="mono">{a().firmware_files.join(", ")}</span>
                 </p>

@@ -90,6 +90,10 @@ pub struct StreamInfo {
     pub requested_codec: Option<String>,
     /// ... maybe because another device streams on its endpoint
     pub requested_in_use: bool,
+    /// Adaptive bit rate on (LDAC, LHDC V5)
+    pub abr: bool,
+    /// The device's maximum bit rate lowered the profile's (LHDC V5)
+    pub bitrate_capped: bool,
     /// Where the audio comes from (sent again when an application capture
     /// starts or stops waiting for the app)
     pub source: SourceInfo,
@@ -536,6 +540,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         }
     };
     let bitrate = encoder.bitrate_kbps();
+    let bitrate_capped = encoder.bitrate_capped();
     tracing::info!("encoder ready: {} {bitrate} kbps, mtu {mtu}, {bits}-bit, ABR {}", kind.name(), encoder_config.abr);
 
     if !host.start_stream() {
@@ -558,6 +563,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         source_bits: (format.sample_format.bytes_per_sample() * 8) as u32,
         requested_codec: choice.replaced.as_ref().map(|(w, _)| w.name().to_string()),
         requested_in_use: matches!(choice.replaced, Some((_, Unavailable::SepInUse { .. }))),
+        abr: encoder_config.abr,
+        bitrate_capped,
         source: req.source.info(),
     };
     inner.save_device(&addr, &req.device_name);

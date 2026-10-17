@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
-import { codecLabelKey, fitToCodec, sampleRates } from "./codecs";
+import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { maskAddresses, parseAddress } from "./format";
 import { validateProfile } from "./profile";
@@ -156,6 +156,25 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "opus", sample_rate: 48000 }).sample_rate).toBe(48000);
     expect(fitToCodec({ ...p, codec: "opus", sample_rate: 44100 }).sample_rate).toBe(0);
     expect(sampleRates("opus")).toEqual([0, 48000]);
+  });
+
+  it("offers 192 kHz for LHDC V5 only, and no quality under its ABR", () => {
+    expect(sampleRates("lhdcv5")).toEqual([0, 44100, 48000, 88200, 96000, 192000]);
+    expect(sampleRates("ldac")).not.toContain(192000);
+    const p = { ...sampleProfile(), codec: "lhdcv5", sample_rate: 192000 };
+    expect(fitToCodec(p).sample_rate).toBe(192000);
+    expect(fitToCodec({ ...p, codec: "ldac" }).sample_rate).toBe(0);
+    // LHDC V5 ABR stays at 400 kbps or below whatever the quality (as on Android)
+    expect(qualityIgnored("lhdcv5", true)).toBe(true);
+    expect(qualityIgnored("lhdcv5", false)).toBe(false);
+    expect(qualityIgnored("ldac", true)).toBe(false);
+  });
+
+  it("says why the bit rate is below the profile's", () => {
+    expect(bitrateNoteKey({ abr: true, bitrate_capped: false })).toBe("quality.codec_abr");
+    expect(bitrateNoteKey({ abr: false, bitrate_capped: true })).toBe("quality.codec_capped");
+    expect(bitrateNoteKey({ abr: true, bitrate_capped: true })).toBe("quality.codec_abr");
+    expect(bitrateNoteKey({ abr: false, bitrate_capped: false })).toBeNull();
   });
 
   it("names codecs as the core reports them", () => {

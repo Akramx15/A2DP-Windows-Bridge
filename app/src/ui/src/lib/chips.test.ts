@@ -153,6 +153,20 @@ describe("firmware state", () => {
     expect(adapterFirmwareTag(other("Unknown", null), s)).toEqual({ key: "ui.adapter.firmware_choose_chip", status: "warn" });
   });
 
+  it("tells a file that is no firmware apart from a missing one", () => {
+    // Issue #66: kernel.org's preview page saved as rtl8761bu_fw.bin
+    const page: AdapterFirmware = { ...rtl(false), firmware_invalid: "rtl8761bu_fw.bin" };
+    expect(chipStatus(setting(CHIP_AUTO), [page], [])).toEqual({
+      kind: "invalid",
+      files: ["rtl8761bu_fw.bin", "rtl8761bu_config.bin"],
+      file: "rtl8761bu_fw.bin",
+    });
+    expect(adapterFirmwareTag(page, setting(CHIP_AUTO))).toEqual({ key: "firmware.invalid_short", status: "bad" });
+    expect(chipStatus(setting(CHIP_AUTO), [{ ...rtl(false), firmware_invalid: null }], []).kind).toBe("missing");
+    // Present wins over a stale name
+    expect(chipStatus(setting(CHIP_AUTO), [{ ...rtl(true), firmware_invalid: "x" }], []).kind).toBe("present");
+  });
+
   it("opens the vendor's firmware page", () => {
     expect(vendorFirmwareUrl("Intel")).toBe(LINKS.firmwareIntel);
     expect(vendorFirmwareUrl("Broadcom")).toBe(LINKS.firmwareBroadcom);

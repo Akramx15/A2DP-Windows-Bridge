@@ -21,6 +21,7 @@ import {
   PACKET_DEFAULT,
   PACKET_MAX,
   PACKET_MIN,
+  qualityIgnored,
   sampleRates,
   type CodecSpec,
   type CodecSupport,
@@ -328,7 +329,7 @@ export function ProfileEditor(props: { original: string | null }) {
                     id={id}
                     describedBy={described}
                     value={p.quality}
-                    disabled={spec().qualities.length === 0}
+                    disabled={spec().qualities.length === 0 || qualityIgnored(p.codec, p.abr)}
                     options={
                       spec().qualities.length
                         ? spec().qualities.map((q) => ({ value: q.id, label: q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label) }))

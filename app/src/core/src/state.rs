@@ -199,6 +199,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
             };
             let chip_pid = chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, [a.realtek_pid]);
             let files = chips::firmware_files(chip_pid, &settings.bt_chip_fw_stem);
+            let check = chips::firmware_check(config_dir, chip_pid, &settings.bt_chip_fw_stem);
             AdapterInfo {
                 instance_id: a.device.instance_id.clone(),
                 vid: a.device.vid,
@@ -209,12 +210,48 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 driver,
                 driver_service: a.device.driver.service.clone(),
                 realtek_chip: a.realtek_pid.and_then(chips::realtek_chip_name).map(str::to_owned),
-                firmware_present: chips::firmware_present(config_dir, chip_pid, &settings.bt_chip_fw_stem),
+                firmware_present: check.as_ref().map(|c| c.present),
                 firmware_files: files.map(|(f, c)| vec![f, c]).unwrap_or_default(),
+                firmware_invalid: check.and_then(|c| c.invalid_file),
                 vendor_note: vendor_note(a.vendor),
             }
         })
         .collect()
+}
+
+/// What a new adapter list tells about the firmware against the last one
+#[derive(Debug, Default, PartialEq, Eq)]
+struct FirmwareChange {
+    /// An adapter's firmware was missing or invalid and is there now
+    fixed: bool,
+    /// Adapters (display name) with a file newly found invalid
+    invalid: Vec<(String, String)>,
+}
+
+fn firmware_change(old: &[AdapterInfo], new: &[AdapterInfo]) -> FirmwareChange {
+    let mut change = FirmwareChange::default();
+    for a in new {
+        let before = old.iter().find(|o| o.instance_id == a.instance_id);
+        if a.firmware_present == Some(true) && before.is_some_and(|o| o.firmware_present == Some(false)) {
+            change.fixed = true;
+        }
+        if let Some(file) = &a.firmware_invalid
+            && before.is_none_or(|o| o.firmware_invalid.as_ref() != Some(file))
+        {
+            change.invalid.push((a.display_name.clone(), file.clone()));
+        }
+    }
+    change
+}
+
+/// The log line of v1 check_firmware_present for each file found invalid
+fn warn_invalid_firmware(config_dir: &Path, invalid: &[(String, String)]) {
+    for (adapter, file) in invalid {
+        tracing::warn!(
+            "{adapter}: {file} in {} is not a Realtek firmware file (a saved web page?)",
+            config_dir.display()
+        );
+    }
 }
 
 /// The saved devices, then the scanned ones; with the codecs each offered
@@ -395,12 +432,10 @@ impl CoreState {
         let legacy = settings.legacy_max_media_payload();
         let profiles: Vec<Profile> = profiles::load(&dir).iter().map(|p| to_ipc_profile(p, legacy)).collect();
         let active = Some(settings.last_profile.clone()).filter(|n| profiles.iter().any(|p| &p.name == n));
+        let adapters = adapter_infos(&dir, &settings);
+        warn_invalid_firmware(&dir, &firmware_change(&[], &adapters).invalid);
         let snapshot = Snapshot {
-            adapter: AdapterState {
-                status: AdapterStatus::Stopped,
-                adapters: adapter_infos(&dir, &settings),
-                error: None,
-            },
+            adapter: AdapterState { status: AdapterStatus::Stopped, adapters, error: None },
             devices: saved_devices(&dir, &[], &service.device_codecs()),
             scanning: false,
             stream: StreamStatus { message: Msg::new("status.ready"), ..Default::default() },
@@ -553,6 +588,8 @@ impl CoreState {
                     source_bits: i.source_bits,
                     requested_codec: i.requested_codec,
                     requested_in_use: i.requested_in_use,
+                    abr: i.abr,
+                    bitrate_capped: i.bitrate_capped,
                     source: Some(to_ipc_source(&i.source)),
                 });
                 // The device was saved when it connected
@@ -610,16 +647,37 @@ impl CoreState {
     }
 
     pub fn refresh_adapters(&self) -> Vec<AdapterInfo> {
+        let (list, fixed) = self.list_adapters();
+        if fixed {
+            // Files placed or replaced meanwhile: a stack started without
+            // them keeps running the ROM code (v1 OnOpenFirmware)
+            tracing::info!("firmware files are there now");
+            self.restart_for_firmware();
+        }
+        list
+    }
+
+    /// The adapters anew, published; true if an adapter's firmware is there
+    /// now that was missing or invalid
+    fn list_adapters(&self) -> (Vec<AdapterInfo>, bool) {
         let (_, s) = self.snapshot();
         let list = adapter_infos(&self.config_dir(), &self.service.settings());
+        let change = firmware_change(&s.adapter.adapters, &list);
+        warn_invalid_firmware(&self.config_dir(), &change.invalid);
         self.publish(Event::Adapter(AdapterState { adapters: list.clone(), ..s.adapter }));
-        list
+        (list, change.fixed)
     }
 
     /// The chip or firmware setting changed: the firmware state anew, and a
     /// stack that loads the firmware again (v1 reset_btstack)
     fn reload_adapter(&self) {
-        self.refresh_adapters();
+        self.list_adapters();
+        self.restart_for_firmware();
+    }
+
+    /// A stack that loads the firmware again: stopped now when idle, else
+    /// at its next use
+    fn restart_for_firmware(&self) {
         let (_, s) = self.snapshot();
         let idle = !s.scanning && matches!(s.stream.state, StreamState::Idle | StreamState::Error);
         if self.service.reload_adapter(idle) {
@@ -1229,6 +1287,44 @@ mod tests {
             source: source.into(),
             ..CustomStream::default()
         }
+    }
+
+    fn rtl(id: &str, present: Option<bool>, invalid: Option<&str>) -> AdapterInfo {
+        AdapterInfo {
+            instance_id: id.into(),
+            vid: 0x0BDA,
+            pid: 0x8771,
+            display_name: "RTL8761BU".into(),
+            device_name: String::new(),
+            vendor: "Realtek".into(),
+            driver: DriverKind::Winusb,
+            driver_service: "WinUSB".into(),
+            realtek_chip: Some("RTL8761BU".into()),
+            firmware_present: present,
+            firmware_files: vec!["rtl8761bu_fw.bin".into(), "rtl8761bu_config.bin".into()],
+            firmware_invalid: invalid.map(str::to_owned),
+            vendor_note: None,
+        }
+    }
+
+    #[test]
+    fn firmware_fixed_and_invalid_files_are_noticed() {
+        let missing = rtl("a", Some(false), None);
+        let page = rtl("a", Some(false), Some("rtl8761bu_fw.bin"));
+        let ok = rtl("a", Some(true), None);
+        // Placed, or a web page replaced by the file: the stack restarts
+        assert!(firmware_change(std::slice::from_ref(&missing), std::slice::from_ref(&ok)).fixed);
+        assert!(firmware_change(std::slice::from_ref(&page), std::slice::from_ref(&ok)).fixed);
+        // Present all along, another adapter, or a newly plugged one
+        assert!(!firmware_change(std::slice::from_ref(&ok), std::slice::from_ref(&ok)).fixed);
+        assert!(!firmware_change(&[rtl("b", Some(false), None)], std::slice::from_ref(&ok)).fixed);
+        assert!(!firmware_change(&[], std::slice::from_ref(&ok)).fixed);
+        // An invalid file is told once, not at every refresh
+        let c = firmware_change(std::slice::from_ref(&missing), std::slice::from_ref(&page));
+        assert_eq!(c.invalid, [("RTL8761BU".to_string(), "rtl8761bu_fw.bin".to_string())]);
+        assert!(!c.fixed);
+        assert!(firmware_change(std::slice::from_ref(&page), std::slice::from_ref(&page)).invalid.is_empty());
+        assert_eq!(firmware_change(&[], std::slice::from_ref(&page)).invalid.len(), 1);
     }
 
     #[test]
