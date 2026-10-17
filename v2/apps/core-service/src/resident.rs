@@ -213,6 +213,7 @@ pub fn run(args: &[String]) -> i32 {
             }
         }));
     }
+    state.check_update_if_due();
     if !background {
         launch_ui(false);
     }

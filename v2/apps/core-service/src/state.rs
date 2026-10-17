@@ -576,12 +576,49 @@ impl CoreState {
             Method::DiagInfo => {
                 Ok(serde_json::to_value(DiagInfo { text: crate::diag_text(self) }).unwrap_or(Value::Null))
             }
-            Method::AppCheckUpdate => Ok(serde_json::to_value(self.snapshot().1.update).unwrap_or(Value::Null)),
+            Method::AppCheckUpdate => {
+                blocking(Box::new(|me| Ok(serde_json::to_value(me.check_update()).unwrap_or(Value::Null)))).await
+            }
             Method::AppQuit => {
                 self.quit();
                 Ok(Value::Null)
             }
         }
+    }
+
+    /// Asks GitHub for a newer release (blocking) and publishes the result
+    pub fn check_update(&self) -> UpdateState {
+        use a2dpwb_core::update;
+        let (_, s) = self.snapshot();
+        self.publish(Event::Update(UpdateState { checking: true, ..s.update.clone() }));
+        let prereleases = self.service.settings().include_prereleases;
+        let available = match update::check(update::current_version(), prereleases) {
+            Ok(r) => r.map(|r| ipc::UpdateInfo { version: r.version, url: r.url, prerelease: r.prerelease }),
+            Err(e) => {
+                tracing::warn!("update check failed: {e}");
+                s.update.available.clone()
+            }
+        };
+        let u = UpdateState { checking: false, available, current_version: update::current_version().to_string() };
+        self.publish(Event::Update(u.clone()));
+        u
+    }
+
+    /// The automatic check: at most once a day (recorded before asking, as v1)
+    pub fn check_update_if_due(self: &Arc<Self>) {
+        use a2dpwb_core::update;
+        let mut s = self.service.settings();
+        let today = update::today();
+        if !update::automatic_check_due(&s, &today) {
+            return;
+        }
+        s.last_update_check = today;
+        let _ = s.save(&self.config_dir());
+        self.service.set_settings(s);
+        let me = self.clone();
+        std::thread::spawn(move || {
+            me.check_update();
+        });
     }
 
     pub fn link_subscribed(&self) -> bool {

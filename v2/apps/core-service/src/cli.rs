@@ -27,6 +27,9 @@ Usage: a2dpwb-core --cli -d XX:XX:XX:XX:XX:XX [options]
   --bits <16|24>        bit depth (default: 24 where the codec carries it)
   --max-packet <bytes>  max media packet size (679-1679, default 1023)
   --afh <policy>        auto, off or Wi-Fi channels to avoid such as 6,11
+  --remote-sink <host[:port]|auto>
+                        statistics of a measuring receiver (tools/linux_sink);
+                        without -d, stream to that receiver
   --scan [seconds]      list nearby devices and exit
 
 Development / testing:
@@ -48,6 +51,7 @@ struct Args {
     bits: Option<u8>,
     max_packet: u16,
     afh: Option<String>,
+    remote_sink: Option<String>,
     scan: Option<u32>,
     hci_tcp: Option<String>,
     hci_capture: Option<PathBuf>,
@@ -68,6 +72,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         bits: None,
         max_packet: bt_host::media::MEDIA_PAYLOAD_LIMIT_DEFAULT,
         afh: None,
+        remote_sink: None,
         scan: None,
         hci_tcp: None,
         hci_capture: None,
@@ -107,6 +112,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 }
             }
             "--afh" => a.afh = Some(value(&mut it, "--afh")?),
+            "--remote-sink" => a.remote_sink = Some(value(&mut it, "--remote-sink")?),
             "--scan" => {
                 let secs = match it.peek() {
                     Some(s) if !s.starts_with('-') => it.next().and_then(|s| s.parse().ok()).unwrap_or(10),
@@ -189,7 +195,37 @@ pub fn run(args: &[String]) -> i32 {
         return code;
     }
 
-    let Some(device) = a.device.as_deref().and_then(bt_host::parse_addr) else {
+    // The measuring receiver: its IP for the statistics and, without -d, its
+    // Bluetooth address as the device to stream to
+    let receiver = a2dpwb_core::receiver::ReceiverClient::new();
+    let mut device_arg = a.device.clone();
+    if let Some(target) = &a.remote_sink {
+        use a2dpwb_core::receiver;
+        let Some((host, port)) = receiver::split_target(target) else {
+            eprintln!("Bad --remote-sink {target}");
+            return 2;
+        };
+        let auto = host.eq_ignore_ascii_case(receiver::AUTO);
+        let found = receiver::discover((!auto).then_some(host.as_str()), port, receiver::DISCOVER_TIMEOUT);
+        let mut stats_target = target.clone();
+        match found.first() {
+            None => println!("Receiver: none answered {}", if auto { "on the local network" } else { host.as_str() }),
+            Some(r) => {
+                println!("{}", r.describe(found.len() > 1));
+                if device_arg.is_none() && !r.bt_address.is_empty() {
+                    device_arg = Some(r.bt_address.clone());
+                    println!("Streaming to the receiver (no -d given)");
+                }
+                if auto {
+                    stats_target = format!("{}:{}", r.ip, r.port);
+                }
+            }
+        }
+        println!("Receiver statistics: {stats_target}");
+        receiver.start(&stats_target);
+    }
+
+    let Some(device) = device_arg.as_deref().and_then(bt_host::parse_addr) else {
         eprintln!("No device: use -d XX:XX:XX:XX:XX:XX (find the address with --scan)");
         return 1;
     };
@@ -222,8 +258,13 @@ pub fn run(args: &[String]) -> i32 {
     });
 
     let mut streaming_since: Option<Instant> = None;
+    let mut last_summary = Instant::now();
     let mut code = 0;
     loop {
+        if a.remote_sink.is_some() && streaming_since.is_some() && last_summary.elapsed() >= Duration::from_secs(5) {
+            last_summary = Instant::now();
+            println!("{}", receiver.summary());
+        }
         if !running.load(Ordering::Acquire) {
             println!("\nStopping...");
             break;
@@ -258,6 +299,10 @@ pub fn run(args: &[String]) -> i32 {
     }
     service.shutdown();
     capture.stop();
+    if a.remote_sink.is_some() {
+        // Let the last packets arrive and the receiver report them
+        std::thread::sleep(Duration::from_millis(1500));
+    }
     let stats = service.stats();
     println!(
         "Sent {} media packets ({} bytes), {} dropped before the radio",
@@ -265,5 +310,9 @@ pub fn run(args: &[String]) -> i32 {
         stats.bytes_sent.load(Ordering::Relaxed),
         stats.queue_drops.load(Ordering::Relaxed) + stats.send_errors.load(Ordering::Relaxed)
     );
+    if a.remote_sink.is_some() {
+        println!("{}", receiver.summary());
+        receiver.stop();
+    }
     code
 }
