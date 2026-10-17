@@ -29,9 +29,10 @@ pub(crate) type Job = Box<dyn FnOnce(&mut HostApp, &Stack) + Send>;
 pub(crate) const TIMER_AFH: u32 = 1;
 pub(crate) const TIMER_PLAYBACK: u32 = 2;
 
-const AFH_TICK_MS: u32 = 5000;
+/// One radio reading per tick (RSSI and the AFH map in turn)
+const AFH_TICK_MS: u32 = 2500;
 /// Re-survey the Wi-Fi every 30 s
-const AFH_CLASSIFY_EVERY_TICKS: u32 = 6;
+const AFH_CLASSIFY_EVERY_TICKS: u32 = 12;
 const PLAYBACK_TICK_MS: u32 = 1000;
 /// No audio for ~2 s = paused
 const PLAYBACK_IDLE_TICKS: u32 = 2;
@@ -102,6 +103,9 @@ pub(crate) struct HostApp {
     afh_sent_map: Option<[u8; 10]>,
     afh_policy_version_seen: Option<u32>,
     afh_ticks: u32,
+    /// The next radio reading is RSSI (else the AFH map). Its own toggle: a
+    /// classification sent on a tick must not always skip the same reading
+    read_rssi_next: bool,
 }
 
 impl HostApp {
@@ -150,6 +154,7 @@ impl HostApp {
             afh_sent_map: None,
             afh_policy_version_seen: None,
             afh_ticks: 0,
+            read_rssi_next: true,
         }
     }
 
@@ -1159,7 +1164,8 @@ impl HostApp {
         if !stack.can_send_command_now() {
             return;
         }
-        if self.afh_ticks % 2 == 1 {
+        self.read_rssi_next = !self.read_rssi_next;
+        if !self.read_rssi_next {
             stack.cmd_read_rssi(handle);
         } else {
             stack.cmd_read_afh_channel_map(handle);
