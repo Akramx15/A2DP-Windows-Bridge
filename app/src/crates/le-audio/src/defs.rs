@@ -2,9 +2,6 @@
 //! types and enums from the Bluetooth SIG Assigned Numbers, PACS, ASCS and
 //! BAP 1.0.x, shared by the BTstack side and the profile modules.
 
-// Step 0 skeleton: remove once the bodies are written (WP2)
-#![allow(unused_variables, dead_code)]
-
 // ---- GATT services (Assigned Numbers 3.4) ----
 pub const UUID_SERVICE_GAP: u16 = 0x1800;
 pub const UUID_SERVICE_GATT: u16 = 0x1801;
@@ -164,12 +161,30 @@ pub enum AseState {
 impl AseState {
     /// The state of an ASE characteristic value's second octet
     pub fn from_u8(value: u8) -> AseState {
-        todo!("Step 0 skeleton")
+        match value {
+            0x00 => AseState::Idle,
+            0x01 => AseState::CodecConfigured,
+            0x02 => AseState::QosConfigured,
+            0x03 => AseState::Enabling,
+            0x04 => AseState::Streaming,
+            0x05 => AseState::Disabling,
+            0x06 => AseState::Releasing,
+            _ => AseState::Unknown,
+        }
     }
 
     /// Name for the log, e.g. "QoS Configured" (v1 ase_state_name)
     pub fn name(self) -> &'static str {
-        todo!("Step 0 skeleton")
+        match self {
+            AseState::Idle => "Idle",
+            AseState::CodecConfigured => "Codec Configured",
+            AseState::QosConfigured => "QoS Configured",
+            AseState::Enabling => "Enabling",
+            AseState::Streaming => "Streaming",
+            AseState::Disabling => "Disabling",
+            AseState::Releasing => "Releasing",
+            AseState::Unknown => "unknown",
+        }
     }
 }
 
@@ -244,15 +259,70 @@ pub const PC_UGG_FEATURES: u8 = UGG_FEATURE_MULTIPLEX | UGG_FEATURE_96KBPS_SRC;
 
 /// LC3 sampling frequency code (SF_CODE_*) to Hz; 0 when unknown
 pub fn sf_code_to_hz(code: u8) -> u32 {
-    todo!("Step 0 skeleton")
+    match code {
+        SF_CODE_8000 => 8000,
+        0x02 => 11025,
+        SF_CODE_16000 => 16000,
+        0x04 => 22050,
+        SF_CODE_24000 => 24000,
+        SF_CODE_32000 => 32000,
+        SF_CODE_44100 => 44100,
+        SF_CODE_48000 => 48000,
+        _ => 0,
+    }
 }
 
 /// Hz to the sampling frequency code (SF_CODE_*); 0 when unknown
 pub fn sf_hz_to_code(hz: u32) -> u8 {
-    todo!("Step 0 skeleton")
+    match hz {
+        8000 => SF_CODE_8000,
+        16000 => SF_CODE_16000,
+        24000 => SF_CODE_24000,
+        32000 => SF_CODE_32000,
+        44100 => SF_CODE_44100,
+        48000 => SF_CODE_48000,
+        _ => 0,
+    }
 }
 
 /// Hz to the Supported Sampling Frequencies bit (SF_BIT_*); 0 when unknown
 pub fn sf_hz_to_cap_bit(hz: u32) -> u16 {
-    todo!("Step 0 skeleton")
+    match hz {
+        8000 => SF_BIT_8000,
+        16000 => SF_BIT_16000,
+        24000 => SF_BIT_24000,
+        32000 => SF_BIT_32000,
+        44100 => SF_BIT_44100,
+        48000 => SF_BIT_48000,
+        _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ase_states() {
+        for v in 0..=6u8 {
+            assert_ne!(AseState::from_u8(v), AseState::Unknown);
+        }
+        assert_eq!(AseState::from_u8(0x02), AseState::QosConfigured);
+        assert_eq!(AseState::from_u8(0x02).name(), "QoS Configured");
+        assert_eq!(AseState::from_u8(0x07), AseState::Unknown);
+        assert_eq!(AseState::from_u8(0xFF).name(), "unknown");
+    }
+
+    #[test]
+    fn sampling_frequencies() {
+        for hz in [8000, 16000, 24000, 32000, 44100, 48000] {
+            assert_eq!(sf_code_to_hz(sf_hz_to_code(hz)), hz);
+            assert_ne!(sf_hz_to_cap_bit(hz), 0);
+        }
+        assert_eq!(sf_code_to_hz(0x02), 11025);
+        assert_eq!(sf_code_to_hz(0x04), 22050);
+        assert_eq!(sf_hz_to_code(11025), 0);
+        assert_eq!(sf_hz_to_cap_bit(12000), 0);
+        assert_eq!(sf_hz_to_cap_bit(48000), 0x80);
+    }
 }

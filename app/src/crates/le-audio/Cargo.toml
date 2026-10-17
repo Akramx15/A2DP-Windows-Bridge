@@ -6,6 +6,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# v1's log lines of the CCP call model and the simulated media player
+tracing.workspace = true
 
 [lints]
 workspace = true

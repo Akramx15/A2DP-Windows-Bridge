@@ -2269,6 +2269,9 @@ dependencies = [
 [[package]]
 name = "le-audio"
 version = "2.0.0-alpha.1"
+dependencies = [
+ "tracing",
+]
 
 [[package]]
 name = "lhdcv5-sys"
