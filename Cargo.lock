@@ -11,6 +11,7 @@ dependencies = [
  "codec",
  "hci-transport",
  "if-addrs",
+ "le-audio",
  "pipeline",
  "semver",
  "serde",
@@ -20,6 +21,7 @@ dependencies = [
  "tracing",
  "ureq",
  "win-sys",
+ "windows",
 ]
 
 [[package]]
@@ -464,6 +466,7 @@ dependencies = [
  "btstack-sys",
  "codec",
  "hci-transport",
+ "le-audio",
  "rtrb",
  "tracing",
 ]
@@ -649,6 +652,7 @@ version = "2.0.0-alpha.1"
 dependencies = [
  "btstack-sys",
  "fdkaac-sys",
+ "lc3-sys",
  "ldac-sys",
  "lhdcv5-sys",
  "openaptx-sys",
@@ -2251,10 +2255,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
+name = "lc3-sys"
+version = "2.0.0-alpha.1"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "ldac-sys"
 version = "2.0.0-alpha.1"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "le-audio"
+version = "2.0.0-alpha.1"
+dependencies = [
+ "tracing",
 ]
 
 [[package]]
@@ -3012,6 +3030,7 @@ version = "2.0.0-alpha.1"
 dependencies = [
  "bt-host",
  "codec",
+ "le-audio",
  "proptest",
  "rtrb",
  "tracing",

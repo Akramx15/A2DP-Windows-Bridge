@@ -1,14 +1,16 @@
 // Picking the headphones: the saved devices and the ones a scan found
 // (device.scan), or an address typed by hand; a saved device can be renamed
-// or removed from the list (v1 OnDeviceEditName / OnDeviceDelete). Used by
-// the profile editor and the first-run setup.
+// or removed from the list (v1 OnDeviceEditName / OnDeviceDelete). With LE
+// Audio (experimental) on, the LE Audio entries too: a dual-mode device is
+// listed twice, its classic entry and its LE Audio one (address and kind
+// name an entry). Used by the profile editor and the first-run setup.
 
 import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
 import { useApp } from "../app/context";
 import { t } from "../i18n";
 import type { Device } from "../ipc/types";
 import { parseAddress } from "../lib/format";
-import { validDeviceName } from "../lib/profile";
+import { deviceKey, listedDevices, validDeviceName } from "../lib/profile";
 import { Button, Dialog, Field, IconButton } from "./controls";
 import { Icon } from "./Icon";
 
@@ -25,12 +27,21 @@ export function sortDevices(devices: readonly Device[]): Device[] {
 
 export function DevicePicker(props: {
   address: string;
-  onPick: (address: string, name: string) => void;
+  /** The chosen entry is the LE Audio one */
+  leAudio?: boolean;
+  onPick: (address: string, name: string, leAudio: boolean) => void;
   error?: string | null;
+  /** Classic entries only (the first-run setup makes an A2DP profile) */
+  classicOnly?: boolean;
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
-  const devices = createMemo(() => sortDevices(snap().devices));
+  const devices = createMemo(() =>
+    sortDevices(listedDevices(snap().devices, snap().settings.le_audio_experimental && !props.classicOnly)),
+  );
+  const chosen = (d: Device) => d.address === props.address && d.le_audio === (props.leAudio ?? false);
+  // Rename and forget name the entry: the LE Audio one with le_audio
+  const kind = (d: Device) => (d.le_audio ? { le_audio: true } : {});
   const [manual, setManual] = createSignal("");
   const scanning = () => snap().scanning;
   const scan = () => app.run(() => app.core.request("device.scan", { seconds: SCAN_SECONDS }));
@@ -51,18 +62,18 @@ export function DevicePicker(props: {
     setRenameTried(true);
     if (!d || !validDeviceName(n) || busy()) return;
     setBusy(true);
-    const ok = await app.run(() => app.core.request("device.rename", { address: d.address, name: n }));
+    const ok = await app.run(() => app.core.request("device.rename", { address: d.address, name: n, ...kind(d) }));
     setBusy(false);
     if (!ok) return;
     setRenaming(null);
     // The profile shows the new name (v1 set the name field too)
-    if (d.address === props.address) props.onPick(d.address, n);
+    if (chosen(d)) props.onPick(d.address, n, d.le_audio);
   };
   const forget = async () => {
     const d = forgetting();
     if (!d || busy()) return;
     setBusy(true);
-    await app.run(() => app.core.request("device.forget", { address: d.address }));
+    await app.run(() => app.core.request("device.forget", { address: d.address, ...kind(d) }));
     setBusy(false);
     setForgetting(null);
   };
@@ -71,7 +82,9 @@ export function DevicePicker(props: {
     <div class="device-picker">
       <div class="picker-head">
         <span class="muted" role="status" aria-live="polite">
-          {scanning() ? t("connection.scanning_hint") : t("ui.devices.count", devices().length)}
+          {scanning()
+            ? t(snap().le_scanning ? "status.le_scanning" : "connection.scanning_hint")
+            : t("ui.devices.count", devices().length)}
         </span>
         <Button icon="search" busy={scanning()} onClick={scan}>
           {scanning() ? t("connection.scanning") : t("connection.scan")}
@@ -85,14 +98,14 @@ export function DevicePicker(props: {
               const nameId = () => `${uid}-${i()}`;
               return (
                 // The radio covers the row (app.css); the buttons sit above it
-                <div class="device-row" classList={{ on: d.address === props.address, dim: !d.audio }}>
+                <div class="device-row" classList={{ on: chosen(d), dim: !d.audio }} data-key={deviceKey(d)}>
                   <input
                     type="radio"
                     name={name}
-                    value={d.address}
-                    checked={d.address === props.address}
+                    value={deviceKey(d)}
+                    checked={chosen(d)}
                     aria-labelledby={nameId()}
-                    onChange={() => props.onPick(d.address, d.name)}
+                    onChange={() => props.onPick(d.address, d.name, d.le_audio)}
                   />
                   <Icon name={d.audio ? "headphones" : "bluetooth"} />
                   <span class="device-row-text" id={nameId()}>
@@ -102,8 +115,15 @@ export function DevicePicker(props: {
                     <Show when={d.saved}>
                       <span class="tag">{t("device.tag_saved")}</span>
                     </Show>
-                    <Show when={d.audio}>
-                      <span class="tag">{t("device.tag_audio")}</span>
+                    <Show
+                      when={d.le_audio}
+                      fallback={
+                        <Show when={d.audio}>
+                          <span class="tag">{t("device.tag_audio")}</span>
+                        </Show>
+                      }
+                    >
+                      <span class="tag">{t(d.le_audio_set ? "device.tag_le_audio_set" : "device.tag_le_audio")}</span>
                     </Show>
                     <Show when={d.rssi !== null}>
                       <span class="tag num">{d.rssi} dBm</span>
@@ -153,7 +173,8 @@ export function DevicePicker(props: {
               disabled={!parseAddress(manual())}
               onClick={() => {
                 const a = parseAddress(manual());
-                if (a) props.onPick(a, "");
+                // A typed address keeps the kind chosen (the profile's check box)
+                if (a) props.onPick(a, "", props.leAudio ?? false);
               }}
             >
               {t("ui.devices.use_address")}
@@ -172,7 +193,7 @@ export function DevicePicker(props: {
       >
         <Field
           label={t("device.enter_name")}
-          hint={renaming()?.address}
+          hint={renaming() ? `${renaming()!.address}${renaming()!.le_audio ? ` (${t("device.tag_le_audio")})` : ""}` : undefined}
           error={nameError()}
         >
           {(id, described) => (
@@ -209,6 +230,10 @@ export function DevicePicker(props: {
         <p>
           <strong>{forgetting()?.name || t("device.name_unknown")}</strong>{" "}
           <span class="mono muted">{forgetting()?.address}</span>
+          <Show when={forgetting()?.le_audio}>
+            {" "}
+            <span class="tag">{t("device.tag_le_audio")}</span>
+          </Show>
         </p>
       </Dialog>
     </div>

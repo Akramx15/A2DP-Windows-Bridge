@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use a2dpwb_core::{Service, ServiceOptions};
 use bt_host::HciCapture;
-use ipc::{AclPacket, Event, LinkCounters, LinkSample, LinkTotals};
+use ipc::{AclPacket, Event, IsoCounters, LinkCounters, LinkSample, LinkTotals};
 use tao::event::{Event as TaoEvent, StartCause};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -77,13 +77,27 @@ const RATE_TICKS: u64 = 4;
 /// Ticks between capture size updates (2 s)
 const CAPTURE_TICKS: u64 = 8;
 
-/// A link sample from the counters now and those of the last sample
+/// The ISO counters of an LE Audio (experimental) stream on `cis` CIS
+fn iso_counters(cis: u32, s: &bt_host::LeStreamStats) -> IsoCounters {
+    IsoCounters {
+        cis,
+        sdu_sets: s.sets_sent,
+        silence: s.silence_sets,
+        underruns: s.underruns,
+        dropped: s.overflows,
+        prefill: s.prefill,
+    }
+}
+
+/// A link sample from the counters now and those of the last sample; `iso`:
+/// an LE Audio stream's counters (the A2DP media figures are then 0 / None)
 fn link_sample(
     time_ms: u64,
     stats: &bt_host::LinkStats,
     last: Option<(Instant, LinkTotals)>,
     now: Instant,
     source_rate: u32,
+    iso: Option<IsoCounters>,
 ) -> (LinkSample, LinkTotals) {
     let (total, start, starts) = crate::state::link_totals(stats);
     let (bps, pps) = match last {
@@ -94,6 +108,7 @@ fn link_sample(
         }
         None => (0.0, 0.0),
     };
+    let (bps, pps) = if iso.is_some() { (0.0, 0.0) } else { (bps, pps) };
     let air = a2dpwb_core::link::airtime(pps, bps);
     let since = total.since(&start);
     let radio = stats.radio();
@@ -105,16 +120,17 @@ fn link_sample(
         afh_avoided: radio.afh_avoided,
         bytes_per_second: bps,
         packets_per_second: pps,
-        queue_depth: stats.queue_depth.load(Ordering::Relaxed),
+        queue_depth: if iso.is_some() { 0 } else { stats.queue_depth.load(Ordering::Relaxed) },
         dropped: since.dropped,
         capture_dropped: since.capture_dropped,
         airtime: air.map_or(0.0, |a| a.airtime),
         avg_packet_bytes: air.map(|a| a.avg_packet_bytes),
         acl_packet: air.map(|a| AclPacket { name: a.packet.into(), slots: a.slots }),
         bandwidth_share: air.map(|a| a.bandwidth_share),
-        queue_capacity: Some(bt_host::stats::MEDIA_QUEUE_PACKETS as u32),
+        queue_capacity: iso.is_none().then_some(bt_host::stats::MEDIA_QUEUE_PACKETS as u32),
         source_rate: Some(source_rate),
         counters: Some(LinkCounters { total, stream_start: start, stream_starts: starts }),
+        iso,
     };
     (sample, total)
 }
@@ -149,12 +165,14 @@ async fn sampler(state: Arc<CoreState>) {
             last_link = None;
             continue;
         }
-        let source_rate = state.with_snapshot(|s| match (&s.stream.state, &s.stream.info) {
-            (ipc::StreamState::Streaming, Some(i)) => i.source_sample_rate,
-            _ => 0,
+        let (source_rate, le_cis) = state.with_snapshot(|s| match (&s.stream.state, &s.stream.info) {
+            (ipc::StreamState::Streaming, Some(i)) => (i.source_sample_rate, i.le.as_ref().map(|l| l.cis)),
+            _ => (0, None),
         });
+        // LE Audio (experimental): the sender's counters
+        let iso = le_cis.and_then(|cis| state.service.host().map(|h| iso_counters(cis, &h.le_stream_stats())));
         let time_ms = state.started.elapsed().as_millis() as u64;
-        let (sample, total) = link_sample(time_ms, &stats, last_link, now, source_rate);
+        let (sample, total) = link_sample(time_ms, &stats, last_link, now, source_rate, iso);
         last_link = Some((now, total));
         state.publish(Event::Link(sample));
     }
@@ -360,7 +378,7 @@ mod tests {
         let stats = bt_host::LinkStats::default();
         let r = Ordering::Relaxed;
         let t0 = Instant::now();
-        let (first, total) = link_sample(0, &stats, None, t0, 48000);
+        let (first, total) = link_sample(0, &stats, None, t0, 48000, None);
         assert_eq!(first.packets_per_second, 0.0);
         assert!(first.acl_packet.is_none());
         assert_eq!(first.queue_capacity, Some(64));
@@ -371,7 +389,7 @@ mod tests {
         stats.packets_sent.store(120, r);
         stats.bytes_sent.store(120 * 1005, r);
         stats.queue_drops.store(2, r);
-        let (s, _) = link_sample(1000, &stats, Some((t0, total)), t0 + Duration::from_secs(1), 48000);
+        let (s, _) = link_sample(1000, &stats, Some((t0, total)), t0 + Duration::from_secs(1), 48000, None);
         assert!((s.packets_per_second - 120.0).abs() < 1e-6);
         assert_eq!(s.acl_packet, Some(AclPacket { name: "3-DH5".into(), slots: 6 }));
         assert!((s.avg_packet_bytes.unwrap() - 1005.0).abs() < 1e-6);
@@ -379,6 +397,38 @@ mod tests {
         assert_eq!(s.dropped, 2);
         let c = s.counters.unwrap();
         assert_eq!((c.total.packets, c.stream_start.packets, c.stream_starts), (120, 10, 1));
+        assert_eq!(s.source_rate, Some(48000));
+        assert!(s.iso.is_none());
+    }
+
+    #[test]
+    fn le_audio_samples_carry_the_iso_counters() {
+        let stats = bt_host::LinkStats::default();
+        let r = Ordering::Relaxed;
+        let t0 = Instant::now();
+        let (_, total) = link_sample(0, &stats, None, t0, 48000, None);
+        stats.packets_sent.store(120, r);
+        stats.bytes_sent.store(120 * 1005, r);
+        stats.queue_depth.store(5, r);
+        let le = bt_host::LeStreamStats {
+            sets_encoded: 990,
+            sets_sent: 1000,
+            sdus_sent: 2000,
+            silence_sets: 12,
+            underruns: 1,
+            overflows: 3,
+            send_errors: 0,
+            prefill: 6,
+        };
+        let iso = Some(iso_counters(2, &le));
+        let (s, _) = link_sample(1000, &stats, Some((t0, total)), t0 + Duration::from_secs(1), 48000, iso);
+        assert_eq!(
+            s.iso,
+            Some(IsoCounters { cis: 2, sdu_sets: 1000, silence: 12, underruns: 1, dropped: 3, prefill: 6 })
+        );
+        // No A2DP media figures while LE Audio streams
+        assert_eq!((s.bytes_per_second, s.packets_per_second, s.airtime, s.queue_depth), (0.0, 0.0, 0.0, 0));
+        assert!(s.acl_packet.is_none() && s.queue_capacity.is_none());
         assert_eq!(s.source_rate, Some(48000));
     }
 }

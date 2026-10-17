@@ -154,6 +154,8 @@ export function codecLabelKey(name: string): string {
     lhdcv5: "codec.lhdc_v5",
     lhdc: "codec.lhdc_v5",
     opus: "codec.opus",
+    // LE Audio (StreamInfo.le)
+    lc3: "ui.codec.lc3",
   };
   return map[n] ?? "";
 }

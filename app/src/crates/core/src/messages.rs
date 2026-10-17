@@ -1,5 +1,5 @@
 //! Status and error messages as translation keys with arguments: the UI
-//! translates them (app/lang/*.json, shared with v1); logs and the CLI use
+//! translates them (app/lang/*.json, shared with the UI); logs and the CLI use
 //! the English text.
 
 use std::collections::HashMap;

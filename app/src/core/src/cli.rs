@@ -6,6 +6,11 @@
 //! Windows-paired device whose class of device is Audio/Video is used, as v1
 //! did; -l lists the devices Windows has paired. Both read Windows' device
 //! list only: the adapter A2DPWB uses is not touched.
+//!
+//! `--le-audio` (implied by `--le-device` and `--le-scan`) streams LC3 over
+//! LE Audio (experimental) instead: v1's le_audio_cli.cpp flow and printed
+//! lines (the emulator tests read them), on the same core service with LE
+//! Audio forced on.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,11 +49,28 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
                         without -d, stream to that receiver
   --scan [seconds]      list nearby devices and exit
 
+LE Audio (experimental, LC3 over LE isochronous channels):
+  --le-audio            stream to the LE Audio device -d (BAP unicast, LC3)
+  --le-device <address> another device of the group (e.g. the second earbud)
+  --le-preset <name>    use only this BAP configuration (e.g. 48_2_2, 16_2_1)
+  --le-low-latency      GMAP low latency (7.5 / 10 ms frames) for a gaming headset
+  --le-scan [seconds]   list the LE Audio devices nearby and exit
+
 Development / testing:
   --hci-tcp <host:port> H4 over TCP to a virtual controller (tools/emu)
   --hci-capture <path>  HCI capture (.pklg) of the whole run
   --test-tone           1 kHz left / 1.5 kHz right at 48 kHz instead of capture
   --duration <seconds>  stop after this time (default: Ctrl+C)
+  --le-sim-volume <level>[,<s>:<level>...]
+                        LE Audio: VolumeSync with a simulated Windows volume
+                        0-127 (changed at <s> seconds); the real volume is not
+                        touched
+  --mcp-dry-run         LE Audio: media control answered by a simulated player,
+                        commands only logged (implied by --hci-tcp)
+  --ccp-sim \"<s>:<command>;...\"
+                        LE Audio: simulated calls (incoming, alerting,
+                        answered, hold, retrieve, hangup)
+  --ccp-console         LE Audio: call simulation commands from the console
 ";
 
 struct Args {
@@ -73,6 +95,43 @@ struct Args {
     hci_capture: Option<PathBuf>,
     test_tone: bool,
     duration: Option<u64>,
+    le: LeArgs,
+}
+
+/// LE Audio (experimental) options (v1 LeAudioCliOptions)
+#[derive(Debug, Default, PartialEq, Eq)]
+struct LeArgs {
+    /// --le-audio, or implied by --le-device / --le-scan
+    on: bool,
+    /// --le-device: more devices of the group (after -d)
+    devices: Vec<String>,
+    preset: Option<String>,
+    sim_volume: Option<String>,
+    low_latency: bool,
+    /// --le-scan [seconds]
+    scan: Option<u32>,
+    mcp_dry_run: bool,
+    ccp_sim: Option<String>,
+    ccp_console: bool,
+}
+
+/// --le-scan without a time (v1 scan_seconds)
+const LE_SCAN_SECONDS: u32 = 8;
+
+impl LeArgs {
+    /// The stream request: --le-preset tries only that preset. GMAP low
+    /// latency is the flag only (not the GUI setting), and an explicit
+    /// preset wins: the message to print then.
+    fn request(&self) -> (bt_host::LeStreamRequest, bool, Option<&'static str>) {
+        let mut request = bt_host::LeStreamRequest::default();
+        if let Some(p) = &self.preset {
+            request.preset_order = vec![p.clone()];
+        }
+        let low_latency = self.low_latency && self.preset.is_none();
+        let note =
+            (self.low_latency && self.preset.is_some()).then_some("--le-preset given: --le-low-latency is not used");
+        (request, low_latency, note)
+    }
 }
 
 fn parse(args: &[String]) -> Result<Args, String> {
@@ -96,6 +155,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         hci_capture: None,
         test_tone: false,
         duration: None,
+        le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
     let value = |it: &mut std::iter::Peekable<std::slice::Iter<String>>, name: &str| {
@@ -148,6 +208,25 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--hci-capture" => a.hci_capture = Some(value(&mut it, "--hci-capture")?.into()),
             "--test-tone" => a.test_tone = true,
             "--duration" => a.duration = Some(value(&mut it, "--duration")?.parse().map_err(|_| "bad --duration")?),
+            "--le-audio" => a.le.on = true,
+            "--le-device" => {
+                a.le.on = true;
+                a.le.devices.push(value(&mut it, "--le-device")?);
+            }
+            "--le-preset" => a.le.preset = Some(value(&mut it, "--le-preset")?),
+            "--le-sim-volume" => a.le.sim_volume = Some(value(&mut it, "--le-sim-volume")?),
+            "--le-low-latency" => a.le.low_latency = true,
+            "--le-scan" => {
+                a.le.on = true;
+                let secs = match it.peek() {
+                    Some(s) if !s.starts_with('-') => it.next().and_then(|s| s.parse().ok()).unwrap_or(LE_SCAN_SECONDS),
+                    _ => LE_SCAN_SECONDS,
+                };
+                a.le.scan = Some(secs);
+            }
+            "--mcp-dry-run" => a.le.mcp_dry_run = true,
+            "--ccp-sim" => a.le.ccp_sim = Some(value(&mut it, "--ccp-sim")?),
+            "--ccp-console" => a.le.ccp_console = true,
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("unknown option {other}")),
         }
@@ -214,6 +293,14 @@ pub fn run(args: &[String]) -> i32 {
         },
         tx,
     );
+
+    if a.le.on {
+        // LE Audio (experimental): its own flow (v1 le_audio_cli.cpp)
+        let code = le_run(&a, &service, &running);
+        service.shutdown();
+        capture.stop();
+        return code;
+    }
 
     if let Some(secs) = a.scan {
         let code = match service.scan(secs) {
@@ -344,6 +431,7 @@ pub fn run(args: &[String]) -> i32 {
         source,
         volume_sync: VolumeSync::Off,
         max_media_payload: a.max_packet,
+        le: None,
     });
 
     let mut streaming_since: Option<Instant> = None;
@@ -404,6 +492,306 @@ pub fn run(args: &[String]) -> i32 {
         receiver.stop();
     }
     code
+}
+
+// ---- LE Audio (experimental): v1 le_audio_cli.cpp ----
+
+/// Waits for the LE core after BTstack started (v1: 50 x 100 ms)
+const LE_READY_WAIT: Duration = Duration::from_secs(5);
+/// le_find before each connection (v1 6000 ms)
+const LE_FIND_TIMEOUT: Duration = Duration::from_secs(6);
+/// le_connect (v1 30000 ms)
+const LE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Set-ups after a lost stream, in all (v1)
+const LE_RESTORE_ATTEMPTS: u32 = 3;
+const LE_STATS_EVERY: Duration = Duration::from_secs(5);
+
+fn le_print_stats(host: &bt_host::BtHost) {
+    println!("{}", a2dpwb_core::le_stats_line(&host.le_stream_stats()));
+}
+
+/// What the CLI needs of the LE core (v1 le_audio::Core): [`bt_host::BtHost`],
+/// or a fake in the tests
+trait LeHost {
+    fn le_find(&self, addr: [u8; 6], timeout: Duration) -> Option<bt_host::LeScanResult>;
+    fn le_connect(&self, addr: bt_host::LeAddr, name: &str, timeout: Duration) -> Result<bt_host::LeDeviceId, String>;
+}
+
+impl LeHost for bt_host::BtHost {
+    fn le_find(&self, addr: [u8; 6], timeout: Duration) -> Option<bt_host::LeScanResult> {
+        bt_host::BtHost::le_find(self, addr, timeout)
+    }
+
+    fn le_connect(&self, addr: bt_host::LeAddr, name: &str, timeout: Duration) -> Result<bt_host::LeDeviceId, String> {
+        bt_host::BtHost::le_connect(self, addr, name, timeout)
+    }
+}
+
+/// Connects every address of the group (v1 connect_group): the address
+/// type and name come from the advertisement (an RPA of a bonded device
+/// changes: le_find resolves it); the ids in order, None if one fails
+fn le_connect_group(
+    host: &dyn LeHost,
+    addrs: &[String],
+    out: &mut dyn std::io::Write,
+) -> Option<Vec<bt_host::LeDeviceId>> {
+    let mut ids = Vec::new();
+    for a in addrs {
+        let Some(parsed) = parse_device_address(a) else {
+            eprintln!("Invalid LE address: {a}");
+            return None;
+        };
+        let mut addr = bt_host::LeAddr { addr: parsed, addr_type: bt_host::LeAddr::PUBLIC };
+        let mut name = String::new();
+        match host.le_find(parsed, LE_FIND_TIMEOUT) {
+            Some(found) => {
+                addr = found.addr;
+                name = found.name.clone();
+                let _ = writeln!(
+                    out,
+                    "Found {a} \"{name}\" (address type {}){}",
+                    if addr.addr_type != bt_host::LeAddr::PUBLIC { "random" } else { "public" },
+                    if found.le_audio { ", LE Audio" } else { "" }
+                );
+                if let Some(identity) = found.identity
+                    && found.addr.addr != parsed
+                {
+                    let _ = writeln!(out, "  advertising as {} now (identity {identity})", found.addr);
+                }
+            }
+            None => {
+                let _ = writeln!(out, "{a} not seen advertising, connecting with a public address");
+            }
+        }
+        match host.le_connect(addr, &name, LE_CONNECT_TIMEOUT) {
+            Ok(id) => ids.push(id),
+            Err(e) => {
+                eprintln!("LE Audio: cannot connect {a}: {e}");
+                return None;
+            }
+        }
+    }
+    Some(ids)
+}
+
+/// v1's --le-scan listing line
+fn le_scan_line(r: &bt_host::LeScanResult) -> String {
+    format!(
+        "  {}  {:<24}  RSSI {:4}  {}{}{}",
+        r.addr,
+        if r.name.is_empty() { "(no name)" } else { r.name.as_str() },
+        r.rssi,
+        if r.addr.addr_type != bt_host::LeAddr::PUBLIC { "random" } else { "public" },
+        if r.rsi.is_some() { ", set member" } else { "" },
+        if r.note.is_empty() { String::new() } else { format!(", {}", r.note) }
+    )
+}
+
+/// Connects the group and starts the stream; Err: the error to print (empty
+/// when it was printed already)
+fn le_setup(
+    host: &bt_host::BtHost,
+    devices: &[String],
+    request: &bt_host::LeStreamRequest,
+) -> Result<bt_host::LeStreamStarted, String> {
+    // (a failed connection printed why)
+    let ids = le_connect_group(host, devices, &mut std::io::stdout()).ok_or_else(String::new)?;
+    host.le_start_stream(ids, request.clone(), &a2dpwb_core::le_silence_set)
+}
+
+/// The LE Audio flow (v1 le_audio_cli_run); the process exit code
+fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
+    let le = &a.le;
+    service.set_le_audio_cli(a2dpwb_core::LeCliOptions {
+        mcp_dry_run: le.mcp_dry_run,
+        ccp_sim: le.ccp_sim.clone(),
+        ccp_console: le.ccp_console,
+    });
+    let is_running = || running.load(Ordering::Acquire);
+
+    println!(
+        "\n[LE Audio, experimental] Initializing BTstack ({} transport)...",
+        if a.hci_tcp.is_none() { "WinUSB" } else { "H4 over TCP" }
+    );
+    let host = match service.ensure_host() {
+        Ok(h) => h,
+        Err(m) => {
+            tracing::error!("{m}");
+            eprintln!("Failed to initialize BTstack.");
+            return 1;
+        }
+    };
+    // Ctrl+C ends the blocking LE calls (find, connect, stream set-up)
+    {
+        let canceller = host.canceller();
+        let running = running.clone();
+        std::thread::Builder::new()
+            .name("le-cancel".into())
+            .spawn(move || {
+                while running.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                canceller.cancel();
+            })
+            .ok();
+    }
+    let until = Instant::now() + LE_READY_WAIT;
+    while !host.le_ready() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !host.le_ready() {
+        eprintln!("LE Audio did not start (does the adapter support LE?)");
+        return 1;
+    }
+
+    if let Some(secs) = le.scan {
+        println!("Scanning for LE Audio devices ({secs} s)...");
+        let results = host.le_scan(Duration::from_secs(secs.into()));
+        let mut n = 0;
+        for r in results.iter().filter(|r| r.le_audio) {
+            n += 1;
+            println!("{}", le_scan_line(r));
+        }
+        println!("{n} LE Audio device(s) found");
+        return 0;
+    }
+
+    let devices: Vec<String> = a.device.iter().chain(le.devices.iter()).cloned().collect();
+    if devices.is_empty() {
+        eprintln!("No LE Audio device given (-d <address>; --le-scan lists them)");
+        return 1;
+    }
+
+    let (request, low_latency, note) = le.request();
+    host.le_set_low_latency(low_latency);
+    if let Some(note) = note {
+        println!("{note}");
+    }
+
+    println!("\nConnecting {} LE Audio device(s)...", devices.len());
+    let started = match le_setup(&host, &devices, &request) {
+        Ok(s) => s,
+        Err(e) => {
+            if !e.is_empty() {
+                eprintln!("LE Audio: cannot stream: {e}");
+            }
+            host.le_stop_stream();
+            host.le_disconnect_all();
+            return 1;
+        }
+    };
+    println!("\nStreaming LE Audio: {}", started.status.summary);
+
+    // Audio at the LC3 rate (WASAPI converts to it)
+    let source = if a.test_tone {
+        SourceRequest::TestTone
+    } else if a.mode == "virtual" && !a.audio_device.is_empty() {
+        SourceRequest::VirtualDevice { id: a.audio_device.clone(), name: a.audio_device.clone(), auto_switch: false }
+    } else {
+        SourceRequest::SystemLoopback
+    };
+    let mut rc = 0;
+    let start_audio = |started: &bt_host::LeStreamStarted| match a2dpwb_core::LeAudioPath::start(
+        &source,
+        started,
+        host.stats().clone(),
+    ) {
+        Ok(path) => {
+            let rate = path.rate();
+            if a.test_tone {
+                println!("Audio: test tone (1 kHz left / 1.5 kHz right) at {rate} Hz");
+            } else {
+                let f = path.format();
+                println!("Audio: WASAPI capture {} Hz {} ch (LC3 at {rate} Hz)", f.sample_rate, f.channels);
+            }
+            Some(path)
+        }
+        Err(e) => {
+            tracing::error!("LE Audio: audio: {e}");
+            eprintln!("Failed to start audio capture");
+            None
+        }
+    };
+    let mut audio = start_audio(&started);
+    if audio.is_none() {
+        rc = 1;
+    }
+
+    // Test only: the headset volume synced with a simulated Windows volume
+    let mut sim_volume = None;
+    if let Some(spec) = &le.sim_volume {
+        match a2dpwb_core::volume_sync::SimulatedWindowsVolume::parse(spec) {
+            Some(v) => sim_volume = Some(v),
+            None => {
+                eprintln!("Invalid --le-sim-volume {spec}");
+                rc = 1;
+            }
+        }
+    }
+
+    let start = Instant::now();
+    let mut last_print = start;
+    let mut restarts = 0;
+    while rc == 0 && is_running() {
+        std::thread::sleep(Duration::from_millis(100));
+        if let Some(d) = a.duration
+            && start.elapsed() >= Duration::from_secs(d)
+        {
+            println!("\n--duration {d} s reached");
+            break;
+        }
+        if last_print.elapsed() >= LE_STATS_EVERY {
+            last_print = Instant::now();
+            le_print_stats(&host);
+        }
+        if let Some(v) = sim_volume.as_mut() {
+            v.tick(&a2dpwb_core::volume_sync::LeHeadphones(&host));
+        }
+        if host.le_stream_lost() {
+            // A device or CIS went away: tear down and set it up again
+            println!("\n*** LE Audio stream lost - setting it up again ***");
+            if let Some(p) = audio.take() {
+                p.stop();
+            }
+            host.le_stop_stream();
+            let mut again = None;
+            while again.is_none() && restarts < LE_RESTORE_ATTEMPTS && is_running() {
+                restarts += 1;
+                std::thread::sleep(Duration::from_secs(2));
+                match le_setup(&host, &devices, &request) {
+                    Ok(s) => again = Some(s),
+                    Err(e) => {
+                        if !e.is_empty() {
+                            tracing::warn!("LE Audio: set-up failed: {e}");
+                        }
+                        host.le_stop_stream();
+                    }
+                }
+            }
+            let Some(started) = again else {
+                eprintln!("LE Audio: could not restore the stream");
+                rc = 1;
+                break;
+            };
+            println!("*** LE Audio stream restored: {} ***", started.status.summary);
+            audio = start_audio(&started);
+            if audio.is_none() {
+                rc = 1;
+            }
+        }
+    }
+
+    println!("\nShutting down...");
+    if let Some(p) = audio.take() {
+        p.stop();
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    le_print_stats(&host);
+    host.le_stop_stream();
+    host.le_disconnect_all();
+    service.shutdown();
+    println!("Done.");
+    rc
 }
 
 /// v1's listing of the Windows-paired devices (BtDeviceDiscovery::
@@ -482,6 +870,184 @@ mod tests {
 
         assert!(parse(&args("--cli -u nonsense")).err().unwrap_or_default().contains("not a USB device"));
         assert_eq!(parse(&args("--cli -u")).err().as_deref(), Some("-u needs a value"));
+    }
+
+    #[test]
+    fn le_audio_options() {
+        // As run_test.py --le-audio calls it
+        let a = parse(&args(
+            "--cli --hci-tcp 127.0.0.1:9610 --le-audio -d 00:A2:D0:00:00:12 --le-device 00:A2:D0:00:00:13 \
+             --test-tone --duration 5 --hci-capture out\\a2dpwb.pklg --le-sim-volume 64,3:90",
+        ))
+        .unwrap();
+        assert!(a.le.on && a.test_tone);
+        assert_eq!(a.device.as_deref(), Some("00:A2:D0:00:00:12"));
+        assert_eq!(a.le.devices, ["00:A2:D0:00:00:13"]);
+        assert_eq!(a.le.sim_volume.as_deref(), Some("64,3:90"));
+        assert_eq!(a.duration, Some(5));
+        assert_eq!(a.hci_tcp.as_deref(), Some("127.0.0.1:9610"));
+
+        // --le-device alone implies --le-audio, and repeats
+        let a = parse(&args("--cli --le-device aa:bb:cc:dd:ee:01 --le-device aa:bb:cc:dd:ee:02")).unwrap();
+        assert!(a.le.on);
+        assert_eq!(a.le.devices.len(), 2);
+        assert!(!parse(&args("--cli -d aa:bb:cc:dd:ee:01")).unwrap().le.on);
+
+        let a = parse(&args("--cli --le-audio --le-preset 16_2_1 --mcp-dry-run --ccp-console")).unwrap();
+        assert_eq!(a.le.preset.as_deref(), Some("16_2_1"));
+        assert!(a.le.mcp_dry_run && a.le.ccp_console && !a.le.low_latency);
+        let a = parse(&[
+            "--cli".into(),
+            "--le-audio".into(),
+            "--ccp-sim".into(),
+            "1:incoming tel:+1555|Alice|tel:+1666;4:hangup".into(),
+        ])
+        .unwrap();
+        assert_eq!(a.le.ccp_sim.as_deref(), Some("1:incoming tel:+1555|Alice|tel:+1666;4:hangup"));
+
+        assert_eq!(parse(&args("--cli --le-device")).err().as_deref(), Some("--le-device needs a value"));
+        assert_eq!(parse(&args("--cli --le-preset")).err().as_deref(), Some("--le-preset needs a value"));
+        assert_eq!(parse(&args("--cli --le-sim-volume")).err().as_deref(), Some("--le-sim-volume needs a value"));
+        assert_eq!(parse(&args("--cli --ccp-sim")).err().as_deref(), Some("--ccp-sim needs a value"));
+    }
+
+    #[test]
+    fn le_scan_takes_optional_seconds() {
+        let a = parse(&args("--cli --le-scan")).unwrap();
+        assert!(a.le.on);
+        assert_eq!(a.le.scan, Some(LE_SCAN_SECONDS));
+        assert_eq!(parse(&args("--cli --le-scan 3")).unwrap().le.scan, Some(3));
+        let a = parse(&args("--cli --le-scan --hci-tcp 127.0.0.1:1")).unwrap();
+        assert_eq!(a.le.scan, Some(LE_SCAN_SECONDS));
+        assert_eq!(a.hci_tcp.as_deref(), Some("127.0.0.1:1"));
+        // The classic --scan is another option
+        let a = parse(&args("--cli --scan 4")).unwrap();
+        assert_eq!((a.scan, a.le.on), (Some(4), false));
+    }
+
+    #[test]
+    fn le_preset_overrides_low_latency() {
+        let a = parse(&args("--cli --le-audio --le-low-latency")).unwrap();
+        let (request, low_latency, note) = a.le.request();
+        assert!(low_latency && note.is_none());
+        assert_eq!(request, bt_host::LeStreamRequest::default());
+
+        let a = parse(&args("--cli --le-audio --le-low-latency --le-preset 48_2_2")).unwrap();
+        let (request, low_latency, note) = a.le.request();
+        assert!(!low_latency);
+        assert_eq!(note, Some("--le-preset given: --le-low-latency is not used"));
+        assert_eq!(request.preset_order, ["48_2_2"]);
+
+        let (_, low_latency, note) = parse(&args("--cli --le-audio")).unwrap().le.request();
+        assert!(!low_latency && note.is_none());
+    }
+
+    #[test]
+    fn every_le_case_of_run_test_parses() {
+        // tools/emu/le_audio_tests: a2dpwb_args after the common ones
+        for extra in [
+            &["--afh", "6,11"][..],
+            &["--ccp-sim", "2:alerting;3:answered"],
+            &["--le-low-latency"],
+            &["--le-preset", "16_2_1"],
+            &["--le-sim-volume", "64"],
+            &["--mcp-dry-run"],
+        ] {
+            let mut v = args("--cli --hci-tcp 127.0.0.1:9600 --le-audio -d 00:A2:D0:00:00:12 --test-tone --duration 8");
+            v.extend(["--hci-capture".to_string(), r"C:\out dir\a2dpwb.pklg".to_string()]);
+            v.extend(extra.iter().map(|s| s.to_string()));
+            let a = parse(&v).unwrap_or_else(|e| panic!("{extra:?}: {e}"));
+            assert!(a.le.on, "{extra:?}");
+        }
+    }
+
+    /// The LE core of the tests: devices advertise as listed
+    struct FakeLe {
+        adverts: Vec<bt_host::LeScanResult>,
+        refuse: Option<[u8; 6]>,
+        calls: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl LeHost for FakeLe {
+        fn le_find(&self, addr: [u8; 6], _timeout: Duration) -> Option<bt_host::LeScanResult> {
+            self.calls.borrow_mut().push(format!("find {}", bt_host::addr_str(&addr)));
+            self.adverts.iter().find(|r| r.addr.addr == addr || r.identity.is_some_and(|i| i.addr == addr)).cloned()
+        }
+        fn le_connect(
+            &self,
+            addr: bt_host::LeAddr,
+            name: &str,
+            _timeout: Duration,
+        ) -> Result<bt_host::LeDeviceId, String> {
+            self.calls.borrow_mut().push(format!("connect {addr} type {} \"{name}\"", addr.addr_type));
+            if self.refuse == Some(addr.addr) {
+                return Err("no answer".into());
+            }
+            Ok(bt_host::LeDeviceId(self.calls.borrow().len() as u32))
+        }
+    }
+
+    #[test]
+    fn le_group_is_found_then_connected_in_order() {
+        let rpa = bt_host::LeAddr { addr: [0x5A, 1, 2, 3, 4, 5], addr_type: bt_host::LeAddr::RANDOM };
+        let identity = bt_host::LeAddr { addr: [0x00, 0xA2, 0xD0, 0, 0, 0x12], addr_type: bt_host::LeAddr::PUBLIC };
+        let le = FakeLe {
+            adverts: vec![bt_host::LeScanResult {
+                addr: rpa,
+                identity: Some(identity),
+                name: "Buds L".into(),
+                le_audio: true,
+                ..Default::default()
+            }],
+            refuse: None,
+            calls: Default::default(),
+        };
+        let mut out = Vec::new();
+        let ids = le_connect_group(&le, &["00:a2:d0:00:00:12".into(), "00:A2:D0:00:00:13".into()], &mut out).unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(
+            *le.calls.borrow(),
+            [
+                "find 00:A2:D0:00:00:12",
+                "connect 5A:01:02:03:04:05 type 1 \"Buds L\"",
+                "find 00:A2:D0:00:00:13",
+                "connect 00:A2:D0:00:00:13 type 0 \"\""
+            ]
+        );
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(
+            text,
+            "Found 00:a2:d0:00:00:12 \"Buds L\" (address type random), LE Audio\n  \
+             advertising as 5A:01:02:03:04:05 now (identity 00:A2:D0:00:00:12)\n\
+             00:A2:D0:00:00:13 not seen advertising, connecting with a public address\n"
+        );
+
+        // A failed connection ends the group; a bad address is refused first
+        let le = FakeLe { adverts: Vec::new(), refuse: Some([0, 0xA2, 0xD0, 0, 0, 0x12]), calls: Default::default() };
+        assert!(
+            le_connect_group(&le, &["00:A2:D0:00:00:12".into(), "00:A2:D0:00:00:13".into()], &mut Vec::new()).is_none()
+        );
+        assert_eq!(le.calls.borrow().len(), 2);
+        assert!(le_connect_group(&le, &["nonsense".into()], &mut Vec::new()).is_none());
+    }
+
+    #[test]
+    fn le_scan_lines_as_v1() {
+        let r = bt_host::LeScanResult {
+            addr: bt_host::LeAddr { addr: [0x00, 0xA2, 0xD0, 0, 0, 0x12], addr_type: 0 },
+            name: "Buds".into(),
+            rssi: -40,
+            rsi: Some([0; 6]),
+            note: "CSIP set 0".into(),
+            le_audio: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            le_scan_line(&r),
+            "  00:A2:D0:00:00:12  Buds                      RSSI  -40  public, set member, CSIP set 0"
+        );
+        let r = bt_host::LeScanResult { name: String::new(), rsi: None, note: String::new(), ..r };
+        assert_eq!(le_scan_line(&r), "  00:A2:D0:00:00:12  (no name)                 RSSI  -40  public");
     }
 
     #[test]

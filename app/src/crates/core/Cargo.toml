@@ -10,6 +10,8 @@ name = "a2dpwb_core"
 
 [dependencies]
 bt-host.workspace = true
+# LE Audio (experimental): plans, SDU sets, --le-sim-volume, the MCP backend
+le-audio.workspace = true
 hci-transport.workspace = true
 codec.workspace = true
 pipeline.workspace = true
@@ -26,6 +28,8 @@ semver = "1"
 time = { version = "0.3", features = ["local-offset"] }
 # receiver.rs: the broadcast address of every IPv4 network (discovery)
 if-addrs = "0.15"
+# le_media.rs: LE Audio MCP, the Windows media session (WinRT, safe API)
+windows = { version = "0.62", features = ["Foundation", "ApplicationModel", "Media_Control"] }
 
 [lints]
 workspace = true

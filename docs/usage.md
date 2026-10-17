@@ -71,7 +71,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 | Startup | **Start with Windows** (see [Start with Windows](#autostart)) |
 | Headphones | **Headphone Buttons Control Playback** (see [Headphone buttons](#headphone-buttons)), **Remember Headphone Volume** (see [Volume](#volume)) |
 | Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
-| Advanced | **Developer mode** (adds the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
+| Advanced | **LE Audio (experimental)** and **Low latency for gaming headsets (GMAP, experimental)** (see [LE Audio](#le-audio)), **Developer mode** (adds the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
 | About A2DPWB | Version, license, third-party licenses, **Quit A2DPWB** |
 
 ### First-Run Setup
@@ -427,6 +427,24 @@ With **Settings > Developer mode**, Diagnostics has a **Peer Receiver Test** tab
 Both sides count the packets of a stream from its first packet, so the packets sent and received can be compared: they should be equal. Bluetooth retransmits lost radio packets inside the controllers, and A2DPWB does not give up on a packet while the link is up, so a poor radio link shows as gaps, jitter and dropouts at the receiver rather than as lost packets; when the link cannot keep up, packets are dropped before sending on the sending side. The number of retransmissions is not available to either side.
 
 The receiver's adapter is not available to its own Bluetooth stack while the tool runs. Discovery uses a UDP broadcast on port 51201, so both PCs must be on the same network segment (otherwise enter the address). See `tools/linux_sink/README.md` for all options and the statistics protocol.
+
+## LE Audio (experimental) {#le-audio}
+
+A2DPWB can also stream to LE Audio headphones and earbuds (LC3 over connected isochronous streams, BAP unicast), with headset volume (VCP), media buttons (MCP), both earbuds of a pair (CSIP) and a low-latency mode for gaming headsets (GMAP). This is **experimental and off by default**. It has only been tested against a Bluetooth emulator, **not yet with real LE Audio headphones**, so it may not work with yours; use the classic A2DP profiles for everyday listening.
+
+What it needs:
+
+- A USB Bluetooth adapter with **Bluetooth 5.2 or later that supports isochronous channels (ISO)**, with WinUSB assigned as for A2DP. An adapter without ISO support is refused with "adapter does not support LE Audio (no ISO buffers)".
+- Headphones or earbuds that support LE Audio (LC3); some need LE Audio turned on in their own app first.
+
+How to use it:
+
+1. Turn on **Settings > Advanced > LE Audio (experimental)**. Bluetooth starts with LE at the next scan or connection (while streaming or scanning, the change waits until then).
+2. Put the headphones into pairing mode and scan for devices in a profile. LE Audio devices are listed with an **LE Audio** tag, a pair of earbuds as **LE Audio set** (pick either one: A2DPWB finds the other). A headphone that also does A2DP is listed twice, once per kind.
+3. Tick **LE Audio device (experimental, LC3)** in the profile. There is no codec or quality choice (A2DPWB picks the best LC3 configuration the headphones accept), and only System Loopback and Virtual Device capture are available.
+4. Optional: **Low latency for gaming headsets (GMAP, experimental)** in the same section uses shorter LC3 frames with headsets that support GMAP's game role, from the next connection.
+
+In CLI mode: `--le-audio -d <address>` streams to an LE Audio device, `--le-device <address>` adds another device of the group (the second earbud), `--le-scan` lists the LE Audio devices nearby, and `--le-low-latency` / `--le-preset <name>` choose the configuration (`a2dpwb-core.exe --cli -h` lists all LE options).
 
 ## Updates {#updates}
 

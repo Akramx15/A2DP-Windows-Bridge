@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod convert;
+pub mod le;
 pub mod packetizer;
 
 use std::sync::Arc;

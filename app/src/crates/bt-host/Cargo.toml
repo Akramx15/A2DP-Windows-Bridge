@@ -9,6 +9,7 @@ license.workspace = true
 btstack-sys.workspace = true
 hci-transport.workspace = true
 codec = { workspace = true, default-features = false }
+le-audio.workspace = true
 tracing.workspace = true
 rtrb.workspace = true
 

@@ -72,7 +72,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 | Démarrage | **Démarrer avec Windows** (voir [Démarrer avec Windows](#autostart)) |
 | Casque | **Boutons du casque contrôlent la lecture** (voir [Boutons du casque](#headphone-buttons)), **Mémoriser le volume du casque** (voir [Volume](#volume)) |
 | Mises à jour | **Rechercher des mises à jour**, **Rechercher les mises à jour au démarrage**, **Inclure les préversions dans les mises à jour** (propose aussi les versions bêta), **Mettre à jour maintenant** (voir [Mises à jour](#updates)) |
-| Avancé | **Mode développeur** (ajoute le test du récepteur au diagnostic et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
+| Avancé | **LE Audio (expérimental)** et **Faible latence pour casques gaming (GMAP, expérimental)** (voir [LE Audio](#le-audio)), **Mode développeur** (ajoute le test du récepteur au diagnostic et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
 | À propos d'A2DPWB | Version, licence, licences tierces, **Quitter A2DPWB** |
 
 ### Configuration au premier lancement
@@ -428,6 +428,24 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte un onglet **Test a
 Les deux côtés comptent les paquets d'un flux à partir de son premier paquet, ce qui permet de comparer les paquets envoyés et reçus : ils doivent être égaux. Le Bluetooth retransmet les paquets radio perdus à l'intérieur des contrôleurs, et A2DPWB n'abandonne pas un paquet tant que la liaison est active : une mauvaise liaison radio se traduit donc par des trous, de la gigue et des coupures au niveau du récepteur plutôt que par des paquets perdus ; lorsque la liaison ne suit pas, des paquets sont abandonnés avant l'envoi du côté émetteur. Le nombre de retransmissions n'est disponible d'aucun côté.
 
 L'adaptateur du récepteur n'est pas disponible pour sa propre pile Bluetooth tant que l'outil fonctionne. La découverte utilise une diffusion UDP sur le port 51201 : les deux PC doivent donc être sur le même segment réseau (sinon, saisissez l'adresse). Voir `tools/linux_sink/README.md` pour toutes les options et le protocole des statistiques.
+
+## LE Audio (expérimental) {#le-audio}
+
+A2DPWB peut aussi diffuser vers des casques et écouteurs LE Audio (LC3 sur des flux isochrones connectés, BAP unicast), avec le volume du casque (VCP), les boutons multimédia (MCP), les deux écouteurs d'une paire (CSIP) et un mode faible latence pour les casques gaming (GMAP). Cette fonction est **expérimentale et désactivée par défaut**. Elle n'a été testée qu'avec un émulateur Bluetooth, **pas encore avec de vrais casques LE Audio**, et peut ne pas fonctionner avec les vôtres ; pour l'écoute au quotidien, utilisez les profils A2DP classiques.
+
+Ce qu'il faut :
+
+- Un adaptateur Bluetooth USB **Bluetooth 5.2 ou plus récent prenant en charge les canaux isochrones (ISO)**, avec WinUSB comme pour A2DP. Un adaptateur sans ISO est refusé avec « adapter does not support LE Audio (no ISO buffers) ».
+- Un casque ou des écouteurs compatibles LE Audio (LC3) ; certains demandent d'activer d'abord LE Audio dans leur propre application.
+
+Utilisation :
+
+1. Activez **Paramètres > Avancé > LE Audio (expérimental)**. Bluetooth démarre avec LE au prochain scan ou à la prochaine connexion (pendant une diffusion ou un scan, le changement attend jusque-là).
+2. Mettez le casque en mode d'appairage et recherchez les appareils dans un profil. Les appareils LE Audio portent l'étiquette **LE Audio**, une paire d'écouteurs **Ensemble LE Audio** (choisissez l'un des deux : A2DPWB trouve l'autre). Un casque qui fait aussi A2DP apparaît deux fois, une fois par type.
+3. Cochez **Appareil LE Audio (expérimental, LC3)** dans le profil. Il n'y a pas de choix de codec ni de qualité (A2DPWB choisit la meilleure configuration LC3 acceptée par le casque), et seules les captures Loopback système et Périphérique virtuel sont disponibles.
+4. En option : **Faible latence pour casques gaming (GMAP, expérimental)**, dans la même section, utilise des trames LC3 plus courtes avec les casques qui prennent en charge le rôle jeu de GMAP, à partir de la connexion suivante.
+
+En mode CLI, `--le-audio -d <adresse>` diffuse vers un appareil LE Audio, `--le-device <adresse>` ajoute un autre appareil du groupe (le second écouteur), `--le-scan` liste les appareils LE Audio à proximité, et `--le-low-latency` / `--le-preset <nom>` choisissent la configuration (`a2dpwb-core.exe --cli -h` liste toutes les options LE).
 
 ## Mises à jour {#updates}
 

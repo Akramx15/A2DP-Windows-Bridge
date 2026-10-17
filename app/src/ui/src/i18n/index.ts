@@ -1,5 +1,5 @@
-// Translations: the flat JSON files of app/lang (shared with the core and
-// v1), English built in and the other languages loaded when chosen. A key
+// Translations: the flat JSON files of app/lang (shared with the core),
+// English built in and the other languages loaded when chosen. A key
 // missing from a language shows the English text, as in v1.
 
 import { createRoot, createSignal } from "solid-js";

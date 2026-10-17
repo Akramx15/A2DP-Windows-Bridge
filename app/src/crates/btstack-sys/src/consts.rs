@@ -127,3 +127,138 @@ pub const L2CAP_CONNECTION_BASEBAND_DISCONNECT: u8 = 0x6A;
 /// Bluetooth SIG company identifiers seen in HCI Read Local Version
 pub const COMPANY_ID_BROADCOM: u16 = 0x000F;
 pub const COMPANY_ID_REALTEK: u16 = 0x005D;
+
+// ---- LE (experimental LE Audio) ----
+
+/// Timer id of bt-host's LE core (its own timer queue runs on this one id;
+/// bt-host's other ids: 1 AFH, 2 playback)
+pub const TIMER_LE: u32 = 3;
+
+/// The LE controller commands' OGF (opcode >> 10)
+pub const OGF_LE_CONTROLLER: u16 = 0x08;
+pub const HCI_OPCODE_READ_LOCAL_SUPPORTED_COMMANDS: u16 = 0x1002;
+pub const HCI_OPCODE_READ_LOCAL_SUPPORTED_FEATURES: u16 = 0x1003;
+pub const HCI_OPCODE_WRITE_LE_HOST_SUPPORTED: u16 = 0x0C6D;
+pub const HCI_OPCODE_DISCONNECT: u16 = 0x0406;
+pub const HCI_OPCODE_LE_SET_SCAN_PARAMETERS: u16 = 0x200B;
+pub const HCI_OPCODE_LE_READ_BUFFER_SIZE: u16 = 0x2002;
+pub const HCI_OPCODE_LE_READ_BUFFER_SIZE_V2: u16 = 0x2060;
+pub const HCI_OPCODE_LE_SET_CIG_PARAMETERS: u16 = 0x2062;
+pub const HCI_OPCODE_LE_CREATE_CIS: u16 = 0x2064;
+pub const HCI_OPCODE_LE_REMOVE_CIG: u16 = 0x2065;
+
+pub const HCI_EVENT_ENCRYPTION_CHANGE: u8 = 0x08;
+pub const HCI_EVENT_ENCRYPTION_KEY_REFRESH_COMPLETE: u8 = 0x30;
+pub const HCI_EVENT_LE_META: u8 = 0x3E;
+pub const HCI_EVENT_ENCRYPTION_CHANGE_V2: u8 = 0x59;
+/// To the ISO handler ([`crate::Source::Iso`]): group id, stream id, CIS
+/// handle (2), stream index, group complete
+pub const HCI_EVENT_CIS_CAN_SEND_NOW: u8 = 0x6C;
+
+pub const GATT_EVENT_QUERY_COMPLETE: u8 = 0xA0;
+pub const GATT_EVENT_SERVICE_QUERY_RESULT: u8 = 0xA1;
+pub const GATT_EVENT_CHARACTERISTIC_QUERY_RESULT: u8 = 0xA2;
+pub const GATT_EVENT_INCLUDED_SERVICE_QUERY_RESULT: u8 = 0xA3;
+pub const GATT_EVENT_CHARACTERISTIC_VALUE_QUERY_RESULT: u8 = 0xA5;
+pub const GATT_EVENT_LONG_CHARACTERISTIC_VALUE_QUERY_RESULT: u8 = 0xA6;
+pub const GATT_EVENT_NOTIFICATION: u8 = 0xA7;
+pub const GATT_EVENT_INDICATION: u8 = 0xA8;
+pub const GATT_EVENT_MTU: u8 = 0xAB;
+pub const ATT_EVENT_CONNECTED: u8 = 0xB3;
+pub const ATT_EVENT_DISCONNECTED: u8 = 0xB4;
+pub const ATT_EVENT_MTU_EXCHANGE_COMPLETE: u8 = 0xB5;
+pub const ATT_EVENT_HANDLE_VALUE_INDICATION_COMPLETE: u8 = 0xB6;
+
+pub const SM_EVENT_JUST_WORKS_REQUEST: u8 = 0xC8;
+pub const SM_EVENT_PASSKEY_DISPLAY_NUMBER: u8 = 0xC9;
+pub const SM_EVENT_PASSKEY_INPUT_NUMBER: u8 = 0xCB;
+pub const SM_EVENT_NUMERIC_COMPARISON_REQUEST: u8 = 0xCC;
+pub const SM_EVENT_IDENTITY_RESOLVING_STARTED: u8 = 0xCD;
+pub const SM_EVENT_IDENTITY_RESOLVING_FAILED: u8 = 0xCE;
+pub const SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED: u8 = 0xCF;
+pub const SM_EVENT_AUTHORIZATION_REQUEST: u8 = 0xD0;
+pub const SM_EVENT_IDENTITY_CREATED: u8 = 0xD3;
+pub const SM_EVENT_PAIRING_STARTED: u8 = 0xD4;
+pub const SM_EVENT_PAIRING_COMPLETE: u8 = 0xD5;
+pub const SM_EVENT_REENCRYPTION_STARTED: u8 = 0xD6;
+pub const SM_EVENT_REENCRYPTION_COMPLETE: u8 = 0xD7;
+
+pub const GAP_EVENT_ADVERTISING_REPORT: u8 = 0xDA;
+pub const GAP_EVENT_EXTENDED_ADVERTISING_REPORT: u8 = 0xDB;
+pub const HCI_EVENT_META_GAP: u8 = 0xE7;
+pub const GAP_SUBEVENT_CIG_CREATED: u8 = 0x06;
+pub const GAP_SUBEVENT_CIS_CREATED: u8 = 0x07;
+pub const GAP_SUBEVENT_LE_CONNECTION_COMPLETE: u8 = 0x08;
+pub const GAP_SUBEVENT_BONDING_DELETED: u8 = 0x09;
+
+/// bd_addr_type_t
+pub const BD_ADDR_TYPE_LE_PUBLIC: u8 = 0;
+pub const BD_ADDR_TYPE_LE_RANDOM: u8 = 1;
+pub const BD_ADDR_TYPE_LE_PUBLIC_IDENTITY: u8 = 2;
+pub const BD_ADDR_TYPE_LE_RANDOM_IDENTITY: u8 = 3;
+pub const BD_ADDR_TYPE_UNKNOWN: u8 = 0xFE;
+
+pub const HCI_CON_HANDLE_INVALID: u16 = 0xFFFF;
+
+/// ATT characteristic properties (bluetooth.h), plus BTstack's flag for
+/// values served by the read / write callbacks
+pub const ATT_PROPERTY_BROADCAST: u16 = 0x01;
+pub const ATT_PROPERTY_READ: u16 = 0x02;
+pub const ATT_PROPERTY_WRITE_WITHOUT_RESPONSE: u16 = 0x04;
+pub const ATT_PROPERTY_WRITE: u16 = 0x08;
+pub const ATT_PROPERTY_NOTIFY: u16 = 0x10;
+pub const ATT_PROPERTY_INDICATE: u16 = 0x20;
+pub const ATT_PROPERTY_DYNAMIC: u16 = 0x100;
+/// att_db_util permissions
+pub const ATT_SECURITY_NONE: u8 = 0;
+pub const ATT_SECURITY_ENCRYPTED: u8 = 1;
+pub const ATT_SECURITY_AUTHENTICATED: u8 = 2;
+pub const ATT_SECURITY_AUTHORIZED: u8 = 3;
+/// Write callback modes (prepared writes)
+pub const ATT_TRANSACTION_MODE_NONE: u16 = 0;
+pub const ATT_TRANSACTION_MODE_ACTIVE: u16 = 1;
+pub const ATT_TRANSACTION_MODE_EXECUTE: u16 = 2;
+pub const ATT_TRANSACTION_MODE_CANCEL: u16 = 3;
+pub const ATT_TRANSACTION_MODE_VALIDATE: u16 = 4;
+pub const ATT_DEFAULT_MTU: u16 = 23;
+
+pub const ATT_ERROR_SUCCESS: u8 = 0x00;
+pub const ATT_ERROR_INVALID_HANDLE: u8 = 0x01;
+pub const ATT_ERROR_READ_NOT_PERMITTED: u8 = 0x02;
+pub const ATT_ERROR_WRITE_NOT_PERMITTED: u8 = 0x03;
+pub const ATT_ERROR_REQUEST_NOT_SUPPORTED: u8 = 0x06;
+pub const ATT_ERROR_INVALID_OFFSET: u8 = 0x07;
+pub const ATT_ERROR_ATTRIBUTE_NOT_LONG: u8 = 0x0B;
+pub const ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH: u8 = 0x0D;
+pub const ATT_ERROR_UNLIKELY_ERROR: u8 = 0x0E;
+pub const ATT_ERROR_INSUFFICIENT_ENCRYPTION: u8 = 0x0F;
+pub const ATT_ERROR_VALUE_NOT_ALLOWED: u8 = 0x13;
+pub const ATT_ERROR_HCI_DISCONNECT_RECEIVED: u8 = 0x1F;
+
+pub const GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NONE: u16 = 0;
+pub const GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION: u16 = 1;
+pub const GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_INDICATION: u16 = 2;
+
+/// sm_set_authentication_requirements flags (Stack::le_init sets SC + bonding)
+pub const SM_AUTHREQ_BONDING: u8 = 0x01;
+pub const SM_AUTHREQ_MITM_PROTECTION: u8 = 0x04;
+pub const SM_AUTHREQ_SECURE_CONNECTION: u8 = 0x08;
+
+pub const ERROR_CODE_UNKNOWN_CONNECTION_IDENTIFIER: u8 = 0x02;
+pub const ERROR_CODE_MEMORY_CAPACITY_EXCEEDED: u8 = 0x07;
+pub const ERROR_CODE_ACL_CONNECTION_ALREADY_EXISTS: u8 = 0x0B;
+pub const ERROR_CODE_CONNECTION_TERMINATED_BY_LOCAL_HOST: u8 = 0x16;
+pub const BTSTACK_BUSY: u8 = 0x55;
+pub const BTSTACK_MEMORY_ALLOC_FAILED: u8 = 0x56;
+pub const BTSTACK_ACL_BUFFERS_FULL: u8 = 0x57;
+pub const GATT_CLIENT_BUSY: u8 = 0x94;
+pub const GATT_CLIENT_IN_WRONG_STATE: u8 = 0x95;
+
+/// LE PHY bits (LE Set CIG Parameters)
+pub const LE_PHY_1M: u8 = 0x01;
+pub const LE_PHY_2M: u8 = 0x02;
+/// The largest ISO SDU [`crate::Stack::iso_send`] takes (HCI_ISO_PAYLOAD_SIZE
+/// 400 of btstack_config.h, minus the 4-byte SDU header)
+pub const ISO_SDU_MAX: usize = 396;
+/// The largest GATT value the client writes ([`crate::Stack::gatt_write_value`])
+pub const ATT_VALUE_MAX: usize = 512;

@@ -32,6 +32,9 @@ pub struct StreamRequest {
     pub source: SourceRequest,
     pub volume_sync: VolumeSync,
     pub max_media_payload: u16,
+    /// LE Audio (experimental) instead of A2DP: the le_stream session
+    /// streams to `device` and these extra devices. None: A2DP.
+    pub le: Option<bt_host::LeRequest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,7 +148,7 @@ impl Sink for SharedInput {
     }
 }
 
-fn input_format(f: Format) -> InputFormat {
+pub(crate) fn input_format(f: Format) -> InputFormat {
     InputFormat {
         sample_rate: f.sample_rate,
         channels: f.channels,
@@ -224,7 +227,7 @@ impl ActiveSource {
 
 /// Restores the default output device when the session ends (virtual
 /// device mode switched it)
-struct DefaultDeviceGuard(Option<String>);
+pub(crate) struct DefaultDeviceGuard(pub(crate) Option<String>);
 
 impl Drop for DefaultDeviceGuard {
     fn drop(&mut self) {

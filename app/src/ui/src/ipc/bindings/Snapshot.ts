@@ -10,7 +10,12 @@ import type { UpdateState } from "./UpdateState";
 /**
  * The whole state
  */
-export type Snapshot = { adapter: AdapterState, devices: Array<Device>, scanning: boolean, stream: StreamStatus, profiles: Array<Profile>, active_profile: string | null, settings: Settings, update: UpdateState, 
+export type Snapshot = { adapter: AdapterState, devices: Array<Device>, scanning: boolean, 
+/**
+ * The scan's LE Audio part runs (status.le_scanning): after the
+ * classic inquiry, with LE Audio on
+ */
+le_scanning: boolean, stream: StreamStatus, profiles: Array<Profile>, active_profile: string | null, settings: Settings, update: UpdateState, 
 /**
  * The settings folder (shown, and opened from the UI)
  */

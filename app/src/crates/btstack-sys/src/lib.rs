@@ -10,15 +10,41 @@
 //! The HCI transport ([`HciBackend`]) and the link key store
 //! ([`LinkKeyStore`]) are implemented in Rust (crate hci-transport, bt-host)
 //! and plugged into BTstack through function tables in csrc/shim.c.
+//!
+//! # LE (experimental LE Audio)
+//!
+//! LE is compiled in but hidden from BTstack by default (see
+//! [`Stack::set_le_hidden`]): with LE Audio off nothing changes for A2DP.
+//! With it on, the app calls, in the init closure of [`run`]:
+//! `set_le_hidden(false)` before `hci_init`, then [`Stack::le_init`] (bond
+//! TLV file, SM, GATT client, ISO), builds the PC's GATT database
+//! ([`Stack::att_db_init`], `att_db_add_*`) and starts the ATT server
+//! ([`Stack::att_server_init`]). LE events reach [`App::on_packet`] with the
+//! sources [`Source::Sm`], [`Source::GattClient`], [`Source::AttServer`] and
+//! [`Source::Iso`] (HCI LE events, LE Meta GAP events and advertising
+//! reports with [`Source::Hci`]); [`events`] reads them. Reads and writes of
+//! the GATT database come to [`App::on_att_read`] / [`App::on_att_write`],
+//! synchronously, also while the app is busy in one of its own calls (they
+//! are then put off until it returns, see crate::att).
 
+mod att;
 mod callbacks;
 pub mod consts;
+pub mod events;
 mod ffi;
+mod le;
 mod stack;
+mod timer_resolution;
 mod transport;
 
+pub use att::AttWriteRequest;
+pub use le::{CigParams, CisParams, ConnectionType, LeDbEntry, LeEncryption};
 pub use stack::{AclState, AvdtpState, HciState, Stack};
-pub use transport::{HciBackend, Upstream, expect_transport_loss};
+pub use timer_resolution::HighTimerResolution;
+pub use transport::{
+    HciBackend, LE_HIDDEN_COMMAND_BITS, LE_SUPPORTED_FEATURE, Upstream, expect_transport_loss,
+    le_hidden_command_complete, le_hidden_intercept, le_hidden_patch_event,
+};
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -38,6 +64,16 @@ pub enum Source {
     Avrcp,
     AvrcpController,
     AvrcpTarget,
+    /// LE Security Manager events (SM_EVENT_*), after [`Stack::le_init`]
+    Sm,
+    /// GATT client query results and notifications / indications
+    /// (GATT_EVENT_*)
+    GattClient,
+    /// ATT server events (ATT_EVENT_*: MTU exchange, indication complete)
+    AttServer,
+    /// The ISO handler: HCI_EVENT_CIS_CAN_SEND_NOW (event packets, channel =
+    /// CIS handle) and incoming ISO data (HCI_ISO_DATA_PACKET)
+    Iso,
 }
 
 impl Source {
@@ -48,6 +84,10 @@ impl Source {
             3 => Source::Avrcp,
             4 => Source::AvrcpController,
             5 => Source::AvrcpTarget,
+            6 => Source::Sm,
+            7 => Source::GattClient,
+            8 => Source::AttServer,
+            9 => Source::Iso,
             _ => Source::Hci,
         }
     }
@@ -68,6 +108,19 @@ pub trait App {
     fn on_intel_firmware(&mut self, _stack: &Stack, _result: i32) {}
     /// The run loop has stopped; HCI is still initialized
     fn on_exit(&mut self, _stack: &Stack) {}
+    /// A GATT client reads attribute `handle` of the PC's GATT database (a
+    /// characteristic added with [`consts::ATT_PROPERTY_DYNAMIC`], or its
+    /// client configuration descriptor): its whole value, or an ATT error.
+    /// btstack-sys sends the part from `offset` (Read Blob) that fits.
+    /// Called synchronously from BTstack; see the crate docs.
+    fn on_att_read(&mut self, _stack: &Stack, _con: u16, _handle: u16, _offset: u16) -> Result<Vec<u8>, u8> {
+        Err(consts::ATT_ERROR_READ_NOT_PERMITTED)
+    }
+    /// A GATT client writes the PC's GATT database: 0 or an ATT error
+    /// (ignored for write commands and the execute of prepared writes)
+    fn on_att_write(&mut self, _stack: &Stack, _write: &AttWriteRequest) -> u8 {
+        consts::ATT_ERROR_WRITE_NOT_PERMITTED
+    }
 }
 
 /// Stores BR/EDR link keys for BTstack (addresses in BTstack's byte order,
@@ -173,6 +226,8 @@ where
     WAKE_FLAGS.store(0, Ordering::Release);
     POISONED.store(false, Ordering::Release);
     transport::reset();
+    att::reset();
+    le::reset();
 
     // SAFETY: first BTstack calls of this run, on this thread; nothing else
     // uses BTstack (RUNNING).
@@ -211,6 +266,8 @@ where
         ffi::btstack_run_loop_deinit();
     }
     transport::reset();
+    att::reset();
+    le::reset();
     RUNNING.store(false, Ordering::Release);
     Ok(())
 }

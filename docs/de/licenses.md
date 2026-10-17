@@ -30,6 +30,8 @@ Der Quellcode von A2DPWB ist unter Apache-2.0 oder MIT doppelt lizenziert. Die v
 | [BTstack](https://github.com/bluekitchen/btstack) | v1.8.1-6-g5bc5cbdbe | BTstack License (BSD-3-Clause-artig mit einer Klausel gegen kommerzielle Nutzung) / kommerziell | Bluetooth-Stack im Benutzermodus |
 | rijndael (in BTstack enthalten) | wie in BTstack | Gemeinfrei (Public Domain) | AES (von BTstack verwendet) |
 | tinydir (in BTstack enthalten) | wie in BTstack | BSD-2-Clause | Verzeichnisauflistung im Broadcom-Chipsatztreiber von BTstack |
+| liblc3 (lc3-google, in BTstack enthalten) | wie in BTstack | Apache-2.0 | LC3-Encoder (LE Audio, experimentell) |
+| micro-ecc (in BTstack enthalten) | wie in BTstack | BSD-2-Clause | P-256 für das Pairing mit LE Secure Connections (LE Audio, experimentell) |
 | Bluedroid-SBC-Encoder, nach Rust portiert | portiert aus der Kopie in BTstack | Apache-2.0 | SBC-Encoder |
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC-Encoder |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | Encoder für aptX / aptX HD / aptX LL |

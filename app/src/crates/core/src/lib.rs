@@ -7,6 +7,8 @@
 
 pub mod adapter;
 pub mod devices;
+mod le_media;
+mod le_stream;
 pub mod link;
 pub mod messages;
 pub mod migrate;
@@ -16,8 +18,9 @@ mod service;
 pub mod settings;
 pub mod stream;
 
+pub use le_stream::{LeAudioPath, LeStreamDetails, le_silence_set, le_stats_line};
 pub use messages::Msg;
-pub use service::{Service, ServiceEvent, ServiceOptions};
+pub use service::{LeCliOptions, ScannedDevice, Service, ServiceEvent, ServiceOptions};
 pub use stream::{SourceInfo, SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync};
 pub mod diag;
 pub mod receiver;

@@ -103,16 +103,15 @@ impl Default for Profile {
 pub enum ProfileError {
     #[error("invalid Bluetooth address \"{0}\"")]
     Address(String),
-    #[error("LE Audio profiles are not supported by this version")]
-    LeAudio,
 }
 
 impl Profile {
-    /// What to stream for this profile
+    /// What to stream for this profile. An LE Audio (experimental) profile
+    /// gives an LE request (`le` Some: the le_stream session, which refuses
+    /// with error.le_audio_disabled while the setting is off); its codec,
+    /// quality, rate and depth are not used (LC3 as the device and the
+    /// preset decide).
     pub fn to_request(&self, legacy_max_media_payload: u16) -> Result<StreamRequest, ProfileError> {
-        if self.le_audio {
-            return Err(ProfileError::LeAudio);
-        }
         let device = bt_host::parse_addr(&self.device_address)
             .ok_or_else(|| ProfileError::Address(self.device_address.clone()))?;
         let source = match self.capture_mode.as_str() {
@@ -148,6 +147,8 @@ impl Profile {
             max_media_payload: clamp_media_payload_limit(
                 self.max_media_payload.unwrap_or(legacy_max_media_payload) as u32
             ),
+            // The low-latency setting is read by the session (GMAP presets)
+            le: self.le_audio.then(bt_host::LeRequest::default),
         })
     }
 }
@@ -203,5 +204,27 @@ mod tests {
         let mut legacy = p.clone();
         legacy.max_media_payload = None;
         assert_eq!(legacy.to_request(1500).unwrap().max_media_payload, 1500);
+        assert_eq!(r.le, None);
+    }
+
+    #[test]
+    fn le_audio_profile_gives_an_le_request() {
+        let text = r#"{"profiles":[{"name":"Buds LE Audio","device_address":"00:a2:d0:00:00:12","device_name":"Buds",
+            "capture_mode":"loopback","le_audio":true}]}"#;
+        let f: ProfilesFile = serde_json::from_str(text).unwrap();
+        let p = &f.profiles[0];
+        assert!(p.le_audio);
+        let r = p.to_request(1023).unwrap();
+        assert_eq!(r.device, [0x00, 0xA2, 0xD0, 0x00, 0x00, 0x12]);
+        assert_eq!(r.le, Some(bt_host::LeRequest { extra_devices: Vec::new(), preset: None, low_latency: false }));
+        assert_eq!(r.source, SourceRequest::SystemLoopback);
+        // Written back as v1 wrote it; a classic profile has no key
+        let out = serde_json::to_value(p).unwrap();
+        assert_eq!(out["le_audio"], true);
+        let classic = Profile { le_audio: false, ..p.clone() };
+        assert!(serde_json::to_value(&classic).unwrap().get("le_audio").is_none());
+        // A bad address is refused as for A2DP
+        let bad = Profile { device_address: "nope".into(), ..p.clone() };
+        assert_eq!(bad.to_request(1023), Err(ProfileError::Address("nope".into())));
     }
 }

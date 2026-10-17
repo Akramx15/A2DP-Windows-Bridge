@@ -824,6 +824,58 @@ pub struct DiagInput<'a> {
     pub clock: Option<u64>,
     /// Bluetooth addresses as AA:BB:CC:xx:xx:xx
     pub mask: bool,
+    /// LE Audio (experimental) of the running stack
+    pub le_audio: Option<&'a LeAudioDiag>,
+}
+
+/// What the diagnostics tell about LE Audio (experimental) of the running
+/// stack
+#[derive(Debug, Clone, Default)]
+pub struct LeAudioDiag {
+    /// The stream's summary (v1's StreamPlan::describe), while one runs
+    pub stream: Option<String>,
+    /// The ISO sender's counters of the running (or last) stream
+    pub stats: Option<bt_host::LeStreamStats>,
+    /// The devices the LE core knows
+    pub devices: Vec<bt_host::LeDeviceInfo>,
+}
+
+/// The [LE Audio] section: only with the setting on or an LE stack running
+fn le_audio_section(out: &mut String, s: &Settings, le: Option<&LeAudioDiag>) {
+    if !s.le_audio_experimental && le.is_none() {
+        return;
+    }
+    out.push_str("\n[LE Audio (experimental)]\n");
+    let _ = writeln!(
+        out,
+        "  Setting: {}, low latency {}; BTstack LE {}",
+        on_off(s.le_audio_experimental),
+        on_off(s.le_audio_low_latency),
+        if le.is_some() { "active" } else { "not running" }
+    );
+    let Some(le) = le else { return };
+    if let Some(summary) = &le.stream {
+        let _ = writeln!(out, "  Stream: {summary}");
+    }
+    if let Some(st) = &le.stats {
+        let _ = writeln!(
+            out,
+            "  ISO: {} SDU sets sent ({} SDUs), {} silence, {} underruns, {} dropped, {} send errors, prefill {}",
+            st.sets_sent, st.sdus_sent, st.silence_sets, st.underruns, st.overflows, st.send_errors, st.prefill
+        );
+    }
+    for d in &le.devices {
+        let state = match (d.connected, d.ready) {
+            (true, true) => "ready",
+            (true, false) => "connected",
+            _ => "disconnected",
+        };
+        let _ = write!(out, "  Device {} '{}': {state}, {} sink ASE(s)", d.addr, d.name, d.sink_ases);
+        if !d.roles.is_empty() {
+            let _ = write!(out, ", {}", d.roles);
+        }
+        out.push('\n');
+    }
 }
 
 fn on_off(b: bool) -> &'static str {
@@ -991,6 +1043,7 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
     if let Some((path, bytes)) = d.hci_capture {
         let _ = writeln!(out, "  HCI capture running: {} ({:.1} MB)", path.display(), bytes as f64 / (1024.0 * 1024.0));
     }
+    le_audio_section(&mut out, s, d.le_audio);
 
     out.push_str("\n[Flow]\n");
     out.push_str(&d.flow.text(Some(d.state), d.rates, d.clock));
@@ -1379,6 +1432,7 @@ mod tests {
             log: &log,
             clock: None,
             mask: true,
+            le_audio: None,
         };
         let text = diag_text(&input);
         assert!(text.starts_with("```text\nA2DPWB diagnostics - 2026-10-17 10:00:00\n"), "{text}");
@@ -1411,6 +1465,53 @@ mod tests {
         assert!(text.contains("DA:71:13"));
         assert!(text.contains("  (none selected - receiver measurement or not connected)\n"));
         assert!(text.contains("[Stream]\n  not streaming\n"));
+        // LE Audio (experimental): off and no LE stack, no section
+        assert!(!text.contains("[LE Audio"));
+
+        let mut le_settings = settings.clone();
+        le_settings.le_audio_experimental = true;
+        input.settings = &le_settings;
+        let text = diag_text(&input);
+        assert!(text.contains("[LE Audio (experimental)]\n  Setting: on, low latency off; BTstack LE not running\n\n"));
+        let le = LeAudioDiag {
+            stream: Some("LC3 48 kHz 10 ms 100 octets (80 kbps/ch), 2 ch over 2 CIS, 48_4_2".into()),
+            stats: Some(bt_host::LeStreamStats {
+                sets_encoded: 990,
+                sets_sent: 1000,
+                sdus_sent: 2000,
+                silence_sets: 12,
+                underruns: 1,
+                overflows: 3,
+                send_errors: 0,
+                prefill: 6,
+            }),
+            devices: vec![bt_host::LeDeviceInfo {
+                id: bt_host::LeDeviceId(1),
+                addr: bt_host::LeAddr { addr: [0xC0, 0x11, 0x22, 0x33, 0x44, 0x55], addr_type: 0 },
+                name: "Earbuds".into(),
+                connected: true,
+                ready: true,
+                sink_locations: 3,
+                sink_ases: 2,
+                pacs: String::new(),
+                roles: "TMAP: UMR, GMAP: UGT (UGT features 0x3C: sink)".into(),
+            }],
+        };
+        input.le_audio = Some(&le);
+        input.mask = true;
+        let text = diag_text(&input);
+        assert!(text.contains("  Setting: on, low latency off; BTstack LE active\n"), "{text}");
+        assert!(text.contains("  Stream: LC3 48 kHz 10 ms 100 octets (80 kbps/ch), 2 ch over 2 CIS, 48_4_2\n"));
+        assert!(text.contains(
+            "  ISO: 1000 SDU sets sent (2000 SDUs), 12 silence, 1 underruns, 3 dropped, 0 send errors, prefill 6\n"
+        ));
+        assert!(
+            text.contains(
+                "  Device C0:11:22:xx:xx:xx 'Earbuds': ready, 2 sink ASE(s), TMAP: UMR, GMAP: UGT (UGT features 0x3C: \
+                 sink)\n"
+            ),
+            "{text}"
+        );
     }
 
     #[test]

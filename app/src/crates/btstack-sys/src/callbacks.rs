@@ -15,11 +15,14 @@ pub(crate) enum Pending {
     Packet(Source, u8, u16, Vec<u8>),
     Timer(u32),
     Intel(i32),
+    /// An ATT request of this connection was answered "pending" while the
+    /// app was busy (crate::att)
+    AttRetry(u16),
 }
 
 /// Runs `f` and keeps a panic from reaching C: the panic is logged and the
 /// run loop is stopped (the owner of the stack restarts it).
-fn guard<R>(default: R, f: impl FnOnce() -> R) -> R {
+pub(crate) fn guard<R>(default: R, f: impl FnOnce() -> R) -> R {
     match std::panic::catch_unwind(AssertUnwindSafe(f)) {
         Ok(r) => r,
         Err(e) => {
@@ -66,6 +69,8 @@ fn deliver(app: &mut dyn App, stack: &Stack, event: Pending) {
         }
         Pending::Timer(id) => app.on_timer(stack, id),
         Pending::Intel(result) => app.on_intel_firmware(stack, result),
+        // Not for the app (drain_pending handles it without a borrow)
+        Pending::AttRetry(_) => {}
     }
 }
 
@@ -73,6 +78,14 @@ fn deliver(app: &mut dyn App, stack: &Stack, event: Pending) {
 pub(crate) fn drain_pending(stack: &Stack) {
     loop {
         let Some(event) = PENDING.with(|p| p.borrow_mut().pop_front()) else { return };
+        if let Pending::AttRetry(con) = event {
+            if app_free() {
+                crate::att::retry(con);
+                continue;
+            }
+            PENDING.with(|p| p.borrow_mut().push_front(event));
+            return;
+        }
         let undelivered = APP.with(|a| match a.try_borrow_mut() {
             Ok(mut slot) => match slot.as_mut() {
                 Some(app) => {
@@ -88,6 +101,11 @@ pub(crate) fn drain_pending(stack: &Stack) {
             return;
         }
     }
+}
+
+/// The app is set and not in one of its calls
+fn app_free() -> bool {
+    APP.with(|a| a.try_borrow().is_ok_and(|slot| slot.is_some()))
 }
 
 /// Runs `f` on the app (not from within another app call), then delivers

@@ -4,11 +4,13 @@
  * Holds everything whose layout is BTstack's business: the static structs
  * BTstack keeps pointers to (registrations, timers, SDP record buffers,
  * stream endpoint capabilities, the codec configuration of
- * a2dp_source_set_config_other), the function tables Rust implements (HCI
- * transport, link key DB, HCI dump), and reads of struct members
- * (hci_connection_t, avdtp_connection_t). No logic of its own: every
- * decision is made in Rust. Runs on the BTstack run loop thread only,
- * except a2dpwb_wake().
+ * a2dp_source_set_config_other; for LE: the TLV store, per-connection GATT
+ * client listeners and write buffers, ATT send registrations, CIG storage),
+ * the function tables Rust implements (HCI transport, link key DB, HCI dump,
+ * ATT server read / write callbacks), and reads of struct members
+ * (hci_connection_t, avdtp_connection_t). No logic of its own beyond the
+ * bookkeeping of that storage: every decision is made in Rust. Runs on the
+ * BTstack run loop thread only, except a2dpwb_wake().
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -18,6 +20,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <wchar.h>
 #include <windows.h>
 
 #include "bluetooth.h"
@@ -34,6 +37,7 @@
 #include "classic/a2dp_source.h"
 #include "classic/avdtp.h"
 #include "classic/avdtp_sink.h"
+#include "classic/avdtp_util.h"
 #include "classic/avrcp.h"
 #include "classic/avrcp_controller.h"
 #include "classic/avrcp_target.h"
@@ -41,6 +45,15 @@
 #include "classic/btstack_link_key_db_memory.h"
 #include "classic/sdp_server.h"
 #include "btstack_chipset_intel_firmware.h"
+#include "btstack_tlv.h"
+#include "btstack_tlv_windows.h"
+#include "ble/att_db.h"
+#include "ble/att_db_util.h"
+#include "ble/att_server.h"
+#include "ble/gatt_client.h"
+#include "ble/le_device_db.h"
+#include "ble/le_device_db_tlv.h"
+#include "ble/sm.h"
 
 /* ---- Implemented in Rust (btstack-sys/src/callbacks.rs) ---- */
 void a2dpwb_rs_on_wake(void);
@@ -57,6 +70,13 @@ void a2dpwb_rs_lk_put(const uint8_t *addr, const uint8_t *key, int type);
 void a2dpwb_rs_lk_delete(const uint8_t *addr);
 int a2dpwb_rs_lk_at(int index, uint8_t *addr, uint8_t *key, int *type);
 void a2dpwb_rs_intel_done(int result);
+uint16_t a2dpwb_rs_att_read(uint16_t con, uint16_t handle, uint16_t offset, uint8_t *buffer, uint16_t buffer_size);
+int a2dpwb_rs_att_write(uint16_t con, uint16_t handle, uint16_t mode, uint16_t offset, const uint8_t *buffer,
+                        uint16_t size);
+void a2dpwb_rs_att_can_send(uint16_t con);
+void a2dpwb_rs_le_disconnected(uint16_t con);
+
+static void cig_slot_release(uint8_t cig_id);
 
 /* ======================================================================== */
 /* Run loop: wake-up from other threads, timers                             */
@@ -132,6 +152,12 @@ static int transport_can_send_packet_now(uint8_t packet_type) {
     return a2dpwb_rs_transport_can_send(packet_type);
 }
 static int transport_send_packet(uint8_t packet_type, uint8_t *packet, int size) {
+    /* LE Remove CIG: hci.c took the CIG out of its list when it sent this,
+     * its storage may be used again */
+    if (packet_type == HCI_COMMAND_DATA_PACKET && size >= 4 &&
+        little_endian_read_16(packet, 0) == HCI_OPCODE_HCI_LE_REMOVE_CIG) {
+        cig_slot_release(packet[3]);
+    }
     return a2dpwb_rs_transport_send(packet_type, packet, size);
 }
 
@@ -259,6 +285,10 @@ enum {
     SOURCE_AVRCP = 3,
     SOURCE_AVRCP_CONTROLLER = 4,
     SOURCE_AVRCP_TARGET = 5,
+    SOURCE_SM = 6,
+    SOURCE_GATT_CLIENT = 7,
+    SOURCE_ATT_SERVER = 8,
+    SOURCE_ISO = 9,
 };
 
 static void handler_hci(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_HCI, t, c, p, s); }
@@ -267,6 +297,10 @@ static void handler_avdtp_sink(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { 
 static void handler_avrcp(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_AVRCP, t, c, p, s); }
 static void handler_avrcp_ct(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_AVRCP_CONTROLLER, t, c, p, s); }
 static void handler_avrcp_tg(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_AVRCP_TARGET, t, c, p, s); }
+static void handler_sm(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_SM, t, c, p, s); }
+static void handler_gatt_client(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_GATT_CLIENT, t, c, p, s); }
+static void handler_att_server(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_ATT_SERVER, t, c, p, s); }
+static void handler_iso(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_ISO, t, c, p, s); }
 
 static btstack_packet_callback_registration_t hci_event_registration;
 
@@ -461,4 +495,417 @@ int a2dpwb_hci_get_state(void) {
 
 int a2dpwb_hci_can_send_command_now(void) {
     return hci_can_send_command_packet_now() ? 1 : 0;
+}
+
+/* ======================================================================== */
+/* LE (experimental LE Audio): set up only by Stack::le_init                */
+/* ======================================================================== */
+
+/* ---- Per-connection storage BTstack keeps pointers to ---- */
+
+#define A2DPWB_LE_SLOTS 16
+#define A2DPWB_ATT_VALUE_MAX 512
+
+typedef struct {
+    hci_con_handle_t con;                        /* HCI_CON_HANDLE_INVALID: free */
+    gatt_client_notification_t listener;         /* all notifications / indications of con */
+    int listening;
+    uint8_t write_buffer[A2DPWB_ATT_VALUE_MAX];  /* the value of a running (long) write */
+    btstack_context_callback_registration_t send_registration;  /* ATT server can-send-now */
+} le_slot_t;
+
+static le_slot_t le_slots[A2DPWB_LE_SLOTS];
+
+static void le_slots_reset(void) {
+    memset(le_slots, 0, sizeof(le_slots));
+    for (int i = 0; i < A2DPWB_LE_SLOTS; i++) le_slots[i].con = HCI_CON_HANDLE_INVALID;
+}
+
+static le_slot_t *le_slot_for(hci_con_handle_t con, int create) {
+    if (con == HCI_CON_HANDLE_INVALID) return NULL;
+    le_slot_t *free_slot = NULL;
+    for (int i = 0; i < A2DPWB_LE_SLOTS; i++) {
+        if (le_slots[i].con == con) return &le_slots[i];
+        if (free_slot == NULL && le_slots[i].con == HCI_CON_HANDLE_INVALID) free_slot = &le_slots[i];
+    }
+    if (!create || free_slot == NULL) return NULL;
+    memset(free_slot, 0, sizeof(*free_slot));
+    free_slot->con = con;
+    return free_slot;
+}
+
+/* The connection is gone: stop listening and free the slot. Its ATT send
+ * registration was in a list of the freed hci_connection_t only. */
+static void le_slot_release(hci_con_handle_t con) {
+    le_slot_t *slot = le_slot_for(con, 0);
+    if (slot == NULL) return;
+    if (slot->listening) gatt_client_stop_listening_for_characteristic_value_updates(&slot->listener);
+    slot->listening = 0;
+    slot->con = HCI_CON_HANDLE_INVALID;
+}
+
+/* ---- CIG storage (gap_cig_create keeps both pointers until the CIG is
+ * removed) ---- */
+
+#define A2DPWB_CIG_SLOTS 4
+
+typedef struct {
+    le_audio_cig_t cig;
+    le_audio_cig_params_t params;
+    int in_use;      /* possibly in hci.c's CIG list */
+    uint8_t cig_id;
+} cig_slot_t;
+
+static cig_slot_t cig_slots[A2DPWB_CIG_SLOTS];
+
+static void cig_slot_release(uint8_t cig_id) {
+    for (int i = 0; i < A2DPWB_CIG_SLOTS; i++)
+        if (cig_slots[i].in_use && cig_slots[i].cig_id == cig_id) cig_slots[i].in_use = 0;
+}
+
+static void cig_slots_reset(void) {
+    memset(cig_slots, 0, sizeof(cig_slots));
+}
+
+/* ---- Housekeeping on HCI events (registered by a2dpwb_le_init) ---- */
+
+static btstack_packet_callback_registration_t le_hci_registration;
+
+static void le_hci_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
+    (void)channel;
+    if (packet_type != HCI_EVENT_PACKET || size < 2) return;
+    switch (packet[0]) {
+    case HCI_EVENT_DISCONNECTION_COMPLETE:
+        if (size >= 6 && packet[2] == ERROR_CODE_SUCCESS) {
+            hci_con_handle_t con = little_endian_read_16(packet, 3);
+            le_slot_release(con);
+            a2dpwb_rs_le_disconnected(con);
+        }
+        break;
+    case HCI_EVENT_META_GAP:
+        /* A CIG that could not be created is not kept by hci.c */
+        if (size >= 5 && packet[2] == GAP_SUBEVENT_CIG_CREATED && packet[3] != ERROR_CODE_SUCCESS)
+            cig_slot_release(packet[4]);
+        break;
+    case BTSTACK_EVENT_STATE:
+        /* HCI reset its state (power off): no CIG is kept */
+        if (size >= 3 && packet[2] == HCI_STATE_OFF) cig_slots_reset();
+        break;
+    default:
+        break;
+    }
+}
+
+/* ---- Setup ---- */
+
+static btstack_tlv_windows_t le_tlv_context;
+static int le_tlv_open;
+static char le_tlv_path[1024];
+static btstack_packet_callback_registration_t sm_event_registration;
+
+/* btstack_tlv_windows opens the file with CreateFileA: the path in the ANSI
+ * code page, or with the folder's 8.3 name if it does not fit in it */
+static int utf8_to_ansi_path(const char *in, char *out, int out_size) {
+    wchar_t wide[1024];
+    if (MultiByteToWideChar(CP_UTF8, 0, in, -1, wide, 1024) <= 0) return 0;
+    if (GetACP() == CP_UTF8) {
+        size_t n = strlen(in) + 1;
+        if (n > (size_t)out_size) return 0;
+        memcpy(out, in, n);
+        return 1;
+    }
+    BOOL lossy = FALSE;
+    if (WideCharToMultiByte(CP_ACP, 0, wide, -1, out, out_size, NULL, &lossy) > 0 && !lossy) return 1;
+    wchar_t *sep = wcsrchr(wide, L'\\');
+    wchar_t *sep2 = wcsrchr(wide, L'/');
+    if (sep2 > sep) sep = sep2;
+    if (sep == NULL) return 0;
+    *sep = 0;
+    wchar_t short_dir[1024];
+    DWORD n = GetShortPathNameW(wide, short_dir, 1024);
+    if (n == 0 || n >= 1024 || wcslen(short_dir) + 1 + wcslen(sep + 1) + 1 > 1024) return 0;
+    wcscat(short_dir, L"\\");
+    wcscat(short_dir, sep + 1);
+    lossy = FALSE;
+    return WideCharToMultiByte(CP_ACP, 0, short_dir, -1, out, out_size, NULL, &lossy) > 0 && !lossy;
+}
+
+/* LE bonds in a TLV file (le_device_db_tlv, as v1's le_audio_bonds.tlv),
+ * SM with LE Secure Connections, Just Works and bonding, GATT client, ISO.
+ * Returns 0 when the path cannot be used (LE is set up anyway, with a TLV
+ * store that keeps nothing). */
+int a2dpwb_le_init(const char *tlv_path) {
+    le_slots_reset();
+    cig_slots_reset();
+    int path_ok = utf8_to_ansi_path(tlv_path, le_tlv_path, (int)sizeof(le_tlv_path));
+    if (!path_ok) strcpy(le_tlv_path, "NUL");
+    memset(&le_tlv_context, 0, sizeof(le_tlv_context));
+    const btstack_tlv_t *tlv = btstack_tlv_windows_init_instance(&le_tlv_context, le_tlv_path);
+    le_tlv_open = 1;
+    btstack_tlv_set_instance(tlv, &le_tlv_context);
+    le_device_db_tlv_configure(tlv, &le_tlv_context);
+
+    sm_init();
+    sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
+    sm_set_authentication_requirements(SM_AUTHREQ_SECURE_CONNECTION | SM_AUTHREQ_BONDING);
+    memset(&sm_event_registration, 0, sizeof(sm_event_registration));
+    sm_event_registration.callback = &handler_sm;
+    sm_add_event_handler(&sm_event_registration);
+
+    gatt_client_init();
+
+    memset(&le_hci_registration, 0, sizeof(le_hci_registration));
+    le_hci_registration.callback = &le_hci_handler;
+    hci_add_event_handler(&le_hci_registration);
+    hci_register_iso_packet_handler(&handler_iso);
+    return path_ok;
+}
+
+void a2dpwb_le_deinit(int att_server_started) {
+    for (int i = 0; i < A2DPWB_LE_SLOTS; i++)
+        if (le_slots[i].con != HCI_CON_HANDLE_INVALID) le_slot_release(le_slots[i].con);
+    hci_remove_event_handler(&le_hci_registration);
+    if (att_server_started) att_server_deinit();
+    sm_deinit();
+    btstack_tlv_set_instance(NULL, NULL);
+    if (le_tlv_open) {
+        btstack_tlv_windows_deinit(&le_tlv_context);
+        le_tlv_open = 0;
+    }
+    cig_slots_reset();
+}
+
+/* ---- GAP ---- */
+
+uint8_t a2dpwb_gap_connect(const uint8_t *addr, uint8_t addr_type) {
+    bd_addr_t a;
+    memcpy(a, addr, 6);
+    return gap_connect(a, (bd_addr_type_t)addr_type);
+}
+
+int a2dpwb_gap_connection_type(uint16_t con) {
+    return (int)gap_get_connection_type(con);
+}
+
+void a2dpwb_gap_delete_bonding(uint8_t addr_type, const uint8_t *addr) {
+    bd_addr_t a;
+    memcpy(a, addr, 6);
+    gap_delete_bonding((bd_addr_type_t)addr_type, a);
+}
+
+/* HCI Disconnect for any handle (a CIS: gap_disconnect only knows ACL / SCO) */
+uint8_t a2dpwb_cmd_disconnect(uint16_t handle, uint8_t reason) {
+    return hci_send_cmd(&hci_disconnect, handle, reason);
+}
+
+/* ---- TLV (the store le_device_db and att_server use) ---- */
+
+/* Length of the tag's value (copied into buffer if not NULL), -1 without a
+ * store, 0 if the tag is not there */
+int a2dpwb_tlv_get(uint32_t tag, uint8_t *buffer, uint32_t size) {
+    const btstack_tlv_t *tlv = NULL;
+    void *context = NULL;
+    btstack_tlv_get_instance(&tlv, &context);
+    if (tlv == NULL) return -1;
+    return tlv->get_tag(context, tag, buffer, size);
+}
+
+int a2dpwb_tlv_store(uint32_t tag, const uint8_t *data, uint32_t size) {
+    const btstack_tlv_t *tlv = NULL;
+    void *context = NULL;
+    btstack_tlv_get_instance(&tlv, &context);
+    if (tlv == NULL) return -1;
+    return tlv->store_tag(context, tag, data, size);
+}
+
+void a2dpwb_tlv_delete(uint32_t tag) {
+    const btstack_tlv_t *tlv = NULL;
+    void *context = NULL;
+    btstack_tlv_get_instance(&tlv, &context);
+    if (tlv != NULL) tlv->delete_tag(context, tag);
+}
+
+/* ---- GATT client (events of queries and listeners: SOURCE_GATT_CLIENT) ---- */
+
+uint8_t a2dpwb_gatt_discover_primary_services(uint16_t con) {
+    return gatt_client_discover_primary_services(&handler_gatt_client, con);
+}
+
+static void make_service(gatt_client_service_t *s, uint16_t start, uint16_t end) {
+    memset(s, 0, sizeof(*s));
+    s->start_group_handle = start;
+    s->end_group_handle = end;
+}
+
+uint8_t a2dpwb_gatt_find_included_services(uint16_t con, uint16_t start, uint16_t end) {
+    gatt_client_service_t s;
+    make_service(&s, start, end);
+    return gatt_client_find_included_services_for_service(&handler_gatt_client, con, &s);
+}
+
+uint8_t a2dpwb_gatt_discover_characteristics(uint16_t con, uint16_t start, uint16_t end) {
+    gatt_client_service_t s;
+    make_service(&s, start, end);
+    return gatt_client_discover_characteristics_for_service(&handler_gatt_client, con, &s);
+}
+
+uint8_t a2dpwb_gatt_read_long_value(uint16_t con, uint16_t value_handle) {
+    return gatt_client_read_long_value_of_characteristic_using_value_handle(&handler_gatt_client, con, value_handle);
+}
+
+/* BTstack keeps the value pointer until the write is done: a copy in the
+ * connection's slot, made only when no other query runs (gatt_client allows
+ * one per connection) */
+uint8_t a2dpwb_gatt_write_value(uint16_t con, uint16_t value_handle, const uint8_t *value, uint16_t len,
+                                int long_write) {
+    if (len > A2DPWB_ATT_VALUE_MAX) return ERROR_CODE_INVALID_HCI_COMMAND_PARAMETERS;
+    if (!gatt_client_is_ready(con)) return GATT_CLIENT_IN_WRONG_STATE;
+    le_slot_t *slot = le_slot_for(con, 1);
+    if (slot == NULL) return BTSTACK_MEMORY_ALLOC_FAILED;
+    if (len > 0) memcpy(slot->write_buffer, value, len);
+    return long_write
+        ? gatt_client_write_long_value_of_characteristic(&handler_gatt_client, con, value_handle, len,
+                                                         slot->write_buffer)
+        : gatt_client_write_value_of_characteristic(&handler_gatt_client, con, value_handle, len,
+                                                    slot->write_buffer);
+}
+
+/* Copied into the outgoing buffer at once */
+uint8_t a2dpwb_gatt_write_without_response(uint16_t con, uint16_t value_handle, const uint8_t *value, uint16_t len) {
+    return gatt_client_write_value_of_characteristic_without_response(con, value_handle, len, (uint8_t *)value);
+}
+
+uint8_t a2dpwb_gatt_write_client_configuration(uint16_t con, uint16_t start_handle, uint16_t value_handle,
+                                               uint16_t end_handle, uint16_t properties, uint16_t uuid16,
+                                               const uint8_t *uuid128, uint16_t configuration) {
+    gatt_client_characteristic_t c;
+    memset(&c, 0, sizeof(c));
+    c.start_handle = start_handle;
+    c.value_handle = value_handle;
+    c.end_handle = end_handle;
+    c.properties = properties;
+    c.uuid16 = uuid16;
+    if (uuid128) memcpy(c.uuid128, uuid128, 16);
+    return gatt_client_write_client_characteristic_configuration(&handler_gatt_client, con, &c, configuration);
+}
+
+/* All notifications and indications of con (GATT_EVENT_NOTIFICATION /
+ * _INDICATION to SOURCE_GATT_CLIENT); the listener is dropped when the
+ * connection goes down */
+int a2dpwb_gatt_listen(uint16_t con) {
+    le_slot_t *slot = le_slot_for(con, 1);
+    if (slot == NULL) return 0;
+    if (!slot->listening) {
+        gatt_client_listen_for_characteristic_value_updates(&slot->listener, &handler_gatt_client, con, NULL);
+        slot->listening = 1;
+    }
+    return 1;
+}
+
+void a2dpwb_gatt_stop_listening(uint16_t con) {
+    le_slot_t *slot = le_slot_for(con, 0);
+    if (slot == NULL || !slot->listening) return;
+    gatt_client_stop_listening_for_characteristic_value_updates(&slot->listener);
+    slot->listening = 0;
+}
+
+/* ---- ATT server: database from att_db_util, callbacks to Rust ---- */
+
+static uint16_t att_read_callback(hci_con_handle_t con, uint16_t handle, uint16_t offset, uint8_t *buffer,
+                                  uint16_t buffer_size) {
+    return a2dpwb_rs_att_read(con, handle, offset, buffer, buffer_size);
+}
+
+static int att_write_callback(hci_con_handle_t con, uint16_t handle, uint16_t mode, uint16_t offset,
+                              uint8_t *buffer, uint16_t buffer_size) {
+    return a2dpwb_rs_att_write(con, handle, mode, offset, buffer, buffer_size);
+}
+
+/* The database att_db_util built: att_server keeps the pointer, so
+ * att_db_util must not be used to change it afterwards */
+void a2dpwb_att_server_init(void) {
+    att_server_init(att_db_util_get_address(), &att_read_callback, &att_write_callback);
+    att_server_register_packet_handler(&handler_att_server);
+}
+
+static void att_send_callback(void *context) {
+    a2dpwb_rs_att_can_send((uint16_t)(uintptr_t)context);
+}
+
+/* One request at a time per connection (the registration is a list item):
+ * Rust asks again after the callback */
+uint8_t a2dpwb_att_server_request_to_send(uint16_t con, int indication) {
+    le_slot_t *slot = le_slot_for(con, 1);
+    if (slot == NULL) return BTSTACK_MEMORY_ALLOC_FAILED;
+    slot->send_registration.callback = &att_send_callback;
+    slot->send_registration.context = (void *)(uintptr_t)con;
+    return indication ? att_server_request_to_send_indication(&slot->send_registration, con)
+                      : att_server_request_to_send_notification(&slot->send_registration, con);
+}
+
+/* ---- CIG / CIS / ISO ---- */
+
+/* The plain layout Rust fills (btstack-sys src/ffi.rs CisParams) */
+typedef struct {
+    uint8_t cis_id;
+    uint8_t phy_c_to_p;
+    uint8_t phy_p_to_c;
+    uint8_t rtn_c_to_p;
+    uint8_t rtn_p_to_c;
+    uint16_t max_sdu_c_to_p;
+    uint16_t max_sdu_p_to_c;
+} a2dpwb_cis_params_t;
+
+uint8_t a2dpwb_cig_create(uint8_t cig_id, uint32_t sdu_interval_c_to_p, uint32_t sdu_interval_p_to_c,
+                          uint8_t worst_case_sca, uint8_t packing, uint8_t framing,
+                          uint16_t max_transport_latency_c_to_p, uint16_t max_transport_latency_p_to_c,
+                          uint8_t num_cis, const a2dpwb_cis_params_t *cis) {
+    if (num_cis == 0 || num_cis > MAX_NR_CIS) return ERROR_CODE_INVALID_HCI_COMMAND_PARAMETERS;
+    cig_slot_t *slot = NULL;
+    for (int i = 0; i < A2DPWB_CIG_SLOTS; i++) {
+        if (cig_slots[i].in_use && cig_slots[i].cig_id == cig_id) return ERROR_CODE_ACL_CONNECTION_ALREADY_EXISTS;
+        if (slot == NULL && !cig_slots[i].in_use) slot = &cig_slots[i];
+    }
+    if (slot == NULL) return ERROR_CODE_MEMORY_CAPACITY_EXCEEDED;
+    memset(slot, 0, sizeof(*slot));
+    le_audio_cig_params_t *p = &slot->params;
+    p->cig_id = cig_id;
+    p->sdu_interval_c_to_p = sdu_interval_c_to_p;
+    p->sdu_interval_p_to_c = sdu_interval_p_to_c;
+    p->worst_case_sca = worst_case_sca;
+    p->packing = packing;
+    p->framing = framing;
+    p->max_transport_latency_c_to_p = max_transport_latency_c_to_p;
+    p->max_transport_latency_p_to_c = max_transport_latency_p_to_c;
+    p->num_cis = num_cis;
+    for (int i = 0; i < num_cis; i++) {
+        p->cis_params[i].cis_id = cis[i].cis_id;
+        p->cis_params[i].max_sdu_c_to_p = cis[i].max_sdu_c_to_p;
+        p->cis_params[i].max_sdu_p_to_c = cis[i].max_sdu_p_to_c;
+        p->cis_params[i].phy_c_to_p = cis[i].phy_c_to_p;
+        p->cis_params[i].phy_p_to_c = cis[i].phy_p_to_c;
+        p->cis_params[i].rtn_c_to_p = cis[i].rtn_c_to_p;
+        p->cis_params[i].rtn_p_to_c = cis[i].rtn_p_to_c;
+    }
+    uint8_t status = gap_cig_create(&slot->cig, p);
+    if (status == ERROR_CODE_SUCCESS) {
+        slot->in_use = 1;
+        slot->cig_id = cig_id;
+    }
+    return status;
+}
+
+/* One HCI ISO data packet with a complete SDU: handle | PB 0b10, no time
+ * stamp, SDU header (sequence number, length). For CIS can-send-now. */
+uint8_t a2dpwb_iso_send(uint16_t cis_handle, uint16_t sequence_number, const uint8_t *sdu, uint16_t len) {
+    if ((uint32_t)len + 4u > HCI_ISO_PAYLOAD_SIZE) return ERROR_CODE_INVALID_HCI_COMMAND_PARAMETERS;
+    if (hci_is_packet_buffer_reserved()) return BTSTACK_ACL_BUFFERS_FULL;
+    hci_reserve_packet_buffer();
+    uint8_t *buffer = hci_get_outgoing_packet_buffer();
+    little_endian_store_16(buffer, 0, (uint16_t)((cis_handle & 0x0FFFu) | (2u << 12)));
+    little_endian_store_16(buffer, 2, (uint16_t)(4u + len));
+    little_endian_store_16(buffer, 4, sequence_number);
+    little_endian_store_16(buffer, 6, len);
+    if (len > 0) memcpy(buffer + 8, sdu, len);
+    return hci_send_iso_packet_buffer((uint16_t)(8u + len));
 }

@@ -7,7 +7,8 @@ license.workspace = true
 
 [dependencies]
 bt-host.workspace = true
-codec = { workspace = true, default-features = false }
+codec = { workspace = true, default-features = false, features = ["lc3"] }
+le-audio.workspace = true
 tracing.workspace = true
 rtrb.workspace = true
 

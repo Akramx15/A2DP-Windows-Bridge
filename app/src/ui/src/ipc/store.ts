@@ -135,6 +135,9 @@ export function createCore(transport: Transport) {
       case "scanning":
         setState("snap", "scanning", ev.value);
         break;
+      case "le_scanning":
+        setState("snap", "le_scanning", ev.value);
+        break;
       case "stream":
         setState("snap", "stream", reconcile(ev.value));
         break;

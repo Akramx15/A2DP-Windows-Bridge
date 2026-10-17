@@ -43,6 +43,10 @@ const INIT_L2CAP: u32 = 2;
 const INIT_SDP: u32 = 4;
 const INIT_A2DP: u32 = 8;
 const INIT_AVRCP: u32 = 16;
+/// LE: SM, GATT client, TLV store (Stack::le_init)
+pub(crate) const INIT_LE: u32 = 32;
+/// LE: the ATT server (Stack::att_server_init)
+pub(crate) const INIT_ATT: u32 = 64;
 
 thread_local! {
     static INITIALIZED: Cell<u32> = const { Cell::new(0) };
@@ -63,8 +67,12 @@ fn keep_path(path: &str) -> *const std::ffi::c_char {
     p
 }
 
-fn mark(flag: u32) {
+pub(crate) fn mark(flag: u32) {
     INITIALIZED.with(|i| i.set(i.get() | flag));
+}
+
+pub(crate) fn initialized(flag: u32) -> bool {
+    INITIALIZED.with(|i| i.get() & flag != 0)
 }
 
 impl Stack {
@@ -77,6 +85,7 @@ impl Stack {
     /// Installs the HCI transport and initializes HCI on it
     pub fn hci_init(&self, backend: Box<dyn crate::HciBackend>) {
         let is_async = transport::install(backend);
+        log_le_hidden();
         // SAFETY: on the BTstack thread; the backend is installed, so the
         // transport table's callbacks have something to call.
         unsafe { ffi::a2dpwb_hci_init(is_async as c_int) };
@@ -87,6 +96,7 @@ impl Stack {
     /// loader that runs first, see [`Stack::intel_download_firmware`])
     pub fn install_transport(&self, backend: Box<dyn crate::HciBackend>) {
         transport::install(backend);
+        log_le_hidden();
     }
 
     /// Initializes HCI on the transport installed with
@@ -552,6 +562,9 @@ impl Stack {
                 }
                 transport::close();
             }
+            if init & INIT_LE != 0 {
+                self.le_deinit(init & INIT_ATT != 0);
+            }
             if init & INIT_AVRCP != 0 {
                 ffi::avrcp_target_deinit();
                 ffi::avrcp_controller_deinit();
@@ -573,6 +586,12 @@ impl Stack {
         }
         transport::uninstall();
         PATHS.with(|p| p.borrow_mut().clear());
+    }
+}
+
+fn log_le_hidden() {
+    if transport::le_hidden() {
+        tracing::info!(target: "hci", "LE hidden: not using the controller's LE support (LE Audio off)");
     }
 }
 

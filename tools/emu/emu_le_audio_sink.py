@@ -3,7 +3,7 @@
 Runs Bumble virtual controllers on one in-process link (as emu_sink.py does
 for A2DP):
   - controller "A2DPWB" is served as H4 over TCP; A2DPWB connects to it with
-    `A2DPWB.exe --cli --hci-tcp 127.0.0.1:<port> --le-audio -d <sink> ...`
+    `a2dpwb-core.exe --cli --hci-tcp 127.0.0.1:<port> --le-audio -d <sink> ...`
   - one or two sink controllers, each driven by a Bumble host acting as a BAP
     unicast server (PACS, ASCS, CAS; le_audio/bap.py) plus the profile
     modules of le_audio/ (CSIP, VCP, MCP, CCP, TMAP / GMAP)

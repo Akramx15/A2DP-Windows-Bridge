@@ -114,7 +114,7 @@ If you just want it to be simple, there is commercial software that ships a sign
 | `app/src/core/` | `a2dpwb-core.exe`: resident core (Bluetooth, audio, tray, IPC server, `--cli`) |
 | `app/src/ui/` | `a2dpwb.exe`: the window (Tauri 2 + SolidJS) |
 | `app/src/driver/` | `a2dpwb-driver.exe`: assigns / restores the WinUSB driver (elevated) |
-| `app/src/crates/` | Rust libraries: BTstack bindings, HCI transports, Bluetooth host, codecs, audio pipeline, capture, Win32, core logic, IPC |
+| `app/src/crates/` | Rust libraries: BTstack bindings, HCI transports, Bluetooth host, codecs, audio pipeline, capture, Win32, core logic, IPC, LE Audio (experimental) |
 | `app/lang/` | Localization files (JSON) |
 | `app/resources/` | Application icon and manifest |
 | `extern/btstack/` | BTstack — user-mode Bluetooth stack (git submodule) |
@@ -175,7 +175,7 @@ cd app/src/ui && pnpm install && pnpm build && cd ../../..
 cargo build --release -p a2dpwb-ui
 ```
 
-The programs (`a2dpwb-core.exe`, `a2dpwb.exe`, `a2dpwb-driver.exe`) are written to `target/release/`. See [Building](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/building) for tests, release packages and the emulator test.
+The programs (`a2dpwb-core.exe`, `a2dpwb.exe`, `a2dpwb-driver.exe`) are written to `target/release/`. Or in one step with PowerShell 7: `pwsh ./build.ps1` (`-Test` adds the checks, `-Emu` the emulator test, `-Release` the release packages). See [Building](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/building) for tests, release packages and the emulator test.
 
 ## Usage
 
@@ -278,6 +278,7 @@ You can manually add this entry using `regedit` if needed. To disable it manuall
 - **Auto-reconnect**: Reconnects on Bluetooth disconnection (up to 10 attempts); a failed connection is retried (up to 3 attempts); after the PC sleeps, A2DPWB reconnects once it resumes
 - **Link quality and AFH**: Shows what is sent, the RSSI and the channels in use; tells the adapter which Wi-Fi channels to avoid
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones; their play/pause, next and previous buttons control playback on the PC
+- **LE Audio (experimental, off by default)**: LC3 to LE Audio headphones and earbuds (BAP unicast, both earbuds of a pair, headset volume, media buttons, GMAP low latency). Needs an adapter with Bluetooth 5.2 isochronous channels; tested only against the Bluetooth emulator, not yet with real LE Audio headphones ([Usage](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio))
 - **Auto-start**: Optionally start in the background (tray icon only) when you sign in
 - **Profile management**: Device + codec + capture configurations, connectable from the tray
 - **Updates**: Daily update check (optionally including pre-releases); the installed version updates itself with **Update now**, after streaming stops

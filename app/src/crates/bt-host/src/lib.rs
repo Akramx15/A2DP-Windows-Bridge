@@ -14,6 +14,7 @@ mod app;
 pub mod capture;
 pub mod chips;
 pub mod events;
+mod le;
 pub mod link_keys;
 pub mod media;
 mod shared;
@@ -33,6 +34,10 @@ use app::{HostApp, Job, Setup};
 pub use btstack_sys::expect_transport_loss;
 pub use capture::HciCapture;
 pub use events::{addr_str, parse_addr};
+pub use le::{
+    LeAddr, LeConfig, LeDeviceId, LeDeviceInfo, LeRequest, LeScanResult, LeSduSink, LeStreamRequest, LeStreamStarted,
+    LeStreamStats, LeStreamStatus,
+};
 pub use media::{MediaPacket, MediaSink};
 use shared::{Shared, Wait};
 pub use stats::{LinkRadio, LinkStats};
@@ -98,6 +103,8 @@ pub struct HostConfig {
     pub media_payload_limit: u16,
     pub capture: HciCapture,
     pub afh: Option<Box<dyn AfhSource>>,
+    /// LE Audio (experimental); None: LE stays off and hidden
+    pub le_audio: Option<LeConfig>,
 }
 
 impl HostConfig {
@@ -113,6 +120,7 @@ impl HostConfig {
             media_payload_limit: media::MEDIA_PAYLOAD_LIMIT_DEFAULT,
             capture: HciCapture::new(),
             afh: None,
+            le_audio: None,
         }
     }
 }
@@ -247,6 +255,10 @@ pub struct BtHost {
     remote_addr: Mutex<Option<[u8; 6]>>,
     last: Mutex<Option<LastStream>>,
     capture: HciCapture,
+    /// LE Audio is configured (HostConfig::le_audio was Some)
+    le_on: bool,
+    /// What the LE worker API reads without a round trip
+    le: Arc<le::core::LeShared>,
 }
 
 fn backend(transport: &TransportConfig) -> Box<dyn HciBackend> {
@@ -292,8 +304,11 @@ impl BtHost {
         let (remote_tx, remote_rx) = mpsc::channel::<(Remote, MediaSink)>();
         let tcp = matches!(config.transport, TransportConfig::Tcp(_));
         let capture = config.capture.clone();
+        let le_on = config.le_audio.is_some();
+        let le_shared = Arc::new(le::core::LeShared::default());
         let thread = {
             let (shared, controls, stats) = (shared.clone(), controls.clone(), stats.clone());
+            let (le_shared, le_jobs) = (le_shared.clone(), jobs_tx.clone());
             std::thread::Builder::new()
                 .name("bt-runloop".into())
                 .spawn(move || {
@@ -308,9 +323,19 @@ impl BtHost {
                         media_payload_limit: _,
                         capture,
                         afh,
+                        le_audio,
                     } = config;
                     let failed_shared = shared.clone();
                     let result = btstack_sys::run(move |stack, remote| {
+                        // LE Audio: the controller's LE support visible to
+                        // BTstack (before hci_init / the transport)
+                        if le_audio.is_some() {
+                            stack.set_le_hidden(false);
+                        }
+                        let le = le_audio.map(|cfg| {
+                            let poster = le::core::LePoster::new(le_jobs, remote);
+                            le::core::LeCore::new(cfg, le_shared, controls.clone(), poster)
+                        });
                         capture.reset_tracking();
                         let logger = capture.clone();
                         stack
@@ -325,7 +350,8 @@ impl BtHost {
                             realtek_files,
                             broadcom_ids,
                         };
-                        let mut app = HostApp::new(shared, controls, stats, jobs_rx, events_tx, consumer, setup, afh);
+                        let mut app =
+                            HostApp::new(shared, controls, stats, jobs_rx, events_tx, consumer, setup, afh, le);
                         let backend = backend(&transport);
                         if intel_loader && !tcp {
                             // Intel controllers boot into a bootloader and
@@ -370,6 +396,8 @@ impl BtHost {
             remote_addr: Mutex::new(None),
             last: Mutex::new(None),
             capture,
+            le_on,
+            le: le_shared,
         };
         match host.wait_init() {
             Ok(()) => Ok(host),

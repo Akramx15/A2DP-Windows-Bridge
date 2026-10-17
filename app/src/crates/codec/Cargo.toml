@@ -6,12 +6,14 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["ldac", "aptx", "aac", "lhdcv5", "opus"]
+default = ["ldac", "aptx", "aac", "lhdcv5", "opus", "lc3"]
 ldac = ["dep:ldac-sys"]
 aptx = ["dep:openaptx-sys"]
 aac = ["dep:fdkaac-sys"]
 lhdcv5 = ["dep:lhdcv5-sys"]
 opus = ["dep:opus-sys"]
+# LC3 for LE Audio (not an A2DP codec)
+lc3 = ["dep:lc3-sys"]
 
 [dependencies]
 thiserror.workspace = true
@@ -21,6 +23,7 @@ openaptx-sys = { path = "../openaptx-sys", optional = true }
 fdkaac-sys = { path = "../fdkaac-sys", optional = true }
 lhdcv5-sys = { path = "../lhdcv5-sys", optional = true }
 opus-sys = { path = "../opus-sys", optional = true }
+lc3-sys = { path = "../lc3-sys", optional = true }
 
 [dev-dependencies]
 btstack-sys = { workspace = true, features = ["sbc-reference"] }

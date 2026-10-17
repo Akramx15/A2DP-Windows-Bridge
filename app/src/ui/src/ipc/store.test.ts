@@ -74,7 +74,14 @@ describe("core store", () => {
     });
     expect(core.state.snap?.stream.state).toBe("connecting");
 
-    f.event(13, { kind: "profiles", value: { profiles: [], active_profile: null } });
+    // The LE Audio part of a scan (state, with a revision)
+    f.event(13, { kind: "le_scanning", value: true });
+    expect(core.state.snap?.le_scanning).toBe(true);
+    expect(core.state.rev).toBe(13);
+    f.event(14, { kind: "le_scanning", value: false });
+    expect(core.state.snap?.le_scanning).toBe(false);
+
+    f.event(15, { kind: "profiles", value: { profiles: [], active_profile: null } });
     expect(core.state.snap?.profiles).toHaveLength(0);
     expect(core.state.snap?.active_profile).toBeNull();
     // No resync was needed

@@ -1,7 +1,7 @@
-// Diagnostics: live link graphs and v1's link quality figures, the
-// eleven-step connection flow, the log with level, text and attempt
-// filters, HCI capture, "copy diagnostic info", and in developer mode the
-// receiver test.
+// Diagnostics: live link graphs and v1's link quality figures (an LE
+// Audio stream's ISO counters), the eleven-step connection flow, the log
+// with level, text and attempt filters, HCI capture, "copy diagnostic
+// info", and in developer mode the receiver test.
 
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -364,6 +364,13 @@ function LinkPanel() {
     return s ? s.airtime * 100 : null;
   };
   const airHigh = () => (airPct() ?? 0) >= 80;
+  // LE Audio: the stream that was set up, and its isochronous channels
+  const le = () => (streaming() ? (stream().info?.le ?? null) : null);
+  const iso = () => last()?.iso ?? null;
+  const isoCount = (pick: (i: NonNullable<ReturnType<typeof iso>>) => number) => {
+    const i = iso();
+    return i ? String(pick(i)) : DASH;
+  };
   const airText = () => {
     const s = sending();
     const p = airPct();
@@ -422,22 +429,45 @@ function LinkPanel() {
           </dl>
         </section>
 
-        <section class="card lq-group" aria-labelledby="lq-band">
-          <h2 id="lq-band">{t("quality.section_band")}</h2>
-          <dl class="lq-rows">
-            <Row label={t("quality.theory")} value={theoryPct() === null ? DASH : t("quality.theory_value", EDR3_MAX_KBPS, theoryPct()!)}>
-              <Gauge value={theoryPct() === null ? null : gaugeValue(theoryPct())} label={t("quality.theory")} />
-            </Row>
-            <Row label={t("quality.airtime")} class={airHigh() ? "st-bad" : ""} value={airText()}>
-              <Gauge
-                value={airPct() === null ? null : gaugeValue(airPct())}
-                label={t("quality.airtime")}
-                status={airHigh() ? "bad" : undefined}
+        <Show when={le() || iso()}>
+          <section class="card lq-group" aria-labelledby="lq-iso">
+            <h2 id="lq-iso">{t("ui.diag.iso_title")}</h2>
+            <dl class="lq-rows">
+              <Row label={t("ui.diag.iso_config")} value={le()?.summary ?? DASH} />
+              <Row label={t("ui.diag.iso_cis")} value={isoCount((i) => i.cis)} />
+              <Row label={t("ui.diag.iso_sdu_sets")} value={isoCount((i) => i.sdu_sets)} />
+              <Row label={t("ui.diag.iso_silence")} class={(iso()?.silence ?? 0) > 0 ? "st-warn" : ""} value={isoCount((i) => i.silence)} />
+              <Row
+                label={t("ui.diag.iso_underruns")}
+                class={(iso()?.underruns ?? 0) > 0 ? "st-warn" : ""}
+                value={isoCount((i) => i.underruns)}
               />
-            </Row>
-          </dl>
-          <p class="hint">{t("quality.band_help")}</p>
-        </section>
+              <Row label={t("ui.diag.iso_dropped")} class={(iso()?.dropped ?? 0) > 0 ? "st-bad" : ""} value={isoCount((i) => i.dropped)} />
+              <Row label={t("ui.diag.iso_prefill")} value={iso() ? t("ui.diag.iso_prefill_value", iso()!.prefill) : DASH} />
+            </dl>
+            <p class="hint">{t("ui.diag.iso_help")}</p>
+          </section>
+        </Show>
+
+        {/* The BR/EDR link's band: not for LE Audio */}
+        <Show when={!le()}>
+          <section class="card lq-group" aria-labelledby="lq-band">
+            <h2 id="lq-band">{t("quality.section_band")}</h2>
+            <dl class="lq-rows">
+              <Row label={t("quality.theory")} value={theoryPct() === null ? DASH : t("quality.theory_value", EDR3_MAX_KBPS, theoryPct()!)}>
+                <Gauge value={theoryPct() === null ? null : gaugeValue(theoryPct())} label={t("quality.theory")} />
+              </Row>
+              <Row label={t("quality.airtime")} class={airHigh() ? "st-bad" : ""} value={airText()}>
+                <Gauge
+                  value={airPct() === null ? null : gaugeValue(airPct())}
+                  label={t("quality.airtime")}
+                  status={airHigh() ? "bad" : undefined}
+                />
+              </Row>
+            </dl>
+            <p class="hint">{t("quality.band_help")}</p>
+          </section>
+        </Show>
 
         <section class="card lq-group" aria-labelledby="lq-loss">
           <div class="lq-group-head">

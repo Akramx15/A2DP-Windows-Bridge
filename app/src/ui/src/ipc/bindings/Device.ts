@@ -20,4 +20,17 @@ rssi: number | null,
  * Codec keys the device offered when it last connected since the core
  * started ("ldac", "aac", ...); empty while not known
  */
-codecs: Array<string>, };
+codecs: Array<string>, 
+/**
+ * An LE Audio entry (experimental; le_audio_devices.txt and the LE
+ * scan). A dual-mode device has two entries with the same address, a
+ * classic one and an LE Audio one: address and this flag identify an
+ * entry. The UI lists them only while Settings.le_audio_experimental
+ * is on.
+ */
+le_audio: boolean, 
+/**
+ * LE Audio: a member of a coordinated set (it advertised a CSIP RSI;
+ * both earbuds stream together)
+ */
+le_audio_set: boolean, };

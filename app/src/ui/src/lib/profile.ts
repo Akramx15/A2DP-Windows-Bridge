@@ -27,6 +27,7 @@ export function newProfile(): Profile {
     volume_device_id: "",
     volume_device_name: "",
     max_media_payload: PACKET_DEFAULT,
+    le_audio: false,
   };
 }
 
@@ -54,6 +55,9 @@ export function validateProfile(p: Profile, taken: readonly string[]): ProfilePr
   }
   if (p.capture_mode === "virtual" && !p.audio_device_id) out.audio_device = { key: "error.no_virtual_device_selected" };
   if (p.capture_mode === "app" && !p.app_exe) out.app = { key: "error.no_app_selected" };
+  // LE Audio streams loopback and virtual device capture only (the core
+  // refuses the stream otherwise)
+  if (p.le_audio && p.capture_mode === "app") out.app = { key: "error.le_audio_capture" };
   return out;
 }
 
@@ -66,7 +70,26 @@ export function normalizeProfile(p: Profile): Profile {
 export function knownCodecs(devices: readonly Device[], address: string): string[] {
   const a = parseAddress(address);
   if (!a) return [];
-  return devices.find((d) => d.address.toUpperCase() === a)?.codecs ?? [];
+  return devices.find((d) => !d.le_audio && d.address.toUpperCase() === a)?.codecs ?? [];
+}
+
+/**
+ * A device entry's identity: a dual-mode device has a classic entry and an
+ * LE Audio one with the same address
+ */
+export function deviceKey(d: Pick<Device, "address" | "le_audio">): string {
+  return `${d.address.toUpperCase()}${d.le_audio ? "/le" : ""}`;
+}
+
+/** The entries to offer: LE Audio ones only with LE Audio (experimental) on, as v1 */
+export function listedDevices(devices: readonly Device[], leAudio: boolean): Device[] {
+  return leAudio ? [...devices] : devices.filter((d) => !d.le_audio);
+}
+
+/** A profile's name until the user types one: the device, "<device> LE Audio" for LE Audio (v1) */
+export function defaultProfileName(deviceName: string, address: string, leAudio: boolean): string {
+  const base = deviceName || address;
+  return leAudio && base ? `${base} LE Audio` : base;
 }
 
 /**

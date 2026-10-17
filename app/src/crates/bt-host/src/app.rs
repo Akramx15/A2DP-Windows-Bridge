@@ -19,6 +19,8 @@ use codec::caps::{ConfigRequest, Configuration, SbcCapabilities, VendorCapabilit
 use codec::sbc::ChannelMode;
 
 use crate::events::{addr_at, addr_str, event_type, hci_error_string, le16, le24, subevent, u8_at};
+use crate::le::core::LeCore;
+use crate::le::iso_send::TIMER_ISO;
 use crate::link_keys::FileLinkKeyStore;
 use crate::media::{MediaPacket, RTP_HEADER_SIZE};
 use crate::shared::Shared;
@@ -68,6 +70,8 @@ pub(crate) struct HostApp {
     pub media: rtrb::Consumer<MediaPacket>,
     pub setup: Setup,
     pub afh: Option<Box<dyn crate::AfhSource>>,
+    /// LE Audio (experimental): None while off
+    pub le: Option<LeCore>,
 
     // ---- connection (BTstack thread only) ----
     pub a2dp_cid: u16,
@@ -120,6 +124,7 @@ impl HostApp {
         media: rtrb::Consumer<MediaPacket>,
         setup: Setup,
         afh: Option<Box<dyn crate::AfhSource>>,
+        le: Option<LeCore>,
     ) -> HostApp {
         HostApp {
             shared,
@@ -130,6 +135,7 @@ impl HostApp {
             media,
             setup,
             afh,
+            le,
             a2dp_cid: 0,
             avrcp_cid: 0,
             local_seid: 0,
@@ -222,6 +228,11 @@ impl HostApp {
             AVRCP_FEATURE_MASK_CATEGORY_PLAYER_OR_RECORDER,
         );
         self.register_endpoints(stack);
+        // LE Audio (experimental, off by default): SM, GATT client / server,
+        // ISO. Nothing of it runs while the setting is off.
+        if let Some(le) = self.le.as_mut() {
+            le.stack_init(stack);
+        }
         // The Realtek driver sends vendor commands before HCI Reset (reading
         // the LMP subversion); without custom pre-init that step runs in the
         // download's slot and the download never happens
@@ -1239,12 +1250,38 @@ impl App for HostApp {
             return;
         }
         match source {
-            Source::Hci => self.handle_hci(stack, packet),
+            Source::Hci => {
+                self.handle_hci(stack, packet);
+                if let Some(le) = self.le.as_mut() {
+                    le.on_hci(stack, packet);
+                }
+            }
             Source::A2dp => self.handle_a2dp(stack, packet),
             Source::AvdtpSink => self.handle_sep(packet),
             Source::Avrcp | Source::AvrcpController | Source::AvrcpTarget => {
                 if event_type(packet) == Some(HCI_EVENT_AVRCP_META) {
                     self.handle_avrcp(stack, packet)
+                }
+            }
+            // LE (only after Stack::le_init)
+            Source::Sm => {
+                if let Some(le) = self.le.as_mut() {
+                    le.on_sm(stack, packet);
+                }
+            }
+            Source::GattClient => {
+                if let Some(le) = self.le.as_mut() {
+                    le.on_gatt(stack, packet);
+                }
+            }
+            Source::AttServer => {
+                if let Some(le) = self.le.as_mut() {
+                    le.on_att_event(packet);
+                }
+            }
+            Source::Iso => {
+                if let Some(le) = self.le.as_mut() {
+                    le.on_iso(stack, packet);
                 }
             }
         }
@@ -1273,6 +1310,16 @@ impl App for HostApp {
                 self.playback_tick(stack);
                 stack.timer_start(TIMER_PLAYBACK, PLAYBACK_TICK_MS);
             }
+            TIMER_LE => {
+                if let Some(le) = self.le.as_mut() {
+                    le.on_timer(stack);
+                }
+            }
+            TIMER_ISO => {
+                if let Some(le) = self.le.as_mut() {
+                    le.on_iso_timer(stack);
+                }
+            }
             _ => {}
         }
     }
@@ -1291,8 +1338,25 @@ impl App for HostApp {
         self.setup_hci_and_power_on(stack, None);
     }
 
-    fn on_exit(&mut self, _stack: &Stack) {
+    fn on_exit(&mut self, stack: &Stack) {
         self.streaming = false;
+        if let Some(le) = self.le.as_mut() {
+            le.stack_deinit(stack);
+        }
+    }
+
+    fn on_att_read(&mut self, stack: &Stack, con: u16, handle: u16, offset: u16) -> Result<Vec<u8>, u8> {
+        match self.le.as_mut() {
+            Some(le) => le.att_read(stack, con, handle, offset),
+            None => Err(ATT_ERROR_READ_NOT_PERMITTED),
+        }
+    }
+
+    fn on_att_write(&mut self, stack: &Stack, write: &btstack_sys::AttWriteRequest) -> u8 {
+        match self.le.as_mut() {
+            Some(le) => le.att_write(stack, write),
+            None => ATT_ERROR_WRITE_NOT_PERMITTED,
+        }
     }
 }
 

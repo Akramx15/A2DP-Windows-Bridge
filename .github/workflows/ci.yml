@@ -114,7 +114,7 @@ jobs:
       - run: python ../../../tools/check_lang.py
 
   emulator:
-    name: Emulator end to end (all codecs)
+    name: Emulator end to end (all codecs, LE Audio)
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
@@ -140,8 +140,19 @@ jobs:
           --a2dpwb target/release/a2dpwb-core.exe
           --decoder build/a2dp_decode/Release/a2dpwb_decode.exe
           --out emu-out
+      # LE Audio (experimental): the 39 cases of tools/emu/le_audio_tests,
+      # also when an A2DP case failed
+      - name: run_test.py --le-audio
+        if: ${{ !cancelled() }}
+        run: >
+          tools/emu/.venv/Scripts/python.exe tools/emu/run_test.py --le-audio
+          --a2dpwb target/release/a2dpwb-core.exe
+          --decoder build/a2dp_decode/Release/a2dpwb_decode.exe
+          --out emu-out-le
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: emu-out
-          path: emu-out
+          path: |
+            emu-out
+            emu-out-le

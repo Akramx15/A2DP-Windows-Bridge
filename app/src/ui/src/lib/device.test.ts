@@ -3,14 +3,18 @@
 
 import { describe, expect, it } from "vitest";
 import type { AudioDevice, Device } from "../ipc/types";
-import { codecSupport } from "./codecs";
+import { codecLabelKey, codecSupport } from "./codecs";
 import { asciiFromFullwidth, parseAddress } from "./format";
 import {
   appCaptureSupportFrom,
   captureDevice,
+  defaultProfileName,
+  deviceKey,
   formatMismatch,
   knownCodecs,
+  listedDevices,
   newProfile,
+  validateProfile,
   validDeviceName,
 } from "./profile";
 
@@ -21,6 +25,8 @@ const dev = (address: string, codecs: string[]): Device => ({
   audio: true,
   rssi: null,
   codecs,
+  le_audio: false,
+  le_audio_set: false,
 });
 
 const audio = (id: string, is_default: boolean, mix_rate: number | null, mix_bits: number | null): AudioDevice => ({
@@ -71,6 +77,41 @@ describe("codecs a device offers", () => {
     expect(knownCodecs(devices, "00:1A:7D:DA:71:13")).toEqual([]);
     expect(knownCodecs(devices, "11:22:33:44:55:66")).toEqual([]);
     expect(knownCodecs(devices, "")).toEqual([]);
+  });
+});
+
+describe("LE Audio entries", () => {
+  const le = (address: string, set = false): Device => ({ ...dev(address, []), le_audio: true, le_audio_set: set });
+
+  it("name an entry by address and kind: a dual-mode device has two", () => {
+    const list = [dev("F4:4E:FD:00:11:22", ["sbc", "aac"]), le("F4:4E:FD:00:11:22", true), le("D0:3E:7D:4C:2A:10")];
+    expect(list.map(deviceKey)).toEqual(["F4:4E:FD:00:11:22", "F4:4E:FD:00:11:22/le", "D0:3E:7D:4C:2A:10/le"]);
+    // The codecs belong to the classic entry
+    expect(knownCodecs([le("F4:4E:FD:00:11:22"), ...list], "F4:4E:FD:00:11:22")).toEqual(["sbc", "aac"]);
+  });
+
+  it("are listed only with LE Audio (experimental) on, as v1", () => {
+    const list = [dev("AC:80:0A:12:34:56", []), le("F4:4E:FD:00:11:22")];
+    expect(listedDevices(list, false).map(deviceKey)).toEqual(["AC:80:0A:12:34:56"]);
+    expect(listedDevices(list, true)).toHaveLength(2);
+  });
+
+  it("name a new profile \"<device> LE Audio\" (v1)", () => {
+    expect(defaultProfileName("Galaxy Buds2 Pro", "F4:4E:FD:00:11:22", true)).toBe("Galaxy Buds2 Pro LE Audio");
+    expect(defaultProfileName("", "F4:4E:FD:00:11:22", true)).toBe("F4:4E:FD:00:11:22 LE Audio");
+    expect(defaultProfileName("Galaxy Buds2 Pro", "F4:4E:FD:00:11:22", false)).toBe("Galaxy Buds2 Pro");
+    expect(defaultProfileName("", "", true)).toBe("");
+  });
+
+  it("refuse application capture", () => {
+    const p = { ...newProfile(), name: "P", device_address: "F4:4E:FD:00:11:22", capture_mode: "app", app_exe: "x.exe" };
+    expect(validateProfile(p, []).app).toBeUndefined();
+    expect(validateProfile({ ...p, le_audio: true }, []).app).toEqual({ key: "error.le_audio_capture" });
+    expect(validateProfile({ ...p, le_audio: true, capture_mode: "loopback" }, [])).toEqual({});
+  });
+
+  it("stream LC3", () => {
+    expect(codecLabelKey("LC3")).toBe("ui.codec.lc3");
   });
 });
 

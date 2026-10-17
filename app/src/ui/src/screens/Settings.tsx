@@ -1,9 +1,9 @@
 // Settings: language, theme, startup, updates, headphone buttons, volume,
-// developer mode, the settings folder, about.
+// LE Audio (experimental), developer mode, the settings folder, about.
 
-import { createSignal, Match, onMount, Show, Switch } from "solid-js";
+import { createSignal, For, Match, onMount, Show, Switch } from "solid-js";
 import { errorText, useApp } from "../app/context";
-import { saveSettings } from "../app/settings";
+import { applySettings, saveSettings } from "../app/settings";
 import { Banner, Button, Dialog, Field, Section, Segmented, Select, Toggle } from "../components/controls";
 import { LANGUAGES, t, tm } from "../i18n";
 import type { UpdatePhase } from "../ipc/transport";
@@ -27,6 +27,17 @@ export function Settings() {
   const canInstall = () => phase().state === "idle" || phase().state === "failed";
   const installUpdate = (manifestUrl: string) => app.run(() => core.transport.updateInstall(manifestUrl));
   const mb = (bytes: number) => (bytes / 1048576).toFixed(1);
+
+  // LE Audio (experimental): v1's message after the toggle, with the note
+  // that a running stream or scan keeps the old setting until the next one
+  // (the core says so: settings.set's le_audio_deferred)
+  const [leNote, setLeNote] = createSignal<string[] | null>(null);
+  const toggleLeAudio = async (on: boolean) => {
+    const applied = await applySettings(app, { le_audio_experimental: on });
+    if (!applied) return;
+    const text = t(on ? "settings.le_audio_on" : "settings.le_audio_off").split("\n\n");
+    setLeNote(applied.le_audio_deferred ? [...text, t("settings.le_audio_deferred")] : text);
+  };
 
   const checkNow = async () => {
     try {
@@ -166,6 +177,35 @@ export function Settings() {
       </Section>
 
       <Section title={t("ui.settings.advanced")}>
+        <Toggle
+          label={t("settings.le_audio")}
+          hint={t("ui.settings.le_audio_hint")}
+          checked={s().le_audio_experimental}
+          onChange={toggleLeAudio}
+        />
+        {/* Read when the next LE Audio stream is set up */}
+        <Toggle
+          label={t("settings.le_low_latency")}
+          hint={t("ui.settings.le_low_latency_hint")}
+          checked={s().le_audio_low_latency}
+          disabled={!s().le_audio_experimental}
+          onChange={(v) => set({ le_audio_low_latency: v })}
+        />
+        <Show when={leNote()}>
+          {(note) => (
+            <Banner
+              kind="info"
+              title={t("settings.le_audio")}
+              actions={
+                <Button kind="subtle" onClick={() => setLeNote(null)}>
+                  {t("modal.close")}
+                </Button>
+              }
+            >
+              <For each={note()}>{(para) => <p>{para}</p>}</For>
+            </Banner>
+          )}
+        </Show>
         <Toggle
           label={t("ui.settings.developer_mode")}
           hint={t("ui.settings.developer_mode_hint")}

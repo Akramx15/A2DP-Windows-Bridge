@@ -132,6 +132,12 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
         source: core_source(i.source.as_ref()),
     });
     let firmware = firmware_text(&s.adapter.adapters);
+    // LE Audio (experimental) of the running stack: stream, ISO counters,
+    // devices with their TMAP / GMAP roles
+    let le_audio = state.service.host().filter(|_| state.service.le_audio_active()).map(|h| {
+        let stream = state.service.le_stream().map(|d| d.summary);
+        diag::LeAudioDiag { stats: stream.is_some().then(|| h.le_stream_stats()), stream, devices: h.le_devices() }
+    });
     let stats = state.service.stats();
     let capture = state.service.capture();
     let capture_path = capture.path();
@@ -150,6 +156,7 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
         log: &log,
         clock: hub.clock(),
         mask,
+        le_audio: le_audio.as_ref(),
     })
 }
 

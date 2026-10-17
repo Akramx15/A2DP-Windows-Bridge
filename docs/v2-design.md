@@ -26,7 +26,7 @@ Oct 17, 2026 · @seiya ／ 改訂: 未決事項の決定を反映（同日）
 
 - Bluetoothスタック本体（btstack）をRustで書き直すこと
 - コーデックのエンコーダをRustで作り直すこと（SBCだけは小さいので例外としてRustに移植します）
-- LE Audio。今回の構造を土台に、別の計画で進めます（`develop-2.0` は v1 の実験的 LE Audio を含む `feat/le-audio` から分岐しているので、v1側のコードは参照用にそのまま残ります）。
+- LE Audio の正式対応。v1 の実験的な LE Audio（BAP ユニキャスト、CSIP / VCP / MCP / CCP / TMAP / GMAP）は 2026-10-18 に v2 へ移植しましたが、実験的な機能（既定でオフ）のままです。実機での確認が済むまで正式な機能にはしません（[LE Audio（実験的）](#le-audio実験的)を参照）。
 - macOS / Linux 版のホストアプリ
 
 ## 現行機能の棚卸し
@@ -330,6 +330,7 @@ v1から上書きインストールするだけで、プロファイル、ペア
 | `settings.json` | そのまま読む。`schema_version` を追加し、未知のキーは消さずに残す。v1の古い `max_media_payload` の移行処理も引き継ぐ |
 | `profiles.json` | そのまま読む。実行時だけの `test_tone` は保存しない |
 | `devices.txt` / `link_keys.txt` | 形式を変えない。リンクキーが読めれば、イヤホンは再ペアリングなしでつながる |
+| `le_audio_devices.txt` / `le_audio_bonds.tlv` / `le_audio_csip.txt` | LE Audio（実験的）のデバイス、ボンド、コーディネートセット。v1 の形式のまま読み書きする |
 | ファームウェアと `.pklg` | 置き場所も名前もそのまま |
 | `debug.log` | v2は `logs\` に日付ごとのファイルで書く。古いものは残す |
 
@@ -411,7 +412,23 @@ Auto の優先順位は LHDC V5 の下、AAC の上です。256 kbps の Opus �
 
 作業は `develop-2.0` ブランチ（`feat/le-audio` から分岐）で進めます。初めはリポジトリ直下の `v2/` にv1のコードと並べて置いていましたが、2026-10-17 に v2 を `app/src/` へ移し、v1 のコードは削除しました。
 
-**v1の保守**: 2026-10-17 に終了しました（当初は v2.0 を出すまで続ける予定でした）。v1 は `main` / `develop` ブランチとリリースのタグに残ります。v1 にあった実験的な LE Audio（`feat/le-audio`）は v2 にはありません。
+**v1の保守**: 2026-10-17 に終了しました（当初は v2.0 を出すまで続ける予定でした）。v1 は `main` / `develop` ブランチとリリースのタグに残ります。v1 にあった実験的な LE Audio（`feat/le-audio`）は 2026-10-18 に v2 へ移植しました（次の節）。
+
+### LE Audio（実験的）
+
+v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動作とログの文言を変えずに v2 へ移しました。設定「LE Audio（実験的）」（`le_audio_experimental`、既定はオフ）か CLI の `--le-audio` で有効になり、オフのときは LE のコードは何も動かず、HCI の初期化も LE なしの v2 と同じです（`btstack-sys` の `transport.rs` が LE の機能ビットを隠す。LE Set Scan Parameters だけはその場で応答する）。確認はエミュレータ（`tools/emu`、39 ケース）だけで、実機の LE Audio イヤホンではまだ確かめていません。
+
+| 層 | クレート / ファイル | 中身 |
+| --- | --- | --- |
+| 1. FFI | `btstack-sys`（`le.rs`、`att.rs`、`events.rs`） | BTstack の `src/ble`（SM、GATT クライアント / サーバー、LE デバイス DB）、micro-ecc、`btstack_tlv_windows.c`。CIG / CIS、ISO 送信、ATT サーバーの同期読み書き |
+| 1. FFI | `lc3-sys` | liblc3（`extern/btstack/3rd-party/lc3-google`、Apache-2.0）のエンコーダ |
+| 2. 部品 | `le-audio` | 純粋なロジック（PACS / ASCS、プリセット、ストリーム計画、CSIP の暗号、VCP / CCP / MCP のモデル、Database Hash、SDU のジッターバッファ） |
+| 2. 部品 | `hci-transport`（`usb.rs`） | HCI ISO データを ACL のバルクエンドポイントで送る（v1 / btusb と同じ） |
+| 3. エンジン | `bt-host`（`le/`、`le/modules/`） | LE コア（スキャン、接続、ペアリング、GATT キュー、GATT サーバー、BAP ユニキャスト、ISO 送信）と、プロファイルのモジュール（CSIP、VCP、MCP、CCP、TMAP / GMAP） |
+| 3. エンジン | `pipeline`（`le.rs`） | 取り込み → ステレオへのダウンミックス → LC3 のレートへのリサンプル → LC3 → SDU セット |
+| 4. コア | `core`（`le_stream.rs`、`le_media.rs`、`devices.rs`） | LE Audio のセッション（v1 の `a2dp_service_le_audio.cpp`）、SMTC のメディア操作、`le_audio_devices.txt` |
+
+設定フォルダには v1 と同じ `le_audio_bonds.tlv`（LE のボンド）、`le_audio_csip.txt`（コーディネートセット）、`le_audio_devices.txt`（LE Audio のデバイス）を置きます。開発者向けの説明は [le-audio-dev.md](le-audio-dev.md) にあります。
 
 ## リスクと未決事項
 
@@ -442,6 +459,8 @@ Auto の優先順位は LHDC V5 の下、AAC の上です。256 kbps の Opus �
 - [ ] `DiInstallDevice` による割り当てが使えない環境の扱い（フェーズ0の検証結果で決める）
 
 ## 改訂履歴
+
+- 2026-10-18（LE Audio）: v1 の実験的な LE Audio を v2 に移植した（クレート `le-audio` と `lc3-sys`、`btstack-sys` の LE、`bt-host` の `le/`、`pipeline` の `le.rs`、`core` の `le_stream.rs`、UI の設定・プロファイル・デバイス一覧・診断）。既定はオフで、実験的な扱いは v1 と同じ。オフのときの HCI コマンドは LE なしのビルドと同じ（LE Set Scan Parameters をトランスポートが応答する点を除く）。[LE Audio（実験的）](#le-audio実験的)を参照。「今回やらないこと」の LE Audio は「正式対応」に書き換えた。
 
 - 2026-10-17（Opus）: Android の A2DP Opus（ベンダー 0x000000E0 / 0x0001）を試験的に `opus` として追加した。エンコーダは libopus 1.5.2（`opus-sys`）。パラメータとその根拠、Auto の位置（LHDC V5 の下、AAC の上）は[Opus](#opus)に記した。ストリームエンドポイントは 9 個（SBC、AAC、aptX、aptX HD、aptX LL、LDAC、LHDC V5、FastStream、Opus）になり、BTstack の静的プールは 1 個あたり約 0.6 KB（`avdtp_stream_endpoint_t` 528 バイトとシムの能力 / 設定 64 バイト）増える。
 

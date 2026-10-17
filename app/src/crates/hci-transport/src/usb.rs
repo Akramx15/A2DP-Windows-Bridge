@@ -2,7 +2,10 @@
 //!
 //! Interface 0 carries HCI: commands on the default control pipe (class
 //! request to the device), events on the interrupt IN pipe, ACL data on the
-//! bulk pipes. SCO (interface 1) is not used by an A2DP source.
+//! bulk pipes. SCO (interface 1) is not used by an A2DP source. HCI ISO data
+//! (LE Audio) shares the bulk pipes with ACL, as in v1 and Linux btusb: out
+//! through the ACL slot; in, the ACL reader delivers it as ACL and BTstack
+//! tells the two apart by the connection handle (a CIS handle).
 //!
 //! Recovery kept from v1's modified WinUSB transport:
 //! - the event and ACL pipes are reset (clear halt) when the adapter is
@@ -27,7 +30,7 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use btstack_sys::consts::{HCI_ACL_DATA_PACKET, HCI_COMMAND_DATA_PACKET, HCI_EVENT_PACKET};
+use btstack_sys::consts::{HCI_ACL_DATA_PACKET, HCI_COMMAND_DATA_PACKET, HCI_EVENT_PACKET, HCI_ISO_DATA_PACKET};
 use btstack_sys::{HciBackend, Upstream};
 use nusb::descriptors::TransferType;
 use nusb::transfer::{Buffer, Bulk, ControlOut, ControlType, In, Interrupt, Out, Recipient, TransferError};
@@ -48,6 +51,17 @@ const POLL: Duration = Duration::from_millis(100);
 const IN_TRANSFERS: usize = 3;
 const EVENT_TRANSFER_SIZE: usize = 512;
 const ACL_TRANSFER_SIZE: usize = 4096;
+
+/// The writer slot of an outgoing packet: 0 commands (control pipe), 1 ACL
+/// and ISO data (bulk OUT pipe). BTstack sends one packet per slot at a time
+/// (one outgoing buffer for ACL and ISO).
+fn out_slot(packet_type: u8) -> Option<usize> {
+    match packet_type {
+        HCI_COMMAND_DATA_PACKET => Some(0),
+        HCI_ACL_DATA_PACKET | HCI_ISO_DATA_PACKET => Some(1),
+        _ => None,
+    }
+}
 
 /// Which adapter to open
 #[derive(Debug, Clone, Default)]
@@ -347,20 +361,12 @@ impl HciBackend for UsbTransport {
 
     fn can_send(&mut self, packet_type: u8) -> bool {
         let Some(o) = &self.opened else { return false };
-        match packet_type {
-            HCI_COMMAND_DATA_PACKET => !o.in_flight[0].load(Ordering::Acquire),
-            HCI_ACL_DATA_PACKET => !o.in_flight[1].load(Ordering::Acquire),
-            _ => false,
-        }
+        out_slot(packet_type).is_some_and(|slot| !o.in_flight[slot].load(Ordering::Acquire))
     }
 
     fn send(&mut self, packet_type: u8, packet: &[u8]) -> bool {
         let Some(o) = &self.opened else { return false };
-        let slot = match packet_type {
-            HCI_COMMAND_DATA_PACKET => 0,
-            HCI_ACL_DATA_PACKET => 1,
-            _ => return false,
-        };
+        let Some(slot) = out_slot(packet_type) else { return false };
         let mut buf = o.recycle_rx.try_recv().unwrap_or_default();
         buf.clear();
         buf.extend_from_slice(packet);
@@ -468,8 +474,8 @@ fn acl_in_loop(ep: &mut Endpoint<Bulk, In>, stop: &AtomicBool, upstream: &Upstre
     drain(ep);
 }
 
-/// Sends commands and ACL packets in the order BTstack hands them over, and
-/// reports each as sent
+/// Sends commands and ACL / ISO packets in the order BTstack hands them
+/// over, and reports each as sent
 fn writer_loop(
     interface: &Interface,
     acl_out: &mut Endpoint<Bulk, Out>,
@@ -493,12 +499,16 @@ fn writer_loop(
             let c = acl_out.transfer_blocking(buf, COMMAND_TIMEOUT);
             c.status
         };
-        in_flight[if packet_type == HCI_COMMAND_DATA_PACKET { 0 } else { 1 }].store(false, Ordering::Release);
+        in_flight[out_slot(packet_type).unwrap_or(1)].store(false, Ordering::Release);
         let _ = recycle.send(packet);
         match result {
             Ok(()) => upstream.packet_sent(),
             Err(e) => {
-                let what = if packet_type == HCI_COMMAND_DATA_PACKET { "HCI command" } else { "ACL write" };
+                let what = match packet_type {
+                    HCI_COMMAND_DATA_PACKET => "HCI command",
+                    HCI_ISO_DATA_PACKET => "ISO write",
+                    _ => "ACL write",
+                };
                 // A lost command leaves BTstack waiting for its answer for
                 // good: the stack has to be restarted
                 upstream.fail(&format!("{what}: {e}"));
@@ -515,6 +525,16 @@ fn writer_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn iso_goes_through_the_acl_slot() {
+        assert_eq!(out_slot(HCI_COMMAND_DATA_PACKET), Some(0));
+        assert_eq!(out_slot(HCI_ACL_DATA_PACKET), Some(1));
+        assert_eq!(out_slot(HCI_ISO_DATA_PACKET), Some(1));
+        // SCO and events are not sent on this transport
+        assert_eq!(out_slot(btstack_sys::consts::HCI_SCO_DATA_PACKET), None);
+        assert_eq!(out_slot(HCI_EVENT_PACKET), None);
+    }
 
     #[test]
     fn selector_from_instance_id() {

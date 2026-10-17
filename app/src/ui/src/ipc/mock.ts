@@ -7,7 +7,8 @@
 // URL options (browser): ?mock=fresh (first run: no profile, adapter still
 // on Windows' Bluetooth driver), ?mock=error (the last connection failed),
 // ?mock=offline (update checks and receivers cannot be reached),
-// ?window=flyout (the flyout view).
+// ?mock=le (LE Audio on, with an LE Audio profile), ?window=flyout (the
+// flyout view).
 
 import { englishText } from "../i18n";
 import { CHIP_NOT_REALTEK, type ChipSetting, firmwareStem, isAutoChip, REALTEK_CHIPS } from "../lib/chips";
@@ -37,7 +38,7 @@ import type {
   StreamInfo,
 } from "./types";
 
-export type MockScenario = "normal" | "fresh" | "error" | "update" | "offline";
+export type MockScenario = "normal" | "fresh" | "error" | "update" | "offline" | "le";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -85,6 +86,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     volume_device_id: "",
     volume_device_name: "",
     max_media_payload: 1023,
+    le_audio: false,
     ...over,
   };
 }
@@ -105,12 +107,23 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     bt_chip_fw_stem: "",
     afh: "auto",
     remote_sink: "",
+    le_audio_experimental: false,
+    le_audio_low_latency: false,
     ...over,
   };
 }
 
+/** A device entry: classic unless `over` says otherwise */
+export function sampleDevice(over: Partial<Device> & { address: string }): Device {
+  return { name: "", saved: false, audio: true, rssi: null, codecs: [], le_audio: false, le_audio_set: false, ...over };
+}
+
+/** The earbuds' LE Audio entry (the same address as their classic one) */
+const LE_BUDS = sampleDevice({ address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2 Pro", le_audio: true, le_audio_set: true });
+
 export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const fresh = scenario === "fresh";
+  const le = scenario === "le";
   const profiles = fresh
     ? []
     : [
@@ -124,6 +137,17 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
           app_exe: "Spotify.exe",
           app_name: "Spotify",
         }),
+        ...(le
+          ? [
+              sampleProfile({
+                name: "Buds (LE Audio)",
+                device_address: LE_BUDS.address,
+                device_name: LE_BUDS.name,
+                codec: "auto",
+                le_audio: true,
+              }),
+            ]
+          : []),
       ];
   const config_dir = "C:\\Users\\you\\AppData\\Roaming\\A2DPWB";
   return {
@@ -135,17 +159,12 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     devices: fresh
       ? []
       : [
-          {
-            address: "AC:80:0A:12:34:56",
-            name: "WH-1000XM5",
-            saved: true,
-            audio: true,
-            rssi: null,
-            codecs: ["sbc", "aac", "ldac"],
-          },
-          { address: "00:1A:7D:DA:71:13", name: "SRS-XB13", saved: true, audio: true, rssi: null, codecs: [] },
+          sampleDevice({ address: "AC:80:0A:12:34:56", name: "WH-1000XM5", saved: true, codecs: ["sbc", "aac", "ldac"] }),
+          sampleDevice({ address: "00:1A:7D:DA:71:13", name: "SRS-XB13", saved: true }),
+          ...(le ? [{ ...LE_BUDS, saved: true }] : []),
         ],
     scanning: false,
+    le_scanning: false,
     stream:
       scenario === "error"
         ? {
@@ -158,7 +177,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
         : { state: "idle", message: { key: "status.idle", args: [] }, profile: null, info: null, volume: null },
     profiles,
     active_profile: fresh ? null : "WH-1000XM5 (LDAC)",
-    settings: sampleSettings(),
+    settings: sampleSettings(le ? { le_audio_experimental: true } : {}),
     update: {
       checking: false,
       available:
@@ -181,11 +200,22 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
 }
 
 const SCAN_RESULTS: Device[] = [
-  { address: "AC:80:0A:12:34:56", name: "WH-1000XM5", saved: true, audio: true, rssi: -48, codecs: [] },
-  { address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2 Pro", saved: false, audio: true, rssi: -61, codecs: [] },
-  { address: "74:45:CE:9A:BC:DE", name: "", saved: false, audio: true, rssi: -83, codecs: [] },
-  { address: "38:18:4C:55:66:77", name: "MX Keys", saved: false, audio: false, rssi: -70, codecs: [] },
+  sampleDevice({ address: "AC:80:0A:12:34:56", name: "WH-1000XM5", saved: true, rssi: -48 }),
+  sampleDevice({ address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2 Pro", rssi: -61 }),
+  sampleDevice({ address: "74:45:CE:9A:BC:DE", rssi: -83 }),
+  sampleDevice({ address: "38:18:4C:55:66:77", name: "MX Keys", audio: false, rssi: -70 }),
 ];
+
+/** What the scan's LE Audio part finds (LE Audio on): the dual-mode
+ *  earbuds' LE Audio entry (a coordinated set) and an LE Audio speaker */
+const LE_SCAN_RESULTS: Device[] = [
+  { ...LE_BUDS, rssi: -64 },
+  sampleDevice({ address: "D0:3E:7D:4C:2A:10", name: "LE Audio Speaker", rssi: -57, le_audio: true }),
+];
+
+/** A device entry's identity: the address and the kind (classic or LE Audio) */
+const sameEntry = (a: Pick<Device, "address" | "le_audio">, address: string, le: boolean) =>
+  a.address.toUpperCase() === address.toUpperCase() && a.le_audio === le;
 
 const AUDIO_DEVICES: AudioDevice[] = [
   { id: "{0.0.0.00000000}.{speakers}", name: "Speakers (Realtek(R) Audio)", is_default: true, is_virtual: false, mix_rate: 48000, mix_channels: 2, mix_bits: 32 },
@@ -239,11 +269,40 @@ const RECEIVER: ReceiverInfo = {
 };
 
 const CODEC_INFO: Record<string, StreamInfo> = {
-  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
-  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
-  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
-  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null },
+  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
 };
+
+/** An LE Audio stream as the core reports it: BAP preset 48_4_2 (GMAP
+ *  low latency: 48_4_gr), one CIS per earbud of a set */
+function lc3Info(lowLatency: boolean, set: boolean): StreamInfo {
+  const preset = lowLatency ? "48_4_gr" : "48_4_2";
+  return {
+    codec: "LC3",
+    bitrate_kbps: 192,
+    sample_rate: 48000,
+    channels: 2,
+    source_sample_rate: 48000,
+    source_channels: 2,
+    source_bits: 32,
+    requested_codec: null,
+    requested_in_use: false,
+    abr: false,
+    bitrate_capped: false,
+    source: null,
+    le: {
+      preset,
+      frame_us: 10000,
+      octets: 120,
+      cis: 2,
+      devices: set ? 2 : 1,
+      low_latency: lowLatency,
+      summary: `LC3 48 kHz 10 ms 120 octets (96 kbps/ch), 2 ch over 2 CIS, ${preset}`,
+    },
+  };
+}
 
 /** What a connection to the mock's devices learns: the codecs they offer */
 const DEVICE_CODECS = ["sbc", "aac", "ldac"];
@@ -257,6 +316,8 @@ function errorInfo(code: string, key: string, args: string[] = []): ErrorInfo {
 /** What a stream sends: a profile's or stream.start_custom's */
 interface StreamTarget {
   address: string;
+  /** An LE Audio profile's stream */
+  le?: boolean;
   codec: string;
   profile: string | null;
   source: SourceInfo;
@@ -318,6 +379,8 @@ export class MockCore implements Transport {
   };
   /** The receiver's own counters of the stream it measures */
   private received = { id: 0, packets: 0, bytes: 0, lost: 0, underruns: 0, underrun_ms: 0 };
+  /** The LE Audio stream's ISO counters (since it was set up) */
+  private iso = { sets: 0, silence: 0, underruns: 0, prefill: 3 };
   private trayHintShown = false;
   private navigate: (route: string) => void = () => {};
   private updatePhase: UpdatePhase = { state: "idle" };
@@ -372,19 +435,20 @@ export class MockCore implements Transport {
       case "device.scan":
         return this.scan(Number(p.seconds ?? 10));
       case "device.forget":
-        this.snap.devices = this.snap.devices.filter((d) => d.address !== p.address);
+        this.snap.devices = this.snap.devices.filter((d) => !sameEntry(d, String(p.address), p.le_audio === true));
         this.emit({ kind: "devices", value: this.snap.devices });
         return null;
       case "device.rename": {
         const name = String(p.name ?? "").trim();
         if (!name) throw errorInfo("device.invalid_name", "ipc.error.bad_request", ["device.rename", `name "${name}"`]);
         const address = String(p.address).toUpperCase();
-        const d = this.snap.devices.find((x) => x.address === address);
+        const le = p.le_audio === true;
+        const d = this.snap.devices.find((x) => sameEntry(x, address, le));
         if (d) {
           d.name = name;
           d.saved = true;
         } else {
-          this.snap.devices.push({ address, name, saved: true, audio: true, rssi: null, codecs: [] });
+          this.snap.devices.push(sampleDevice({ address, name, saved: true, le_audio: le }));
         }
         this.emit({ kind: "devices", value: this.snap.devices });
         return null;
@@ -397,17 +461,13 @@ export class MockCore implements Transport {
         if (i >= 0) this.snap.profiles[i] = profile;
         else this.snap.profiles.push(profile);
         if (!this.snap.active_profile || this.snap.active_profile === original) this.snap.active_profile = profile.name;
-        const known = this.snap.devices.find((d) => d.address === profile.device_address);
+        const le = profile.le_audio === true;
+        const known = this.snap.devices.find((d) => sameEntry(d, profile.device_address, le));
         if (known) known.saved = true;
         else
-          this.snap.devices.push({
-            address: profile.device_address,
-            name: profile.device_name,
-            saved: true,
-            audio: true,
-            rssi: null,
-            codecs: [],
-          });
+          this.snap.devices.push(
+            sampleDevice({ address: profile.device_address, name: profile.device_name, saved: true, le_audio: le }),
+          );
         this.emit({ kind: "devices", value: this.snap.devices });
         this.emitProfiles();
         return null;
@@ -423,8 +483,25 @@ export class MockCore implements Transport {
         return null;
       case "settings.set": {
         const before = this.snap.settings;
-        this.snap.settings = p.settings as Settings;
+        // An older UI sends no LE Audio settings: they stay as they are
+        const next = p.settings as Partial<Settings>;
+        this.snap.settings = {
+          ...(p.settings as Settings),
+          le_audio_experimental: next.le_audio_experimental ?? before.le_audio_experimental,
+          le_audio_low_latency: next.le_audio_low_latency ?? before.le_audio_low_latency,
+        };
         this.emit({ kind: "settings", value: this.snap.settings });
+        let le_audio_deferred = false;
+        if (before.le_audio_experimental !== this.snap.settings.le_audio_experimental) {
+          // As v1: LE is set up when BTstack starts; an idle one stops so that
+          // the next scan or connection starts it with the setting
+          const st = this.snap.stream.state;
+          const busy = this.snap.scanning || st === "connecting" || st === "streaming" || st === "reconnecting";
+          const on = this.snap.settings.le_audio_experimental ? "on" : "off";
+          this.log("info", "a2dpwb_core_exe::state", `LE Audio (experimental) ${on}${busy ? ": takes effect at the next scan or connection" : ""}`);
+          if (!busy && this.snap.adapter.status !== "stopped") this.setAdapter("stopped");
+          le_audio_deferred = busy;
+        }
         if (before.bt_chip_pid !== this.snap.settings.bt_chip_pid || before.bt_chip_fw_stem !== this.snap.settings.bt_chip_fw_stem) {
           // As the core's reload_adapter: the firmware state for the new
           // chip, then an idle stack is released so the firmware loads again
@@ -432,7 +509,7 @@ export class MockCore implements Transport {
           this.log("info", "a2dpwb_core_exe::state", "adapter settings changed: Bluetooth stopped, it starts again at the next use");
           if (this.snap.stream.state === "idle" || this.snap.stream.state === "error") this.setAdapter("stopped");
         }
-        return null;
+        return { le_audio_deferred };
       }
       case "adapter.list":
         return this.snap.adapter.adapters;
@@ -682,9 +759,24 @@ export class MockCore implements Transport {
   private startStream(name: string): null {
     const profile = this.snap.profiles.find((x) => x.name === name);
     if (!profile) throw errorInfo("profile.not_found", "profile.none_selected");
+    if (profile.le_audio) {
+      // The core refuses these when the stream starts (le_stream.rs)
+      const refused = !this.snap.settings.le_audio_experimental
+        ? "error.le_audio_disabled"
+        : profile.capture_mode === "app"
+          ? "error.le_audio_capture"
+          : null;
+      if (refused) {
+        this.snap.stream = { state: "error", message: { key: refused, args: [] }, profile: name, info: null, volume: null };
+        this.log("error", "a2dpwb_core::le_stream", englishText({ key: refused, args: [] }));
+        this.emit({ kind: "stream", value: this.snap.stream });
+        return null;
+      }
+    }
     this.connect({
       address: profile.device_address,
-      codec: profile.codec,
+      le: profile.le_audio,
+      codec: profile.le_audio ? "lc3" : profile.codec,
       profile: name,
       source: sourceOf(profile.capture_mode, profile.capture_mode === "app" ? profile.app_exe : profile.audio_device_id, profile.audio_device_name),
       sampleRate: profile.sample_rate || null,
@@ -730,8 +822,11 @@ export class MockCore implements Transport {
     this.log("info", "a2dpwb_core::stream", `stream: device ${t.address} codec ${t.codec} quality hq source ${t.source.kind}`);
     this.log("info", "a2dpwb_core::service", "state Connecting: Initializing BTstack...");
     if (this.snap.adapter.status !== "ready") this.setAdapter("initializing");
+    const set = this.snap.devices.find((d) => sameEntry(d, t.address, true))?.le_audio_set ?? false;
     const info = (): StreamInfo => {
-      const base = CODEC_INFO[t.codec] ?? { ...CODEC_INFO.aac, codec: t.codec.toUpperCase() };
+      const base = t.le
+        ? lc3Info(this.snap.settings.le_audio_low_latency, set)
+        : (CODEC_INFO[t.codec] ?? { ...CODEC_INFO.aac, codec: t.codec.toUpperCase() });
       // The app is not running in the mock: application capture waits for it
       const source = { ...t.source, waiting: t.source.kind === "app" };
       return { ...base, sample_rate: t.sampleRate ?? base.sample_rate, source };
@@ -742,10 +837,19 @@ export class MockCore implements Transport {
       this.log("info", "bt_host", "HCI ready after 412 ms");
       if (this.snap.adapter.status !== "ready") this.setAdapter("ready");
       this.setStream("connecting", "status.connecting_device");
-      this.log("info", "bt_host", `connecting to ${t.address}`);
+      this.log("info", "bt_host", t.le ? `LE Audio: connecting with ${t.address}` : `connecting to ${t.address}`);
     });
     this.later(1200, () => {
       if (this.snap.stream.state !== "connecting") return;
+      if (t.le) {
+        const i = info();
+        this.log("info", "bt_host::le", `LE Audio: ${t.address} ready (device 1)`);
+        if (set) this.log("info", "bt_host::le::csip", "CSIP: streaming to coordinated set 0, 2 of 2 members");
+        this.log("info", "bt_host::le", "Enable metadata: contexts 0x0004, CCID list 1");
+        this.log("info", "bt_host::le", `Streaming LE Audio: ${i.le!.summary}`);
+        this.learnLe(t.address);
+        return;
+      }
       this.log("info", "bt_host::app", `HCI ACL connection established to ${t.address}`);
       this.log("info", "bt_host::app", "signaling connection established (cid 0x0041, handle 0x000b)");
       this.log("info", "bt_host::app", "capability discovery complete (LDAC=true aptX HD=false aptX LL=false aptX=false aptX Adaptive=false [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)");
@@ -762,6 +866,7 @@ export class MockCore implements Transport {
       if (this.snap.stream.state !== "connecting") return;
       this.streamStart = { ...this.totals };
       this.streamStarts += 1;
+      this.iso = { sets: 0, silence: 3, underruns: 0, prefill: 3 };
       if (t.address === RECEIVER.bt_address) {
         this.received = { id: this.received.id + 1, packets: 0, bytes: 0, lost: 0, underruns: 0, underrun_ms: 0 };
       }
@@ -773,13 +878,21 @@ export class MockCore implements Transport {
 
   /** A connection learnt what the device offers (and saved it, as the core does) */
   private learnCodecs(address: string) {
-    const d = this.snap.devices.find((x) => x.address === address);
+    const d = this.snap.devices.find((x) => sameEntry(x, address, false));
     if (d) {
       d.codecs = [...DEVICE_CODECS];
       d.saved = true;
     } else {
-      this.snap.devices.push({ address, name: "", saved: true, audio: true, rssi: null, codecs: [...DEVICE_CODECS] });
+      this.snap.devices.push(sampleDevice({ address, saved: true, codecs: [...DEVICE_CODECS] }));
     }
+    this.emit({ kind: "devices", value: this.snap.devices });
+  }
+
+  /** An LE Audio device that connected is saved (le_audio_devices.txt) */
+  private learnLe(address: string) {
+    const d = this.snap.devices.find((x) => sameEntry(x, address, true));
+    if (d) d.saved = true;
+    else this.snap.devices.push(sampleDevice({ address, saved: true, le_audio: true }));
     this.emit({ kind: "devices", value: this.snap.devices });
   }
 
@@ -795,19 +908,33 @@ export class MockCore implements Transport {
     this.emit({ kind: "scanning", value: true });
     this.log("info", "bt_host", `starting inquiry (~${seconds} s)`);
     return new Promise((resolve) => {
-      this.later(Math.min(seconds, 3) * 1000, () => {
-        const known = new Map(this.snap.devices.map((d) => [d.address, d]));
-        const found = SCAN_RESULTS.map((d) => ({
-          ...d,
-          saved: known.get(d.address)?.saved ?? false,
-          codecs: known.get(d.address)?.codecs ?? [],
-        }));
-        const merged = [...this.snap.devices.filter((d) => !found.some((f) => f.address === d.address)), ...found];
+      const finish = (results: Device[]) => {
+        const known = (d: Device) => this.snap.devices.find((x) => sameEntry(x, d.address, d.le_audio));
+        const found = results.map((d) => ({ ...d, saved: known(d)?.saved ?? false, codecs: known(d)?.codecs ?? [] }));
+        const merged = [
+          ...this.snap.devices.filter((d) => !found.some((f) => sameEntry(f, d.address, d.le_audio))),
+          ...found,
+        ];
         this.snap.devices = merged;
         this.snap.scanning = false;
         this.emit({ kind: "devices", value: merged });
         this.emit({ kind: "scanning", value: false });
         resolve(found);
+      };
+      this.later(Math.min(seconds, 3) * 1000, () => {
+        if (!this.snap.settings.le_audio_experimental) {
+          finish(SCAN_RESULTS);
+          return;
+        }
+        // LE Audio on: an LE scan after the inquiry (v1: 5 s)
+        this.snap.le_scanning = true;
+        this.emit({ kind: "le_scanning", value: true });
+        this.log("info", "bt_host::le", "LE Audio: scanning for 5 s");
+        this.later(1500, () => {
+          this.snap.le_scanning = false;
+          this.emit({ kind: "le_scanning", value: false });
+          finish([...SCAN_RESULTS, ...LE_SCAN_RESULTS]);
+        });
       });
     });
   }
@@ -975,6 +1102,15 @@ export class MockCore implements Transport {
       capture_frames: this.totals.capture_frames + frames,
       capture_dropped: this.totals.capture_dropped,
     };
+    if (info?.le) {
+      this.iso.sets += Math.round((1_000_000 / info.le.frame_us) * dt);
+      // Now and then the capture is late: silence, and a longer prefill
+      if (Math.random() < 0.01 * dt) {
+        this.iso.underruns += 1;
+        this.iso.silence += 1;
+        this.iso.prefill = Math.min(7, this.iso.prefill + 1);
+      }
+    }
     if (this.receiver.connection === "connected" && this.received.id > 0) {
       this.received.packets += packets;
       this.received.bytes += bytes;
@@ -1014,6 +1150,11 @@ export class MockCore implements Transport {
   private sample() {
     this.advance();
     const streaming = this.snap.stream.state === "streaming";
+    const le = streaming ? (this.snap.stream.info?.le ?? null) : null;
+    if (le) {
+      this.onMessage({ type: "event", rev: this.rev, event: { kind: "link", value: this.leSample(le) } });
+      return;
+    }
     const t = Date.now() / 1000;
     const kbps = streaming ? (this.snap.stream.info?.bitrate_kbps ?? 0) * (0.96 + 0.06 * Math.sin(t / 2)) : 0;
     const pps = streaming ? 120 + Math.random() * 6 : 0;
@@ -1042,13 +1183,47 @@ export class MockCore implements Transport {
     this.onMessage({ type: "event", rev: this.rev, event: { kind: "link", value: sample } });
   }
 
+  /** LE Audio: SDUs over the CIS, the ISO counters; no BR/EDR link figures */
+  private leSample(le: NonNullable<StreamInfo["le"]>): LinkSample {
+    const info = this.snap.stream.info!;
+    const t = Date.now() / 1000;
+    return {
+      time_ms: this.now(),
+      rssi: null,
+      afh_in_use: null,
+      afh_usable: null,
+      afh_avoided: "",
+      bytes_per_second: (info.bitrate_kbps * 1000 * (0.99 + 0.02 * Math.sin(t))) / 8,
+      packets_per_second: (1_000_000 / le.frame_us) * le.cis,
+      queue_depth: Math.max(0, Math.round(this.iso.prefill + Math.sin(t * 2))),
+      dropped: 0,
+      capture_dropped: 0,
+      airtime: 0,
+      avg_packet_bytes: le.octets,
+      acl_packet: null,
+      bandwidth_share: null,
+      queue_capacity: 16,
+      source_rate: info.source_sample_rate,
+      counters: { total: { ...this.totals }, stream_start: { ...this.streamStart }, stream_starts: this.streamStarts },
+      iso: {
+        cis: le.cis,
+        sdu_sets: this.iso.sets,
+        silence: this.iso.silence,
+        underruns: this.iso.underruns,
+        dropped: 0,
+        prefill: this.iso.prefill,
+      },
+    };
+  }
+
   private diagText(mask: boolean) {
     const s = this.snap;
     const text = [
       "A2DP Windows Bridge 2.0.0-alpha.1 (mock core)",
       `Adapter: ${s.adapter.adapters.map((a) => `${a.display_name} [${a.driver_service}]`).join(", ") || "none"}`,
       `Firmware files: ${s.adapter.adapters.map((a) => `${a.display_name}: ${a.firmware_present === null ? "none needed" : a.firmware_present ? "present" : "MISSING"} (${a.firmware_files.join(", ")})`).join("; ")}`,
-      `State: ${s.stream.state}${s.stream.info ? ` ${s.stream.info.codec} ${s.stream.info.bitrate_kbps} kbps` : ""}`,
+      `State: ${s.stream.state}${s.stream.info ? ` ${s.stream.info.codec} ${s.stream.info.bitrate_kbps} kbps` : ""}${s.stream.info?.le ? ` (${s.stream.info.le.summary})` : ""}`,
+      `LE Audio (experimental): ${s.settings.le_audio_experimental ? "on" : "off"}${s.settings.le_audio_low_latency ? ", low latency" : ""}`,
       `Profiles: ${s.profiles.map((p) => `${p.name} [${p.device_address}]`).join(", ")}`,
       `Config: ${s.config_dir}`,
     ].join("\n");

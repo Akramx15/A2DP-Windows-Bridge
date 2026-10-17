@@ -76,6 +76,13 @@ pub struct Settings {
 
     pub last_profile: String,
 
+    /// LE Audio (experimental): BTstack starts with LE (SM, GATT, ISO) and
+    /// LE Audio profiles can stream. Off by default.
+    pub le_audio_experimental: bool,
+    /// LE Audio: GMAP low-latency presets for a gaming headset (read when a
+    /// stream is set up)
+    pub le_audio_low_latency: bool,
+
     /// Before v1.1 the max media packet size was a setting; it now seeds
     /// profiles saved without one. Read, not written.
     #[serde(skip_serializing)]
@@ -116,6 +123,8 @@ impl Default for Settings {
             afh: default_afh(),
             remote_sink: String::new(),
             last_profile: String::new(),
+            le_audio_experimental: false,
+            le_audio_low_latency: false,
             max_media_payload: None,
             other: BTreeMap::new(),
         }
@@ -177,9 +186,14 @@ mod tests {
         assert!(!s.media_keys);
         assert!(s.minimize_to_tray);
         assert_eq!(s.legacy_max_media_payload(), 1500);
-        assert_eq!(s.other.get("le_audio_experimental"), Some(&serde_json::Value::Bool(true)));
+        assert!(s.le_audio_experimental);
+        assert!(!s.le_audio_low_latency);
+        assert!(!s.other.contains_key("le_audio_experimental"));
         let out = serde_json::to_value(&s).unwrap();
         assert_eq!(out["window_x"], 10);
+        // v1 wrote both LE Audio keys
+        assert_eq!(out["le_audio_experimental"], true);
+        assert_eq!(out["le_audio_low_latency"], false);
         // v1 wrote no schema; save() writes the current one (migrate.rs)
         assert_eq!(out["schema_version"], 1);
         assert!(out.get("max_media_payload").is_none());

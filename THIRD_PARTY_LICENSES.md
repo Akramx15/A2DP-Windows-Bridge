@@ -27,6 +27,8 @@ repository. The Rust crates are pinned in `Cargo.lock`, the JavaScript packages 
 | Bluedroid SBC encoder, ported to Rust | ported from BTstack `5bc5cbdbe` (`3rd-party/bluedroid/encoder/`) | Apache-2.0 | Broadcom Corporation | SBC audio encoding (`app/src/crates/codec/src/sbc/`) | `a2dpwb-core.exe` |
 | rijndael (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/rijndael/`) | Public domain | Philip J. Erdelsky | AES (used by BTstack) | `a2dpwb-core.exe` |
 | tinydir (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/tinydir/`) | BSD-2-Clause | tinydir authors | Directory listing in BTstack's Broadcom chipset driver | `a2dpwb-core.exe` |
+| liblc3 (lc3-google, bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/lc3-google/`) | Apache-2.0 | Google LLC | LC3 encoding for the experimental LE Audio support (decoding in `a2dpwb_decode`, §14), §17 | `a2dpwb-core.exe` |
+| micro-ecc (bundled in BTstack) | as in BTstack `5bc5cbdbe` (`3rd-party/micro-ecc/`) | BSD-2-Clause | Kenneth MacKay | P-256 for LE Secure Connections (experimental LE Audio), §18 | `a2dpwb-core.exe` |
 | LHDC-V5-Encoder (C port of the AOSP LHDC V5 encoder) | commit `3f9d198` | Apache-2.0; `src/lhdcv5_fft.c` BSD-3-Clause | The Android Open Source Project; Mark Borgerding (KISS FFT) | LHDC V5 audio encoding, §8 | `a2dpwb-core.exe` |
 | libopus | 1.5.2 (tag `v1.5.2`, commit `ddbe483`) | BSD-3-Clause | Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon | Opus audio encoding (decoding in `a2dpwb_decode`, §14), §16 | `a2dpwb-core.exe` |
 | Rust crates (Tauri 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ...) | `Cargo.lock` | Apache-2.0, MIT and other permissive licenses; MPL-2.0 for a few (§9) | their authors | Everything written in Rust that is not A2DPWB's own | all three programs |
@@ -60,6 +62,8 @@ The installer (`A2DPWB-<version>-win64-setup.exe`) installs, and the portable zi
 | `licenses/libldac-LICENSE.txt` | libldac license (Apache-2.0 text, `extern/libldac/LICENSE`) |
 | `licenses/libldac-NOTICE.txt` | libldac NOTICE (`extern/libldac/NOTICE`) |
 | `licenses/Apache-2.0.txt` | Apache License 2.0 text (covers the Bluedroid SBC encoder ported to Rust) |
+| `licenses/liblc3-LICENSE.txt` | liblc3 license (Apache-2.0 text, `extern/btstack/3rd-party/lc3-google/LICENSE`) |
+| `licenses/micro-ecc-LICENSE.txt` | micro-ecc BSD-2-Clause license (`extern/btstack/3rd-party/micro-ecc/LICENSE.txt`) |
 | `licenses/fdk-aac-NOTICE.txt` | Fraunhofer FDK AAC Codec Library license (`extern/fdk-aac/NOTICE`) |
 | `licenses/libopenaptx-LGPL-2.1.txt` | GNU LGPL 2.1 text for libopenaptx (`extern/libopenaptx/COPYING`) |
 | `licenses/lhdcv5-enc-LICENSE.txt` | LHDC V5 encoder license (Apache-2.0 text, `extern/lhdcv5-enc/LICENSE`); its KISS FFT notice is in §8 of this document |
@@ -228,8 +232,11 @@ the NOTICE, or from the patent owners) is the user's responsibility.
 - **Path in project**: `extern/btstack/` (git submodule), built unmodified by
   `app/src/crates/btstack-sys/build.rs`: `src/` (without the audio, LC3, HID,
   SLIP and UART transport files), the classic profiles A2DP / AVDTP / AVRCP / SDP
-  from `src/classic/`, the Windows run loop, the Realtek, Broadcom and Intel
-  chipset drivers, and `3rd-party/rijndael` (§6) and `3rd-party/tinydir` (§7).
+  from `src/classic/`, the LE part `src/ble/` (SM, ATT / GATT client and server,
+  LE device database; for the experimental LE Audio support), the Windows run
+  loop and TLV store (`platform/windows/btstack_tlv_windows.c`), the Realtek,
+  Broadcom and Intel chipset drivers, and `3rd-party/rijndael` (§6),
+  `3rd-party/tinydir` (§7) and `3rd-party/micro-ecc` (§18).
   `btstack_config.h` and the C glue `csrc/shim.c` in that crate are A2DPWB's own.
   BTstack's HCI transport is A2DPWB's own Rust crate `hci-transport` (USB through
   `nusb`); BTstack's `hci_transport_h2_winusb.c` is not used
@@ -627,8 +634,8 @@ If you redistribute an `a2dpwb_decode.exe` binary, the obligations of §3
 (fdk-aac: license text, source code offer, no patent license; AAC decoding
 may also need a patent license), §2 (libopenaptx: LGPL-2.1 text, prominent
 notice, relinking via the source at the same commit) and §5 (Apache-2.0
-text, notices; also for liblc3, Copyright 2022 Google LLC) and §16 (libopus:
-the BSD-3-Clause notice) apply, in the same way as for `a2dpwb-core.exe`.
+text, notices), §17 (liblc3: Apache-2.0 text, Copyright 2022 Google LLC) and
+§16 (libopus: the BSD-3-Clause notice) apply, in the same way as for `a2dpwb-core.exe`.
 
 ---
 
@@ -779,6 +786,54 @@ no terms of its own.
 
 ---
 
+## 17. liblc3 (lc3-google, bundled in BTstack)
+
+- **Source**: `extern/btstack/3rd-party/lc3-google/` (Google's liblc3, as
+  vendored by BTstack)
+- **Version**: as contained in BTstack commit `5bc5cbdbe`
+- **License**: Apache License 2.0 (`LICENSE`, and the header of every source file)
+- **Copyright**: Copyright 2022 Google LLC
+- **SPDX**: `Apache-2.0`
+- **Usage**: LC3 encoding for the experimental LE Audio support (off by
+  default). The crate `lc3-sys` compiles all of `src/*.c` unmodified and links
+  them statically into `a2dpwb-core.exe`; `src/lc3.c` is compiled through a
+  generated wrapper that only drops its `dllexport` (so that the executable
+  exports no `lc3_*` functions). BTstack's `btstack_lc3_google.c` glue is not
+  used. LC3 decoding in `a2dpwb_decode` (§14)
+
+No NOTICE file is present.
+
+### Obligations
+
+- Include a copy of the Apache 2.0 license when distributing (shipped as
+  `licenses/liblc3-LICENSE.txt`)
+- Retain all copyright, patent, trademark, and attribution notices
+- Mark modified files with prominent notices if changes are made (none are)
+
+LC3 is specified by the Bluetooth SIG for LE Audio; implementing it in a
+Bluetooth product is covered by Bluetooth qualification (§12).
+
+---
+
+## 18. micro-ecc (bundled in BTstack)
+
+- **Source**: `extern/btstack/3rd-party/micro-ecc/` (`uECC.c`)
+- **Version**: as contained in BTstack commit `5bc5cbdbe`
+- **License**: BSD 2-Clause (`LICENSE.txt`)
+- **Copyright**: Copyright (c) 2014, Kenneth MacKay
+- **SPDX**: `BSD-2-Clause`
+- **Usage**: P-256 key generation and Diffie-Hellman for LE Secure
+  Connections pairing (BTstack `ENABLE_MICRO_ECC_P256`), compiled unmodified by
+  `app/src/crates/btstack-sys/build.rs` into `a2dpwb-core.exe`; used only by
+  the experimental LE Audio support
+
+### Obligations
+
+- Binary redistribution must reproduce the copyright notice, the conditions
+  and the disclaimer: shipped as `licenses/micro-ecc-LICENSE.txt`
+
+---
+
 ## License Compatibility Matrix
 
 | Component | License | Compatible with Apache-2.0 / MIT? | Notes |
@@ -793,6 +848,8 @@ no terms of its own.
 | BTstack | LicenseRef-BTstack | Source: yes / Binary: **restricts it** | Non-commercial clause 4 applies to the distributed `a2dpwb-core.exe` and with it the release; commercial license from BlueKitchen |
 | rijndael | Public domain | Yes | — |
 | tinydir | BSD-2-Clause | Yes | Permissive; notice reproduced in §7 |
+| liblc3 | Apache-2.0 | Yes | Permissive (§17) |
+| micro-ecc | BSD-2-Clause | Yes | Permissive; notice shipped as `licenses/micro-ecc-LICENSE.txt` (§18) |
 | Rust crates | Apache-2.0, MIT, BSD, ISC, Zlib, Unicode-3.0, CDLA-Permissive-2.0, MPL-2.0 | Yes | Texts in `licenses/rust-crates.txt`; MPL-2.0 files stay under MPL (§9) |
 | SolidJS, @tauri-apps/api, Fluent UI System Icons | MIT (Apache-2.0 OR MIT) | Yes | Permissive |
 | Windows SDK, WebView2 | Proprietary | Yes (system components) | Platform dependency |

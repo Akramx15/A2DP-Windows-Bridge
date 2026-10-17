@@ -30,6 +30,8 @@ A2DPWB のソースコードは Apache-2.0 / MIT のデュアルライセンス�
 | [BTstack](https://github.com/bluekitchen/btstack) | v1.8.1-6-g5bc5cbdbe | BTstack License（非商用条項付きの BSD-3-Clause 類似ライセンス）/ 商用 | ユーザーモード Bluetooth スタック |
 | rijndael（BTstack に同梱） | BTstack に準拠 | パブリックドメイン | AES（BTstack が使用） |
 | tinydir（BTstack に同梱） | BTstack に準拠 | BSD-2-Clause | BTstack の Broadcom チップセットドライバーでのフォルダー一覧 |
+| liblc3（lc3-google、BTstack に同梱） | BTstack に準拠 | Apache-2.0 | LC3 エンコーダー（LE Audio、実験的） |
+| micro-ecc（BTstack に同梱） | BTstack に準拠 | BSD-2-Clause | LE Secure Connections のペアリングの P-256（LE Audio、実験的） |
 | Bluedroid SBC エンコーダー（Rust に移植） | BTstack 同梱版から移植 | Apache-2.0 | SBC エンコーダー |
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC エンコーダー |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL エンコーダー |

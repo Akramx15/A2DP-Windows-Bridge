@@ -3,7 +3,7 @@
 Linux only, as root (opens /dev/vhci). Runs two Bumble virtual controllers on
 one in-process link:
   - controller "A2DPWB" is served as H4 over TCP; A2DPWB connects to it with
-    `A2DPWB.exe --cli --hci-tcp <this host>:<port>` (from another PC too)
+    `a2dpwb-core.exe --cli --hci-tcp <this host>:<port>` (from another PC too)
   - controller "LINUX" is attached to the kernel through /dev/vhci, so BlueZ
     sees it as a new adapter (hciN) and everything above it - bluetoothd,
     PipeWire, tools/linux_sink/a2dpwb_sink.py - runs unmodified

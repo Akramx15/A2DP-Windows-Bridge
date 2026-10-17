@@ -39,6 +39,8 @@ cargo build --release -p a2dpwb-ui
 
 程式會輸出到 `target/release/`：`a2dpwb-core.exe`（常駐核心：藍牙、音訊、系統匣）、`a2dpwb.exe`（視窗）與 `a2dpwb-driver.exe`（以提高權限指派 / 還原 WinUSB 驅動程式的輔助程式）。請將這三個程式放在同一個資料夾中；`a2dpwb-core.exe --cli` 可在沒有視窗的情況下串流。
 
+**一步建置：**`pwsh ./build.ps1`（PowerShell 7）可一次完成上述步驟。它會先檢查 Rust、Node.js、pnpm 與子模組是否齊全，`node_modules` 不存在時也會執行 `pnpm install`。參數：`-Debug`（開發設定檔，`target/debug/`）、`-Test`（接著執行「測試」中的檢查）、`-Decoder`（同時建置解碼工具）、`-Emu`（同時執行[不使用硬體進行測試](#emu)）、`-Release -Arch x64`（僅執行發行指令碼，見「發行套件」）。
+
 ## 若複製時未使用 `--recursive`
 
 ```bash

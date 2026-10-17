@@ -24,7 +24,7 @@ the sink runs in the tools/emu/.venv environment.
 
 runs the experimental LE Audio cases instead (le_audio_tests/: stereo,
 two-ase, earbuds, mono-16k and the profiles' own): emu_le_audio_sink.py with
-the case's layout, A2DPWB.exe --cli --le-audio with the test tone, and
+the case's layout, a2dpwb-core.exe --cli --le-audio with the test tone, and
 a2dpwb_decode --le-audio on both sides:
   - one LC3 stream of the expected configuration on both sides, consecutive
     ISO SDU sequence numbers, no decoder problems
@@ -233,10 +233,14 @@ def tone_check_stream(path, tones):
 def start_sink(port, capture, log_path, script='emu_sink.py', extra=()):
     """Starts a virtual sink; its READY line is in proc.ready_line."""
     log = open(log_path, 'w', encoding='utf-8')
+    # The sink writes UTF-8 whatever the system locale (a Japanese Windows
+    # would write cp932, and a non-ASCII log line, e.g. MCP's simulated
+    # track title, would arrive with U+FFFD)
+    env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
     proc = subprocess.Popen(
         [VENV_PYTHON, '-u', os.path.join(HERE, script), '--port', str(port), '--capture', capture]
         + list(extra),
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', env=env)
     lines = queue.Queue()
 
     def pump():

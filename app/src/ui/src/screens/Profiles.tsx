@@ -64,9 +64,16 @@ function ProfileList() {
                     </Show>
                   </div>
                   <div class="profile-card-meta">
-                    <span class="tag">{t(codecSpec(p.codec).label)}</span>
+                    {/* LE Audio (experimental): LC3, no codec choice */}
+                    <Show when={p.le_audio} fallback={<span class="tag">{t(codecSpec(p.codec).label)}</span>}>
+                      <span class="tag">{t("ui.codec.lc3")}</span>
+                    </Show>
                     {/* The device did not offer this codec when it last connected */}
-                    <Show when={codecSupport(p.codec, knownCodecs(snap().devices, p.device_address)) === "not_offered"}>
+                    <Show
+                      when={
+                        !p.le_audio && codecSupport(p.codec, knownCodecs(snap().devices, p.device_address)) === "not_offered"
+                      }
+                    >
                       <span class="tag">
                         <Icon name="warning" />
                         {t("ui.profile.codec_not_offered")}

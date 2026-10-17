@@ -30,6 +30,8 @@ A2DPWB 소스 코드는 Apache-2.0 또는 MIT 이중 라이선스입니다. 배�
 | [BTstack](https://github.com/bluekitchen/btstack) | v1.8.1-6-g5bc5cbdbe | BTstack License (비상업적 조항이 있는 BSD-3-Clause 형식) / 상용 | 사용자 모드 Bluetooth 스택 |
 | rijndael (BTstack에 포함) | BTstack과 동일 | Public domain | AES (BTstack에서 사용) |
 | tinydir (BTstack에 포함) | BTstack과 동일 | BSD-2-Clause | BTstack의 Broadcom 칩셋 드라이버에서 디렉터리 목록 조회 |
+| liblc3 (lc3-google, BTstack에 포함) | BTstack과 동일 | Apache-2.0 | LC3 인코더 (LE Audio, 실험적) |
+| micro-ecc (BTstack에 포함) | BTstack과 동일 | BSD-2-Clause | LE Secure Connections 페어링용 P-256 (LE Audio, 실험적) |
 | Bluedroid SBC 인코더 (Rust로 포팅) | BTstack에 포함된 사본에서 포팅 | Apache-2.0 | SBC 인코더 |
 | [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 | LDAC 인코더 |
 | [libopenaptx](https://github.com/pali/libopenaptx) | 0.2.0 | LGPL-2.1+ | aptX / aptX HD / aptX LL 인코더 |
