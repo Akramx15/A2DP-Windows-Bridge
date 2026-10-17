@@ -2,9 +2,9 @@
 // dialog (app/src/wx_profile_dialog.cpp, update_codec_dependent): quality
 // modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, "mhq" only
-// for LHDC V5, no quality choice for the aptX family.
+// for LHDC V5, no quality choice for the aptX family, 48 kHz only for Opus.
 
-export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "aac" | "sbc";
+export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "opus" | "aac" | "sbc";
 
 export interface QualityMode {
   id: string;
@@ -24,6 +24,8 @@ export interface CodecSpec {
   abr: boolean;
   /** 24-bit and 88.2 / 96 kHz */
   hiRes: boolean;
+  /** The only capture rates it takes (0 = auto), when not the usual ones */
+  rates?: number[];
 }
 
 const HQ = "quality.high";
@@ -73,6 +75,20 @@ export const CODECS: CodecSpec[] = [
   { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
   { id: "aptxll", label: "codec.aptx_ll", bars: { quality: 2, latency: 5, stability: 4 }, qualities: [], abr: false, hiRes: false },
   {
+    id: "opus",
+    label: "codec.opus",
+    bars: { quality: 4, latency: 3, stability: 4 },
+    // Android's A2DP Opus: 256 kbps stereo (mono: half), 48 kHz, 20 ms frames
+    qualities: [
+      { id: "hq", label: HQ, kbps: "256" },
+      { id: "sq", label: SQ, kbps: "192" },
+      { id: "mq", label: MQ, kbps: "128" },
+    ],
+    abr: false,
+    hiRes: false,
+    rates: [0, 48000],
+  },
+  {
     id: "aac",
     label: "codec.aac",
     bars: { quality: 3, latency: 2, stability: 4 },
@@ -116,6 +132,7 @@ export function codecLabelKey(name: string): string {
     sbc: "codec.sbc",
     lhdcv5: "codec.lhdc_v5",
     lhdc: "codec.lhdc_v5",
+    opus: "codec.opus",
   };
   return map[n] ?? "";
 }
@@ -135,7 +152,8 @@ export function codecSupport(codec: string, known: readonly string[]): CodecSupp
 }
 
 export function sampleRates(codec: string): number[] {
-  return codecSpec(codec).hiRes ? [0, 44100, 48000, 88200, 96000] : [0, 44100, 48000];
+  const spec = codecSpec(codec);
+  return spec.rates ?? (spec.hiRes ? [0, 44100, 48000, 88200, 96000] : [0, 44100, 48000]);
 }
 
 export function bitDepths(codec: string): number[] {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
-import { codecLabelKey, fitToCodec } from "./codecs";
+import { codecLabelKey, fitToCodec, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { maskAddresses, parseAddress } from "./format";
 import { validateProfile } from "./profile";
@@ -152,11 +152,16 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "ldac" })).toMatchObject({ quality: "hq", abr: true, sample_rate: 96000, bit_depth: 24 });
     expect(fitToCodec({ ...p, codec: "aac" })).toMatchObject({ abr: false, sample_rate: 0, bit_depth: 0 });
     expect(fitToCodec({ ...p, codec: "aptx" })).toMatchObject({ quality: "mhq", abr: false });
+    expect(fitToCodec({ ...p, codec: "opus" })).toMatchObject({ quality: "hq", abr: false, sample_rate: 0, bit_depth: 0 });
+    expect(fitToCodec({ ...p, codec: "opus", sample_rate: 48000 }).sample_rate).toBe(48000);
+    expect(fitToCodec({ ...p, codec: "opus", sample_rate: 44100 }).sample_rate).toBe(0);
+    expect(sampleRates("opus")).toEqual([0, 48000]);
   });
 
   it("names codecs as the core reports them", () => {
     expect(codecLabelKey("aptX HD")).toBe("codec.aptx_hd");
     expect(codecLabelKey("LHDC V5")).toBe("codec.lhdc_v5");
+    expect(codecLabelKey("Opus")).toBe("codec.opus");
     expect(codecLabelKey("Ldac")).toBe("codec.ldac");
   });
 

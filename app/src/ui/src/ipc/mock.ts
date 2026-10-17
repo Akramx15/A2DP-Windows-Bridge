@@ -692,7 +692,7 @@ export class MockCore implements Transport {
       throw errorInfo("profile.invalid_address", "error.invalid_address_format");
     }
     const codec = String(p.codec || "auto").toLowerCase();
-    if (!["auto", "ldac", "aptxhd", "aptxll", "aptx", "sbc", "aac", "lhdcv5"].includes(codec)) {
+    if (!["auto", "ldac", "aptxhd", "aptxll", "aptx", "sbc", "aac", "lhdcv5", "opus"].includes(codec)) {
       throw errorInfo("stream.bad_codec", "ipc.error.bad_request", ["stream.start_custom", `unknown codec "${codec}"`]);
     }
     const mode = String(p.source || "loopback");
@@ -742,7 +742,7 @@ export class MockCore implements Transport {
       if (this.snap.stream.state !== "connecting") return;
       this.log("info", "bt_host::app", `HCI ACL connection established to ${t.address}`);
       this.log("info", "bt_host::app", "signaling connection established (cid 0x0041, handle 0x000b)");
-      this.log("info", "bt_host::app", "capability discovery complete (LDAC=true aptX HD=false aptX LL=false aptX=false aptX Adaptive=false [not encodable] SBC=true AAC=true LHDC V5=false)");
+      this.log("info", "bt_host::app", "capability discovery complete (LDAC=true aptX HD=false aptX LL=false aptX=false aptX Adaptive=false [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)");
       this.learnCodecs(t.address);
       const i = info();
       this.log("info", "a2dpwb_core::stream", `codec selected: ${i.codec}`);
