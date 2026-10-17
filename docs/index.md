@@ -59,14 +59,14 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and
 
 | Component | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
 |:----------|:----------------:|:----------------:|:--------------:|
-| **A2DPWB** (GUI / CLI) | ✅ (not yet tried on real hardware) | ✅ | ❌ |
-| [Building from source](building) (Visual Studio 2022+) | ✅ | ✅ | ❌ |
+| **A2DPWB** (window, tray, CLI) | ✅ (not yet tried on real hardware) | ✅ | ❌ |
+| [Building from source](building) (Rust, Visual Studio 2022+, Node.js) | ✅ | ✅ | ❌ |
 | `a2dpwb_decode` (stream checker) | ✅ | ✅ | ❌ |
 | End-to-end test `tools/emu/run_test.py` | ✅ | ✅ | ❌ |
 | Virtual adapter `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | [Measuring receiver](usage#receiver) `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB itself runs on Windows only, as an x64 build. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
+A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), as an x64 build. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
 
 ## Verified Hardware
 
@@ -89,7 +89,7 @@ A2DPWB captures audio via WASAPI and offers three modes:
 | **Virtual Device** | Captures from a user-selected virtual audio device (e.g., VB-CABLE, VoiceMeeter) | Route specific apps to Bluetooth while keeping other audio on speakers |
 | **Application** | Captures only what one app plays, after its own processing (Windows 11 / Windows 10 2004+) | Send one app, or the output of a system-wide effects app (equalizer, sound enhancer) |
 
-In **Virtual Device** mode, A2DPWB switches the Windows default playback device to the selected virtual device, then captures its loopback output. Apps that output to the virtual device are streamed over Bluetooth. When streaming stops, the previous default device is restored.
+In **Virtual Device** mode, A2DPWB can switch the Windows default playback device to the selected virtual device (**Auto-switch default device**), then captures its loopback output. Apps that output to the virtual device are streamed over Bluetooth. When streaming stops, the previous default device is restored.
 
 System Loopback does not take the audio away from the default playback device: it plays there as well as over Bluetooth. See [Capture Modes](usage#capture-modes).
 
@@ -113,18 +113,21 @@ flowchart TD
     usb -.-> hp["Headphones"]
 ```
 
-A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly with a USB Bluetooth adapter through WinUSB, using [BTstack](https://github.com/bluekitchen/btstack) to implement the full Bluetooth protocol stack in user-mode.
+A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly with a USB Bluetooth adapter through WinUSB, using [BTstack](https://github.com/bluekitchen/btstack) to implement the full Bluetooth protocol stack in user-mode. A small resident program (`a2dpwb-core.exe`, with the tray icon) streams the audio; the window only shows its state, so closing it does not stop the audio (see [Architecture](architecture)).
 
 ## Features
 
-- **Multi-codec**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC with automatic negotiation
+- **Multi-codec**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC and (experimental) LHDC V5 with automatic negotiation
 - **Three capture modes**: System loopback, virtual audio device routing, or one application's output
+- **Window, tray and CLI**: a window for setup and diagnostics, a tray flyout and menu for everyday connecting, and a command line (see [Usage](usage))
+- **WinUSB in the app**: assigns the WinUSB driver to the adapter and restores the original driver, no Zadig needed (see [Setup](setup#winusb))
+- **First-run setup**: adapter, driver and firmware, headphones, test tone
 - **ABR**: Adaptive Bit Rate for unstable connections (LDAC and LHDC V5)
-- **Auto-reconnect**: Reconnects on disconnection (up to 10 attempts)
+- **Auto-reconnect**: Reconnects on disconnection (up to 10 attempts), and after the PC resumes from sleep
 - **Link quality and AFH**: Shows what is sent, the RSSI and the channels in use; tells the adapter which Wi-Fi channels to avoid (see [Usage](usage#link-quality))
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones and the Windows volume; their play/pause, next and previous buttons control playback on the PC (see [Usage](usage#headphone-buttons))
-- **Profile management**: Save and load device + codec configurations
-- **GUI + CLI**: wxWidgets graphical interface or command-line operation
-- **Localization**: English / Japanese
+- **Profile management**: Device + codec + capture configurations, connectable from the tray
+- **Updates**: The installed version updates itself after streaming stops (see [Usage](usage#updates))
+- **Localization**: English, Japanese, Simplified / Traditional Chinese, Korean, German, French and Spanish
 - **Realtek firmware**: Guided firmware download for Realtek adapters
-- **Diagnostics** (debug mode): debug console, HCI capture, peer receiver test against a Linux PC (see [Usage](usage#receiver))
+- **Diagnostics**: connection flow, log, HCI capture, diagnostics for bug reports, peer receiver test against a Linux PC (see [Usage](usage#receiver))

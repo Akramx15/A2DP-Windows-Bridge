@@ -12,7 +12,7 @@ Feel free to [open an issue](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Brid
 
 You don't need to fill in every field. Rough reports are fine, and I'll ask if I need more details.
 
-For connection problems, **Copy Diagnostics** in the debug console (**Settings > Debug Mode**, restart, then **Debug > Debug Console...**) puts the version, adapter, connection flow and recent log on the clipboard, ready to paste into the report.
+For connection problems, **Copy Diagnostics** on the **Diagnostics** screen puts the version, adapter, connection flow and recent log on the clipboard, ready to paste into the report.
 
 ## Building from Source
 

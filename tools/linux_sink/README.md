@@ -70,19 +70,19 @@ in `a2dpwb_sink_keys.json` next to the script.
 
 On the A2DPWB PC (same network segment - the discovery is a broadcast):
 
-- **GUI** (debug mode): **Debug > Peer Receiver Test...** finds the
-  receiver by itself, **Start** streams to its Bluetooth adapter with the
-  chosen codec, quality, sample rate and bit depth (no profile needed) and a
-  steady test tone as the source (or system audio), and
-  the window shows what was sent next to what arrived. The receiver's L2CAP
-  MTU and playout buffer can be set there too; they apply from Start.
-- **CLI**: `A2DPWB.exe --cli --remote-sink auto` finds the receiver, streams
-  to it (unless `-d` names another device) and prints its statistics every
-  5 seconds and at the end.
+- **CLI**: quit A2DPWB (tray > **Exit**), then
+  `a2dpwb-core.exe --cli --remote-sink auto --test-tone` finds the receiver,
+  streams to it (unless `-d` names another device) with the codec, quality,
+  rate and bit depth given by `-c`, `-q`, `--rate` and `--bits` and a steady
+  test tone (without `--test-tone`: the system audio), and prints its
+  statistics every 5 seconds and at the end.
+- **Window**: with **Settings > Developer mode**, **Diagnostics** has a
+  **Peer Receiver Test** tab. In this version it is a preview that saves the
+  receiver address but does not stream yet; use the CLI.
 
 Open UDP and TCP port 51201 on the Linux PC if it has a firewall
 (`sudo ufw allow 51201`). A2DPWB can also be given the address directly
-(`--remote-sink 192.168.1.20`, or the address field) when broadcasts do not
+(`--remote-sink 192.168.1.20`) when broadcasts do not
 get through, e.g. across routers.
 
 The tool prints one line per second while streaming and a summary when the
@@ -154,7 +154,7 @@ A2DPWB reaches over TCP; a2dpwb_sink then takes that adapter like a real one:
 ```bash
 sudo .venv/bin/python ../emu/emu_vhci.py [--drop 2] [--stall 400/6]   # Linux, terminal 1
 sudo sh run.sh                                                      # Linux, terminal 2
-A2DPWB.exe --cli --hci-tcp <linux>:9001 -c ldac --test-tone --duration 20 --remote-sink auto
+a2dpwb-core.exe --cli --hci-tcp <linux>:9001 -c ldac --test-tone --duration 20 --remote-sink auto   # Windows
 ```
 
 `--drop` loses a share of the media packets, `--stall MS/S` holds them back

@@ -20,7 +20,7 @@ callouts:
     color: red
 
 footer_content: >-
-  A2DP Windows Bridge (A2DPWB) source code is dual-licensed under <a href="https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE">Apache-2.0 or MIT</a>. The distributed A2DPWB.exe includes BTstack and may only be used for personal, non-commercial purposes (<a href="https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md">third-party licenses</a>).
+  A2DP Windows Bridge (A2DPWB) source code is dual-licensed under <a href="https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/LICENSE">Apache-2.0 or MIT</a>. The distributed programs include BTstack (in a2dpwb-core.exe) and may only be used for personal, non-commercial purposes (<a href="https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md">third-party licenses</a>).
 
 plugins:
   - jekyll-remote-theme

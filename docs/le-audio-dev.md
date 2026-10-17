@@ -6,7 +6,13 @@ nav_exclude: true
 
 # LE Audio (experimental) - developer note
 
-A2DPWB can stream to LE Audio devices as a **BAP unicast client** (audio
+{: .warning }
+**This note describes A2DPWB v1 (C++), not v2.** v2 has no LE Audio yet: the v1
+code it describes was removed from the `develop-2.0` branch and remains on the
+`feat/le-audio` branch. The note is kept as a reference for bringing LE Audio
+to v2; the files, settings and options named below do not exist in v2.
+
+A2DPWB v1 can stream to LE Audio devices as a **BAP unicast client** (audio
 source): LC3 over Connected Isochronous Streams (CIS), on the same BTstack
 session and WinUSB adapter as A2DP. It is **experimental and off by
 default** (Settings > "LE Audio (experimental)", `le_audio_experimental` in
