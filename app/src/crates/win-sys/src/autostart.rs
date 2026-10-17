@@ -5,7 +5,7 @@
 //!
 //! Also holds the small registry helpers the driver module uses.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, WIN32_ERROR};
 use windows::Win32::System::Registry::{
@@ -41,6 +41,17 @@ pub fn remove(value_name: &str) -> windows::core::Result<bool> {
 pub fn command_line(exe: &Path, args: &str) -> String {
     let exe = exe.display();
     if args.is_empty() { format!("\"{exe}\"") } else { format!("\"{exe}\" {args}") }
+}
+
+/// The program a Run command line starts: the quoted path, or up to the
+/// first space when unquoted (as Windows reads it); None if empty
+pub fn program_of(command: &str) -> Option<PathBuf> {
+    let command = command.trim_start();
+    let program = match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(rest),
+        None => command.split(' ').next().unwrap_or(command),
+    };
+    (!program.trim().is_empty()).then(|| PathBuf::from(program))
 }
 
 fn get_in(subkey: &str, value_name: &str) -> windows::core::Result<Option<String>> {
@@ -187,6 +198,20 @@ mod tests {
             r#""C:\Program Files\A2DPWB\a2dpwb.exe" --minimized"#
         );
         assert_eq!(command_line(Path::new(r"C:\a.exe"), ""), r#""C:\a.exe""#);
+    }
+
+    #[test]
+    fn program_of_reads_the_path_back() {
+        let exe = Path::new(r"C:\Program Files\A2DPWB\a2dpwb-core.exe");
+        assert_eq!(program_of(&command_line(exe, "--background")).as_deref(), Some(exe));
+        assert_eq!(program_of(&command_line(exe, "")).as_deref(), Some(exe));
+        assert_eq!(
+            program_of(r"C:\A2DPWB\A2DPWB.exe --minimized").as_deref(),
+            Some(Path::new(r"C:\A2DPWB\A2DPWB.exe"))
+        );
+        assert_eq!(program_of(r#"  "C:\x y\a.exe"#).as_deref(), Some(Path::new(r"C:\x y\a.exe"))); // unclosed quote
+        assert_eq!(program_of(""), None);
+        assert_eq!(program_of(r#""" --x"#), None);
     }
 
     /// Writes only under a throwaway HKCU key, deleted afterwards

@@ -356,7 +356,7 @@
   "receiver.afh_off": "Aus",
   "receiver.afh_manual": "Manuell",
   "receiver.afh_channels": "Wi-Fi-Kan.",
-  "receiver.afh_tooltip": "Kanäle, die Bluetooth meiden soll (AFH-Host-Klassifizierung, gilt für jede Verbindung): Automatisch = das 2,4-GHz-Wi-Fi, das dieser PC stark empfängt, Aus = dem Bluetooth-Controller überlassen, Manuell = die eingegebenen Wi-Fi-Kanäle, z. B. 6,11. Mindestens 20 der 79 Kanäle bleiben in Gebrauch.",
+  "receiver.afh_tooltip": "Kanäle, die Bluetooth meiden soll (AFH-Host-Klassifizierung, gilt für jede Verbindung): Automatisch = der 2,4-GHz-Wi-Fi-Kanal, über den dieser PC verbunden ist (nichts, wenn er nicht mit 2,4-GHz-Wi-Fi verbunden ist), Aus = dem Bluetooth-Controller überlassen, Manuell = die eingegebenen Wi-Fi-Kanäle, z. B. 6,11. Mindestens 20 der 79 Kanäle bleiben in Gebrauch.",
   "receiver.start": "Start",
   "receiver.stop": "Stopp",
   "receiver.profile_name": "Peer-Empfängertest",

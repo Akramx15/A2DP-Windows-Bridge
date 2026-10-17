@@ -356,7 +356,7 @@
   "receiver.afh_off": "关",
   "receiver.afh_manual": "手动",
   "receiver.afh_channels": "Wi-Fi 信道",
-  "receiver.afh_tooltip": "Bluetooth 应避开的信道（AFH 主机分类，适用于所有连接）：自动 = 本机强烈接收到的 2.4 GHz Wi-Fi，关 = 交由 Bluetooth 控制器决定，手动 = 输入的 Wi-Fi 信道，例如 6,11。79 个信道中至少保留 20 个可用。",
+  "receiver.afh_tooltip": "Bluetooth 应避开的信道（AFH 主机分类，适用于所有连接）：自动 = 本机所连接的 2.4 GHz Wi-Fi 信道（未连接 2.4 GHz Wi-Fi 时不做任何处理），关 = 交由 Bluetooth 控制器决定，手动 = 输入的 Wi-Fi 信道，例如 6,11。79 个信道中至少保留 20 个可用。",
   "receiver.start": "开始",
   "receiver.stop": "停止",
   "receiver.profile_name": "对端接收器测试",

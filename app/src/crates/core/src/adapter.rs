@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use bt_host::afh::{self, WifiAp};
+use bt_host::afh;
 use bt_host::chips::{self, ChipVendor};
 use bt_host::{AfhClassification, AfhSource, HostConfig, TransportConfig};
 use win_sys::usb_adapters::{self, UsbDevice};
@@ -100,18 +100,14 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
     }
 }
 
-/// AFH host channel classification from the access points Windows' Wi-Fi
-/// scans found
+/// AFH host channel classification from the 2.4 GHz channel this PC's Wi-Fi
+/// is connected on ("auto")
 struct WifiAfh;
 
 impl AfhSource for WifiAfh {
     fn classify(&mut self, policy: &str) -> Option<AfhClassification> {
         let c = afh::classify(policy, || match win_sys::wlan::survey() {
-            Ok(s) => s
-                .bss
-                .iter()
-                .filter_map(|b| b.channel_24ghz.map(|channel| WifiAp { channel, rssi_dbm: b.rssi_dbm }))
-                .collect(),
+            Ok(s) => s.connected_channels_24ghz(),
             Err(e) => {
                 tracing::debug!("Wi-Fi survey failed: {e}");
                 Vec::new()

@@ -356,7 +356,7 @@
   "receiver.afh_off": "オフ",
   "receiver.afh_manual": "手動",
   "receiver.afh_channels": "Wi-Fi ch",
-  "receiver.afh_tooltip": "Bluetooth が避けるチャネル（AFH ホスト分類。すべての接続に適用）: 自動 = この PC で強く聞こえる 2.4 GHz の Wi-Fi、オフ = Bluetooth コントローラに任せる、手動 = 入力した Wi-Fi チャネル（例: 6,11）。79 チャネルのうち最低 20 チャネルは使える状態を残します。",
+  "receiver.afh_tooltip": "Bluetooth が避けるチャネル（AFH ホスト分類。すべての接続に適用）: 自動 = この PC が接続している 2.4 GHz の Wi-Fi のチャネル（2.4 GHz の Wi-Fi に接続していなければ何もしない）、オフ = Bluetooth コントローラに任せる、手動 = 入力した Wi-Fi チャネル（例: 6,11）。79 チャネルのうち最低 20 チャネルは使える状態を残します。",
   "receiver.start": "開始",
   "receiver.stop": "停止",
   "receiver.profile_name": "対向受信テスト",

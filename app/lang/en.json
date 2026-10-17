@@ -356,7 +356,7 @@
   "receiver.afh_off": "Off",
   "receiver.afh_manual": "Manual",
   "receiver.afh_channels": "Wi-Fi ch",
-  "receiver.afh_tooltip": "Channels Bluetooth should avoid (AFH host classification, applies to every connection): Auto = the 2.4 GHz Wi-Fi this PC hears strongly, Off = leave it to the Bluetooth controller, Manual = the Wi-Fi channels entered, e.g. 6,11. At least 20 of the 79 channels stay in use.",
+  "receiver.afh_tooltip": "Channels Bluetooth should avoid (AFH host classification, applies to every connection): Auto = the 2.4 GHz Wi-Fi channel this PC is connected on (nothing when it is not on 2.4 GHz Wi-Fi), Off = leave it to the Bluetooth controller, Manual = the Wi-Fi channels entered, e.g. 6,11. At least 20 of the 79 channels stay in use.",
   "receiver.start": "Start",
   "receiver.stop": "Stop",
   "receiver.profile_name": "Peer receiver test",

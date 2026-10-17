@@ -220,7 +220,7 @@ pub fn run(args: &[String]) -> i32 {
             }),
         )
     };
-    // The Run value names this copy of the program
+    // A missing Run value, or one naming a copy of the core that is gone
     state.refresh_autostart();
     {
         let state = state.clone();

@@ -7,34 +7,32 @@
 //! so what it passes applies to headphones and receivers alike.
 //!
 //! Policies:
-//!   "auto"   Wi-Fi access points this PC hears strongly: their 2.4 GHz
-//!            channels are marked bad
+//!   "auto"   the 2.4 GHz Wi-Fi channel this PC is connected on is marked
+//!            bad; nothing is passed when the PC is not on 2.4 GHz Wi-Fi
 //!   "off"    nothing is passed (the controller decides alone)
 //!   "6,11"   these Wi-Fi channels are marked bad
 //!
-//! At least `MIN_CHANNELS` channels stay usable, as the specification
-//! requires: channels of the weakest access points are dropped first.
+//! "auto" is conservative on purpose. v1 and early v2 avoided every access
+//! point heard at -75 dBm or louder; in a hardware test (2026-10-17) that
+//! took a neighbour's channel 11 while the PC's own Wi-Fi was disconnected,
+//! left 56 of 79 channels, and radio silences over 40 ms went from about 6
+//! to 30-95 a minute. Access points the PC only hears are left to the
+//! controller's own AFH; only the PC's own Wi-Fi, which shares the antenna
+//! area and transmits whenever the PC does, is avoided.
 //!
-//! Plain functions over plain data: the access points come from
-//! win-sys::wlan, converted by the caller into `WifiAp`.
+//! At least `MIN_CHANNELS` channels stay usable, as the specification
+//! requires: channels later in the list are dropped first.
+//!
+//! Plain functions over plain data: the connected channels come from
+//! win-sys::wlan.
 
 /// Bluetooth BR/EDR channels
 pub const CHANNELS: usize = 79;
 /// The fewest channels the specification allows AFH to keep (Nmin = 20)
 pub const MIN_CHANNELS: usize = 20;
-/// Access points weaker than this are ignored by "auto"
-pub const AUTO_RSSI_DBM: i32 = -75;
 /// A 20 MHz Wi-Fi signal (22 MHz for 802.11b) spreads +-11 MHz around its
 /// center
 const WIFI_HALF_WIDTH_MHZ: i32 = 11;
-
-/// One 2.4 GHz access point the PC hears
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WifiAp {
-    /// 2.4 GHz channel number, 1-14
-    pub channel: u8,
-    pub rssi_dbm: i32,
-}
 
 /// What to pass to the controller
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,30 +77,23 @@ impl Policy {
     }
 }
 
-/// Classification for a policy string. `survey` is called only for
-/// "auto" (it scans nothing itself: win-sys::wlan returns what Windows'
-/// background scans found).
-pub fn classify(policy: &str, survey: impl FnOnce() -> Vec<WifiAp>) -> Classification {
+/// Classification for a policy string. `connected` is called only for
+/// "auto" and returns the 2.4 GHz channels (1-14) this PC's Wi-Fi
+/// interfaces are connected on: empty when it is disconnected, on 5 / 6
+/// GHz, or has no Wi-Fi (win-sys::wlan; it scans nothing itself).
+pub fn classify(policy: &str, connected: impl FnOnce() -> Vec<u8>) -> Classification {
     match Policy::parse(policy) {
         Policy::Off => Classification::all_usable(),
-        Policy::Auto => avoid_wifi(&auto_channels(&survey())),
+        Policy::Auto => avoid_wifi(&auto_channels(&connected())),
         Policy::Manual(channels) => avoid_wifi(&channels),
     }
 }
 
-/// The Wi-Fi channels "auto" avoids: those with an access point at or
-/// above AUTO_RSSI_DBM, loudest first (by each channel's strongest access
-/// point; ties by channel number)
-pub fn auto_channels(aps: &[WifiAp]) -> Vec<i64> {
-    let mut loudest: Vec<(u8, i32)> = Vec::new();
-    for ap in aps.iter().filter(|ap| ap.rssi_dbm >= AUTO_RSSI_DBM) {
-        match loudest.iter_mut().find(|(ch, _)| *ch == ap.channel) {
-            Some((_, rssi)) => *rssi = (*rssi).max(ap.rssi_dbm),
-            None => loudest.push((ap.channel, ap.rssi_dbm)),
-        }
-    }
-    loudest.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    loudest.into_iter().map(|(ch, _)| i64::from(ch)).collect()
+/// The Wi-Fi channels "auto" avoids: the 2.4 GHz channels this PC is
+/// connected on, in interface order, nothing else. Access points the PC
+/// only hears, however loud, are not avoided.
+pub fn auto_channels(connected: &[u8]) -> Vec<i64> {
+    connected.iter().map(|&ch| i64::from(ch)).collect()
 }
 
 /// Classification that avoids these Wi-Fi channels in order, skipping

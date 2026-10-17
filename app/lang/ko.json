@@ -356,7 +356,7 @@
   "receiver.afh_off": "끄기",
   "receiver.afh_manual": "수동",
   "receiver.afh_channels": "Wi-Fi ch",
-  "receiver.afh_tooltip": "Bluetooth가 피해야 할 채널(AFH 호스트 분류, 모든 연결에 적용): 자동 = 이 PC에서 강하게 수신되는 2.4 GHz Wi-Fi, 끄기 = Bluetooth 컨트롤러에 맡김, 수동 = 입력한 Wi-Fi 채널(예: 6,11). 79개 채널 중 최소 20개는 계속 사용됩니다.",
+  "receiver.afh_tooltip": "Bluetooth가 피해야 할 채널(AFH 호스트 분류, 모든 연결에 적용): 자동 = 이 PC가 연결된 2.4 GHz Wi-Fi 채널(2.4 GHz Wi-Fi에 연결되어 있지 않으면 아무것도 하지 않음), 끄기 = Bluetooth 컨트롤러에 맡김, 수동 = 입력한 Wi-Fi 채널(예: 6,11). 79개 채널 중 최소 20개는 계속 사용됩니다.",
   "receiver.start": "시작",
   "receiver.stop": "중지",
   "receiver.profile_name": "피어 수신기 테스트",

@@ -394,9 +394,11 @@ Bluetooth avoids busy channels by itself (AFH), but it only learns about Wi-Fi f
 
 | AFH | |
 |:--|:--|
-| Auto (default) | The 2.4 GHz Wi-Fi networks this PC hears strongly (Windows Wi-Fi scan, repeated while connected) |
+| Auto (default) | Only the 2.4 GHz Wi-Fi channel this PC is connected on (checked again every 30 seconds while connected). Nothing when the PC is not on 2.4 GHz Wi-Fi: disconnected, on 5 or 6 GHz, or wired |
 | Off | Nothing: the controller decides alone |
 | Manual, e.g. `6,11` | These Wi-Fi channels (1 to 14) |
+
+Auto leaves the networks the PC only hears to the controller's own AFH: avoiding a neighbour's busy channel takes 22 MHz from the hopping and can make the link worse, not better. To avoid such a channel anyway, enter it as Manual.
 
 At least 20 Bluetooth channels always stay in use. Set it on the **Adapter** screen, with `"afh"` in `settings.json` (config folder), or with `--afh` in CLI mode. The radio line shows which Wi-Fi channels are avoided. Whether it helps depends on the environment: measure with the peer receiver test.
 

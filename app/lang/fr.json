@@ -356,7 +356,7 @@
   "receiver.afh_off": "Désactivé",
   "receiver.afh_manual": "Manuel",
   "receiver.afh_channels": "Canaux Wi-Fi",
-  "receiver.afh_tooltip": "Canaux que le Bluetooth doit éviter (classification d'hôte AFH, s'applique à chaque connexion) : Auto = le Wi-Fi 2,4 GHz que ce PC capte fortement, Désactivé = laisser faire le contrôleur Bluetooth, Manuel = les canaux Wi-Fi saisis, par ex. 6,11. Au moins 20 des 79 canaux restent utilisés.",
+  "receiver.afh_tooltip": "Canaux que le Bluetooth doit éviter (classification d'hôte AFH, s'applique à chaque connexion) : Auto = le canal Wi-Fi 2,4 GHz auquel ce PC est connecté (rien s'il n'est pas connecté en Wi-Fi 2,4 GHz), Désactivé = laisser faire le contrôleur Bluetooth, Manuel = les canaux Wi-Fi saisis, par ex. 6,11. Au moins 20 des 79 canaux restent utilisés.",
   "receiver.start": "Démarrer",
   "receiver.stop": "Arrêter",
   "receiver.profile_name": "Test avec récepteur pair",

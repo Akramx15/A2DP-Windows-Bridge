@@ -67,21 +67,38 @@ fn manual_list_parsing_is_forgiving() {
 }
 
 #[test]
-fn auto_takes_loud_access_points_loudest_first() {
-    let aps = [
-        WifiAp { channel: 11, rssi_dbm: -60 },
-        WifiAp { channel: 1, rssi_dbm: -80 }, // too weak
-        WifiAp { channel: 6, rssi_dbm: -70 },
-        WifiAp { channel: 11, rssi_dbm: -50 }, // the strongest on 11 counts
-        WifiAp { channel: 6, rssi_dbm: -75 },  // at the limit: counts
-        WifiAp { channel: 3, rssi_dbm: -70 },  // ties with 6: lower channel first
-    ];
-    assert_eq!(auto_channels(&aps), [11, 3, 6]);
-    let c = classify("auto", || aps.to_vec());
-    // 11 and 3 overlap little; 6 would leave fewer than 20
-    assert_eq!(c.avoided_wifi, [11, 3]);
+fn auto_avoids_only_the_connected_channel() {
+    // Connected on 2.4 GHz channel 11: BT channels 49..71 marked bad
+    let c = classify("auto", || vec![11]);
+    assert!(c.passed);
+    assert_eq!(c.avoided_wifi, [11]);
+    assert_eq!(c.usable, 79 - 23);
+    let usable = usable_channels(&c.map);
+    assert!(usable.contains(&48) && usable.contains(&72));
+    assert!((49..=71).all(|n| !usable.contains(&n)));
+    assert_eq!(auto_channels(&[11]), [11]);
+}
+
+#[test]
+fn auto_passes_nothing_without_2_4_ghz_wifi() {
+    // Disconnected, on 5 / 6 GHz or no Wi-Fi: the survey returns nothing,
+    // however loud the access points around are
+    let c = classify("auto", Vec::new);
+    assert!(!c.passed);
+    assert_eq!(c, Classification::all_usable());
+    assert!(auto_channels(&[]).is_empty());
+}
+
+#[test]
+fn auto_with_two_interfaces_keeps_twenty_channels() {
+    // Two adapters on 1 and 6, and a repeat: each channel once
+    let c = classify("auto", || vec![1, 6, 1]);
+    assert_eq!(c.avoided_wifi, [1, 6]);
+    assert_eq!(c.usable, 79 - 22 - 23);
+    // A third on 11 would leave fewer than 20: skipped
+    let c = classify("auto", || vec![1, 6, 11]);
+    assert_eq!(c.avoided_wifi, [1, 6]);
     assert!(c.usable >= MIN_CHANNELS);
-    assert!(classify("auto", Vec::new).avoided_wifi.is_empty());
 }
 
 #[test]

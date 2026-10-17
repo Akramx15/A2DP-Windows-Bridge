@@ -356,7 +356,7 @@
   "receiver.afh_off": "關閉",
   "receiver.afh_manual": "手動",
   "receiver.afh_channels": "Wi-Fi 通道",
-  "receiver.afh_tooltip": "藍牙應避開的通道 (AFH 主機分類，套用至每個連線): 自動 = 此電腦收到的強 2.4 GHz Wi-Fi，關閉 = 交由藍牙控制器處理，手動 = 輸入的 Wi-Fi 通道，例如 6,11。79 個通道中至少保留 20 個使用。",
+  "receiver.afh_tooltip": "藍牙應避開的通道 (AFH 主機分類，套用至每個連線): 自動 = 此電腦所連線的 2.4 GHz Wi-Fi 通道（未連線至 2.4 GHz Wi-Fi 時不做任何處理），關閉 = 交由藍牙控制器處理，手動 = 輸入的 Wi-Fi 通道，例如 6,11。79 個通道中至少保留 20 個使用。",
   "receiver.start": "開始",
   "receiver.stop": "停止",
   "receiver.profile_name": "對端接收器測試",
