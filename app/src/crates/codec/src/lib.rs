@@ -3,7 +3,7 @@
 //! - [`Encoder`]: what the encode thread drives. One call encodes
 //!   [`Encoder::pcm_frames_per_encode`] PCM frames.
 //! - [`sbc`]: the SBC encoder, ported from Bluedroid to Rust (bit-exact).
-//! - LDAC, aptX family, AAC, LHDC V5: safe wrappers of the C encoders
+//! - LDAC, aptX family, AAC, LHDC V5, Opus: safe wrappers of the C encoders
 //!   (crates `*-sys`), behind cargo features.
 //! - [`caps`]: codec information of the local stream endpoints, parsing of
 //!   the remote's capabilities, the configuration sent with
@@ -22,6 +22,8 @@ pub mod aptx;
 pub mod ldac;
 #[cfg(feature = "lhdcv5")]
 pub mod lhdcv5;
+#[cfg(feature = "opus")]
+pub mod opus;
 
 use std::fmt;
 
@@ -35,10 +37,11 @@ pub enum CodecKind {
     AptxLl,
     Ldac,
     LhdcV5,
+    Opus,
 }
 
 impl CodecKind {
-    pub const ALL: [CodecKind; 7] = [
+    pub const ALL: [CodecKind; 8] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
         CodecKind::AptxLl,
@@ -46,16 +49,22 @@ impl CodecKind {
         CodecKind::Sbc,
         CodecKind::Aac,
         CodecKind::LhdcV5,
+        CodecKind::Opus,
     ];
 
     /// The choice of "Auto", best first. LHDC V5 stays below the aptX family
-    /// and above AAC / SBC, as in v1.
-    pub const AUTO_PRIORITY: [CodecKind; 7] = [
+    /// and above AAC / SBC, as in v1. Opus (Android's A2DP Opus, 256 kbps
+    /// stereo) comes next: above AAC, which it matches or beats at the same
+    /// bit rate with less codec delay (26.5 ms: a 20 ms frame and 6.5 ms
+    /// look-ahead, against AAC-LC's ~43 ms), but below the codecs sinks have
+    /// shipped for years (sink-side Opus implementations are new and few).
+    pub const AUTO_PRIORITY: [CodecKind; 8] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
         CodecKind::AptxLl,
         CodecKind::Aptx,
         CodecKind::LhdcV5,
+        CodecKind::Opus,
         CodecKind::Aac,
         CodecKind::Sbc,
     ];
@@ -70,6 +79,7 @@ impl CodecKind {
             CodecKind::AptxLl => "aptX Low Latency",
             CodecKind::Ldac => "LDAC",
             CodecKind::LhdcV5 => "LHDC V5",
+            CodecKind::Opus => "Opus",
         }
     }
 
@@ -83,6 +93,7 @@ impl CodecKind {
             CodecKind::AptxLl => "aptxll",
             CodecKind::Ldac => "ldac",
             CodecKind::LhdcV5 => "lhdcv5",
+            CodecKind::Opus => "opus",
         }
     }
 
@@ -91,11 +102,11 @@ impl CodecKind {
     }
 
     /// Bytes of the A2DP media payload header in front of the codec frames:
-    /// SBC and LDAC 1 (frame count), LHDC V5 2 (frame count, sequence),
-    /// the others none
+    /// SBC, LDAC and Opus 1 (frame count), LHDC V5 2 (frame count,
+    /// sequence), the others none
     pub fn media_header_len(self) -> usize {
         match self {
-            CodecKind::Sbc | CodecKind::Ldac => 1,
+            CodecKind::Sbc | CodecKind::Ldac | CodecKind::Opus => 1,
             CodecKind::LhdcV5 => 2,
             _ => 0,
         }
@@ -124,6 +135,7 @@ impl CodecKind {
             CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => cfg!(feature = "aptx"),
             CodecKind::Ldac => cfg!(feature = "ldac"),
             CodecKind::LhdcV5 => cfg!(feature = "lhdcv5"),
+            CodecKind::Opus => cfg!(feature = "opus"),
         }
     }
 }
@@ -137,12 +149,13 @@ impl fmt::Display for CodecKind {
 /// Quality mode (codec-specific meaning, as in v1)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Quality {
-    /// LDAC 990 kbps, SBC bitpool 53, AAC 256 kbps, LHDC V5 1000 kbps
+    /// LDAC 990 kbps, SBC bitpool 53, AAC 256 kbps, LHDC V5 1000 kbps, Opus
+    /// 256 kbps
     #[default]
     High,
-    /// LDAC 660 kbps, SBC bitpool 35, AAC 192 kbps
+    /// LDAC 660 kbps, SBC bitpool 35, AAC 192 kbps, Opus 192 kbps
     Standard,
-    /// LDAC 330 kbps, SBC bitpool 19, AAC 128 kbps
+    /// LDAC 330 kbps, SBC bitpool 19, AAC 128 kbps, Opus 128 kbps
     Mobile,
     /// LHDC V5 only (900 kbps); other codecs treat it as High
     MediumHigh,
@@ -208,6 +221,11 @@ impl Pcm<'_> {
 pub struct PeerParams {
     /// LHDC V5: the sink's bit rate limits (codec info byte 7, bits 7..4)
     pub lhdcv5_bitrate_limits: u8,
+    /// Opus: the frame duration configured, 10 or 20 ms (0 = 20)
+    pub opus_frame_ms: u8,
+    /// Opus: the channels configured on the wire, 1 or 2 (0 = as the
+    /// input); mono input is duplicated for a stereo stream
+    pub opus_channels: u8,
 }
 
 /// Encoder setup, fixed for a stream
@@ -300,6 +318,8 @@ pub fn create(kind: CodecKind, config: &EncoderConfig) -> Result<Box<dyn Encoder
         CodecKind::Ldac => Ok(Box::new(ldac::LdacEncoder::new(config)?)),
         #[cfg(feature = "lhdcv5")]
         CodecKind::LhdcV5 => Ok(Box::new(lhdcv5::LhdcV5Encoder::new(config)?)),
+        #[cfg(feature = "opus")]
+        CodecKind::Opus => Ok(Box::new(opus::OpusEncoder::new(config)?)),
         #[allow(unreachable_patterns)]
         _ => Err(EncoderError::NotAvailable(kind)),
     }

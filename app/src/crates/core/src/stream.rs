@@ -398,11 +398,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         );
         preferred = kind.max_sample_rate();
     }
-    // aptX family: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates.
-    // WASAPI resamples to the requested rate.
+    // aptX family: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates;
+    // Opus: 48 kHz only. WASAPI resamples to the requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
+        CodecKind::Opus => 48000,
         CodecKind::Sbc | CodecKind::Aac if preferred != 44100 => 48000,
         _ => preferred,
     };
@@ -514,7 +515,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         mtu,
         bits_per_sample: bits,
         abr: req.abr && matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5),
-        peer: PeerParams { lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits() },
+        peer: {
+            let (opus_frame_ms, opus_channels) = remote.opus_stream(channels);
+            PeerParams { lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(), opus_frame_ms, opus_channels }
+        },
     };
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,

@@ -2,9 +2,11 @@
 //!
 //! Frames are collected until the next would not fit the payload size; each
 //! round of the encode thread ends with a flush, so a packet never waits for
-//! the next round (as v1). The media payload header goes in front: SBC and
-//! LDAC carry the frame count in the low 4 bits (no fragmentation), LHDC V5
-//! the frame count shifted left by 2 and a sequence number; the others none.
+//! the next round (as v1). The media payload header goes in front: SBC,
+//! LDAC and Opus carry the frame count in the low 4 bits (no fragmentation),
+//! LHDC V5 the frame count shifted left by 2 and a sequence number; the
+//! others none. LDAC and Opus send each encoder output as a packet of its
+//! own.
 
 use bt_host::media::{MAX_MEDIA_PACKET_SIZE, MediaPacket, RTP_HEADER_SIZE};
 use codec::CodecKind;
@@ -25,7 +27,7 @@ pub struct Packetizer {
 pub fn max_raw(kind: CodecKind, mtu: u16, sample_rate: u32) -> usize {
     let mtu = mtu as usize;
     match kind {
-        CodecKind::Sbc | CodecKind::Ldac => mtu - 1,
+        CodecKind::Sbc | CodecKind::Ldac | CodecKind::Opus => mtu - 1,
         CodecKind::LhdcV5 => mtu - 2,
         // aptX and aptX LL go without the RTP header: the whole L2CAP MTU is
         // payload; whole 4-byte aptX frames
@@ -88,8 +90,9 @@ impl Packetizer {
             self.frames += frames;
         }
         // libldac sizes each output for one packet (frames per 2-DH5 / 3-DH5):
-        // send it as is, as Android does, rather than merging outputs
-        if self.kind == CodecKind::Ldac {
+        // send it as is, as Android does, rather than merging outputs. Opus:
+        // one frame per packet (Android; PipeWire's decoder takes no other)
+        if matches!(self.kind, CodecKind::Ldac | CodecKind::Opus) {
             sent += self.flush(send);
         }
         sent
@@ -101,7 +104,7 @@ impl Packetizer {
             return 0;
         }
         match self.kind {
-            CodecKind::Sbc | CodecKind::Ldac => self.packet.data[0] = (self.frames & 0x0F) as u8,
+            CodecKind::Sbc | CodecKind::Ldac | CodecKind::Opus => self.packet.data[0] = (self.frames & 0x0F) as u8,
             CodecKind::LhdcV5 => {
                 // Android A2DP_VendorBuildCodecHeaderLhdcV5: frames << 2,
                 // latency bits 1..0 = 0; then the packet sequence number
@@ -164,6 +167,18 @@ mod tests {
         p.flush(&mut |pk| out.push(pk.payload().to_vec()));
         assert_eq!(out[0], vec![3 << 2, 0, 1, 2, 3]);
         assert_eq!(out[1], vec![1 << 2, 1, 4]);
+    }
+
+    #[test]
+    fn opus_one_frame_per_packet() {
+        // Small (low bit rate) Opus frames are not merged
+        let mut p = Packetizer::new(CodecKind::Opus, 1011, 48000);
+        let mut out = Vec::new();
+        p.push(&[0xFC, 1, 2], 1, 0, &mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+        p.push(&[0xFC, 3], 1, 960, &mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+        p.flush(&mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+        assert_eq!(out, vec![(vec![1, 0xFC, 1, 2], 0), (vec![1, 0xFC, 3], 960)]);
+        assert_eq!(max_raw(CodecKind::Opus, 1011, 48000), 1010);
     }
 
     #[test]

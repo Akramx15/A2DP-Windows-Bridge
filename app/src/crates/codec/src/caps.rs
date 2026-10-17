@@ -23,6 +23,8 @@ pub const APTXAD_VENDOR_ID: u32 = 0x0000_00D7;
 pub const APTXAD_CODEC_ID: u16 = 0x00AD;
 pub const LHDCV5_VENDOR_ID: u32 = 0x0000_053A; // Savitech
 pub const LHDCV5_CODEC_ID: u16 = 0x4C35;
+pub const OPUS_VENDOR_ID: u32 = 0x0000_00E0; // Google
+pub const OPUS_CODEC_ID: u16 = 0x0001;
 
 /// AVDTP media codec types
 pub const CODEC_TYPE_SBC: u8 = 0x00;
@@ -73,6 +75,22 @@ const LHDCV5_VERSION_1: u8 = 0x01;
 const LHDCV5_VERSION_MASK: u8 = 0x0F;
 const LHDCV5_FRAME_5MS: u8 = 0x10;
 const LHDCV5_CAPS_P8: u8 = LHDCV5_VERSION_1 | LHDCV5_FRAME_5MS;
+
+// Opus (Android a2dp_vendor_opus_constants.h; PipeWire OPUS_G_*): one byte,
+//   bits 2..0 channel mode 0x01 mono 0x02 stereo 0x04 dual mono,
+//   bits 4..3 frame duration 0x08 10 ms 0x10 20 ms, bit 7 0x80 48 kHz
+const OPUS_INFO_LEN: usize = 7;
+pub const OPUS_CH_MONO: u8 = 0x01;
+pub const OPUS_CH_STEREO: u8 = 0x02;
+pub const OPUS_CH_DUAL_MONO: u8 = 0x04;
+pub const OPUS_FRAME_10MS: u8 = 0x08;
+pub const OPUS_FRAME_20MS: u8 = 0x10;
+const OPUS_FRAME_MASK: u8 = 0x18;
+pub const OPUS_FREQ_48000: u8 = 0x80;
+/// We offer mono and stereo, 10 and 20 ms
+const OPUS_CAPS: u8 = OPUS_FREQ_48000 | OPUS_FRAME_10MS | OPUS_FRAME_20MS | OPUS_CH_MONO | OPUS_CH_STEREO;
+/// Android's default configuration: 48 kHz, 20 ms, stereo
+const OPUS_CONFIG_DEFAULT: u8 = OPUS_FREQ_48000 | OPUS_FRAME_20MS | OPUS_CH_STEREO;
 
 fn vendor_header(vendor_id: u32, codec_id: u16) -> Vec<u8> {
     let mut v = vendor_id.to_le_bytes().to_vec();
@@ -169,6 +187,16 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &[LHDCV5_SR_48000, LHDCV5_BITS_24, LHDCV5_CAPS_P8],
         ));
     }
+    if CodecKind::Opus.available() {
+        eps.push(vendor(
+            CodecKind::Opus,
+            OPUS_VENDOR_ID,
+            OPUS_CODEC_ID,
+            OPUS_INFO_LEN,
+            &[OPUS_CAPS],
+            &[OPUS_CONFIG_DEFAULT],
+        ));
+    }
     eps
 }
 
@@ -188,6 +216,7 @@ pub struct RemoteCaps {
     pub aptx_hd: Option<RemoteSep>,
     pub aptx_ll: Option<RemoteSep>,
     pub lhdcv5: Option<RemoteSep>,
+    pub opus: Option<RemoteSep>,
     /// aptX family byte 6 of each (0 = not reported: assume 44.1k + 48k)
     pub aptx_caps: u8,
     pub aptxhd_caps: u8,
@@ -199,6 +228,8 @@ pub struct RemoteCaps {
     pub aptx_adaptive: bool,
     /// LHDC V5 codec information (11 bytes) when usable
     pub lhdcv5_info: [u8; LHDCV5_INFO_LEN],
+    /// Opus codec information byte 6 (channel modes, frame durations, rate)
+    pub opus_caps: u8,
     /// SEP discovery: audio sink SEPs, and how many of them were in use (a
     /// codec streaming to another device is missing from the above)
     pub audio_sinks: u8,
@@ -234,6 +265,7 @@ impl RemoteCaps {
             CodecKind::AptxHd => self.aptx_hd,
             CodecKind::AptxLl => self.aptx_ll,
             CodecKind::LhdcV5 => self.lhdcv5,
+            CodecKind::Opus => self.opus,
         }
     }
 
@@ -298,6 +330,23 @@ impl RemoteCaps {
             }
             return VendorCapability::Taken(CodecKind::LhdcV5);
         }
+        if vid == OPUS_VENDOR_ID && cid == OPUS_CODEC_ID {
+            // 48 kHz, a frame duration, and mono or stereo (dual mono, two
+            // independent channels, is not sent)
+            let caps = byte(6);
+            let usable = info.len() >= OPUS_INFO_LEN
+                && caps & OPUS_FREQ_48000 != 0
+                && caps & OPUS_FRAME_MASK != 0
+                && caps & (OPUS_CH_MONO | OPUS_CH_STEREO) != 0;
+            if !usable {
+                return VendorCapability::Ignored(CodecKind::Opus, "no 48 kHz / frame duration / mono or stereo");
+            }
+            if self.opus.is_none() {
+                self.opus = Some(RemoteSep { seid });
+                self.opus_caps = caps;
+            }
+            return VendorCapability::Taken(CodecKind::Opus);
+        }
         if vid == APTX_VENDOR_ID && cid == APTX_CODEC_ID {
             let caps = byte(6);
             if info.len() >= 7 && caps & APTX_CH_STEREO == 0 {
@@ -320,6 +369,17 @@ impl RemoteCaps {
 
     pub fn lhdcv5_bitrate_limits(&self) -> u8 {
         self.lhdcv5_info[7] & LHDCV5_BITRATE_LIMITS_MASK
+    }
+
+    /// Opus: the frame duration (ms) and the channels on the wire for
+    /// `channels` of input. 20 ms when offered (the only duration Android
+    /// has a bit rate for; PipeWire prefers it too), else 10 ms. Mono only
+    /// for mono input to a sink that has it.
+    pub fn opus_stream(&self, channels: u32) -> (u8, u8) {
+        let frame_ms =
+            if self.opus_caps & OPUS_FRAME_10MS != 0 && self.opus_caps & OPUS_FRAME_20MS == 0 { 10 } else { 20 };
+        let wire = if channels == 1 && self.opus_caps & OPUS_CH_MONO != 0 { 1 } else { 2 };
+        (frame_ms, wire)
     }
 
     /// The best codec both sides have (Auto)
@@ -468,6 +528,20 @@ impl RemoteCaps {
                 info.resize(LHDCV5_INFO_LEN, 0);
                 ConfigRequest::Vendor(info)
             }
+            CodecKind::Opus => {
+                if sample_rate != 48000 {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                let (frame_ms, wire) = self.opus_stream(channels);
+                let ch = if wire == 1 { OPUS_CH_MONO } else { OPUS_CH_STEREO };
+                if self.opus_caps & ch == 0 {
+                    return Err(ConfigError::Channels(kind, wire));
+                }
+                let frame = if frame_ms == 10 { OPUS_FRAME_10MS } else { OPUS_FRAME_20MS };
+                let mut info = vendor_header(OPUS_VENDOR_ID, OPUS_CODEC_ID);
+                info.push(OPUS_FREQ_48000 | frame | ch);
+                ConfigRequest::Vendor(info)
+            }
         };
         Ok(Configuration { kind, remote_seid, request })
     }
@@ -512,6 +586,8 @@ pub enum ConfigError {
     SampleRate(CodecKind, u32),
     #[error("{0} does not support {1}-bit here")]
     BitDepth(CodecKind, u8),
+    #[error("{0} does not support {1} channel(s) here")]
+    Channels(CodecKind, u8),
 }
 
 /// Why the codec of a profile is not used
@@ -620,6 +696,74 @@ mod tests {
         assert_eq!(c.kind, CodecKind::Sbc);
         assert_eq!(c.replaced, Some((CodecKind::Ldac, Unavailable::SepInUse { in_use: 1, total: 2 })));
         assert!(choose(&caps, Some(CodecKind::Ldac), false).is_err());
+    }
+
+    #[test]
+    fn opus_caps_and_configuration() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        caps.add_aac(2);
+        // Android's sink capabilities: 48 kHz, 20 ms, stereo
+        let r = caps.add_vendor(5, &[0xE0, 0, 0, 0, 0x01, 0x00, 0x92]);
+        assert_eq!(r, VendorCapability::Taken(CodecKind::Opus));
+        if CodecKind::Opus.available() {
+            assert_eq!(caps.best(), Some(CodecKind::Opus));
+        }
+        assert_eq!(caps.opus_stream(2), (20, 2));
+        // No mono on the sink: mono input goes out as stereo
+        assert_eq!(caps.opus_stream(1), (20, 2));
+        let c = caps.configuration(CodecKind::Opus, 48000, 2, 16).unwrap();
+        assert_eq!(c.remote_seid, 5);
+        assert_eq!(c.request, ConfigRequest::Vendor(vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x92]));
+        assert_eq!(
+            caps.configuration(CodecKind::Opus, 44100, 2, 16),
+            Err(ConfigError::SampleRate(CodecKind::Opus, 44100))
+        );
+        // LDAC and the aptX family still win Auto
+        caps.add_vendor(3, &[0x4F, 0, 0, 0, 0x01, 0x00, 0x22]);
+        if CodecKind::Aptx.available() {
+            assert_eq!(caps.best(), Some(CodecKind::Aptx));
+        }
+
+        // PipeWire's capabilities: 10 + 20 ms, mono / stereo / dual mono
+        let mut pw = RemoteCaps::default();
+        pw.add_vendor(3, &[0xE0, 0, 0, 0, 0x01, 0x00, 0x9F]);
+        assert_eq!(pw.opus_stream(1), (20, 1));
+        let c = pw.configuration(CodecKind::Opus, 48000, 1, 16).unwrap();
+        assert_eq!(c.request, ConfigRequest::Vendor(vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x91]));
+        // 10 ms only
+        let mut short = RemoteCaps::default();
+        short.add_vendor(3, &[0xE0, 0, 0, 0, 0x01, 0x00, 0x8A]);
+        assert_eq!(short.opus_stream(2), (10, 2));
+        let c = short.configuration(CodecKind::Opus, 48000, 2, 16).unwrap();
+        assert_eq!(c.request, ConfigRequest::Vendor(vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x8A]));
+
+        // Unusable: no 48 kHz, no duration, dual mono only, too short
+        let bad: [&[u8]; 4] = [
+            &[0xE0, 0, 0, 0, 0x01, 0x00, 0x12],
+            &[0xE0, 0, 0, 0, 0x01, 0x00, 0x82],
+            &[0xE0, 0, 0, 0, 0x01, 0x00, 0x94],
+            &[0xE0, 0, 0, 0, 0x01, 0x00],
+        ];
+        for info in bad {
+            let mut c = RemoteCaps::default();
+            assert!(matches!(c.add_vendor(3, info), VendorCapability::Ignored(CodecKind::Opus, _)), "{info:02X?}");
+            assert!(!c.has(CodecKind::Opus));
+        }
+    }
+
+    #[test]
+    fn opus_local_endpoint() {
+        let eps = local_endpoints();
+        let Some(ep) = eps.iter().find(|e| e.kind == CodecKind::Opus) else {
+            assert!(!CodecKind::Opus.available());
+            return;
+        };
+        assert_eq!(ep.codec_type, CODEC_TYPE_VENDOR);
+        assert_eq!(ep.caps, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x9B]);
+        assert_eq!(ep.config, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x92]);
+        // BTstack's static endpoint pool (MAX_NR_AVDTP_STREAM_ENDPOINTS)
+        assert!(eps.len() <= 8);
     }
 
     #[test]

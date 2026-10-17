@@ -1051,7 +1051,7 @@ mod tests {
                 APP,
                 Level::INFO,
                 "capability discovery complete (LDAC=true aptX HD=false aptX LL=false aptX=false aptX Adaptive=false \
-                 [not encodable] SBC=true AAC=true LHDC V5=false)",
+                 [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)",
             ),
             (2601, STREAM, Level::INFO, "device connected, choosing the codec"),
             (2602, STREAM, Level::INFO, "codec selected: LDAC"),

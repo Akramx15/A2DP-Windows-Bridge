@@ -652,6 +652,7 @@ dependencies = [
  "ldac-sys",
  "lhdcv5-sys",
  "openaptx-sys",
+ "opus-sys",
  "proptest",
  "thiserror 2.0.21",
  "tracing",
