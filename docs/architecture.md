@@ -290,7 +290,7 @@ result. Listing adapters and their driver needs no elevation.
 - `a2dp_source_establish_stream()` — Connect to A2DP sink
 - `a2dp_source_set_config_other()` — Configure vendor-specific codec
 - `a2dp_source_stream_send_media_payload_rtp()` — Send encoded audio with an
-  RTP header (LDAC, aptX HD, AAC, SBC, LHDC V5)
+  RTP header (LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5)
 - `a2dp_source_stream_send_media_packet()` — Send raw media packets without
   an RTP header (aptX, aptX LL)
 
@@ -315,6 +315,7 @@ Captures audio in real time using the Windows Audio Session API.
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit stereo, no RTP header |
 | AAC | fdk-aac | up to 256 kbps | AAC-LC, LATM transport |
 | SBC | Rust port of the Bluedroid encoder | up to ~345 kbps | Mandatory A2DP baseline; bit-exact with the C encoder (tested over all configurations) |
+| SBC XQ | the same SBC encoder | ~385/505/552 kbps | Dual channel, bitpool 47 / 43 at 44.1 / 48 kHz (High); only when the sink's SBC allows dual channel and a bitpool of at least 43; shares SBC's stream endpoint, media payload header and RTP header |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | Experimental; 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 
 All encoders implement the `codec::Encoder` trait: they state the PCM

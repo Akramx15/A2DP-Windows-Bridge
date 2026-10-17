@@ -35,6 +35,7 @@
   "codec.aptx_low_latency": "aptX Low Latency",
   "codec.aac": "AAC",
   "codec.sbc": "SBC",
+  "codec.sbc_xq": "SBC XQ",
   "codec.lhdc_v5": "LHDC V5",
   "codec.unknown": "Inconnu",
   "quality.high": "Haute",

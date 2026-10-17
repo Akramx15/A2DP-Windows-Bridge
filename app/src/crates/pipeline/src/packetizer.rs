@@ -25,7 +25,7 @@ pub struct Packetizer {
 pub fn max_raw(kind: CodecKind, mtu: u16, sample_rate: u32) -> usize {
     let mtu = mtu as usize;
     match kind {
-        CodecKind::Sbc | CodecKind::Ldac => mtu - 1,
+        CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac => mtu - 1,
         CodecKind::LhdcV5 => mtu - 2,
         // aptX and aptX LL go without the RTP header: the whole L2CAP MTU is
         // payload; whole 4-byte aptX frames
@@ -101,7 +101,7 @@ impl Packetizer {
             return 0;
         }
         match self.kind {
-            CodecKind::Sbc | CodecKind::Ldac => self.packet.data[0] = (self.frames & 0x0F) as u8,
+            CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac => self.packet.data[0] = (self.frames & 0x0F) as u8,
             CodecKind::LhdcV5 => {
                 // Android A2DP_VendorBuildCodecHeaderLhdcV5: frames << 2,
                 // latency bits 1..0 = 0; then the packet sequence number
@@ -140,6 +140,19 @@ mod tests {
         assert_eq!(out[0].0.len(), 1 + 5 * 119);
         assert_eq!(out[1].1, 5 * 128);
         assert_eq!(out[2].0[0], 2);
+    }
+
+    #[test]
+    fn sbc_xq_frames_fill_the_mtu() {
+        // 200-byte SBC XQ frames (44.1k dual channel bitpool 47): 5 in 1023,
+        // with SBC's media payload header and RTP
+        let mut p = Packetizer::new(CodecKind::SbcXq, 1023, 44100);
+        let mut out = Vec::new();
+        for i in 0..6 {
+            p.push(&[0x9Cu8; 200], 1, i * 128, &mut |pk| out.push((pk.payload().to_vec(), pk.rtp)));
+        }
+        assert_eq!(out.len(), 1);
+        assert_eq!((out[0].0[0], out[0].0.len(), out[0].1), (5, 1 + 5 * 200, true));
     }
 
     #[test]

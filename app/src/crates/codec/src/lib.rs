@@ -29,6 +29,9 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CodecKind {
     Sbc,
+    /// High-bitrate SBC as PipeWire / Android custom ROMs call it: dual
+    /// channel, 16 blocks, 8 subbands, loudness, a high bitpool
+    SbcXq,
     Aac,
     Aptx,
     AptxHd,
@@ -38,25 +41,29 @@ pub enum CodecKind {
 }
 
 impl CodecKind {
-    pub const ALL: [CodecKind; 7] = [
+    pub const ALL: [CodecKind; 8] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
         CodecKind::AptxLl,
         CodecKind::Aptx,
+        CodecKind::SbcXq,
         CodecKind::Sbc,
         CodecKind::Aac,
         CodecKind::LhdcV5,
     ];
 
     /// The choice of "Auto", best first. LHDC V5 stays below the aptX family
-    /// and above AAC / SBC, as in v1.
-    pub const AUTO_PRIORITY: [CodecKind; 7] = [
+    /// and above AAC / SBC, as in v1. SBC XQ goes just above SBC: it carries
+    /// more bits than AAC at 256 kbps, but AAC sounds better per bit and
+    /// sinks that offer AAC are tuned for it.
+    pub const AUTO_PRIORITY: [CodecKind; 8] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
         CodecKind::AptxLl,
         CodecKind::Aptx,
         CodecKind::LhdcV5,
         CodecKind::Aac,
+        CodecKind::SbcXq,
         CodecKind::Sbc,
     ];
 
@@ -64,6 +71,7 @@ impl CodecKind {
     pub fn name(self) -> &'static str {
         match self {
             CodecKind::Sbc => "SBC",
+            CodecKind::SbcXq => "SBC XQ",
             CodecKind::Aac => "AAC",
             CodecKind::Aptx => "aptX",
             CodecKind::AptxHd => "aptX HD",
@@ -77,6 +85,7 @@ impl CodecKind {
     pub fn key(self) -> &'static str {
         match self {
             CodecKind::Sbc => "sbc",
+            CodecKind::SbcXq => "sbcxq",
             CodecKind::Aac => "aac",
             CodecKind::Aptx => "aptx",
             CodecKind::AptxHd => "aptxhd",
@@ -91,11 +100,11 @@ impl CodecKind {
     }
 
     /// Bytes of the A2DP media payload header in front of the codec frames:
-    /// SBC and LDAC 1 (frame count), LHDC V5 2 (frame count, sequence),
-    /// the others none
+    /// SBC (XQ too) and LDAC 1 (frame count), LHDC V5 2 (frame count,
+    /// sequence), the others none
     pub fn media_header_len(self) -> usize {
         match self {
-            CodecKind::Sbc | CodecKind::Ldac => 1,
+            CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac => 1,
             CodecKind::LhdcV5 => 2,
             _ => 0,
         }
@@ -119,7 +128,7 @@ impl CodecKind {
     /// Whether the encoder for this codec is built in
     pub fn available(self) -> bool {
         match self {
-            CodecKind::Sbc => true,
+            CodecKind::Sbc | CodecKind::SbcXq => true,
             CodecKind::Aac => cfg!(feature = "aac"),
             CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => cfg!(feature = "aptx"),
             CodecKind::Ldac => cfg!(feature = "ldac"),
@@ -137,12 +146,13 @@ impl fmt::Display for CodecKind {
 /// Quality mode (codec-specific meaning, as in v1)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Quality {
-    /// LDAC 990 kbps, SBC bitpool 53, AAC 256 kbps, LHDC V5 1000 kbps
+    /// LDAC 990 kbps, SBC bitpool 53, SBC XQ ~552 kbps, AAC 256 kbps,
+    /// LHDC V5 1000 kbps
     #[default]
     High,
-    /// LDAC 660 kbps, SBC bitpool 35, AAC 192 kbps
+    /// LDAC 660 kbps, SBC bitpool 35, SBC XQ ~505 kbps, AAC 192 kbps
     Standard,
-    /// LDAC 330 kbps, SBC bitpool 19, AAC 128 kbps
+    /// LDAC 330 kbps, SBC bitpool 19, SBC XQ ~385 kbps, AAC 128 kbps
     Mobile,
     /// LHDC V5 only (900 kbps); other codecs treat it as High
     MediumHigh,
@@ -208,6 +218,8 @@ impl Pcm<'_> {
 pub struct PeerParams {
     /// LHDC V5: the sink's bit rate limits (codec info byte 7, bits 7..4)
     pub lhdcv5_bitrate_limits: u8,
+    /// SBC XQ: the sink's largest SBC bitpool (0 = not known)
+    pub sbc_max_bitpool: u8,
 }
 
 /// Encoder setup, fixed for a stream
@@ -292,6 +304,7 @@ pub fn create(kind: CodecKind, config: &EncoderConfig) -> Result<Box<dyn Encoder
     }
     match kind {
         CodecKind::Sbc => Ok(Box::new(sbc::SbcEncoder::new(config)?)),
+        CodecKind::SbcXq => Ok(Box::new(sbc::SbcEncoder::new_xq(config)?)),
         #[cfg(feature = "aac")]
         CodecKind::Aac => Ok(Box::new(aac::AacEncoder::new(config)?)),
         #[cfg(feature = "aptx")]

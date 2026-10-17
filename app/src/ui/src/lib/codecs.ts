@@ -4,7 +4,7 @@
 // pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, "mhq" only
 // for LHDC V5, no quality choice for the aptX family.
 
-export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "aac" | "sbc";
+export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "aac" | "sbcxq" | "sbc";
 
 export interface QualityMode {
   id: string;
@@ -85,6 +85,20 @@ export const CODECS: CodecSpec[] = [
     hiRes: false,
   },
   {
+    // Dual channel, high bitpool (PipeWire's SBC-XQ); only on sinks whose
+    // SBC allows it
+    id: "sbcxq",
+    label: "codec.sbc_xq",
+    bars: { quality: 3, latency: 3, stability: 3 },
+    qualities: [
+      { id: "hq", label: HQ, kbps: "~552" },
+      { id: "sq", label: SQ, kbps: "~505" },
+      { id: "mq", label: MQ, kbps: "~385" },
+    ],
+    abr: false,
+    hiRes: false,
+  },
+  {
     id: "sbc",
     label: "codec.sbc",
     bars: { quality: 2, latency: 3, stability: 5 },
@@ -114,6 +128,7 @@ export function codecLabelKey(name: string): string {
     aptxlowlatency: "codec.aptx_ll",
     aac: "codec.aac",
     sbc: "codec.sbc",
+    sbcxq: "codec.sbc_xq",
     lhdcv5: "codec.lhdc_v5",
     lhdc: "codec.lhdc_v5",
   };

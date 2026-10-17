@@ -8,6 +8,7 @@
 //! follows Android and PipeWire.
 
 use crate::CodecKind;
+use crate::sbc::{self, ChannelMode};
 
 pub const LDAC_VENDOR_ID: u32 = 0x0000_012D; // Sony
 pub const LDAC_CODEC_ID: u16 = 0x00AA;
@@ -73,6 +74,58 @@ const LHDCV5_VERSION_1: u8 = 0x01;
 const LHDCV5_VERSION_MASK: u8 = 0x0F;
 const LHDCV5_FRAME_5MS: u8 = 0x10;
 const LHDCV5_CAPS_P8: u8 = LHDCV5_VERSION_1 | LHDCV5_FRAME_5MS;
+
+// SBC codec information (A2DP 4.3.2), as BTstack's SBC capability event
+// splits it: sampling frequency 0x08 16k 0x04 32k 0x02 44.1k 0x01 48k;
+// channel mode 0x08 mono 0x04 dual 0x02 stereo 0x01 joint stereo; block
+// length 0x08 4 .. 0x01 16; subbands 0x02 4 0x01 8; allocation 0x02 SNR
+// 0x01 loudness
+const SBC_FREQ_44100: u8 = 0x02;
+const SBC_FREQ_48000: u8 = 0x01;
+const SBC_CH_DUAL: u8 = 0x04;
+const SBC_BLOCKS_16: u8 = 0x01;
+const SBC_SUBBANDS_8: u8 = 0x01;
+const SBC_ALLOC_LOUDNESS: u8 = 0x01;
+/// SBC XQ needs the sink to take at least this bitpool per channel (the
+/// lowest High / the Standard 44.1 kHz bitpool, ~507 kbps); below it the
+/// sink gets plain SBC
+pub const SBC_XQ_MIN_MAX_BITPOOL: u8 = 43;
+
+/// A remote SEP's SBC capabilities (the bitmaps of BTstack's
+/// A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CAPABILITY)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SbcCapabilities {
+    pub sampling_frequency: u8,
+    pub channel_mode: u8,
+    pub block_length: u8,
+    pub subbands: u8,
+    pub allocation_method: u8,
+    pub min_bitpool: u8,
+    pub max_bitpool: u8,
+}
+
+impl SbcCapabilities {
+    /// Dual channel with 16 blocks, 8 subbands, loudness, 44.1 or 48 kHz and
+    /// a bitpool up to at least [`SBC_XQ_MIN_MAX_BITPOOL`]
+    pub fn allows_xq(&self) -> bool {
+        self.channel_mode & SBC_CH_DUAL != 0
+            && self.block_length & SBC_BLOCKS_16 != 0
+            && self.subbands & SBC_SUBBANDS_8 != 0
+            && self.allocation_method & SBC_ALLOC_LOUDNESS != 0
+            && self.sampling_frequency & (SBC_FREQ_44100 | SBC_FREQ_48000) != 0
+            && self.max_bitpool >= SBC_XQ_MIN_MAX_BITPOOL
+            && self.min_bitpool <= SBC_XQ_MIN_MAX_BITPOOL
+    }
+}
+
+/// The local SEP a codec streams from: SBC XQ shares SBC's (it offers all
+/// channel modes and a bitpool up to 53)
+pub fn endpoint_kind(kind: CodecKind) -> CodecKind {
+    match kind {
+        CodecKind::SbcXq => CodecKind::Sbc,
+        k => k,
+    }
+}
 
 fn vendor_header(vendor_id: u32, codec_id: u16) -> Vec<u8> {
     let mut v = vendor_id.to_le_bytes().to_vec();
@@ -143,7 +196,8 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &[APTX_CONFIG_DEFAULT],
         ));
     }
-    // SBC: 44.1+48k, all channel modes, 16 blocks, 8 subbands, loudness, bitpool 2..53
+    // SBC: 44.1+48k, all channel modes, 16 blocks, 8 subbands, loudness,
+    // bitpool 2..53 (SBC XQ streams from this SEP too, in dual channel)
     eps.push(LocalEndpoint {
         kind: CodecKind::Sbc,
         codec_type: CODEC_TYPE_SBC,
@@ -182,6 +236,8 @@ pub struct RemoteSep {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RemoteCaps {
     pub sbc: Option<RemoteSep>,
+    /// The SBC SEP's capabilities, when reported (SBC XQ needs them)
+    pub sbc_caps: Option<SbcCapabilities>,
     pub aac: Option<RemoteSep>,
     pub ldac: Option<RemoteSep>,
     pub aptx: Option<RemoteSep>,
@@ -228,6 +284,7 @@ impl RemoteCaps {
     pub fn sep(&self, kind: CodecKind) -> Option<RemoteSep> {
         match kind {
             CodecKind::Sbc => self.sbc,
+            CodecKind::SbcXq => self.sbc.filter(|_| self.sbc_caps.is_some_and(|c| c.allows_xq())),
             CodecKind::Aac => self.aac,
             CodecKind::Ldac => self.ldac,
             CodecKind::Aptx => self.aptx,
@@ -237,8 +294,25 @@ impl RemoteCaps {
         }
     }
 
+    /// An SBC SEP whose capabilities are not known (no SBC XQ)
     pub fn add_sbc(&mut self, seid: u8) {
         self.sbc = Some(RemoteSep { seid });
+        self.sbc_caps = None;
+    }
+
+    /// An SBC SEP with its capabilities. With several, the first that
+    /// allows SBC XQ wins, else the last.
+    pub fn add_sbc_caps(&mut self, seid: u8, caps: SbcCapabilities) {
+        if self.sbc_caps.is_some_and(|c| c.allows_xq()) && !caps.allows_xq() {
+            return;
+        }
+        self.sbc = Some(RemoteSep { seid });
+        self.sbc_caps = Some(caps);
+    }
+
+    /// The sink's largest SBC bitpool (0 = not known)
+    pub fn sbc_max_bitpool(&self) -> u8 {
+        self.sbc_caps.map_or(0, |c| c.max_bitpool)
     }
 
     pub fn add_aac(&mut self, seid: u8) {
@@ -393,7 +467,28 @@ impl RemoteCaps {
                 if sample_rate != 44100 && sample_rate != 48000 {
                     return Err(ConfigError::SampleRate(kind, sample_rate));
                 }
-                ConfigRequest::Sbc { sampling_frequency: sample_rate as u16, mono, min_bitpool: 2, max_bitpool: 53 }
+                ConfigRequest::Sbc {
+                    sampling_frequency: sample_rate as u16,
+                    channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::JointStereo },
+                    min_bitpool: 2,
+                    max_bitpool: 53,
+                }
+            }
+            CodecKind::SbcXq => {
+                if sample_rate != 44100 && sample_rate != 48000 {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                // Dual channel (mono for one channel). The bitpool range as
+                // PipeWire's select_config: up to the largest XQ bitpool of
+                // the rate, within the sink's range; the encoder's bitpool
+                // (by quality) is never above it.
+                let remote = self.sbc_caps.unwrap_or_default();
+                ConfigRequest::Sbc {
+                    sampling_frequency: sample_rate as u16,
+                    channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::DualChannel },
+                    min_bitpool: remote.min_bitpool.max(2),
+                    max_bitpool: sbc::xq_max_bitpool(sample_rate).min(remote.max_bitpool),
+                }
             }
             CodecKind::Aac => {
                 ConfigRequest::Aac { sampling_frequency: sample_rate, channels: channels as u8, bit_rate: 256_000 }
@@ -496,8 +591,9 @@ pub struct Configuration {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigRequest {
-    /// Joint stereo (mono for one channel), 16 blocks, 8 subbands, loudness
-    Sbc { sampling_frequency: u16, mono: bool, min_bitpool: u8, max_bitpool: u8 },
+    /// 16 blocks, 8 subbands, loudness; SBC joint stereo, SBC XQ dual
+    /// channel (both mono for one channel)
+    Sbc { sampling_frequency: u16, channel_mode: ChannelMode, min_bitpool: u8, max_bitpool: u8 },
     /// MPEG-2 AAC-LC, constant bit rate
     Aac { sampling_frequency: u32, channels: u8, bit_rate: u32 },
     /// Vendor codec information
@@ -620,6 +716,112 @@ mod tests {
         assert_eq!(c.kind, CodecKind::Sbc);
         assert_eq!(c.replaced, Some((CodecKind::Ldac, Unavailable::SepInUse { in_use: 1, total: 2 })));
         assert!(choose(&caps, Some(CodecKind::Ldac), false).is_err());
+    }
+
+    /// A headset's SBC SEP: everything, bitpool 2..53
+    fn sbc_all() -> SbcCapabilities {
+        SbcCapabilities {
+            sampling_frequency: 0x0F,
+            channel_mode: 0x0F,
+            block_length: 0x0F,
+            subbands: 0x03,
+            allocation_method: 0x03,
+            min_bitpool: 2,
+            max_bitpool: 53,
+        }
+    }
+
+    #[test]
+    fn sbc_xq_negotiation() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        assert!(caps.has(CodecKind::SbcXq) && caps.has(CodecKind::Sbc));
+        assert_eq!(caps.sep(CodecKind::SbcXq), Some(RemoteSep { seid: 1 }));
+        assert_eq!(caps.best(), Some(CodecKind::SbcXq));
+        assert_eq!(caps.sbc_max_bitpool(), 53);
+        assert_eq!(CodecKind::from_key("SBCXQ"), Some(CodecKind::SbcXq));
+        assert_eq!((CodecKind::SbcXq.name(), CodecKind::SbcXq.media_header_len()), ("SBC XQ", 1));
+        assert!(CodecKind::SbcXq.uses_rtp());
+        // Above SBC, below AAC
+        caps.add_aac(2);
+        if CodecKind::Aac.available() {
+            assert_eq!(caps.best(), Some(CodecKind::Aac));
+        }
+
+        let c = caps.configuration(CodecKind::SbcXq, 44100, 2, 16).unwrap();
+        assert_eq!(endpoint_kind(c.kind), CodecKind::Sbc);
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 44100,
+                channel_mode: ChannelMode::DualChannel,
+                min_bitpool: 2,
+                max_bitpool: 47
+            }
+        );
+        let c = caps.configuration(CodecKind::SbcXq, 48000, 1, 16).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 48000,
+                channel_mode: ChannelMode::Mono,
+                min_bitpool: 2,
+                max_bitpool: 43
+            }
+        );
+        assert!(caps.configuration(CodecKind::SbcXq, 32000, 2, 16).is_err());
+        // Plain SBC is unchanged
+        let c = caps.configuration(CodecKind::Sbc, 48000, 2, 16).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 48000,
+                channel_mode: ChannelMode::JointStereo,
+                min_bitpool: 2,
+                max_bitpool: 53
+            }
+        );
+
+        // A sink taking up to 45: XQ capped there
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, SbcCapabilities { max_bitpool: 45, ..sbc_all() });
+        let c = caps.configuration(CodecKind::SbcXq, 44100, 2, 16).unwrap();
+        assert!(matches!(c.request, ConfigRequest::Sbc { max_bitpool: 45, .. }));
+    }
+
+    #[test]
+    fn sbc_xq_falls_back_to_sbc() {
+        let no_xq = [
+            SbcCapabilities { channel_mode: 0x0B, ..sbc_all() }, // no dual channel
+            SbcCapabilities { max_bitpool: 42, ..sbc_all() },    // bitpool too low
+            SbcCapabilities { block_length: 0x0E, ..sbc_all() }, // no 16 blocks
+            SbcCapabilities { subbands: 0x02, ..sbc_all() },     // 4 subbands only
+            SbcCapabilities { allocation_method: 0x02, ..sbc_all() }, // SNR only
+            SbcCapabilities { sampling_frequency: 0x0C, ..sbc_all() }, // 16 / 32k only
+        ];
+        for sbc in no_xq {
+            let mut caps = RemoteCaps::default();
+            caps.add_sbc_caps(1, sbc);
+            assert!(!caps.has(CodecKind::SbcXq), "{sbc:?}");
+            assert_eq!(caps.best(), Some(CodecKind::Sbc));
+            assert_eq!(
+                caps.configuration(CodecKind::SbcXq, 48000, 2, 16),
+                Err(ConfigError::NotOffered(CodecKind::SbcXq))
+            );
+            let c = choose(&caps, Some(CodecKind::SbcXq), true).unwrap();
+            assert_eq!(c.kind, CodecKind::Sbc);
+            assert_eq!(c.replaced, Some((CodecKind::SbcXq, Unavailable::NotSupported)));
+            assert!(choose(&caps, Some(CodecKind::SbcXq), false).is_err());
+        }
+        // Capabilities not known: SBC only
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(3);
+        assert!(!caps.has(CodecKind::SbcXq));
+        // A second SBC SEP without dual channel keeps the one that allows XQ
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        caps.add_sbc_caps(2, SbcCapabilities { channel_mode: 0x01, ..sbc_all() });
+        assert_eq!(caps.sep(CodecKind::SbcXq), Some(RemoteSep { seid: 1 }));
     }
 
     #[test]

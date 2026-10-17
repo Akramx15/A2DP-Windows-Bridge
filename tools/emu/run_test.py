@@ -12,6 +12,8 @@ with a2dpwb_decode:
   - decoded audio (all codecs but LDAC and LHDC V5, which have no open-source
     decoder) is identical on both sides and is the test tone: 1 kHz left,
     1.5 kHz right, amplitude 0.5
+The cases of NEGOTIATION run the same way with another sink or command line
+(Auto choosing SBC XQ, or SBC on a sink without dual channel).
 
 Outputs (captures, logs, reports, WAV) go to tools/emu/out/<codec>/.
 Exit code 0 when every codec passed. Uses only the Python standard library;
@@ -61,12 +63,22 @@ if not os.path.exists(VENV_PYTHON) and sys.prefix != sys.base_prefix:
 SINK_ADDRESS = '00:A2:D0:00:00:02'
 BASE_PORT = 9101  # A2DP cases; LE Audio cases use BASE_PORT + 100
 
-CODECS = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5']
+CODECS = ['sbc', 'sbcxq', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5']
 CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
-    'sbc': r'SBC \d', 'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
+    'sbc': r'SBC \d+ Hz, joint stereo, 16 blocks, 8 subbands, loudness, bitpool 2-53$',
+    # SBC XQ: dual channel up to bitpool 47 (44.1 kHz) / 43 (48 kHz)
+    'sbcxq': r'SBC (44100 Hz, dual channel, .*bitpool 2-47|48000 Hz, dual channel, .*bitpool 2-43)$',
+    'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
 }
 NO_DECODER = {'ldac', 'lhdcv5'}  # frame headers are validated, audio is not decoded
+# Further cases: name -> (A2DPWB -c, emu_sink.py arguments, the codec expected,
+# more A2DPWB arguments)
+NEGOTIATION = {
+    'sbcxq-44k': ('sbcxq', [], 'sbcxq', ['--rate', '44100']),            # bitpool 47
+    'auto-sbcxq': ('auto', ['--codecs', 'sbc'], 'sbcxq', []),            # Auto takes SBC XQ over SBC
+    'auto-sbc-no-xq': ('auto', ['--codecs', 'sbc', '--sbc-no-dual'], 'sbc', []),  # no dual channel: SBC
+}
 TONES = ((1000.0, 0.5), (1500.0, 0.5))  # (frequency, amplitude) per channel, as --test-tone
 
 
@@ -238,15 +250,16 @@ def run_codec(args, codec, port):
     sink_capture = os.path.join(out, 'sink.pklg')
     failures = []
 
-    sink = start_sink(port, sink_capture, os.path.join(out, 'sink.log'))
+    cli_codec, sink_args, expected, a2dpwb_args = NEGOTIATION.get(codec, (codec, [], codec, []))
+    sink = start_sink(port, sink_capture, os.path.join(out, 'sink.log'), extra=sink_args)
     try:
         env = dict(os.environ, A2DPWB_CONFIG_DIR=os.path.join(out, 'config'))  # isolated link keys
         with open(os.path.join(out, 'a2dpwb.log'), 'w', encoding='utf-8', errors='replace') as log:
             try:
                 rc = subprocess.run(
                     [args.a2dpwb, '--cli', '--hci-tcp', f'127.0.0.1:{port}', '-d', SINK_ADDRESS,
-                     '-c', codec, '--test-tone', '--duration', str(args.duration),
-                     '--hci-capture', src_capture]
+                     '-c', cli_codec, '--test-tone', '--duration', str(args.duration),
+                     '--hci-capture', src_capture] + a2dpwb_args
                     + (['--max-packet', str(args.max_packet)] if args.max_packet else []),
                     stdout=log, stderr=subprocess.STDOUT, env=env, timeout=args.duration + 90).returncode
             except subprocess.TimeoutExpired:
@@ -269,7 +282,7 @@ def run_codec(args, codec, port):
         r = reports[side] = parse_report(text)
         if r['streams'] != 1:
             failures.append(f'{side}: {r["streams"]} streams (expected 1)')
-        if not re.match(CONFIG_PATTERN[codec], r['config'] or ''):
+        if not re.match(CONFIG_PATTERN[expected], r['config'] or ''):
             failures.append(f'{side}: configuration "{r["config"]}"')
         if not r['result_ok']:
             failures.extend(f'{side}: {p}' for p in r['problems'] or ['a2dpwb_decode reported problems'])
@@ -283,7 +296,7 @@ def run_codec(args, codec, port):
         if (sent['audio_s'] or 0) < 0.9 * args.duration:
             failures.append(f'only {sent["audio_s"]} s of audio for --duration {args.duration}')
         detail = f'{sent["packets"]} packets, {sent["frames"]} frames, {sent["audio_s"]} s'
-        if codec not in NO_DECODER:
+        if expected not in NO_DECODER:
             if not (sent['wav'] and received['wav']):
                 failures.append('no decoded WAV')
             else:
@@ -487,7 +500,9 @@ def main_le(args):
 
 def main():
     parser = argparse.ArgumentParser(description='End-to-end A2DP test of A2DPWB against a virtual sink')
-    parser.add_argument('--codecs', nargs='+', choices=CODECS, default=CODECS)
+    parser.add_argument('--codecs', nargs='+', choices=CODECS + list(NEGOTIATION),
+                        default=CODECS + list(NEGOTIATION),
+                        help='codecs and negotiation cases (%(default)s)')
     parser.add_argument('--le-audio', nargs='*', metavar='CASE',
                         help='run the LE Audio (experimental) cases instead (default: all of them)')
     parser.add_argument('--duration', type=int, default=5, help='seconds of streaming per codec')

@@ -35,6 +35,7 @@
   "codec.aptx_low_latency": "aptX 低遅延",
   "codec.aac": "AAC",
   "codec.sbc": "SBC",
+  "codec.sbc_xq": "SBC XQ",
   "codec.lhdc_v5": "LHDC V5",
   "codec.unknown": "不明",
   "quality.high": "高音質",

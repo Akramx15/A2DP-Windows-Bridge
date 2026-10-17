@@ -19,7 +19,7 @@ Oct 17, 2026 · @seiya ／ 改訂: 未決事項の決定を反映（同日）
 
 - 対応OSは Windows 10 (22H2) / 11 です。**x64 と ARM64 の両方を v2.0 で出します**（[ARM64](#arm64) を参照）。
 - 使い方は今と同じです。WinUSBを割り当てたUSBドングルを btstack で直接制御して、WASAPIで取り込んだシステム音声をA2DPで送ります。
-- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。
+- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。v2 では SBC XQ を加えます（[v2 で加えたコーデック](#v2-で加えたコーデック)）。
 - アプリ名（A2DP Windows Bridge / A2DPWB）とアイコンは v1 のまま変えません。
 
 **今回やらないこと**
@@ -90,7 +90,7 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | 1. FFI | `ldac-sys` / `openaptx-sys` / `fdkaac-sys` / `lhdcv5-sys` | 残すCコーデックをビルドしてFFIを提供。ライセンスの異なるライブラリをクレート単位で分けて管理する | 可 |
 | 1. FFI | `win-sys` | `windows` クレートで、Rustのライブラリが無いWin32 APIを包む。MMCSS、IPolicyConfig（既定デバイスの切り替え）、WLAN API（AFH用）、電源通知、レジストリのRunキー、メディアキー送出、**WinUSBドライバの割り当てと解除（SetupAPI / DiInstallDevice）** | 可 |
 | 2. 部品 | `hci-transport` | HCI H2（`nusb` でWinUSBを直接制御）とH4 over TCP（エミュレータ用）。現行の改造版 `hci_transport_h2_winusb.c` の復旧処理（パイプリセット、読み取り失敗からの復帰、コマンドタイムアウト、終了時のHCI Reset）を移植し、btstackには `btstack-sys` のコールバック表で接続する | 禁止 |
-| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC）も担当 | 禁止 |
+| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC XQ > SBC）も担当 | 禁止 |
 | 2. 部品 | `audio-capture` | `wasapi` クレートで取り込む。システムループバック、仮想デバイス、アプリ単位のループバック（build 19041以降）。デバイス一覧、エンドポイント音量、テストトーン | 禁止 |
 | 3. エンジン | `bt-host` | btstackのランループを専用スレッドに閉じ込め、外からはコマンドチャネルと型付きイベントだけで操作する。GAP / A2DP Source / AVRCP（絶対音量、ボタン操作）/ SDP / リンクキー / AFH / ファームウェア読み込み / pklgキャプチャ | 禁止 |
 | 3. エンジン | `pipeline` | リングバッファ、形式変換、リサンプル、ダウンミックス、エンコード、メディアペイロードの組み立て、送信ペースの制御、ABR | 禁止 |
@@ -140,6 +140,16 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | libldac / lhdcv5-enc | 仕様が公開されておらず、参照実装を使う以外にない |
 | fdk-aac | AACエンコーダでこれを超える品質のRust実装はない |
 | libopenaptx 0.2.0 | Rustへの移植自体は難しくない。ただし移植版もLGPL-2.1の派生物になり、ライセンスの扱いは変わらない。なので当面は独立した `-sys` クレートに閉じ込めておく |
+
+### v2 で加えたコーデック
+
+**SBC XQ**（キー `sbcxq`、表示名 "SBC XQ"。PipeWire の `sbc_xq` と同じ考え方）
+
+- SBC を dual channel、16ブロック、8サブバンド、loudness で、チャネルごとに高い bitpool を使って送ります。メディアペイロードヘッダ（フレーム数1バイト）とRTPヘッダはSBCと同じです。ローカルのSEPはSBCのもの（全チャネルモード、bitpool 2〜53）を共用し、SET_CONFIGURATION で dual channel を選びます。
+- bitpool（`codec::sbc::xq_bitpool`）: High は 44.1 kHz で 47（200バイトのフレーム、約551 kbps。Androidのカスタムロムや pulseaudio-modules-bt の "SBC XQ" と同じ）、48 kHz で 43（約552 kbps、同じビットレート）。Standard は PipeWire の SBC-XQ の既定値（`a2dp-codec-sbc.c` の `default_bitpool`）の 43 / 39（約505 kbps、A2DP 1.2 のシンクが必ず受けられる 512 kbps 以内）、Mobile は PipeWire の XQ でない dual channel の既定値 32 / 29（約385 kbps）。High のフレームは、ヘッダ込みで 2-DH5 に3つ、3-DH5 に5つ入ります（1023バイトのパケット上限で1001 / 921バイト）。dual channel の bitpool の上限はチャネルごとに 16 × サブバンド数 = 128 なので、どれも制限の内側です。
+- 交渉: シンクのSBCの能力（BTstack の SBC capability イベントのビットマップと bitpool の範囲）に dual channel、16ブロック、8サブバンド、loudness、44.1 / 48 kHz があり、最大 bitpool が 43 以上のときだけ SBC XQ を提供していると見なします。設定する最大 bitpool は min(そのレートの High の bitpool, シンクの最大)、エンコーダの bitpool は品質の値をシンクの最大で抑えたものです。条件を満たさないシンクでは SBC XQ は出ず、Auto は SBC を選び、明示的に選んだ場合は代替コーデックの設定に従って SBC に切り替わるか、エラーになります。
+- Auto の優先順位は AAC の下、SBC の上です。ビット数は AAC 256 kbps より多いものの、AAC を出すシンクは AAC 向けに調整されていることが多く、ビットあたりの音質も AAC のほうが上だからです。
+- 検証: 単体テスト（フレーム長とビットレート、パケットへの収まり、交渉とフォールバック）と `tools/emu`（`sbcxq` と、SBCだけのシンクでの Auto の2ケース `auto-sbcxq` / `auto-sbc-no-xq`）。実機では未確認です。
 
 ## 音声パイプライン・スレッド設計
 
@@ -404,6 +414,8 @@ Windows 8 以降は WinUSB ドライバ（`winusb.inf`）が OS に標準で入�
 - [ ] `DiInstallDevice` による割り当てが使えない環境の扱い（フェーズ0の検証結果で決める）
 
 ## 改訂履歴
+
+- 2026-10-17（SBC XQ）: SBC XQ（dual channel、高 bitpool）を独立したコーデック `sbcxq` として追加した。交渉、品質ごとの bitpool、Auto の位置は[v2 で加えたコーデック](#v2-で加えたコーデック)に記した。
 
 - 2026-10-17（v2 に一本化）: v1 の保守を終了し、develop-2.0 から v1 のコード（C++ / wxWidgets、Inno Setup のインストーラ、CMake のビルド、実験的な LE Audio）を削除した。v2 を `v2/` から `app/src/` に移し、`core` / `ui` / `driver` / `crates` に分けた。Cargo workspace はリポジトリ直下、インストーラの台本は `installer/`、この設計書は `docs/v2-design.md`。デコーダの開発ツール `tools/a2dp_decode` は単独の CMake プロジェクトにした。
 - 2026-10-17（フェーズ3）: NSISのインストールはユーザー単位だけにした（全ユーザー向けを選べるとUACが毎回出るため）。セットアップ画面は8言語。更新のマニフェストはリリースごとに添付し、コアの更新チェックがURLを決める。コアに `--quit`、IPCに `app.quit_for_update`（配信中は断る）を追加。v1からの移行（`backup-v1\`、`schema_version`、古い `max_media_payload` をプロファイルへ）をコアの初回起動に入れた。待機中メモリの計測結果と、注入DLLを除く計り方を追記。開発用に `A2DPWB_INSTANCE`（別のパイプとmutexで2つ目のコアを動かす）。

@@ -14,6 +14,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
+| SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 
@@ -26,6 +27,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or (exp
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (sinks whose SBC allows dual channel, bitpool ≥ 43) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | LHDC V5 | ❌ | ❌ | ❌ | 🧪 experimental |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
@@ -189,6 +191,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbcxq   # SBC XQ: dual channel, bitpool 47 / 43 (44.1 / 48 kHz)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc
 
 # LDAC quality modes
@@ -219,7 +222,7 @@ All options, including AFH (`--afh`) and the peer receiver test (`--remote-sink`
 
 > **Note**: System loopback and virtual device capture use WASAPI shared mode. The capture sample rate depends on the device's format configured in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the device format to 96 kHz in Sound settings > Advanced. Application capture is converted by Windows to the rate A2DPWB asks for.
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 (experimental) > AAC > SBC XQ > SBC
 
 ### aptX family and aptX Adaptive
 
