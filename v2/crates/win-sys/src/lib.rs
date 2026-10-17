@@ -8,6 +8,7 @@ pub mod driver;
 pub mod elevation;
 pub mod media_keys;
 pub mod mmcss;
+pub mod pipe;
 pub mod power;
 pub mod process;
 pub mod single_instance;
