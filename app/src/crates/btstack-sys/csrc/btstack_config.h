@@ -2,11 +2,15 @@
  * btstack_config.h - BTstack compile-time configuration for A2DPWB v2
  *
  * Classic Bluetooth A2DP Source + AVRCP with vendor codecs over a host-side
- * HCI transport (WinUSB via nusb, or H4 over TCP to tools/emu).
+ * HCI transport (WinUSB via nusb, or H4 over TCP to tools/emu), plus LE
+ * central / ISO for the experimental LE Audio (bt-host's le module).
  *
- * Same values as v1 (app/src/btstack_config.h) without LE: LE Audio is not
- * part of v2.0, and without ENABLE_BLE BTstack sends no LE setup commands,
- * so v1's "LE hidden" transport wrapper is not needed.
+ * Same values as v1 (app/src/btstack_config.h at b819893). LE is compiled in
+ * always but stays inert unless LE Audio is enabled: by default the HCI
+ * transport hides the controller's LE support from BTstack (btstack-sys
+ * src/transport.rs, "LE hidden"), so HCI init sends the commands of a build
+ * without LE, and SM, the ATT server and the GATT client are only set up
+ * when LE Audio is on (Stack::le_init).
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
@@ -40,6 +44,37 @@
 /* Link key storage for paired devices */
 #define NVM_NUM_DEVICE_DB_ENTRIES  16
 #define NVM_NUM_LINK_KEYS          16
+
+/* LE (experimental LE Audio). Compiled in always, but inert unless LE Audio
+ * is enabled: only then is the controller's LE support visible to BTstack
+ * and are SM, the ATT server and the GATT client initialized. A2DPWB acts as
+ * LE central and never advertises; ENABLE_LE_PERIPHERAL is only defined
+ * because BTstack's extended advertising code (needed for extended scanning)
+ * depends on it. */
+#define ENABLE_BLE
+#define ENABLE_LE_CENTRAL
+#define ENABLE_LE_PERIPHERAL
+#define ENABLE_LE_SECURE_CONNECTIONS
+#define ENABLE_MICRO_ECC_P256              /* software P-256 (3rd-party/micro-ecc) */
+#define ENABLE_LE_DATA_LENGTH_EXTENSION
+#define ENABLE_LE_EXTENDED_ADVERTISING     /* extended scanning when the controller has it */
+#define ENABLE_LE_ISOCHRONOUS_STREAMS      /* CIG / CIS as central, HCI ISO data */
+
+/* ATT server: a read / write callback may answer "pending". btstack-sys does
+ * so only while the application is busy (an ATT request processed from
+ * within one of its own calls) and lets BTstack ask again right after. */
+#define ENABLE_ATT_DELAYED_RESPONSE
+
+/* LE Audio limits: CIS per CIG (N devices x M sink ASEs) and the ISO SDU
+ * reassembly size (2 channels x 155 octets of LC3 48_6, plus headroom) */
+#define MAX_NR_CIS                 4
+#define HCI_ISO_PAYLOAD_SIZE       400
+
+/* CCC values of bonded GATT clients att_server keeps in the bond TLV, for
+ * all clients together (default 20; the oldest go first). The PC's GMCS and
+ * GTBS have 23 CCCs: room for about 11 bonded clients. At most 256 (one
+ * byte of the TLV tag). */
+#define NVN_NUM_GATT_SERVER_CCC    256
 
 /* A2DP explicit config: disable SBC auto-selection, allow vendor codec config.
  * Required for LDAC/aptX - BTstack's auto-mode only handles SBC. */

@@ -1247,6 +1247,8 @@ impl App for HostApp {
                     self.handle_avrcp(stack, packet)
                 }
             }
+            // LE (only after Stack::le_init): the LE core (WP4) takes these
+            Source::Sm | Source::GattClient | Source::AttServer | Source::Iso => {}
         }
     }
 

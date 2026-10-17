@@ -1,6 +1,7 @@
-//! Builds BTstack (classic: HCI, L2CAP, SDP, AVDTP / A2DP source, AVRCP), the
-//! Windows run loop, the chipset drivers and the C glue in csrc/shim.c with
-//! the MSVC compiler found by `cc`.
+//! Builds BTstack (classic: HCI, L2CAP, SDP, AVDTP / A2DP source, AVRCP; LE:
+//! SM, ATT / GATT, LE device DB in a TLV file, ISO), the Windows run loop and
+//! TLV store, micro-ecc, the chipset drivers and the C glue in csrc/shim.c
+//! with the MSVC compiler found by `cc`.
 //!
 //! The BTstack sources come from the git submodule extern/btstack of the
 //! repository (override with the BTSTACK_DIR environment variable).
@@ -8,8 +9,8 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-/// src/*.c not needed by a classic A2DP source (audio playback helpers,
-/// LC3, other HCI transports, LE advertising data)
+/// src/*.c not needed by A2DPWB (audio playback helpers, LC3 - LE Audio
+/// encodes with crate lc3-sys -, other HCI transports, HID)
 const CORE_EXCLUDE: &[&str] = &[
     "btstack_audio.c",
     "btstack_audio_generator.c",
@@ -50,6 +51,10 @@ const CLASSIC: &[&str] = &[
     "btstack_link_key_db_memory.c",
 ];
 
+/// src/ble/*.c not built: LE bonds are kept in a TLV file
+/// (le_device_db_tlv.c), as in v1
+const BLE_EXCLUDE: &[&str] = &["le_device_db_memory.c"];
+
 /// Bluedroid SBC encoder (Apache-2.0), feature "sbc-reference"
 const SBC_ENCODER: &[&str] = &[
     "sbc_analysis.c",
@@ -86,13 +91,17 @@ fn main() {
         .include(btstack.join("chipset/intel"))
         .include(btstack.join("3rd-party/tinydir"))
         .include(btstack.join("3rd-party/rijndael"))
+        .include(btstack.join("3rd-party/micro-ecc"))
         .define("_WIN32_WINNT", "0x0A00")
         .define("NOMINMAX", None)
         .define("WIN32_LEAN_AND_MEAN", None)
         .define("_CRT_SECURE_NO_WARNINGS", None)
         .warnings(false)
         .flag_if_supported("/utf-8")
-        .flag_if_supported("/W1");
+        .flag_if_supported("/W1")
+        // A function called without a declaration (C4013) links against
+        // nothing when it is a static inline of a header: an error
+        .flag_if_supported("/we4013");
 
     // The Realtek driver prints why it loads which firmware ("Realtek:
     // Using firmware ...", "Firmware already exists") with printf, to a
@@ -111,8 +120,21 @@ fn main() {
         .collect();
     core.sort();
     build.files(&core);
+    let mut ble: Vec<PathBuf> = std::fs::read_dir(btstack.join("src/ble"))
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "c"))
+        .filter(|p| !BLE_EXCLUDE.contains(&p.file_name().unwrap().to_str().unwrap()))
+        .collect();
+    ble.sort();
+    build.files(&ble);
     build.files(CLASSIC.iter().map(|f| btstack.join("src/classic").join(f)));
     build.file(btstack.join("platform/windows/btstack_run_loop_windows.c"));
+    // LE bonds (le_device_db_tlv) and the GATT server's client
+    // configurations in a TLV file, readable by v1's le_audio_bonds.tlv
+    build.file(btstack.join("platform/windows/btstack_tlv_windows.c"));
+    // Software P-256 for LE Secure Connections (ENABLE_MICRO_ECC_P256)
+    build.file(btstack.join("3rd-party/micro-ecc/uECC.c"));
     build.file(btstack.join("chipset/bcm/btstack_chipset_bcm.c"));
     build.file(btstack.join("chipset/intel/btstack_chipset_intel_firmware.c"));
     build.file(btstack.join("3rd-party/rijndael/rijndael.c"));
@@ -134,6 +156,7 @@ fn main() {
     println!("cargo:rerun-if-changed=csrc");
     println!("cargo:rerun-if-env-changed=BTSTACK_DIR");
     rerun_dir(&btstack.join("src"));
+    rerun_dir(&btstack.join("src/ble"));
     // For dependents (e.g. tests that need the include paths)
     println!("cargo:root={}", btstack.display());
 }
