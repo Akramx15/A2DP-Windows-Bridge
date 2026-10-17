@@ -18,6 +18,8 @@ pub mod sbc;
 pub mod aac;
 #[cfg(feature = "aptx")]
 pub mod aptx;
+#[cfg(feature = "lc3")]
+pub mod lc3;
 #[cfg(feature = "ldac")]
 pub mod ldac;
 #[cfg(feature = "lhdcv5")]

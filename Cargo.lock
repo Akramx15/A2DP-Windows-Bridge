@@ -650,6 +650,7 @@ version = "2.0.0-alpha.1"
 dependencies = [
  "btstack-sys",
  "fdkaac-sys",
+ "lc3-sys",
  "ldac-sys",
  "lhdcv5-sys",
  "openaptx-sys",
@@ -3024,6 +3025,7 @@ version = "2.0.0-alpha.1"
 dependencies = [
  "bt-host",
  "codec",
+ "le-audio",
  "proptest",
  "rtrb",
  "tracing",
