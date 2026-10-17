@@ -13,8 +13,8 @@ body:
     id: version
     attributes:
       label: A2DPWB version
-      description: Shown in Help → About.
-      placeholder: e.g. 1.0.6
+      description: Shown in Settings → About A2DPWB.
+      placeholder: e.g. 2.0.0
 
   - type: input
     id: windows
@@ -47,8 +47,12 @@ body:
         - aptX HD
         - aptX Low Latency
         - aptX
+        - LHDC V5
+        - Opus
         - AAC
+        - SBC XQ
         - SBC
+        - FastStream
         - Not relevant / didn't get that far
 
   - type: dropdown
@@ -58,6 +62,7 @@ body:
       options:
         - System Loopback
         - Virtual Device
+        - Application
         - Not relevant
 
   - type: dropdown
@@ -65,8 +70,8 @@ body:
     attributes:
       label: Interface
       options:
-        - GUI
-        - CLI (--cli)
+        - Window / tray
+        - CLI (a2dpwb-core.exe --cli)
 
   - type: textarea
     id: what_happened
@@ -87,16 +92,15 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Debug log
+      label: Diagnostics / log
       description: |
         Optional, but it helps a lot.
 
-        1. Open **Settings → Preferences...**, enable **Debug mode (output debug.log)**, and click OK.
-        2. Restart A2DPWB (debug mode takes effect at startup) and reproduce the problem.
-        3. Open **Actions → Open Config Folder** (`%APPDATA%\A2DPWB\`) and attach `debug.log` here (drag and drop, or paste the relevant part).
+        1. Reproduce the problem.
+        2. Open **Diagnostics** and click **Copy Diagnostics** (version, adapter, connection flow and recent log; Bluetooth addresses are masked by default), then paste it here.
+        3. If you can, attach the log file too: `%APPDATA%\A2DPWB\logs\a2dpwb-core.<date>.log` (**Settings → Open Config Folder**; the last 7 days are kept). **Settings → Developer mode** adds more details to the log.
 
-        Copy the files before restarting A2DPWB — they are overwritten on every start.
-        For connection problems, `hci_dump.pklg` (Bluetooth capture, opens in Wireshark) is also very helpful. It contains Bluetooth addresses, device names and pairing keys, so if you'd rather not post it publicly, email it instead (address on the maintainer's GitHub profile).
+        For connection problems, an HCI capture (**Diagnostics → Start HCI Capture**, a `.pklg` file in the config folder that opens in Wireshark) is also very helpful. It contains Bluetooth addresses, device names and pairing keys, so if you'd rather not post it publicly, email it instead (address on the maintainer's GitHub profile).
       render: text
 
   - type: textarea

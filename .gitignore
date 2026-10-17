@@ -3,10 +3,6 @@
 node_modules/
 dist/
 build/
-out/
-x64/
-Debug/
-Release/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -18,9 +14,6 @@ Makefile
 .idea/
 *.user
 *.suo
-*.sln
-*.vcxproj
-*.vcxproj.filters
 
 # Compiled objects
 *.obj
@@ -28,15 +21,10 @@ Makefile
 *.lib
 *.a
 *.dll
-*.sys
 *.exe
 *.pdb
 *.exp
 *.ilk
-
-# Driver build
-*.cer
-*.cat
 
 # Logs
 *.log
@@ -62,9 +50,6 @@ Desktop.ini
 *.7z
 *.msi
 *.nupkg
-
-# User-specific build script (copy from build.bat.example)
-build.bat
 
 # AI
 .claude/
