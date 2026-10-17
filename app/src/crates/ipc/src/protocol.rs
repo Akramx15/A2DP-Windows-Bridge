@@ -138,6 +138,17 @@ pub struct Device {
     /// started ("ldac", "aac", ...); empty while not known
     #[serde(default)]
     pub codecs: Vec<String>,
+    /// An LE Audio entry (experimental; le_audio_devices.txt and the LE
+    /// scan). A dual-mode device has two entries with the same address, a
+    /// classic one and an LE Audio one: address and this flag identify an
+    /// entry. The UI lists them only while Settings.le_audio_experimental
+    /// is on.
+    #[serde(default)]
+    pub le_audio: bool,
+    /// LE Audio: a member of a coordinated set (it advertised a CSIP RSI;
+    /// both earbuds stream together)
+    #[serde(default)]
+    pub le_audio_set: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
@@ -174,6 +185,32 @@ pub struct StreamInfo {
     /// Where the audio comes from
     #[serde(default)]
     pub source: Option<SourceInfo>,
+    /// An LE Audio stream (codec "LC3"; bitrate_kbps, sample_rate and
+    /// channels those of the LC3 configuration): what was set up. None for
+    /// A2DP.
+    #[serde(default)]
+    pub le: Option<LeStreamInfo>,
+}
+
+/// The LE Audio stream that was set up (BAP unicast; v1 StreamPlan)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct LeStreamInfo {
+    /// The BAP preset ("48_4_2"; GMAP low latency "48_4_gr")
+    pub preset: String,
+    /// LC3 frame duration: 7500 or 10000
+    pub frame_us: u32,
+    /// LC3 octets per channel and frame
+    pub octets: u32,
+    /// Connected isochronous streams
+    pub cis: u32,
+    /// Devices streamed to (2 for both earbuds of a coordinated set)
+    pub devices: u32,
+    /// The GMAP low latency (gaming) configuration
+    pub low_latency: bool,
+    /// English, v1's StreamPlan::describe ("LC3 48 kHz 10 ms 120 octets (96
+    /// kbps/ch), 2 ch over 2 CIS, 48_4_2")
+    pub summary: String,
 }
 
 /// The audio source of a stream
@@ -232,6 +269,12 @@ pub struct Profile {
     pub volume_device_id: String,
     pub volume_device_name: String,
     pub max_media_payload: u16,
+    /// An LE Audio device (experimental, LC3): codec, quality, abr,
+    /// sample_rate and bit_depth do not apply, capture_mode is "loopback"
+    /// or "virtual" (error.le_audio_capture), and streaming needs
+    /// Settings.le_audio_experimental (error.le_audio_disabled)
+    #[serde(default)]
+    pub le_audio: bool,
 }
 
 /// Application settings the UI edits
@@ -256,6 +299,16 @@ pub struct Settings {
     /// auto, off, or Wi-Fi channels such as "6,11"
     pub afh: String,
     pub remote_sink: String,
+    /// LE Audio (experimental; off by default): LE Audio devices in the
+    /// scan and LE Audio profiles. BTstack sets LE up when it starts: while
+    /// it streams or scans the change waits for the next scan or
+    /// connection (settings.le_audio_deferred).
+    #[serde(default)]
+    pub le_audio_experimental: bool,
+    /// LE Audio: GMAP low latency for gaming headsets (read when the next
+    /// LE Audio stream is set up); only with le_audio_experimental
+    #[serde(default)]
+    pub le_audio_low_latency: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
@@ -289,6 +342,10 @@ pub struct Snapshot {
     pub adapter: AdapterState,
     pub devices: Vec<Device>,
     pub scanning: bool,
+    /// The scan's LE Audio part runs (status.le_scanning): after the
+    /// classic inquiry, with LE Audio on
+    #[serde(default)]
+    pub le_scanning: bool,
     pub stream: StreamStatus,
     pub profiles: Vec<Profile>,
     pub active_profile: Option<String>,
@@ -380,6 +437,35 @@ pub struct LinkSample {
     #[ts(optional = nullable)]
     #[serde(default)]
     pub counters: Option<LinkCounters>,
+    /// An LE Audio stream's isochronous channels (None for A2DP; the A2DP
+    /// fields above stay at 0 / None then)
+    #[ts(optional = nullable)]
+    #[serde(default)]
+    pub iso: Option<IsoCounters>,
+}
+
+/// An LE Audio stream's send counters (since the stream was set up; a
+/// re-setup after a loss starts them again)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+
+pub struct IsoCounters {
+    /// Connected isochronous streams
+    pub cis: u32,
+    /// SDU sets sent (one SDU per CIS and frame interval), silence included
+    #[ts(type = "number")]
+    pub sdu_sets: u64,
+    /// Sets of silence sent because no audio was buffered
+    #[ts(type = "number")]
+    pub silence: u64,
+    /// Times the jitter buffer ran empty
+    #[ts(type = "number")]
+    pub underruns: u64,
+    /// Sets dropped because the jitter buffer was full
+    #[ts(type = "number")]
+    pub dropped: u64,
+    /// The jitter buffer's prefill (frames buffered before sending starts;
+    /// 3, growing to 7 after underruns)
+    pub prefill: u32,
 }
 
 /// An ACL packet type and the slots one media packet takes in it
@@ -474,6 +560,8 @@ pub enum Event {
     Adapter(AdapterState),
     Devices(Vec<Device>),
     Scanning(bool),
+    /// The scan's LE Audio part started or ended (state, le_scanning)
+    LeScanning(bool),
     Stream(StreamStatus),
     Profiles {
         profiles: Vec<Profile>,
@@ -554,11 +642,25 @@ pub enum Method {
     /// -> Device[] (also as an event)
     #[serde(rename = "device.scan")]
     DeviceScan { seconds: u32 },
+    /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
+    /// or false: the classic one)
     #[serde(rename = "device.forget")]
-    DeviceForget { address: String },
-    /// Renames a device (it is saved with that name)
+    DeviceForget {
+        address: String,
+        #[ts(optional = nullable)]
+        #[serde(default)]
+        le_audio: Option<bool>,
+    },
+    /// Renames a device (it is saved with that name); `le_audio` as in
+    /// device.forget
     #[serde(rename = "device.rename")]
-    DeviceRename { address: String, name: String },
+    DeviceRename {
+        address: String,
+        name: String,
+        #[ts(optional = nullable)]
+        #[serde(default)]
+        le_audio: Option<bool>,
+    },
     /// Adds or replaces a profile (`original_name`: the one renamed)
     #[serde(rename = "profile.save")]
     ProfileSave { profile: Box<Profile>, original_name: Option<String> },
@@ -983,6 +1085,112 @@ mod tests {
         )
         .unwrap();
         assert!(dev.codecs.is_empty());
+    }
+
+    /// The LE Audio additions: absent in an older core's state and an older
+    /// UI's requests, and they round-trip
+    #[test]
+    fn le_audio_fields_are_optional() {
+        let m = |j: serde_json::Value| serde_json::from_value::<Method>(j).unwrap();
+        assert_eq!(
+            m(serde_json::json!({"method": "device.forget", "params": {"address": "A"}})),
+            Method::DeviceForget { address: "A".into(), le_audio: None }
+        );
+        assert_eq!(
+            m(serde_json::json!({"method": "device.rename", "params": {"address": "A", "name": "N"}})),
+            Method::DeviceRename { address: "A".into(), name: "N".into(), le_audio: None }
+        );
+        let forget = Method::DeviceForget { address: "A".into(), le_audio: Some(true) };
+        let j = serde_json::to_value(&forget).unwrap();
+        assert_eq!(j, serde_json::json!({"method": "device.forget", "params": {"address": "A", "le_audio": true}}));
+        assert_eq!(serde_json::from_value::<Method>(j).unwrap(), forget);
+
+        let dev: Device = serde_json::from_value(
+            serde_json::json!({"address": "A", "name": "", "saved": true, "audio": true, "rssi": null}),
+        )
+        .unwrap();
+        assert!(!dev.le_audio && !dev.le_audio_set);
+        let le = Device { le_audio: true, le_audio_set: true, ..dev };
+        let back: Device = serde_json::from_value(serde_json::to_value(&le).unwrap()).unwrap();
+        assert_eq!(back, le);
+
+        let profile: Profile = serde_json::from_value(serde_json::json!({
+            "name": "P", "device_address": "A", "device_name": "", "codec": "auto", "quality": "hq",
+            "abr": false, "codec_fallback": true, "sample_rate": 0, "bit_depth": 0, "capture_mode": "loopback",
+            "audio_device_id": "", "audio_device_name": "", "auto_switch_device": true, "app_exe": "",
+            "app_name": "", "volume_sync": "auto", "volume_device_id": "", "volume_device_name": "",
+            "max_media_payload": 1023}))
+        .unwrap();
+        assert!(!profile.le_audio);
+        let le = Profile { le_audio: true, ..profile };
+        assert_eq!(serde_json::from_value::<Profile>(serde_json::to_value(&le).unwrap()).unwrap(), le);
+
+        let settings: Settings = serde_json::from_value(serde_json::json!({
+            "language": "en", "theme": "system", "start_with_windows": false, "start_minimized": false,
+            "minimize_to_tray": true, "check_updates_on_startup": true, "include_prereleases": false,
+            "media_keys": true, "remember_volume": true, "developer_mode": false, "bt_chip_pid": 0,
+            "bt_chip_fw_stem": "", "afh": "auto", "remote_sink": ""}))
+        .unwrap();
+        assert!(!settings.le_audio_experimental && !settings.le_audio_low_latency);
+        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, ..settings };
+        assert_eq!(serde_json::from_value::<Settings>(serde_json::to_value(&on).unwrap()).unwrap(), on);
+
+        let info: StreamInfo = serde_json::from_value(serde_json::json!({
+            "codec": "SBC", "bitrate_kbps": 328, "sample_rate": 48000, "channels": 2, "source_sample_rate": 48000,
+            "source_channels": 2, "source_bits": 32, "requested_codec": null, "requested_in_use": false}))
+        .unwrap();
+        assert!(info.le.is_none());
+        let lc3 = StreamInfo {
+            codec: "LC3".into(),
+            bitrate_kbps: 192,
+            le: Some(LeStreamInfo {
+                preset: "48_4_2".into(),
+                frame_us: 10000,
+                octets: 120,
+                cis: 2,
+                devices: 1,
+                low_latency: false,
+                summary: "LC3 48 kHz 10 ms 120 octets (96 kbps/ch), 2 ch over 2 CIS, 48_4_2".into(),
+            }),
+            ..info
+        };
+        assert_eq!(serde_json::from_value::<StreamInfo>(serde_json::to_value(&lc3).unwrap()).unwrap(), lc3);
+
+        let sample: LinkSample = serde_json::from_value(serde_json::json!({
+            "time_ms": 0, "rssi": null, "afh_in_use": null, "afh_usable": null, "afh_avoided": "",
+            "bytes_per_second": 0.0, "packets_per_second": 0.0, "queue_depth": 0, "dropped": 0,
+            "capture_dropped": 0, "airtime": 0.0}))
+        .unwrap();
+        assert!(sample.iso.is_none());
+        let iso = LinkSample {
+            iso: Some(IsoCounters { cis: 2, sdu_sets: 1000, silence: 3, underruns: 1, dropped: 0, prefill: 4 }),
+            ..sample
+        };
+        assert_eq!(serde_json::from_value::<LinkSample>(serde_json::to_value(&iso).unwrap()).unwrap(), iso);
+
+        // A snapshot without le_scanning, and the event
+        let mut snap = serde_json::to_value(Snapshot {
+            adapter: AdapterState::default(),
+            devices: Vec::new(),
+            scanning: false,
+            le_scanning: true,
+            stream: StreamStatus::default(),
+            profiles: Vec::new(),
+            active_profile: None,
+            settings: on,
+            update: UpdateState::default(),
+            config_dir: String::new(),
+            log_dir: String::new(),
+            capture: None,
+            clock_ms: None,
+        })
+        .unwrap();
+        snap.as_object_mut().unwrap().remove("le_scanning");
+        assert!(!serde_json::from_value::<Snapshot>(snap).unwrap().le_scanning);
+        let e = ServerMessage::Event { rev: 4, event: Box::new(Event::LeScanning(true)) };
+        let j = serde_json::to_value(&e).unwrap();
+        assert_eq!(j, serde_json::json!({"type": "event", "rev": 4, "event": {"kind": "le_scanning", "value": true}}));
+        assert_eq!(serde_json::from_value::<ServerMessage>(j).unwrap(), e);
     }
 
     #[test]

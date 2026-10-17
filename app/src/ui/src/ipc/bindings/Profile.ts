@@ -27,4 +27,11 @@ capture_mode: string, audio_device_id: string, audio_device_name: string, auto_s
 /**
  * auto, off, device
  */
-volume_sync: string, volume_device_id: string, volume_device_name: string, max_media_payload: number, };
+volume_sync: string, volume_device_id: string, volume_device_name: string, max_media_payload: number, 
+/**
+ * An LE Audio device (experimental, LC3): codec, quality, abr,
+ * sample_rate and bit_depth do not apply, capture_mode is "loopback"
+ * or "virtual" (error.le_audio_capture), and streaming needs
+ * Settings.le_audio_experimental (error.le_audio_disabled)
+ */
+le_audio: boolean, };

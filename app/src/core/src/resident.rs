@@ -115,6 +115,7 @@ fn link_sample(
         queue_capacity: Some(bt_host::stats::MEDIA_QUEUE_PACKETS as u32),
         source_rate: Some(source_rate),
         counters: Some(LinkCounters { total, stream_start: start, stream_starts: starts }),
+        iso: None,
     };
     (sample, total)
 }

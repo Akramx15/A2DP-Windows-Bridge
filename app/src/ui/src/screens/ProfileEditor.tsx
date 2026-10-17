@@ -2,7 +2,9 @@
 // stability, and whether the device offered it when it last connected),
 // capture source (with the capture device's format), volume sync, and the
 // details behind "Advanced". The defaults give the best sound; the advanced
-// values only offer what the chosen codec can do (lib/codecs.ts).
+// values only offer what the chosen codec can do (lib/codecs.ts). With LE
+// Audio (experimental) on, "LE Audio device" makes an LE Audio profile: LC3,
+// so no codec, quality, sample rate or bit depth, and no application capture.
 
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
@@ -30,6 +32,7 @@ import { LINKS } from "../lib/links";
 import {
   appCaptureSupport,
   captureDevice,
+  defaultProfileName,
   formatMismatch,
   knownCodecs,
   newProfile,
@@ -86,9 +89,21 @@ export function ProfileEditor(props: { original: string | null }) {
     ),
   );
 
-  const pickDevice = (address: string, name: string) => {
+  const leOn = () => snap().settings.le_audio_experimental;
+  const followName = () => {
+    if (!nameTouched()) setP("name", defaultProfileName(p.device_name, p.device_address, p.le_audio));
+  };
+  const pickDevice = (address: string, name: string, leAudio: boolean) => {
     setP({ device_address: address, device_name: name });
-    if (!nameTouched()) setP("name", name || address);
+    // A new profile follows the entry picked (the classic or the LE Audio
+    // entry of a device); an existing one keeps its kind, only the check
+    // box changes that (v1)
+    if (props.original === null && leOn()) setP("le_audio", leAudio);
+    followName();
+  };
+  const setLeAudio = (v: boolean) => {
+    setP("le_audio", v);
+    followName();
   };
 
   const pickCodec = (c: CodecSpec) => setP(fitToCodec({ ...unwrap(p), codec: c.id }));
@@ -155,39 +170,56 @@ export function ProfileEditor(props: { original: string | null }) {
               </span>
             </Show>
           </div>
-          <DevicePicker address={p.device_address} onPick={pickDevice} error={tp(problems().device)} />
-        </Section>
-
-        <Section title={t("connection.codec")}>
-          <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")} title={t("tooltip.codec")}>
-            <For each={CODECS}>
-              {(c) => (
-                <CodecCard
-                  spec={c}
-                  selected={p.codec === c.id}
-                  support={c.id === "auto" ? null : support(c.id)}
-                  onPick={() => pickCodec(c)}
-                />
-              )}
-            </For>
-          </div>
-          <Show when={p.device_address && known().length === 0}>
-            <p class="hint">{t("ui.profile.codecs_unknown")}</p>
+          {/* LE Audio device (experimental): only offered with the setting on */}
+          <Show when={leOn()}>
+            <Check label={t("profile.le_audio")} title={t("tooltip.le_audio")} checked={p.le_audio} onChange={setLeAudio} />
+            <Show when={p.le_audio}>
+              <p class="hint">{t("tooltip.le_audio")}</p>
+            </Show>
           </Show>
-          <Show when={support(p.codec) === "not_offered"}>
-            <Banner kind="warn" title={t("error.codec_not_supported", t(spec().label))}>
-              {p.codec_fallback ? t("ui.profile.codec_fallback_on") : t("ui.profile.codec_fallback_off")}
-            </Banner>
+          <Show when={p.le_audio && !leOn()}>
+            <Banner kind="warn">{t("error.le_audio_disabled")}</Banner>
           </Show>
-          <Check
-            label={t("connection.codec_fallback")}
-            title={t("tooltip.codec_fallback")}
-            checked={p.codec_fallback}
-            // Auto already takes the best codec the device offers
-            disabled={p.codec === "auto"}
-            onChange={(v) => setP("codec_fallback", v)}
+          <DevicePicker
+            address={p.device_address}
+            leAudio={p.le_audio}
+            onPick={pickDevice}
+            error={tp(problems().device)}
           />
         </Section>
+
+        <Show when={!p.le_audio}>
+          <Section title={t("connection.codec")}>
+            <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")} title={t("tooltip.codec")}>
+              <For each={CODECS}>
+                {(c) => (
+                  <CodecCard
+                    spec={c}
+                    selected={p.codec === c.id}
+                    support={c.id === "auto" ? null : support(c.id)}
+                    onPick={() => pickCodec(c)}
+                  />
+                )}
+              </For>
+            </div>
+            <Show when={p.device_address && known().length === 0}>
+              <p class="hint">{t("ui.profile.codecs_unknown")}</p>
+            </Show>
+            <Show when={support(p.codec) === "not_offered"}>
+              <Banner kind="warn" title={t("error.codec_not_supported", t(spec().label))}>
+                {p.codec_fallback ? t("ui.profile.codec_fallback_on") : t("ui.profile.codec_fallback_off")}
+              </Banner>
+            </Show>
+            <Check
+              label={t("connection.codec_fallback")}
+              title={t("tooltip.codec_fallback")}
+              checked={p.codec_fallback}
+              // Auto already takes the best codec the device offers
+              disabled={p.codec === "auto"}
+              onChange={(v) => setP("codec_fallback", v)}
+            />
+          </Section>
+        </Show>
 
         <Section title={t("capture.mode")}>
           <Segmented
@@ -207,6 +239,9 @@ export function ProfileEditor(props: { original: string | null }) {
                 ? t("capture.hint_app")
                 : t("capture.hint_loopback")}
           </p>
+          <Show when={p.le_audio && p.capture_mode === "app"}>
+            <Banner kind="warn">{t("error.le_audio_capture")}</Banner>
+          </Show>
           <CaptureFormat profile={p} devices={devices()} />
           <Show when={p.capture_mode === "virtual"}>
             <Field label={t("capture.audio_device")} hint={t("tooltip.audio_device")} error={tp(problems().audio_device)}>
@@ -323,48 +358,51 @@ export function ProfileEditor(props: { original: string | null }) {
           </button>
           <Show when={advanced()}>
             <div id="advanced-body" class="advanced-grid">
-              <Field label={t("connection.quality")} hint={t("tooltip.quality")}>
-                {(id, described) => (
-                  <Select
-                    id={id}
-                    describedBy={described}
-                    value={p.quality}
-                    disabled={spec().qualities.length === 0 || qualityIgnored(p.codec, p.abr)}
-                    options={
-                      spec().qualities.length
-                        ? spec().qualities.map((q) => ({ value: q.id, label: q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label) }))
-                        : [{ value: p.quality, label: t("ui.profile.fixed_bitrate") }]
-                    }
-                    onChange={(v) => setP("quality", v)}
-                  />
-                )}
-              </Field>
-              <Field label={t("connection.sample_rate")} hint={t("tooltip.sample_rate")}>
-                {(id, described) => (
-                  <Select
-                    id={id}
-                    describedBy={described}
-                    value={p.sample_rate}
-                    options={sampleRates(p.codec).map((r) => ({ value: r, label: r === 0 ? t("codec.auto") : `${r} Hz` }))}
-                    onChange={(v) => setP("sample_rate", v)}
-                  />
-                )}
-              </Field>
-              <Field label={t("connection.bit_depth")} hint={t("tooltip.bit_depth")}>
-                {(id, described) => (
-                  <Select
-                    id={id}
-                    describedBy={described}
-                    value={p.bit_depth}
-                    disabled={bitDepths(p.codec).length === 1}
-                    options={bitDepths(p.codec).map((b) => ({
-                      value: b,
-                      label: b === 0 ? (spec().hiRes ? t("codec.auto") : t("bitdepth.16")) : t(`bitdepth.${b}`),
-                    }))}
-                    onChange={(v) => setP("bit_depth", v)}
-                  />
-                )}
-              </Field>
+              {/* LC3 (LE Audio): the core picks the configuration */}
+              <Show when={!p.le_audio}>
+                <Field label={t("connection.quality")} hint={t("tooltip.quality")}>
+                  {(id, described) => (
+                    <Select
+                      id={id}
+                      describedBy={described}
+                      value={p.quality}
+                      disabled={spec().qualities.length === 0 || qualityIgnored(p.codec, p.abr)}
+                      options={
+                        spec().qualities.length
+                          ? spec().qualities.map((q) => ({ value: q.id, label: q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label) }))
+                          : [{ value: p.quality, label: t("ui.profile.fixed_bitrate") }]
+                      }
+                      onChange={(v) => setP("quality", v)}
+                    />
+                  )}
+                </Field>
+                <Field label={t("connection.sample_rate")} hint={t("tooltip.sample_rate")}>
+                  {(id, described) => (
+                    <Select
+                      id={id}
+                      describedBy={described}
+                      value={p.sample_rate}
+                      options={sampleRates(p.codec).map((r) => ({ value: r, label: r === 0 ? t("codec.auto") : `${r} Hz` }))}
+                      onChange={(v) => setP("sample_rate", v)}
+                    />
+                  )}
+                </Field>
+                <Field label={t("connection.bit_depth")} hint={t("tooltip.bit_depth")}>
+                  {(id, described) => (
+                    <Select
+                      id={id}
+                      describedBy={described}
+                      value={p.bit_depth}
+                      disabled={bitDepths(p.codec).length === 1}
+                      options={bitDepths(p.codec).map((b) => ({
+                        value: b,
+                        label: b === 0 ? (spec().hiRes ? t("codec.auto") : t("bitdepth.16")) : t(`bitdepth.${b}`),
+                      }))}
+                      onChange={(v) => setP("bit_depth", v)}
+                    />
+                  )}
+                </Field>
+              </Show>
               <Field
                 label={t("advanced.max_packet")}
                 hint={t("advanced.max_packet_help", PACKET_MIN, PACKET_MAX, PACKET_DEFAULT)}
@@ -395,7 +433,7 @@ export function ProfileEditor(props: { original: string | null }) {
                   </div>
                 )}
               </Field>
-              <Show when={spec().abr}>
+              <Show when={spec().abr && !p.le_audio}>
                 <Check label={t("connection.abr")} title={t("tooltip.abr")} checked={p.abr} onChange={(v) => setP("abr", v)} />
               </Show>
             </div>

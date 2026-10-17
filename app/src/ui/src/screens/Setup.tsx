@@ -291,6 +291,7 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
       <p>{t("ui.setup.device_intro")}</p>
       <DevicePicker
         address={address()}
+        classicOnly
         onPick={(a, n) => {
           setAddress(a);
           setDeviceName(n);

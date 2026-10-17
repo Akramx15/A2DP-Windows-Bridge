@@ -109,6 +109,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         volume_device_id: p.volume_device_id.clone(),
         volume_device_name: p.volume_device_name.clone(),
         max_media_payload: p.max_media_payload.unwrap_or(legacy),
+        le_audio: false,
     }
 }
 
@@ -153,6 +154,8 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         bt_chip_fw_stem: s.bt_chip_fw_stem.clone(),
         afh: s.afh.clone(),
         remote_sink: s.remote_sink.clone(),
+        le_audio_experimental: false,
+        le_audio_low_latency: false,
     }
 }
 
@@ -258,7 +261,16 @@ fn warn_invalid_firmware(config_dir: &Path, invalid: &[(String, String)]) {
 fn saved_devices(config_dir: &Path, scanned: &[Device], codecs: &BTreeMap<String, Vec<String>>) -> Vec<Device> {
     let mut list: Vec<Device> = devices::load(config_dir)
         .into_iter()
-        .map(|d| Device { address: d.address, name: d.name, saved: true, audio: true, rssi: None, codecs: Vec::new() })
+        .map(|d| Device {
+            address: d.address,
+            name: d.name,
+            saved: true,
+            audio: true,
+            rssi: None,
+            codecs: Vec::new(),
+            le_audio: false,
+            le_audio_set: false,
+        })
         .collect();
     for s in scanned {
         match list.iter_mut().find(|d| d.address.eq_ignore_ascii_case(&s.address)) {
@@ -438,6 +450,7 @@ impl CoreState {
             adapter: AdapterState { status: AdapterStatus::Stopped, adapters, error: None },
             devices: saved_devices(&dir, &[], &service.device_codecs()),
             scanning: false,
+            le_scanning: false,
             stream: StreamStatus { message: Msg::new("status.ready"), ..Default::default() },
             profiles,
             active_profile: active,
@@ -494,6 +507,7 @@ impl CoreState {
                 Event::Adapter(a) => s.adapter = a.clone(),
                 Event::Devices(d) => s.devices = d.clone(),
                 Event::Scanning(b) => s.scanning = *b,
+                Event::LeScanning(b) => s.le_scanning = *b,
                 Event::Stream(st) => s.stream = st.clone(),
                 Event::Profiles { profiles, active_profile } => {
                     s.profiles = profiles.clone();
@@ -591,6 +605,7 @@ impl CoreState {
                     abr: i.abr,
                     bitrate_capped: i.bitrate_capped,
                     source: Some(to_ipc_source(&i.source)),
+                    le: None,
                 });
                 // The device was saved when it connected
                 devices_changed = true;
@@ -965,6 +980,8 @@ impl CoreState {
                             audio: d.is_audio(),
                             rssi: Some(d.rssi),
                             codecs: Vec::new(),
+                            le_audio: false,
+                            le_audio_set: false,
                         })
                         .collect();
                     let list = saved_devices(&me.config_dir(), &scanned, &me.service.device_codecs());
@@ -973,13 +990,13 @@ impl CoreState {
                 }))
                 .await
             }
-            Method::DeviceForget { address } => {
+            Method::DeviceForget { address, .. } => {
                 devices::remove(&self.config_dir(), &address)
                     .map_err(|_| err("device.forget_failed", "error.device_forget"))?;
                 self.refresh_devices();
                 Ok(Value::Null)
             }
-            Method::DeviceRename { address, name } => {
+            Method::DeviceRename { address, name, .. } => {
                 let name = name.trim();
                 let Some(addr) = bt_host::parse_addr(&address) else {
                     return Err(err("device.invalid_address", "error.invalid_address_format"));
@@ -1483,6 +1500,8 @@ mod tests {
             audio: true,
             rssi: Some(-60),
             codecs: Vec::new(),
+            le_audio: false,
+            le_audio_set: false,
         }];
         let mut codecs = BTreeMap::new();
         codecs.insert("AA:BB:CC:DD:EE:FF".to_string(), vec!["sbc".to_string(), "ldac".to_string()]);

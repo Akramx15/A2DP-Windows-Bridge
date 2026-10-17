@@ -19,4 +19,16 @@ bt_chip_pid: number, bt_chip_fw_stem: string,
 /**
  * auto, off, or Wi-Fi channels such as "6,11"
  */
-afh: string, remote_sink: string, };
+afh: string, remote_sink: string, 
+/**
+ * LE Audio (experimental; off by default): LE Audio devices in the
+ * scan and LE Audio profiles. BTstack sets LE up when it starts: while
+ * it streams or scans the change waits for the next scan or
+ * connection (settings.le_audio_deferred).
+ */
+le_audio_experimental: boolean, 
+/**
+ * LE Audio: GMAP low latency for gaming headsets (read when the next
+ * LE Audio stream is set up); only with le_audio_experimental
+ */
+le_audio_low_latency: boolean, };
