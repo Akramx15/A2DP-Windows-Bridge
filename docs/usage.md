@@ -15,103 +15,164 @@ nav_order: 3
 
 ---
 
-## GUI Mode (Default)
+## The Window
 
-```
-A2DPWB.exe
-```
+Start **A2DP Windows Bridge** from the Start menu (or `a2dpwb.exe`). The menu on the left has five screens; it folds to icons when the window is narrow. The window only shows what the resident `a2dpwb-core.exe` does: closing it does not stop streaming (see [Tray and Flyout](#tray)).
 
-The graphical interface provides:
+### Home
 
-- **Bluetooth adapter selection** -- choose which WinUSB adapter to use
-- **Audio device selection** -- choose the WASAPI loopback capture source
-- **Device address** -- enter manually, select from paired devices, or **Scan Devices** in the profile dialog (nearby devices, found with the USB adapter). Typed or pasted addresses are formatted as you go: `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`
-- **Codec selection** -- Auto / LDAC / aptX HD / aptX LL / aptX / SBC / AAC
-- **LDAC quality** -- HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)
-- **LHDC V5 quality** -- High (1000 kbps) / Medium-High (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), the four levels Android offers
-- **ABR** -- Adaptive Bit Rate toggle for unstable connections (shown for LDAC and LHDC V5)
-- **Profile management** -- save and load device + codec configurations
-- **Real-time status** -- codec, bitrate, connection state
-- **Link quality** -- **Actions > Link Quality...** (see [Link Quality Window and AFH](#link-quality))
-- **Settings menu** -- language, theme, Start with Windows, Minimize to System Tray, Check for Updates on Startup, Include Pre-releases in Update Checks (also offer beta releases), Headphone Buttons Control Playback (see [Headphone buttons](#headphone-buttons)), Remember Headphone Volume (see [Volume](#volume)), Debug Mode (adds the **Debug** menu: debug console, HCI capture, peer receiver test)
+- The device of the current profile, its state, and the codec in use with its bitrate. When a different codec than the profile's is used, the codec badge says which one and why
+- **Connect** / **Disconnect**, the biggest button on the screen
+- **Volume**: the headphones' volume (see [Volume](#volume))
+- The profile switcher, the capture source (with **Edit**) and the link quality with a small graph
+- An error comes with its cause and, where there is one, the button that fixes it (**Assign WinUSB**, **Open Download Page**, **Restart Bluetooth**, **Try again**, **Edit** the profile, ...)
+
+### Profiles
+
+A profile is a device plus its sound settings. The cards show the device, the codec and the capture source, with **Connect** (or **Disconnect** while it streams), edit and delete. **New Profile** and the edit button open the editor:
+
+- **Device**: **Scan Devices** finds nearby devices with the USB adapter (about 10 seconds; put the headphones into pairing mode). Devices A2DPWB paired with before are tagged **Paired**. If the scan does not find them, enter the address under **Manual:** and click **Use**; typed or pasted addresses are formatted as you go (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`)
+- **Profile Name**: follows the device until you type one
+- **Codec**: Auto or one codec, as cards with three bars (sound quality, low latency, stability). **Use another codec if this one is not available** (on by default, see [Explicitly Selected Codec Not Offered](#codec-fallback))
+- **Capture Source**: System Loopback, Virtual Device or Application (see [Capture Modes](#capture-modes))
+- **Windows Volume Sync** (see [Volume](#volume))
+- **Advanced** (quality, sample rate, bit depth, packet size): offers only what the chosen codec can do
+  - **Quality**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps); LHDC V5 High (1000 kbps) / Medium-High (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), the four levels Android offers; AAC and SBC have quality levels too, the aptX family a fixed bitrate
+  - **ABR (Adaptive Bit Rate)**: for LDAC and LHDC V5 (see [ABR](#abr))
+  - **Sample Rate**: Auto follows the capture device
+  - **Bit Depth**: 16 or 24 bit for LDAC and LHDC V5 (Auto: 24 bit); 16 bit for the others
+  - **Max media packet size (bytes)** (see [Max Media Packet Size](#max-packet))
+
+The defaults give the best sound; most profiles need nothing under **Advanced**.
+
+### Diagnostics
+
+- **Link Quality** while streaming: actual bitrate, packets, packets dropped before sending, audio dropped at capture, send queue, radio time used, signal (RSSI) and the AFH channels (see [Link Quality and AFH](#link-quality))
+- **Connection Flow**: the eleven stages of the latest connection attempt (start, Bluetooth adapter, ACL / AVDTP connect, capability discovery, codec selection, audio capture, stream configuration, encoder, stream start, audio sending, connection upkeep with disconnects / reconnects) as OK, Warning or Failed, with the time it took. **Copy Flow** copies it
+- **Log**: live, filtered by level (all, info and above, warnings and errors, errors only) and by text. **Copy Shown Log** copies what is shown
+- **Start HCI Capture** / **Stop HCI Capture** (see [Verifying the Media Stream](#verify-stream))
+- **Copy Diagnostics**: version, OS, adapter, profile, the flow, warnings / errors and the recent log on the clipboard, ready to paste into a bug report. **Mask Bluetooth addresses** (on by default) keeps only the vendor part (`AA:BB:CC:xx:xx:xx`)
+
+With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test** tab (see [Peer Receiver Test](#receiver)).
+
+### Adapter
+
+- The detected USB Bluetooth adapters with their chip, **Driver** and **Firmware**. **Refresh** looks again
+- **Assign WinUSB** / **Restore driver** (see [Setup](setup#winusb)); Windows asks for administrator permission each time
+- **Bluetooth Chip** for the firmware, with **Open Download Page** and **Open Config Folder** (see [Firmware](setup#firmware))
+- **AFH**: Auto, Off or Manual Wi-Fi channels (see [Link Quality and AFH](#link-quality))
+- **Bluetooth stack**: stopped (it starts with the first scan or connection), starting, ready or error, and **Restart Bluetooth**
+
+### Settings
+
+| Section | Settings |
+|:--------|:---------|
+| Appearance | Language, theme (System / Light / Dark) |
+| Startup | **Start with Windows** (see [Start with Windows](#autostart)) |
+| Headphones | **Headphone Buttons Control Playback** (see [Headphone buttons](#headphone-buttons)), **Remember Headphone Volume** (see [Volume](#volume)) |
+| Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
+| Advanced | **Developer mode** (adds the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
+| About A2DPWB | Version, license, third-party licenses, **Quit A2DPWB** |
+
+### First-Run Setup
+
+The first start (no profile yet, or no adapter with WinUSB) opens **Set up A2DPWB**: choose the adapter, driver and firmware, find your headphones, test. See [Setup](setup#first-run). **Settings > Run setup** opens it again.
+
+## Tray and Flyout {#tray}
+
+A2DPWB keeps running in the system tray, with or without the window:
+
+- **Left-click** the tray icon for the flyout: the device and its state, **Connect** / **Disconnect**, the volume, the profile switcher, the codec, the link quality and **Open app**. Esc or a click elsewhere hides it. If an error needs a screen of the main window (a profile, the adapter), its button opens the window there
+- **Right-click** for the menu: **Open A2DPWB**, the first 10 profiles (the active one checked; click one to connect with it), **Disconnect** and **Exit**. The menu opens at once, without starting the window
+- The tooltip says whether A2DPWB is idle or streaming
+
+Closing the window only hides it. **Exit** in the tray menu or **Settings > Quit A2DPWB** stops streaming, releases the adapter and closes A2DPWB completely.
+
+## Start with Windows {#autostart}
+
+**Settings > Start with Windows** starts A2DPWB in the background when you sign in: only the tray icon appears, and the window opens from it. It is the value `A2DPWB` under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, with the data `"<folder>\a2dpwb-core.exe" --background`. To turn it off by hand, delete that value.
 
 ## CLI Mode
 
-Add `--cli` to run without a GUI window.
+`a2dpwb-core.exe --cli` streams from a console, with the same core as the window. Quit A2DPWB first (tray > **Exit**): only one program can use the adapter at a time. The CLI does not read the profiles; everything is given as options.
 
 ### Basic
 
 ```bash
 # Auto-select best codec
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF
 ```
+
+Ctrl+C stops streaming. The CLI prints the state, the codec and bitrate, and at the end the number of packets sent and dropped.
 
 ### Codec Selection
 
 ```bash
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac      # LDAC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd    # aptX HD
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac      # LDAC
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd    # aptX HD
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 ```
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream only when chosen)
 
-If the requested codec is not offered by the headphones, the CLI falls back to the Auto priority order. aptX Adaptive is never selected -- see [aptX Family and aptX Adaptive Compatibility](#aptx-compatibility).
+If the requested codec is not offered by the headphones, the CLI stops with an error that says why; use `-c auto` (the default) to take the best codec they offer. aptX Adaptive is never selected -- see [aptX Family and aptX Adaptive Compatibility](#aptx-compatibility).
 
-### LDAC Quality
+### Quality
 
 ```bash
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
 # LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
 ```
 
-### ABR (Adaptive Bit Rate)
+### ABR (Adaptive Bit Rate) {#abr}
 
 ```bash
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -a
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -a
 ```
 
-ABR automatically lowers the bitrate when the Bluetooth connection is unstable, and raises it when conditions improve. LDAC moves between its quality modes; LHDC V5 follows Android's policy and stays between 160 and 400 kbps.
+ABR automatically lowers the bitrate when the Bluetooth connection is unstable, and raises it when conditions improve. LDAC moves between its quality modes; LHDC V5 follows Android's policy and stays between 160 and 400 kbps. In the window, ABR is in the profile editor under **Advanced**.
 
 ### Device Discovery
 
 ```bash
-# List paired Bluetooth audio devices
-A2DPWB.exe --cli -l
+# Nearby devices, found with the USB adapter (10 seconds; --scan 20 for longer)
+a2dpwb-core.exe --cli --scan
 ```
 
-{: .note }
-Device listing uses the Windows Bluetooth API via your **built-in** Bluetooth adapter, not the WinUSB adapter.
+Put the headphones into pairing mode first.
 
-### All Options
+### All Options {#all-options}
 
 | Option | Description |
 |:-------|:------------|
-| `-d <addr>` | Bluetooth address of the headphones (`AA:BB:CC:DD:EE:FF`) |
-| `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `auto` (default: `auto`) |
+| `-d <addr>` | Bluetooth address of the headphones / receiver (`AA:BB:CC:DD:EE:FF`) |
+| `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `auto` (default: `auto`) |
 | `-q <mode>` | Quality: `hq` (default), `sq`, `mq`; LHDC V5 also `mhq` (900 kbps) |
 | `-a` | ABR (LDAC and LHDC V5) |
-| `-m <mode>` | Capture mode: `loopback` (default), `virtual` |
-| `--audio-device <id>` | Audio device ID for `-m virtual` |
-| `-u <path>` | USB device path of the adapter (when several are connected) |
-| `-l` | List paired Bluetooth audio devices and exit |
-| `--max-packet <bytes>` | Max media packet size, 679-1679 (see [Max Media Packet Size](#max-packet)) |
-| `--afh <auto\|off\|6,11>` | AFH host channel classification (see [Link Quality Window and AFH](#link-quality)) |
-| `--remote-sink <host[:port]\|auto>` | Show what the peer receiver gets (see [Peer Receiver Test](#receiver)) |
+| `-m <mode>` | Capture mode: `loopback` (default), `virtual`, `app` |
+| `--audio-device <id>` | Render device for `-m virtual` |
+| `--app <exe>` | Executable for `-m app` (e.g. `spotify.exe`) |
+| `--rate <hz>` | Capture sample rate (default: the device's) |
+| `--bits <16\|24>` | Bit depth (default: 24 where the codec carries it) |
+| `--max-packet <bytes>` | Max media packet size, 679-1679, default 1023 (see [Max Media Packet Size](#max-packet)) |
+| `--afh <auto\|off\|6,11>` | AFH host channel classification (see [Link Quality and AFH](#link-quality)) |
+| `--remote-sink <host[:port]\|auto>` | Show what the peer receiver gets; without `-d`, stream to that receiver (see [Peer Receiver Test](#receiver)) |
+| `--scan [seconds]` | List nearby devices and exit (default 10 seconds) |
 | `-h` | Show the help |
 
 For development and testing there are also `--hci-tcp <host:port>` (a virtual controller over TCP instead of the WinUSB adapter), `--test-tone` (1 kHz left / 1.5 kHz right instead of captured audio), `--duration <s>` (stop after this many seconds) and `--hci-capture <file.pklg>` (HCI capture of the whole run); see [Building](building#emu).
 
-In GUI mode, `--minimized` starts A2DPWB in the system tray (used by **Start with Windows**).
+Without `--cli`, `a2dpwb-core.exe` is the resident program: it starts the window too, except with `--background` (tray icon only, used by **Start with Windows**). `a2dpwb-core.exe --quit` asks a running A2DPWB to stop streaming and exit (the installer uses it).
 
 ## Capture Modes {#capture-modes}
 
@@ -123,13 +184,13 @@ A2DPWB supports three audio capture modes. Each records a different point in the
 | Virtual Device | What apps play into the selected device (e.g., VB-CABLE) |
 | Application | Only what one app (and its child processes) plays, after the app's own processing. Needs Windows 11 or Windows 10 version 2004 (build 19041) or later |
 
-The profile dialog shows the same explanation under **Capture Source**.
+The profile editor shows the same explanation under **Capture Source**.
 
 System Loopback copies the audio; it does not take it away from the default output device. The audio keeps playing on that device (speakers, an HDMI TV, ...) as well as on the Bluetooth headphones. To hear it only on the headphones, use Virtual Device mode with a device that does not play anywhere, such as VB-CABLE.
 
-In Virtual Device mode, **Auto-switch default device** (on by default) makes the selected device the Windows default output while streaming, so apps play to it without changing Windows settings. When streaming stops, A2DPWB switches back to the previous default device.
+In Virtual Device mode, **Auto-switch default device** makes the selected device the Windows default output while streaming, so apps play to it without changing Windows settings. When streaming stops, A2DPWB switches back to the previous default device.
 
-- The **Audio Device** list shows only the devices that A2DPWB detects as virtual audio devices.
+- The **Audio Device** list shows only the devices that A2DPWB detects as virtual audio devices. Without one, the editor offers **Download VB-Cable**.
 - The default communication device (used by calling apps) is not changed.
 - Some apps keep playing on the previous device until they are restarted.
 - If A2DPWB exits unexpectedly, the default device is not switched back. Change it in Windows Sound settings.
@@ -142,11 +203,11 @@ Application mode sends the audio of one app, for example a music player, a brows
 - The app keeps playing on its own output device as well. To hear it only on the headphones, mute that output device (its master volume): this does not affect what A2DPWB captures. Do not mute the app in the Windows Volume Mixer, though, or the headphones get silence too.
 - The app's slider in the Windows Volume Mixer changes the level sent to the headphones (and on its output device). The master volume and the volume keys do not change the audio sent; with the profile's **Windows Volume Sync** on Auto they change the headphones' volume instead (see [Volume](#volume)).
 - Windows converts the audio to the sample rate that A2DPWB asks for, so the device format in Sound settings does not limit it.
-- On Windows 10 before version 2004 (build 19041), Windows has no per-app capture. The profile dialog marks Application as not available on that PC, and connecting with such a profile shows an error.
+- On Windows 10 before version 2004 (build 19041), Windows has no per-app capture. Connecting with an Application profile then shows an error that asks for another capture source.
 
 ### Volume {#volume}
 
-While streaming, the main window shows a **Volume** slider when the headphones support AVRCP absolute volume. It sets the volume on the headphones themselves, so the audio sent keeps its full resolution. The slider also follows the volume buttons and touch controls on the headphones.
+While streaming, Home and the tray flyout show a **Volume** slider when the headphones support AVRCP absolute volume. It sets the volume on the headphones themselves, so the audio sent keeps its full resolution. The slider also follows the volume buttons and touch controls on the headphones.
 
 **Windows Volume Sync** in the profile makes a Windows volume and the headphones' volume one volume while streaming:
 
@@ -203,7 +264,7 @@ Application mode, or a free virtual device such as VB-CABLE, covers the same use
 - Windows has no public API for changing the default device. A2DPWB uses the undocumented IPolicyConfig interface, as other audio switching tools do (Windows 10 and 11).
 
 {: .warning }
-Both modes use WASAPI shared mode, so the capture sample rate is determined by the device's **Default Format** in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the output device's format to 96 kHz in **Sound settings > Device properties > Advanced > Default format**.
+System Loopback and Virtual Device use WASAPI shared mode, so the capture sample rate is determined by the device's **Default Format** in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the output device's format to 96 kHz in **Sound settings > Device properties > Advanced > Default format**.
 
 ## Codec Comparison
 
@@ -216,6 +277,8 @@ Both modes use WASAPI shared mode, so the capture sample rate is determined by t
 | aptX | Widest aptX device support | 16-bit, 352/384 kbps |
 | AAC | Apple devices, good efficiency | Moderate quality |
 | SBC | Maximum compatibility | Lowest audio quality |
+
+The profile editor shows the same comparison as three bars on each codec card.
 
 ## aptX Family and aptX Adaptive Compatibility {#aptx-compatibility}
 
@@ -245,28 +308,28 @@ When A2DPWB connects, the headphones advertise a **list of codecs** (AVDTP strea
 - **The headphones also list classic aptX** -- Many aptX Adaptive headphones do, because Qualcomm markets aptX Adaptive as backward compatible with aptX / aptX HD. In that case A2DPWB selects classic aptX directly; it is a separate codec in the headphones' list, not a reduced mode of aptX Adaptive.
 - **The headphones list only aptX Adaptive** (no classic aptX, aptX HD or aptX LL) -- aptX is not possible with A2DPWB. Auto picks the next codec in the priority order, typically AAC or SBC.
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
+Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream only when chosen)
 
 ### Explicitly Selected Codec Not Offered {#codec-fallback}
 
 When you request a specific codec that the headphones do not list:
 
-| Mode | Behavior |
-|:-----|:---------|
-| GUI, **Use another codec if this one is not available** checked (default) | Connects with the best codec the headphones offer, in the Auto priority order, and the status says which codec is used instead and why. |
-| GUI, option unchecked | The connection stops with an error ("Device does not support ..."). If you requested aptX, aptX HD or aptX LL and the headphones offer only aptX Adaptive, the message says so and suggests Auto, AAC or SBC. |
-| CLI (`-c <codec>`) | Prints `Requested codec ... not available, falling back...` and continues with the Auto priority order. If the headphones offer aptX Adaptive, an extra line notes that it is never selected. |
+| Where | Behavior |
+|:------|:---------|
+| Profile, **Use another codec if this one is not available** on (default) | Connects with the best codec the headphones offer, in the Auto priority order, and the codec badge says which codec is used instead and why. |
+| Profile, option off | The connection stops with an error ("Device does not support ..."). If you requested aptX, aptX HD or aptX LL and the headphones offer only aptX Adaptive, the message says so and suggests Auto, AAC or SBC. |
+| CLI (`-c <codec>`) | Stops with the same error. Use `-c auto` to connect with the best codec offered. |
 
-The option is in **Edit Profile** next to the codec (not used with Auto).
+The option is in the profile editor under the codec cards (not used with Auto).
 
 ### Codec Missing While the Headphones Are Connected to Another Device {#sep-in-use}
 
-Headphones offer each codec on a stream endpoint (SEP). On a dual (multipoint) connection, an endpoint that streams to the phone or PC is reported as **in use**, and its codec cannot be used until that stream stops. Some headphones also offer high-resolution codecs (LDAC, L2HC, ...) only while a single device is connected. A2DPWB then reports:
+Headphones offer each codec on a stream endpoint (SEP). On a dual (multipoint) connection, an endpoint that streams to the phone or PC is reported as **in use**, and its codec cannot be used until that stream stops. Some headphones also offer high-resolution codecs (LDAC, L2HC, ...) only while a single device is connected. A2DPWB then logs:
 
 ```
-BTstack: Remote SEP SEID=6 sink audio, IN USE (codec not queried)
-BTstack: Remote SEPs in use by another connection: 1 of 6 audio sink SEP(s); ...
-BTstack: Capability discovery complete (LDAC=0, ..., 1 of 6 audio sink SEP(s) in use)
+remote SEP 6: sink audio, IN USE (codec not queried)
+remote SEPs in use by another connection: 1 of 6 audio sink SEP(s); ...
+capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 ```
 
 and the error says that endpoints are in use by another device. Disconnect the headphones from the phone / PC (or turn dual connection off in the headphones' app) and connect again. A PC whose built-in Bluetooth is still paired with the headphones counts as another device, too.
@@ -277,36 +340,33 @@ aptX, aptX HD and aptX LL support only 44.1 kHz and 48 kHz. A2DPWB picks one of 
 
 ### Checking What Your Headphones Offer
 
-1. In the **Settings** menu, check **Debug Mode (debug.log / HCI Log)**, then restart A2DPWB.
-2. Connect to the headphones.
-3. Open `debug.log` in the config folder (`%APPDATA%\A2DPWB`). In CLI mode the same lines are written to standard error.
+1. Connect to the headphones.
+2. Open **Diagnostics** and type `remote` into the log filter.
 
-In the GUI, **Debug > Debug Console...** (Ctrl+Shift+D) shows the same log live. Its **Connection Flow** list marks each stage of the latest connection attempt (adapter init, ACL / AVDTP connect, capability discovery, codec selection, WASAPI, stream configuration, encoder, stream start, audio sending, disconnects / reconnects) as OK, Warning or Failed; double-click a step to jump to the log line behind it. The log below can be filtered by level and text. **Copy Diagnostics** puts version, OS, adapter, profile, the flow, warnings / errors and the recent log on the clipboard, ready to paste into a bug report (Bluetooth addresses are masked to their vendor part by default).
-
-The capability lines show exactly which codecs the headphones list:
+The same lines are in the log files in the config folder (`%APPDATA%\A2DPWB\logs\a2dpwb-core.<date>.log`); in CLI mode they are printed to the console. The capability lines show exactly which codecs the headphones list:
 
 ```
-BTstack: Remote supports aptX (SEID=..., caps=0x..)
-BTstack: Remote supports aptX Adaptive (SEID=...) — never selected (no open encoder); classic aptX is used only if the remote lists it
-BTstack: Remote vendor codec vid=0x........ cid=0x.... (SEID=...) — unsupported
-BTstack: Capability discovery complete (LDAC=0, aptXHD=0, aptXLL=0, aptX=1, aptXAdaptive=1 [not encodable], SBC=1, AAC=1)
+remote supports aptX (SEID ..., [...])
+remote supports aptX Adaptive (SEID ...) - never selected (no open encoder); classic aptX is used only if the remote lists it
+remote vendor codec 0x........./0x.... (SEID ...) - unsupported
+capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)
 ```
 
-- `aptX=1` -- classic aptX is available (even if `aptXAdaptive=1` too).
-- `aptX=0`, `aptXHD=0`, `aptXLL=0` with `aptXAdaptive=1` -- the headphones offer only aptX Adaptive; use Auto, AAC or SBC.
-- `Remote vendor codec ... — unsupported` -- another vendor codec that A2DPWB does not implement.
+- `aptX=true` -- classic aptX is available (even if `aptX Adaptive=true` too).
+- `aptX=false`, `aptX HD=false`, `aptX LL=false` with `aptX Adaptive=true` -- the headphones offer only aptX Adaptive; use Auto, AAC or SBC.
+- `remote vendor codec ... - unsupported` -- another vendor codec that A2DPWB does not implement.
 
 ## Max Media Packet Size (per Profile) {#max-packet}
 
-**Max media packet size** in each profile (**Edit Profile**; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so headphones that need a different value can have their own. The headphones' own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. Profiles saved by older versions take the value that was set globally before.
+**Max media packet size** in each profile (profile editor > **Advanced**; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so headphones that need a different value can have their own. The headphones' own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. Profiles saved by older versions take the value that was set globally before.
 
 **1023 (default) is recommended.** It fits one Bluetooth baseband packet (3-DH5). Larger values save only 1-2% overhead, and each lost packet then loses more audio. 679 fits one 2-DH5 packet and is the minimum LDAC accepts.
 
 ## Verifying the Media Stream (a2dpwb_decode) {#verify-stream}
 
-Most headphones cannot show which codec is in use. In debug mode, the GUI has a **Debug** menu with **Start HCI Capture** / **Stop HCI Capture**. A capture is an HCI packet log (`hci_<date>_<time>.pklg` in the config folder) with the codec negotiation and every media packet sent. At LDAC 990 kbps it grows by roughly 0.5 GB per hour, so capture only as long as you need.
+Most headphones cannot show which codec is in use. **Diagnostics > Start HCI Capture** / **Stop HCI Capture** records an HCI packet log (`hci_<date>_<time>.pklg` in the config folder) with the codec negotiation and every media packet sent. At LDAC 990 kbps it grows by roughly 0.5 GB per hour, so capture only as long as you need. In CLI mode, `--hci-capture <file.pklg>` records the whole run.
 
-You can start a capture before connecting or while already streaming. If it starts during a connection, A2DPWB first writes the connection setup packets it remembered (L2CAP channel setup and AVDTP signaling, including the codec negotiation), so the file can still be analysed. After stopping, A2DPWB shows the file path.
+You can start a capture before connecting or while already streaming. If it starts during a connection, A2DPWB first writes the connection setup packets it remembered (L2CAP channel setup and AVDTP signaling, including the codec negotiation), so the file can still be analysed. Diagnostics shows the file path while it records and after it stops.
 
 Open the capture in Wireshark, or check it with the `a2dpwb_decode` developer tool (built from source, see [Building](building)):
 
@@ -326,23 +386,25 @@ For every stream it also reports RTP sequence gaps, how fast the RTP timestamp a
 {: .note }
 This shows what A2DPWB sent and that it is valid for the negotiated codec. Since a sink can only decode the codec that was negotiated, correct audio from the headphones together with a clean report is strong evidence that the codec is really in use.
 
-## Link Quality Window and AFH {#link-quality}
+## Link Quality and AFH {#link-quality}
 
-**Actions > Link Quality...** shows what A2DPWB sends while streaming: codec and bitrate, packets sent, packets dropped before sending (send queue full: the radio link could not keep up), audio the encoder could not keep up with, the send queue, and **Radio**: the RSSI of the connection, relative to the controller's golden receive range (0 = fine, negative = too weak; not an absolute level), and how many of the 79 Bluetooth channels the link hops on (AFH).
+**Diagnostics > Link Quality** shows what A2DPWB sends while streaming: the actual bitrate, packets sent, packets dropped before sending (send queue full: the radio link could not keep up), audio dropped at capture, the send queue, the radio time used, and the **Signal**: the RSSI of the connection, relative to the controller's golden receive range (0 = fine, negative = too weak; not an absolute level), and how many of the 79 Bluetooth channels the link hops on (AFH). Home and the tray flyout sum it up as Good, Fair or Poor.
 
 Bluetooth avoids busy channels by itself (AFH), but it only learns about Wi-Fi from errors. A2DPWB also tells its controller which channels to avoid (AFH host channel classification), for every connection:
 
-| `afh` | |
+| AFH | |
 |:--|:--|
-| `auto` (default) | The 2.4 GHz Wi-Fi networks this PC hears strongly (Windows Wi-Fi scan, repeated while connected) |
-| `off` | Nothing: the controller decides alone |
-| `6,11` | These Wi-Fi channels |
+| Auto (default) | Only the 2.4 GHz Wi-Fi channel this PC is connected on (checked again every 30 seconds while connected). Nothing when the PC is not on 2.4 GHz Wi-Fi: disconnected, on 5 or 6 GHz, or wired |
+| Off | Nothing: the controller decides alone |
+| Manual, e.g. `6,11` | These Wi-Fi channels (1 to 14) |
 
-At least 20 Bluetooth channels always stay in use. Set it with `"afh"` in `settings.json` (config folder), in the Peer Receiver Test window (it is saved there), or with `--afh` in CLI mode. The Radio row shows which Wi-Fi channels are avoided. Whether it helps depends on the environment: measure with the peer receiver test.
+Auto leaves the networks the PC only hears to the controller's own AFH: avoiding a neighbour's busy channel takes 22 MHz from the hopping and can make the link worse, not better. To avoid such a channel anyway, enter it as Manual.
+
+At least 20 Bluetooth channels always stay in use. Set it on the **Adapter** screen, with `"afh"` in `settings.json` (config folder), or with `--afh` in CLI mode. The radio line shows which Wi-Fi channels are avoided. Whether it helps depends on the environment: measure with the peer receiver test.
 
 ## Peer Receiver Test (tools/linux_sink) {#receiver}
 
-The link quality window shows what A2DPWB sends. To see what actually arrives, run `tools/linux_sink/a2dpwb_sink.py` on a second PC with Linux. It drives that PC's ordinary Bluetooth adapter - the built-in one is fine - directly (Bumble over the HCI user channel) as an A2DP sink for every codec including LDAC, measures every media packet that arrives and serves the statistics over the network:
+The link quality view shows what A2DPWB sends. To see what actually arrives, run `tools/linux_sink/a2dpwb_sink.py` on a second PC with Linux. It drives that PC's ordinary Bluetooth adapter - the built-in one is fine - directly (Bumble over the HCI user channel) as an A2DP sink for every codec including LDAC, measures every media packet that arrives and serves the statistics over the network:
 
 Copy the `tools/linux_sink` folder to the Linux PC (the folder alone is enough), then:
 
@@ -351,27 +413,53 @@ sh setup.sh      # once: decoder libraries, Python environment (Ubuntu / Debian,
 sudo sh run.sh   # start the receiver (root: it takes the Bluetooth adapter)
 ```
 
-In debug mode, **Debug > Peer Receiver Test...** finds the receiver on the local network by itself. **Start** streams a steady test tone (or the system audio) to its Bluetooth adapter with the chosen codec, quality, sample rate and bit depth - no profile or pairing step needed - and the window shows what was sent next to what arrived: bitrate, lost and late packets (RTP sequence numbers), jitter and gaps, dropouts and skips of a modelled playout buffer, stream / decode errors and the RSSI at the receiver (relative to its golden receive range: 0 = fine, negative = too weak). Each step (find receiver, statistics, receiver settings, Bluetooth connection, codec, audio arrives) is shown as OK / NG, with a log that can be copied. In CLI mode, `--remote-sink auto` does the same: it finds the receiver, streams to it unless `-d` names another device, and prints its statistics every 5 seconds and at the end.
+On the Windows PC, quit A2DPWB (tray > **Exit**) and run:
 
-Both sides count the packets of a stream from its first packet, and after **Stop** the final counts stay shown ("at stop"; the receiver's arrive about a second later), so the packets sent and received can be compared: they should be equal. Bluetooth retransmits lost radio packets inside the controllers, and A2DPWB does not give up on a packet while the link is up, so a poor radio link shows as gaps, jitter and dropouts at the receiver rather than as lost packets; when the link cannot keep up, packets are dropped before sending on the sending side. The number of retransmissions is not available to either side.
+```bash
+a2dpwb-core.exe --cli --remote-sink auto -c ldac --test-tone
+```
+
+`--remote-sink auto` finds the receiver on the local network, streams to its Bluetooth adapter unless `-d` names another device, and prints the receiver's statistics every 5 seconds and at the end: bitrate, lost and late packets (RTP sequence numbers), jitter and gaps, dropouts and skips of a modelled playout buffer, stream / decode errors and the RSSI at the receiver (relative to its golden receive range: 0 = fine, negative = too weak). Without `--test-tone` it sends the system audio. `--remote-sink <host[:port]>` names the receiver instead of searching for it.
+
+{: .note }
+With **Settings > Developer mode**, Diagnostics has a **Peer Receiver Test** tab. In this version it is a preview: it saves the receiver address, but it does not stream yet. Use the command line above.
+
+Both sides count the packets of a stream from its first packet, so the packets sent and received can be compared: they should be equal. Bluetooth retransmits lost radio packets inside the controllers, and A2DPWB does not give up on a packet while the link is up, so a poor radio link shows as gaps, jitter and dropouts at the receiver rather than as lost packets; when the link cannot keep up, packets are dropped before sending on the sending side. The number of retransmissions is not available to either side.
 
 The receiver's adapter is not available to its own Bluetooth stack while the tool runs. Discovery uses a UDP broadcast on port 51201, so both PCs must be on the same network segment (otherwise enter the address). See `tools/linux_sink/README.md` for all options and the statistics protocol.
 
+## Updates {#updates}
+
+A2DPWB checks GitHub Releases at most once a day (**Settings > Check for Updates on Startup**; **Include Pre-releases in Update Checks** also offers beta releases). When a new version is available, Settings says so:
+
+- **Installed copy**: **Update now** downloads the signed update. While streaming, it waits and installs when streaming stops, so an update never cuts the audio. A2DPWB then closes, installs the new version and starts again by itself.
+- **Portable copy** (or a build without update signing): **Open download page** opens the release page.
+
 ## Troubleshooting
+
+### The Window Says the Core Is Not Running
+
+The window needs `a2dpwb-core.exe` next to it and starts it by itself. "The A2DPWB core is not running" means it could not be started: reinstall A2DPWB (or extract the portable zip again). "The core is a different version" means the two programs come from different versions: install the same version of both (the latest release does this).
+
+### Assigning or Restoring the Driver Fails
+
+- "The administrator prompt was declined": the driver was not changed. Click the button again and allow the prompt.
+- "Changing the driver failed": see **Diagnostics > Log** for the details.
+- "The adapter did not return to its previous driver": if the adapter was set up with Zadig, Windows may pick Zadig's WinUSB driver package again. Remove that driver package in Device Manager (adapter > Uninstall device, with "Attempt to remove the driver for this device"), then unplug and replug the adapter.
 
 ### The Bluetooth Adapter Does Not Respond {#adapter-no-answer}
 
-If the adapter sends nothing back after it is opened (it does not answer HCI Reset), A2DPWB gives up after 5 seconds, opens it once more and, if it still does not answer, shows "The Bluetooth adapter does not respond". Unplug the adapter, plug it back in and try again. Restarting A2DPWB is not needed: a failed start releases the adapter and every new start initializes it again.
+If the adapter sends nothing back after it is opened (it does not answer HCI Reset), A2DPWB gives up after 5 seconds, opens it once more and, if it still does not answer, shows "The Bluetooth adapter does not respond". Unplug the adapter, plug it back in and try again (or **Restart Bluetooth**). Restarting A2DPWB is not needed: a failed start releases the adapter and every new start initializes it again.
 
 To keep an adapter from getting stuck, A2DPWB resets its USB pipes when it opens it and sends HCI Reset when it closes it.
 
 ### Pairing Problems After Updating
 
-A2DPWB pairs using SSP (Just Works) with **General Bonding**, and the link keys are saved so the headphones can reconnect without pairing again. If you paired the headphones with an older A2DPWB build, remove the A2DPWB pairing on the headphones (see the headphones' manual for clearing the pairing list) and pair again.
+A2DPWB pairs using SSP (Just Works) with **General Bonding**, and the link keys are saved so the headphones can reconnect without pairing again (v2 reads the link keys of v1). If you paired the headphones with an older A2DPWB build and they no longer connect, remove the A2DPWB pairing on the headphones (see the headphones' manual for clearing the pairing list) and pair again.
 
 ### Connection Timeouts
 
-A2DPWB registers SDP records (A2DP Source, AVRCP Controller / Target) so the headphones can identify it as an audio source. If a connection attempt times out, the half-open connection is torn down, so you can simply retry in the same session without restarting A2DPWB. Make sure the headphones are powered on, in range, and not connected to another device.
+A2DPWB registers SDP records (A2DP Source, AVRCP Controller / Target) so the headphones can identify it as an audio source. If a connection attempt times out, the half-open connection is torn down, so you can simply retry without restarting A2DPWB. Make sure the headphones are powered on, in range, and not connected to another device.
 
 A failed connection is tried again by itself (up to 3 attempts) when the link came up and then carried nothing, and when the headphones did not answer. If the headphones no longer know the pairing (reset, or paired with another PC), the stored key is dropped and pairing is done once more. The error then says what happened:
 
@@ -381,3 +469,5 @@ A failed connection is tried again by itself (up to 3 attempts) when the link ca
 | The connection came up but then carried nothing | Radio conditions: try again, or move the adapter / the device |
 | The device answered but then ended the connection itself | It does not accept a connection now: turning off, charging, or connected to another device |
 | Authentication failed, also after pairing again | Put the device into pairing mode, or remove its pairing list entry, and try again |
+
+A lost connection is reconnected by itself (up to 10 attempts). When the PC goes to sleep while streaming, A2DPWB reconnects after it resumes; these attempts are not counted.

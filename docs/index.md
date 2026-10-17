@@ -9,12 +9,10 @@ nav_order: 1
 Bluetooth A2DP audio streaming for Windows with full codec support.
 {: .fs-6 .fw-300 }
 
-Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and **LHDC V5** using a USB Bluetooth adapter in WinUSB mode -- no kernel driver or test signing required.
+Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** and (experimental) **Opus** using a USB Bluetooth adapter in WinUSB mode -- no kernel driver or test signing required.
 
 [Get Started](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
-
-![Main window, connection profile and link quality window]({{ '/images/app_sample.jpg' | relative_url }})
 
 ---
 
@@ -28,7 +26,8 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### Codec Support by Platform (Sending to Headphones)
 
@@ -41,6 +40,7 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
+| Opus (Android's A2DP Opus) | ❌ | ❌ | not checked | 🧪 experimental |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ supported · 🧪 experimental · ❌ not supported. All columns are the sending side (PC → headphones). "Built-in" is the OS's own Bluetooth audio, without A2DPWB; the Ubuntu column is the PipeWire codec set of Ubuntu 26.04 (`libspa-0.2-bluetooth`).
@@ -48,8 +48,11 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and
 {: .warning }
 **aptX HD and aptX Low Latency are experimental.** They follow the Android / PipeWire implementations and pass encode/decode round-trip tests, but have not yet been verified with real headphones. Latency values in this table are typical figures, not measured with A2DPWB.
 
-{: .note }
-**About LHDC V5.** It uses a C port of the LHDC V5 encoder that Google added to Android 17 (AOSP, Apache-2.0); the port was verified bit-exact against the AOSP Rust encoder, and the A2DP signaling follows Android's `a2dp_vendor_lhdcv5`. A user verified it with real LHDC V5 headphones at 1000 kbps / 192 kHz ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). Only lossy LHDC V5 is supported: LHDC V2/V3 (older headphones) and the lossless "LHDC-RAW" mode have no open-source encoder. In Auto mode LHDC V5 ranks below LDAC and the aptX family and above AAC / SBC.
+{: .warning }
+**About LHDC V5.** It uses a C port of the LHDC V5 encoder that Google added to Android 17 (AOSP, Apache-2.0); the port was verified bit-exact against the AOSP Rust encoder, and the A2DP signaling follows Android's `a2dp_vendor_lhdcv5`. A user verified it with real LHDC V5 headphones at 1000 kbps / 192 kHz on v1.1.1-beta.1 ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)); v2 uses the same encoder. Only lossy LHDC V5 is supported: LHDC V2/V3 (older headphones) and the lossless "LHDC-RAW" mode have no open-source encoder. In Auto mode LHDC V5 ranks below LDAC and the aptX family and above AAC / SBC.
+
+{: .warning }
+**Opus is experimental.** It is Android's A2DP Opus vendor codec (Android 13+, vendor ID 0x000000E0 Google): 48 kHz, 20 ms frames, 256 kbps stereo as Android requests it (Standard 192, Mobile 128 kbps), encoded with libopus 1.5.2. It passes the end-to-end test against a virtual sink, but has not yet been verified with real Opus headphones. In Auto mode it ranks below LHDC V5 and above AAC / SBC.
 
 {: .note }
 **Only need classic aptX?** Windows 10 already supports classic aptX in its built-in Bluetooth stack (not aptX HD, aptX LL or aptX Adaptive), so A2DPWB is not required for it. A2DPWB is mainly useful for LDAC, aptX HD and aptX Low Latency.
@@ -61,14 +64,14 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** and
 
 | Component | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
 |:----------|:----------------:|:----------------:|:--------------:|
-| **A2DPWB** (GUI / CLI) | ✅ (not yet tried on real hardware) | ✅ | ❌ |
-| [Building from source](building) (Visual Studio 2022+) | ✅ | ✅ | ❌ |
+| **A2DPWB** (window, tray, CLI) | ✅ (not yet tried on real hardware) | ✅ | ❌ |
+| [Building from source](building) (Rust, Visual Studio 2022+, Node.js) | ✅ | ✅ | ❌ |
 | `a2dpwb_decode` (stream checker) | ✅ | ✅ | ❌ |
 | End-to-end test `tools/emu/run_test.py` | ✅ | ✅ | ❌ |
 | Virtual adapter `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | [Measuring receiver](usage#receiver) `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB itself runs on Windows only, as an x64 build. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
+A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), as an x64 build. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
 
 ## Verified Hardware
 
@@ -77,8 +80,7 @@ A2DPWB itself runs on Windows only, as an x64 build. The Linux tools need Python
 | Sony WH-1000XM4 (headphones) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC | ✅ Plays (the XM4 has no aptX) |
 | TP-Link UB500 (Realtek RTL8761BU, adapter) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | Measuring receiver `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 over the air | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Received and measured |
-| Virtual link `tools/emu` (Bumble) | Windows 11, no radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 | ✅ End-to-end test passes |
-| LHDC V5 headphones (user report, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ Plays at 1000 kbps / 192 kHz |
+| Virtual link `tools/emu` (Bumble) | Windows 11, no radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, Opus | ✅ End-to-end test passes |
 
 Windows 10 has not been tried on real hardware yet. Other adapters: see [Recommended Adapters](setup#adapters).
 
@@ -92,7 +94,7 @@ A2DPWB captures audio via WASAPI and offers three modes:
 | **Virtual Device** | Captures from a user-selected virtual audio device (e.g., VB-CABLE, VoiceMeeter) | Route specific apps to Bluetooth while keeping other audio on speakers |
 | **Application** | Captures only what one app plays, after its own processing (Windows 11 / Windows 10 2004+) | Send one app, or the output of a system-wide effects app (equalizer, sound enhancer) |
 
-In **Virtual Device** mode, A2DPWB switches the Windows default playback device to the selected virtual device, then captures its loopback output. Apps that output to the virtual device are streamed over Bluetooth. When streaming stops, the previous default device is restored.
+In **Virtual Device** mode, A2DPWB can switch the Windows default playback device to the selected virtual device (**Auto-switch default device**), then captures its loopback output. Apps that output to the virtual device are streamed over Bluetooth. When streaming stops, the previous default device is restored.
 
 System Loopback does not take the audio away from the default playback device: it plays there as well as over Bluetooth. See [Capture Modes](usage#capture-modes).
 
@@ -110,24 +112,27 @@ flowchart TD
     s2["Virtual device"]
     s3["Application (process loopback)"]
     s1 & s2 & s3 --> cap["WASAPI loopback capture (PCM)"]
-    cap --> enc["Audio encoder: LDAC / aptX family / LHDC V5 / AAC / SBC"]
+    cap --> enc["Audio encoder: LDAC / aptX family / LHDC V5 / Opus / AAC / SBC"]
     enc --> bt["BTstack: A2DP Source → AVDTP → L2CAP → HCI"]
     bt --> usb["WinUSB → USB Bluetooth adapter"]
     usb -.-> hp["Headphones"]
 ```
 
-A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly with a USB Bluetooth adapter through WinUSB, using [BTstack](https://github.com/bluekitchen/btstack) to implement the full Bluetooth protocol stack in user-mode.
+A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly with a USB Bluetooth adapter through WinUSB, using [BTstack](https://github.com/bluekitchen/btstack) to implement the full Bluetooth protocol stack in user-mode. A small resident program (`a2dpwb-core.exe`, with the tray icon) streams the audio; the window only shows its state, so closing it does not stop the audio (see [Architecture](architecture)).
 
 ## Features
 
-- **Multi-codec**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC with automatic negotiation
+- **Multi-codec**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 and (experimental) Opus with automatic negotiation
 - **Three capture modes**: System loopback, virtual audio device routing, or one application's output
+- **Window, tray and CLI**: a window for setup and diagnostics, a tray flyout and menu for everyday connecting, and a command line (see [Usage](usage))
+- **WinUSB in the app**: assigns the WinUSB driver to the adapter and restores the original driver, no Zadig needed (see [Setup](setup#winusb))
+- **First-run setup**: adapter, driver and firmware, headphones, test tone
 - **ABR**: Adaptive Bit Rate for unstable connections (LDAC and LHDC V5)
-- **Auto-reconnect**: Reconnects on disconnection (up to 10 attempts)
+- **Auto-reconnect**: Reconnects on disconnection (up to 10 attempts), and after the PC resumes from sleep
 - **Link quality and AFH**: Shows what is sent, the RSSI and the channels in use; tells the adapter which Wi-Fi channels to avoid (see [Usage](usage#link-quality))
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones and the Windows volume; their play/pause, next and previous buttons control playback on the PC (see [Usage](usage#headphone-buttons))
-- **Profile management**: Save and load device + codec configurations
-- **GUI + CLI**: wxWidgets graphical interface or command-line operation
-- **Localization**: English, Japanese, Simplified Chinese, Traditional Chinese, Korean, German, French, Spanish
+- **Profile management**: Device + codec + capture configurations, connectable from the tray
+- **Updates**: The installed version updates itself after streaming stops (see [Usage](usage#updates))
+- **Localization**: English, Japanese, Simplified / Traditional Chinese, Korean, German, French and Spanish
 - **Realtek firmware**: Guided firmware download for Realtek adapters
-- **Diagnostics** (debug mode): debug console, HCI capture, peer receiver test against a Linux PC (see [Usage](usage#receiver))
+- **Diagnostics**: connection flow, log, HCI capture, diagnostics for bug reports, peer receiver test against a Linux PC (see [Usage](usage#receiver))

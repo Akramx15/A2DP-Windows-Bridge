@@ -26,18 +26,18 @@ BlueZ takes the adapter back.
 | | |
 |:--|:--|
 | Packets, bytes, bitrate | per second and in total |
-| Lost / late packets | gaps and steps back in the RTP sequence numbers (not for classic aptX and aptX LL, which carry no RTP header) |
+| Lost / late packets | gaps and steps back in the RTP sequence numbers (not for classic aptX, aptX LL and FastStream, which carry no RTP header) |
 | Jitter | RFC 3550 interarrival jitter against the audio carried |
 | Gaps | longest time between two packets |
 | Playout buffer model | a sink playing with `--buffer` ms (default 200) of audio: **dropouts** = the buffer would have run dry (audible interruption), **skips** = a burst after a stall would have overfilled it to more than twice its size (audio thrown away). The playout clock follows the sender within +-500 ppm, so clock drift is not counted; lost packets are not concealed and shorten the audio |
 | Pauses | the source sent nothing for more than 3 s (A2DPWB capturing a silent PC): counted separately, not as dropouts; the playout model starts over when media comes back |
-| Stream errors | RTP timestamp steps, SBC / LDAC frame headers, aptX sync, decode errors |
+| Stream errors | RTP timestamp steps, SBC / FastStream / LDAC frame headers, Opus packet headers, aptX sync, decode errors |
 | RSSI | of the connection, read from the controller every second. For BR/EDR this is relative to the controller's golden receive range (about -60 to -40 dBm): 0 = inside it, e.g. -30 = 30 dB too weak. It is not an absolute level |
 
 Decoding uses the distribution's libraries through ctypes when they are
-installed: `libsbc1` (SBC), `libfreeaptx0` (aptX, aptX HD, aptX LL),
-`libfdk-aac2` (AAC, in Ubuntu's multiverse). LDAC has no open-source decoder:
-its frame headers are checked. Without the libraries the stream is still
+installed: `libsbc1` (SBC, SBC XQ, FastStream), `libfreeaptx0` (aptX, aptX HD,
+aptX LL), `libfdk-aac2` (AAC, in Ubuntu's multiverse), `libopus0` (Opus). LDAC
+has no open-source decoder: its frame headers are checked. Without the libraries the stream is still
 measured and only the header checks are done.
 
 ## Setup (once)
@@ -50,7 +50,7 @@ sh setup.sh
 ```
 
 It installs what is missing of `python3-venv` and the decoder libraries
-(`libsbc1`, `libfreeaptx0`, `libfdk-aac2` when the distribution has it; asks
+(`libsbc1`, `libfreeaptx0`, `libopus0`, `libfdk-aac2` when the distribution has it; asks
 for the sudo password), creates `.venv` and installs `requirements.txt`:
 Bumble and its dependencies at the versions pinned for `tools/emu`. Safe to
 run again. On other distributions install venv support and, optionally, the
@@ -70,19 +70,19 @@ in `a2dpwb_sink_keys.json` next to the script.
 
 On the A2DPWB PC (same network segment - the discovery is a broadcast):
 
-- **GUI** (debug mode): **Debug > Peer Receiver Test...** finds the
-  receiver by itself, **Start** streams to its Bluetooth adapter with the
-  chosen codec, quality, sample rate and bit depth (no profile needed) and a
-  steady test tone as the source (or system audio), and
-  the window shows what was sent next to what arrived. The receiver's L2CAP
-  MTU and playout buffer can be set there too; they apply from Start.
-- **CLI**: `A2DPWB.exe --cli --remote-sink auto` finds the receiver, streams
-  to it (unless `-d` names another device) and prints its statistics every
-  5 seconds and at the end.
+- **CLI**: quit A2DPWB (tray > **Exit**), then
+  `a2dpwb-core.exe --cli --remote-sink auto --test-tone` finds the receiver,
+  streams to it (unless `-d` names another device) with the codec, quality,
+  rate and bit depth given by `-c`, `-q`, `--rate` and `--bits` and a steady
+  test tone (without `--test-tone`: the system audio), and prints its
+  statistics every 5 seconds and at the end.
+- **Window**: with **Settings > Developer mode**, **Diagnostics** has a
+  **Peer Receiver Test** tab. In this version it is a preview that saves the
+  receiver address but does not stream yet; use the CLI.
 
 Open UDP and TCP port 51201 on the Linux PC if it has a firewall
 (`sudo ufw allow 51201`). A2DPWB can also be given the address directly
-(`--remote-sink 192.168.1.20`, or the address field) when broadcasts do not
+(`--remote-sink 192.168.1.20`) when broadcasts do not
 get through, e.g. across routers.
 
 The tool prints one line per second while streaming and a summary when the
@@ -92,9 +92,9 @@ stream ends. Stop it with Ctrl+C.
 |:-------|:------------|
 | `--adapter hci1` | Adapter to use (default: the first one) |
 | `--mtu <bytes>` | L2CAP MTU offered for AVDTP (default 1005; 672 = like BlueZ, 679 = smallest LDAC accepts) |
-| `--codecs sbc aac aptx aptxhd aptxll ldac` | Codecs to offer (default: all) |
+| `--codecs ldac aptxhd aptxll aptx opus aac sbcxq sbc faststream` | Codecs to offer (default: all). `sbcxq` lets the SBC endpoint take dual channel, which A2DPWB uses for SBC XQ; without it the endpoint has no dual channel |
 | `--packet-types all\|br` | ACL packet types allowed on the link: all (default) or basic rate only, no EDR |
-| `--sbc-max-bitpool <n>` | Highest SBC bitpool offered (default 53, as most headphones) |
+| `--sbc-max-bitpool <n>` | Highest SBC bitpool offered (default 53, as most headphones; below 43 SBC XQ is not offered) |
 | `--buffer <ms>` | Playout buffer of the modelled sink (default 200) |
 | `--port <n>`, `--bind <addr>` | Statistics / discovery port and address (default `0.0.0.0:51201`) |
 | `--csv <file>` | Append one row of statistics per second |
@@ -109,8 +109,12 @@ stream ends. Stop it with Ctrl+C.
 - The numbers describe what the receiver's controller delivers:
   retransmissions happen inside the controllers and only show as delay and
   gaps.
-- Classic aptX and aptX LL carry no sequence numbers, so their lost packets
-  only show as missing audio (dropouts).
+- Classic aptX, aptX LL and FastStream carry no sequence numbers, so their
+  lost packets only show as missing audio (dropouts).
+- SBC XQ is SBC in dual channel mode on the SBC endpoint: a stream the source
+  configures as dual channel SBC is reported as SBC XQ.
+- FastStream: only the music direction is offered (A2DPWB sends no voice
+  backchannel).
 - The tool is a measuring device, not a speaker: nothing is played.
 
 ## Statistics protocol
@@ -121,7 +125,8 @@ stream ends. Stop it with Ctrl+C.
 ```json
 {"type":"announce","version":1,"tool":"a2dpwb_sink","host":"lab-pc","port":51201,
  "bt_address":"00:1A:7D:DA:71:13","bt_name":"A2DPWB Sink (lab-pc)",
- "codecs":["LDAC","aptX HD","aptX LL","aptX","AAC","SBC"],"mtu":1005,"buffer_ms":200}
+ "codecs":["LDAC","aptX HD","aptX LL","aptX","Opus","AAC","SBC XQ","SBC","FastStream"],
+ "mtu":1005,"buffer_ms":200}
 ```
 
 **Statistics**: TCP, one JSON object per line. A `hello` line (the fields of
@@ -154,7 +159,7 @@ A2DPWB reaches over TCP; a2dpwb_sink then takes that adapter like a real one:
 ```bash
 sudo .venv/bin/python ../emu/emu_vhci.py [--drop 2] [--stall 400/6]   # Linux, terminal 1
 sudo sh run.sh                                                      # Linux, terminal 2
-A2DPWB.exe --cli --hci-tcp <linux>:9001 -c ldac --test-tone --duration 20 --remote-sink auto
+a2dpwb-core.exe --cli --hci-tcp <linux>:9001 -c ldac --test-tone --duration 20 --remote-sink auto   # Windows
 ```
 
 `--drop` loses a share of the media packets, `--stall MS/S` holds them back

@@ -6,8 +6,11 @@
  * codec, extracts the outgoing media packets and decodes them:
  *
  *   SBC               Bluedroid SBC decoder (BTstack 3rd-party/bluedroid)
+ *   FastStream        the same SBC decoder (frames padded to even length,
+ *                     three per packet, no RTP / media payload header)
  *   AAC               fdk-aac (LATM, muxConfigPresent=1)
  *   aptX / HD / LL    libopenaptx 0.2.0
+ *   Opus              libopus (Android's A2DP Opus, vendor 0x000000E0 / 0x0001)
  *   LDAC, LHDC V5     no open-source decoder: frame headers are validated only
  *
  * Decoded audio is written to WAV files next to the dump. The report on
@@ -20,6 +23,8 @@
  * (see THIRD_PARTY_LICENSES.md).
  *
  * Usage: a2dpwb_decode <capture.pklg> [-o <output prefix>] [--no-wav] [--received]
+ *        a2dpwb_decode --le-audio <capture.pklg>... [-o <prefix>] [--no-wav] [--received]
+ *        (LE Audio: LC3 over CIS, le_audio_decode.cpp)
  * Exit:  0 = no problems found, 1 = problems found, 2 = usage / file error
  */
 
@@ -39,6 +44,7 @@ extern "C" {
 #include "openaptx.h"
 }
 #include "aacdecoder_lib.h"
+#include "opus.h"
 
 /* ------------------------------------------------------------------------ */
 /* Byte helpers                                                             */
@@ -57,7 +63,7 @@ static uint32_t be32(const uint8_t *p) {
 /* Codec configuration (AVDTP Media Codec capability)                       */
 /* ------------------------------------------------------------------------ */
 
-enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5 };
+enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5, FastStream, Opus };
 
 static const char *codec_name(Codec c) {
     switch (c) {
@@ -68,6 +74,8 @@ static const char *codec_name(Codec c) {
     case Codec::AptxLL: return "aptX LL";
     case Codec::LDAC:   return "LDAC";
     case Codec::LHDCV5: return "LHDC V5";
+    case Codec::FastStream: return "FastStream";
+    case Codec::Opus:   return "Opus";
     default:            return "unknown";
     }
 }
@@ -81,6 +89,8 @@ static const char *codec_file_tag(Codec c) {
     case Codec::AptxLL: return "aptxll";
     case Codec::LDAC:   return "ldac";
     case Codec::LHDCV5: return "lhdcv5";
+    case Codec::FastStream: return "faststream";
+    case Codec::Opus:   return "opus";
     default:            return "unknown";
     }
 }
@@ -102,9 +112,11 @@ struct CodecConfig {
     /* LHDC V5: samples per 5 ms frame (240 / 480 / 960) and bit depth */
     uint32_t lhdc_frame_samples = 0;
     int lhdc_bits = 0;
+    /* Opus: samples per frame at 48 kHz (480 / 960) */
+    uint32_t opus_frame_samples = 0;
 
-    /* A2DPWB sends classic aptX and aptX LL without an RTP header */
-    bool has_rtp() const { return codec != Codec::Aptx && codec != Codec::AptxLL; }
+    /* A2DPWB sends classic aptX, aptX LL and FastStream without an RTP header */
+    bool has_rtp() const { return codec != Codec::Aptx && codec != Codec::AptxLL && codec != Codec::FastStream; }
 };
 
 /* Exactly one bit must be set in a configuration (not capability) field. */
@@ -239,6 +251,44 @@ static CodecConfig parse_media_codec(const uint8_t *p, size_t n) {
                 c.desc += " (INVALID: not exactly one option per field, or not V5 ver.1 / 5 ms)";
             return c;
         }
+        if (vendor == 0xE0 && vcodec == 0x0001 && vlen >= 1) {
+            /* Android a2dp_vendor_opus_constants.h: bits 2..0 channel mode
+             * (0x01 mono, 0x02 stereo, 0x04 dual mono), bits 4..3 frame
+             * duration (0x08 10 ms, 0x10 20 ms), bit 7 48 kHz */
+            c.codec = Codec::Opus;
+            int ch = single_bit_index(v[0] & 0x07, 3);
+            int dur = single_bit_index((v[0] >> 3) & 0x03, 2);
+            c.sample_rate = (v[0] & 0x80) ? 48000 : 0;
+            c.channels = ch == 0 ? 1 : ch > 0 ? 2 : 0;
+            c.opus_frame_samples = dur == 0 ? 480 : dur == 1 ? 960 : 0;
+            c.desc = strf("Opus %u Hz, %s, %s frames", c.sample_rate,
+                ch == 0 ? "mono" : ch == 1 ? "stereo" : ch == 2 ? "dual mono" : "?",
+                dur == 0 ? "10 ms" : dur == 1 ? "20 ms" : "?");
+            if (c.sample_rate == 0 || ch < 0 || dur < 0)
+                c.desc += " (INVALID: not exactly one option per field)";
+            return c;
+        }
+        if (vendor == 0x0A && vcodec == 0x0001 && vlen >= 2) {
+            /* FastStream (PipeWire a2dp_faststream_t): direction 0x01 sink
+             * (music) | 0x02 source (voice); byte 7 low nibble sink rate
+             * 0x2 44.1k / 0x1 48k, high nibble source rate 0x2 16k. The
+             * music stream is SBC joint stereo, 16 blocks, 8 subbands,
+             * loudness, bitpool 29. */
+            c.codec = Codec::FastStream;
+            c.channels = 2;
+            uint8_t sink = v[1] & 0x0F;
+            c.sample_rate = sink == 0x02 ? 44100 : sink == 0x01 ? 48000 : 0;
+            c.sbc_mode = SBC_JOINT_STEREO;
+            c.sbc_blocks = 16;
+            c.sbc_subbands = 8;
+            c.sbc_alloc = SBC_LOUDNESS;
+            c.sbc_min_bitpool = c.sbc_max_bitpool = 29;
+            c.desc = strf("FastStream %u Hz, direction 0x%02X (%s), source rate bits 0x%X",
+                c.sample_rate, v[0], v[0] == 0x01 ? "music" : v[0] == 0x03 ? "music + voice" : "?", v[1] >> 4);
+            if (c.sample_rate == 0 || !(v[0] & 0x01))
+                c.desc += " (INVALID: not exactly one sink rate, or no music direction)";
+            return c;
+        }
         c.desc = strf("vendor codec 0x%08X:0x%04X (not supported by this tool)", vendor, vcodec);
         return c;
     }
@@ -315,6 +365,7 @@ public:
         wav_.set_path(wav_path);
         switch (cfg_.codec) {
         case Codec::SBC:
+        case Codec::FastStream:
             if (OI_CODEC_SBC_DecoderReset(&sbc_, sbc_data_, sizeof(sbc_data_), SBC_MAX_CHANNELS,
                                           (OI_UINT8)(cfg_.channels == 1 ? 1 : 2), FALSE) != OI_OK)
                 issue("SBC: decoder reset failed");
@@ -329,6 +380,13 @@ public:
             aptx_ = aptx_init(cfg_.codec == Codec::AptxHD ? 1 : 0);
             if (!aptx_) issue("aptX: aptx_init failed");
             break;
+        case Codec::Opus: {
+            int err = 0;
+            if (cfg_.sample_rate == 48000 && cfg_.channels > 0)
+                opus_ = opus_decoder_create(48000, cfg_.channels, &err);
+            if (!opus_) issue(strf("Opus: opus_decoder_create failed (%d)", err));
+            break;
+        }
         default:
             break;
         }
@@ -337,6 +395,7 @@ public:
     ~Session() {
         if (aac_) aacDecoder_Close(aac_);
         if (aptx_) aptx_finish(aptx_);
+        if (opus_) opus_decoder_destroy(opus_);
     }
 
     void on_packet(double t, const uint8_t *p, size_t n) {
@@ -354,12 +413,14 @@ public:
 
         switch (cfg_.codec) {
         case Codec::SBC:    decode_sbc(pl, pn); break;
+        case Codec::FastStream: decode_faststream(pl, pn); break;
         case Codec::AAC:    decode_aac(pl, pn); break;
         case Codec::Aptx:
         case Codec::AptxLL:
         case Codec::AptxHD: decode_aptx(pl, pn); break;
         case Codec::LDAC:   check_ldac(pl, pn); break;
         case Codec::LHDCV5: check_lhdcv5(pl, pn); break;
+        case Codec::Opus:   decode_opus(pl, pn); break;
         default: break;
         }
     }
@@ -498,6 +559,59 @@ private:
         if (got != announced) issue("SBC: media payload header frame count differs from frames in packet");
     }
 
+    /* One SBC frame at p (n bytes available): decoded, checked against the
+     * configuration and written to the WAV. Returns its length (A2DP 12.9),
+     * 0 on an error. */
+    size_t decode_one_sbc_frame(const uint8_t *p, size_t n, const char *codec) {
+        if (n < 4 || p[0] != 0x9C) { issue(strf("%s: SBC sync word 0x9C not found where a frame should start", codec)); return 0; }
+        static const int blocks_by_bits[4] = {4, 8, 12, 16};
+        int blocks = blocks_by_bits[(p[1] >> 4) & 3], mode = (p[1] >> 2) & 3, subbands = (p[1] & 1) ? 8 : 4;
+        int ch = mode == 0 ? 1 : 2, bitpool = p[2];
+        size_t bits = mode == 3 ? (size_t)subbands + (size_t)blocks * bitpool
+                    : mode == 2 ? (size_t)blocks * bitpool : (size_t)blocks * ch * bitpool;
+        size_t len = 4 + (4 * (size_t)subbands * ch) / 8 + (bits + 7) / 8;
+        if (len > n) { issue(strf("%s: SBC frame runs past the end of the packet", codec)); return 0; }
+        const OI_BYTE *data = p;
+        OI_UINT32 left = (OI_UINT32)len;
+        OI_INT16 pcm[SBC_MAX_CHANNELS * SBC_MAX_BANDS * SBC_MAX_BLOCKS];
+        OI_UINT32 pcm_bytes = sizeof(pcm);
+        OI_STATUS st = OI_CODEC_SBC_DecodeFrame(&sbc_, &data, &left, pcm, &pcm_bytes);
+        if (st != OI_OK) { issue(strf("%s: SBC decode error (OI_STATUS %d)", codec, (int)st)); return 0; }
+        if (left != 0) issue(strf("%s: SBC decoder did not take the whole frame", codec));
+        frames_++;
+        const OI_CODEC_SBC_FRAME_INFO &fi = sbc_.common.frameInfo;
+        if (fi.frequency != cfg_.sample_rate) issue(strf("%s: frame sampling frequency differs from configuration", codec));
+        if (fi.mode != cfg_.sbc_mode) issue(strf("%s: frame channel mode differs from configuration", codec));
+        if (fi.nrof_blocks != cfg_.sbc_blocks) issue(strf("%s: frame block length differs from configuration", codec));
+        if (fi.nrof_subbands != cfg_.sbc_subbands) issue(strf("%s: frame subbands differ from configuration", codec));
+        if (fi.alloc != cfg_.sbc_alloc) issue(strf("%s: frame allocation method differs from configuration", codec));
+        if (fi.bitpool < cfg_.sbc_min_bitpool || fi.bitpool > cfg_.sbc_max_bitpool)
+            issue(strf("%s: frame bitpool outside the configured range", codec));
+        samples_ += (uint64_t)fi.nrof_blocks * fi.nrof_subbands;
+        wav_.write(pcm, pcm_bytes, fi.frequency, fi.nrof_channels, 16);
+        return len;
+    }
+
+    /* FastStream (PipeWire a2dp-codec-faststream.c): no media payload
+     * header; SBC frames each padded with a zero byte to an even length;
+     * A2DPWB sends three per packet as PipeWire. */
+    void decode_faststream(const uint8_t *p, size_t n) {
+        size_t off = 0;
+        uint64_t got = 0;
+        while (off < n) {
+            size_t len = decode_one_sbc_frame(p + off, n - off, "FastStream");
+            if (len == 0) break;
+            off += len;
+            got++;
+            if (len % 2) {
+                if (off >= n) { issue("FastStream: odd-length frame without its padding byte"); break; }
+                if (p[off] != 0) issue("FastStream: padding byte after an odd-length frame is not 0");
+                off++;
+            }
+        }
+        if (got != 3) issue("FastStream: packet does not carry 3 frames (PipeWire's packets do)");
+    }
+
     void decode_aac(const uint8_t *p, size_t n) {
         if (!aac_) return;
         UCHAR *buf = const_cast<UCHAR *>(p);
@@ -587,6 +701,33 @@ private:
         }
     }
 
+    /* Opus (Android a2dp_vendor_opus_encoder.cc / _decoder.cc, PipeWire
+     * a2dp-codec-opus-g.c): 1-byte media payload header (F S L bits 7..5,
+     * frame count in bits 3..0: always 1, PipeWire rejects any other), then
+     * one Opus packet of one 10 / 20 ms frame. */
+    void decode_opus(const uint8_t *p, size_t n) {
+        if (!opus_) return;
+        if (n < 2) { issue("Opus: media payload shorter than its header and a TOC byte"); return; }
+        if (p[0] & 0xE0) { issue("Opus: fragmented media payload (not used by Android)"); return; }
+        if ((p[0] & 0x0F) != 1) issue("Opus: media payload header frame count is not 1");
+        const unsigned char *pkt = p + 1;
+        opus_int32 len = (opus_int32)(n - 1);
+        int frames = opus_packet_get_nb_frames(pkt, len);
+        int samples = opus_packet_get_nb_samples(pkt, len, 48000);
+        if (frames < 1 || samples <= 0) { issue("Opus: malformed Opus packet"); return; }
+        if (frames != 1) issue("Opus: more than one Opus frame in a packet");
+        if ((uint32_t)samples != cfg_.opus_frame_samples)
+            issue("Opus: packet duration differs from the configured frame duration");
+        if (cfg_.channels == 1 && opus_packet_get_nb_channels(pkt) != 1)
+            issue("Opus: stereo packet in a mono stream");
+        std::vector<opus_int16> pcm((size_t)5760 * cfg_.channels);
+        int got = opus_decode(opus_, pkt, len, pcm.data(), 5760, 0);
+        if (got < 0) { issue(strf("Opus: decode error %d", got)); return; }
+        frames_++;
+        samples_ += (uint64_t)got;
+        wav_.write(pcm.data(), (size_t)got * cfg_.channels * sizeof(opus_int16), 48000, (uint16_t)cfg_.channels, 16);
+    }
+
     /* LHDC V5 (A2DPWB / Android a2dp_vendor_lhdcv5_encoder.cc): 2-byte media
      * payload header [frames << 2 | latency] [sequence], then frames each
      * starting with a 2-byte LE header whose low 10 bits are the encoded
@@ -647,6 +788,7 @@ private:
     HANDLE_AACDECODER aac_ = nullptr;
     bool aac_synced_ = false;
     struct aptx_context *aptx_ = nullptr;
+    OpusDecoder *opus_ = nullptr;
 
     uint64_t ldac_frame_bytes_ = 0, ldac_min_frame_ = 0, ldac_max_frame_ = 0;
     uint64_t ldac_min_fpp_ = 0, ldac_max_fpp_ = 0;
@@ -921,6 +1063,10 @@ private:
 
 /* ------------------------------------------------------------------------ */
 
+/* le_audio_decode.cpp */
+int le_audio_decode_main(const std::vector<std::string> &inputs, const std::string &prefix, bool write_wav,
+                         bool received);
+
 static void usage() {
     fprintf(stderr,
         "Usage: a2dpwb_decode <capture.pklg> [-o <output prefix>] [--no-wav] [--received]\n"
@@ -929,28 +1075,37 @@ static void usage() {
         "HCI capture. Decoded audio is written to <prefix>.<n>.<codec>.wav\n"
         "(default prefix: the capture path without its extension).\n"
         "--received analyses the media the capturing host received instead of sent\n"
-        "(e.g. the capture of the tools/emu test sink).\n");
+        "(e.g. the capture of the tools/emu test sink).\n"
+        "\n"
+        "a2dpwb_decode --le-audio <capture.pklg>... [-o <prefix>] [--no-wav] [--received]\n"
+        "checks and decodes the LE Audio stream (LC3 over CIS) instead; several captures\n"
+        "(one per sink of a group) are read together. Audio: <prefix>.<n>.lc3.wav\n");
 }
 
 int main(int argc, char **argv) {
     std::string input, prefix;
-    bool write_wav = true, received = false;
+    std::vector<std::string> inputs;
+    bool write_wav = true, received = false, le_audio = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "-o" && i + 1 < argc) prefix = argv[++i];
         else if (a == "--no-wav") write_wav = false;
         else if (a == "--received") received = true;
+        else if (a == "--le-audio") le_audio = true;
         else if (a == "-h" || a == "--help") { usage(); return 2; }
-        else if (input.empty() && a[0] != '-') input = a;
+        else if (a[0] != '-') inputs.push_back(a);
         else { usage(); return 2; }
     }
-    if (input.empty()) { usage(); return 2; }
+    if (inputs.empty() || (inputs.size() > 1 && !le_audio)) { usage(); return 2; }
+    input = inputs[0];
     if (prefix.empty()) {
         prefix = input;
         size_t dot = prefix.find_last_of('.');
         size_t sep = prefix.find_last_of("/\\");
         if (dot != std::string::npos && (sep == std::string::npos || dot > sep)) prefix.erase(dot);
     }
+
+    if (le_audio) return le_audio_decode_main(inputs, prefix, write_wav, received);
 
     FILE *f = fopen(input.c_str(), "rb");
     if (!f) { fprintf(stderr, "Cannot open %s\n", input.c_str()); return 2; }

@@ -24,6 +24,20 @@ Low Latency without requiring a kernel driver.
 
 Uses **BTstack + WinUSB** — entirely user-mode, no driver signing needed.
 
+A2DPWB 2.0 is written in Rust. The C libraries that cannot be replaced
+(BTstack and the codec encoders) are compiled from source and called through
+small FFI crates; everything else, the SBC encoder included, is Rust.
+
+## Processes
+
+A2DPWB runs as up to three programs:
+
+| Program | Runs | Does |
+|:--------|:-----|:-----|
+| `a2dpwb-core.exe` | While A2DPWB is running (started by the window, the Start menu or **Start with Windows**) | Bluetooth, audio capture and encoding, profiles and settings, the tray icon and its menu, the IPC server. `--cli` runs the same core from a console instead |
+| `a2dpwb.exe` | Only while a window is open (exits 3 minutes after the last one was closed) | The main window and the tray flyout (Tauri 2, SolidJS + TypeScript). Holds no state of its own |
+| `a2dpwb-driver.exe` | For one driver change, with administrator rights (UAC) | Assigns WinUSB to an adapter or restores its previous driver, then exits |
+
 ```mermaid
 ---
 config:
@@ -33,22 +47,34 @@ config:
 ---
 flowchart TB
     src["Windows audio: system loopback / virtual device / one app"]
-    subgraph exe["A2DPWB.exe (user mode)"]
-        ui["GUI (wxWidgets) / CLI (--cli)"] --> svc["A2DP Service: connection lifecycle, codec selection"]
+    ui["a2dpwb.exe: window and tray flyout (Tauri + SolidJS)"]
+    subgraph core["a2dpwb-core.exe (resident, user mode)"]
+        ctl["Tray menu / IPC server / CLI (--cli)"] --> svc["Core service: connection state machine, codec selection, profiles, reconnect"]
         svc --> cap["WASAPI capture"]
-        cap -- PCM --> enc["Encoder: LDAC / aptX family / LHDC V5 / AAC / SBC"]
-        enc --> bt["BTstack: HCI / L2CAP / AVDTP / A2DP"]
+        cap -- PCM --> enc["Encoder pipeline: LDAC / aptX family / LHDC V5 / Opus / AAC / SBC"]
+        enc --> bt["BTstack: HCI / L2CAP / AVDTP / A2DP / AVRCP"]
     end
+    ui <-->|"per-user named pipe"| ctl
+    svc -.->|"UAC, only to change the driver"| drv["a2dpwb-driver.exe (elevated): assign / restore WinUSB"]
     src --> cap
-    bt -- WinUSB API --> usb["USB Bluetooth adapter (WinUSB driver via Zadig)"]
+    bt -->|"WinUSB (nusb)"| usb["USB Bluetooth adapter (WinUSB driver)"]
+    drv -.->|SetupAPI| usb
     usb -. Bluetooth .-> hp["Headphones / speakers"]
 ```
 
-## Why the setup takes these steps
-
-With an audio driver of its own, A2DPWB could be a plain install: the headphones would show up as a normal Windows audio device on the built-in Bluetooth. But Windows 10 / 11 only loads kernel-mode drivers signed through Microsoft, and Microsoft's signing service requires an EV code signing certificate. Such certificates cost roughly USD 300–700 per year and are generally issued only to registered companies — more than an individual project can carry. A2DPWB therefore takes the long way round: it takes a whole USB Bluetooth adapter away from Windows with the Microsoft-signed WinUSB driver and runs the Bluetooth stack itself, in user mode. That is why a dedicated adapter, Zadig and (for Realtek adapters) firmware files are needed.
-
-If you just want it to be simple, there is commercial software that ships a signed driver and works with the built-in Bluetooth. Honestly, for what it does it is remarkably cheap, so if ease of setup matters most to you, use that instead.
+- **The core is not a Windows service.** It is an ordinary process of the
+  signed-in user, because WASAPI loopback captures that user's session audio.
+  A per-session mutex keeps it to one instance; starting it again opens the
+  window.
+- **The tray belongs to the core.** Its right-click menu (open, the first 10
+  profiles, disconnect, exit) opens at once, without starting the window. A
+  left click starts the window's flyout.
+- **The window only displays.** It receives a snapshot of the core's state
+  and then the changes; closing it, or the window crashing, does not stop
+  the audio. Closing a window only hides it, so reopening it from the tray
+  is instant.
+- **The command line uses the same core.** `a2dpwb-core.exe --cli` runs the
+  core service without tray and IPC; the emulator test runs this way.
 
 ## Transport: BTstack + WinUSB
 
@@ -68,13 +94,14 @@ user-mode.
   Bluetooth)
 - While claimed by WinUSB, the adapter is unavailable for normal Windows
   Bluetooth
-- Device address is entered manually, selected from the Windows paired device
-  list (read via the built-in adapter), or found by a scan (GAP inquiry) with
+- Device address is entered manually or found by a scan (GAP inquiry) with
   the USB adapter
 
 **How it works**:
-1. User installs WinUSB driver on a USB Bluetooth adapter via Zadig
-2. BTstack opens the USB device via WinUSB API
+1. WinUSB is assigned to a USB Bluetooth adapter, in the app (**Adapter >
+   Assign WinUSB**, see [Driver Assignment](#driver-assignment)) or with Zadig
+2. The `hci-transport` crate opens the adapter through WinUSB with `nusb`
+   and connects it to BTstack as its HCI transport
 3. BTstack sends HCI commands to initialize the Bluetooth controller
 4. (Realtek, Intel and Broadcom adapters) Firmware is uploaded if needed
 5. BTstack establishes an ACL connection and opens L2CAP channels (PSM 0x0019)
@@ -101,66 +128,36 @@ sequenceDiagram
     end
 ```
 
-## Module Structure
+The USB transport keeps the recovery steps that real adapters needed in
+v1: the event and ACL pipes are reset when the adapter is opened, a failed
+event read is retried, HCI commands time out, and closing the adapter sends
+HCI Reset, so the next session finds an idle controller.
 
-```
-A2DPWB.exe
-├── GUI Layer (wxWidgets)
-│   ├── wx_app              App entry point, event loop
-│   ├── wx_main_frame       Main window (device, codec, status)
-│   ├── wx_profile_dialog   Connection profile management, device scan
-│   ├── wx_firmware_dialog  Realtek firmware download
-│   ├── wx_about_dialog     About / license info
-│   ├── wx_zadig_dialog     Zadig WinUSB installation guide
-│   ├── wx_link_quality_dialog  Link quality window (what is sent, radio)
-│   ├── wx_receiver_dialog  Peer receiver test (sent vs. received, debug mode)
-│   ├── wx_debug_console_dialog  Debug console: live log, connection flow
-│   ├── wx_radio_text.h     RSSI / AFH as text for both windows
-│   ├── theme_manager       Light / dark theme support
-│   └── localization        i18n (en, ja, zh-CN, zh-TW, ko, de, fr, es — embedded JSON)
-│
-├── Core Layer
-│   ├── a2dp_service        A2DP connection lifecycle & state machine
-│   ├── btstack_transport   BTstack integration (HCI, L2CAP, AVDTP, A2DP)
-│   ├── btstack_link_key_db_file  Link key storage (file in the config folder)
-│   ├── btstack_uart_tcp_windows  H4 over TCP to a virtual controller (--hci-tcp, testing)
-│   ├── wasapi_capture      WASAPI loopback audio capture
-│   ├── test_tone           Test tone instead of captured audio
-│   ├── audio_encoder       Encoder interface (abstract base)
-│   │   ├── ldac_encoder        LDAC (libldac, ABR support)
-│   │   ├── aptxhd_encoder      aptX HD (libopenaptx)
-│   │   ├── aptxll_encoder      aptX Low Latency (libopenaptx)
-│   │   ├── aptx_encoder        aptX classic (libopenaptx)
-│   │   ├── aptx_pcm_pack.h     Shared PCM → packed 24-bit helper for aptX encoders
-│   │   ├── aac_encoder         AAC-LC (fdk-aac, LATM transport)
-│   │   └── a2dp_sbc_encoder    SBC (BTstack Bluedroid)
-│   │
-│   ├── bt_device           Bluetooth device info (address, name, codecs)
-│   ├── bt_adapter_enum     USB Bluetooth adapter enumeration (WinUSB)
-│   ├── audio_device_enum   WASAPI audio device enumeration
-│   ├── profile_manager     Connection profile persistence (JSON)
-│   ├── media_payload_limit Max media packet size (range, default)
-│   ├── afh                 AFH host channel classification from the Wi-Fi scan
-│   ├── link_stats          Counters for the link quality window
-│   └── remote_sink_client  Statistics from tools/linux_sink over the network
-│
-├── Support
-│   ├── app_settings        Persistent application settings (JSON)
-│   ├── config_path         Config file path resolution
-│   ├── system_integration  System tray, autostart
-│   ├── debug_log           Debug logging macros
-│   ├── debug_log_model     Log lines and connection flow for the debug console
-│   ├── hci_capture         On-demand HCI capture (.pklg)
-│   ├── update_checker      Update check (GitHub Releases)
-│   ├── zadig_helper        Zadig download / launch
-│   ├── embedded_langs      Language files embedded at build time
-│   └── capture_mode        Audio capture mode definitions
-│
-└── CLI Mode
-    └── main.cpp            CLI argument parsing, headless streaming
-```
+## Crate Structure
 
-## Data Flow
+One Cargo workspace (`Cargo.toml` at the repository root) in five layers;
+each layer depends only on the layers below it. Libraries are in
+`app/src/crates/`, the programs in `app/src/core`, `app/src/ui` and
+`app/src/driver`. Only the `*-sys` crates and `win-sys` may contain `unsafe`
+code; all other crates have `#![forbid(unsafe_code)]`.
+
+| Layer | Crate | Does |
+|:------|:------|:-----|
+| 1. FFI | `btstack-sys` | Builds BTstack with `cc` (MSVC), hand-written FFI declarations and safe wrappers, `btstack_config.h`. BTstack may only be called on its run loop thread: the `!Send` `Stack` token enforces it |
+| 1. FFI | `ldac-sys`, `openaptx-sys`, `fdkaac-sys`, `lhdcv5-sys`, `opus-sys` | Build the C encoders and expose them; one crate per library, so each license stays separate |
+| 1. FFI | `win-sys` | Win32 APIs without a Rust library: MMCSS, the default audio device (IPolicyConfig), the WLAN API (AFH), power notifications, the Run key, media keys, the pipe's DACL, elevation, and the WinUSB driver assignment (SetupAPI) |
+| 2. Parts | `hci-transport` | HCI over USB ("H2") with `nusb`, and H4 over TCP to a virtual controller (`tools/emu`) |
+| 2. Parts | `codec` | The `Encoder` trait, the SBC encoder (Rust port of Bluedroid's), safe wrappers of the C encoders, Codec Information parsing and the codec choice |
+| 2. Parts | `audio-capture` | WASAPI capture (`wasapi` crate): system loopback, virtual device, one application (process loopback); device and app lists, test tone |
+| 3. Engine | `bt-host` | Runs BTstack on its own thread, driven by commands and typed events: GAP, A2DP Source, AVRCP, SDP, link keys, AFH, firmware loading, HCI capture (`.pklg`) |
+| 3. Engine | `pipeline` | PCM rings, format conversion, downmix, encoding, media payloads, pacing, ABR |
+| 4. Core | `a2dpwb-core` (directory `core`) | The state machine, reconnects, sleep / resume, profiles, settings and the v1 migration, volume sync, update check, the receiver test client, statistics |
+| 4. Core | `ipc` | The protocol types shared by core and window (serde; TypeScript types generated with `ts-rs`) and the pipe framing |
+| 5. Programs | `a2dpwb-core-exe` (`app/src/core`) | `a2dpwb-core.exe`: core, tray (`tray-icon` on a `tao` event loop), IPC server, `--cli` |
+| 5. Programs | `a2dpwb-ui` (`app/src/ui`) | `a2dpwb.exe`: Tauri 2; the Rust side is an IPC client, the page is SolidJS + TypeScript + Vite |
+| 5. Programs | `a2dpwb-driver` (`app/src/driver`) | `a2dpwb-driver.exe`: the elevated helper |
+
+## Audio Path and Threads
 
 ```mermaid
 ---
@@ -171,29 +168,49 @@ config:
 ---
 flowchart TD
     out["System audio output (loopback / virtual device / one app)"]
-    out --> cap["WASAPI loopback capture (usually float32, 44.1–96 kHz)"]
-    cap --> conv["A2DP Service: PCM conversion to 16 / 32-bit integer"]
-    conv --> enc["Audio encoder: LDAC / aptX family / LHDC V5 / AAC / SBC"]
-    enc --> stack["BtStackTransport::send_media() → AVDTP → L2CAP → HCI"]
-    stack --> usb["WinUSB → USB Bluetooth adapter → radio"]
+    out --> cap["capture thread: WASAPI, event-driven (usually float32, 44.1–96 kHz)"]
+    cap -->|"lock-free ring (PCM)"| enc["encode thread: conversion, downmix, encoder, media payload + RTP header, ABR"]
+    enc -->|"lock-free ring (packets)"| stack["bt-runloop thread: BTstack → AVDTP → L2CAP → HCI"]
+    stack --> usb["hci-transport → WinUSB → USB Bluetooth adapter → radio"]
     usb -.-> hp["Headphones / speakers"]
 ```
 
-## Key Modules
+| Thread | Priority | Work |
+|:-------|:---------|:-----|
+| capture | MMCSS "Audio" | Reads WASAPI; fills silent stretches with silence |
+| encode | MMCSS "Pro Audio" | Converts to what the encoder takes, encodes whole encoder blocks (the rest waits for the next round), packs frames into media payloads, in rounds of about 10 ms so packets go out evenly |
+| bt-runloop | -- | BTstack's run loop; sends a queued packet whenever L2CAP can send |
+| USB | -- | WinUSB transfers: three reads in flight on each IN pipe (events, ACL data), a writer for commands and ACL data |
+| core | Normal | State machine, IPC (tokio), settings, statistics (4 Hz), update check |
 
-### A2DP Service (`a2dp_service.cpp`)
+Once a stream runs, the audio path allocates no memory and takes no lock.
+Statistics are atomic counters that the core reads four times a second.
+BTstack is not thread-safe: other threads send it commands, which run on
+the bt-runloop thread.
 
-Central connection lifecycle manager. Coordinates:
-- Codec negotiation (auto-select or user-specified)
-- Stream endpoint registration for all supported codecs
-- aptX-family sample rate selection (44.1 / 48 kHz from the rates the remote
-  advertises; WASAPI resamples the capture)
-- PCM conversion (float32 → 16 / 32-bit integer) for the encoder
-- Connection state machine (idle → connecting → streaming → reconnecting, error)
-- Auto-reconnect logic on unexpected disconnection
-- Media packet sending with codec-specific framing
+## Core and IPC
 
-The connection state machine (`A2dpService::State`):
+The window talks to the core over the user's named pipe
+`\\.\pipe\a2dpwb-<user SID>`, whose DACL admits only that user. Messages are
+length-prefixed JSON frames:
+
+1. The window sends `hello { protocol, client }`. A core with another
+   protocol version rejects it, and the window says that the two programs
+   are from different versions.
+2. The core answers with a `snapshot`: its whole state (adapter, devices,
+   stream, profiles, settings, update) and a revision number.
+3. From then on the core sends `event`s with the changes. A missed revision
+   makes the window fetch a new snapshot.
+4. Actions are `request { id, method, params }` with a `response { id,
+   result | error }`. The method groups are `stream.*`, `device.*`,
+   `profile.*`, `settings.*`, `adapter.*`, `audio.*`, `diag.*` and `app.*`.
+
+Errors are codes with parameters (for example `adapter.driver_missing`), not
+texts; the window translates them and offers the fix next to the message.
+High-rate data (link quality, the log) is only sent while a screen
+subscribes to it.
+
+The connection state machine:
 
 ```mermaid
 stateDiagram-v2
@@ -209,47 +226,84 @@ stateDiagram-v2
     Error --> Connecting: Start again
 ```
 
-### BTstack Transport (`btstack_transport.cpp`)
+A failed connection is tried up to 3 times, a lost one is reconnected up to
+10 times. When the PC goes to sleep, the core stops BTstack without counting
+the lost link as a failure and reconnects after the PC resumes.
 
-Bridge between the application's synchronous model and BTstack's event-driven
-API.
+## Driver Assignment {#driver-assignment}
+
+Windows 8 and later include the Microsoft-signed WinUSB driver
+(`winusb.inf`). `a2dpwb-driver.exe` does what Device Manager's "Update
+driver > Let me pick > WinUsb Device" does, through SetupAPI:
+
+1. Open the adapter by its device instance ID.
+2. Write a `DeviceInterfaceGUIDs` value to its `Device Parameters`, so that
+   WinUSB registers a device interface for it.
+3. Select the "WinUsb Device" model of `%SystemRoot%\INF\winusb.inf` and
+   install it with `DiInstallDevice`. The inbox driver is signed, so no
+   certificate is installed (unlike Zadig / libwdi, which sign a generated
+   INF with a self-made certificate).
+4. **Restore**: remove the device (`DiUninstallDevice`) and re-enumerate it;
+   Windows then picks its best-ranked driver again (normally `BthUSB` or the
+   vendor's driver). The driver the adapter had before is recorded in the
+   settings folder (`driver\`) and compared after the restore.
+
+The core never runs as administrator: for an assignment or a restore it starts
+the helper with a UAC prompt (`ShellExecuteEx` "runas") and reads its JSON
+result. Listing adapters and their driver needs no elevation.
+
+## Key Modules
+
+### Codec choice (`codec::caps`)
+
+- Parses the remote's capabilities: the standard SBC and AAC elements and the
+  vendor codecs, including aptX LL under both vendor IDs and aptX Adaptive
+  (detected and logged only)
+- Picks the codec: Auto takes the best codec the remote offers; a requested
+  codec the remote does not offer is replaced by Auto's choice when the
+  profile allows it (**Use another codec if this one is not available**), and
+  is an error otherwise
+- Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
+  advertises; WASAPI resamples the capture)
+
+### Bluetooth host (`bt-host`)
 
 **Responsibilities**:
-- Initialize BTstack with WinUSB HCI transport
-- Run BTstack event loop in a dedicated thread
-- Register stream endpoints: vendor codecs (LDAC, aptX HD, aptX, aptX LL)
-  plus SBC and AAC
+- Run BTstack with the USB (or TCP) HCI transport on its own thread
+- Register stream endpoints: vendor codecs (LDAC, aptX HD, aptX, aptX LL,
+  LHDC V5, FastStream, Opus) plus SBC (also used by SBC XQ) and AAC
 - Register SDP records (A2DP Source, AVRCP Controller, AVRCP Target)
-- Parse remote capabilities, including aptX LL under both vendor IDs and
-  aptX Adaptive (detected and logged only)
-- Handle A2DP connection lifecycle via async-to-sync wrappers
 - Manage SSP pairing (Just Works, General Bonding; link keys persisted)
 - Tear down a half-open connection after a connect timeout so retries work
 - Retry a failed connection (up to 3 attempts) and tell the causes apart (no
   answer, silent link, remote ended the link, authentication); drop a link key
   the device no longer knows and pair again
 - GAP inquiry for the device scan
+- AVRCP absolute volume and the headphones' buttons
 - AFH host channel classification and RSSI / AFH readings for the link quality
-  window
-- Provide thread-safe media sending for WASAPI callback
+  view
 - Firmware loading for Realtek, Intel and Broadcom chipsets
+- HCI capture (`.pklg`), including the connection setup when it starts mid-connection
 
 **Key BTstack APIs used**:
 - `a2dp_source_create_stream_endpoint()` — Register codec endpoints
 - `a2dp_source_establish_stream()` — Connect to A2DP sink
 - `a2dp_source_set_config_other()` — Configure vendor-specific codec
 - `a2dp_source_stream_send_media_payload_rtp()` — Send encoded audio with an
-  RTP header (LDAC, aptX HD, AAC, SBC)
+  RTP header (LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5, Opus)
 - `a2dp_source_stream_send_media_packet()` — Send raw media packets without
-  an RTP header (aptX, aptX LL)
+  an RTP header (aptX, aptX LL, FastStream)
 
-### WASAPI Capture (`wasapi_capture.cpp`)
+### Audio capture (`audio-capture`)
 
-Captures system audio output in real-time using Windows Audio Session API.
-- Uses `IAudioClient` in `AUDCLNT_STREAMFLAGS_LOOPBACK` mode
-- Delivers the device's shared-mode mix format (usually float32; A2DP Service
-  converts it for the encoder)
-- Configurable audio device selection
+Captures audio in real time using the Windows Audio Session API.
+- System loopback of the default output device, loopback of a chosen
+  (virtual) device, or process loopback of one application and its child
+  processes (Windows 10 build 19041 or later)
+- Delivers the device's shared-mode mix format (usually float32; the
+  pipeline converts it for the encoder)
+- In Application mode, waits for the application and picks it up again when
+  it is restarted
 
 ### Audio Encoders
 
@@ -260,16 +314,18 @@ Captures system audio output in real-time using Windows Audio Session API.
 | aptX LL | libopenaptx | 352 kbps | ~32 ms latency, no RTP header, packets ≤ ~7.5 ms |
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit stereo, no RTP header |
 | AAC | fdk-aac | up to 256 kbps | AAC-LC, LATM transport |
-| SBC | BTstack Bluedroid | up to ~345 kbps | Mandatory A2DP baseline |
+| SBC | Rust port of the Bluedroid encoder | up to ~345 kbps | Mandatory A2DP baseline; bit-exact with the C encoder (tested over all configurations) |
+| SBC XQ | the same SBC encoder | ~385/505/552 kbps | Dual channel, bitpool 47 / 43 at 44.1 / 48 kHz (High); only when the sink's SBC allows dual channel and a bitpool of at least 43; shares SBC's stream endpoint, media payload header and RTP header |
+| FastStream | the same SBC encoder | 198/216 kbps (44.1/48 kHz) | CSR vendor codec, music direction only (no voice backchannel): SBC joint stereo bitpool 29, frames padded to 72 bytes, 3 per packet, no media payload header and no RTP header (as PipeWire); never chosen by Auto |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
+| Opus | libopus 1.5.2 | 128/192/256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
 
-All encoders implement the `AudioEncoder` interface with `encode()` and
-`get_frame_size()` methods.
+All encoders implement the `codec::Encoder` trait: they state the PCM
+format and the number of frames one call consumes, and return codec frames.
 
 libopenaptx expects groups of 4 stereo samples as packed 24-bit little-endian
-PCM. `aptx_pcm_pack.h` converts the capture's 16-bit or 32-bit (MSB-aligned)
-samples into that format for the aptX, aptX HD and aptX LL encoders; mono input
-is duplicated to both channels.
+PCM; the aptX wrappers convert the 16-bit or 32-bit samples into that format,
+and mono input is duplicated to both channels.
 
 ## Vendor Codec Information Elements
 
@@ -283,6 +339,8 @@ Non-standard codecs are registered as Vendor Specific in AVDTP:
 | aptX Low Latency | CSR (0x0000000A) or Qualcomm (0x000000D7) | 0x0002 |
 | aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD (detected only, never selected) |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
+| FastStream | CSR (0x0000000A) | 0x0001 |
+| Opus | Google (0x000000E0) | 0x0001 |
 
 AAC and SBC use standard A2DP codec IDs defined in the A2DP specification.
 
@@ -303,8 +361,18 @@ Codec information element sizes (including the 6-byte vendor/codec ID):
   configuration and applied to the encoder, as Android does. Media packets
   carry a 2-byte payload header: frame count << 2 (latency bits 0) and a
   sequence number
+- **FastStream**: 8 bytes (PipeWire `a2dp_faststream_t`): byte 6 direction
+  (0x01 sink = music, 0x02 source = voice), byte 7 low nibble the sink rates
+  (0x2 44.1k, 0x1 48k), high nibble the source rate (0x2 16k). A2DPWB offers
+  and configures the music direction only
+- **Opus**: 7 bytes (Android `a2dp_vendor_opus_constants.h`): byte 6 bits
+  2..0 channel mode (0x01 mono, 0x02 stereo, 0x04 dual mono), bits 4..3
+  frame duration (0x08 10 ms, 0x10 20 ms), bit 7 48 kHz. A2DPWB offers mono
+  and stereo, 10 and 20 ms, and configures 20 ms stereo (mono only for mono
+  input to a sink that has it). Media packets carry one Opus packet behind
+  a 1-byte payload header (frame count 1 in the low 4 bits)
 
-**RTP vs no RTP**: LDAC, aptX HD, AAC, SBC and LHDC V5 media packets carry the
+**RTP vs no RTP**: LDAC, aptX HD, AAC, SBC, LHDC V5 and Opus media packets carry the
 12-byte RTP header. aptX and aptX LL are sent **without** an RTP header (as Android and
 PipeWire do), so the whole L2CAP MTU is available for aptX frames.
 
@@ -312,13 +380,35 @@ PipeWire do), so the whole L2CAP MTU is available for aptX frames.
 it), so A2DPWB never registers or selects it. When a sink lists it, A2DPWB
 only logs it; classic aptX is used if the sink lists that separately.
 
+## Settings and Files
+
+Everything is kept in the settings folder, `%APPDATA%\A2DPWB` (or the
+folder named by the `A2DPWB_CONFIG_DIR` environment variable), in the same
+formats as v1:
+
+| File | Contents |
+|:-----|:---------|
+| `settings.json` | App settings, with a `schema_version`; unknown keys are kept |
+| `profiles.json` | Profiles |
+| `devices.txt`, `link_keys.txt` | Known devices and their link keys: headphones paired with v1 reconnect without pairing again |
+| `*.bin`, `*.hcd`, `ibt-*` | Firmware files |
+| `hci_<date>_<time>.pklg` | HCI captures |
+| `logs\a2dpwb-core.<date>.log` | The core's log, one file per day (UTC), the last 7 kept |
+| `driver\` | The previous driver of each adapter WinUSB was assigned to |
+| `backup-v1\` | A copy of the v1 settings, made once at the first v2 start |
+
 ## Build System
 
-- **CMake** with MSVC (Visual Studio 2022 or later)
-- Third-party libraries built as static libraries from source
-- wxWidgets fetched at configure time via CMake FetchContent (v3.2.6)
-- Language files (JSON) embedded into the executable at configure time
-- Application manifest and icon compiled via Windows resource script
+- **Cargo** builds everything; there is no CMake. Each `-sys` crate compiles
+  its C library from the git submodule in `extern/` with MSVC in `build.rs`
+- The window's page is built with **Vite** (`pnpm build` in `app/src/ui`) and
+  embedded into `a2dpwb.exe` by Tauri
+- The TypeScript types of the IPC protocol are generated from the Rust types
+  (`cargo test -p ipc export_bindings`)
+- Language files (`app/lang/*.json`) are used by the window and by the core's
+  tray menu
+- `installer/build-release.ps1` makes the NSIS installer (Tauri's bundler),
+  the portable zip and the updater manifest. See [Building](building)
 
 ## Important Considerations
 
@@ -331,4 +421,4 @@ only logs it; classic aptX is used if the sink lists that separately.
   dedicated USB adapter for A2DPWB
 - Some Bluetooth adapters' firmware limits achievable bitrate
 - USB Bluetooth 5.0+ adapters generally work well for LDAC
-- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
+- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream only when chosen)
