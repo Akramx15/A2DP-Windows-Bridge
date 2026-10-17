@@ -16,103 +16,164 @@ nav_order: 2
 
 ---
 
-## GUI 模式（預設）
+## 視窗
 
-```
-A2DPWB.exe
-```
+從「開始」功能表啟動 **A2DP Windows Bridge**（或執行 `a2dpwb.exe`）。左側的功能表有五個畫面；視窗較窄時會收合為圖示。視窗只是顯示常駐程式 `a2dpwb-core.exe` 的運作情形：關閉視窗並不會停止串流（請參閱 [系統匣與快顯視窗](#tray)）。
 
-圖形介面提供：
+### 首頁
 
-- **藍牙介面卡選擇** -- 選擇要使用的 WinUSB 介面卡
-- **音訊裝置選擇** -- 選擇 WASAPI 回送擷取的來源
-- **裝置位址** -- 手動輸入、從已配對的裝置中選取，或在設定檔對話方塊中使用 **掃描裝置**（以 USB 介面卡尋找附近的裝置）。輸入或貼上的位址會即時格式化：`AA:BB:CC:DD:EE:FF`、`aa-bb-cc-dd-ee-ff`、`AABBCCDDEEFF` 與 `AA BB CC DD EE FF` 都會變成 `AA:BB:CC:DD:EE:FF`
-- **轉碼器選擇** -- 自動 / LDAC / aptX HD / aptX LL / aptX / SBC / AAC
-- **LDAC 品質** -- HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)
-- **LHDC V5 品質** -- 高 (1000 kbps) / 中高 (900 kbps) / 標準 (500 kbps) / 行動 (400 kbps)，即 Android 提供的四個等級
-- **ABR** -- 針對不穩定連線的自適應位元率開關（LDAC 與 LHDC V5 時顯示）
-- **設定檔管理** -- 儲存與載入裝置 + 轉碼器設定
-- **即時狀態** -- 轉碼器、位元率、連線狀態
-- **連線品質** -- **操作 > 連線品質...**（請參閱 [連線品質視窗與 AFH](#link-quality)）
-- **設定功能表** -- 語言、佈景主題、隨 Windows 啟動、最小化至系統匣、啟動時檢查更新、檢查更新時包含搶先版（也會通知 Beta 版本）、以耳機按鈕控制播放（請參閱 [耳機按鈕](#headphone-buttons)）、記住耳機音量（請參閱 [音量](#volume)）、偵錯模式（新增 **偵錯** 功能表：偵錯主控台、HCI 擷取、對端接收器測試）
+- 目前設定檔的裝置、其狀態，以及使用中的轉碼器與位元率。若使用的轉碼器與設定檔不同，轉碼器標籤會說明改用了哪個轉碼器及原因
+- **連線** / **中斷連線**，畫面上最大的按鈕
+- **音量**：耳機的音量（請參閱 [音量](#volume)）
+- 設定檔切換、擷取來源（附 **編輯**），以及附小型圖表的連線品質
+- 發生錯誤時會顯示原因，若有解決方法，也會顯示對應的按鈕（**指派 WinUSB**、**開啟下載頁面**、**重新啟動藍牙**、**重試**、**編輯** 設定檔等）
+
+### 設定檔
+
+設定檔是一個裝置加上其音效設定。每張卡片會顯示裝置、轉碼器與擷取來源，並附有 **連線**（串流期間為 **中斷連線**）、編輯與刪除。**新增設定檔** 與編輯按鈕會開啟編輯器：
+
+- **裝置**：**掃描裝置** 會以 USB 介面卡尋找附近的裝置（約 10 秒；請將耳機切換到配對模式）。A2DPWB 曾經配對過的裝置會標示為 **已配對**。若掃描找不到耳機，請在 **手動:** 欄位輸入位址，然後按一下 **使用**；輸入或貼上的位址會即時格式化（`aa-bb-cc-dd-ee-ff`、`AABBCCDDEEFF` 與 `AA BB CC DD EE FF` 都會變成 `AA:BB:CC:DD:EE:FF`）
+- **設定檔名稱**：在您自行輸入之前，會跟隨裝置名稱
+- **轉碼器**：「自動」或單一轉碼器，以附有三條橫條（音質、低延遲、穩定性）的卡片呈現。**無法使用此轉碼器時改用其他轉碼器**（預設開啟，請參閱 [明確指定的轉碼器不在清單中](#codec-fallback)）
+- **擷取來源**：系統回送、虛擬裝置或應用程式（請參閱 [擷取模式](#capture-modes)）
+- **Windows 音量同步**（請參閱 [音量](#volume)）
+- **進階**（品質、取樣率、位元深度、封包大小）：只會提供所選轉碼器支援的選項
+  - **品質**：LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)；LHDC V5 高 (1000 kbps) / 中高 (900 kbps) / 標準 (500 kbps) / 行動 (400 kbps)，即 Android 提供的四個等級；AAC 與 SBC 也有品質等級，aptX 系列則為固定位元率
+  - **ABR (自適應位元率)**：適用於 LDAC 與 LHDC V5（請參閱 [ABR](#abr)）
+  - **取樣率**：「自動」會配合擷取裝置
+  - **位元深度**：LDAC 與 LHDC V5 為 16 或 24 位元（自動：24 位元）；其他轉碼器為 16 位元
+  - **媒體封包大小上限 (位元組)**（請參閱 [媒體封包大小上限](#max-packet)）
+
+預設值的音質最佳；大多數設定檔都不需要在 **進階** 中做任何設定。
+
+### 診斷
+
+- 串流期間的 **連線品質**：實際位元率、封包、傳送前捨棄的封包、擷取時捨棄的音訊、傳送佇列、無線電使用時間、訊號 (RSSI) 與 AFH 通道（請參閱 [連線品質與 AFH](#link-quality)）
+- **連線流程**：最近一次連線嘗試的十一個階段（開始、藍牙介面卡、ACL / AVDTP 連線、功能探索、轉碼器選擇、音訊擷取、串流設定、編碼器、串流開始、音訊傳送，以及包含中斷 / 重新連線的連線維持），標示為 OK、警告或失敗，並附上所花的時間。**複製流程** 可將其複製
+- **記錄**：即時顯示，可依層級（所有層級、資訊及以上、警告與錯誤、僅錯誤）與文字篩選。**複製顯示的記錄** 會複製目前顯示的內容
+- **開始 HCI 擷取** / **停止 HCI 擷取**（請參閱 [驗證媒體串流](#verify-stream)）
+- **複製診斷資訊**：將版本、作業系統、介面卡、設定檔、連線流程、警告 / 錯誤與最近的記錄複製到剪貼簿，可直接貼到錯誤回報中。**遮蔽藍牙位址**（預設開啟）只保留廠商部分（`AA:BB:CC:xx:xx:xx`）
+
+開啟 **設定 > 開發人員模式** 後，「診斷」中還會出現 **對端接收器測試** 分頁（請參閱 [對端接收器測試](#receiver)）。
+
+### 介面卡
+
+- 偵測到的 USB 藍牙介面卡，以及其晶片、**驅動程式** 與 **韌體**。**重新整理** 會重新偵測
+- **指派 WinUSB** / **還原驅動程式**（請參閱 [安裝設定](setup#winusb)）；每次 Windows 都會要求系統管理員權限
+- 韌體用的 **藍牙晶片**，以及 **開啟下載頁面** 與 **開啟設定資料夾**（請參閱 [韌體](setup#firmware)）
+- **AFH**：自動、關閉或手動指定 Wi-Fi 通道（請參閱 [連線品質與 AFH](#link-quality)）
+- **藍牙堆疊**：已停止（於第一次掃描或連線時啟動）、正在啟動、就緒或錯誤，以及 **重新啟動藍牙**
+
+### 設定
+
+| 區段 | 設定 |
+|:--------|:---------|
+| 外觀 | 語言、佈景主題（系統 / 淺色 / 深色） |
+| 啟動 | **隨 Windows 啟動**（請參閱 [隨 Windows 啟動](#autostart)） |
+| 耳機 | **以耳機按鈕控制播放**（請參閱 [耳機按鈕](#headphone-buttons)）、**記住耳機音量**（請參閱 [音量](#volume)） |
+| 更新 | **檢查更新**、**啟動時檢查更新**、**檢查更新時包含搶先版**（也會通知 Beta 版本）、**立即更新**（請參閱 [更新](#updates)） |
+| 進階 | **開發人員模式**（在「診斷」中加入接收器測試，並在記錄中寫入更多詳細資訊；不需要重新啟動）、**設定資料夾** 與 **開啟設定資料夾**、**執行設定精靈** |
+| 關於 A2DPWB | 版本、授權、第三方授權、**結束 A2DPWB** |
+
+### 首次執行設定
+
+第一次啟動時（尚無設定檔，或沒有任何介面卡使用 WinUSB）會開啟 **設定 A2DPWB**：選擇介面卡、驅動程式與韌體、尋找耳機、測試。請參閱 [安裝設定](setup#first-run)。可從 **設定 > 執行設定精靈** 再次開啟。
+
+## 系統匣與快顯視窗 {#tray}
+
+無論視窗是否開啟，A2DPWB 都會持續在系統匣中執行：
+
+- **按左鍵** 點選系統匣圖示會開啟快顯視窗：裝置與其狀態、**連線** / **中斷連線**、音量、設定檔切換、轉碼器、連線品質，以及 **開啟應用程式**。按 Esc 或點選其他位置即可隱藏。若錯誤需要主視窗的某個畫面（設定檔、介面卡）才能處理，按下其按鈕會在該畫面開啟視窗
+- **按右鍵** 會開啟選單：**開啟 A2DPWB**、前 10 個設定檔（使用中的設定檔會打勾；點選即可以該設定檔連線）、**中斷連線** 與 **結束**。選單會立即開啟，不需要啟動視窗
+- 工具提示會顯示 A2DPWB 目前是閒置還是串流中
+
+關閉視窗只會將它隱藏。系統匣選單中的 **結束** 或 **設定 > 結束 A2DPWB** 會停止串流、釋放介面卡，並完全關閉 A2DPWB。
+
+## 隨 Windows 啟動 {#autostart}
+
+**設定 > 隨 Windows 啟動** 會在您登入時於背景啟動 A2DPWB：只會顯示系統匣圖示，視窗可從圖示開啟。它是 `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` 下名為 `A2DPWB` 的值，資料為 `"<folder>\a2dpwb-core.exe" --background`。若要手動關閉，請刪除該值。
 
 ## CLI 模式
 
-加上 `--cli` 即可在沒有 GUI 視窗的情況下執行。
+`a2dpwb-core.exe --cli` 會從主控台進行串流，使用與視窗相同的核心。請先結束 A2DPWB（系統匣 > **結束**）：同一時間只有一個程式能使用介面卡。CLI 不會讀取設定檔；所有內容都以選項指定。
 
 ### 基本用法
 
 ```bash
 # Auto-select best codec
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF
 ```
+
+按 Ctrl+C 停止串流。CLI 會輸出狀態、轉碼器與位元率，並在結束時輸出已傳送與捨棄的封包數。
 
 ### 轉碼器選擇
 
 ```bash
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac      # LDAC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd    # aptX HD
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac      # LDAC
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd    # aptX HD
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll    # aptX Low Latency
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx      # aptX
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 ```
 
-自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
+自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（實驗性） > AAC > SBC XQ > SBC（FastStream 僅在明確選擇時使用）
 
-如果耳機不提供所要求的轉碼器，CLI 會改依「自動」的優先順序選擇。aptX Adaptive 永遠不會被選用 -- 請參閱 [aptX 系列與 aptX Adaptive 相容性](#aptx-compatibility)。
+如果耳機不提供所要求的轉碼器，CLI 會以說明原因的錯誤停止；請使用 `-c auto`（預設）來選用耳機提供的最佳轉碼器。aptX Adaptive 永遠不會被選用 -- 請參閱 [aptX 系列與 aptX Adaptive 相容性](#aptx-compatibility)。
 
-### LDAC 品質
+### 品質
 
 ```bash
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
 # LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
 ```
 
-### ABR（自適應位元率）
+### ABR（自適應位元率） {#abr}
 
 ```bash
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -a
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -a
 ```
 
-ABR 會在藍牙連線不穩定時自動降低位元率，並在狀況改善時提高位元率。LDAC 會在其品質模式之間切換；LHDC V5 依照 Android 的策略，維持在 160 到 400 kbps 之間。
+ABR 會在藍牙連線不穩定時自動降低位元率，並在狀況改善時提高位元率。LDAC 會在其品質模式之間切換；LHDC V5 依照 Android 的策略，維持在 160 到 400 kbps 之間。在視窗中，ABR 位於設定檔編輯器的 **進階** 中。
 
 ### 裝置探索
 
 ```bash
-# List paired Bluetooth audio devices
-A2DPWB.exe --cli -l
+# Nearby devices, found with the USB adapter (10 seconds; --scan 20 for longer)
+a2dpwb-core.exe --cli --scan
 ```
 
-{: .note }
-列出裝置時，會透過 **內建** 藍牙介面卡使用 Windows 藍牙 API，而不是 WinUSB 介面卡。
+請先將耳機切換到配對模式。
 
-### 所有選項
+### 所有選項 {#all-options}
 
 | 選項 | 說明 |
 |:-------|:------------|
-| `-d <addr>` | 耳機的藍牙位址（`AA:BB:CC:DD:EE:FF`） |
-| `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`auto`（預設：`auto`） |
+| `-d <addr>` | 耳機 / 接收器的藍牙位址（`AA:BB:CC:DD:EE:FF`） |
+| `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`lhdcv5`、`opus`、`auto`（預設：`auto`） |
 | `-q <mode>` | 品質：`hq`（預設）、`sq`、`mq`；LHDC V5 另有 `mhq`（900 kbps） |
 | `-a` | ABR（LDAC 與 LHDC V5） |
-| `-m <mode>` | 擷取模式：`loopback`（預設）、`virtual` |
-| `--audio-device <id>` | `-m virtual` 使用的音訊裝置 ID |
-| `-u <path>` | 介面卡的 USB 裝置路徑（連接多個介面卡時） |
-| `-l` | 列出已配對的藍牙音訊裝置後結束 |
-| `--max-packet <bytes>` | 媒體封包大小上限，679-1679（請參閱 [媒體封包大小上限](#max-packet)） |
-| `--afh <auto\|off\|6,11>` | AFH 主機通道分類（請參閱 [連線品質視窗與 AFH](#link-quality)） |
-| `--remote-sink <host[:port]\|auto>` | 顯示對端接收器收到的內容（請參閱 [對端接收器測試](#receiver)） |
+| `-m <mode>` | 擷取模式：`loopback`（預設）、`virtual`、`app` |
+| `--audio-device <id>` | `-m virtual` 使用的播放裝置 |
+| `--app <exe>` | `-m app` 使用的執行檔（例如 `spotify.exe`） |
+| `--rate <hz>` | 擷取取樣率（預設：裝置的取樣率） |
+| `--bits <16\|24>` | 位元深度（預設：轉碼器支援時為 24） |
+| `--max-packet <bytes>` | 媒體封包大小上限，679-1679，預設 1023（請參閱 [媒體封包大小上限](#max-packet)） |
+| `--afh <auto\|off\|6,11>` | AFH 主機通道分類（請參閱 [連線品質與 AFH](#link-quality)） |
+| `--remote-sink <host[:port]\|auto>` | 顯示對端接收器收到的內容；未指定 `-d` 時，會串流到該接收器（請參閱 [對端接收器測試](#receiver)） |
+| `--scan [seconds]` | 列出附近的裝置後結束（預設 10 秒） |
 | `-h` | 顯示說明 |
 
 開發與測試用途另有 `--hci-tcp <host:port>`（以 TCP 連線的虛擬控制器取代 WinUSB 介面卡）、`--test-tone`（以左 1 kHz / 右 1.5 kHz 取代擷取的音訊）、`--duration <s>`（經過指定秒數後停止）與 `--hci-capture <file.pklg>`（擷取整個執行期間的 HCI）；請參閱 [建置](building#emu)。
 
-在 GUI 模式下，`--minimized` 會讓 A2DPWB 在系統匣中啟動（**隨 Windows 啟動** 使用此選項）。
+未加上 `--cli` 時，`a2dpwb-core.exe` 即為常駐程式：它也會啟動視窗，但加上 `--background` 時除外（只顯示系統匣圖示，**隨 Windows 啟動** 使用此選項）。`a2dpwb-core.exe --quit` 會要求執行中的 A2DPWB 停止串流並結束（安裝程式會使用此選項）。
 
 ## 擷取模式 {#capture-modes}
 
@@ -124,13 +185,13 @@ A2DPWB 支援三種音訊擷取模式，各自錄製音訊路徑中的不同位�
 | 虛擬裝置 | 應用程式播放到所選裝置（例如 VB-CABLE）的內容 |
 | 應用程式 | 僅單一應用程式（及其子處理程序）播放的內容，經該應用程式本身處理後。需要 Windows 11 或 Windows 10 版本 2004（組建 19041）以上 |
 
-設定檔對話方塊的 **擷取來源** 下方也有相同的說明。
+設定檔編輯器的 **擷取來源** 下方也有相同的說明。
 
 系統回送是複製音訊，不會把音訊從預設輸出裝置上移走。音訊會持續在該裝置（喇叭、HDMI 電視等）以及藍牙耳機上播放。若只想從耳機聽到，請使用虛擬裝置模式，並選擇不會實際發聲的裝置，例如 VB-CABLE。
 
-在虛擬裝置模式下，**自動切換預設裝置**（預設開啟）會在串流期間將所選裝置設為 Windows 預設輸出，讓應用程式不需變更 Windows 設定即可播放到該裝置。停止串流時，A2DPWB 會切換回先前的預設裝置。
+在虛擬裝置模式下，**自動切換預設裝置** 會在串流期間將所選裝置設為 Windows 預設輸出，讓應用程式不需變更 Windows 設定即可播放到該裝置。停止串流時，A2DPWB 會切換回先前的預設裝置。
 
-- **音訊裝置** 清單只會顯示 A2DPWB 偵測為虛擬音訊裝置的裝置。
+- **音訊裝置** 清單只會顯示 A2DPWB 偵測為虛擬音訊裝置的裝置。若沒有這類裝置，編輯器會提供 **下載 VB-Cable**。
 - 不會變更預設通訊裝置（通話應用程式使用的裝置）。
 - 部分應用程式在重新啟動前，仍會在先前的裝置上播放。
 - 如果 A2DPWB 意外結束，預設裝置不會切換回來。請在 Windows 音效設定中變更。
@@ -143,11 +204,11 @@ A2DPWB 支援三種音訊擷取模式，各自錄製音訊路徑中的不同位�
 - 應用程式也會繼續在其本身的輸出裝置上播放。若只想從耳機聽到，請將該輸出裝置靜音（主音量）：這不會影響 A2DPWB 擷取的內容。但請勿在 Windows 音量混音程式中將該應用程式靜音，否則耳機也會沒有聲音。
 - Windows 音量混音程式中該應用程式的滑桿，會改變傳送到耳機（以及其輸出裝置）的音量。主音量與音量鍵不會改變傳送的音訊；若設定檔的 **Windows 音量同步** 設為「自動」，則會改為調整耳機的音量（請參閱 [音量](#volume)）。
 - Windows 會將音訊轉換為 A2DPWB 要求的取樣率，因此不受音效設定中裝置格式的限制。
-- 在 Windows 10 版本 2004（組建 19041）之前，Windows 不支援依應用程式擷取。設定檔對話方塊會將「應用程式」標示為此 PC 無法使用，以這種設定檔連線時會顯示錯誤。
+- 在 Windows 10 版本 2004（組建 19041）之前，Windows 不支援依應用程式擷取。此時以應用程式設定檔連線，會顯示要求您選擇其他擷取來源的錯誤。
 
 ### 音量 {#volume}
 
-串流期間，若耳機支援 AVRCP 絕對音量，主視窗會顯示 **音量** 滑桿。它會設定耳機本身的音量，因此傳送的音訊能保持完整解析度。滑桿也會跟隨耳機上的音量按鈕與觸控操作。
+串流期間，若耳機支援 AVRCP 絕對音量，首頁與系統匣快顯視窗會顯示 **音量** 滑桿。它會設定耳機本身的音量，因此傳送的音訊能保持完整解析度。滑桿也會跟隨耳機上的音量按鈕與觸控操作。
 
 設定檔中的 **Windows 音量同步** 會在串流期間將某個 Windows 音量與耳機音量合而為一：
 
@@ -204,7 +265,7 @@ A2DPWB 支援三種音訊擷取模式，各自錄製音訊路徑中的不同位�
 - Windows 沒有用來變更預設裝置的公開 API。A2DPWB 與其他音訊切換工具一樣，使用未公開的 IPolicyConfig 介面（Windows 10 與 11）。
 
 {: .warning }
-兩種模式都使用 WASAPI 共用模式，因此擷取的取樣率取決於 Windows 音效設定中該裝置的 **預設格式**（通常為 48 kHz）。若要以 96 kHz 使用 LDAC，請在 **音效設定 > 裝置內容 > 進階 > 預設格式** 中將輸出裝置的格式改為 96 kHz。
+系統回送與虛擬裝置使用 WASAPI 共用模式，因此擷取的取樣率取決於 Windows 音效設定中該裝置的 **預設格式**（通常為 48 kHz）。若要以 96 kHz 使用 LDAC，請在 **音效設定 > 裝置內容 > 進階 > 預設格式** 中將輸出裝置的格式改為 96 kHz。
 
 ## 轉碼器比較
 
@@ -217,6 +278,8 @@ A2DPWB 支援三種音訊擷取模式，各自錄製音訊路徑中的不同位�
 | aptX | 支援的 aptX 裝置最多 | 16 位元，352/384 kbps |
 | AAC | Apple 裝置，效率佳 | 音質中等 |
 | SBC | 相容性最高 | 音質最低 |
+
+設定檔編輯器在每張轉碼器卡片上，以三條橫條呈現相同的比較。
 
 ## aptX 系列與 aptX Adaptive 相容性 {#aptx-compatibility}
 
@@ -246,28 +309,28 @@ A2DPWB 連線時，耳機會公布一份 **轉碼器清單**（AVDTP 串流端�
 - **耳機同時列出傳統 aptX** -- 許多 aptX Adaptive 耳機都會如此，因為 Qualcomm 宣傳 aptX Adaptive 向下相容 aptX / aptX HD。此時 A2DPWB 會直接選擇傳統 aptX；它是耳機清單中的另一個轉碼器，而不是 aptX Adaptive 的降級模式。
 - **耳機只列出 aptX Adaptive**（沒有傳統 aptX、aptX HD 或 aptX LL）-- A2DPWB 無法使用 aptX。「自動」會依優先順序選擇下一個轉碼器，通常是 AAC 或 SBC。
 
-自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
+自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（實驗性） > AAC > SBC XQ > SBC（FastStream 僅在明確選擇時使用）
 
 ### 明確指定的轉碼器不在清單中 {#codec-fallback}
 
 當您指定的轉碼器不在耳機的清單中時：
 
-| 模式 | 行為 |
-|:-----|:---------|
-| GUI，已勾選 **無法使用此轉碼器時改用其他轉碼器**（預設） | 依「自動」的優先順序，以耳機提供的最佳轉碼器連線，狀態列會顯示改用了哪個轉碼器及原因。 |
-| GUI，未勾選此選項 | 連線會因錯誤而停止（「裝置不支援 ...」）。如果您指定了 aptX、aptX HD 或 aptX LL，而耳機只提供 aptX Adaptive，訊息會說明此情況，並建議使用自動、AAC 或 SBC。 |
-| CLI（`-c <codec>`） | 輸出 `Requested codec ... not available, falling back...`，並依「自動」的優先順序繼續。如果耳機提供 aptX Adaptive，會另外輸出一行說明它永遠不會被選用。 |
+| 位置 | 行為 |
+|:------|:---------|
+| 設定檔，**無法使用此轉碼器時改用其他轉碼器** 開啟（預設） | 依「自動」的優先順序，以耳機提供的最佳轉碼器連線，轉碼器標籤會顯示改用了哪個轉碼器及原因。 |
+| 設定檔，此選項關閉 | 連線會因錯誤而停止（「裝置不支援 ...」）。如果您指定了 aptX、aptX HD 或 aptX LL，而耳機只提供 aptX Adaptive，訊息會說明此情況，並建議使用自動、AAC 或 SBC。 |
+| CLI（`-c <codec>`） | 以相同的錯誤停止。請使用 `-c auto`，以耳機提供的最佳轉碼器連線。 |
 
-此選項位於 **編輯設定檔** 中的轉碼器旁（選擇「自動」時不使用）。
+此選項位於設定檔編輯器中的轉碼器卡片下方（選擇「自動」時不使用）。
 
 ### 耳機連線到其他裝置時缺少轉碼器 {#sep-in-use}
 
-耳機會在串流端點 (SEP) 上提供各個轉碼器。在雙重（多點）連線時，正在串流到手機或 PC 的端點會被回報為 **使用中**，在該串流停止之前無法使用其轉碼器。有些耳機也只在單一裝置連線時才提供高解析度轉碼器（LDAC、L2HC 等）。此時 A2DPWB 會回報：
+耳機會在串流端點 (SEP) 上提供各個轉碼器。在雙重（多點）連線時，正在串流到手機或 PC 的端點會被回報為 **使用中**，在該串流停止之前無法使用其轉碼器。有些耳機也只在單一裝置連線時才提供高解析度轉碼器（LDAC、L2HC 等）。此時 A2DPWB 會記錄：
 
 ```
-BTstack: Remote SEP SEID=6 sink audio, IN USE (codec not queried)
-BTstack: Remote SEPs in use by another connection: 1 of 6 audio sink SEP(s); ...
-BTstack: Capability discovery complete (LDAC=0, ..., 1 of 6 audio sink SEP(s) in use)
+remote SEP 6: sink audio, IN USE (codec not queried)
+remote SEPs in use by another connection: 1 of 6 audio sink SEP(s); ...
+capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 ```
 
 錯誤訊息也會說明端點正由其他裝置使用。請中斷耳機與手機 / PC 的連線（或在耳機的應用程式中關閉雙重連線），然後再次連線。內建藍牙仍與耳機配對的 PC 也算是其他裝置。
@@ -278,36 +341,33 @@ aptX、aptX HD 與 aptX LL 只支援 44.1 kHz 與 48 kHz。A2DPWB 會從耳機�
 
 ### 檢查耳機提供的轉碼器
 
-1. 在 **設定** 功能表中勾選 **偵錯模式 (debug.log / HCI 記錄)**，然後重新啟動 A2DPWB。
-2. 連線到耳機。
-3. 開啟設定資料夾（`%APPDATA%\A2DPWB`）中的 `debug.log`。在 CLI 模式下，相同的內容會寫入標準錯誤輸出。
+1. 連線到耳機。
+2. 開啟 **診斷**，在記錄篩選欄位中輸入 `remote`。
 
-在 GUI 中，**偵錯 > 偵錯主控台...**（Ctrl+Shift+D）會即時顯示相同的記錄。其 **連線流程** 清單會將最近一次連線嘗試的各個階段（介面卡初始化、ACL / AVDTP 連線、功能探索、轉碼器選擇、WASAPI、串流設定、編碼器、串流開始、音訊傳送、中斷連線 / 重新連線）標示為 OK、警告或失敗；按兩下步驟可跳到其來源的記錄行。下方的記錄可依層級與文字篩選。**複製診斷資訊** 會將版本、作業系統、介面卡、設定檔、連線流程、警告 / 錯誤與最近的記錄複製到剪貼簿，可直接貼到錯誤回報中（藍牙位址預設會遮蔽到只剩廠商部分）。
-
-功能相關的記錄行會確切列出耳機提供的轉碼器：
+相同的記錄行也會寫入設定資料夾中的記錄檔（`%APPDATA%\A2DPWB\logs\a2dpwb-core.<date>.log`）；在 CLI 模式下則會輸出到主控台。功能相關的記錄行會確切列出耳機提供的轉碼器：
 
 ```
-BTstack: Remote supports aptX (SEID=..., caps=0x..)
-BTstack: Remote supports aptX Adaptive (SEID=...) — never selected (no open encoder); classic aptX is used only if the remote lists it
-BTstack: Remote vendor codec vid=0x........ cid=0x.... (SEID=...) — unsupported
-BTstack: Capability discovery complete (LDAC=0, aptXHD=0, aptXLL=0, aptX=1, aptXAdaptive=1 [not encodable], SBC=1, AAC=1)
+remote supports aptX (SEID ..., [...])
+remote supports aptX Adaptive (SEID ...) - never selected (no open encoder); classic aptX is used only if the remote lists it
+remote vendor codec 0x........./0x.... (SEID ...) - unsupported
+capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)
 ```
 
-- `aptX=1` -- 可使用傳統 aptX（即使同時為 `aptXAdaptive=1`）。
-- `aptX=0`、`aptXHD=0`、`aptXLL=0` 且 `aptXAdaptive=1` -- 耳機只提供 aptX Adaptive；請使用自動、AAC 或 SBC。
-- `Remote vendor codec ... — unsupported` -- A2DPWB 未實作的其他廠商轉碼器。
+- `aptX=true` -- 可使用傳統 aptX（即使同時為 `aptX Adaptive=true`）。
+- `aptX=false`、`aptX HD=false`、`aptX LL=false` 且 `aptX Adaptive=true` -- 耳機只提供 aptX Adaptive；請使用自動、AAC 或 SBC。
+- `remote vendor codec ... - unsupported` -- A2DPWB 未實作的其他廠商轉碼器。
 
 ## 媒體封包大小上限（依設定檔） {#max-packet}
 
-每個設定檔中的 **媒體封包大小上限**（**編輯設定檔**；CLI：`--max-packet <bytes>`）設定每個藍牙封包中音訊資料的上限，範圍為 679 到 1679 位元組，讓需要不同數值的耳機可以有各自的設定。耳機本身的上限 (MTU) 也一律適用；A2DPWB 會採用兩者中較小的值。變更會從下次連線開始生效。舊版儲存的設定檔會沿用先前的全域設定值。
+每個設定檔中的 **媒體封包大小上限**（設定檔編輯器 > **進階**；CLI：`--max-packet <bytes>`）設定每個藍牙封包中音訊資料的上限，範圍為 679 到 1679 位元組，讓需要不同數值的耳機可以有各自的設定。耳機本身的上限 (MTU) 也一律適用；A2DPWB 會採用兩者中較小的值。變更會從下次連線開始生效。舊版儲存的設定檔會沿用先前的全域設定值。
 
 **建議使用 1023（預設）。** 它剛好可放入一個藍牙基頻封包 (3-DH5)。較大的值只能節省 1-2% 的額外負擔，而且每遺失一個封包就會遺失更多音訊。679 剛好可放入一個 2-DH5 封包，也是 LDAC 接受的最小值。
 
 ## 驗證媒體串流 (a2dpwb_decode) {#verify-stream}
 
-大多數耳機無法顯示正在使用的轉碼器。在偵錯模式下，GUI 會有 **偵錯** 功能表，內含 **開始 HCI 擷取** / **停止 HCI 擷取**。擷取檔是 HCI 封包記錄（設定資料夾中的 `hci_<date>_<time>.pklg`），包含轉碼器協商與傳送的每個媒體封包。以 LDAC 990 kbps 時每小時約增加 0.5 GB，因此請只擷取所需的時間。
+大多數耳機無法顯示正在使用的轉碼器。**診斷 > 開始 HCI 擷取** / **停止 HCI 擷取** 會錄製 HCI 封包記錄（設定資料夾中的 `hci_<date>_<time>.pklg`），包含轉碼器協商與傳送的每個媒體封包。以 LDAC 990 kbps 時每小時約增加 0.5 GB，因此請只擷取所需的時間。在 CLI 模式下，`--hci-capture <file.pklg>` 會錄製整個執行期間。
 
-您可以在連線前或串流期間開始擷取。若在連線期間開始，A2DPWB 會先寫入它記住的連線建立封包（L2CAP 通道建立與 AVDTP 訊號，包含轉碼器協商），因此檔案仍可分析。停止後，A2DPWB 會顯示檔案路徑。
+您可以在連線前或串流期間開始擷取。若在連線期間開始，A2DPWB 會先寫入它記住的連線建立封包（L2CAP 通道建立與 AVDTP 訊號，包含轉碼器協商），因此檔案仍可分析。錄製期間與停止後，「診斷」都會顯示檔案路徑。
 
 可在 Wireshark 中開啟擷取檔，或使用 `a2dpwb_decode` 開發者工具檢查（需從原始碼建置，請參閱 [建置](building)）：
 
@@ -327,23 +387,25 @@ a2dpwb_decode "%APPDATA%\A2DPWB\hci_20260925_120000.pklg" -o C:\temp\check
 {: .note }
 這能顯示 A2DPWB 傳送了什麼，以及這些內容對協商的轉碼器是否有效。由於接收端只能解碼協商好的轉碼器，若耳機播放的聲音正確且報告沒有問題，就能有力證明確實使用了該轉碼器。
 
-## 連線品質視窗與 AFH {#link-quality}
+## 連線品質與 AFH {#link-quality}
 
-**操作 > 連線品質...** 會顯示 A2DPWB 在串流期間傳送的內容：轉碼器與位元率、已傳送的封包、傳送前捨棄的封包（傳送佇列已滿：無線連結跟不上）、編碼器來不及處理的音訊、傳送佇列，以及 **無線電**：連線的 RSSI（相對於控制器的黃金接收範圍；0 = 良好，負值 = 太弱；並非絕對值），以及連結在 79 個藍牙通道中跳頻使用了多少個 (AFH)。
+**診斷 > 連線品質** 會顯示 A2DPWB 在串流期間傳送的內容：實際位元率、已傳送的封包、傳送前捨棄的封包（傳送佇列已滿：無線連結跟不上）、擷取時捨棄的音訊、傳送佇列、無線電使用時間，以及 **訊號**：連線的 RSSI（相對於控制器的黃金接收範圍；0 = 良好，負值 = 太弱；並非絕對值），以及連結在 79 個藍牙通道中跳頻使用了多少個 (AFH)。首頁與系統匣快顯視窗會將其總結為良好、普通或不佳。
 
 藍牙會自行避開繁忙的通道 (AFH)，但它只能從錯誤中得知 Wi-Fi 的存在。A2DPWB 也會在每次連線時告知控制器應避開哪些通道（AFH 主機通道分類）：
 
-| `afh` | |
+| AFH | |
 |:--|:--|
-| `auto`（預設） | 此 PC 收到強訊號的 2.4 GHz Wi-Fi 網路（Windows Wi-Fi 掃描，連線期間會重複執行） |
-| `off` | 不指定：由控制器自行決定 |
-| `6,11` | 這些 Wi-Fi 通道 |
+| 自動（預設） | 只避開此 PC 所連線的 2.4 GHz Wi-Fi 通道（連線期間每 30 秒重新檢查）。PC 未連線至 2.4 GHz Wi-Fi 時（未連線、使用 5 或 6 GHz，或使用有線網路）不做任何處理 |
+| 關閉 | 不指定：由控制器自行決定 |
+| 手動，例如 `6,11` | 這些 Wi-Fi 通道（1 到 14） |
 
-至少一律保留 20 個藍牙通道。可透過 `settings.json`（設定資料夾）中的 `"afh"`、對端接收器測試視窗（設定會儲存在此），或 CLI 模式的 `--afh` 設定。「無線電」列會顯示避開了哪些 Wi-Fi 通道。是否有幫助取決於環境：請使用對端接收器測試來測量。
+對於 PC 只是收得到訊號的網路，「自動」會交由控制器本身的 AFH 處理：避開鄰居繁忙的通道會讓跳頻少掉 22 MHz，反而可能使連線變差。若仍想避開這類通道，請以「手動」輸入。
+
+至少一律保留 20 個藍牙通道。可在 **介面卡** 畫面、`settings.json`（設定資料夾）中的 `"afh"`，或 CLI 模式的 `--afh` 設定。無線電資訊列會顯示避開了哪些 Wi-Fi 通道。是否有幫助取決於環境：請使用對端接收器測試來測量。
 
 ## 對端接收器測試 (tools/linux_sink) {#receiver}
 
-連線品質視窗顯示的是 A2DPWB 傳送的內容。若要查看實際抵達的內容，請在另一台 Linux PC 上執行 `tools/linux_sink/a2dpwb_sink.py`。它會直接驅動該 PC 的一般藍牙介面卡（內建的即可）（透過 HCI user channel 使用 Bumble），作為支援所有轉碼器（包括 LDAC）的 A2DP 接收端，測量每個抵達的媒體封包，並透過網路提供統計資料：
+連線品質畫面顯示的是 A2DPWB 傳送的內容。若要查看實際抵達的內容，請在另一台 Linux PC 上執行 `tools/linux_sink/a2dpwb_sink.py`。它會直接驅動該 PC 的一般藍牙介面卡（內建的即可）（透過 HCI user channel 使用 Bumble），作為支援所有轉碼器（包括 LDAC）的 A2DP 接收端，測量每個抵達的媒體封包，並透過網路提供統計資料：
 
 將 `tools/linux_sink` 資料夾複製到 Linux PC（只需此資料夾），然後執行：
 
@@ -352,27 +414,53 @@ sh setup.sh      # once: decoder libraries, Python environment (Ubuntu / Debian,
 sudo sh run.sh   # start the receiver (root: it takes the Bluetooth adapter)
 ```
 
-在偵錯模式下，**偵錯 > 對端接收器測試...** 會自動在區域網路上尋找接收器。**開始** 會以所選的轉碼器、品質、取樣率與位元深度，將穩定的測試音（或系統音訊）串流到接收器的藍牙介面卡 -- 不需要設定檔或配對步驟 -- 視窗會並列顯示傳送與抵達的內容：位元率、遺失與延遲的封包（RTP 序號）、抖動與間隔、模擬播放緩衝區的斷音與跳過、串流 / 解碼錯誤，以及接收端的 RSSI（相對於其黃金接收範圍：0 = 良好，負值 = 太弱）。每個步驟（尋找接收器、統計資料、接收器設定、藍牙連線、轉碼器、音訊抵達）都會顯示為 OK / NG，並附有可複製的記錄。在 CLI 模式下，`--remote-sink auto` 的作用相同：它會尋找接收器，除非 `-d` 指定了其他裝置，否則會串流到該接收器，並每 5 秒及結束時輸出統計資料。
+在 Windows PC 上，結束 A2DPWB（系統匣 > **結束**），然後執行：
 
-兩端都從串流的第一個封包開始計算封包數，按下 **停止** 後最終計數會持續顯示（「停止時」；接收端的數值約晚一秒抵達），因此可以比較傳送與接收的封包數：兩者應該相等。藍牙會在控制器內部重新傳送遺失的無線封包，而且 A2DPWB 在連結存續期間不會放棄任何封包，因此無線連結不佳時，會在接收端呈現為間隔、抖動與斷音，而不是封包遺失；當連結跟不上時，傳送端會在傳送前捨棄封包。兩端都無法得知重新傳送的次數。
+```bash
+a2dpwb-core.exe --cli --remote-sink auto -c ldac --test-tone
+```
+
+`--remote-sink auto` 會在區域網路上尋找接收器，除非 `-d` 指定了其他裝置，否則會串流到其藍牙介面卡，並每 5 秒及結束時輸出接收器的統計資料：位元率、遺失與延遲的封包（RTP 序號）、抖動與間隔、模擬播放緩衝區的斷音與跳過、串流 / 解碼錯誤，以及接收端的 RSSI（相對於其黃金接收範圍：0 = 良好，負值 = 太弱）。未加上 `--test-tone` 時會傳送系統音訊。`--remote-sink <host[:port]>` 可直接指定接收器，而不進行搜尋。
+
+{: .note }
+開啟 **設定 > 開發人員模式** 後，「診斷」中會有 **對端接收器測試** 分頁。在此版本中它只是預覽：會儲存接收器位址，但尚無法串流。請使用上述命令列。
+
+兩端都從串流的第一個封包開始計算封包數，因此可以比較傳送與接收的封包數：兩者應該相等。藍牙會在控制器內部重新傳送遺失的無線封包，而且 A2DPWB 在連結存續期間不會放棄任何封包，因此無線連結不佳時，會在接收端呈現為間隔、抖動與斷音，而不是封包遺失；當連結跟不上時，傳送端會在傳送前捨棄封包。兩端都無法得知重新傳送的次數。
 
 工具執行期間，接收端的介面卡無法供其本身的藍牙堆疊使用。探索使用 UDP 連接埠 51201 的廣播，因此兩台 PC 必須位於相同的網段（否則請輸入位址）。所有選項與統計通訊協定請參閱 `tools/linux_sink/README.md`。
 
+## 更新 {#updates}
+
+A2DPWB 最多每天檢查一次 GitHub Releases（**設定 > 啟動時檢查更新**；**檢查更新時包含搶先版** 也會通知 Beta 版本）。有新版本時，「設定」中會顯示通知：
+
+- **安裝版**：**立即更新** 會下載已簽署的更新。串流期間會等待，並在串流停止後才安裝，因此更新絕不會中斷音訊。接著 A2DPWB 會關閉、安裝新版本，然後自動重新啟動。
+- **免安裝版**（或未進行更新簽署的組建）：**開啟下載頁面** 會開啟發行頁面。
+
 ## 疑難排解
+
+### 視窗顯示核心未執行
+
+視窗需要 `a2dpwb-core.exe` 位於同一資料夾，並會自行啟動它。「A2DPWB 核心未執行」表示無法啟動核心：請重新安裝 A2DPWB（或重新解壓縮免安裝版 zip）。「核心版本不同」表示兩個程式來自不同版本：請安裝兩者的相同版本（安裝最新版本即可）。
+
+### 指派或還原驅動程式失敗
+
+- 「系統管理員權限要求已遭拒絕」：驅動程式未變更。請再按一次按鈕，並允許權限要求。
+- 「變更驅動程式失敗」：詳細資料請查看 **診斷 > 記錄**。
+- 「介面卡未恢復為先前的驅動程式」：如果介面卡是用 Zadig 設定的，Windows 可能會再次選用 Zadig 的 WinUSB 驅動程式套件。請在裝置管理員中刪除該驅動程式套件（介面卡 > 解除安裝裝置，並勾選「嘗試移除此裝置的驅動程式」），然後拔下並重新插入介面卡。
 
 ### 藍牙介面卡沒有回應 {#adapter-no-answer}
 
-如果介面卡開啟後沒有任何回傳（不回應 HCI Reset），A2DPWB 會在 5 秒後放棄，再開啟一次；若仍無回應，會顯示「藍牙介面卡沒有回應」。請拔下介面卡，重新插入後再試一次。不需要重新啟動 A2DPWB：啟動失敗時會釋放介面卡，每次重新啟動都會再次初始化介面卡。
+如果介面卡開啟後沒有任何回傳（不回應 HCI Reset），A2DPWB 會在 5 秒後放棄，再開啟一次；若仍無回應，會顯示「藍牙介面卡沒有回應」。請拔下介面卡，重新插入後再試一次（或按 **重新啟動藍牙**）。不需要重新啟動 A2DPWB：啟動失敗時會釋放介面卡，每次重新啟動都會再次初始化介面卡。
 
 為避免介面卡卡住，A2DPWB 在開啟介面卡時會重設其 USB 管道，關閉時會傳送 HCI Reset。
 
 ### 更新後的配對問題
 
-A2DPWB 使用 SSP (Just Works) 搭配 **General Bonding** 進行配對，並儲存連結金鑰，讓耳機不需重新配對即可重新連線。如果您曾用舊版 A2DPWB 與耳機配對，請在耳機上移除 A2DPWB 的配對（清除配對清單的方法請參閱耳機說明書），然後重新配對。
+A2DPWB 使用 SSP (Just Works) 搭配 **General Bonding** 進行配對，並儲存連結金鑰，讓耳機不需重新配對即可重新連線（v2 會讀取 v1 的連結金鑰）。如果您曾用舊版 A2DPWB 與耳機配對，而耳機已無法連線，請在耳機上移除 A2DPWB 的配對（清除配對清單的方法請參閱耳機說明書），然後重新配對。
 
 ### 連線逾時
 
-A2DPWB 會註冊 SDP 記錄（A2DP Source、AVRCP Controller / Target），讓耳機能將它識別為音訊來源。如果連線嘗試逾時，半開的連線會被拆除，因此您可以在同一工作階段中直接重試，不需重新啟動 A2DPWB。請確認耳機已開機、在範圍內，且未連線到其他裝置。
+A2DPWB 會註冊 SDP 記錄（A2DP Source、AVRCP Controller / Target），讓耳機能將它識別為音訊來源。如果連線嘗試逾時，半開的連線會被拆除，因此您可以直接重試，不需重新啟動 A2DPWB。請確認耳機已開機、在範圍內，且未連線到其他裝置。
 
 當連結建立後沒有傳輸任何資料，或耳機沒有回應時，失敗的連線會自動重試（最多 3 次）。如果耳機已不認得配對（已重設，或已與其他 PC 配對），會捨棄儲存的金鑰並重新配對一次。之後錯誤訊息會說明發生了什麼事：
 
@@ -382,3 +470,5 @@ A2DPWB 會註冊 SDP 記錄（A2DP Source、AVRCP Controller / Target），讓�
 | 連線已建立，但之後沒有傳輸任何資料 | 無線電環境：請再試一次，或移動介面卡 / 裝置 |
 | 裝置有回應，但隨後自行結束連線 | 裝置目前不接受連線：正在關機、充電或已連線到其他裝置 |
 | 驗證失敗，重新配對後仍然失敗 | 將裝置切換到配對模式，或移除其配對清單項目，然後再試一次 |
+
+連線中斷時會自動重新連線（最多 10 次）。若 PC 在串流期間進入睡眠，A2DPWB 會在恢復後重新連線；這些嘗試不計入次數。

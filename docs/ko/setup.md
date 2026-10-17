@@ -18,81 +18,93 @@ nav_order: 1
 
 ## 준비 사항
 
-- **Windows 10/11** (x64)
+- **Windows 10 (22H2) / 11** (x64)
 - **전용 USB Bluetooth 어댑터** (내장 Bluetooth와 별도)
-- **Zadig** ([https://zadig.akeo.ie/](https://zadig.akeo.ie/))
+
+A2DPWB가 어댑터에 WinUSB 드라이버를 직접 할당합니다. 이제 [Zadig](https://zadig.akeo.ie/)는 필요 없습니다(계속 사용할 수는 있습니다. [Zadig 사용하기](#zadig) 참조).
 
 ## A2DPWB 설치
 
 각 [릴리스](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)는 같은 파일을 담은 두 가지 형식으로 제공됩니다.
 
-- **설치 프로그램** (`A2DPWB-<version>-win64-setup.exe`): 관리자 권한 없이 현재 사용자용으로 설치하며(선택하면 모든 사용자용으로도 설치 가능), 시작 메뉴 항목과 제거 프로그램을 추가합니다. 처음 설치할 때는 설치 과정에서 선택한 언어로 A2DPWB를 시작합니다
-- **포터블** (`A2DPWB-<version>-win64-portable.zip`): 원하는 위치에 압축을 풀고 `A2DPWB.exe`를 실행합니다
+- **설치 프로그램** (`A2DPWB-<version>-win64-setup.exe`): 관리자 권한 없이 현재 사용자용으로 설치하며, 시작 메뉴 항목(**A2DP Windows Bridge**)과 제거 프로그램을 추가하고, Microsoft Edge WebView2 Runtime이 없으면 함께 설치합니다(Windows 11에는 포함되어 있음). 업데이트는 앱에서 스스로 설치됩니다(**설정 > 업데이트 > 지금 업데이트**)
+- **포터블** (`A2DPWB-<version>-win64-portable.zip`): 원하는 위치에 압축을 풀고 `a2dpwb.exe`를 실행합니다. 세 프로그램(`a2dpwb.exe`, `a2dpwb-core.exe`, `a2dpwb-driver.exe`)은 같은 위치에 함께 두십시오. 포터블 버전은 업데이트를 알려 주기만 하며, WebView2 Runtime이 설치되어 있어야 합니다
 
 두 형식 모두 설정, 프로필, 링크 키, 펌웨어를 `%APPDATA%\A2DPWB`에 저장하므로 서로 전환해서 사용할 수 있습니다. 제거해도 이 폴더는 남아 있습니다.
 
-## 1단계: WinUSB 드라이버 설치
+### v1에서 업그레이드 {#from-v1}
 
-A2DPWB는 WinUSB를 통해 USB Bluetooth 어댑터와 직접 통신합니다. **전용 어댑터**가 필요하며, 내장 Bluetooth는 일반 Windows Bluetooth로 계속 정상 작동합니다.
+v1 위에 v2 설치 프로그램을 실행합니다. v1이 실행 중이면 종료하라는 안내가 표시되고, 그다음 v1을 제거하면서 설정 폴더는 유지합니다. 프로필, 헤드폰과의 페어링, 펌웨어 파일이 그대로 이어지므로 헤드폰을 다시 페어링할 필요가 없습니다. 이미 (Zadig로) WinUSB가 설치된 어댑터는 그대로 WinUSB를 유지합니다. **Windows 시작 시 실행**이 켜져 있었다면 이제 v2가 시작됩니다.
 
-1. USB Bluetooth 어댑터를 꽂습니다
-2. [Zadig](https://zadig.akeo.ie/)를 다운로드하여 엽니다
-3. **Options > List All Devices**를 선택합니다
-4. 드롭다운에서 USB Bluetooth 어댑터를 선택합니다
-5. 대상 드라이버로 **WinUSB**를 선택합니다
-6. **Replace Driver**를 클릭합니다
+v2는 처음 시작할 때 v1 설정을 읽기 전에 `%APPDATA%\A2DPWB\backup-v1\`에 복사해 둡니다.
+
+## 1단계: 첫 실행 설정 {#first-run}
+
+USB Bluetooth 어댑터를 꽂고 A2DPWB를 시작합니다. 아직 프로필이 없거나 WinUSB가 설치된 어댑터가 없으면 A2DPWB는 **A2DPWB 설정**을 열며, 다음 네 단계로 진행합니다.
+
+1. **어댑터 선택**: 발견된 USB Bluetooth 어댑터가 표시됩니다. 사용할 어댑터가 없으면 꽂은 후 **새로 고침**을 누릅니다
+2. **드라이버 및 펌웨어**: **WinUSB 할당**([2단계](#winusb) 참조), Realtek 어댑터의 경우 펌웨어 파일([펌웨어](#firmware) 참조)
+3. **헤드폰 찾기**: 헤드폰을 페어링 모드로 전환하고 **장치 검색**으로 찾아 선택한 다음 **프로필 만들기**를 누릅니다([3단계](#headphones) 참조)
+4. **테스트**: 연결한 다음 **테스트 톤 재생**을 누릅니다. 오른쪽 귀에는 높은 소리, 왼쪽 귀에는 낮은 소리가 들립니다
+
+**나중에 설정**을 누르면 나머지 단계를 건너뜁니다. **설정 > 설정 마법사 실행**으로 다시 열 수 있습니다.
+
+## 2단계: 어댑터에 WinUSB 할당 {#winusb}
+
+A2DPWB는 Windows에 포함된 범용 USB 드라이버인 WinUSB를 통해 USB Bluetooth 어댑터와 직접 통신합니다. **전용 어댑터**가 필요하며, 내장 Bluetooth는 일반 Windows Bluetooth로 계속 정상 작동합니다.
+
+1. **어댑터** 화면(또는 설정 마법사의 **드라이버 및 펌웨어** 단계)을 엽니다
+2. 어댑터의 **드라이버**에 **Windows Bluetooth**(또는 **다른 드라이버** / **드라이버 없음**)가 표시됩니다. **WinUSB 할당**을 클릭합니다
+3. 확인 내용을 읽고 계속합니다. Windows가 관리자 권한(UAC)을 요청합니다
+4. 이제 드라이버에 **WinUSB(A2DPWB에서 사용)**가 표시됩니다
 
 {: .warning }
-어댑터가 WinUSB 모드인 동안에는 Windows가 일반 Bluetooth 용도로 사용할 수 없습니다. 일반 주변 장치(키보드, 마우스 등)에는 내장 Bluetooth를 사용하십시오.
+WinUSB가 할당되어 있는 동안 Windows의 Bluetooth는 이 어댑터를 더 이상 인식하지 못합니다. 이 어댑터를 통해 Windows에 페어링한 장치는 드라이버를 복원할 때까지 작동하지 않습니다. 일반 주변 장치(키보드, 마우스 등)에는 내장 Bluetooth를 사용하고, **PC에 내장된 Bluetooth 어댑터에는 절대 WinUSB를 할당하지 마십시오**.
 
-## 2단계: 헤드폰의 Bluetooth 주소 확인
+같은 화면의 **드라이버 복원**은 어댑터를 Windows에 돌려줍니다. Windows가 다시 자체 드라이버(보통 Bluetooth 드라이버)를 선택하며, 어댑터를 Windows의 Bluetooth에서 사용할 수 있게 됩니다. WinUSB를 다시 할당하기 전에는 A2DPWB가 이 어댑터로 스트리밍할 수 없습니다. 어댑터를 다시 Windows에서 사용하려면 A2DPWB를 제거하기 전에 드라이버를 복원하십시오.
 
-헤드폰/스피커의 Bluetooth MAC 주소가 필요합니다.
+### Zadig 사용하기 {#zadig}
 
-**Windows 설정에서:**
+[Zadig](https://zadig.akeo.ie/)로 설치한 WinUSB 드라이버도 똑같이 작동합니다.
+
+1. Zadig를 열고 **Options > List All Devices**를 선택합니다
+2. 드롭다운에서 USB Bluetooth 어댑터를 선택합니다
+3. 대상 드라이버로 **WinUSB**를 선택하고 **Replace Driver**를 클릭합니다
+
+## 3단계: 헤드폰 찾기 {#headphones}
+
+**장치 검색**(설정 마법사와 프로필 편집기에 있음)은 USB 어댑터로 약 10초 동안 주변 장치를 찾습니다. 먼저 헤드폰을 페어링 모드로 전환하십시오. A2DPWB와 페어링한 적이 있는 장치는 **페어링됨**으로 표시됩니다.
+
+검색에서 찾지 못하면 **직접 입력:**에 Bluetooth 주소를 입력하고 **사용**을 클릭합니다. 입력하거나 붙여 넣은 주소는 바로 형식이 맞춰집니다. `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF`, `AA BB CC DD EE FF`는 모두 `AA:BB:CC:DD:EE:FF`가 됩니다.
+
+**Windows 설정에서** (헤드폰을 PC 내장 Bluetooth와 페어링한 경우):
 1. **설정 > Bluetooth 및 장치**를 엽니다
 2. 오디오 장치를 클릭합니다
 3. **속성**을 클릭합니다
 4. Bluetooth 주소가 표시됩니다 (형식: `AA:BB:CC:DD:EE:FF`)
 
-**A2DPWB GUI에서:**
-- `A2DPWB.exe`를 실행하면 페어링된 Bluetooth 오디오 장치가 장치 드롭다운에 표시됩니다
-- 또는 프로필 대화 상자의 **장치 검색**으로 USB 어댑터를 사용해 주변 장치를 찾습니다(헤드폰을 페어링 모드로 전환하십시오)
-
-**CLI에서:**
+**명령줄에서** (먼저 A2DPWB를 종료하십시오. 트레이 > **종료**):
 ```
-A2DPWB.exe --cli -l
+a2dpwb-core.exe --cli --scan
 ```
 
-## 3단계: A2DPWB 실행
-
-**GUI:**
-```
-A2DPWB.exe
-```
-
-**CLI:**
-```
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
-```
-
-자세한 내용은 [사용법](usage)을 참조하십시오.
+새 프로필은 코덱이 **자동**, 캡처 소스가 시스템 오디오로 시작합니다. 기본값으로 최상의 음질을 얻을 수 있습니다. 그 밖의 내용은 [사용법](usage)을 참조하십시오.
 
 ---
 
-## 펌웨어 (Realtek 어댑터)
+## 펌웨어 (Realtek 어댑터) {#firmware}
 
 Realtek 기반 USB Bluetooth 어댑터(예: TP-Link UB500, RTL8761BU 동글)는 작동하려면 독점 펌웨어가 필요합니다. CSR 어댑터는 펌웨어가 필요 없습니다. Intel 및 Broadcom 어댑터(실험적)는 자체 펌웨어 파일이 필요할 수 있습니다. [권장 어댑터](#adapters)를 참조하십시오.
 
-### GUI (안내형 다운로드)
+### 앱에서 (안내형 다운로드)
 
-`A2DPWB.exe`를 실행하고 **작업 > Bluetooth 펌웨어 선택**을 선택합니다. 펌웨어가 없으면 경고가 표시됩니다. **다운로드 페이지 열기** 버튼으로 브라우저에서 [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) 페이지를 열고, **설정 폴더 열기**로 저장할 폴더를 엽니다. 필요한 `.bin` 파일을 다운로드하여 설정 폴더에 넣습니다.
+**어댑터** 화면(및 설정 마법사의 **드라이버 및 펌웨어** 단계)에 어댑터의 펌웨어 상태가 **펌웨어 정상**, **펌웨어 파일이 필요 없습니다**, 또는 필요한 파일 이름과 함께 **펌웨어를 찾을 수 없음**으로 표시됩니다. **다운로드 페이지 열기** 버튼으로 브라우저에서 [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) 페이지를 열고, **설정 폴더 열기**로 저장할 폴더를 엽니다. 필요한 `.bin` 파일을 다운로드하여 설정 폴더에 넣습니다.
 
-대화 상자는 어댑터 칩셋을 자동으로 감지하고 필요한 펌웨어 파일을 표시합니다.
+A2DPWB는 어댑터 칩셋을 감지하고 필요한 펌웨어 파일을 표시합니다.
 
 ### Bluetooth 칩 설정
 
-같은 대화 상자의 **Bluetooth 칩** 목록은 A2DPWB가 어댑터에 Realtek 초기화(펌웨어 업로드)를 수행할지 결정합니다.
+**어댑터** 화면의 **Bluetooth 칩** 목록은 A2DPWB가 어댑터에 Realtek 초기화(펌웨어 업로드)를 수행할지 결정합니다.
 
 | 선택 | 의미 |
 |:-----|:-----|
@@ -106,7 +118,7 @@ Realtek이 아닌 어댑터에는 Realtek 칩이나 Custom을 선택하지 마�
 ### 수동 다운로드
 
 1. [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt)에서 칩셋에 맞는 펌웨어 및 config `.bin` 파일을 다운로드합니다 (예: `rtl8761bu_fw.bin`과 `rtl8761bu_config.bin`)
-2. 두 파일을 A2DPWB 설정 폴더(`%APPDATA%\A2DPWB` 또는 펌웨어 대화 상자에 표시된 경로)에 넣습니다
+2. 두 파일을 A2DPWB 설정 폴더(`%APPDATA%\A2DPWB`, **설정 > 설정 폴더**에서도 열 수 있음)에 넣습니다
 
 {: .note }
 이 펌웨어 파일은 linux-firmware 프로젝트를 통해 배포되는 Realtek 독점 바이너리이며, 이 저장소에는 포함되어 있지 않습니다. 재배포 조건은 [WHENCE](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/WHENCE)를 참조하십시오.
@@ -124,3 +136,5 @@ Realtek이 아닌 어댑터에는 Realtek 칩이나 Custom을 선택하지 마�
 | MediaTek, Qualcomm | MT7921/MT7922, QCA61x4 | 미지원: A2DPWB에 없는 펌웨어 로더가 필요합니다 |
 
 LDAC 같은 고비트레이트 코덱에는 일반적으로 USB Bluetooth 5.0 이상 어댑터가 가장 적합합니다.
+
+여러 어댑터에 WinUSB가 설치되어 있으면 A2DPWB는 처음 찾은 어댑터를 사용합니다. WinUSB는 A2DPWB에 사용할 어댑터에만 설치해 두십시오.

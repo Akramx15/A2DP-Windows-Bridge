@@ -18,81 +18,93 @@ nav_order: 1
 
 ## 前提条件
 
-- **Windows 10/11**（x64）
+- **Windows 10（22H2）/ 11**（x64）
 - **专用 USB Bluetooth 适配器**（独立于内置 Bluetooth）
-- **Zadig**（[https://zadig.akeo.ie/](https://zadig.akeo.ie/)）
+
+A2DPWB 会自行为适配器分配 WinUSB 驱动程序，不再需要 [Zadig](https://zadig.akeo.ie/)（Zadig 仍然可用，请参阅[改用 Zadig](#zadig)）。
 
 ## 安装 A2DPWB
 
 每个[发布版本](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)提供两种形式，内含文件相同：
 
-- **安装程序**（`A2DPWB-<version>-win64-setup.exe`）：无需管理员权限即可为当前用户安装（也可选择为所有用户安装），添加“开始”菜单项和卸载程序；首次安装后会以安装时选择的语言启动 A2DPWB
-- **便携版**（`A2DPWB-<version>-win64-portable.zip`）：解压到任意位置，运行 `A2DPWB.exe` 即可
+- **安装程序**（`A2DPWB-<version>-win64-setup.exe`）：无需管理员权限即可为当前用户安装，添加“开始”菜单项（**A2DP Windows Bridge**）和卸载程序；如果缺少 Microsoft Edge WebView2 Runtime，还会一并安装（Windows 11 已自带）。更新可在应用内自动安装（**设置 > 更新 > 立即更新**）
+- **便携版**（`A2DPWB-<version>-win64-portable.zip`）：解压到任意位置，运行 `a2dpwb.exe` 即可。请将三个程序（`a2dpwb.exe`、`a2dpwb-core.exe`、`a2dpwb-driver.exe`）放在一起。便携版只会提示有可用更新；它需要已安装 WebView2 Runtime
 
 两者都将设置、配置文件、链接密钥和固件保存在 `%APPDATA%\A2DPWB` 中，因此可以在两者之间切换。卸载时该文件夹会保留。
 
-## 第 1 步：安装 WinUSB 驱动
+### 从 v1 升级 {#from-v1}
 
-A2DPWB 通过 WinUSB 直接与 USB Bluetooth 适配器通信。你需要一个**专用适配器**——内置 Bluetooth 仍可照常用于 Windows 的普通 Bluetooth 功能。
+直接在 v1 上运行 v2 的安装程序即可。如果 v1 正在运行，安装程序会请你关闭它，然后卸载 v1 并保留设置文件夹：配置文件、与耳机的配对以及固件文件都会沿用，耳机无需重新配对。已通过 Zadig 设置为 WinUSB 的适配器会保持 WinUSB。如果之前开启了**随 Windows 启动**，现在启动的将是 v2。
 
-1. 插入 USB Bluetooth 适配器
-2. 下载并打开 [Zadig](https://zadig.akeo.ie/)
-3. 选择 **Options > List All Devices**
-4. 从下拉列表中选择你的 USB Bluetooth 适配器
-5. 选择 **WinUSB** 作为目标驱动
-6. 单击 **Replace Driver**
+v2 首次启动时，会先将 v1 的设置复制到 `%APPDATA%\A2DPWB\backup-v1\`，然后再读取。
+
+## 第 1 步：首次运行设置 {#first-run}
+
+插入 USB Bluetooth 适配器并启动 A2DPWB。如果还没有任何配置文件，或者没有任何适配器使用 WinUSB，A2DPWB 会打开**设置 A2DPWB**，共四步：
+
+1. **选择适配器**：列出找到的 USB Bluetooth 适配器。如果没有你的适配器，请插入后单击**刷新**
+2. **驱动程序和固件**：**分配 WinUSB**（请参阅[第 2 步](#winusb)），Realtek 适配器还需要固件文件（请参阅[固件](#firmware)）
+3. **查找耳机**：让耳机进入配对模式，单击**扫描设备**，选择耳机，然后单击**创建配置文件**（请参阅[第 3 步](#headphones)）
+4. **测试**：连接后单击**播放测试音**：右耳听到较高的音，左耳听到较低的音
+
+**稍后设置**会跳过剩余步骤；**设置 > 运行设置向导**可再次打开它。
+
+## 第 2 步：为适配器分配 WinUSB {#winusb}
+
+A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB Bluetooth 适配器通信。你需要一个**专用适配器**——内置 Bluetooth 仍可照常用于 Windows 的普通 Bluetooth 功能。
+
+1. 打开**适配器**页面（或设置向导中的**驱动程序和固件**步骤）
+2. 适配器的**驱动程序**显示为 **Windows Bluetooth**（或**其他驱动程序** / **无驱动程序**）。单击**分配 WinUSB**
+3. 阅读确认信息后继续：Windows 会请求管理员权限（UAC）
+4. 驱动程序现在显示为 **WinUSB（由 A2DPWB 使用）**
 
 {: .warning }
-适配器处于 WinUSB 模式时，Windows 无法将其用于普通 Bluetooth。键盘、鼠标等普通外设请使用内置 Bluetooth。
+分配 WinUSB 期间，Windows 自带的 Bluetooth 将不再识别该适配器：通过它与 Windows 配对的设备在恢复驱动程序之前都无法使用。键盘、鼠标等普通外设请使用内置 Bluetooth，并且**切勿为 PC 的内置 Bluetooth 适配器分配 WinUSB**。
 
-## 第 2 步：查找耳机的 Bluetooth 地址
+同一页面上的**恢复驱动程序**会将适配器交还给 Windows：Windows 会重新为其选择自己的驱动程序（通常是其 Bluetooth 驱动程序），适配器即可配合 Windows 的 Bluetooth 使用。在重新分配 WinUSB 之前，A2DPWB 无法通过它串流。如果卸载 A2DPWB 后还想在 Windows 中使用该适配器，请在卸载前恢复驱动程序。
 
-你需要耳机/音箱的 Bluetooth MAC 地址。
+### 改用 Zadig {#zadig}
 
-**通过 Windows 设置：**
+使用 [Zadig](https://zadig.akeo.ie/) 安装的 WinUSB 驱动程序同样可用：
+
+1. 打开 Zadig，选择 **Options > List All Devices**
+2. 从下拉列表中选择你的 USB Bluetooth 适配器
+3. 选择 **WinUSB** 作为目标驱动，然后单击 **Replace Driver**
+
+## 第 3 步：查找耳机 {#headphones}
+
+**扫描设备**（在设置向导和配置文件编辑器中）会通过 USB 适配器查找附近的设备，持续约 10 秒。请先让耳机进入配对模式。A2DPWB 之前配对过的设备会标记为**已配对**。
+
+如果扫描找不到耳机，请在**手动：**下输入 Bluetooth 地址并单击**使用**。输入或粘贴的地址会自动格式化：`AA:BB:CC:DD:EE:FF`、`aa-bb-cc-dd-ee-ff`、`AABBCCDDEEFF` 和 `AA BB CC DD EE FF` 都会变为 `AA:BB:CC:DD:EE:FF`。
+
+**通过 Windows 设置**（如果耳机曾与 PC 的内置 Bluetooth 配对）：
 1. 打开 **设置 > 蓝牙和其他设备**
 2. 单击你的音频设备
 3. 单击 **属性**
 4. 即可看到 Bluetooth 地址（格式：`AA:BB:CC:DD:EE:FF`）
 
-**通过 A2DPWB GUI：**
-- 启动 `A2DPWB.exe`，已配对的 Bluetooth 音频设备会列在设备下拉列表中
-- 或在配置文件对话框中使用 **扫描设备**，通过 USB 适配器查找附近的设备（请让耳机进入配对模式）
-
-**通过 CLI：**
+**通过命令行**（请先退出 A2DPWB：托盘 > **退出**）：
 ```
-A2DPWB.exe --cli -l
+a2dpwb-core.exe --cli --scan
 ```
 
-## 第 3 步：运行 A2DPWB
-
-**GUI：**
-```
-A2DPWB.exe
-```
-
-**CLI：**
-```
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
-```
-
-详细信息请参阅[使用方法](usage)。
+新配置文件的编解码器默认为**自动**，捕获源默认为系统音频；默认值即可获得最佳音质。其他内容请参阅[使用方法](usage)。
 
 ---
 
-## 固件（Realtek 适配器）
+## 固件（Realtek 适配器） {#firmware}
 
 基于 Realtek 的 USB Bluetooth 适配器（如 TP-Link UB500、RTL8761BU 适配器）需要专有固件才能工作。CSR 适配器无需固件。Intel 和 Broadcom 适配器（实验性）可能需要各自的固件文件：请参阅[推荐适配器](#adapters)。
 
-### GUI（下载引导）
+### 在应用中（下载引导）
 
-启动 `A2DPWB.exe`，选择 **操作 > Bluetooth 固件选择**。如果缺少固件，会显示警告。使用 **打开下载页面** 按钮在浏览器中打开 [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) 页面，然后使用 **打开配置文件夹** 打开目标文件夹。下载所需的 `.bin` 文件并放入该配置文件夹。
+**适配器**页面（以及设置向导的**驱动程序和固件**步骤）会显示适配器的固件状态：**固件正常**、**无需固件文件**，或**未找到固件**并列出所需的文件名。使用**打开下载页面**按钮在浏览器中打开 [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) 页面，然后使用**打开配置文件夹**打开目标文件夹。下载所需的 `.bin` 文件并放入该配置文件夹。
 
-该对话框会自动检测适配器的芯片组，并显示需要哪些固件文件。
+A2DPWB 会检测适配器的芯片组，并显示需要哪些固件文件。
 
 ### Bluetooth 芯片设置
 
-同一对话框中的 **Bluetooth 芯片** 列表决定 A2DPWB 是否对适配器执行 Realtek 初始化（上传固件）：
+**适配器**页面上的 **Bluetooth 芯片**列表决定 A2DPWB 是否对适配器执行 Realtek 初始化（上传固件）：
 
 | 选项 | 含义 |
 |:-------|:--------|
@@ -106,7 +118,7 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
 ### 手动下载
 
 1. 从 [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) 下载与芯片组对应的固件和配置 `.bin` 文件（如 `rtl8761bu_fw.bin` 和 `rtl8761bu_config.bin`）
-2. 将这两个文件放入 A2DPWB 配置文件夹（`%APPDATA%\A2DPWB`，或固件对话框中显示的路径）
+2. 将这两个文件放入 A2DPWB 配置文件夹（`%APPDATA%\A2DPWB`，也可在**设置 > 设置文件夹**中找到）
 
 {: .note }
 这些固件文件是通过 linux-firmware 项目分发的 Realtek 专有二进制文件，未包含在本仓库中。再分发条款请参阅 [WHENCE](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/WHENCE)。
@@ -124,3 +136,5 @@ A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
 | MediaTek、Qualcomm | MT7921/MT7922、QCA61x4 | 不支持：需要 A2DPWB 所没有的固件加载程序 |
 
 对于 LDAC 等高比特率编解码器，USB Bluetooth 5.0+ 适配器通常效果最好。
+
+如果有多个适配器使用 WinUSB，A2DPWB 会使用找到的第一个。请只为 A2DPWB 所用的适配器保留 WinUSB。

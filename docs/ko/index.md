@@ -11,12 +11,10 @@ has_toc: false
 모든 코덱을 지원하는 Windows용 Bluetooth A2DP 오디오 스트리밍 도구
 {: .fs-6 .fw-300 }
 
-WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC** 및 **LHDC V5**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
+WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** 및 (실험적) **Opus**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
 
 [시작하기](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
-
-![메인 창, 연결 프로필, 연결 품질 창]({{ '/images/app_sample.jpg' | relative_url }})
 
 ---
 
@@ -30,7 +28,8 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | SBC | 최대 약 345 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
-| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### 플랫폼별 코덱 지원 (헤드폰으로 전송)
 
@@ -43,6 +42,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | AAC | ❌ | ✅ | ❌ Ubuntu 패키지에 포함되지 않음 | ✅ |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
+| Opus (Android의 A2DP Opus) | ❌ | ❌ | 확인하지 않음 | 🧪 실험적 |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 지원 · 🧪 실험적 · ❌ 미지원. 모든 열은 전송 측(PC → 헤드폰) 기준입니다. "기본"은 A2DPWB 없이 OS 자체 Bluetooth 오디오를 사용하는 경우이며, Ubuntu 열은 Ubuntu 26.04의 PipeWire 코덱 구성(`libspa-0.2-bluetooth`)입니다.
@@ -50,8 +50,11 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 {: .warning }
 **aptX HD와 aptX Low Latency는 실험적 기능입니다.** Android / PipeWire 구현을 따르며 인코딩/디코딩 왕복 테스트를 통과했지만, 실제 헤드폰에서는 아직 검증되지 않았습니다. 표의 지연 시간은 일반적인 수치이며 A2DPWB로 측정한 값이 아닙니다.
 
-{: .note }
-**LHDC V5 정보.** Google이 Android 17(AOSP, Apache-2.0)에 추가한 LHDC V5 인코더의 C 포팅 버전을 사용합니다. 이 포팅 버전은 AOSP Rust 인코더와 비트 단위로 일치함을 확인했으며, A2DP 시그널링은 Android의 `a2dp_vendor_lhdcv5`를 따릅니다. 실제 LHDC V5 헤드폰에서도 사용자가 1000 kbps / 192 kHz로 작동함을 확인했습니다([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). 손실 압축 LHDC V5만 지원합니다. LHDC V2/V3(구형 헤드폰)와 무손실 "LHDC-RAW" 모드는 오픈 소스 인코더가 없습니다. 자동 모드에서 LHDC V5의 우선순위는 LDAC 및 aptX 계열보다 낮고 AAC / SBC보다 높습니다.
+{: .warning }
+**LHDC V5 정보.** Google이 Android 17(AOSP, Apache-2.0)에 추가한 LHDC V5 인코더의 C 포팅 버전을 사용합니다. 이 포팅 버전은 AOSP Rust 인코더와 비트 단위로 일치함을 확인했으며, A2DP 시그널링은 Android의 `a2dp_vendor_lhdcv5`를 따릅니다. 한 사용자가 v1.1.1-beta.1에서 실제 LHDC V5 헤드폰으로 1000 kbps / 192 kHz 작동을 확인했으며([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)), v2도 같은 인코더를 사용합니다. 손실 압축 LHDC V5만 지원합니다. LHDC V2/V3(구형 헤드폰)와 무손실 "LHDC-RAW" 모드는 오픈 소스 인코더가 없습니다. 자동 모드에서 LHDC V5의 우선순위는 LDAC 및 aptX 계열보다 낮고 AAC / SBC보다 높습니다.
+
+{: .warning }
+**Opus는 실험적 기능입니다.** Android의 A2DP Opus 벤더 코덱(Android 13 이상, 벤더 ID 0x000000E0 Google)으로, 48 kHz, 20 ms 프레임이며 Android가 요청하는 대로 256 kbps 스테레오(표준 192, 모바일 128 kbps)로 libopus 1.5.2를 사용해 인코딩합니다. 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, 실제 Opus 헤드폰에서는 아직 검증되지 않았습니다. 자동 모드에서 Opus의 우선순위는 LHDC V5보다 낮고 AAC / SBC보다 높습니다.
 
 {: .note }
 **기본 aptX만 필요하십니까?** Windows 10의 기본 Bluetooth 스택은 이미 기본 aptX를 지원하므로(aptX HD, aptX LL, aptX Adaptive는 미지원) 이 경우 A2DPWB가 필요하지 않습니다. A2DPWB는 주로 LDAC, aptX HD, aptX Low Latency에 유용합니다.
@@ -63,14 +66,14 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 
 | 구성 요소 | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
 |:----------|:----------------:|:----------------:|:--------------:|
-| **A2DPWB** (GUI / CLI) | ✅ (실제 하드웨어에서는 아직 미확인) | ✅ | ❌ |
-| [소스에서 빌드](building) (Visual Studio 2022 이상) | ✅ | ✅ | ❌ |
+| **A2DPWB** (창, 트레이, CLI) | ✅ (실제 하드웨어에서는 아직 미확인) | ✅ | ❌ |
+| [소스에서 빌드](building) (Rust, Visual Studio 2022 이상, Node.js) | ✅ | ✅ | ❌ |
 | `a2dpwb_decode` (스트림 검사 도구) | ✅ | ✅ | ❌ |
 | 엔드투엔드 테스트 `tools/emu/run_test.py` | ✅ | ✅ | ❌ |
 | 가상 어댑터 `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | [측정용 수신기](usage#receiver) `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB 자체는 Windows 전용이며 x64 빌드만 제공됩니다. Linux 도구에는 Python 3.11 이상이 필요합니다(Ubuntu 26.04에서 확인). `setup.sh`는 Ubuntu / Debian용이며, 다른 배포판에서는 패키지를 직접 설치해야 합니다.
+A2DPWB 자체는 Windows(Windows 10 22H2 또는 Windows 11) 전용이며 x64 빌드로 제공됩니다. Linux 도구에는 Python 3.11 이상이 필요합니다(Ubuntu 26.04에서 확인). `setup.sh`는 Ubuntu / Debian용이며, 다른 배포판에서는 패키지를 직접 설치해야 합니다.
 
 ## 검증된 하드웨어 {#verified-hardware}
 
@@ -79,8 +82,7 @@ A2DPWB 자체는 Windows 전용이며 x64 빌드만 제공됩니다. Linux 도�
 | Sony WH-1000XM4 (헤드폰) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC | ✅ 재생됨 (XM4는 aptX 미지원) |
 | TP-Link UB500 (Realtek RTL8761BU, 어댑터) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | 측정용 수신기 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04, 실제 무선 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ 수신 및 측정됨 |
-| 가상 링크 `tools/emu` (Bumble) | Windows 11, 무선 없음 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 | ✅ 엔드투엔드 테스트 통과 |
-| LHDC V5 헤드폰 (사용자 보고, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ 1000 kbps / 192 kHz로 재생 |
+| 가상 링크 `tools/emu` (Bumble) | Windows 11, 무선 없음 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, Opus | ✅ 엔드투엔드 테스트 통과 |
 
 Windows 10은 아직 실제 하드웨어에서 시험하지 않았습니다. 다른 어댑터는 [권장 어댑터](setup#adapters)를 참조하십시오.
 
@@ -94,7 +96,7 @@ A2DPWB는 WASAPI로 오디오를 캡처하며 세 가지 모드를 제공합니�
 | **가상 장치** | 사용자가 선택한 가상 오디오 장치(예: VB-CABLE, VoiceMeeter)에서 캡처 | 특정 앱만 Bluetooth로 보내고 나머지 소리는 스피커로 출력 |
 | **응용 프로그램** | 한 앱이 재생하는 소리만 앱 자체 처리 후에 캡처 (Windows 11 / Windows 10 2004 이상) | 한 앱만 보내거나, 시스템 전체 효과 앱(이퀄라이저, 음질 향상 앱)의 출력을 보낼 때 |
 
-**가상 장치** 모드에서 A2DPWB는 Windows 기본 재생 장치를 선택한 가상 장치로 전환한 다음, 그 루프백 출력을 캡처합니다. 가상 장치로 출력하는 앱의 소리가 Bluetooth로 스트리밍됩니다. 스트리밍을 중지하면 이전 기본 장치로 복원됩니다.
+**가상 장치** 모드에서 A2DPWB는 Windows 기본 재생 장치를 선택한 가상 장치로 전환한 다음(**기본 장치 자동 전환**), 그 루프백 출력을 캡처합니다. 가상 장치로 출력하는 앱의 소리가 Bluetooth로 스트리밍됩니다. 스트리밍을 중지하면 이전 기본 장치로 복원됩니다.
 
 시스템 루프백은 기본 재생 장치에서 소리를 빼앗지 않습니다. 소리는 Bluetooth와 함께 그 장치에서도 재생됩니다. [캡처 모드](usage#capture-modes)를 참조하십시오.
 
@@ -112,24 +114,27 @@ flowchart TD
     s2["가상 장치"]
     s3["응용 프로그램 (프로세스 루프백)"]
     s1 & s2 & s3 --> cap["WASAPI 루프백 캡처 (PCM)"]
-    cap --> enc["오디오 인코더: LDAC / aptX 계열 / LHDC V5 / AAC / SBC"]
+    cap --> enc["오디오 인코더: LDAC / aptX 계열 / LHDC V5 / Opus / AAC / SBC"]
     enc --> bt["BTstack: A2DP Source → AVDTP → L2CAP → HCI"]
     bt --> usb["WinUSB → USB Bluetooth 어댑터"]
     usb -.-> hp["헤드폰"]
 ```
 
-A2DPWB는 Windows Bluetooth 스택을 완전히 우회합니다. [BTstack](https://github.com/bluekitchen/btstack)을 사용해 WinUSB를 통해 USB Bluetooth 어댑터와 직접 통신하며, Bluetooth 프로토콜 스택 전체를 사용자 모드에서 구현합니다.
+A2DPWB는 Windows Bluetooth 스택을 완전히 우회합니다. [BTstack](https://github.com/bluekitchen/btstack)을 사용해 WinUSB를 통해 USB Bluetooth 어댑터와 직접 통신하며, Bluetooth 프로토콜 스택 전체를 사용자 모드에서 구현합니다. 오디오는 작은 상주 프로그램(`a2dpwb-core.exe`, 트레이 아이콘 포함)이 스트리밍하고, 창은 그 상태를 표시할 뿐이므로 창을 닫아도 오디오는 멈추지 않습니다([아키텍처](architecture) 참조).
 
 ## 주요 기능
 
-- **다중 코덱**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC 및 자동 협상
+- **다중 코덱**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 및 (실험적) Opus, 자동 협상
 - **세 가지 캡처 모드**: 시스템 루프백, 가상 오디오 장치 라우팅, 또는 한 응용 프로그램의 출력
+- **창, 트레이, CLI**: 설정과 진단을 위한 창, 평소 연결에 쓰는 트레이 플라이아웃과 메뉴, 그리고 명령줄 ([사용법](usage) 참조)
+- **앱 내 WinUSB 할당**: 어댑터에 WinUSB 드라이버를 할당하고 원래 드라이버를 복원하며, Zadig가 필요 없습니다 ([설정](setup#winusb) 참조)
+- **첫 실행 설정**: 어댑터, 드라이버와 펌웨어, 헤드폰, 테스트 톤
 - **ABR**: 불안정한 연결을 위한 적응형 비트레이트 (LDAC 및 LHDC V5)
-- **자동 다시 연결**: 연결이 끊기면 다시 연결 (최대 10회)
+- **자동 다시 연결**: 연결이 끊기면 다시 연결 (최대 10회), PC가 절전 모드에서 복귀한 후에도 다시 연결
 - **연결 품질과 AFH**: 전송 내용, RSSI, 사용 중인 채널을 표시하고, 피해야 할 Wi-Fi 채널을 어댑터에 알립니다 ([사용법](usage#link-quality) 참조)
 - **헤드폰 제어 (AVRCP)**: 헤드폰 및 Windows 볼륨과 연동되는 볼륨 슬라이더, 헤드폰의 재생/일시 정지, 다음 곡, 이전 곡 버튼으로 PC 재생 제어 ([사용법](usage#headphone-buttons) 참조)
-- **프로필 관리**: 장치 + 코덱 구성 저장 및 불러오기
-- **GUI + CLI**: wxWidgets 그래픽 인터페이스 또는 명령줄 작업
+- **프로필 관리**: 장치 + 코덱 + 캡처 구성을 저장하고 트레이에서 바로 연결
+- **업데이트**: 설치된 버전은 스트리밍이 중지된 후 스스로 업데이트됩니다 ([사용법](usage#updates) 참조)
 - **다국어 지원**: 영어, 일본어, 중국어 간체, 중국어 번체, 한국어, 독일어, 프랑스어, 스페인어
 - **Realtek 펌웨어**: Realtek 어댑터용 안내형 펌웨어 다운로드
-- **진단** (디버그 모드): 디버그 콘솔, HCI 캡처, Linux PC를 이용한 피어 수신기 테스트 ([사용법](usage#receiver) 참조)
+- **진단**: 연결 흐름, 로그, HCI 캡처, 버그 보고용 진단 정보, Linux PC를 이용한 피어 수신기 테스트 ([사용법](usage#receiver) 참조)

@@ -18,81 +18,93 @@ nav_order: 1
 
 ## Prérequis
 
-- **Windows 10/11** (x64)
+- **Windows 10 (22H2) / 11** (x64)
 - **Adaptateur Bluetooth USB dédié** (distinct du Bluetooth intégré)
-- **Zadig** ([https://zadig.akeo.ie/](https://zadig.akeo.ie/))
+
+A2DPWB attribue lui-même le pilote WinUSB à l'adaptateur. [Zadig](https://zadig.akeo.ie/) n'est plus nécessaire (il fonctionne toujours, voir [Utiliser Zadig à la place](#zadig)).
 
 ## Installer A2DPWB
 
 Chaque [version](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest) est proposée sous deux formes contenant les mêmes fichiers :
 
-- **Programme d'installation** (`A2DPWB-<version>-win64-setup.exe`) : installe pour l'utilisateur actuel sans droits administrateur (ou pour tous les utilisateurs, si vous le choisissez), ajoute une entrée au menu Démarrer et un programme de désinstallation, et lors de la première installation démarre A2DPWB dans la langue choisie pendant l'installation
-- **Portable** (`A2DPWB-<version>-win64-portable.zip`) : extrayez-le où vous voulez et lancez `A2DPWB.exe`
+- **Programme d'installation** (`A2DPWB-<version>-win64-setup.exe`) : installe pour l'utilisateur actuel sans droits administrateur, ajoute une entrée au menu Démarrer (**A2DP Windows Bridge**) et un programme de désinstallation, et installe le runtime Microsoft Edge WebView2 s'il est absent (Windows 11 l'inclut). Les mises à jour s'installent toutes seules depuis l'application (**Paramètres > Mises à jour > Mettre à jour maintenant**)
+- **Portable** (`A2DPWB-<version>-win64-portable.zip`) : extrayez-le où vous voulez et lancez `a2dpwb.exe`. Gardez les trois programmes (`a2dpwb.exe`, `a2dpwb-core.exe`, `a2dpwb-driver.exe`) ensemble. La copie portable se contente de vous signaler les mises à jour ; elle nécessite que le runtime WebView2 soit installé
 
 Les deux conservent les paramètres, les profils, les clés de liaison et le firmware dans `%APPDATA%\A2DPWB`, vous pouvez donc passer de l'un à l'autre. La désinstallation laisse ce dossier en place.
 
-## Étape 1 : installer le pilote WinUSB
+### Mise à niveau depuis la v1 {#from-v1}
 
-A2DPWB communique directement avec un adaptateur Bluetooth USB via WinUSB. Il vous faut un **adaptateur dédié** -- votre Bluetooth intégré continue de fonctionner normalement pour le Bluetooth habituel de Windows.
+Lancez le programme d'installation de la v2 par-dessus la v1. Il vous demande de fermer la v1 si elle est en cours d'exécution, puis désinstalle la v1 en conservant le dossier des paramètres : les profils, l'association avec votre casque et les fichiers de firmware sont repris, et il n'est pas nécessaire d'associer à nouveau le casque. Un adaptateur qui a déjà WinUSB (installé avec Zadig) le conserve. Si **Démarrer avec Windows** était activé, c'est désormais la v2 qui démarre.
 
-1. Branchez un adaptateur Bluetooth USB
-2. Téléchargez et ouvrez [Zadig](https://zadig.akeo.ie/)
-3. Allez dans **Options > List All Devices**
-4. Sélectionnez votre adaptateur Bluetooth USB dans la liste déroulante
-5. Sélectionnez **WinUSB** comme pilote cible
-6. Cliquez sur **Replace Driver**
+À son premier démarrage, la v2 copie les paramètres de la v1 dans `%APPDATA%\A2DPWB\backup-v1\` avant de les lire.
+
+## Étape 1 : configuration au premier lancement {#first-run}
+
+Branchez l'adaptateur Bluetooth USB et lancez A2DPWB. S'il n'existe encore aucun profil, ou si aucun adaptateur n'a WinUSB, A2DPWB ouvre **Configurer A2DPWB**, en quatre étapes :
+
+1. **Choisir l'adaptateur** : les adaptateurs Bluetooth USB détectés. Si le vôtre n'apparaît pas, branchez-le et appuyez sur **Actualiser**
+2. **Pilote et firmware** : **Attribuer WinUSB** (voir [Étape 2](#winusb)) et, pour les adaptateurs Realtek, les fichiers de firmware (voir [Firmware](#firmware))
+3. **Trouver votre casque** : mettez-le en mode d'association, lancez **Rechercher**, choisissez-le, puis **Créer le profil** (voir [Étape 3](#headphones))
+4. **Test** : connectez-vous, puis **Jouer le signal de test** : un son plus aigu dans l'oreille droite et un son plus grave dans la gauche
+
+**Configurer plus tard** ignore la suite ; **Paramètres > Lancer la configuration** la rouvre.
+
+## Étape 2 : attribuer WinUSB à l'adaptateur {#winusb}
+
+A2DPWB communique directement avec un adaptateur Bluetooth USB via WinUSB, le pilote USB générique inclus dans Windows. Il vous faut un **adaptateur dédié** -- votre Bluetooth intégré continue de fonctionner normalement pour le Bluetooth habituel de Windows.
+
+1. Ouvrez l'écran **Adaptateur** (ou l'étape **Pilote et firmware** de la configuration)
+2. Le **Pilote** de l'adaptateur indique **Bluetooth de Windows** (ou **Autre pilote** / **Aucun pilote**). Cliquez sur **Attribuer WinUSB**
+3. Lisez la confirmation et continuez : Windows demande l'autorisation de l'administrateur (UAC)
+4. Le pilote indique désormais **WinUSB (utilisé par A2DPWB)**
 
 {: .warning }
-Tant que l'adaptateur est en mode WinUSB, Windows ne peut pas l'utiliser pour le Bluetooth habituel. Utilisez votre Bluetooth intégré pour les périphériques courants (clavier, souris, etc.).
+Tant que WinUSB est attribué, le Bluetooth de Windows ne voit plus l'adaptateur : les appareils associés à Windows par son intermédiaire ne fonctionnent plus tant que le pilote n'est pas restauré. Utilisez votre Bluetooth intégré pour les périphériques courants (clavier, souris, etc.), et **n'attribuez jamais WinUSB à l'adaptateur Bluetooth intégré du PC**.
 
-## Étape 2 : trouver l'adresse Bluetooth de votre casque
+**Restaurer le pilote**, sur le même écran, rend l'adaptateur à Windows : Windows choisit de nouveau son propre pilote (normalement son pilote Bluetooth) et l'adaptateur fonctionne avec le Bluetooth de Windows. A2DPWB ne peut plus diffuser par son intermédiaire tant que WinUSB n'est pas attribué de nouveau. Restaurez le pilote avant de désinstaller A2DPWB si vous voulez réutiliser l'adaptateur avec Windows.
 
-Il vous faut l'adresse MAC Bluetooth de votre casque ou de vos enceintes.
+### Utiliser Zadig à la place {#zadig}
 
-**Depuis les Paramètres Windows :**
+Un pilote WinUSB installé avec [Zadig](https://zadig.akeo.ie/) fonctionne tout aussi bien :
+
+1. Ouvrez Zadig et allez dans **Options > List All Devices**
+2. Sélectionnez votre adaptateur Bluetooth USB dans la liste déroulante
+3. Sélectionnez **WinUSB** comme pilote cible et cliquez sur **Replace Driver**
+
+## Étape 3 : trouver votre casque {#headphones}
+
+**Rechercher** (dans la configuration et dans l'éditeur de profil) recherche les appareils à proximité avec l'adaptateur USB pendant environ 10 secondes. Mettez d'abord le casque en mode d'association. Les appareils déjà associés à A2DPWB sont marqués **Associé**.
+
+Si la recherche ne le trouve pas, saisissez l'adresse Bluetooth sous **Manuel :** et cliquez sur **Utiliser**. Les adresses tapées ou collées sont mises en forme au fur et à mesure : `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` et `AA BB CC DD EE FF` deviennent toutes `AA:BB:CC:DD:EE:FF`.
+
+**Depuis les Paramètres Windows** (si le casque a été associé avec le Bluetooth intégré du PC) :
 1. Ouvrez **Paramètres > Bluetooth et appareils**
 2. Cliquez sur votre appareil audio
 3. Cliquez sur **Propriétés**
 4. L'adresse Bluetooth s'affiche (format : `AA:BB:CC:DD:EE:FF`)
 
-**Depuis la GUI d'A2DPWB :**
-- Lancez `A2DPWB.exe` : les appareils audio Bluetooth associés sont listés dans la liste déroulante des appareils
-- Ou utilisez **Rechercher** dans la boîte de dialogue du profil pour trouver les appareils à proximité avec l'adaptateur USB (mettez le casque en mode d'association)
-
-**Depuis la CLI :**
+**Depuis la ligne de commande** (quittez d'abord A2DPWB, zone de notification > **Quitter**) :
 ```
-A2DPWB.exe --cli -l
+a2dpwb-core.exe --cli --scan
 ```
 
-## Étape 3 : lancer A2DPWB
-
-**GUI :**
-```
-A2DPWB.exe
-```
-
-**CLI :**
-```
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
-```
-
-Voir [Utilisation](usage) pour tous les détails.
+Le nouveau profil démarre avec **Auto** comme codec et l'audio du système comme source de capture ; les valeurs par défaut donnent le meilleur son. Voir [Utilisation](usage) pour tout le reste.
 
 ---
 
-## Firmware (adaptateurs Realtek)
+## Firmware (adaptateurs Realtek) {#firmware}
 
 Les adaptateurs Bluetooth USB à puce Realtek (p. ex. TP-Link UB500, dongles RTL8761BU) ont besoin d'un firmware propriétaire pour fonctionner. Les adaptateurs CSR n'ont besoin d'aucun firmware. Les adaptateurs Intel et Broadcom (expérimental) peuvent nécessiter leurs propres fichiers de firmware : voir [Adaptateurs recommandés](#adapters).
 
-### GUI (téléchargement guidé)
+### Dans l'application (téléchargement guidé)
 
-Lancez `A2DPWB.exe` et choisissez **Actions > Sélection du firmware Bluetooth**. Si le firmware est absent, un avertissement s'affiche. Le bouton **Ouvrir la page de téléchargement** ouvre la page [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) dans votre navigateur, puis **Ouvrir le dossier de configuration** ouvre le dossier de destination. Téléchargez les fichiers `.bin` nécessaires et placez-les dans le dossier de configuration.
+L'écran **Adaptateur** (et l'étape **Pilote et firmware** de la configuration) indique l'état du firmware de l'adaptateur : **Firmware OK**, **Aucun fichier firmware requis**, ou **Firmware introuvable** avec les noms des fichiers requis. Le bouton **Ouvrir la page de téléchargement** ouvre la page [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) dans votre navigateur, puis **Ouvrir le dossier de configuration** ouvre le dossier de destination. Téléchargez les fichiers `.bin` nécessaires et placez-les dans le dossier de configuration.
 
-La boîte de dialogue détecte automatiquement la puce de votre adaptateur et indique quels fichiers de firmware sont nécessaires.
+A2DPWB détecte la puce de l'adaptateur et indique quels fichiers de firmware sont nécessaires.
 
 ### Réglage Puce Bluetooth
 
-La liste **Puce Bluetooth** de la même boîte de dialogue détermine si A2DPWB effectue l'initialisation Realtek (envoi du firmware) sur l'adaptateur :
+La liste **Puce Bluetooth** de l'écran **Adaptateur** détermine si A2DPWB effectue l'initialisation Realtek (envoi du firmware) sur l'adaptateur :
 
 | Choix | Signification |
 |:-------|:--------|
@@ -106,7 +118,7 @@ Ne choisissez pas une puce Realtek ni Custom pour un adaptateur non Realtek : A2
 ### Téléchargement manuel
 
 1. Téléchargez les fichiers `.bin` de firmware et de configuration de votre puce depuis [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) (p. ex. `rtl8761bu_fw.bin` et `rtl8761bu_config.bin`)
-2. Placez les deux fichiers dans le dossier de configuration d'A2DPWB (`%APPDATA%\A2DPWB`, ou le chemin affiché dans la boîte de dialogue du firmware)
+2. Placez les deux fichiers dans le dossier de configuration d'A2DPWB (`%APPDATA%\A2DPWB`, également accessible via **Paramètres > Dossier des paramètres**)
 
 {: .note }
 Ces fichiers de firmware sont des binaires propriétaires de Realtek distribués via le projet linux-firmware. Ils ne sont pas inclus dans ce dépôt. Voir [WHENCE](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/WHENCE) pour les conditions de redistribution.
@@ -124,3 +136,5 @@ Ces fichiers de firmware sont des binaires propriétaires de Realtek distribués
 | MediaTek, Qualcomm | MT7921/MT7922, QCA61x4 | Non pris en charge : nécessitent des chargeurs de firmware qu'A2DPWB ne possède pas |
 
 Les adaptateurs Bluetooth USB 5.0+ donnent généralement les meilleurs résultats avec les codecs à haut débit comme LDAC.
+
+Lorsque plusieurs adaptateurs ont WinUSB, A2DPWB utilise le premier qu'il trouve. Ne laissez WinUSB que sur l'adaptateur que vous utilisez pour A2DPWB.
