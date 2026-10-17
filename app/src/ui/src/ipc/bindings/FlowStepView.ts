@@ -17,4 +17,12 @@ elapsed_ms: number | null,
 /**
  * English; `detail_msg` translates it where the core computed it
  */
-detail: string, detail_msg: Msg | null, };
+detail: string, detail_msg: Msg | null, 
+/**
+ * LogLine.seq of the line that set the status (None: none yet)
+ */
+seq?: number | null, 
+/**
+ * LogLine.time_ms of that line
+ */
+time_ms?: number | null, };

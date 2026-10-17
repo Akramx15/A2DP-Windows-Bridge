@@ -100,6 +100,9 @@ pub struct ServiceOptions {
     pub capture: HciCapture,
     /// AFH policy instead of the settings' (command line)
     pub afh: Option<String>,
+    /// The USB adapter to open (the command line's -u); default: the
+    /// first one that works. Not used with hci_tcp.
+    pub usb: UsbSelector,
 }
 
 pub(crate) struct Inner {
@@ -113,6 +116,11 @@ pub(crate) struct Inner {
     pub power: PowerState,
     tick: (Mutex<()>, Condvar),
     state: Mutex<StreamState>,
+    /// Codec keys each device (address) offered at its last connection
+    codecs: Mutex<BTreeMap<String, Vec<String>>>,
+    /// The chip or firmware setting changed while the stack was in use:
+    /// the next use starts a new stack (which loads the firmware again)
+    reload: AtomicBool,
 }
 
 impl Inner {
@@ -154,7 +162,8 @@ impl Inner {
         let s = self.settings.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let transport = match &self.opts.hci_tcp {
             Some(addr) => TransportConfig::Tcp(addr.clone()),
-            None => TransportConfig::Usb(UsbSelector::default()),
+            // bt-host adds the adapters it knows to `known`
+            None => TransportConfig::Usb(self.opts.usb.clone()),
         };
         let mut c = HostConfig::new(transport);
         c.link_key_dir = Some(self.opts.config_dir.clone());
@@ -232,6 +241,8 @@ impl Inner {
             // (v1 issues #42, #43: only an app restart helped)
             let why = if self.power.stale() {
                 Some(stream::RESUMED)
+            } else if self.reload.load(Ordering::Acquire) {
+                Some("the adapter settings changed")
             } else if !h.controller_responds(CONTROLLER_PROBE) {
                 Some("the Bluetooth adapter stopped answering")
             } else {
@@ -247,6 +258,7 @@ impl Inner {
             }
         }
         self.power.clear_stale();
+        self.reload.store(false, Ordering::Release);
         self.wait_after_resume();
         let h = self.start_host()?;
         *slot = Some(h.clone());
@@ -331,6 +343,11 @@ impl Inner {
         }
     }
 
+    /// What a device offered (after capability discovery)
+    pub fn record_codecs(&self, addr: &str, codecs: Vec<String>) {
+        self.codecs.lock().unwrap_or_else(|e| e.into_inner()).insert(addr.to_uppercase(), codecs);
+    }
+
     pub fn save_device(&self, addr: &str, name: &str) {
         if let Err(e) = crate::devices::save(&self.opts.config_dir, addr, name) {
             tracing::warn!("cannot save the device: {e}");
@@ -360,6 +377,8 @@ impl Service {
             power: PowerState::default(),
             tick: (Mutex::new(()), Condvar::new()),
             state: Mutex::new(StreamState::Idle),
+            codecs: Mutex::new(BTreeMap::new()),
+            reload: AtomicBool::new(false),
         });
         // Without a window, also while only the tray runs
         let weak = Arc::downgrade(&inner);
@@ -421,6 +440,27 @@ impl Service {
     /// changed); the next use starts a new one
     pub fn release_adapter(&self) {
         self.shutdown();
+    }
+
+    /// The chip or firmware setting changed (v1 reset_btstack): an idle
+    /// stack is released now, one in use is replaced at its next use (the
+    /// next connection or scan), so the firmware is loaded again. `idle`:
+    /// nothing streams or scans. True when it was released now.
+    pub fn reload_adapter(&self, idle: bool) -> bool {
+        if idle && !self.is_running() {
+            self.inner.reload.store(false, Ordering::Release);
+            self.inner.shutdown_host();
+            true
+        } else {
+            self.inner.reload.store(self.host().is_some(), Ordering::Release);
+            false
+        }
+    }
+
+    /// Codec keys each device (upper-case address) offered when it last
+    /// connected
+    pub fn device_codecs(&self) -> BTreeMap<String, Vec<String>> {
+        self.inner.codecs.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn settings(&self) -> Settings {

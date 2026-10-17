@@ -1,6 +1,6 @@
 // The core's state as the UI sees it: the last Snapshot with each Event
 // applied (each event replaces one part), plus the streams the UI
-// subscribes to (link samples, log lines). The UI keeps no state of its
+// subscribes to (link samples, log lines, the receiver test's state). The UI keeps no state of its
 // own beyond this and view state.
 //
 // Revisions: every state event carries the next revision; link samples
@@ -23,6 +23,7 @@ import {
   type LogLevel,
   type LogLine,
   type MethodName,
+  type ReceiverState,
   type ResultOf,
   type ServerMessage,
   type Snapshot,
@@ -56,6 +57,7 @@ export function createCore(transport: Transport) {
   /** Lines up to this time were cleared: the kept lines do not bring them back */
   let logsClearedAt = -1;
   const [flow, setFlow] = createSignal<FlowView | null>(null);
+  const [receiver, setReceiver] = createSignal<ReceiverState | null>(null);
 
   /** A state.snapshot on its way: the revision when asked, and the state events since */
   let pending: { from: number | null; events: { rev: number; ev: Event }[] } | null = null;
@@ -114,6 +116,9 @@ export function createCore(transport: Transport) {
         if (logBuf.length > LOG_KEEP) logBuf.splice(0, logBuf.length - LOG_KEEP);
         setLogTick((n) => n + 1);
         return;
+      case "receiver":
+        setReceiver(ev.value);
+        return;
     }
   }
 
@@ -145,6 +150,9 @@ export function createCore(transport: Transport) {
       case "update":
         setState("snap", "update", reconcile(ev.value));
         break;
+      case "capture":
+        setState("snap", "capture", ev.value === null ? null : reconcile(ev.value));
+        break;
       default:
         // An event kind of a newer core: the next snapshot has it
         break;
@@ -152,7 +160,7 @@ export function createCore(transport: Transport) {
   }
 
   function applyEvent(rev: number, ev: Event) {
-    if (ev.kind === "link" || ev.kind === "log") {
+    if (ev.kind === "link" || ev.kind === "log" || ev.kind === "receiver") {
       applyData(ev);
       return;
     }
@@ -205,6 +213,7 @@ export function createCore(transport: Transport) {
   // for nothing while it is hidden. The backend merges both windows.
 
   const linkWants = new Set<symbol>();
+  const receiverWants = new Set<symbol>();
   const logWants = new Map<symbol, LogLevel>();
   let lastSent: string | undefined;
   /** The log level of the last subscription sent */
@@ -238,18 +247,19 @@ export function createCore(transport: Transport) {
       pushQueued = false;
       const hidden = windowHidden();
       const link = !hidden && linkWants.size > 0;
+      const receiver = !hidden && receiverWants.size > 0;
       let logs: LogLevel | null = null;
       if (!hidden) {
         for (const l of logWants.values()) {
           if (logs === null || LEVELS.indexOf(l) > LEVELS.indexOf(logs)) logs = l;
         }
       }
-      const key = JSON.stringify({ logs, link });
+      const key = JSON.stringify({ logs, link, receiver });
       if (key === lastSent || state.conn.state !== "connected") return;
       const before = lastLogs;
       lastSent = key;
       lastLogs = logs;
-      request("diag.subscribe", { logs, link })
+      request("diag.subscribe", { logs, link, receiver })
         .then(() => {
           // Lines logged while nobody listened (the window was closed, or
           // opened later): the core keeps the recent ones
@@ -275,6 +285,23 @@ export function createCore(transport: Transport) {
     pushSubscription();
     return () => {
       linkWants.delete(k);
+      pushSubscription();
+    };
+  }
+
+  /** The receiver test's state (receiver()) while the caller lives; also
+   *  asks for it at once */
+  function wantReceiver(): () => void {
+    const k = Symbol("receiver");
+    receiverWants.add(k);
+    pushSubscription();
+    if (state.conn.state === "connected") {
+      request("receiver.status")
+        .then(setReceiver)
+        .catch(() => {});
+    }
+    return () => {
+      receiverWants.delete(k);
       pushSubscription();
     };
   }
@@ -343,8 +370,11 @@ export function createCore(transport: Transport) {
     },
     /** The core's connection flow, while someone wants it (reactive) */
     flow,
+    /** The receiver test's last state, while someone wants it (reactive) */
+    receiver,
     wantFlow,
     wantLink,
     wantLogs,
+    wantReceiver,
   };
 }

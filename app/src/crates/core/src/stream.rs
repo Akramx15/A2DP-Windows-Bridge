@@ -42,6 +42,20 @@ pub enum SourceRequest {
     TestTone,
 }
 
+impl SourceRequest {
+    /// The source as the UI shows it (not waiting: the session says when
+    /// an application is not running)
+    pub fn info(&self) -> SourceInfo {
+        let (kind, name) = match self {
+            SourceRequest::SystemLoopback => ("loopback", String::new()),
+            SourceRequest::VirtualDevice { name, .. } => ("virtual", name.clone()),
+            SourceRequest::Application { exe } => ("app", exe.clone()),
+            SourceRequest::TestTone => ("tone", String::new()),
+        };
+        SourceInfo { kind, name, waiting: false }
+    }
+}
+
 impl std::fmt::Display for SourceRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -76,6 +90,25 @@ pub struct StreamInfo {
     pub requested_codec: Option<String>,
     /// ... maybe because another device streams on its endpoint
     pub requested_in_use: bool,
+    /// Where the audio comes from (sent again when an application capture
+    /// starts or stops waiting for the app)
+    pub source: SourceInfo,
+}
+
+/// The audio source of a stream
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SourceInfo {
+    /// "loopback", "virtual", "app" (profile capture modes) or "tone"
+    pub kind: &'static str,
+    /// The virtual device's name or the application's executable
+    pub name: String,
+    /// Application capture: the application is not running
+    pub waiting: bool,
+}
+
+/// Codec keys ("ldac", "sbc", ...) of what a device offered
+pub fn codec_keys(remote: &caps::RemoteCaps) -> Vec<String> {
+    CodecKind::ALL.into_iter().filter(|&k| remote.has(k)).map(|k| k.key().to_string()).collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -172,6 +205,11 @@ enum ActiveSource {
 }
 
 impl ActiveSource {
+    /// An application capture whose app is not running
+    fn waiting(&self) -> bool {
+        matches!(self, ActiveSource::App(a) if a.running.is_none())
+    }
+
     fn stop(self) {
         match self {
             ActiveSource::Capture(r) => r.stop(),
@@ -308,6 +346,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
         Err(f) => return inner.notify(StreamState::Error, connect_error(Some(f))),
     };
+    inner.record_codecs(&addr, codec_keys(&remote));
     tracing::info!("device connected, choosing the codec");
     if stopped() {
         host.disconnect();
@@ -498,7 +537,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     inner.notify(StreamState::Streaming, fallback_text.clone().unwrap_or_else(|| Msg::new("status.connected")));
-    inner.stream_info(StreamInfo {
+    let mut info = StreamInfo {
         codec: kind.name().into(),
         bitrate_kbps: bitrate,
         sample_rate: format.sample_rate,
@@ -508,7 +547,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         source_bits: (format.sample_format.bytes_per_sample() * 8) as u32,
         requested_codec: choice.replaced.as_ref().map(|(w, _)| w.name().to_string()),
         requested_in_use: matches!(choice.replaced, Some((_, Unavailable::SepInUse { .. }))),
-    });
+        source: req.source.info(),
+    };
     inner.save_device(&addr, &req.device_name);
 
     // ---- pipeline and capture ----
@@ -555,6 +595,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         host.disconnect();
         return inner.notify(StreamState::Error, Msg::new("error.audio_capture_start"));
     };
+    info.source.waiting = active.waiting();
+    inner.stream_info(info.clone());
 
     // Headphone volume and a Windows volume act as one (volume_sync.rs)
     let mut volume = crate::volume_sync::EndpointChoice::for_stream(&req.volume_sync, &req.source)
@@ -584,6 +626,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             if app.running.is_none() && app_ticks.is_multiple_of(5) {
                 app.attach(&input);
             }
+        }
+        if active.waiting() != info.source.waiting {
+            info.source.waiting = active.waiting();
+            inner.stream_info(info.clone());
         }
 
         // Sleep, or an adapter that stopped working, leaves a stack that
@@ -790,6 +836,27 @@ mod tests {
         assert_eq!(check_link(true, true, false, true), LinkCheck::SleepThrough);
         // A stack still stale from an earlier sleep is not restarted now
         assert_eq!(check_link(false, true, true, true), LinkCheck::SleepThrough);
+    }
+
+    #[test]
+    fn sources_as_the_ui_shows_them() {
+        assert_eq!(SourceRequest::TestTone.info(), SourceInfo { kind: "tone", name: String::new(), waiting: false });
+        let app = SourceRequest::Application { exe: "Spotify.exe".into() }.info();
+        assert_eq!((app.kind, app.name.as_str()), ("app", "Spotify.exe"));
+        let dev = SourceRequest::VirtualDevice { id: "{x}".into(), name: "CABLE".into(), auto_switch: true }.info();
+        assert_eq!((dev.kind, dev.name.as_str()), ("virtual", "CABLE"));
+        assert_eq!(SourceRequest::SystemLoopback.info().kind, "loopback");
+    }
+
+    #[test]
+    fn codec_keys_of_a_device() {
+        let mut remote = caps::RemoteCaps::default();
+        assert!(codec_keys(&remote).is_empty());
+        remote.add_sbc(1);
+        remote.add_aac(2);
+        let keys = codec_keys(&remote);
+        assert!(keys.contains(&"sbc".to_string()) && keys.contains(&"aac".to_string()));
+        assert_eq!(keys.len(), 2);
     }
 
     #[test]

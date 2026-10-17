@@ -118,5 +118,8 @@ mod tests {
         FlowView::export_all(&cfg).unwrap();
         AdapterInfo::export_all(&cfg).unwrap();
         Method::export_all(&cfg).unwrap();
+        FirmwareFile::export_all(&cfg).unwrap();
+        ReceiverState::export_all(&cfg).unwrap();
+        DiagInfoParams::export_all(&cfg).unwrap();
     }
 }

@@ -922,6 +922,14 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
                 i.source_channels,
                 i.source_bits
             );
+            let src = &i.source;
+            let _ = writeln!(
+                out,
+                "  Source: {}{}{}",
+                src.kind,
+                if src.name.is_empty() { String::new() } else { format!(" '{}'", src.name) },
+                if src.waiting { " (waiting for the app to start)" } else { "" }
+            );
             if let Some(req) = &i.requested_codec {
                 let _ = writeln!(
                     out,
@@ -1332,6 +1340,7 @@ mod tests {
             source_bits: 32,
             requested_codec: None,
             requested_in_use: false,
+            source: crate::stream::SourceInfo { kind: "app", name: "Spotify.exe".into(), waiting: true },
         };
         let stats = LinkStats::default();
         stats.packets_sent.store(1500, std::sync::atomic::Ordering::Relaxed);
@@ -1368,6 +1377,7 @@ mod tests {
         assert!(text.contains("  Device: WH-1000XM4 [00:1A:7D:xx:xx:xx]\n"), "{text}");
         assert!(text.contains("  Codec: ldac, quality hq, ABR off, fallback on, sample rate auto, bit depth auto\n"));
         assert!(text.contains("  LDAC 48000 Hz 2 ch, 990 kbps; source 48000 Hz 2 ch 32 bit\n"));
+        assert!(text.contains("  Source: app 'Spotify.exe' (waiting for the app to start)\n"));
         assert!(text.contains("  Media packets sent 1500 (0 bytes), queue drops 0, send errors 0\n"));
         assert!(text.contains("  HCI capture running: C:\\a2dpwb\\hci.pklg (3.0 MB)\n"));
         assert!(text.contains("[Flow]\nConnection flow: attempt #1, started T+1.001\n"));

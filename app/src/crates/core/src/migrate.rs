@@ -7,6 +7,8 @@
 //! - Before v1.1 the max media packet size was a setting; profiles saved
 //!   without one used it. v2 does not write that setting back, so its value
 //!   is copied into those profiles first (what v1 did when it read them).
+//! - start_minimized is set: v1 always started hidden in the tray at logon
+//!   (whatever that key said), v2's autostart honours it.
 //! - devices.txt, link_keys.txt, the firmware and captures are not changed.
 //!   v1's debug.log stays; v2 logs to `logs\` (see the core-service's
 //!   logging), which the backup leaves out.
@@ -140,7 +142,11 @@ pub fn prepare(dir: &Path) -> Report {
         }
     }
 
-    let settings = Settings::load(dir);
+    let mut settings = Settings::load(dir);
+    // v1 always started hidden in the tray at logon (it registered
+    // --minimized whatever start_minimized said, and offered no switch for
+    // it); v2 honours the setting, so it is set to keep that
+    settings.start_minimized = true;
     if settings.max_media_payload.is_some() {
         let legacy = settings.legacy_max_media_payload();
         let mut list = profiles::load(dir);
@@ -232,6 +238,8 @@ mod tests {
         assert_eq!(s["language"], "ja");
         assert_eq!(s["window_x"], 10);
         assert!(s.get("max_media_payload").is_none());
+        // v1 started hidden at logon: kept
+        assert_eq!(s["start_minimized"], true);
         let p = profiles::load(dir);
         assert_eq!(p[0].max_media_payload, Some(1500));
         assert_eq!(p[1].max_media_payload, Some(800));

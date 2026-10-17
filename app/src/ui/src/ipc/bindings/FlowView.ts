@@ -9,7 +9,11 @@ export type FlowView = {
 /**
  * 1, 2, ... since the core started; 0 = no session yet
  */
-session: number, start_ms: number, stop_ms: number | null, reconnects: number, 
+session: number, 
+/**
+ * LogLine.seq of the attempt's first line ("this attempt only")
+ */
+first_seq?: number | null, start_ms: number, stop_ms: number | null, reconnects: number, 
 /**
  * In order: start, btstack, connect, caps, codec, capture, config,
  * encoder, stream, audio, link

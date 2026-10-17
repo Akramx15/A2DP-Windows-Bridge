@@ -1,6 +1,6 @@
 import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
-import { sampleSnapshot } from "./mock";
+import { MockCore, sampleSnapshot } from "./mock";
 import { createCore } from "./store";
 import type { ConnStatus, Transport } from "./transport";
 import type { Event, ServerMessage } from "./types";
@@ -174,14 +174,68 @@ describe("core store", () => {
     await tick();
     const subs = () => f.calls.filter((c) => c.method === "diag.subscribe").map((c) => c.params);
     expect(f.calls.map((c) => c.method)).toEqual(["state.snapshot", "diag.subscribe", "diag.recent_logs"]);
-    expect(subs()).toEqual([{ logs: "debug", link: true }]);
+    expect(subs()).toEqual([{ logs: "debug", link: true, receiver: false }]);
     releaseDebug();
     releaseLink();
     await tick();
-    expect(subs()[1]).toEqual({ logs: "info", link: false });
+    expect(subs()[1]).toEqual({ logs: "info", link: false, receiver: false });
     releaseLogs();
     await tick();
-    expect(subs()[2]).toEqual({ logs: null, link: false });
+    expect(subs()[2]).toEqual({ logs: null, link: false, receiver: false });
+  });
+
+  it("follows the receiver test while a view wants it", async () => {
+    const f = fakeTransport();
+    const core = createRoot(() => createCore(f.transport));
+    await tick();
+    f.send({ type: "snapshot", rev: 1, state: sampleSnapshot() });
+    const first = {
+      connection: "connecting" as const,
+      detail: "",
+      target: "auto",
+      receiver: null,
+      stats: null,
+      stats_age_ms: null,
+      sent: null,
+      stream_starts: 0,
+    };
+    f.answers["receiver.status"] = first;
+    f.status({ state: "connected", server: "core" });
+    await tick();
+    const release = core.wantReceiver();
+    await tick();
+    await tick();
+    expect(f.calls.filter((c) => c.method === "diag.subscribe").map((c) => c.params)).toContainEqual({
+      logs: null,
+      link: false,
+      receiver: true,
+    });
+    expect(core.receiver()).toEqual(first);
+    // Its events are data: they take no revision
+    f.event(1, { kind: "receiver", value: { ...first, connection: "connected" } });
+    expect(core.receiver()?.connection).toBe("connected");
+    f.event(2, { kind: "scanning", value: true });
+    expect(f.calls.filter((c) => c.method === "state.snapshot")).toHaveLength(1);
+    release();
+    await tick();
+    const subs = f.calls.filter((c) => c.method === "diag.subscribe");
+    expect(subs[subs.length - 1].params).toEqual({ logs: null, link: false, receiver: false });
+  });
+
+  it("keeps the HCI capture state", async () => {
+    const f = fakeTransport();
+    const core = createRoot(() => createCore(f.transport));
+    await tick();
+    f.send({ type: "snapshot", rev: 1, state: sampleSnapshot() });
+    expect(core.state.snap?.capture).toBeNull();
+    const c = { path: "C:\\x\\hci_20261017_101500.pklg", bytes: 64, started_ms: 1_760_000_000_000 };
+    f.event(2, { kind: "capture", value: c });
+    expect(core.state.snap?.capture).toEqual(c);
+    f.event(3, { kind: "capture", value: { ...c, bytes: 4096 } });
+    expect(core.state.snap?.capture?.bytes).toBe(4096);
+    f.event(4, { kind: "capture", value: null });
+    expect(core.state.snap?.capture).toBeNull();
+    expect(core.state.rev).toBe(4);
   });
 
   it("puts the core's kept lines before the live ones, once each", async () => {
@@ -225,5 +279,67 @@ describe("core store", () => {
       code: "adapter.driver_missing",
       msg: { key: "error.btstack_init" },
     });
+  });
+});
+
+describe("mock core", () => {
+  const wait = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+
+  it("streams without a profile, learns the device's codecs and runs the receiver test", async () => {
+    const mock = new MockCore({ speed: 0 });
+    const core = createRoot(() => createCore(mock));
+    await wait();
+    const release = core.wantReceiver();
+    const st = await core.request("receiver.connect", { target: "" });
+    expect(st.target).toBe("auto");
+    await wait();
+    expect(core.receiver()?.connection).toBe("connected");
+    expect(core.state.snap?.settings.remote_sink).toBe("auto");
+    const [found] = await core.request("receiver.discover");
+    await core.request("receiver.configure", { mtu: 1005 });
+    await core.request("stream.start_custom", { device: found.bt_address, codec: "sbc", quality: "hq", source: "tone" });
+    await wait(50);
+    const stream = core.state.snap!.stream;
+    expect(stream.state).toBe("streaming");
+    expect(stream.profile).toBeNull();
+    expect(stream.info?.source).toEqual({ kind: "tone", name: "", waiting: false });
+    expect(core.state.snap!.devices.find((d) => d.address === found.bt_address)?.codecs).toContain("ldac");
+    await expect(
+      core.request("stream.start_custom", { device: "nope", codec: "sbc", quality: "hq", source: "tone" }),
+    ).rejects.toMatchObject({ code: "profile.invalid_address" });
+    release();
+    mock.dispose();
+  });
+
+  it("reports the capture, the flow's lines and failed update checks", async () => {
+    const mock = new MockCore({ speed: 0, scenario: "offline" });
+    const core = createRoot(() => createCore(mock));
+    await wait();
+    const path = await core.request("diag.capture_start");
+    await wait();
+    expect(core.state.snap?.capture?.path).toBe(path);
+    expect(path).toMatch(/hci_\d{8}_\d{6}\.pklg$/);
+    const done = await core.request("diag.capture_stop");
+    expect(done?.path).toBe(path);
+    await wait();
+    expect(core.state.snap?.capture).toBeNull();
+
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await wait(50);
+    const flow = await core.request("diag.flow");
+    expect(flow.first_seq).toBeGreaterThan(0);
+    const connect = flow.steps.find((s) => s.step === "connect")!;
+    const lines = await core.request("diag.recent_logs", { level: "trace" });
+    const line = lines.find((l) => l.seq === connect.seq);
+    expect(line?.time_ms).toBe(connect.time_ms);
+    expect(line?.session).toBe(flow.session);
+
+    const info = await core.request("diag.info");
+    expect(info.text).toContain("AC:80:0A:xx:xx:xx");
+    expect((await core.request("diag.info", { mask: false })).text).toContain("AC:80:0A:12:34:56");
+
+    await expect(core.request("app.check_update")).rejects.toMatchObject({ code: "update.failed" });
+    expect(core.state.snap?.update.error?.key).toBe("update.error");
+    mock.dispose();
   });
 });

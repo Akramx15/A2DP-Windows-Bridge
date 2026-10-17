@@ -6,7 +6,7 @@
 //! snapshot instead (it sees the revision gap).
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use ipc::{ClientMessage, Event, Method, PROTOCOL_VERSION, ServerMessage, read_frame, write_frame};
@@ -70,6 +70,7 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
     // Responses come from request tasks through this channel
     let (resp_tx, mut resp_rx) = mpsc::channel::<ServerMessage>(32);
     let mut link = false;
+    let mut receiver = false;
     // Log lines while subscribed; the sender stays alive for the session so
     // recv never ends
     let (log_tx, mut log_rx) = mpsc::channel::<ipc::LogLine>(1024);
@@ -79,17 +80,18 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
             msg = read_frame::<_, ClientMessage>(&mut rd) => {
                 match msg {
                     Ok(Some(ClientMessage::Request { id, call })) => {
-                        if let Method::DiagSubscribe { logs: l, link: k } = &call {
+                        if let Method::DiagSubscribe { logs: l, link: k, receiver: r } = &call {
                             log_sub = l.map(|level| {
                                 let tx = log_tx.clone();
                                 crate::logging::hub().subscribe_with(level, move |line| {
                                     !matches!(tx.try_send(line.clone()), Err(mpsc::error::TrySendError::Closed(_)))
                                 })
                             });
-                            if *k != link {
-                                link = *k;
-                                if link { state.link_subscribers.fetch_add(1, Ordering::AcqRel); }
-                                else { state.link_subscribers.fetch_sub(1, Ordering::AcqRel); }
+                            set_subscribed(&state.link_subscribers, &mut link, *k);
+                            let r = r.unwrap_or(false);
+                            if set_subscribed(&state.receiver_subscribers, &mut receiver, r) && r {
+                                // The state now, not only at the next tick
+                                state.publish_receiver();
                             }
                         }
                         let (state, tx) = (state.clone(), resp_tx.clone());
@@ -115,6 +117,7 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
                     Ok((rev, event)) => {
                         let wanted = match &*event {
                             Event::Link(_) => link,
+                            Event::Receiver(_) => receiver,
                             Event::Log(_) => false, // logs come from the log hub
                             _ => true,
                         };
@@ -140,9 +143,40 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
         }
     };
     drop(log_sub);
-    if link {
-        state.link_subscribers.fetch_sub(1, Ordering::AcqRel);
-    }
+    set_subscribed(&state.link_subscribers, &mut link, false);
+    set_subscribed(&state.receiver_subscribers, &mut receiver, false);
     tracing::info!("IPC: {client} disconnected");
     result
+}
+
+/// Counts this connection in or out of a subscription; true if it changed
+fn set_subscribed(count: &AtomicUsize, current: &mut bool, wanted: bool) -> bool {
+    if *current == wanted {
+        return false;
+    }
+    *current = wanted;
+    if wanted {
+        count.fetch_add(1, Ordering::AcqRel);
+    } else {
+        count.fetch_sub(1, Ordering::AcqRel);
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subscriptions_count_once_per_connection() {
+        let count = AtomicUsize::new(0);
+        let (mut a, mut b) = (false, false);
+        assert!(set_subscribed(&count, &mut a, true));
+        assert!(!set_subscribed(&count, &mut a, true));
+        assert!(set_subscribed(&count, &mut b, true));
+        assert_eq!(count.load(Ordering::Acquire), 2);
+        assert!(set_subscribed(&count, &mut a, false));
+        assert!(!set_subscribed(&count, &mut a, false));
+        assert_eq!(count.load(Ordering::Acquire), 1);
+    }
 }

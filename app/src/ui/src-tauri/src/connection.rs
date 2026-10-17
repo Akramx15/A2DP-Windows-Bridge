@@ -55,6 +55,14 @@ pub enum Status {
 struct Subscription {
     logs: Option<LogLevel>,
     link: bool,
+    #[serde(default)]
+    receiver: bool,
+}
+
+impl Subscription {
+    fn method(self) -> Method {
+        Method::DiagSubscribe { logs: self.logs, link: self.link, receiver: Some(self.receiver) }
+    }
 }
 
 type Pending = oneshot::Sender<Result<Value, ErrorInfo>>;
@@ -91,8 +99,22 @@ fn timeout_for(method: &str, params: &Value) -> Duration {
             Duration::from_secs(30.max(seconds + 10))
         }
         "adapter.assign_winusb" | "adapter.restore_driver" => Duration::from_secs(120),
-        "stream.start" | "adapter.restart" | "adapter.list" | "audio.devices" | "audio.apps" | "diag.info"
-        | "diag.capture_start" | "diag.capture_stop" | "app.check_update" | "state.snapshot" => Duration::from_secs(30),
+        "stream.start"
+        | "stream.start_custom"
+        | "adapter.restart"
+        | "adapter.list"
+        | "adapter.firmware_files"
+        | "audio.devices"
+        | "audio.apps"
+        | "diag.info"
+        | "diag.capture_start"
+        | "diag.capture_stop"
+        | "app.check_update"
+        | "state.snapshot"
+        | "settings.set"
+        | "receiver.discover"
+        | "receiver.connect"
+        | "receiver.disconnect" => Duration::from_secs(30),
         _ => Duration::from_secs(5),
     }
 }
@@ -142,13 +164,13 @@ impl Ipc {
         }
         let mut call: Method = serde_json::from_value(wire)
             .map_err(|e| error("ipc.bad_request", "ipc.error.bad_request", &[method.into(), e.to_string()]))?;
-        if let Method::DiagSubscribe { logs, link } = call {
+        if let Method::DiagSubscribe { logs, link, receiver } = call {
             let merged = {
                 let mut subs = lock(&self.subscriptions);
-                subs.insert(window.into(), Subscription { logs, link });
+                subs.insert(window.into(), Subscription { logs, link, receiver: receiver.unwrap_or(false) });
                 merge(subs.values())
             };
-            call = Method::DiagSubscribe { logs: merged.logs, link: merged.link };
+            call = merged.method();
         }
         let timeout = timeout_for(method, params.as_ref().unwrap_or(&Value::Null));
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -186,8 +208,7 @@ impl Ipc {
     fn send_subscription(&self, sub: Subscription) {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         if let Some(out) = lock(&self.out).as_ref() {
-            let _ =
-                out.send(ClientMessage::Request { id, call: Method::DiagSubscribe { logs: sub.logs, link: sub.link } });
+            let _ = out.send(ClientMessage::Request { id, call: sub.method() });
         }
     }
 
@@ -219,6 +240,7 @@ fn merge<'a>(subs: impl Iterator<Item = &'a Subscription>) -> Subscription {
         // most detailed level any window wants
         logs: acc.logs.max(s.logs),
         link: acc.link || s.link,
+        receiver: acc.receiver || s.receiver,
     })
 }
 
@@ -391,11 +413,11 @@ mod tests {
     #[test]
     fn subscriptions_merge_to_the_most_detailed() {
         let subs = [
-            Subscription { logs: Some(LogLevel::Info), link: false },
-            Subscription { logs: None, link: true },
-            Subscription { logs: Some(LogLevel::Debug), link: false },
+            Subscription { logs: Some(LogLevel::Info), link: false, receiver: false },
+            Subscription { logs: None, link: true, receiver: false },
+            Subscription { logs: Some(LogLevel::Debug), link: false, receiver: true },
         ];
-        assert_eq!(merge(subs.iter()), Subscription { logs: Some(LogLevel::Debug), link: true });
+        assert_eq!(merge(subs.iter()), Subscription { logs: Some(LogLevel::Debug), link: true, receiver: true });
         assert_eq!(merge([].iter()), Subscription::default());
     }
 
@@ -405,5 +427,8 @@ mod tests {
         assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 10 })), Duration::from_secs(30));
         assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 40 })), Duration::from_secs(50));
         assert!(timeout_for("adapter.assign_winusb", &Value::Null) >= Duration::from_secs(60));
+        // Discovery waits 1.5 s; connecting ends an older connection first
+        assert!(timeout_for("receiver.discover", &Value::Null) >= Duration::from_secs(10));
+        assert!(timeout_for("receiver.connect", &Value::Null) >= Duration::from_secs(10));
     }
 }

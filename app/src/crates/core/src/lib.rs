@@ -7,6 +7,7 @@
 
 pub mod adapter;
 pub mod devices;
+pub mod link;
 pub mod messages;
 pub mod migrate;
 pub mod paths;
@@ -17,7 +18,7 @@ pub mod stream;
 
 pub use messages::Msg;
 pub use service::{Service, ServiceEvent, ServiceOptions};
-pub use stream::{SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync};
+pub use stream::{SourceInfo, SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync};
 pub mod diag;
 pub mod receiver;
 pub mod update;

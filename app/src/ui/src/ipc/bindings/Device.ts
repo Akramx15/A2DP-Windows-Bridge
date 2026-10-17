@@ -15,4 +15,9 @@ audio: boolean,
 /**
  * From the last scan
  */
-rssi: number | null, };
+rssi: number | null, 
+/**
+ * Codec keys the device offered when it last connected since the core
+ * started ("ldac", "aac", ...); empty while not known
+ */
+codecs: Array<string>, };

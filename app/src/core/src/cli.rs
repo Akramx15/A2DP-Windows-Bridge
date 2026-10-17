@@ -210,9 +210,7 @@ pub fn run(args: &[String]) -> i32 {
             hci_tcp: a.hci_tcp.clone(),
             capture: capture.clone(),
             afh: a.afh.clone(),
-            // WIRING(-u): once ServiceOptions has `usb: hci_transport::UsbSelector`
-            // (crates/core/src/service.rs), pass the adapter chosen with -u:
-            // usb: a.usb.as_ref().map(|(_, s)| s.clone()).unwrap_or_default(),
+            usb: a.usb.as_ref().map(|(_, s)| s.clone()).unwrap_or_default(),
         },
         tx,
     );

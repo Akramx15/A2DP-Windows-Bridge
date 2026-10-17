@@ -212,7 +212,14 @@ impl Ring {
 /// oldest
 fn next_slot<'a>(lines: &'a mut Vec<LogLine>, head: &mut usize, capacity: usize) -> &'a mut LogLine {
     if lines.len() < capacity {
-        lines.push(LogLine { time_ms: 0, level: LogLevel::Info, target: String::new(), message: String::new() });
+        lines.push(LogLine {
+            time_ms: 0,
+            level: LogLevel::Info,
+            target: String::new(),
+            message: String::new(),
+            seq: None,
+            session: None,
+        });
         let last = lines.len() - 1;
         &mut lines[last]
     } else {
@@ -359,6 +366,9 @@ impl LogHub {
             slot.message.clear();
             event.record(&mut MessageVisitor(&mut slot.message));
             flow.feed(time_ms, meta.target(), *meta.level(), &slot.message);
+            // The flow's line count: steps name their line by it
+            slot.seq = Some(flow.lines());
+            slot.session = Some(flow.session().id);
             // A copy for the subscribers only when there are any
             (self.0.active.load(Ordering::Acquire) > 0).then(|| slot.clone())
         };
@@ -545,6 +555,22 @@ mod tests {
         let lines = hub.recent();
         let again = ConnectionFlow::from_lines(lines.iter().map(entry));
         assert_eq!(again.session(), flow.session());
+    }
+
+    #[test]
+    fn lines_carry_their_number_and_attempt() {
+        let hub = LogHub::new(10);
+        with_hub(&hub, || {
+            tracing::info!(target: "t", "before");
+            tracing::info!(target: "a2dpwb_core::stream", "stream: device AA:BB:CC:DD:EE:FF codec None");
+            tracing::info!(target: "bt_host", "connecting to AA:BB:CC:DD:EE:FF");
+        });
+        let lines = hub.recent();
+        let got: Vec<(Option<u64>, Option<u32>)> = lines.iter().map(|l| (l.seq, l.session)).collect();
+        assert_eq!(got, [(Some(1), Some(0)), (Some(2), Some(1)), (Some(3), Some(1))]);
+        let flow = hub.flow();
+        assert_eq!(flow.session().first_seq, 2);
+        assert_eq!(flow.session().step(Step::Connect).seq, 3);
     }
 
     #[test]
