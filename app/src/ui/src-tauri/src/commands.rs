@@ -72,12 +72,20 @@ pub fn open_url(url: String) -> Result<(), String> {
     tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
-/// Opens a folder in Explorer (the settings folder). Folders only: a file
-/// path would run the file's program.
+/// Opens a folder in Explorer (the settings folder), creating it first if it
+/// is not there yet, as v1's Open Config Folder did (the firmware files go
+/// there before anything else wrote to it). Folders only: a file path would
+/// run the file's program.
 #[tauri::command]
 pub fn open_folder(path: String) -> Result<(), String> {
     let p = Path::new(&path);
-    if !p.is_absolute() || !p.is_dir() {
+    if !p.is_absolute() {
+        return Err(format!("{path} is not a folder"));
+    }
+    if !p.exists() {
+        std::fs::create_dir_all(p).map_err(|e| format!("{path}: {e}"))?;
+    }
+    if !p.is_dir() {
         return Err(format!("{path} is not a folder"));
     }
     tauri_plugin_opener::open_path(p, None::<&str>).map_err(|e| e.to_string())

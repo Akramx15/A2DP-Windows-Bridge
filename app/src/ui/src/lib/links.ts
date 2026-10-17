@@ -24,3 +24,12 @@ export function firmwareUrl(vendor: string): string {
   if (v.includes("broadcom")) return LINKS.firmwareBroadcom;
   return LINKS.firmwareRealtek;
 }
+
+/** The firmware page for a non-Realtek adapter's own files (v1: Intel's
+ *  ibt-* in linux-firmware, Broadcom's .hcd); null for vendors with none */
+export function vendorFirmwareUrl(vendor: string): string | null {
+  const v = vendor.toLowerCase();
+  if (v.includes("intel")) return LINKS.firmwareIntel;
+  if (v.includes("broadcom")) return LINKS.firmwareBroadcom;
+  return null;
+}

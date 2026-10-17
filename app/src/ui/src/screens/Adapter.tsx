@@ -1,16 +1,16 @@
 // Adapter: the USB Bluetooth adapters with their driver and firmware,
 // WinUSB assign / restore, the chip for the firmware, and AFH.
 
-import { createSignal, For, Show } from "solid-js";
-import { useApp } from "../app/context";
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { type AppContext, useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { ErrorPanel, WinusbDialog } from "../components/stream";
-import { t } from "../i18n";
-import type { AdapterInfo, DriverKind } from "../ipc/types";
-import { CHIP_AUTO, CHIP_CUSTOM, CHIP_NOT_REALTEK, REALTEK_CHIPS, stemFor } from "../lib/chips";
-import { firmwareUrl, LINKS } from "../lib/links";
+import { t, tm } from "../i18n";
+import type { AdapterInfo, DriverKind, FirmwareFile } from "../ipc/types";
+import { adapterFirmwareTag, buildChipOptions, type ChipStatus, chipStatus, isAutoChip } from "../lib/chips";
+import { LINKS, vendorFirmwareUrl } from "../lib/links";
 
 const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 
@@ -27,6 +27,11 @@ export function driverText(d: DriverKind): { text: string; status: "good" | "war
   }
 }
 
+/** Opens the settings folder (the shell creates it if it is not there yet) */
+function openConfigFolder(app: AppContext) {
+  return app.run(() => app.core.transport.openFolder(app.core.state.snap!.config_dir));
+}
+
 export function Adapter() {
   const app = useApp();
   const { core } = app;
@@ -34,12 +39,34 @@ export function Adapter() {
   const adapter = () => snap().adapter;
   const [dialog, setDialog] = createSignal<{ adapter: AdapterInfo; mode: "assign" | "restore" } | null>(null);
   const [listing, setListing] = createSignal(false);
+  // The *_fw.bin files in the settings folder: chips the table lacks
+  const [files, setFiles] = createSignal<FirmwareFile[]>([]);
+  const loadFiles = async () => {
+    try {
+      setFiles(await core.request("adapter.firmware_files"));
+    } catch {
+      // The choice keeps the table's chips
+    }
+  };
 
   const refresh = async () => {
     setListing(true);
-    await app.run(() => core.request("adapter.list"));
+    await Promise.all([app.run(() => core.request("adapter.list")), loadFiles()]);
     setListing(false);
   };
+
+  // v1 checked the firmware again when its dialog got the focus back: the
+  // files may have been placed through Open Config Folder meanwhile
+  const onFocus = () => {
+    if (listing()) return;
+    void core.request("adapter.list").catch(() => {});
+    void loadFiles();
+  };
+  onMount(() => {
+    void loadFiles();
+    window.addEventListener("focus", onFocus);
+  });
+  onCleanup(() => window.removeEventListener("focus", onFocus));
 
   return (
     <div class="page">
@@ -72,6 +99,7 @@ export function Adapter() {
         <For each={adapter().adapters}>
           {(a) => {
             const drv = () => driverText(a.driver);
+            const fw = () => adapterFirmwareTag(a, snap().settings);
             return (
               <section class="card adapter-card" aria-label={a.display_name}>
                 <div class="adapter-head">
@@ -94,42 +122,13 @@ export function Adapter() {
                   <div>
                     <dt>{t("ui.adapter.firmware")}</dt>
                     <dd>
-                      <Show
-                        when={a.firmware_present !== null}
-                        fallback={<span class="muted">{t("ui.adapter.firmware_not_needed")}</span>}
-                      >
-                        <span class={`tag st-${a.firmware_present ? "good" : "bad"}`}>
-                          {a.firmware_present ? t("firmware.present") : t("firmware.missing_short")}
-                        </span>
-                        <Show when={a.realtek_chip}>
-                          <span class="muted"> {a.realtek_chip}</span>
-                        </Show>
+                      <span class={`tag st-${fw().status}`}>{t(fw().key)}</span>
+                      <Show when={a.realtek_chip}>
+                        <span class="muted"> {a.realtek_chip}</span>
                       </Show>
                     </dd>
                   </div>
                 </dl>
-                <Show when={a.firmware_present === false}>
-                  <Banner
-                    kind="warn"
-                    title={t("firmware.missing_manual")}
-                    actions={
-                      <>
-                        <Button icon="open" onClick={() => core.transport.openUrl(firmwareUrl(a.vendor))}>
-                          {t("firmware.open_download_page")}
-                        </Button>
-                        <Button icon="folder_open" onClick={() => core.transport.openFolder(snap().config_dir)}>
-                          {t("firmware.open_folder")}
-                        </Button>
-                      </>
-                    }
-                  >
-                    <p>{t("firmware.required_files")}</p>
-                    <ul class="mono files">
-                      <For each={a.firmware_files}>{(f) => <li>{f}</li>}</For>
-                    </ul>
-                    <p class="hint">{t("firmware.manual_instructions")}</p>
-                  </Banner>
-                </Show>
                 <div class="adapter-actions">
                   <Show
                     when={a.driver === "winusb"}
@@ -154,7 +153,7 @@ export function Adapter() {
         </For>
       </Show>
 
-      <ChipSection />
+      <ChipSection files={files()} onChanged={loadFiles} />
       <AfhSection />
 
       <WinusbDialog adapter={dialog()?.adapter ?? null} mode={dialog()?.mode ?? "assign"} onClose={() => setDialog(null)} />
@@ -162,30 +161,26 @@ export function Adapter() {
   );
 }
 
-function ChipSection() {
+/** v1 FirmwareDialog: the chip choice and the firmware state of that chip */
+function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<void> }) {
   const app = useApp();
-  const settings = () => app.core.state.snap!.settings;
-  const detected = () => app.core.state.snap!.adapter.adapters.find((a) => a.realtek_chip)?.realtek_chip ?? null;
-  const options = () => [
-    { value: CHIP_AUTO, label: t("firmware.chip_auto", detected() ?? t("firmware.chip_auto_none")) },
-    { value: CHIP_NOT_REALTEK, label: t("firmware.chip_non_realtek") },
-    ...REALTEK_CHIPS.map((c) => ({ value: c.pid, label: `${c.name} (${c.stem}_fw.bin)` })),
-    { value: CHIP_CUSTOM, label: "Custom (custom_fw.bin, custom_config.bin)" },
-  ];
-  // A value no entry stands for (a chip since dropped from the table) stays choosable
-  const all = () => {
-    const o = options();
-    const pid = settings().bt_chip_pid;
-    return o.some((x) => x.value === pid) ? o : [...o, { value: pid, label: `0x${hex4(pid)} ${settings().bt_chip_fw_stem}` }];
+  const snap = () => app.core.state.snap!;
+  const settings = () => snap().settings;
+  const adapters = () => snap().adapter.adapters;
+  const detected = () => adapters().find((a) => a.realtek_chip)?.realtek_chip ?? null;
+  const choice = () =>
+    buildChipOptions(settings(), props.files, {
+      auto: t("firmware.chip_auto", detected() ?? t("firmware.chip_auto_none")),
+      nonRealtek: t("firmware.chip_non_realtek"),
+    });
+  const hint = () => (isAutoChip(settings()) && detected() ? t("firmware.auto_selected") : t("firmware.select_chip"));
+  const choose = async (key: string) => {
+    const o = choice().options.find((x) => x.key === key);
+    if (!o || (o.pid === settings().bt_chip_pid && o.stem === settings().bt_chip_fw_stem)) return;
+    // The core lists the adapters anew with the firmware state for this chip
+    // (and releases an idle stack); the folder may have changed as well
+    if (await saveSettings(app, { bt_chip_pid: o.pid, bt_chip_fw_stem: o.stem })) await props.onChanged();
   };
-  const hint = () =>
-    settings().bt_chip_pid === CHIP_NOT_REALTEK
-      ? t("firmware.non_realtek")
-      : settings().bt_chip_pid === CHIP_AUTO
-        ? detected()
-          ? t("firmware.auto_selected")
-          : t("firmware.auto_unrecognized")
-        : t("firmware.select_chip");
   return (
     <Section title={t("firmware.title")}>
       <Field label={t("settings.bt_chip")} hint={hint()}>
@@ -193,14 +188,19 @@ function ChipSection() {
           <Select
             id={id}
             describedBy={described}
-            value={settings().bt_chip_pid}
-            options={all()}
-            onChange={(pid) => void saveSettings(app, { bt_chip_pid: pid, bt_chip_fw_stem: stemFor(pid) })}
+            value={choice().selected}
+            options={choice().options.map((o) => ({ value: o.key, label: o.label }))}
+            onChange={(key) => void choose(key)}
           />
         )}
       </Field>
+      <div aria-live="polite">
+        <Show when={chipStatus(settings(), adapters(), props.files)} keyed>
+          {(st) => <FirmwareStatus status={st} />}
+        </Show>
+      </div>
       <div class="inline">
-        <Button icon="folder_open" kind="subtle" onClick={() => app.core.transport.openFolder(app.core.state.snap!.config_dir)}>
+        <Button icon="folder_open" kind="subtle" onClick={() => void openConfigFolder(app)}>
           {t("firmware.open_folder")}
         </Button>
         <Button icon="open" kind="subtle" onClick={() => app.core.transport.openUrl(LINKS.setupGuide)}>
@@ -209,6 +209,71 @@ function ChipSection() {
       </div>
     </Section>
   );
+}
+
+/** v1 UpdateFirmwareStatus: the files, what is missing, a vendor's note */
+function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
+  const app = useApp();
+  const download = (url: string) => (
+    <Button icon="open" onClick={() => app.core.transport.openUrl(url)}>
+      {t("firmware.open_download_page")}
+    </Button>
+  );
+  const fileList = (files: string[]) => (
+    <ul class="mono files">
+      <For each={files}>{(f) => <li>{f}</li>}</For>
+    </ul>
+  );
+  const st = props.status;
+  switch (st.kind) {
+    case "present":
+      return (
+        <Banner kind="good" title={t("firmware.present")}>
+          {fileList(st.files)}
+        </Banner>
+      );
+    case "missing":
+    case "unchecked": {
+      if (st.kind === "unchecked" && st.present === true) {
+        return (
+          <Banner kind="good" title={t("firmware.present")}>
+            {fileList(st.files)}
+          </Banner>
+        );
+      }
+      const missing = st.kind === "missing" || st.present === false;
+      return (
+        <Banner
+          kind={missing ? "warn" : "info"}
+          title={missing ? t("firmware.missing_manual") : undefined}
+          actions={download(LINKS.firmwareRealtek)}
+        >
+          <p>{t("firmware.required_files")}</p>
+          {fileList(st.files)}
+          <p class="hint">{t("firmware.manual_instructions")}</p>
+        </Banner>
+      );
+    }
+    case "vendor": {
+      const url = vendorFirmwareUrl(st.vendor);
+      return (
+        <Banner
+          kind={st.note.key === "firmware.vendor_unsupported" ? "warn" : "info"}
+          actions={url ? download(url) : undefined}
+        >
+          {tm(st.note)}
+        </Banner>
+      );
+    }
+    case "non_realtek":
+      return <Banner kind="good">{t("firmware.non_realtek")}</Banner>;
+    case "auto_no_adapter":
+      return <Banner kind="warn">{t("firmware.auto_no_adapter")}</Banner>;
+    case "auto_unrecognized":
+      return <Banner kind="warn">{t("firmware.auto_unrecognized")}</Banner>;
+    default:
+      return <Banner kind="warn">{t("firmware.select_chip")}</Banner>;
+  }
 }
 
 /** "6,11": Wi-Fi channels 1..14, at least one */
