@@ -4,6 +4,7 @@ description = "The Bluetooth host: BTstack on its own thread (A2DP source, AVRCP
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 btstack-sys.workspace = true

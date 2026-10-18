@@ -4,6 +4,7 @@ description = "A2DPWB's core: the streaming state machine, Bluetooth stack lifec
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [lib]
 name = "a2dpwb_core"

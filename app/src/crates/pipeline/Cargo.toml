@@ -4,6 +4,7 @@ description = "The audio path between capture and Bluetooth: PCM ring, format co
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 bt-host.workspace = true

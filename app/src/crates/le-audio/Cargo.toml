@@ -4,6 +4,7 @@ description = "LE Audio (experimental), the pure logic: assigned numbers, LTVs, 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 # v1's log lines of the CCP call model and the simulated media player

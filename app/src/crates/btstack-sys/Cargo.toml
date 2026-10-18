@@ -4,6 +4,7 @@ description = "BTstack built from extern/btstack, with the FFI and the safe laye
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 links = "btstack"
 build = "build.rs"
 

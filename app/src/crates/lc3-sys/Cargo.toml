@@ -6,6 +6,7 @@ edition.workspace = true
 # The wrapper code in this crate; the C library it builds is Apache-2.0
 # (extern/btstack/3rd-party/lc3-google/LICENSE, THIRD_PARTY_LICENSES.md)
 license.workspace = true
+publish.workspace = true
 links = "lc3"
 build = "build.rs"
 

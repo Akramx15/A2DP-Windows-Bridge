@@ -4,6 +4,7 @@ description = "Win32 APIs A2DPWB needs that no Rust library covers (unsafe allow
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 tracing.workspace = true

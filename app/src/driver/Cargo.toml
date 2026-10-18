@@ -4,6 +4,7 @@ description = "Elevated helper that assigns WinUSB to a Bluetooth adapter and re
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [[bin]]
 name = "a2dpwb-driver"

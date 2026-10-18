@@ -794,8 +794,10 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_millis(250));
     }
 
+    // Generous: a refused connect on Windows retries the SYN for about 2 s,
+    // up to CONNECT_TIMEOUT, slower still on a loaded CI runner
     fn wait_for(what: impl Fn() -> bool) -> bool {
-        let until = Instant::now() + Duration::from_secs(5);
+        let until = Instant::now() + Duration::from_secs(15);
         while Instant::now() < until {
             if what() {
                 return true;

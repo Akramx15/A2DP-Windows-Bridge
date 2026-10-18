@@ -4,6 +4,7 @@ description = "A2DP codecs: the Encoder trait, the Rust SBC encoder, wrappers of
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [features]
 default = ["ldac", "aptx", "aac", "lhdcv5", "opus", "lc3"]

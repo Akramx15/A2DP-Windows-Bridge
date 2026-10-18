@@ -6,6 +6,7 @@ edition.workspace = true
 # The wrapper code in this crate; the C++ library it builds is under the
 # Fraunhofer FDK AAC licence (extern/fdk-aac/NOTICE, THIRD_PARTY_LICENSES.md §3)
 license.workspace = true
+publish.workspace = true
 links = "fdkaac"
 build = "build.rs"
 

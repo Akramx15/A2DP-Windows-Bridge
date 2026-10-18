@@ -4,6 +4,7 @@ description = "LHDC V5 encoder (portable C port of the AOSP encoder) built from 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 links = "lhdcv5"
 build = "build.rs"
 

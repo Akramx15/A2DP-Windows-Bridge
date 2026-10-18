@@ -4,6 +4,7 @@ description = "a2dpwb-core.exe: the resident A2DPWB process (tray, IPC) and the 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [[bin]]
 name = "a2dpwb-core"
