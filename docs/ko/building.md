@@ -22,6 +22,7 @@ nav_order: 3
 - "C++를 사용한 데스크톱 개발" 워크로드가 설치된 **Visual Studio 2022 이상**(또는 Build Tools): C 라이브러리(BTstack, 코덱)는 MSVC로 컴파일합니다
 - UI용 **Node.js** 22와 **pnpm** (`corepack enable`로 pnpm을 사용할 수 있음)
 - **Git** (서브모듈용)
+- `build.ps1` / `build.bat`용 **PowerShell 7** (`pwsh`, `winget install Microsoft.PowerShell`)
 - ARM64 빌드의 경우: Visual Studio 구성 요소 "MSVC v143 - VS 2022 C++ ARM64 build tools"와 `rustup target add aarch64-pc-windows-msvc`
 
 ## 빠른 빌드
@@ -29,17 +30,23 @@ nav_order: 3
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
+pwsh ./build.ps1
+```
+
+탐색기에서 `build.bat`을 더블클릭해도 됩니다. `build.ps1`을 실행하고 끝나면 키 입력을 기다립니다(`build.bat -Test`처럼 스위치도 전달됩니다). `build.ps1`은 먼저 Rust, Node.js, pnpm, 서브모듈이 있는지 확인하고, `node_modules`가 없으면 `pnpm install`을 실행하며, 창의 페이지를 빌드한 다음 세 프로그램을 `target/release/`에 생성합니다. `a2dpwb-core.exe`(상주 코어: Bluetooth, 오디오, 트레이), `a2dpwb.exe`(창), `a2dpwb-driver.exe`(WinUSB 드라이버를 할당 / 복원하는, 관리자 권한으로 실행되는 도우미)입니다. 세 프로그램은 같은 폴더에 두십시오. `a2dpwb-core.exe --cli`는 창 없이 스트리밍합니다.
+
+스위치: `-Debug`(개발 프로필, `target/debug/`), `-Test`(이어서 테스트 항목의 검사), `-Decoder`(디코더 도구도 빌드), `-Emu`([하드웨어 없이 테스트](#emu)도 실행), `-Release -Arch x64|arm64`(릴리스 스크립트만 실행, 릴리스 패키지 항목 참조).
+
+**단계별로 실행하는 경우** (`build.ps1`이 하는 일입니다. `a2dpwb.exe`는 창의 페이지를 내장하므로 페이지를 먼저 빌드해야 합니다):
+
+```bash
 cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
 cd app/src/ui
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 cd ../../..
 cargo build --release -p a2dpwb-ui
 ```
-
-프로그램은 `target/release/`에 생성됩니다. `a2dpwb-core.exe`(상주 코어: Bluetooth, 오디오, 트레이), `a2dpwb.exe`(창), `a2dpwb-driver.exe`(WinUSB 드라이버를 할당 / 복원하는, 관리자 권한으로 실행되는 도우미)입니다. 세 프로그램은 같은 폴더에 두십시오. `a2dpwb-core.exe --cli`는 창 없이 스트리밍합니다.
-
-**한 번에 빌드:** `pwsh ./build.ps1`(PowerShell 7)로 위 과정을 한 번에 실행할 수 있습니다. 먼저 Rust, Node.js, pnpm, 서브모듈이 있는지 확인하고, `node_modules`가 없으면 `pnpm install`도 실행합니다. 스위치: `-Debug`(개발 프로필, `target/debug/`), `-Test`(이어서 테스트 항목의 검사), `-Decoder`(디코더 도구도 빌드), `-Emu`([하드웨어 없이 테스트](#emu)도 실행), `-Release -Arch x64`(릴리스 스크립트만 실행, 릴리스 패키지 항목 참조).
 
 ## `--recursive` 없이 이미 클론한 경우
 

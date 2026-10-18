@@ -22,6 +22,7 @@ nav_order: 3
 - **Visual Studio 2022 ou ultérieur** (ou ses Build Tools) avec la charge de travail « Développement Desktop en C++ » : les bibliothèques C (BTstack, les codecs) sont compilées avec MSVC
 - **Node.js** 22 et **pnpm** pour l'interface (`corepack enable` fournit pnpm)
 - **Git** (pour les sous-modules)
+- **PowerShell 7** (`pwsh`) pour `build.ps1` / `build.bat` (`winget install Microsoft.PowerShell`)
 - Pour les versions ARM64 : le composant Visual Studio « MSVC v143 - VS 2022 C++ ARM64 build tools » et `rustup target add aarch64-pc-windows-msvc`
 
 ## Compilation rapide
@@ -29,17 +30,23 @@ nav_order: 3
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
+pwsh ./build.ps1
+```
+
+Ou double-cliquez sur `build.bat` dans l'Explorateur : il lance `build.ps1` et attend une touche à la fin (`build.bat -Test` transmet les options). `build.ps1` vérifie d'abord que Rust, Node.js, pnpm et les sous-modules sont présents, lance `pnpm install` si `node_modules` est absent, compile la page de la fenêtre puis les trois programmes dans `target/release/` : `a2dpwb-core.exe` (le cœur résident : Bluetooth, audio, zone de notification), `a2dpwb.exe` (la fenêtre) et `a2dpwb-driver.exe` (l'assistant élevé qui attribue / restaure le pilote WinUSB). Gardez les trois dans un même dossier ; `a2dpwb-core.exe --cli` diffuse sans la fenêtre.
+
+Options : `-Debug` (profil de développement, `target/debug/`), `-Test` (puis les vérifications de la section « Tests »), `-Decoder` (aussi l'outil de décodage), `-Emu` (aussi le [test sans matériel](#emu)), `-Release -Arch x64|arm64` (uniquement le script de publication, voir « Paquets de version »).
+
+**Pas à pas** (ce que fait `build.ps1` ; la page de la fenêtre doit être compilée avant `a2dpwb.exe`, qui l'intègre) :
+
+```bash
 cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
 cd app/src/ui
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 cd ../../..
 cargo build --release -p a2dpwb-ui
 ```
-
-Les programmes sont générés dans `target/release/` : `a2dpwb-core.exe` (le cœur résident : Bluetooth, audio, zone de notification), `a2dpwb.exe` (la fenêtre) et `a2dpwb-driver.exe` (l'assistant élevé qui attribue / restaure le pilote WinUSB). Gardez les trois dans un même dossier ; `a2dpwb-core.exe --cli` diffuse sans la fenêtre.
-
-**En une seule étape :** `pwsh ./build.ps1` (PowerShell 7) fait la même chose. Il vérifie d'abord que Rust, Node.js, pnpm et les sous-modules sont présents, et lance `pnpm install` si `node_modules` est absent. Options : `-Debug` (profil de développement, `target/debug/`), `-Test` (puis les vérifications de la section « Tests »), `-Decoder` (aussi l'outil de décodage), `-Emu` (aussi le [test sans matériel](#emu)), `-Release -Arch x64` (uniquement le script de publication, voir « Paquets de version »).
 
 ## Si vous avez déjà cloné sans `--recursive`
 

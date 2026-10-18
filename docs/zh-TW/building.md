@@ -22,6 +22,7 @@ nav_order: 3
 - **Visual Studio 2022 以上**（或其 Build Tools），並安裝「使用 C++ 的桌面開發」工作負載：C 程式庫（BTstack、各轉碼器）以 MSVC 編譯
 - 建置 UI 所需的 **Node.js** 22 與 **pnpm**（`corepack enable` 即可提供 pnpm）
 - **Git**（用於子模組）
+- 供 `build.ps1` / `build.bat` 使用的 **PowerShell 7**（`pwsh`，`winget install Microsoft.PowerShell`）
 - 建置 ARM64 版本時：Visual Studio 元件「MSVC v143 - VS 2022 C++ ARM64 build tools」，以及 `rustup target add aarch64-pc-windows-msvc`
 
 ## 快速建置
@@ -29,17 +30,23 @@ nav_order: 3
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
+pwsh ./build.ps1
+```
+
+也可以在檔案總管中連按兩下 `build.bat`：它會執行 `build.ps1`，結束時等待按鍵（`build.bat -Test` 會把參數傳給指令碼）。`build.ps1` 會先檢查 Rust、Node.js、pnpm 與子模組是否齊全，`node_modules` 不存在時執行 `pnpm install`，先建置視窗的頁面，再把三個程式輸出到 `target/release/`：`a2dpwb-core.exe`（常駐核心：藍牙、音訊、系統匣）、`a2dpwb.exe`（視窗）與 `a2dpwb-driver.exe`（以提高權限指派 / 還原 WinUSB 驅動程式的輔助程式）。請將這三個程式放在同一個資料夾中；`a2dpwb-core.exe --cli` 可在沒有視窗的情況下串流。
+
+參數：`-Debug`（開發設定檔，`target/debug/`）、`-Test`（接著執行「測試」中的檢查）、`-Decoder`（同時建置解碼工具）、`-Emu`（同時執行[不使用硬體進行測試](#emu)）、`-Release -Arch x64|arm64`（僅執行發行指令碼，見「發行套件」）。
+
+**分步建置**（即 `build.ps1` 所做的事；`a2dpwb.exe` 會嵌入視窗的頁面，因此必須先建置頁面）：
+
+```bash
 cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
 cd app/src/ui
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 cd ../../..
 cargo build --release -p a2dpwb-ui
 ```
-
-程式會輸出到 `target/release/`：`a2dpwb-core.exe`（常駐核心：藍牙、音訊、系統匣）、`a2dpwb.exe`（視窗）與 `a2dpwb-driver.exe`（以提高權限指派 / 還原 WinUSB 驅動程式的輔助程式）。請將這三個程式放在同一個資料夾中；`a2dpwb-core.exe --cli` 可在沒有視窗的情況下串流。
-
-**一步建置：**`pwsh ./build.ps1`（PowerShell 7）可一次完成上述步驟。它會先檢查 Rust、Node.js、pnpm 與子模組是否齊全，`node_modules` 不存在時也會執行 `pnpm install`。參數：`-Debug`（開發設定檔，`target/debug/`）、`-Test`（接著執行「測試」中的檢查）、`-Decoder`（同時建置解碼工具）、`-Emu`（同時執行[不使用硬體進行測試](#emu)）、`-Release -Arch x64`（僅執行發行指令碼，見「發行套件」）。
 
 ## 若複製時未使用 `--recursive`
 
