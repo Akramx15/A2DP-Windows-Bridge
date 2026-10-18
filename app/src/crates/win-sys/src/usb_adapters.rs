@@ -121,6 +121,12 @@ impl UsbDevice {
         }
     }
 
+    /// WinUSB refused to open the device for the probe: another program
+    /// (v1, another A2DPWB) holds it
+    pub fn in_use(&self) -> bool {
+        matches!(&self.probe, Some(Err(e)) if e.starts_with("open failed (error 5)"))
+    }
+
     /// Worth listing as a possible adapter: WinUSB-bound, Bluetooth class
     /// or compatible ID, or Windows' Bluetooth setup class. A vendor-class
     /// adapter without a driver is caught only by a VID known to bt-host's
