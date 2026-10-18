@@ -165,13 +165,48 @@ pub fn path(dir: &Path) -> PathBuf {
     dir.join("profiles.json")
 }
 
+/// Gives every profile a name of its own: v1 named profiles "<device>
+/// <codec>" and told them apart by position, so two alike had the same
+/// name, while v2 finds them by name. A repeated name gets " (2)", " (3)"…
+/// (the first keeps its name, so a last_profile naming it still does).
+/// Returns how many were renamed.
+pub fn make_names_unique(list: &mut [Profile]) -> usize {
+    let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut renamed = 0;
+    for i in 0..list.len() {
+        if taken.insert(list[i].name.clone()) {
+            continue;
+        }
+        let base = list[i].name.clone();
+        let name = (2..)
+            .map(|n| format!("{base} ({n})"))
+            // Not one taken already, nor one a later profile has
+            .find(|c| !taken.contains(c) && !list[i + 1..].iter().any(|p| &p.name == c))
+            .unwrap_or_default();
+        taken.insert(name.clone());
+        list[i].name = name;
+        renamed += 1;
+    }
+    renamed
+}
+
+/// The saved profiles, names made unique in memory (see make_names_unique;
+/// written at the next save)
 pub fn load(dir: &Path) -> Vec<Profile> {
-    let Ok(text) = std::fs::read_to_string(path(dir)) else { return Vec::new() };
+    load_counted(dir).0
+}
+
+/// [`load`], and how many profiles it renamed
+pub fn load_counted(dir: &Path) -> (Vec<Profile>, usize) {
+    let Ok(text) = std::fs::read_to_string(path(dir)) else { return (Vec::new(), 0) };
     match serde_json::from_str::<ProfilesFile>(&text) {
-        Ok(f) => f.profiles,
+        Ok(mut f) => {
+            let renamed = make_names_unique(&mut f.profiles);
+            (f.profiles, renamed)
+        }
         Err(e) => {
             tracing::warn!("profiles: {} is not valid ({e})", path(dir).display());
-            Vec::new()
+            (Vec::new(), 0)
         }
     }
 }
@@ -205,6 +240,45 @@ mod tests {
         legacy.max_media_payload = None;
         assert_eq!(legacy.to_request(1500).unwrap().max_media_payload, 1500);
         assert_eq!(r.le, None);
+    }
+
+    fn named(names: &[&str]) -> Vec<Profile> {
+        names.iter().map(|n| Profile { name: n.to_string(), ..Profile::default() }).collect()
+    }
+
+    fn names(list: &[Profile]) -> Vec<&str> {
+        list.iter().map(|p| p.name.as_str()).collect()
+    }
+
+    #[test]
+    fn repeated_names_get_a_number() {
+        let mut list = named(&["WH LDAC", "WH LDAC", "Buds AAC", "WH LDAC"]);
+        assert_eq!(make_names_unique(&mut list), 2);
+        assert_eq!(names(&list), ["WH LDAC", "WH LDAC (2)", "Buds AAC", "WH LDAC (3)"]);
+        // Already unique: unchanged
+        assert_eq!(make_names_unique(&mut list), 0);
+        // A number some profile already has is skipped, also a later one's
+        let mut list = named(&["A", "A (2)", "A", "A", "A (3)"]);
+        assert_eq!(make_names_unique(&mut list), 2);
+        assert_eq!(names(&list), ["A", "A (2)", "A (4)", "A (5)", "A (3)"]);
+    }
+
+    #[test]
+    fn load_makes_names_unique_in_memory() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-profiles-dup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = r#"{"profiles":[{"name":"WH LDAC","device_address":"00:A2:D0:00:00:02","codec":"ldac"},
+            {"name":"WH LDAC","device_address":"00:A2:D0:00:00:02","codec":"ldac","quality":"sq"}]}"#;
+        std::fs::write(path(&dir), text).unwrap();
+        let list = load(&dir);
+        assert_eq!(names(&list), ["WH LDAC", "WH LDAC (2)"]);
+        assert_eq!(list[1].quality, "sq");
+        // The file itself is left until the next save
+        assert_eq!(std::fs::read_to_string(path(&dir)).unwrap(), text);
+        save(&dir, &list).unwrap();
+        assert_eq!(names(&load(&dir)), ["WH LDAC", "WH LDAC (2)"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
