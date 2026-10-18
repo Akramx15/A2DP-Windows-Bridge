@@ -28,6 +28,7 @@
   "codec.faststream": "FastStream",
   "codec.lhdc_v5": "LHDC V5",
   "codec.opus": "Opus",
+  "codec.opus05": "Opus 05 (PipeWire)",
   "quality.high": "High",
   "quality.medium_high": "Medium-High",
   "quality.standard": "Standard",

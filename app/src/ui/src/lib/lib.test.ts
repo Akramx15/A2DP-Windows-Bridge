@@ -158,6 +158,8 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "opus", sample_rate: 48000 }).sample_rate).toBe(48000);
     expect(fitToCodec({ ...p, codec: "opus", sample_rate: 44100 }).sample_rate).toBe(0);
     expect(sampleRates("opus")).toEqual([0, 48000]);
+    expect(fitToCodec({ ...p, codec: "opus05", sample_rate: 44100 })).toMatchObject({ quality: "hq", abr: false, sample_rate: 0, bit_depth: 0 });
+    expect(sampleRates("opus05")).toEqual([0, 48000]);
   });
 
   it("offers 192 kHz for LHDC V5 only, and no quality under its ABR", () => {
@@ -183,6 +185,7 @@ describe("profiles", () => {
     expect(codecLabelKey("aptX HD")).toBe("codec.aptx_hd");
     expect(codecLabelKey("LHDC V5")).toBe("codec.lhdc_v5");
     expect(codecLabelKey("Opus")).toBe("codec.opus");
+    expect(codecLabelKey("Opus 05")).toBe("codec.opus05");
     expect(codecLabelKey("SBC XQ")).toBe("codec.sbc_xq");
     expect(codecLabelKey("FastStream")).toBe("codec.faststream");
     expect(codecLabelKey("Ldac")).toBe("codec.ldac");

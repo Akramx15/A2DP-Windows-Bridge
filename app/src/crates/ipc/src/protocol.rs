@@ -247,7 +247,7 @@ pub struct Profile {
     pub name: String,
     pub device_address: String,
     pub device_name: String,
-    /// auto, ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, faststream
+    /// auto, ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream
     pub codec: String,
     /// hq, sq, mq; mhq for LHDC V5
     pub quality: String,

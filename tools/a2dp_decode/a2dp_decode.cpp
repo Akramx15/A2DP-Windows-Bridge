@@ -11,6 +11,8 @@
  *   AAC               fdk-aac (LATM, muxConfigPresent=1)
  *   aptX / HD / LL    libopenaptx 0.2.0
  *   Opus              libopus (Android's A2DP Opus, vendor 0x000000E0 / 0x0001)
+ *   Opus 05           libopus (PipeWire's A2DP Opus, vendor 0x000005F1 / 0x1005;
+ *                     one stream: a plain Opus packet)
  *   LDAC, LHDC V5     no open-source decoder: frame headers are validated only
  *
  * Decoded audio is written to WAV files next to the dump. The report on
@@ -63,7 +65,7 @@ static uint32_t be32(const uint8_t *p) {
 /* Codec configuration (AVDTP Media Codec capability)                       */
 /* ------------------------------------------------------------------------ */
 
-enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5, FastStream, Opus };
+enum class Codec { Unknown, SBC, AAC, Aptx, AptxHD, AptxLL, LDAC, LHDCV5, FastStream, Opus, Opus05 };
 
 static const char *codec_name(Codec c) {
     switch (c) {
@@ -76,6 +78,7 @@ static const char *codec_name(Codec c) {
     case Codec::LHDCV5: return "LHDC V5";
     case Codec::FastStream: return "FastStream";
     case Codec::Opus:   return "Opus";
+    case Codec::Opus05: return "Opus 05";
     default:            return "unknown";
     }
 }
@@ -91,6 +94,7 @@ static const char *codec_file_tag(Codec c) {
     case Codec::LHDCV5: return "lhdcv5";
     case Codec::FastStream: return "faststream";
     case Codec::Opus:   return "opus";
+    case Codec::Opus05: return "opus05";
     default:            return "unknown";
     }
 }
@@ -268,6 +272,32 @@ static CodecConfig parse_media_codec(const uint8_t *p, size_t n) {
                 c.desc += " (INVALID: not exactly one option per field)";
             return c;
         }
+        if (vendor == 0x5F1 && vcodec == 0x1005 && vlen >= 18) {
+            /* PipeWire's Opus 05 (a2dp-codec-caps.h a2dp_opus_05_t): two
+             * 9-byte directions, main (the music) then bidi (return channel),
+             * each channels, coupled streams, location (LE32), frame
+             * durations (0x01 2.5 ms .. 0x04 10 ms, 0x08 20 ms, 0x10 40 ms),
+             * bit rate (LE16, units of 1024 bps). One stream (mono, or
+             * stereo as one coupled stream) is a plain Opus packet. */
+            static const uint32_t frame_samples[5] = {120, 240, 480, 960, 1920};
+            static const char *frame_names[5] = {"2.5 ms", "5 ms", "10 ms", "20 ms", "40 ms"};
+            c.codec = Codec::Opus05;
+            int ch = v[0], coupled = v[1], bidi = v[9];
+            uint32_t location = (uint32_t)v[2] | (uint32_t)v[3] << 8 | (uint32_t)v[4] << 16 | (uint32_t)v[5] << 24;
+            int dur = single_bit_index(v[6] & 0x1F, 5);
+            unsigned bitrate = le16(v + 7);
+            c.sample_rate = 48000; /* not in the configuration: A2DPWB sends 48 kHz */
+            c.channels = ch;
+            c.opus_frame_samples = dur >= 0 ? frame_samples[dur] : 0;
+            c.desc = strf("Opus 05 %u Hz, %s, %s frames, location 0x%08X, max %u x 1024 bps, %s",
+                c.sample_rate, ch == 1 ? "mono" : ch == 2 ? "stereo" : "?",
+                dur >= 0 ? frame_names[dur] : "?", location, bitrate,
+                bidi ? "with a return channel" : "no return channel");
+            if ((ch != 1 && ch != 2) || coupled != ch - 1 || dur < 0 || (v[6] & 0xE0) ||
+                (ch == 2 && location != 0x3))
+                c.desc += " (INVALID: not mono / stereo in one stream at front left + right, or not one frame duration)";
+            return c;
+        }
         if (vendor == 0x0A && vcodec == 0x0001 && vlen >= 2) {
             /* FastStream (PipeWire a2dp_faststream_t): direction 0x01 sink
              * (music) | 0x02 source (voice); byte 7 low nibble sink rate
@@ -380,7 +410,8 @@ public:
             aptx_ = aptx_init(cfg_.codec == Codec::AptxHD ? 1 : 0);
             if (!aptx_) issue("aptX: aptx_init failed");
             break;
-        case Codec::Opus: {
+        case Codec::Opus:
+        case Codec::Opus05: {
             int err = 0;
             if (cfg_.sample_rate == 48000 && cfg_.channels > 0)
                 opus_ = opus_decoder_create(48000, cfg_.channels, &err);
@@ -420,7 +451,8 @@ public:
         case Codec::AptxHD: decode_aptx(pl, pn); break;
         case Codec::LDAC:   check_ldac(pl, pn); break;
         case Codec::LHDCV5: check_lhdcv5(pl, pn); break;
-        case Codec::Opus:   decode_opus(pl, pn); break;
+        case Codec::Opus:
+        case Codec::Opus05: decode_opus(pl, pn); break;
         default: break;
         }
     }
@@ -702,7 +734,8 @@ private:
     }
 
     /* Opus (Android a2dp_vendor_opus_encoder.cc / _decoder.cc, PipeWire
-     * a2dp-codec-opus-g.c): 1-byte media payload header (F S L bits 7..5,
+     * a2dp-codec-opus-g.c; Opus 05: a2dp-codec-opus.c, the same header as its
+     * rtp_payload): 1-byte media payload header (F S L bits 7..5,
      * frame count in bits 3..0: always 1, PipeWire rejects any other), then
      * one Opus packet of one 10 / 20 ms frame. */
     void decode_opus(const uint8_t *p, size_t n) {

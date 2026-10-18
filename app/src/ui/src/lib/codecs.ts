@@ -3,9 +3,21 @@
 // modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
 // "mhq" only for LHDC V5, no quality choice for the aptX family or under LHDC
-// V5 ABR, 48 kHz only for Opus.
+// V5 ABR, 48 kHz only for Opus and Opus 05.
 
-export type CodecId = "auto" | "ldac" | "aptxhd" | "aptxll" | "aptx" | "lhdcv5" | "opus" | "aac" | "sbcxq" | "sbc" | "faststream";
+export type CodecId =
+  | "auto"
+  | "ldac"
+  | "aptxhd"
+  | "aptxll"
+  | "aptx"
+  | "lhdcv5"
+  | "opus"
+  | "aac"
+  | "sbcxq"
+  | "sbc"
+  | "faststream"
+  | "opus05";
 
 export interface QualityMode {
   id: string;
@@ -131,6 +143,21 @@ export const CODECS: CodecSpec[] = [
   // CSR FastStream: fixed SBC (bitpool 29, ~200 kbps), music only; never
   // picked by Auto
   { id: "faststream", label: "codec.faststream", bars: { quality: 1, latency: 4, stability: 4 }, qualities: [], abr: false, hiRes: false },
+  {
+    // PipeWire's own Opus ("Opus 05"; experimental, never picked by Auto):
+    // Android Opus' levels, stereo, 48 kHz, 10 ms frames when offered
+    id: "opus05",
+    label: "codec.opus05",
+    bars: { quality: 4, latency: 3, stability: 3 },
+    qualities: [
+      { id: "hq", label: HQ, kbps: "256" },
+      { id: "sq", label: SQ, kbps: "192" },
+      { id: "mq", label: MQ, kbps: "128" },
+    ],
+    abr: false,
+    hiRes: false,
+    rates: [0, 48000],
+  },
 ];
 
 export function codecSpec(id: string): CodecSpec {
@@ -154,6 +181,7 @@ export function codecLabelKey(name: string): string {
     lhdcv5: "codec.lhdc_v5",
     lhdc: "codec.lhdc_v5",
     opus: "codec.opus",
+    opus05: "codec.opus05",
     // LE Audio (StreamInfo.le)
     lc3: "ui.codec.lc3",
   };

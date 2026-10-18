@@ -18,12 +18,22 @@
 //! payload, and every packet is encoded with that payload as its limit, so
 //! a VBR peak never exceeds the MTU. Complexity 10 (libopus' default, as
 //! PipeWire; Android uses 5 to save phone CPU).
+//!
+//! PipeWire's own "Opus 05" (vendor 0x000005F1, codec 0x1005; PipeWire
+//! a2dp-codec-opus.c, `opus_05`) streams the same way for stereo music: an
+//! Opus multistream packet of one stream (one coupled stream for stereo,
+//! which is a plain Opus packet) per media packet, behind the same 1-byte
+//! header (PipeWire's rtp_payload: frame count 1, no fragmentation, which
+//! its decoder takes as is), with an RTP header. PipeWire's encoder uses
+//! OPUS_APPLICATION_AUDIO and libopus' default constrained VBR too, from 96
+//! to 320 kbps; here the quality levels are Android Opus' and the target
+//! is also capped at the bit rate configured (the sink's limit, units of
+//! 1024 bps). PipeWire adapts the bit rate to the send queue; A2DPWB does
+//! not (no ABR).
 
 use opus_sys::{OpusEnc, ffi};
 
 use crate::{CodecKind, Encoded, Encoder, EncoderConfig, EncoderError, Pcm, PcmFormat, Quality};
-
-const CODEC: CodecKind = CodecKind::Opus;
 
 /// The media payload header in front of the Opus packet
 /// (A2DP_OPUS_MPL_HDR_LEN)
@@ -49,6 +59,8 @@ fn quality_bitrate(quality: Quality, channels: u32) -> u32 {
 }
 
 pub struct OpusEncoder {
+    /// Opus or Opus 05
+    kind: CodecKind,
     enc: OpusEnc,
     /// Channels of the input
     in_channels: usize,
@@ -64,8 +76,12 @@ pub struct OpusEncoder {
 }
 
 impl OpusEncoder {
-    pub fn new(config: &EncoderConfig) -> Result<OpusEncoder, EncoderError> {
-        let unsupported = |what: String| EncoderError::Unsupported { codec: CODEC, what };
+    /// An encoder for `kind`: [`CodecKind::Opus`] or [`CodecKind::Opus05`]
+    pub fn new(kind: CodecKind, config: &EncoderConfig) -> Result<OpusEncoder, EncoderError> {
+        let unsupported = |what: String| EncoderError::Unsupported { codec: kind, what };
+        if !kind.is_opus() {
+            return Err(unsupported(format!("{kind} is not Opus")));
+        }
         if config.sample_rate != SAMPLE_RATE {
             return Err(unsupported(format!("sample rate {} Hz (Opus over A2DP is 48000 only)", config.sample_rate)));
         }
@@ -99,13 +115,18 @@ impl OpusEncoder {
         // packet limit passed to opus_encode catches the rest
         let max_bitrate = u32::try_from(max_packet as u64 * 8 * 1000 / u64::from(frame_ms)).unwrap_or(u32::MAX);
         let mut bitrate = quality_bitrate(config.quality, channels);
+        let configured = config.peer.opus_max_bitrate;
+        if kind == CodecKind::Opus05 && configured > 0 && bitrate > configured {
+            tracing::info!("{kind}: bit rate limited to {configured} bps by the configuration");
+            bitrate = configured;
+        }
         if bitrate > max_bitrate {
-            tracing::info!("Opus: bit rate limited to {max_bitrate} bps by the {}-byte media payload", config.mtu);
+            tracing::info!("{kind}: bit rate limited to {max_bitrate} bps by the {}-byte media payload", config.mtu);
             bitrate = max_bitrate;
         }
 
         let init_err =
-            |what: &str, e: opus_sys::Error| EncoderError::Init { codec: CODEC, what: format!("{what}: {e}") };
+            |what: &str, e: opus_sys::Error| EncoderError::Init { codec: kind, what: format!("{what}: {e}") };
         let mut enc =
             OpusEnc::new(SAMPLE_RATE, channels, ffi::OPUS_APPLICATION_AUDIO).map_err(|e| init_err("create", e))?;
         enc.set_bitrate(bitrate as i32).map_err(|e| init_err("OPUS_SET_BITRATE", e))?;
@@ -114,7 +135,7 @@ impl OpusEncoder {
         enc.set(ffi::OPUS_SET_COMPLEXITY_REQUEST, COMPLEXITY).map_err(|e| init_err("OPUS_SET_COMPLEXITY", e))?;
 
         tracing::info!(
-            "Opus: initialized ({}, rate={SAMPLE_RATE}, ch={channels}{}, {frame_ms} ms frames, {} kbps CVBR, \
+            "{kind}: initialized ({}, rate={SAMPLE_RATE}, ch={channels}{}, {frame_ms} ms frames, {} kbps CVBR, \
              packets up to {max_packet} bytes, lookahead {} samples)",
             opus_sys::version(),
             if channels as u32 > config.channels { " from mono" } else { "" },
@@ -122,6 +143,7 @@ impl OpusEncoder {
             enc.lookahead().unwrap_or(-1)
         );
         Ok(OpusEncoder {
+            kind,
             enc,
             in_channels: config.channels as usize,
             channels: channels as usize,
@@ -135,7 +157,7 @@ impl OpusEncoder {
 
 impl Encoder for OpusEncoder {
     fn kind(&self) -> CodecKind {
-        CODEC
+        self.kind
     }
 
     fn pcm_format(&self) -> PcmFormat {
@@ -153,7 +175,7 @@ impl Encoder for OpusEncoder {
 
     fn encode(&mut self, pcm: Pcm<'_>, out: &mut [u8]) -> Result<Encoded, EncoderError> {
         let Pcm::I16(samples) = pcm else {
-            return Err(EncoderError::Encode { codec: CODEC, what: "input is not 16-bit PCM".into() });
+            return Err(EncoderError::Encode { codec: self.kind, what: "input is not 16-bit PCM".into() });
         };
         let expected = self.frame_size * self.in_channels;
         if samples.len() != expected {
@@ -174,7 +196,7 @@ impl Encoder for OpusEncoder {
         let n = self
             .enc
             .encode(input, &mut out[..self.max_packet])
-            .map_err(|e| EncoderError::Encode { codec: CODEC, what: e.to_string() })?;
+            .map_err(|e| EncoderError::Encode { codec: self.kind, what: e.to_string() })?;
         Ok(Encoded { bytes: n, frames: 1 })
     }
 

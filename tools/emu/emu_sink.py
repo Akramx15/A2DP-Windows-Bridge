@@ -5,7 +5,7 @@ Runs two Bumble virtual controllers on one in-process link:
     `a2dpwb-core.exe --cli --hci-tcp 127.0.0.1:<port>`
   - controller "SINK" is driven by a Bumble host acting as an A2DP sink that
     offers SBC (SBC XQ capable), AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5,
-    FastStream and Opus like a typical headset
+    FastStream, Opus and Opus 05 like a typical headset
 
 The sink's HCI traffic is written to a PacketLogger (.pklg) capture, so
 a2dpwb_decode --received can check what actually arrived at the sink.
@@ -127,7 +127,7 @@ class PacketLoggerSnooper(Snooper):
 
 
 # Codec of each sink_codec_capabilities() entry, in order (for --in-use)
-CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus']
+CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus', 'opus05']
 
 
 def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53):
@@ -197,6 +197,10 @@ def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53):
         # Opus (Android a2dp_vendor_opus_constants.h): Android's own sink
         # capabilities, 48 kHz (0x80), 20 ms frames (0x10), stereo (0x02)
         vendor(0x000000E0, 0x0001, [0x92]),
+        # Opus 05 (PipeWire a2dp-codec-opus.c, its opus_05 sink SEP): main
+        # direction stereo at front left + right (0x00000003), every frame
+        # duration (0x1F), no bit rate limit; no return channel
+        vendor(0x000005F1, 0x1005, [2, 0, 0x03, 0, 0, 0, 0x1F, 0, 0] + [0] * 9),
     ]
 
 

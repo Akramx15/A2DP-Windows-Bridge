@@ -26,6 +26,8 @@ pub const LHDCV5_VENDOR_ID: u32 = 0x0000_053A; // Savitech
 pub const LHDCV5_CODEC_ID: u16 = 0x4C35;
 pub const OPUS_VENDOR_ID: u32 = 0x0000_00E0; // Google
 pub const OPUS_CODEC_ID: u16 = 0x0001;
+pub const OPUS05_VENDOR_ID: u32 = 0x0000_05F1; // The Linux Foundation (PipeWire)
+pub const OPUS05_CODEC_ID: u16 = 0x1005;
 pub const FASTSTREAM_VENDOR_ID: u32 = 0x0000_000A; // CSR
 pub const FASTSTREAM_CODEC_ID: u16 = 0x0001;
 
@@ -94,6 +96,35 @@ pub const OPUS_FREQ_48000: u8 = 0x80;
 const OPUS_CAPS: u8 = OPUS_FREQ_48000 | OPUS_FRAME_10MS | OPUS_FRAME_20MS | OPUS_CH_MONO | OPUS_CH_STEREO;
 /// Android's default configuration: 48 kHz, 20 ms, stereo
 const OPUS_CONFIG_DEFAULT: u8 = OPUS_FREQ_48000 | OPUS_FRAME_20MS | OPUS_CH_STEREO;
+
+// Opus 05 (PipeWire a2dp-codec-caps.h, a2dp_opus_05_t): 24 bytes, the
+// vendor header then two 9-byte directions, "main" (source to sink: the
+// music) and "bidi" (the return channel; 0 channels = none), each
+//   +0 channels (capabilities: the most), +1 coupled streams,
+//   +2..+5 audio location (LE; Bluetooth audio location bits), +6 frame
+//   durations (0x01 2.5 ms, 0x02 5, 0x04 10, 0x08 20, 0x10 40), +7..+8
+//   bit rate (LE, units of 1024 bps; 0 = no limit)
+// A2DPWB offers and configures the main direction only: stereo (2
+// channels, 1 coupled stream, front left + right) or mono, 10 or 20 ms.
+const OPUS05_INFO_LEN: usize = 24;
+const OPUS05_MAIN: usize = 6;
+const OPUS05_BIDI: usize = 15;
+pub const OPUS05_FRAME_10MS: u8 = 0x04;
+pub const OPUS05_FRAME_20MS: u8 = 0x08;
+const OPUS05_LOCATION_STEREO: u32 = 0x0000_0003; // front left, front right
+/// PipeWire's largest Opus 05 stereo bit rate (BITRATE_MAX), the
+/// configuration's limit when the sink sets none: 320000 / 1024
+pub const OPUS05_MAX_BITRATE_UNITS: u16 = 312;
+/// The bit rate field's unit
+pub const OPUS05_BITRATE_UNIT: u32 = 1024;
+
+/// One Opus 05 direction (9 bytes)
+fn opus05_direction(channels: u8, coupled: u8, location: u32, frames: u8, bitrate: u16) -> [u8; 9] {
+    let l = location.to_le_bytes();
+    let b = bitrate.to_le_bytes();
+    [channels, coupled, l[0], l[1], l[2], l[3], frames, b[0], b[1]]
+}
+
 // SBC codec information (A2DP 4.3.2), as BTstack's SBC capability event
 // splits it: sampling frequency 0x08 16k 0x04 32k 0x02 44.1k 0x01 48k;
 // channel mode 0x08 mono 0x04 dual 0x02 stereo 0x01 joint stereo; block
@@ -274,6 +305,19 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &[OPUS_CONFIG_DEFAULT],
         ));
     }
+    if CodecKind::Opus05.available() {
+        // Up to stereo (front left + right), 10 / 20 ms, no bit rate limit,
+        // no return channel; the default configuration is PipeWire's stereo
+        let frames = OPUS05_FRAME_10MS | OPUS05_FRAME_20MS;
+        eps.push(vendor(
+            CodecKind::Opus05,
+            OPUS05_VENDOR_ID,
+            OPUS05_CODEC_ID,
+            OPUS05_INFO_LEN,
+            &opus05_direction(2, 0, OPUS05_LOCATION_STEREO, frames, 0),
+            &opus05_direction(2, 1, OPUS05_LOCATION_STEREO, OPUS05_FRAME_10MS, OPUS05_MAX_BITRATE_UNITS),
+        ));
+    }
     eps
 }
 
@@ -296,6 +340,7 @@ pub struct RemoteCaps {
     pub aptx_ll: Option<RemoteSep>,
     pub lhdcv5: Option<RemoteSep>,
     pub opus: Option<RemoteSep>,
+    pub opus05: Option<RemoteSep>,
     pub faststream: Option<RemoteSep>,
     /// FastStream sink (music) rates: 0x02 44.1k, 0x01 48k
     pub faststream_rates: u8,
@@ -312,6 +357,13 @@ pub struct RemoteCaps {
     pub lhdcv5_info: [u8; LHDCV5_INFO_LEN],
     /// Opus codec information byte 6 (channel modes, frame durations, rate)
     pub opus_caps: u8,
+    /// Opus 05: the main direction's channels, frame durations and bit rate
+    /// limit (units of 1024 bps, 0 = none), and whether the SEP taken has a
+    /// return channel (a duplex SEP, used only when there is no other)
+    pub opus05_channels: u8,
+    pub opus05_frames: u8,
+    pub opus05_bitrate: u16,
+    pub opus05_bidi: bool,
     /// SEP discovery: audio sink SEPs, and how many of them were in use (a
     /// codec streaming to another device is missing from the above)
     pub audio_sinks: u8,
@@ -349,6 +401,7 @@ impl RemoteCaps {
             CodecKind::AptxLl => self.aptx_ll,
             CodecKind::LhdcV5 => self.lhdcv5,
             CodecKind::Opus => self.opus,
+            CodecKind::Opus05 => self.opus05,
             CodecKind::FastStream => self.faststream,
         }
     }
@@ -462,6 +515,24 @@ impl RemoteCaps {
             }
             return VendorCapability::Taken(CodecKind::Opus);
         }
+        if vid == OPUS05_VENDOR_ID && cid == OPUS05_CODEC_ID {
+            // The music direction with a channel and 10 or 20 ms frames
+            let (channels, frames) = (byte(OPUS05_MAIN), byte(OPUS05_MAIN + 6));
+            if info.len() < OPUS05_INFO_LEN || channels == 0 || frames & (OPUS05_FRAME_10MS | OPUS05_FRAME_20MS) == 0 {
+                return VendorCapability::Ignored(CodecKind::Opus05, "no music direction with 10 / 20 ms frames");
+            }
+            // PipeWire offers stereo on its opus_05 SEP and a return channel
+            // on its opus_05_duplex SEP: prefer the one without
+            let bidi = byte(OPUS05_BIDI) != 0;
+            if self.opus05.is_none() || (self.opus05_bidi && !bidi) {
+                self.opus05 = Some(RemoteSep { seid });
+                self.opus05_channels = channels;
+                self.opus05_frames = frames;
+                self.opus05_bitrate = u16::from_le_bytes([byte(OPUS05_MAIN + 7), byte(OPUS05_MAIN + 8)]);
+                self.opus05_bidi = bidi;
+            }
+            return VendorCapability::Taken(CodecKind::Opus05);
+        }
         if vid == FASTSTREAM_VENDOR_ID && cid == FASTSTREAM_CODEC_ID {
             let rates = byte(7) & FASTSTREAM_SINK_MASK;
             if info.len() < FASTSTREAM_INFO_LEN || byte(6) & FASTSTREAM_DIRECTION_SINK == 0 || rates == 0 {
@@ -506,6 +577,41 @@ impl RemoteCaps {
             if self.opus_caps & OPUS_FRAME_10MS != 0 && self.opus_caps & OPUS_FRAME_20MS == 0 { 10 } else { 20 };
         let wire = if channels == 1 && self.opus_caps & OPUS_CH_MONO != 0 { 1 } else { 2 };
         (frame_ms, wire)
+    }
+
+    /// Opus 05: the frame duration (ms) and the channels on the wire. 10 ms
+    /// when offered (PipeWire's choice), else 20 ms; stereo unless the sink
+    /// takes one channel only (mono input is duplicated, as PipeWire's own
+    /// opus_05 sends stereo)
+    pub fn opus05_stream(&self) -> (u8, u8) {
+        let frame_ms = if self.opus05_frames & OPUS05_FRAME_10MS != 0 { 10 } else { 20 };
+        (frame_ms, if self.opus05_channels == 1 { 1 } else { 2 })
+    }
+
+    /// Opus 05: the bit rate limit of the configuration, units of 1024 bps:
+    /// the sink's limit, at most PipeWire's 312 (320 kbps)
+    pub fn opus05_bitrate_units(&self) -> u16 {
+        match self.opus05_bitrate {
+            0 => OPUS05_MAX_BITRATE_UNITS,
+            b => b.min(OPUS05_MAX_BITRATE_UNITS),
+        }
+    }
+
+    /// Opus / Opus 05 encoder parameters for `kind` and `channels` of input:
+    /// (frame duration in ms, channels on the wire, bit rate limit in bps
+    /// or 0); zeros for other codecs
+    pub fn opus_params(&self, kind: CodecKind, channels: u32) -> (u8, u8, u32) {
+        match kind {
+            CodecKind::Opus => {
+                let (frame_ms, wire) = self.opus_stream(channels);
+                (frame_ms, wire, 0)
+            }
+            CodecKind::Opus05 => {
+                let (frame_ms, wire) = self.opus05_stream();
+                (frame_ms, wire, u32::from(self.opus05_bitrate_units()) * OPUS05_BITRATE_UNIT)
+            }
+            _ => (0, 0, 0),
+        }
     }
 
     /// The best codec both sides have (Auto)
@@ -713,6 +819,24 @@ impl RemoteCaps {
                 let frame = if frame_ms == 10 { OPUS_FRAME_10MS } else { OPUS_FRAME_20MS };
                 let mut info = vendor_header(OPUS_VENDOR_ID, OPUS_CODEC_ID);
                 info.push(OPUS_FREQ_48000 | frame | ch);
+                ConfigRequest::Vendor(info)
+            }
+            CodecKind::Opus05 => {
+                // The rate is not in the configuration: 48 kHz is the one
+                // PipeWire lists first and the only one A2DPWB encodes
+                if sample_rate != 48000 {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                // As PipeWire's select_config / set_channel_conf for
+                // opus_05: one frame duration, stereo as one coupled stream
+                // at front left + right (mono: one stream, no location), the
+                // bit rate limit, no return channel
+                let (frame_ms, wire) = self.opus05_stream();
+                let frame = if frame_ms == 10 { OPUS05_FRAME_10MS } else { OPUS05_FRAME_20MS };
+                let (coupled, location) = if wire == 2 { (1, OPUS05_LOCATION_STEREO) } else { (0, 0) };
+                let mut info = vendor_header(OPUS05_VENDOR_ID, OPUS05_CODEC_ID);
+                info.extend_from_slice(&opus05_direction(wire, coupled, location, frame, self.opus05_bitrate_units()));
+                info.resize(OPUS05_INFO_LEN, 0);
                 ConfigRequest::Vendor(info)
             }
         };
@@ -1131,7 +1255,110 @@ mod tests {
         assert_eq!(ep.caps, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x9B]);
         assert_eq!(ep.config, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x92]);
         // BTstack's static endpoint pool (MAX_NR_AVDTP_STREAM_ENDPOINTS)
-        assert!(eps.len() <= 9);
+        assert!(eps.len() <= 10);
+    }
+
+    /// PipeWire's opus_05 sink SEP (codec_fill_caps): stereo at front left +
+    /// right, every frame duration, no bit rate limit, no return channel
+    fn pipewire_opus05(main_channels: u8, frames: u8, bitrate: u16, bidi_channels: u8) -> Vec<u8> {
+        let mut info = vec![0xF1, 0x05, 0, 0, 0x05, 0x10];
+        info.extend_from_slice(&opus05_direction(main_channels, 0, 0x3, frames, bitrate));
+        info.extend_from_slice(&opus05_direction(bidi_channels, 0, if bidi_channels > 0 { 0x3 } else { 0 }, 0x1F, 0));
+        info
+    }
+
+    #[test]
+    fn opus05_caps_and_configuration() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        let r = caps.add_vendor(6, &pipewire_opus05(2, 0x1F, 0, 0));
+        assert_eq!(r, VendorCapability::Taken(CodecKind::Opus05));
+        assert!(caps.has(CodecKind::Opus05));
+        // Never Auto's choice
+        assert_eq!(caps.best(), Some(CodecKind::SbcXq));
+        let mut only = RemoteCaps::default();
+        only.add_vendor(6, &pipewire_opus05(2, 0x1F, 0, 0));
+        assert_eq!(only.best(), None);
+        if CodecKind::Opus05.available() {
+            assert_eq!(choose(&only, Some(CodecKind::Opus05), false).unwrap().kind, CodecKind::Opus05);
+        }
+
+        // 10 ms, stereo (mono input too), 312 * 1024 bps, no return channel
+        assert_eq!(caps.opus05_stream(), (10, 2));
+        assert_eq!(caps.opus_params(CodecKind::Opus05, 1), (10, 2, 312 * 1024));
+        let mut want = vec![0xF1, 0x05, 0, 0, 0x05, 0x10, 2, 1, 0x03, 0, 0, 0, 0x04, 0x38, 0x01];
+        want.resize(24, 0);
+        for ch in [2, 1] {
+            let c = caps.configuration(CodecKind::Opus05, 48000, ch, 16).unwrap();
+            assert_eq!(c.remote_seid, 6);
+            assert_eq!(c.request, ConfigRequest::Vendor(want.clone()));
+        }
+        assert_eq!(
+            caps.configuration(CodecKind::Opus05, 44100, 2, 16),
+            Err(ConfigError::SampleRate(CodecKind::Opus05, 44100))
+        );
+
+        // 20 ms only with a 128-unit limit; a mono-only sink
+        let vendor_info = |caps: &RemoteCaps| match caps.configuration(CodecKind::Opus05, 48000, 2, 16).unwrap().request
+        {
+            ConfigRequest::Vendor(v) => v,
+            r => panic!("{r:?}"),
+        };
+        let mut c20 = RemoteCaps::default();
+        c20.add_vendor(6, &pipewire_opus05(2, 0x08, 128, 0));
+        assert_eq!(c20.opus_params(CodecKind::Opus05, 2), (20, 2, 128 * 1024));
+        let v = vendor_info(&c20);
+        assert_eq!((v[12], u16::from_le_bytes([v[13], v[14]])), (0x08, 128));
+        let mut mono = RemoteCaps::default();
+        mono.add_vendor(6, &pipewire_opus05(1, 0x04, 1000, 0));
+        assert_eq!(&vendor_info(&mono)[6..15], &[1, 0, 0, 0, 0, 0, 0x04, 0x38, 0x01]);
+
+        // PipeWire's duplex SEP is taken only when there is no other
+        let mut both = RemoteCaps::default();
+        both.add_vendor(7, &pipewire_opus05(2, 0x1F, 0, 2));
+        assert_eq!(both.sep(CodecKind::Opus05), Some(RemoteSep { seid: 7 }));
+        both.add_vendor(6, &pipewire_opus05(8, 0x1F, 0, 0));
+        both.add_vendor(8, &pipewire_opus05(2, 0x1F, 0, 2));
+        assert_eq!(both.sep(CodecKind::Opus05), Some(RemoteSep { seid: 6 }));
+        let v = vendor_info(&both);
+        assert_eq!((v[6], v[15]), (2, 0));
+
+        // Unusable: no channel, no 10 / 20 ms, too short; Android's Opus is not Opus 05
+        let bad = [
+            pipewire_opus05(0, 0x1F, 0, 0),
+            pipewire_opus05(2, 0x13, 0, 0),
+            pipewire_opus05(2, 0x1F, 0, 0)[..15].to_vec(),
+        ];
+        for info in bad {
+            let mut c = RemoteCaps::default();
+            assert!(matches!(c.add_vendor(3, &info), VendorCapability::Ignored(CodecKind::Opus05, _)), "{info:02X?}");
+            assert!(!c.has(CodecKind::Opus05));
+        }
+        let mut android = RemoteCaps::default();
+        android.add_vendor(5, &[0xE0, 0, 0, 0, 0x01, 0x00, 0x92]);
+        assert!(android.has(CodecKind::Opus) && !android.has(CodecKind::Opus05));
+        assert_eq!(android.opus_params(CodecKind::Opus, 2), (20, 2, 0));
+        assert_eq!(CodecKind::from_key("opus05"), Some(CodecKind::Opus05));
+        assert_eq!((CodecKind::Opus05.name(), CodecKind::Opus05.media_header_len()), ("Opus 05", 1));
+        assert!(CodecKind::Opus05.uses_rtp() && CodecKind::Opus05.is_opus());
+    }
+
+    #[test]
+    fn opus05_local_endpoint() {
+        let eps = local_endpoints();
+        let Some(ep) = eps.iter().find(|e| e.kind == CodecKind::Opus05) else {
+            assert!(!CodecKind::Opus05.available());
+            return;
+        };
+        assert_eq!(ep.codec_type, CODEC_TYPE_VENDOR);
+        let mut caps = vec![0xF1, 0x05, 0, 0, 0x05, 0x10, 2, 0, 0x03, 0, 0, 0, 0x0C, 0, 0];
+        caps.resize(24, 0);
+        assert_eq!(ep.caps, caps);
+        let mut config = vec![0xF1, 0x05, 0, 0, 0x05, 0x10, 2, 1, 0x03, 0, 0, 0, 0x04, 0x38, 0x01];
+        config.resize(24, 0);
+        assert_eq!(ep.config, config);
+        // BTstack's static endpoint pool (MAX_NR_AVDTP_STREAM_ENDPOINTS)
+        assert!(eps.len() <= 10);
     }
 
     #[test]

@@ -34,7 +34,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   -u <adapter>          USB Bluetooth adapter to use when several have WinUSB:
                         instance ID (USB\\VID_0BDA&PID_8771\\...), device path
                         (\\\\?\\usb#vid_0bda&pid_8771#...) or VID:PID (0bda:8771)
-  -c <codec>           ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, faststream, auto (default)
+  -c <codec>           ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream, auto (default)
   -q <quality>          hq (default), sq, mq; mhq for LHDC V5
   -a                    adaptive bit rate (LDAC, LHDC V5)
   -m <mode>             capture: loopback (default), virtual, app
@@ -177,7 +177,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
                     None
                 } else {
                     Some(CodecKind::from_key(&c).ok_or_else(|| {
-                        format!("Unknown codec '{c}'. Use: ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, faststream, auto")
+                        format!("Unknown codec '{c}'. Use: ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream, auto")
                     })?)
                 };
             }

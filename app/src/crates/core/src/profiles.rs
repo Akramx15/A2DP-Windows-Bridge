@@ -31,7 +31,7 @@ pub struct Profile {
     /// XX:XX:XX:XX:XX:XX
     pub device_address: String,
     pub device_name: String,
-    /// auto, ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, faststream
+    /// auto, ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream
     #[serde(default = "auto")]
     pub codec: String,
     /// hq, sq, mq; mhq for LHDC V5 only
