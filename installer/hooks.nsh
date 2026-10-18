@@ -16,8 +16,9 @@
 ; the Run value is removed when it points at this installation.
 ;
 ; Command line: /KEEPV1 leaves an installed v1, a running v1 and the Run
-; value alone (testing v2 beside v1; both use the same settings folder and
-; cannot use the adapter at the same time).
+; value alone (testing v2 beside an installed v1; both use the same settings
+; folder). The core still replaces v1 when it starts: it asks a running v1
+; to exit and takes over v1's Run value (resident.rs, refresh_autostart).
 ;
 ; This file is included at the top of Tauri's installer.nsi, after
 ; LogicLib, FileFunc and StrFunc. Saved as UTF-8 with a BOM.

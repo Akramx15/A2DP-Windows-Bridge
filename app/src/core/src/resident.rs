@@ -181,13 +181,50 @@ async fn sampler(state: Arc<CoreState>) {
 /// How often the core looks whether v1 runs
 const V1_CHECK: Duration = Duration::from_secs(3);
 
-/// Whether A2DPWB v1 runs (its single-instance mutex), now and every few
-/// seconds: the UI asks the user to exit it (both cannot use the adapter)
+/// How long the start waits for v1 to exit when asked
+const V1_EXIT_WAIT: Duration = Duration::from_secs(10);
+
+/// v2 replaces v1 like a newer version: a running v1 is asked to exit (and
+/// waited for, so that the adapter is free), then v1's mutex is held so
+/// that a v1 started later quits at once. None if v1 still runs (it did not
+/// exit, or runs elevated): [`watch_v1`] then takes the mutex once it exits.
+fn replace_v1() -> Option<win_sys::single_instance::SingleInstance> {
+    use win_sys::single_instance::{SingleInstance, V1_MUTEX_NAME, ask_v1_to_exit, is_held};
+    if is_held(V1_MUTEX_NAME) {
+        let asked = ask_v1_to_exit();
+        tracing::info!("A2DPWB v1 runs: asked {asked} window(s) to exit");
+        let until = Instant::now() + V1_EXIT_WAIT;
+        while is_held(V1_MUTEX_NAME) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+    match SingleInstance::acquire(V1_MUTEX_NAME) {
+        Ok(Some(g)) => Some(g),
+        Ok(None) => {
+            tracing::warn!("A2DPWB v1 still runs: it may hold the Bluetooth adapter");
+            None
+        }
+        Err(e) => {
+            tracing::warn!("v1 mutex: {e}");
+            None
+        }
+    }
+}
+
+/// While v1 still runs (it did not exit when asked): the UI asks the user to
+/// exit it. Once it has exited, v1's mutex is taken and held from then on.
 async fn watch_v1(state: Arc<CoreState>) {
+    use win_sys::single_instance::{SingleInstance, V1_MUTEX_NAME};
     let mut tick = tokio::time::interval(V1_CHECK);
     loop {
         tick.tick().await;
-        state.set_v1_running(win_sys::single_instance::is_held(win_sys::single_instance::V1_MUTEX_NAME));
+        if let Ok(Some(guard)) = SingleInstance::acquire(V1_MUTEX_NAME) {
+            state.set_v1_running(false);
+            // Held for as long as the core runs
+            std::future::pending::<()>().await;
+            drop(guard);
+        }
+        state.set_v1_running(true);
     }
 }
 
@@ -217,6 +254,11 @@ pub fn run(args: &[String]) -> i32 {
             return 1;
         }
     };
+    // Before the service starts, so that v1 has released the adapter. A
+    // development instance (A2DPWB_INSTANCE) leaves v1 alone.
+    let replaces_v1 = ipc::instance_suffix().is_empty();
+    let v1_guard = if replaces_v1 { replace_v1() } else { None };
+    let watches_v1 = replaces_v1 && v1_guard.is_none();
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
@@ -247,8 +289,8 @@ pub fn run(args: &[String]) -> i32 {
             }),
         )
     };
-    // A missing Run value, or one naming a copy of the core that is gone
-    state.refresh_autostart();
+    // A missing Run value, v1's, or one naming a copy of the core that is gone
+    state.refresh_autostart(replaces_v1);
     {
         let state = state.clone();
         std::thread::Builder::new()
@@ -275,7 +317,9 @@ pub fn run(args: &[String]) -> i32 {
                 };
                 rt.block_on(async move {
                     tokio::spawn(sampler(state.clone()));
-                    tokio::spawn(watch_v1(state.clone()));
+                    if watches_v1 {
+                        tokio::spawn(watch_v1(state.clone()));
+                    }
                     let name = match win_sys::pipe::current_user_sid() {
                         Ok(sid) => ipc::pipe_name(&sid),
                         Err(e) => {

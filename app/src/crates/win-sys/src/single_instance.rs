@@ -2,15 +2,53 @@
 //!
 //! v1 (GUI mode) creates the mutex "A2DPWB_SingleInstance" at start and
 //! quits if it already exists (main.cpp). v2 uses its own mutex the same
-//! way, and checks v1's with `is_held` to tell the user that v1 still runs
-//! (both cannot use the same USB adapter).
+//! way. v2 replaces v1 as a newer version would: it asks a running v1 to
+//! exit ([`ask_v1_to_exit`]) and then holds v1's mutex too, so that a v1
+//! started later quits at once (both cannot use the same USB adapter).
 
-use windows::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, GetLastError, HANDLE};
+use windows::Win32::Foundation::{
+    CloseHandle, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, LPARAM, WPARAM,
+};
 use windows::Win32::System::Threading::{CreateMutexW, OpenMutexW, SYNCHRONIZATION_SYNCHRONIZE};
-use windows::core::HSTRING;
+use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, PostMessageW, WM_COMMAND};
+use windows::core::{BOOL, HSTRING};
 
 /// The mutex v1 holds while its GUI runs
 pub const V1_MUTEX_NAME: &str = "A2DPWB_SingleInstance";
+
+/// v1's main window title starts with this ("A2DPWB v1.1.1", wx_main_frame.cpp)
+const V1_TITLE_PREFIX: &str = "A2DPWB v1.";
+/// The menu command v1's main window exits on (wxID_EXIT: File > Exit, and
+/// the tray menu's Exit)
+const V1_EXIT_COMMAND: usize = 5006;
+
+/// Asks a running v1 to exit as its own Exit command does (the stream
+/// stops and the adapter is released): posts that command to v1's main
+/// window, also while it is hidden in the tray. The number of windows asked
+/// (0: none found). Wait for [`V1_MUTEX_NAME`] to go to know it has exited.
+pub fn ask_v1_to_exit() -> usize {
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let mut buf = [0u16; 128];
+        // SAFETY: a window handle EnumWindows passes, and a buffer the
+        // call writes at most buf.len() units into.
+        let n = unsafe { GetWindowTextW(hwnd, &mut buf) };
+        let title = String::from_utf16_lossy(&buf[..n.max(0) as usize]);
+        if title.starts_with(V1_TITLE_PREFIX) {
+            // SAFETY: lparam is the &mut Vec ask_v1_to_exit passes, alive
+            // for the whole EnumWindows call.
+            unsafe { &mut *(lparam.0 as *mut Vec<HWND>) }.push(hwnd);
+        }
+        BOOL(1)
+    }
+    let mut windows: Vec<HWND> = Vec::new();
+    // SAFETY: the callback only uses `windows` through lparam during the call.
+    let _ = unsafe { EnumWindows(Some(collect), LPARAM(&mut windows as *mut Vec<HWND> as isize)) };
+    windows
+        .into_iter()
+        // SAFETY: posting a message to a window handle; a stale one fails.
+        .filter(|&w| unsafe { PostMessageW(Some(w), WM_COMMAND, WPARAM(V1_EXIT_COMMAND), LPARAM(0)) }.is_ok())
+        .count()
+}
 
 /// Holds the named mutex; another `acquire` of the same name fails while
 /// this lives. Released on drop (and by Windows when the process ends).

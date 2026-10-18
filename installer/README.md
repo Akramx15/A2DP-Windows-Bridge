@@ -87,7 +87,8 @@ not secret; once it is final it may also be committed as `plugins.updater.pubkey
   ask, and no UAC prompt), where the adapters stay on WinUSB. An adapter that already had WinUSB
   (Zadig) when A2DPWB was asked to assign it is left alone.
 - `/KEEPV1` on the command line leaves v1, a running v1 and the Run value alone. Only for testing
-  v2 beside v1: both use the same settings folder and cannot use the adapter at the same time.
+  v2 beside an installed v1 (both use the same settings folder). The core still replaces v1 when it
+  starts, as in a normal install: it asks a running v1 to exit and takes over v1's Run value.
   For example, a throwaway install: `A2DPWB-<ver>-win64-setup.exe /S /NS /KEEPV1 /D=C:\temp\a2dpwb-test`
   (`/NS`: no shortcuts; `/D` must come last). Remove it with its `uninstall.exe /S`, then delete
   `HKCU\Software\Seiya Funaoka\A2DP Windows Bridge`: Tauri's uninstaller keeps that folder there,

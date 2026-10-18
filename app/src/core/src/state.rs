@@ -444,15 +444,41 @@ fn apply_autostart(enabled: bool, minimized: bool) -> Result<(), String> {
     }
 }
 
-/// The Run value should be written at start (start_with_windows on):
-/// `current` is missing or empty, or names an a2dpwb-core.exe that does
-/// not `exist` any more. Any other program is not ours to replace.
-fn autostart_refresh_needed(current: Option<&str>, exists: impl Fn(&std::path::Path) -> bool) -> bool {
-    let Some(program) = current.and_then(win_sys::autostart::program_of) else {
-        return true;
-    };
-    let is_core = program.file_name().is_some_and(|n| n.eq_ignore_ascii_case("a2dpwb-core.exe"));
-    is_core && !exists(&program)
+/// What the start does with the Run value
+#[derive(Debug, PartialEq, Eq)]
+enum AutostartFix {
+    Keep,
+    /// Points it at this core (start_with_windows on)
+    Write,
+    /// Removes it (start_with_windows off)
+    Remove,
+}
+
+/// The Run value at start, from `current` and start_with_windows
+/// (`enabled`). v1's (its A2DPWB.exe; v2 registers only the core) is taken
+/// over as by an update when `replaces_v1`: pointed at v2, or removed when
+/// v2's setting is off, so that v1 does not start at logon. Otherwise it is
+/// written only when on and missing, empty, or naming an a2dpwb-core.exe
+/// that does not `exist` any more. Any other program is not ours to replace.
+fn autostart_fix(
+    current: Option<&str>,
+    enabled: bool,
+    replaces_v1: bool,
+    exists: impl Fn(&std::path::Path) -> bool,
+) -> AutostartFix {
+    let program = current.and_then(win_sys::autostart::program_of);
+    let named = |name: &str| program.as_ref().and_then(|p| p.file_name()).is_some_and(|n| n.eq_ignore_ascii_case(name));
+    if replaces_v1 && named("A2DPWB.exe") {
+        return if enabled { AutostartFix::Write } else { AutostartFix::Remove };
+    }
+    if !enabled {
+        return AutostartFix::Keep;
+    }
+    match &program {
+        None => AutostartFix::Write,
+        Some(p) if named("a2dpwb-core.exe") && !exists(p) => AutostartFix::Write,
+        Some(_) => AutostartFix::Keep,
+    }
 }
 
 fn autostart_args(minimized: bool) -> &'static str {
@@ -843,16 +869,13 @@ impl CoreState {
         (self.quit)();
     }
 
-    /// Start with Windows: at start the Run value is written only when it
-    /// is missing or names a copy of the core that is gone (the program
-    /// moved). One naming another program that exists (v1's A2DPWB.exe,
-    /// another copy of v2, the installed copy while a test build runs) is
-    /// left alone; the settings toggle still writes it.
-    pub fn refresh_autostart(&self) {
+    /// Start with Windows: at start v1's Run value is taken over (when
+    /// `replaces_v1`), and v2's is written when it is missing or names a
+    /// copy of the core that is gone (the program moved). One naming another
+    /// copy of v2 that exists (the installed copy while a test build runs)
+    /// is left alone; the settings toggle still writes it. See autostart_fix.
+    pub fn refresh_autostart(&self, replaces_v1: bool) {
         let s = self.service.settings();
-        if !s.start_with_windows {
-            return;
-        }
         let current = match win_sys::autostart::get(win_sys::autostart::VALUE_NAME) {
             Ok(c) => c,
             Err(e) => {
@@ -860,11 +883,13 @@ impl CoreState {
                 return;
             }
         };
-        if !autostart_refresh_needed(current.as_deref(), |p| p.exists()) {
+        let fix = autostart_fix(current.as_deref(), s.start_with_windows, replaces_v1, |p| p.exists());
+        if fix == AutostartFix::Keep {
             tracing::debug!("start with Windows entry kept: {}", current.unwrap_or_default());
             return;
         }
-        if let Err(e) = apply_autostart(true, s.start_minimized) {
+        tracing::info!("start with Windows entry {fix:?}: was {}", current.unwrap_or_default());
+        if let Err(e) = apply_autostart(fix == AutostartFix::Write, s.start_minimized) {
             tracing::warn!("cannot refresh the start with Windows entry: {e}");
         }
     }
@@ -1594,26 +1619,35 @@ mod tests {
     }
 
     #[test]
-    fn autostart_refresh_leaves_other_programs_alone() {
+    fn autostart_fix_takes_over_v1_and_leaves_other_programs_alone() {
+        use AutostartFix::{Keep, Remove, Write};
         let present = |p: &std::path::Path| {
             [r"C:\A2DP-Windows-Bridge\build\dist\A2DPWB.exe", r"C:\Program Files\A2DPWB\a2dpwb-core.exe"]
                 .contains(&p.to_str().unwrap())
         };
-        // Missing or empty: written
-        assert!(autostart_refresh_needed(None, present));
-        assert!(autostart_refresh_needed(Some(""), present));
+        let fix = |current, enabled| autostart_fix(current, enabled, true, present);
+        // Missing or empty: written when on
+        assert_eq!(fix(None, true), Write);
+        assert_eq!(fix(Some(""), true), Write);
+        assert_eq!(fix(None, false), Keep);
         // A copy of the core that is gone (moved or uninstalled): written
-        assert!(autostart_refresh_needed(Some(r#""D:\old\a2dpwb-core.exe" --background"#), present));
-        assert!(autostart_refresh_needed(Some(r#""D:\old\A2DPWB-Core.EXE""#), present));
+        assert_eq!(fix(Some(r#""D:\old\a2dpwb-core.exe" --background"#), true), Write);
+        assert_eq!(fix(Some(r#""D:\old\A2DPWB-Core.EXE""#), true), Write);
         // Another existing copy of v2: kept (a test build must not take it)
-        assert!(!autostart_refresh_needed(Some(r#""C:\Program Files\A2DPWB\a2dpwb-core.exe""#), present));
-        // v1, existing or not, and any other program: kept
-        assert!(!autostart_refresh_needed(
-            Some(r#""C:\A2DP-Windows-Bridge\build\dist\A2DPWB.exe" --minimized"#),
-            present
-        ));
-        assert!(!autostart_refresh_needed(Some(r#""E:\gone\A2DPWB.exe""#), present));
-        assert!(!autostart_refresh_needed(Some(r"C:\Tools\other.exe /x"), present));
+        assert_eq!(fix(Some(r#""C:\Program Files\A2DPWB\a2dpwb-core.exe""#), true), Keep);
+        assert_eq!(fix(Some(r#""C:\Program Files\A2DPWB\a2dpwb-core.exe""#), false), Keep);
+        // v1, existing or not: taken over as by an update
+        let v1 = r#""C:\A2DP-Windows-Bridge\build\dist\A2DPWB.exe" --minimized"#;
+        assert_eq!(fix(Some(v1), true), Write);
+        assert_eq!(fix(Some(v1), false), Remove);
+        assert_eq!(fix(Some(r#""E:\gone\A2DPWB.exe""#), true), Write);
+        assert_eq!(fix(Some(r"E:\v1\a2dpwb.EXE --minimized"), false), Remove);
+        // ... but not by a development instance
+        assert_eq!(autostart_fix(Some(v1), true, false, present), Keep);
+        assert_eq!(autostart_fix(Some(v1), false, false, present), Keep);
+        // Any other program: kept
+        assert_eq!(fix(Some(r"C:\Tools\other.exe /x"), true), Keep);
+        assert_eq!(fix(Some(r"C:\Tools\other.exe /x"), false), Keep);
     }
 
     #[test]
