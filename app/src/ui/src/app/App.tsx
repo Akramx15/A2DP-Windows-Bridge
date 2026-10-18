@@ -116,6 +116,16 @@ function MainWindow() {
   const releaseLogs = core.wantLogs("info");
   onCleanup(releaseLogs);
 
+  // Ctrl+Shift+D opens the diagnostics (v1's Debug Console shortcut)
+  const onKey = (e: KeyboardEvent) => {
+    if (isDiagnosticsShortcut(e) && !app.setupActive()) {
+      e.preventDefault();
+      app.navigate({ name: "diagnostics" });
+    }
+  };
+  window.addEventListener("keydown", onKey);
+  onCleanup(() => window.removeEventListener("keydown", onKey));
+
   // "Minimize to System Tray": the tray icon is the core's, so minimizing
   // only has to take the window off the taskbar. The core says once that
   // A2DPWB still runs in the tray (closing the window does the same, in
@@ -201,6 +211,11 @@ function MainWindow() {
       <NoticeLine />
     </Gate>
   );
+}
+
+/** Ctrl+Shift+D, whatever the keyboard layout writes for the key */
+export function isDiagnosticsShortcut(e: Pick<KeyboardEvent, "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "code" | "key">): boolean {
+  return e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && (e.code === "KeyD" || e.key.toLowerCase() === "d");
 }
 
 /** Hides the main window to the tray and lets the core show its one-time
