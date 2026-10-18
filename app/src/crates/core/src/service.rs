@@ -575,6 +575,9 @@ impl Service {
         pipeline::set_thread_priority_hook(|| {
             Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
         });
+        hci_transport::set_acl_out_priority_hook(|| {
+            Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
+        });
         Service { inner, worker: Mutex::new(None), _power: power }
     }
 
