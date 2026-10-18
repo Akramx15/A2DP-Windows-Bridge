@@ -196,7 +196,7 @@ export function ProfileEditor(props: { original: string | null }) {
 
         <Show when={!p.le_audio}>
           <Section title={t("connection.codec")}>
-            <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")} title={t("tooltip.codec")}>
+            <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")}>
               <For each={CODECS}>
                 {(c) => (
                   <CodecCard

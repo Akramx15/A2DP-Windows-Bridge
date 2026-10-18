@@ -350,7 +350,6 @@
   "capture.hint_loopback": "录制 Windows 默认输出设备播放的内容：所有应用混音。该设备上也会继续播放。",
   "capture.hint_virtual": "录制应用播放到所选设备的内容。",
   "capture.hint_app": "仅录制所选应用（及其子进程）播放的内容，在应用自身处理之后。该应用的输出设备上也会继续播放。",
-  "tooltip.codec": "用于 Bluetooth 串流的音频编解码器。LDAC 音质最高。",
   "tooltip.quality": "编码音质级别。音质越高，占用带宽越多。",
   "tooltip.abr": "自适应比特率：根据连接稳定性自动调整音质（LDAC 和 LHDC V5）。LHDC V5 的 ABR 与 Android 相同，最高 400 kbps，并忽略音质设置。",
   "tooltip.codec_fallback": "当设备不提供所选编解码器时，使用其提供的最佳编解码器连接（与“自动”相同），而不是报错停止。",

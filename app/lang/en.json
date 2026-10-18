@@ -350,7 +350,6 @@
   "capture.hint_loopback": "Records what the Windows default output device plays: all apps mixed. It keeps playing on that device too.",
   "capture.hint_virtual": "Records what apps play into the selected device.",
   "capture.hint_app": "Records only what the selected app (and its child processes) plays, after the app's own processing. The app keeps playing on its output device too.",
-  "tooltip.codec": "Audio codec for Bluetooth streaming. LDAC offers the highest quality.",
   "tooltip.quality": "Encoding quality level. Higher quality uses more bandwidth.",
   "tooltip.abr": "Adaptive Bit Rate: auto-adjusts quality based on connection stability (LDAC and LHDC V5). LHDC V5 ABR stays at 400 kbps or below (as on Android) and ignores the quality setting.",
   "tooltip.codec_fallback": "When the device does not offer the chosen codec, connect with the best codec it offers (as Auto does) instead of stopping with an error.",

@@ -350,7 +350,6 @@
   "capture.hint_loopback": "Enregistre ce que lit le périphérique de sortie par défaut de Windows : toutes les applications mixées. La lecture continue aussi sur ce périphérique.",
   "capture.hint_virtual": "Enregistre ce que les applications lisent sur le périphérique sélectionné.",
   "capture.hint_app": "Enregistre uniquement ce que lit l'application sélectionnée (et ses processus enfants), après son propre traitement. L'application continue aussi de lire sur son périphérique de sortie.",
-  "tooltip.codec": "Codec audio pour la diffusion Bluetooth. LDAC offre la meilleure qualité.",
   "tooltip.quality": "Niveau de qualité d'encodage. Une qualité supérieure utilise plus de bande passante.",
   "tooltip.abr": "Débit adaptatif : ajuste automatiquement la qualité selon la stabilité de la connexion (LDAC et LHDC V5). En LHDC V5, l'ABR reste à 400 kbps au plus (comme sous Android) et ignore le réglage de qualité.",
   "tooltip.codec_fallback": "Si l'appareil ne propose pas le codec choisi, se connecter avec le meilleur codec qu'il propose (comme Auto) au lieu de s'arrêter sur une erreur.",

@@ -350,7 +350,6 @@
   "capture.hint_loopback": "錄製 Windows 預設輸出裝置播放的內容: 所有應用程式的混音。該裝置也會繼續播放。",
   "capture.hint_virtual": "錄製應用程式播放到所選裝置的內容。",
   "capture.hint_app": "僅錄製所選應用程式 (及其子處理程序) 播放的內容，為經過應用程式本身處理後的音訊。該應用程式也會繼續在其輸出裝置上播放。",
-  "tooltip.codec": "藍牙串流使用的音訊轉碼器。LDAC 提供最高品質。",
   "tooltip.quality": "編碼品質等級。品質越高，使用的頻寬越多。",
   "tooltip.abr": "自適應位元率: 根據連線穩定性自動調整品質 (LDAC 與 LHDC V5)。LHDC V5 的 ABR 與 Android 相同，最高 400 kbps，並忽略品質設定。",
   "tooltip.codec_fallback": "當裝置不提供所選轉碼器時，改用裝置提供的最佳轉碼器連線 (與「自動」相同)，而不是以錯誤停止。",
