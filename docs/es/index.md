@@ -29,7 +29,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bits | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bits | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
-| SBC XQ 🧪 | ~385/505/552 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
+| SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | SBC | hasta ~345 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bits | -- |
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
@@ -45,7 +45,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ no está en los paquetes de Ubuntu | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | 🧪 experimental (receptores cuyo SBC admite canal dual y bitpool ≥ 43) |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (receptores cuyo SBC admite canal dual y bitpool ≥ 43) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 experimental (solo música, si se elige expresamente) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
@@ -68,7 +68,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 **Opus 05 es experimental y no está verificado en hardware real.** Es el códec de fabricante Opus A2DP propio de PipeWire (ID de fabricante 0x000005F1, códec 0x1005; `opus_05` de PipeWire), que solo implementa PipeWire, así que el receptor tiene que ser un PC con PipeWire como receptor A2DP. A2DPWB envía solo la dirección de música estéreo (sin 5.1 / 7.1 ni canal de retorno): 48 kHz, tramas de 10 ms (20 ms si el receptor solo admite esas), el mismo codificador libopus y las mismas tasas de bits que Opus, limitadas al máximo del receptor. El modo Automático nunca lo elige; elíjalo en el perfil o con `-c opus05`. Supera la prueba de extremo a extremo contra un receptor virtual que ofrece las capacidades de PipeWire, pero no se ha probado con un receptor PipeWire real. PipeWire como receptor A2DP decodifica Opus 05 desde la 0.3.57 y el Opus de Android (`opus_g`) desde la 1.2.0: Ubuntu 24.04 LTS incluye PipeWire 1.0.5 (solo Opus 05), Ubuntu 25.10 (1.4.7) y 26.04 LTS (1.6.2) incluyen ambos; ninguno está aún verificado con A2DPWB.
 
 {: .warning }
-**SBC XQ es experimental.** El 18-10-2026 unos Sony WH-1000XM4 lo aceptaron (canal dual, bitpool 43 a 48 kHz, 552 kbps) y A2DPWB transmitió hacia ellos sin paquetes perdidos, pero el sonido no se ha juzgado de oído y no se probaron otros auriculares. Los receptores que rechazan la configuración se reconectan con SBC normal. **FastStream es experimental:** supera la prueba de extremo a extremo contra un receptor virtual, pero no se ha probado con auriculares FastStream reales. Solo la dirección de música; Automático nunca lo elige.
+**SBC XQ** se verificó con unos Sony WH-1000XM4 (canal dual, bitpool 43 a 48 kHz, 552 kbps). Los receptores que rechazan la configuración se reconectan con SBC normal. **FastStream es experimental:** supera la prueba de extremo a extremo contra un receptor virtual, pero no se ha probado con auriculares FastStream reales. Solo la dirección de música; Automático nunca lo elige.
 
 {: .note }
 **¿Solo necesita aptX clásico?** Windows 10 ya admite aptX clásico en su pila Bluetooth integrada (no aptX HD, aptX LL ni aptX Adaptive), así que A2DPWB no es necesario para ese códec. A2DPWB es útil sobre todo para LDAC, aptX HD y aptX Low Latency.
@@ -93,7 +93,7 @@ A2DPWB solo funciona en Windows (Windows 10 22H2 o Windows 11), con compilacione
 
 | Qué | Configuración | Códecs | Resultado |
 |:-----|:------|:-------|:-------|
-| Sony WH-1000XM4 (auriculares) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC; SBC XQ transmite (no evaluado de oído) | ✅ Reproduce (los XM4 no tienen aptX) |
+| Sony WH-1000XM4 (auriculares) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC, SBC XQ | ✅ Reproduce (los XM4 no tienen aptX) |
 | TP-Link UB500 (Realtek RTL8761BU, adaptador) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | Receptor de medición `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 por radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Recibido y medido |
 | Enlace virtual `tools/emu` (Bumble) | Windows 11, sin radio | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus, Opus 05 | ✅ La prueba de extremo a extremo se supera |

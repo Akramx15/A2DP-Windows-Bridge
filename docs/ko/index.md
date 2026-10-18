@@ -29,7 +29,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 약 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
-| SBC XQ 🧪 | 약 385/505/552 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
+| SBC XQ | 약 385/505/552 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | SBC | 최대 약 345 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
@@ -45,7 +45,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 실험적 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu 패키지에 포함되지 않음 | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | 🧪 실험적 (SBC에서 듀얼 채널과 bitpool 43 이상을 허용하는 수신 장치) |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (SBC에서 듀얼 채널과 bitpool 43 이상을 허용하는 수신 장치) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 실험적 (음악 전용, 직접 선택한 경우) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
@@ -68,7 +68,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 **Opus 05는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** PipeWire 고유의 A2DP Opus 벤더 코덱(벤더 ID 0x000005F1, 코덱 0x1005, PipeWire의 `opus_05`)으로, 구현한 곳이 PipeWire뿐이므로 수신 장치는 A2DP 싱크로 동작하는 PipeWire PC여야 합니다. A2DPWB는 스테레오 음악 방향만 보냅니다(5.1 / 7.1과 복귀 채널 없음). 48 kHz, 10 ms 프레임(싱크가 20 ms만 지원하면 20 ms), 인코더와 비트레이트는 Opus와 같으며 싱크의 상한으로 제한합니다. 자동 선택은 이를 고르지 않으므로 프로필에서 또는 `-c opus05`로 선택하십시오. PipeWire와 같은 기능을 제공하는 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, 실제 PipeWire 수신 장치로는 시험하지 않았습니다. A2DP 싱크로서의 PipeWire는 Opus 05를 0.3.57부터, Android의 Opus(`opus_g`)를 1.2.0부터 디코딩합니다. Ubuntu 24.04 LTS는 PipeWire 1.0.5(Opus 05만), Ubuntu 25.10(1.4.7)과 26.04 LTS(1.6.2)는 둘 다 제공합니다. 어느 쪽도 A2DPWB로는 아직 확인하지 않았습니다.
 
 {: .warning }
-**SBC XQ는 실험적 기능입니다.** 2026-10-18에 Sony WH-1000XM4가 이를 받아들였고(듀얼 채널, 48 kHz에서 bitpool 43, 552 kbps) A2DPWB는 패킷 손실 없이 스트리밍했지만, 소리는 귀로 판단하지 않았고 다른 헤드폰은 시험하지 않았습니다. 이 구성을 거부하는 싱크에는 일반 SBC로 다시 연결합니다. **FastStream은 실험적 기능입니다.** 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만 실제 FastStream 헤드폰으로는 시험하지 않았습니다. 음악 방향만 지원하며, 자동 선택은 이를 고르지 않습니다.
+**SBC XQ**는 Sony WH-1000XM4로 검증되었습니다(듀얼 채널, 48 kHz에서 bitpool 43, 552 kbps). 이 구성을 거부하는 싱크에는 일반 SBC로 다시 연결합니다. **FastStream은 실험적 기능입니다.** 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만 실제 FastStream 헤드폰으로는 시험하지 않았습니다. 음악 방향만 지원하며, 자동 선택은 이를 고르지 않습니다.
 
 {: .note }
 **기본 aptX만 필요하십니까?** Windows 10의 기본 Bluetooth 스택은 이미 기본 aptX를 지원하므로(aptX HD, aptX LL, aptX Adaptive는 미지원) 이 경우 A2DPWB가 필요하지 않습니다. A2DPWB는 주로 LDAC, aptX HD, aptX Low Latency에 유용합니다.
@@ -93,7 +93,7 @@ A2DPWB 자체는 Windows(Windows 10 22H2 또는 Windows 11) 전용이며 x64와 
 
 | 대상 | 구성 | 코덱 | 결과 |
 |:-----|:-----|:-----|:-----|
-| Sony WH-1000XM4 (헤드폰) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC; SBC XQ 스트리밍됨 (귀로 판단하지 않음) | ✅ 재생됨 (XM4는 aptX 미지원) |
+| Sony WH-1000XM4 (헤드폰) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC, SBC XQ | ✅ 재생됨 (XM4는 aptX 미지원) |
 | TP-Link UB500 (Realtek RTL8761BU, 어댑터) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | 측정용 수신기 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04, 실제 무선 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ 수신 및 측정됨 |
 | 가상 링크 `tools/emu` (Bumble) | Windows 11, 무선 없음 | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus, Opus 05 | ✅ 엔드투엔드 테스트 통과 |
