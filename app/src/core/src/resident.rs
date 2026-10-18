@@ -178,6 +178,19 @@ async fn sampler(state: Arc<CoreState>) {
     }
 }
 
+/// How often the core looks whether v1 runs
+const V1_CHECK: Duration = Duration::from_secs(3);
+
+/// Whether A2DPWB v1 runs (its single-instance mutex), now and every few
+/// seconds: the UI asks the user to exit it (both cannot use the adapter)
+async fn watch_v1(state: Arc<CoreState>) {
+    let mut tick = tokio::time::interval(V1_CHECK);
+    loop {
+        tick.tick().await;
+        state.set_v1_running(win_sys::single_instance::is_held(win_sys::single_instance::V1_MUTEX_NAME));
+    }
+}
+
 /// Shows a balloon from the core (tray thread)
 fn show_balloon(notifier: &TrayNotifier, b: BalloonRequest) {
     let balloon =
@@ -204,10 +217,6 @@ pub fn run(args: &[String]) -> i32 {
             return 1;
         }
     };
-    if win_sys::single_instance::is_held(win_sys::single_instance::V1_MUTEX_NAME) {
-        tracing::warn!("A2DPWB v1 is running: it may hold the Bluetooth adapter");
-    }
-
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
@@ -266,6 +275,7 @@ pub fn run(args: &[String]) -> i32 {
                 };
                 rt.block_on(async move {
                     tokio::spawn(sampler(state.clone()));
+                    tokio::spawn(watch_v1(state.clone()));
                     let name = match win_sys::pipe::current_user_sid() {
                         Ok(sid) => ipc::pipe_name(&sid),
                         Err(e) => {

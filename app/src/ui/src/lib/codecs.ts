@@ -185,6 +185,33 @@ export function qualityIgnored(codec: string, abr: boolean): boolean {
   return codec === "lhdcv5" && abr;
 }
 
+/** LDAC's rates at 44.1 / 88.2 kHz, LHDC V5's Standard at 44.1 kHz (88.2
+ *  kHz runs as 96 kHz there): v1's profile list */
+const RATE_44K: Partial<Record<CodecId, Record<string, string>>> = {
+  ldac: { hq: "909", sq: "606", mq: "303" },
+  lhdcv5: { sq: "480" },
+};
+
+/**
+ * The quality of a profile as the profile list shows it (v1's
+ * rebuild_profile_list): "High (990 kbps)", "ABR (≤400 kbps)" under LHDC V5
+ * ABR; null when the codec has no quality choice (aptX family, FastStream,
+ * LE Audio). `label` translates the quality's key.
+ */
+export function qualityTag(
+  p: { codec: string; quality: string; abr: boolean; sample_rate: number; le_audio?: boolean },
+  label: (key: string) => string,
+): string | null {
+  if (p.le_audio) return null;
+  const spec = codecSpec(p.codec);
+  if (spec.qualities.length === 0) return null;
+  if (qualityIgnored(p.codec, p.abr)) return "ABR (≤400 kbps)";
+  const q = spec.qualities.find((x) => x.id === p.quality) ?? spec.qualities[0];
+  const is441 = p.codec === "lhdcv5" ? p.sample_rate === 44100 : p.sample_rate === 44100 || p.sample_rate === 88200;
+  const kbps = (is441 ? RATE_44K[spec.id]?.[q.id] : undefined) ?? q.kbps;
+  return kbps ? `${label(q.label)} (${kbps} kbps)` : label(q.label);
+}
+
 /** Why a stream's bit rate is below the profile's, appended to the codec
  *  line: ABR (LHDC V5 stays at 400 kbps or below), or the device's maximum */
 export function bitrateNoteKey(info: { abr: boolean; bitrate_capped: boolean }): string | null {

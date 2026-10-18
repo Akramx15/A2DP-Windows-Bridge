@@ -73,6 +73,18 @@ function FirmwareMissing() {
   );
 }
 
+/** v1 still runs (both cannot use the adapter): on Home and in the setup */
+export function V1Running() {
+  const { core } = useApp();
+  return (
+    <Show when={core.state.snap?.v1_running}>
+      <Banner kind="warn" title={t("ui.v1_running.title")}>
+        {t("ui.v1_running.text")}
+      </Banner>
+    </Show>
+  );
+}
+
 export function Home() {
   const { core, navigate } = useApp();
   const snap = () => core.state.snap!;
@@ -100,6 +112,7 @@ export function Home() {
         </Show>
       </header>
 
+      <V1Running />
       <Show when={error()}>{(e) => <ErrorPanel code={e().code} message={e().message} />}</Show>
       <FirmwareMissing />
 

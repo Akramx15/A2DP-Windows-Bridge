@@ -470,6 +470,26 @@ fn chip_changed(before: &CoreSettings, after: &CoreSettings) -> bool {
     before.bt_chip_pid != after.bt_chip_pid || before.bt_chip_fw_stem != after.bt_chip_fw_stem
 }
 
+/// The tray icon's tooltip while streaming: "A2DPWB - Streaming (WH-1000XM4)"
+/// and the codec on a second line
+fn tray_tooltip(base: &str, device: Option<&str>, codec: Option<(&str, u32)>) -> String {
+    let mut t = match device.filter(|d| !d.is_empty()) {
+        Some(d) => format!("{base} ({d})"),
+        None => base.to_string(),
+    };
+    if let Some((c, kbps)) = codec {
+        t.push_str(&format!("\n{c} {kbps} kbps"));
+    }
+    t
+}
+
+/// A saved profile is the one streaming or connecting (under its name before
+/// the save): it is started again with the new settings
+fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
+    matches!(stream.state, StreamState::Connecting | StreamState::Streaming | StreamState::Reconnecting)
+        && stream.profile.as_deref() == Some(saved)
+}
+
 fn unix_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -504,6 +524,8 @@ impl CoreState {
             capture: None,
             // Set by logging::init, first thing in main
             clock_ms: crate::logging::hub().clock(),
+            // Set by the resident core's watch (resident.rs)
+            v1_running: false,
         };
         let (events, _) = broadcast::channel(256);
         let state = Arc::new(CoreState {
@@ -558,6 +580,7 @@ impl CoreState {
                 Event::Settings(x) => s.settings = x.clone(),
                 Event::Update(u) => s.update = u.clone(),
                 Event::Capture(c) => s.capture = c.clone(),
+                Event::V1Running(b) => s.v1_running = *b,
                 // Not state: no revision
                 Event::Link(_) | Event::Log(_) | Event::Receiver(_) | Event::Bye => {
                     let _ = self.events.send((g.0, Arc::new(event)));
@@ -571,6 +594,19 @@ impl CoreState {
         self.update_tray();
     }
 
+    /// A2DPWB v1 started or exited: published when it changed
+    pub fn set_v1_running(&self, on: bool) {
+        if self.with_snapshot(|s| s.v1_running) == on {
+            return;
+        }
+        if on {
+            tracing::warn!("A2DPWB v1 is running: it may hold the Bluetooth adapter");
+        } else {
+            tracing::info!("A2DPWB v1 exited");
+        }
+        self.publish(Event::V1Running(on));
+    }
+
     fn update_tray(&self) {
         let (_, s) = self.snapshot();
         let lang = s.settings.language.clone();
@@ -580,9 +616,17 @@ impl CoreState {
         } else {
             a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DPWB - Idle")
         };
-        let tooltip = match (&s.stream.info, streaming) {
-            (Some(i), true) => format!("{base}\n{} {} kbps", i.codec, i.bitrate_kbps),
-            _ => base,
+        // The streamed profile's device (v1)
+        let device = s
+            .stream
+            .profile
+            .as_ref()
+            .and_then(|n| s.profiles.iter().find(|p| &p.name == n))
+            .map(|p| if p.device_name.is_empty() { p.device_address.as_str() } else { p.device_name.as_str() });
+        let tooltip = if streaming {
+            tray_tooltip(&base, device, s.stream.info.as_ref().map(|i| (i.codec.as_str(), i.bitrate_kbps)))
+        } else {
+            base
         };
         (self.tray)(TrayView {
             streaming,
@@ -1095,6 +1139,11 @@ impl CoreState {
                 };
                 self.save_profiles(&list, active)?;
                 self.refresh_devices();
+                // The profile in use starts again with what was saved (v1)
+                if restart_after_save(&s.stream, &key) {
+                    tracing::info!("profile \"{key}\" saved while in use: it starts again as \"{}\"", profile.name);
+                    self.start_profile(&profile.name)?;
+                }
                 Ok(Value::Null)
             }
             Method::ProfileDelete { name } => {
@@ -1404,6 +1453,38 @@ mod tests {
         assert!(!c.fixed);
         assert!(firmware_change(std::slice::from_ref(&page), std::slice::from_ref(&page)).invalid.is_empty());
         assert_eq!(firmware_change(&[], std::slice::from_ref(&page)).invalid.len(), 1);
+    }
+
+    #[test]
+    fn the_tray_tooltip_names_the_device() {
+        assert_eq!(
+            tray_tooltip("A2DPWB - Streaming", Some("WH-1000XM4"), Some(("LDAC", 990))),
+            "A2DPWB - Streaming (WH-1000XM4)\nLDAC 990 kbps"
+        );
+        assert_eq!(tray_tooltip("A2DPWB - Streaming", None, Some(("SBC", 328))), "A2DPWB - Streaming\nSBC 328 kbps");
+        assert_eq!(tray_tooltip("A2DPWB - Streaming", Some(""), None), "A2DPWB - Streaming");
+        assert_eq!(
+            tray_tooltip("A2DPWB - Streaming", Some("AA:BB:CC:DD:EE:FF"), None),
+            "A2DPWB - Streaming (AA:BB:CC:DD:EE:FF)"
+        );
+    }
+
+    #[test]
+    fn saving_the_profile_in_use_restarts_it() {
+        let status = |state, profile: Option<&str>| StreamStatus {
+            state,
+            profile: profile.map(str::to_owned),
+            ..StreamStatus::default()
+        };
+        for state in [StreamState::Connecting, StreamState::Streaming, StreamState::Reconnecting] {
+            assert!(restart_after_save(&status(state, Some("WH LDAC")), "WH LDAC"));
+            assert!(!restart_after_save(&status(state, Some("WH LDAC")), "Buds AAC"));
+            // A custom stream (receiver test, test tone) has no profile
+            assert!(!restart_after_save(&status(state, None), "WH LDAC"));
+        }
+        for state in [StreamState::Idle, StreamState::Error] {
+            assert!(!restart_after_save(&status(state, Some("WH LDAC")), "WH LDAC"));
+        }
     }
 
     #[test]

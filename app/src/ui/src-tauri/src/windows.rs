@@ -2,7 +2,9 @@
 //! frameless, near the notification area), and the rule that ends the UI
 //! process: closing a window only hides it, so that reopening it from the
 //! tray is instant, and the process exits after everything was hidden for
-//! a few minutes (the core keeps streaming without it).
+//! a few minutes (the core keeps streaming without it). With "Minimize to
+//! System Tray" off, closing the main window exits A2DPWB, core included,
+//! as the tray's Exit does (v1).
 
 use std::time::{Duration, Instant};
 
@@ -121,7 +123,7 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
             api.prevent_close();
             let _ = window.hide();
             if window.label() == MAIN {
-                hidden_to_tray(window);
+                main_closed(window);
             }
         }
         WindowEvent::Focused(false) if window.label() == FLYOUT => {
@@ -137,18 +139,31 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
     }
 }
 
-/// The main window went to the tray (closed, or minimized with "Minimize
-/// to System Tray", which the frontend does): the core shows its one-time
-/// "still running in the tray" balloon
-fn hidden_to_tray(window: &tauri::Window) {
+/// The main window was closed (it is hidden already). With "Minimize to
+/// System Tray" the core shows its one-time "still running in the tray"
+/// balloon (minimizing does the same, in the frontend); without it the core
+/// is asked to exit, and its Bye ends this process (connection.rs).
+fn main_closed(window: &tauri::Window) {
     let Some(ipc) = window.try_state::<std::sync::Arc<crate::connection::Ipc>>() else {
         return;
     };
     let ipc = ipc.inner().clone();
     tauri::async_runtime::spawn(async move {
-        // Not connected: nothing to tell, the core is not running
-        let _ = ipc.request(MAIN, "app.hidden_to_tray", None).await;
+        // Not connected: the setting is not known, the window stays hidden
+        // (and the process ends when idle)
+        let Ok(snap) = ipc.request(MAIN, "state.snapshot", None).await else { return };
+        if quits_on_close(&snap) {
+            let _ = ipc.request(MAIN, "app.quit", None).await;
+        } else {
+            let _ = ipc.request(MAIN, "app.hidden_to_tray", None).await;
+        }
     });
+}
+
+/// Closing the main window exits A2DPWB: "Minimize to System Tray" is off
+/// in the core's snapshot
+fn quits_on_close(snapshot: &serde_json::Value) -> bool {
+    snapshot.pointer("/settings/minimize_to_tray").and_then(serde_json::Value::as_bool) == Some(false)
 }
 
 /// A second `a2dpwb.exe` (from the tray or the Start menu) only forwards
@@ -195,5 +210,19 @@ pub fn set_theme(app: &AppHandle, theme: &str) {
     };
     for w in app.webview_windows().values() {
         let _ = w.set_theme(t);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_quits_only_without_minimize_to_tray() {
+        let snap = |v: serde_json::Value| serde_json::json!({ "settings": { "minimize_to_tray": v } });
+        assert!(quits_on_close(&snap(false.into())));
+        assert!(!quits_on_close(&snap(true.into())));
+        // Unknown: the window only hides
+        assert!(!quits_on_close(&serde_json::json!({})));
     }
 }

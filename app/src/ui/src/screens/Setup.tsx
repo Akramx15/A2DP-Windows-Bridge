@@ -14,6 +14,7 @@ import type { AdapterInfo, ParamsOf, Profile, Snapshot, StreamState } from "../i
 import { firmwareUrl, LINKS } from "../lib/links";
 import { newProfile, normalizeProfile, validateProfile } from "../lib/profile";
 import { driverText } from "./Adapter";
+import { V1Running } from "./Home";
 
 export function needsSetup(snap: Snapshot): boolean {
   return snap.profiles.length === 0 || !snap.adapter.adapters.some((a) => a.driver === "winusb");
@@ -67,6 +68,7 @@ export function Setup() {
           <p class="muted">{t("ui.setup.intro")}</p>
         </div>
       </header>
+      <V1Running />
       <ol class="stepper">
         <For each={STEP_KEYS}>
           {(k, i) => (

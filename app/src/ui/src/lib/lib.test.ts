@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
-import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, sampleRates } from "./codecs";
+import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { maskAddresses, parseAddress } from "./format";
+import { thirdPartyUrl } from "./links";
 import { validateProfile } from "./profile";
 
 const line = (time_ms: number, message: string, level: LogLine["level"] = "info"): LogLine => ({
@@ -188,5 +189,32 @@ describe("profiles", () => {
 
   it("masks the device part of addresses", () => {
     expect(maskAddresses("connecting to AC:80:0A:12:34:56 now")).toBe("connecting to AC:80:0A:xx:xx:xx now");
+  });
+});
+
+describe("about", () => {
+  it("links the third-party licences of the release tag", () => {
+    expect(thirdPartyUrl("2.0.0-alpha.1")).toBe(
+      "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/v2.0.0-alpha.1/THIRD_PARTY_LICENSES.md",
+    );
+  });
+});
+
+describe("profile list", () => {
+  it("shows the quality and its bit rate as v1 did", () => {
+    const tag = (over: Parameters<typeof sampleProfile>[0]) => qualityTag(sampleProfile(over), t);
+    expect(tag({ codec: "ldac", quality: "hq" })).toBe("High (990 kbps)");
+    expect(tag({ codec: "ldac", quality: "sq", sample_rate: 44100 })).toBe("Standard (606 kbps)");
+    expect(tag({ codec: "ldac", quality: "mq", sample_rate: 88200 })).toBe("Mobile (303 kbps)");
+    expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 44100 })).toBe("Standard (480 kbps)");
+    expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 88200 })).toBe("Standard (500 kbps)");
+    expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("Medium-High (900 kbps)");
+    expect(tag({ codec: "lhdcv5", quality: "hq", abr: true })).toBe("ABR (≤400 kbps)");
+    expect(tag({ codec: "sbc", quality: "sq" })).toBe("Standard (~240 kbps)");
+    expect(tag({ codec: "auto", quality: "hq" })).toBe("High");
+    // No quality choice
+    expect(tag({ codec: "aptxhd" })).toBeNull();
+    expect(tag({ codec: "faststream" })).toBeNull();
+    expect(tag({ codec: "auto", le_audio: true })).toBeNull();
   });
 });

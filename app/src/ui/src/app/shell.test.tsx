@@ -4,7 +4,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App, hideToTray } from "./App";
+import { App, hideToTray, isDiagnosticsShortcut } from "./App";
 import { captureRunningText } from "./indicators";
 import { errorCopyText, sourceText } from "../components/stream";
 import { setLanguage, t } from "../i18n";
@@ -30,6 +30,17 @@ afterEach(async () => {
   mock = null;
   vi.restoreAllMocks();
   await setLanguage("en");
+});
+
+describe("keyboard", () => {
+  it("Ctrl+Shift+D opens the diagnostics", async () => {
+    start("#/home");
+    await screen.findByRole("button", { name: "Connect" });
+    fireEvent.keyDown(window, { key: "D", code: "KeyD", ctrlKey: true, shiftKey: true });
+    expect(await screen.findByRole("heading", { level: 1, name: "Diagnostics" })).toBeInTheDocument();
+    expect(isDiagnosticsShortcut({ key: "d", code: "KeyD", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })).toBe(false);
+    expect(isDiagnosticsShortcut({ key: "D", code: "KeyD", ctrlKey: true, shiftKey: true, altKey: true, metaKey: false })).toBe(false);
+  });
 });
 
 describe("update check", () => {

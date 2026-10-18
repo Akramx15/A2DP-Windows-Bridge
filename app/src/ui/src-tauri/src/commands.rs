@@ -39,11 +39,25 @@ pub struct UiInfo {
     /// The window has the Mica backdrop: the page keeps its background
     /// translucent
     mica: bool,
+    /// The licence texts next to the programs (installer and portable zip,
+    /// installer/build-release.ps1); None in a development build
+    licenses_dir: Option<String>,
 }
 
 #[tauri::command]
 pub fn ui_info(window: WebviewWindow) -> UiInfo {
-    UiInfo { window: window.label().into(), version: env!("CARGO_PKG_VERSION"), mica: windows::mica_supported() }
+    UiInfo {
+        window: window.label().into(),
+        version: env!("CARGO_PKG_VERSION"),
+        mica: windows::mica_supported(),
+        licenses_dir: licenses_dir(),
+    }
+}
+
+fn licenses_dir() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.join("licenses");
+    dir.is_dir().then(|| dir.display().to_string())
 }
 
 // Async: a synchronous command runs on the main thread, and creating a

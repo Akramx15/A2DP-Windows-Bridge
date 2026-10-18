@@ -7,6 +7,10 @@
 //! - Before v1.1 the max media packet size was a setting; profiles saved
 //!   without one used it. v2 does not write that setting back, so its value
 //!   is copied into those profiles first (what v1 did when it read them).
+//! - v1 named profiles "<device> <codec>" and told them apart by position,
+//!   so two alike shared a name; v2 finds them by name, so a repeated name
+//!   gets " (2)", " (3)"… ([`profiles::load`] does the same in memory when
+//!   v1 wrote the file again later).
 //! - start_minimized is set: v1 always started hidden in the tray at logon
 //!   (whatever that key said), v2's autostart honours it.
 //! - devices.txt, link_keys.txt, the firmware and captures are not changed.
@@ -56,6 +60,8 @@ pub struct Report {
     pub backed_up: bool,
     /// Profiles that got the old max media packet size setting
     pub profiles_seeded: usize,
+    /// Profiles renamed because another one had the same name
+    pub profiles_renamed: usize,
     /// settings.json was rewritten with the current schema_version
     pub schema_written: bool,
 }
@@ -147,25 +153,31 @@ pub fn prepare(dir: &Path) -> Report {
     // --minimized whatever start_minimized said, and offered no switch for
     // it); v2 honours the setting, so it is set to keep that
     settings.start_minimized = true;
+    let (mut list, renamed) = profiles::load_counted(dir);
+    let mut seeded = 0;
     if settings.max_media_payload.is_some() {
         let legacy = settings.legacy_max_media_payload();
-        let mut list = profiles::load(dir);
-        let mut seeded = 0;
         for p in list.iter_mut().filter(|p| p.max_media_payload.is_none()) {
             p.max_media_payload = Some(legacy);
             seeded += 1;
         }
         if seeded > 0 {
-            match profiles::save(dir, &list) {
-                Ok(()) => {
-                    tracing::info!("settings from v1: max media packet size {legacy} given to {seeded} profile(s)");
-                    report.profiles_seeded = seeded;
-                }
-                Err(e) => {
-                    // Keep the old setting in settings.json: it is still used
-                    tracing::error!("settings from v1: cannot save {}: {e}", profiles::path(dir).display());
-                    return report;
-                }
+            tracing::info!("settings from v1: max media packet size {legacy} given to {seeded} profile(s)");
+        }
+    }
+    if renamed > 0 {
+        tracing::info!("settings from v1: {renamed} profile(s) with a repeated name given a number");
+    }
+    if seeded > 0 || renamed > 0 {
+        match profiles::save(dir, &list) {
+            Ok(()) => {
+                report.profiles_seeded = seeded;
+                report.profiles_renamed = renamed;
+            }
+            Err(e) => {
+                // Keep the old setting in settings.json: it is still used
+                tracing::error!("settings from v1: cannot save {}: {e}", profiles::path(dir).display());
+                return report;
             }
         }
     }
@@ -220,7 +232,14 @@ mod tests {
         let r = prepare(dir);
         assert_eq!(
             r,
-            Report { schema_before: Some(1), from_v1: true, backed_up: true, profiles_seeded: 1, schema_written: true }
+            Report {
+                schema_before: Some(1),
+                from_v1: true,
+                backed_up: true,
+                profiles_seeded: 1,
+                profiles_renamed: 0,
+                schema_written: true
+            }
         );
         // The backup has v1's files as they were, without v2's logs
         let b = dir.join(BACKUP_DIR);
@@ -265,6 +284,28 @@ mod tests {
         assert!(r.from_v1 && !r.backed_up && r.schema_written);
         assert_eq!(std::fs::read_to_string(dir.join(BACKUP_DIR).join("settings.json")).unwrap(), "first");
         assert_eq!(read_json(&Settings::path(dir))["schema_version"], SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn repeated_v1_profile_names_are_numbered() {
+        let t = TempDir::new("dup");
+        let dir = &t.0;
+        std::fs::write(Settings::path(dir), r#"{"language":"ja","last_profile":"WH LDAC"}"#).unwrap();
+        let text = r#"{"profiles":[{"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:FF","codec":"ldac"},
+            {"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:FF","codec":"ldac","quality":"mq"},
+            {"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:FF","codec":"ldac","quality":"sq"}]}"#;
+        std::fs::write(profiles::path(dir), text).unwrap();
+        let r = prepare(dir);
+        assert_eq!(r.profiles_renamed, 2);
+        assert_eq!(r.profiles_seeded, 0);
+        // Written to the file, in v1's order; the backup has v1's file
+        let f = read_json(&profiles::path(dir));
+        let names: Vec<&str> = f["profiles"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["WH LDAC", "WH LDAC (2)", "WH LDAC (3)"]);
+        assert_eq!(f["profiles"][1]["quality"], "mq");
+        assert_eq!(std::fs::read_to_string(dir.join(BACKUP_DIR).join("profiles.json")).unwrap(), text);
+        // last_profile still names the first one
+        assert_eq!(read_json(&Settings::path(dir))["last_profile"], "WH LDAC");
     }
 
     #[test]

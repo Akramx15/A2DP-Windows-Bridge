@@ -10,6 +10,7 @@ interface UiInfo {
   window: string;
   version: string;
   mica: boolean;
+  licenses_dir: string | null;
 }
 
 export async function createTauriTransport(): Promise<Transport> {
@@ -19,6 +20,7 @@ export async function createTauriTransport(): Promise<Transport> {
     window: kind,
     mica: info.mica,
     version: info.version,
+    licensesDir: info.licenses_dir ?? null,
     async start(onMessage, onStatus) {
       // Listen first, then read the status: nothing falls between the two
       await listen<ServerMessage>("ipc://message", (e) => onMessage(e.payload));

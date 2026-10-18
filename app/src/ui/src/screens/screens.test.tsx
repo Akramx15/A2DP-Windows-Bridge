@@ -38,6 +38,16 @@ describe("Home", () => {
     expect(calls.some((c) => c.method === "stream.stop")).toBe(true);
   });
 
+  it("asks to exit v1 while it runs", async () => {
+    start("#/home");
+    await screen.findByRole("button", { name: "Connect" });
+    expect(screen.queryByText("A2DPWB v1 is running — exit it first")).toBeNull();
+    mock!.setV1Running(true);
+    expect(await screen.findByText("A2DPWB v1 is running — exit it first")).toBeInTheDocument();
+    mock!.setV1Running(false);
+    await waitFor(() => expect(screen.queryByText("A2DPWB v1 is running — exit it first")).toBeNull());
+  });
+
   it("shows the cause of an error and a fix", async () => {
     start("#/home", { scenario: "error" });
     const alert = await screen.findByRole("alert");
@@ -114,6 +124,9 @@ describe("every screen renders", () => {
   it("the first-run setup when no adapter is on WinUSB", async () => {
     const { calls } = start("#/home", { scenario: "fresh" });
     expect(await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" })).toBeInTheDocument();
+    mock!.setV1Running(true);
+    expect(await screen.findByText("A2DPWB v1 is running — exit it first")).toBeInTheDocument();
+    mock!.setV1Running(false);
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     // Step 2: assigning WinUSB asks first
     fireEvent.click(await screen.findByRole("button", { name: "Assign WinUSB" }));

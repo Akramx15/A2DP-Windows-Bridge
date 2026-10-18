@@ -26,6 +26,8 @@ export interface Transport {
   readonly mica: boolean;
   /** The UI's own version */
   readonly version: string;
+  /** The licence texts shipped with the app (null in a development build) */
+  readonly licensesDir: string | null;
   /** Delivers every server message and status change from now on */
   start(onMessage: (m: ServerMessage) => void, onStatus: (s: ConnStatus) => void): Promise<void>;
   /** One request; rejects with an ErrorInfo-shaped value */

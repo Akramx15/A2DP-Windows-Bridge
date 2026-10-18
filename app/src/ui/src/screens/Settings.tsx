@@ -8,7 +8,7 @@ import { Banner, Button, Dialog, Field, Section, Segmented, Select, Toggle } fro
 import { LANGUAGES, t, tm } from "../i18n";
 import type { UpdatePhase } from "../ipc/transport";
 import { IpcError, type Msg } from "../ipc/types";
-import { LINKS } from "../lib/links";
+import { LINKS, thirdPartyUrl } from "../lib/links";
 
 export function Settings() {
   const app = useApp();
@@ -18,6 +18,12 @@ export function Settings() {
   const set = (patch: Parameters<typeof saveSettings>[1]) => void saveSettings(app, patch);
   const [quitting, setQuitting] = createSignal(false);
   const update = () => snap().update;
+  // The licence texts shipped next to the programs; a development build
+  // has none, so the release's copy online
+  const openLicenses = () => {
+    const dir = core.transport.licensesDir;
+    void (dir ? core.transport.openFolder(dir) : core.transport.openUrl(thirdPartyUrl(core.transport.version)));
+  };
   // The in-app update (installed copies); otherwise the release page
   const [phase, setPhase] = createSignal<UpdatePhase>({ state: "unavailable", reason: "portable" });
   onMount(() => {
@@ -238,7 +244,7 @@ export function Settings() {
           <div>
             <strong>{t("help.full_name")}</strong>
             <p class="muted num">
-              {t("help.version")} {core.transport.version} · core {update().current_version}
+              {t("help.version")} {core.transport.version} · {t("ui.settings.core_version", update().current_version)}
             </p>
             <p class="muted">{t("help.author")}</p>
           </div>
@@ -246,11 +252,12 @@ export function Settings() {
         <p class="hint">{t("help.license")}</p>
         <p class="hint">{t("help.binary_license")}</p>
         <p class="hint">{t("ui.settings.icons_license")}</p>
+        <p class="hint">{t("help.third_party")}</p>
         <div class="inline wrap">
           <Button icon="open" kind="subtle" onClick={() => core.transport.openUrl(LINKS.repo)}>
             {t("help.github")}
           </Button>
-          <Button icon="open" kind="subtle" onClick={() => core.transport.openUrl(LINKS.thirdParty)}>
+          <Button icon="open" kind="subtle" onClick={() => openLicenses()}>
             {t("help.third_party_link")}
           </Button>
           <Button icon="open" kind="subtle" onClick={() => core.transport.openUrl(LINKS.issues)}>

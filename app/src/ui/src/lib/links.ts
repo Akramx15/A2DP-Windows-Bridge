@@ -12,10 +12,16 @@ export const LINKS = {
   firmwareBroadcom: "https://github.com/winterheart/broadcom-bt-firmware",
   releases: `${REPO}/releases`,
   issues: `${REPO}/issues/new/choose`,
-  thirdParty: `${REPO}/blob/main/THIRD_PARTY_LICENSES.md`,
   sponsor: "https://github.com/sponsors/SeiyaFunaokaJP",
   vbCable: "https://vb-audio.com/Cable/",
 } as const;
+
+/** The third-party licences of this version (a development build has no
+ *  licenses folder next to it): the release tag's copy, not the main
+ *  branch's, which may list other components */
+export function thirdPartyUrl(version: string): string {
+  return `${REPO}/blob/v${version}/THIRD_PARTY_LICENSES.md`;
+}
 
 /** The firmware download page for an adapter's vendor */
 export function firmwareUrl(vendor: string): string {

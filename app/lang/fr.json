@@ -562,5 +562,14 @@
   "error.capture_start": "La capture HCI n'a pas pu être démarrée",
   "error.uac_cancelled": "L'invite d'administrateur a été refusée : le pilote n'a pas été modifié",
   "error.driver_failed": "La modification du pilote a échoué. Consultez le journal pour plus de détails.",
-  "error.driver_restore_unverified": "Le pilote a été modifié, mais l'adaptateur n'est pas revenu à son pilote précédent. S'il avait été configuré avec Zadig, supprimez le paquet de pilote de Zadig dans le Gestionnaire de périphériques."
+  "error.driver_restore_unverified": "Le pilote a été modifié, mais l'adaptateur n'est pas revenu à son pilote précédent. S'il avait été configuré avec Zadig, supprimez le paquet de pilote de Zadig dans le Gestionnaire de périphériques.",
+  "ui.v1_running.title": "A2DPWB v1 est en cours d'exécution — quittez-le d'abord",
+  "ui.v1_running.text": "v1 et v2 ne peuvent pas utiliser l'adaptateur Bluetooth en même temps. Faites un clic droit sur l'icône de v1 dans la zone de notification et choisissez Quitter.",
+  "help.third_party": "Inclut également libldac (Apache-2.0), libopenaptx (LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár), Fraunhofer FDK AAC, Bluedroid SBC (Apache-2.0), l'encodeur LHDC V5 (Apache-2.0, dérivé d'AOSP ; FFT de KISS FFT, BSD-3-Clause), libopus (BSD-3-Clause), liblc3 (Apache-2.0), Tauri, SolidJS et d'autres bibliothèques Rust et JavaScript. Les textes des licences se trouvent dans le dossier \"licenses\" à côté du programme.",
+  "ui.settings.core_version": "cœur %s",
+  "dbgc.col_step": "Étape",
+  "dbgc.col_status": "État",
+  "dbgc.col_time": "Heure",
+  "dbgc.col_elapsed": "Écoulé",
+  "dbgc.col_detail": "Détail"
 }
