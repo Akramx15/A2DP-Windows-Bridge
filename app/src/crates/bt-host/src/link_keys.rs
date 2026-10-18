@@ -36,12 +36,16 @@ fn parse_line(line: &str) -> Option<LinkKeyEntry> {
     let mut parts = line.split_whitespace();
     let addr = crate::events::parse_addr(parts.next()?)?;
     let hex = parts.next()?;
+    // 32 hex digits, read as bytes: a line with other characters is skipped
+    // (slicing the str at byte offsets could split a character and panic)
+    let hex = hex.as_bytes();
     if hex.len() != 32 {
         return None;
     }
     let mut key = [0u8; 16];
+    let digit = |c: u8| char::from(c).to_digit(16);
     for (i, k) in key.iter_mut().enumerate() {
-        *k = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        *k = (digit(hex[i * 2])? * 16 + digit(hex[i * 2 + 1])?) as u8;
     }
     let key_type = parts.next()?.parse().ok()?;
     Some(LinkKeyEntry { addr, key, key_type })
@@ -145,5 +149,30 @@ mod tests {
         store.delete(&addr);
         assert_eq!(FileLinkKeyStore::open(&dir).entries().len(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn bad_lines_are_skipped() {
+        let addr = "00-A2-D0-00-00-02";
+        let good = parse_line(&format!("{addr} 00112233445566778899aabbccddeeFF 4")).unwrap();
+        assert_eq!(good.key[1], 0x11);
+        assert_eq!(good.key[15], 0xFF);
+        // 32 bytes but not ASCII: no panic, no entry
+        for key in [
+            "\u{e9}112233445566778899aabbccddeeff",
+            "0\u{e9}112233445566778899aabbccddeef",
+            "0011223344556677889\u{3042}bccddeeff0",
+        ] {
+            assert_eq!(key.len(), 32, "{key}");
+            assert!(parse_line(&format!("{addr} {key} 4")).is_none(), "{key}");
+        }
+        for bad in [
+            "+0112233445566778899aabbccddeeff 4",
+            "0g112233445566778899aabbccddeeff 4",
+            "00112233445566778899aabbccddeeff",
+            "00112233445566778899aabbccddeef 4",
+        ] {
+            assert!(parse_line(&format!("{addr} {bad}")).is_none(), "{bad}");
+        }
     }
 }

@@ -17,12 +17,17 @@
 //!   accepting them does not block the stack
 //! - close sends HCI Reset (bounded) and cancels everything, leaving the
 //!   controller idle for the next session
-//! - a transfer that fails for good (device gone) is reported to BTstack's
-//!   owner through [`Upstream::fail`]: BTstack itself cannot recover, it
-//!   waits for the answer to a command that was lost
+//! - a failed ACL read is retried the same way (ACL_IN_MAX_ERRORS)
+//! - ACL / ISO writes have no timeout, and a failed one only drops the packet
+//! - a transfer that fails for good (device gone, a lost command) is
+//!   reported to BTstack's owner through [`Upstream::fail`]: BTstack itself
+//!   cannot recover, it waits for the answer to a command that was lost
+//! - an adapter that cannot be opened (another program holds it) is skipped
+//!   for the next one the selector takes
 //!
 //! BTstack treats this transport as asynchronous: `send` hands the packet to
-//! the writer thread and returns; the writer reports each packet as sent.
+//! a writer thread (one for commands, one for ACL / ISO) and returns; the
+//! writer reports each packet as sent.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,6 +50,8 @@ const COMMAND_TIMEOUT: Duration = Duration::from_millis(2000);
 const CLOSE_RESET_TIMEOUT: Duration = Duration::from_millis(500);
 /// Consecutive failed event reads before event delivery is given up
 const EVENT_IN_MAX_ERRORS: u32 = 10;
+/// Consecutive failed ACL reads before ACL delivery is given up
+const ACL_IN_MAX_ERRORS: u32 = 10;
 /// How often the I/O threads look at the stop flag
 const POLL: Duration = Duration::from_millis(100);
 /// Transfers kept in flight per IN pipe
@@ -105,6 +112,18 @@ impl UsbSelector {
             return Err(bad());
         }
         Ok(UsbSelector { instance_id: Some(id), ..Default::default() })
+    }
+
+    /// The selector picks this device: the named adapter, else any
+    /// Bluetooth-class or known one
+    fn takes(&self, c: &UsbCandidate) -> bool {
+        if let Some(id) = &self.instance_id {
+            c.instance_id.eq_ignore_ascii_case(id)
+        } else if let Some(vp) = self.vid_pid {
+            (c.vid, c.pid) == vp
+        } else {
+            c.bluetooth_class || c.known
+        }
     }
 }
 
@@ -188,7 +207,8 @@ struct Opened {
     interface: Interface,
     _device: Device,
     stop: Arc<AtomicBool>,
-    writer_tx: mpsc::Sender<(u8, Vec<u8>)>,
+    /// The writer of each slot (see [`out_slot`])
+    writer_tx: [mpsc::Sender<(u8, Vec<u8>)>; 2],
     /// Buffers of written packets come back here for reuse
     recycle_rx: mpsc::Receiver<Vec<u8>>,
     threads: Vec<JoinHandle<()>>,
@@ -206,30 +226,28 @@ impl UsbTransport {
         UsbTransport { selector, opened: None }
     }
 
-    fn find(&self) -> Result<DeviceInfo, String> {
+    /// The WinUSB adapters the selector takes, in enumeration order
+    fn find(&self) -> Result<Vec<DeviceInfo>, String> {
         let devices: Vec<DeviceInfo> = nusb::list_devices()
             .wait()
             .map_err(|e| format!("cannot list USB devices: {e}"))?
             .filter(|d| !is_vmware(d))
             .collect();
+        let mut found = Vec::new();
         let mut wrong_driver = None;
         for info in devices {
             let c = candidate(&info, &self.selector.known);
-            if let Some(id) = &self.selector.instance_id {
-                if !c.instance_id.eq_ignore_ascii_case(id) {
-                    continue;
-                }
-            } else if let Some(vp) = self.selector.vid_pid {
-                if (c.vid, c.pid) != vp {
-                    continue;
-                }
-            } else if !(c.bluetooth_class || c.known) {
+            if !self.selector.takes(&c) {
                 continue;
             }
             if c.winusb() {
-                return Ok(info);
+                found.push(info);
+            } else {
+                wrong_driver.get_or_insert(c);
             }
-            wrong_driver.get_or_insert(c);
+        }
+        if !found.is_empty() {
+            return Ok(found);
         }
         Err(match wrong_driver {
             Some(c) => format!(
@@ -275,9 +293,12 @@ fn send_command(interface: &Interface, command: &[u8], timeout: Duration) -> Res
         .wait()
 }
 
-/// Errors after which the device handle no longer reaches the adapter
+/// Errors after which the device handle no longer reaches the adapter, as
+/// v1's usb_device_gone: ERROR_DEVICE_NOT_CONNECTED, ERROR_NO_SUCH_DEVICE
+/// and ERROR_FILE_NOT_FOUND (nusb's Disconnected), ERROR_BAD_COMMAND (22)
+/// and ERROR_INVALID_HANDLE (6)
 fn device_gone(e: &TransferError) -> bool {
-    matches!(e, TransferError::Disconnected)
+    matches!(e, TransferError::Disconnected | TransferError::Unknown(22) | TransferError::Unknown(6))
 }
 
 impl HciBackend for UsbTransport {
@@ -287,12 +308,37 @@ impl HciBackend for UsbTransport {
 
     fn open(&mut self, upstream: Upstream) -> Result<(), String> {
         self.close();
-        let info = self.find()?;
+        // The first adapter that opens: one another program holds is
+        // skipped, as v1's usb_open tried every device
+        let mut last_error = String::new();
+        let mut opened = None;
+        for info in self.find()? {
+            let (vid, pid) = (info.vendor_id(), info.product_id());
+            let attempt =
+                info.open().wait().map_err(|e| format!("cannot open {vid:04X}:{pid:04X}: {e}")).and_then(|device| {
+                    let interface = device
+                        .claim_interface(0)
+                        .wait()
+                        .map_err(|e| format!("cannot claim interface 0 of {vid:04X}:{pid:04X}: {e}"))?;
+                    let endpoints = hci_endpoints(&interface)
+                        .ok_or_else(|| format!("{vid:04X}:{pid:04X} lacks the HCI event / ACL endpoints"))?;
+                    Ok((device, interface, endpoints))
+                });
+            match attempt {
+                Ok(o) => {
+                    opened = Some((info, o));
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(target: "hci", "USB: {e}; trying the next adapter, if any");
+                    last_error = e;
+                }
+            }
+        }
+        let Some((info, (device, interface, (event_addr, acl_in_addr, acl_out_addr)))) = opened else {
+            return Err(last_error);
+        };
         let (vid, pid) = (info.vendor_id(), info.product_id());
-        let device = info.open().wait().map_err(|e| format!("cannot open {vid:04X}:{pid:04X}: {e}"))?;
-        let interface = device.claim_interface(0).wait().map_err(|e| format!("cannot claim interface 0: {e}"))?;
-        let (event_addr, acl_in_addr, acl_out_addr) =
-            hci_endpoints(&interface).ok_or("the adapter lacks the HCI event / ACL endpoints")?;
         let mut event_in = interface.endpoint::<Interrupt, In>(event_addr).map_err(|e| e.to_string())?;
         let mut acl_in = interface.endpoint::<Bulk, In>(acl_in_addr).map_err(|e| e.to_string())?;
         let mut acl_out = interface.endpoint::<Bulk, Out>(acl_out_addr).map_err(|e| e.to_string())?;
@@ -315,7 +361,8 @@ impl HciBackend for UsbTransport {
 
         let stop = Arc::new(AtomicBool::new(false));
         let in_flight = Arc::new([AtomicBool::new(false), AtomicBool::new(false)]);
-        let (writer_tx, writer_rx) = mpsc::channel::<(u8, Vec<u8>)>();
+        let (command_tx, command_rx) = mpsc::channel::<(u8, Vec<u8>)>();
+        let (data_tx, data_rx) = mpsc::channel::<(u8, Vec<u8>)>();
         let (recycle_tx, recycle_rx) = mpsc::channel::<Vec<u8>>();
         let mut threads = Vec::new();
         let spawn = |name: &str, f: Box<dyn FnOnce() + Send>| {
@@ -331,21 +378,52 @@ impl HciBackend for UsbTransport {
         }
         {
             let (stop, interface, in_flight) = (stop.clone(), interface.clone(), in_flight.clone());
+            let (upstream, recycle) = (upstream.clone(), recycle_tx.clone());
             threads.push(spawn(
-                "usb-out",
+                "usb-cmd-out",
                 Box::new(move || {
-                    writer_loop(&interface, &mut acl_out, writer_rx, recycle_tx, &in_flight, &stop, &upstream)
+                    let write = |_: u8, p: &[u8]| send_command(&interface, p, COMMAND_TIMEOUT);
+                    writer_loop(write, command_rx, recycle, &in_flight[0], &stop, &upstream)
                 }),
             )?);
         }
-        self.opened = Some(Opened { interface, _device: device, stop, writer_tx, recycle_rx, threads, in_flight });
+        {
+            let (stop, in_flight) = (stop.clone(), in_flight.clone());
+            threads.push(spawn(
+                "usb-acl-out",
+                Box::new(move || {
+                    let write_stop = stop.clone();
+                    let write = |_: u8, p: &[u8]| {
+                        let r = bulk_write(&mut acl_out, p, &write_stop);
+                        if matches!(r, Err(TransferError::Stall)) {
+                            // Or every later write fails as well
+                            if let Err(e) = acl_out.clear_halt().wait() {
+                                tracing::warn!(target: "hci", "USB: clearing the ACL out pipe failed: {e}");
+                            }
+                        }
+                        r
+                    };
+                    writer_loop(write, data_rx, recycle_tx, &in_flight[1], &stop, &upstream)
+                }),
+            )?);
+        }
+        self.opened = Some(Opened {
+            interface,
+            _device: device,
+            stop,
+            writer_tx: [command_tx, data_tx],
+            recycle_rx,
+            threads,
+            in_flight,
+        });
         Ok(())
     }
 
     fn close(&mut self) {
         let Some(opened) = self.opened.take() else { return };
         opened.stop.store(true, Ordering::Release);
-        // The writer finishes the packet it has (bounded by the timeouts)
+        // The writers finish the packet they have (a command bounded by its
+        // timeout, a data write cancelled on the stop flag)
         drop(opened.writer_tx);
         for t in opened.threads {
             let _ = t.join();
@@ -371,7 +449,7 @@ impl HciBackend for UsbTransport {
         buf.clear();
         buf.extend_from_slice(packet);
         o.in_flight[slot].store(true, Ordering::Release);
-        if o.writer_tx.send((packet_type, buf)).is_err() {
+        if o.writer_tx[slot].send((packet_type, buf)).is_err() {
             o.in_flight[slot].store(false, Ordering::Release);
             return false;
         }
@@ -446,27 +524,40 @@ fn event_loop(ep: &mut Endpoint<Interrupt, In>, stop: &AtomicBool, upstream: &Up
 
 fn acl_in_loop(ep: &mut Endpoint<Bulk, In>, stop: &AtomicBool, upstream: &Upstream) {
     let mut acl = Reassembler::new(HCI_ACL_DATA_PACKET);
+    let mut errors = 0u32;
     for _ in 0..IN_TRANSFERS {
         submit_in(ep, ACL_TRANSFER_SIZE);
     }
     while !stop.load(Ordering::Acquire) {
         let Some(c) = ep.wait_next_complete(POLL) else { continue };
         match c.status {
-            Ok(()) => acl.push(&c.buffer[..c.actual_len], |p| upstream.deliver(HCI_ACL_DATA_PACKET, p)),
+            Ok(()) => {
+                errors = 0;
+                acl.push(&c.buffer[..c.actual_len], |p| upstream.deliver(HCI_ACL_DATA_PACKET, p));
+            }
             Err(TransferError::Cancelled) if stop.load(Ordering::Acquire) => break,
-            Err(TransferError::Stall) => {
+            Err(e) if device_gone(&e) => {
+                upstream.fail(&format!("ACL read: {e}"));
+                break;
+            }
+            Err(e) => {
+                // As v1: reset the pipe and read on (a stall, a bad
+                // transfer); only a run of failures gives up
+                errors += 1;
                 acl.reset();
-                tracing::warn!(target: "hci", "USB: ACL read stalled, resetting the pipe");
+                if errors > ACL_IN_MAX_ERRORS {
+                    upstream.fail(&format!("ACL read failed {errors} times in a row: {e}"));
+                    break;
+                }
+                tracing::warn!(target: "hci", "USB: ACL read failed ({e}), resetting the pipe ({errors}/{ACL_IN_MAX_ERRORS})");
                 drain(ep);
-                let _ = ep.clear_halt().wait();
+                if let Err(e) = ep.clear_halt().wait() {
+                    tracing::warn!(target: "hci", "USB: clearing the ACL in pipe failed: {e}");
+                }
                 for _ in 0..IN_TRANSFERS {
                     submit_in(ep, ACL_TRANSFER_SIZE);
                 }
                 continue;
-            }
-            Err(e) => {
-                upstream.fail(&format!("ACL read: {e}"));
-                break;
             }
         }
         submit_in(ep, ACL_TRANSFER_SIZE);
@@ -474,14 +565,55 @@ fn acl_in_loop(ep: &mut Endpoint<Bulk, In>, stop: &AtomicBool, upstream: &Upstre
     drain(ep);
 }
 
-/// Sends commands and ACL / ISO packets in the order BTstack hands them
-/// over, and reports each as sent
+/// What becomes of a failed write
+#[derive(Debug, PartialEq, Eq)]
+enum WriteFailure {
+    /// The stack has to be restarted
+    Fatal,
+    /// Logged; the packet is lost and the stack goes on
+    Dropped,
+}
+
+/// A lost command leaves BTstack waiting for its answer for good, so any
+/// command failure is fatal. A lost ACL / ISO packet is not (L2CAP and the
+/// media stream go on, as in v1): only a gone adapter is.
+fn write_failure(packet_type: u8, e: &TransferError) -> WriteFailure {
+    if packet_type == HCI_COMMAND_DATA_PACKET || device_gone(e) { WriteFailure::Fatal } else { WriteFailure::Dropped }
+}
+
+/// One bulk OUT transfer with no timeout, as v1's ACL writes: a controller
+/// may hold data for a while (a link going down, the air busy), which is not
+/// a failure. Only the stop flag cancels it.
+fn bulk_write(ep: &mut Endpoint<Bulk, Out>, packet: &[u8], stop: &AtomicBool) -> Result<(), TransferError> {
+    let mut buf = Buffer::new(packet.len());
+    buf.extend_from_slice(packet);
+    ep.submit(buf);
+    loop {
+        if let Some(c) = ep.wait_next_complete(POLL) {
+            return c.status;
+        }
+        if stop.load(Ordering::Acquire) {
+            ep.cancel_all();
+            return match ep.wait_next_complete(Duration::from_secs(1)) {
+                Some(c) => c.status,
+                None => {
+                    tracing::warn!(target: "hci", "USB: a cancelled ACL write did not return");
+                    Err(TransferError::Cancelled)
+                }
+            };
+        }
+    }
+}
+
+/// Sends the packets of one writer slot in the order BTstack hands them over
+/// and reports each as sent. Commands (control pipe) and ACL / ISO data
+/// (bulk OUT) have a thread each, so data the controller holds back does not
+/// delay commands, as in v1 where both were separate overlapped transfers.
 fn writer_loop(
-    interface: &Interface,
-    acl_out: &mut Endpoint<Bulk, Out>,
+    mut write: impl FnMut(u8, &[u8]) -> Result<(), TransferError>,
     rx: mpsc::Receiver<(u8, Vec<u8>)>,
     recycle: mpsc::Sender<Vec<u8>>,
-    in_flight: &[AtomicBool; 2],
+    in_flight: &AtomicBool,
     stop: &AtomicBool,
     upstream: &Upstream,
 ) {
@@ -491,15 +623,8 @@ fn writer_loop(
             Err(mpsc::RecvTimeoutError::Timeout) if !stop.load(Ordering::Acquire) => continue,
             Err(_) => break,
         };
-        let result = if packet_type == HCI_COMMAND_DATA_PACKET {
-            send_command(interface, &packet, COMMAND_TIMEOUT)
-        } else {
-            let mut buf = Buffer::new(packet.len());
-            buf.extend_from_slice(&packet);
-            let c = acl_out.transfer_blocking(buf, COMMAND_TIMEOUT);
-            c.status
-        };
-        in_flight[out_slot(packet_type).unwrap_or(1)].store(false, Ordering::Release);
+        let result = write(packet_type, &packet);
+        in_flight.store(false, Ordering::Release);
         let _ = recycle.send(packet);
         match result {
             Ok(()) => upstream.packet_sent(),
@@ -509,11 +634,19 @@ fn writer_loop(
                     HCI_ISO_DATA_PACKET => "ISO write",
                     _ => "ACL write",
                 };
-                // A lost command leaves BTstack waiting for its answer for
-                // good: the stack has to be restarted
-                upstream.fail(&format!("{what}: {e}"));
-                if device_gone(&e) || stop.load(Ordering::Acquire) {
+                if stop.load(Ordering::Acquire) {
                     break;
+                }
+                match write_failure(packet_type, &e) {
+                    WriteFailure::Fatal => {
+                        upstream.fail(&format!("{what}: {e}"));
+                        if device_gone(&e) {
+                            break;
+                        }
+                    }
+                    WriteFailure::Dropped => {
+                        tracing::warn!(target: "hci", "USB: {what} failed ({e}), packet dropped");
+                    }
                 }
                 // Free BTstack's packet buffer anyway
                 upstream.packet_sent();
@@ -534,6 +667,52 @@ mod tests {
         // SCO and events are not sent on this transport
         assert_eq!(out_slot(btstack_sys::consts::HCI_SCO_DATA_PACKET), None);
         assert_eq!(out_slot(HCI_EVENT_PACKET), None);
+    }
+
+    #[test]
+    fn only_a_gone_adapter_or_a_lost_command_is_fatal() {
+        use TransferError::*;
+        for data in [HCI_ACL_DATA_PACKET, HCI_ISO_DATA_PACKET] {
+            for e in [Cancelled, Stall, Fault, InvalidArgument, Unknown(31)] {
+                assert_eq!(write_failure(data, &e), WriteFailure::Dropped, "{data} {e:?}");
+            }
+            for e in [Disconnected, Unknown(22), Unknown(6)] {
+                assert_eq!(write_failure(data, &e), WriteFailure::Fatal, "{data} {e:?}");
+            }
+        }
+        for e in [Cancelled, Stall, Disconnected] {
+            assert_eq!(write_failure(HCI_COMMAND_DATA_PACKET, &e), WriteFailure::Fatal);
+        }
+        assert!(device_gone(&Disconnected));
+        assert!(!device_gone(&Stall));
+        assert!(!device_gone(&Cancelled));
+    }
+
+    fn usb_candidate(vid: u16, pid: u16, bluetooth_class: bool, known: bool) -> UsbCandidate {
+        UsbCandidate {
+            vid,
+            pid,
+            instance_id: format!(r"USB\VID_{vid:04X}&PID_{pid:04X}\1"),
+            driver: Some("WinUSB".into()),
+            product: None,
+            bluetooth_class,
+            known,
+        }
+    }
+
+    #[test]
+    fn selector_takes() {
+        let any = UsbSelector::default();
+        assert!(any.takes(&usb_candidate(0x0BDA, 0x8771, true, false)));
+        // A vendor-class adapter (ASUS BT400) once its VID:PID is known
+        assert!(any.takes(&usb_candidate(0x0B05, 0x17CB, false, true)));
+        assert!(!any.takes(&usb_candidate(0x0B05, 0x17CB, false, false)));
+        let vp = UsbSelector { vid_pid: Some((0x0B05, 0x17CB)), ..Default::default() };
+        assert!(vp.takes(&usb_candidate(0x0B05, 0x17CB, false, false)));
+        assert!(!vp.takes(&usb_candidate(0x0BDA, 0x8771, true, false)));
+        let id = UsbSelector::from_arg(r"usb\vid_0bda&pid_8771\1").unwrap();
+        assert!(id.takes(&usb_candidate(0x0BDA, 0x8771, true, false)));
+        assert!(!id.takes(&usb_candidate(0x0BDA, 0x8772, true, false)));
     }
 
     #[test]

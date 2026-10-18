@@ -51,6 +51,31 @@ pub fn adapters(probe_winusb: bool) -> Vec<Adapter> {
         .collect()
 }
 
+/// Vendor-class (FF/01/01) controllers v1's WinUSB transport knew built in
+/// (BTstack's list): they do not identify as Bluetooth class
+const BUILTIN_VENDOR_CLASS: &[(u16, u16)] = &[
+    (0x0A5C, 0x21E8), // BCM20702A0, DeLOCK Bluetooth 4.0
+    (0x0B05, 0x17CB), // BCM20702A0, ASUS BT400
+    (0x0A5C, 0x22BE), // BCM20702B0, generic class 1
+    (0x2FE3, 0x0100), // nRF5x Zephyr USB HCI
+    (0x2FE3, 0x000B),
+];
+
+/// VID:PIDs the USB transport opens besides Bluetooth-class devices (bt-host
+/// adds BTstack's Realtek table, CSR and Intel): v1's built-in vendor-class
+/// list, the OEM adapters with a Realtek chip, and the WinUSB adapters whose
+/// interface 0 was found to be vendor-class Bluetooth with the HCI pipes
+pub fn usb_known_ids(vendor_class: &[(u16, u16)]) -> Vec<(u16, u16)> {
+    let mut ids: Vec<(u16, u16)> = BUILTIN_VENDOR_CLASS.to_vec();
+    ids.extend(chips::OEM_TABLE.iter().map(|m| (m.vid, m.pid)));
+    for id in vendor_class {
+        if !ids.contains(id) {
+            ids.push(*id);
+        }
+    }
+    ids
+}
+
 /// Fills the chipset part of `config` from the settings and the present
 /// adapters
 pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Path) {
@@ -59,9 +84,27 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
         return; // a virtual controller: no chipset, no firmware
     }
     let auto = chips::is_auto_chip(settings.bt_chip_pid, &settings.bt_chip_fw_stem);
-    let present = adapters(false);
+    // The stack is not running yet (start and restart shut the old one
+    // down first): the probe reads interface 0 of each WinUSB adapter, as
+    // v1 did before opening one, and tells one another program holds
+    let present = adapters(true);
     let winusb: Vec<&Adapter> =
         present.iter().filter(|a| a.device.driver_kind == win_sys::driver::DriverKind::WinUsb).collect();
+    if let TransportConfig::Usb(sel) = &mut config.transport {
+        let vendor_class: Vec<(u16, u16)> = winusb
+            .iter()
+            .filter(|a| a.device.winusb_bluetooth() == Some(true))
+            .map(|a| (a.device.vid, a.device.pid))
+            .collect();
+        for (vid, pid) in &vendor_class {
+            tracing::info!("vendor-class (FF/01/01) adapter {vid:04X}:{pid:04X}: the transport may open it");
+        }
+        for id in usb_known_ids(&vendor_class) {
+            if !sel.known.contains(&id) {
+                sel.known.push(id);
+            }
+        }
+    }
     let pid =
         chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, winusb.iter().map(|a| a.realtek_pid));
     if pid != 0 {
@@ -84,7 +127,16 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
     if pid == 0 {
         // Other vendors (experimental): Intel needs its bootloader
         // firmware, Broadcom may take a PatchRAM
-        config.intel_loader = winusb.iter().any(|a| a.vendor == ChipVendor::Intel);
+        // One held by another program cannot be loaded either (v1 skipped
+        // it too)
+        config.intel_loader = winusb.iter().any(|a| a.vendor == ChipVendor::Intel && !a.device.in_use());
+        for a in winusb.iter().filter(|a| a.vendor == ChipVendor::Intel && a.device.in_use()) {
+            tracing::info!(
+                "Intel adapter {:04X}:{:04X} is in use by another program: no bootloader download for it",
+                a.device.vid,
+                a.device.pid
+            );
+        }
         config.broadcom_ids =
             winusb.iter().filter(|a| a.vendor == ChipVendor::Broadcom).map(|a| (a.device.vid, a.device.pid)).collect();
         for a in &winusb {
@@ -118,5 +170,57 @@ impl AfhSource for WifiAfh {
             usable: c.usable as u32,
             avoided: afh::describe(&c.avoided_wifi),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use win_sys::driver::{DriverInfo, DriverKind};
+    use win_sys::usb_adapters::{InterfaceProbe, UsbClass};
+
+    fn device(vid: u16, pid: u16, probe: Option<Result<InterfaceProbe, String>>) -> UsbDevice {
+        UsbDevice {
+            instance_id: format!(r"USB\VID_{vid:04X}&PID_{pid:04X}\1"),
+            device_path: String::new(),
+            vid,
+            pid,
+            name: String::new(),
+            bus_reported_name: None,
+            manufacturer: String::new(),
+            hardware_ids: Vec::new(),
+            compatible_ids: Vec::new(),
+            usb_class: None,
+            driver: DriverInfo::default(),
+            driver_kind: DriverKind::WinUsb,
+            problem_code: None,
+            probe,
+        }
+    }
+
+    #[test]
+    fn known_ids_cover_v1s_vendor_class_adapters() {
+        let ids = usb_known_ids(&[]);
+        // v1's built-in list (BTstack's WinUSB transport)
+        for id in [(0x0A5C, 0x21E8), (0x0B05, 0x17CB), (0x0A5C, 0x22BE), (0x2FE3, 0x0100), (0x2FE3, 0x000B)] {
+            assert!(ids.contains(&id), "{id:04X?}");
+        }
+        // The OEM table (TP-Link UB500)
+        assert!(ids.contains(&(0x2357, 0x0604)));
+        // An enumerated vendor-class adapter, once
+        let ids = usb_known_ids(&[(0x1234, 0x5678), (0x0B05, 0x17CB)]);
+        assert_eq!(ids.iter().filter(|&&id| id == (0x1234, 0x5678)).count(), 1);
+        assert_eq!(ids.iter().filter(|&&id| id == (0x0B05, 0x17CB)).count(), 1);
+    }
+
+    #[test]
+    fn probe_tells_vendor_class_and_in_use() {
+        let vendor = InterfaceProbe { class: UsbClass::VENDOR_BLUETOOTH, num_endpoints: 3, hci_endpoints: true };
+        assert_eq!(device(0x1234, 0x5678, Some(Ok(vendor.clone()))).winusb_bluetooth(), Some(true));
+        let no_pipes = InterfaceProbe { hci_endpoints: false, ..vendor };
+        assert_eq!(device(0x1234, 0x5678, Some(Ok(no_pipes))).winusb_bluetooth(), None);
+        assert!(device(0x8087, 0x0029, Some(Err("open failed (error 5)".into()))).in_use());
+        assert!(!device(0x8087, 0x0029, Some(Err("open failed (error 2)".into()))).in_use());
+        assert!(!device(0x8087, 0x0029, None).in_use());
     }
 }
