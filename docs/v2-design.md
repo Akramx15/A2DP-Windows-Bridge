@@ -462,6 +462,8 @@ v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動�
 
 ## 改訂履歴
 
+- 2026-10-18（v1 との差の修正: UI）: v1 の同名プロファイルに「 (2)」「 (3)」…を付ける（移行時と読み込み時）。settings.json に言語がないときは Windows の表示言語を使う。使用中のプロファイルを保存すると新しい設定でつなぎ直す。「システムトレイに最小化」がオフならメインウィンドウを閉じるとアプリ全体が終了する。v1 が動いている間はホームとセットアップにバナー（スナップショットの `v1_running`）。このアプリについてにサードパーティの一覧を戻し、ライセンスはプログラム横の `licenses` フォルダ（開発ビルドではリリースタグのページ）を開く。Ctrl+Shift+D で診断。トレイのツールチップに配信中のデバイス名。接続フローの列見出し。プロファイル一覧に品質とビットレート。
+
 - 2026-10-18（LE Audio）: v1 の実験的な LE Audio を v2 に移植した（クレート `le-audio` と `lc3-sys`、`btstack-sys` の LE、`bt-host` の `le/`、`pipeline` の `le.rs`、`core` の `le_stream.rs`、UI の設定・プロファイル・デバイス一覧・診断）。既定はオフで、実験的な扱いは v1 と同じ。オフのときの HCI コマンドは LE なしのビルドと同じ（LE Set Scan Parameters をトランスポートが応答する点を除く）。[LE Audio（実験的）](#le-audio実験的)を参照。「今回やらないこと」の LE Audio は「正式対応」に書き換えた。
 
 - 2026-10-17（Opus）: Android の A2DP Opus（ベンダー 0x000000E0 / 0x0001）を試験的に `opus` として追加した。エンコーダは libopus 1.5.2（`opus-sys`）。パラメータとその根拠、Auto の位置（LHDC V5 の下、AAC の上）は[Opus](#opus)に記した。ストリームエンドポイントは 9 個（SBC、AAC、aptX、aptX HD、aptX LL、LDAC、LHDC V5、FastStream、Opus）になり、BTstack の静的プールは 1 個あたり約 0.6 KB（`avdtp_stream_endpoint_t` 528 バイトとシムの能力 / 設定 64 バイト）増える。
