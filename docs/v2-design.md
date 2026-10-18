@@ -149,8 +149,9 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 - SBC を dual channel、16ブロック、8サブバンド、loudness で、チャネルごとに高い bitpool を使って送ります。メディアペイロードヘッダ（フレーム数1バイト）とRTPヘッダはSBCと同じです。ローカルのSEPはSBCのもの（全チャネルモード、bitpool 2〜53）を共用し、SET_CONFIGURATION で dual channel を選びます。
 - bitpool（`codec::sbc::xq_bitpool`）: High は 44.1 kHz で 47（200バイトのフレーム、約551 kbps。Androidのカスタムロムや pulseaudio-modules-bt の "SBC XQ" と同じ）、48 kHz で 43（約552 kbps、同じビットレート）。Standard は PipeWire の SBC-XQ の既定値（`a2dp-codec-sbc.c` の `default_bitpool`）の 43 / 39（約505 kbps、A2DP 1.2 のシンクが必ず受けられる 512 kbps 以内）、Mobile は PipeWire の XQ でない dual channel の既定値 32 / 29（約385 kbps）。High のフレームは、ヘッダ込みで 2-DH5 に3つ、3-DH5 に5つ入ります（1023バイトのパケット上限で1001 / 921バイト）。dual channel の bitpool の上限はチャネルごとに 16 × サブバンド数 = 128 なので、どれも制限の内側です。
 - 交渉: シンクのSBCの能力（BTstack の SBC capability イベントのビットマップと bitpool の範囲）に dual channel、16ブロック、8サブバンド、loudness、44.1 / 48 kHz があり、最大 bitpool が 43 以上のときだけ SBC XQ を提供していると見なします。設定する bitpool の範囲は max(2, シンクの最小) 〜 min(そのレートの High の bitpool, シンクの最大)、エンコーダの bitpool は品質の値をシンクの範囲に収めたものです。通常の SBC も同じようにシンクの範囲を使います（範囲は max(2, シンクの最小) 〜 min(53, シンクの最大)。能力が分からないときは 2 〜 53）。条件を満たさないシンクでは SBC XQ は出ず、Auto は SBC を選び、明示的に選んだ場合は代替コーデックの設定に従って SBC に切り替わるか、エラーになります。
+- 能力では dual channel を出しているのに、SET_CONFIGURATION で dual channel を拒否するシンクがあります。SBC XQ の設定が拒否された（または応答がなかった）ときは、Auto か代替コーデックがオンなら一度だけ通常の SBC でやり直します。BTstack はこの接続の A2DP の設定手順を拒否で終えてしまう（2回目の SET_CONFIGURATION を受け付けない）ので、いったん切断して接続し直し、能力を読み直してから SBC を設定します。レート、チャネル数、ビット数は SBC XQ と同じなので、取り込みはそのままです。明示的に SBC XQ を選び代替コーデックがオフなら、これまでどおりエラーです。拒否された SET_CONFIGURATION と START は、BTstack の `A2DP_SUBEVENT_COMMAND_REJECTED` を見て待ちをすぐ終えます（以前は10秒のタイムアウトまで待っていました）。
 - Auto の優先順位は AAC の下、SBC の上です。ビット数は AAC 256 kbps より多いものの、AAC を出すシンクは AAC 向けに調整されていることが多く、ビットあたりの音質も AAC のほうが上だからです。
-- 検証: 単体テスト（フレーム長とビットレート、パケットへの収まり、交渉とフォールバック）と `tools/emu`（`sbcxq` と、SBCだけのシンクでの Auto の2ケース `auto-sbcxq` / `auto-sbc-no-xq`、最大 bitpool の低いシンクの `auto-sbc-bp35` / `sbcxq-bp45`）。実機では未確認です。
+- 検証: 単体テスト（フレーム長とビットレート、パケットへの収まり、交渉とフォールバック）と `tools/emu`（`sbcxq` と、SBCだけのシンクでの Auto の2ケース `auto-sbcxq` / `auto-sbc-no-xq`、dual channel を拒否するシンクで SBC に戻る `auto-sbcxq-refused`、最大 bitpool の低いシンクの `auto-sbc-bp35` / `sbcxq-bp45`）。実機では未確認です。
 
 **FastStream**（キー `faststream`、表示名 "FastStream"。CSR のベンダーコーデック、vendor ID 0x0000000A / codec ID 0x0001）
 
@@ -179,6 +180,11 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 - リアルタイム経路の設定変更（コーデック、ビットレート、チャンネル数）は、`arc-swap` で差し替える不変の `StreamConfig` で渡します。encodeスレッドはフレームの切れ目でだけ読み直します。
 - 統計（送信数、ドロップ数、キュー深さ、送信間隔のゆらぎ、RSSI）は `AtomicU64` のカウンタに書きます。coreが4Hzで読んでUIに配信するので、経路側は待たされません。
 - バッファの深さは3段階のプリセット（低遅延 / 標準 / 安定）から選べるようにします。現行の固定値は「標準」に当てます。
+- ストリームが開始していない間（サスペンド中、再接続中）、encodeスレッドはエンコードを続けますが、パケットはキューに入れずに捨てます（キューのドロップには数えません。v1 の `send_media` と同じ）。BTstack のスレッドがストリームの開始・停止で共有のフラグを切り替え、開始のときはそれより前に残ったパケットを捨てます。ABR もこの間は止めます。誰も取り出さないキューが満ちて、LDAC が MQ に、LHDC V5 が最低のビットレートに下がり、再開後に古い音を送るのを防ぐためです。再接続後の `Pipeline::reset` では、残りのPCMとタイムスタンプに加えて ABR の状態もストリームの始めに戻します（LDAC は品質の設定値と新しい ABR モジュール、LHDC V5 は表の最上段 400 kbps）。
+- 再接続では、デバイスがそのとき出す能力から設定を作り直します（SEID やコーデックの設定が変わっていることがあるため。v1 も能力を読み直していました）。そのコーデックが出なくなっていたら、再試行せずにエラー（`error.codec_not_supported`）で終えます。`BtHost::reconnect` / `configure_and_start` は新しい設定、能力、MTU を返し、MTU やシンクの設定（SBC の bitpool の範囲など）でエンコーダの設定が変わったときはパイプラインを作り直します。変わらなければ今のエンコーダのまま `reset` します。
+- UI に出す ABR は、エンコーダが実際に ABR を動かしているか（`Encoder::abr_active`）です。LDAC の ABR モジュールの準備に失敗したときは固定の品質で流れ、ABR はオフと表示します。
+- ログ: 取り込みリングのあふれ（エンコードが遅れて捨てた取り込みバッファの数）を5秒ごとに、WASAPI のデータの不連続（開始直後の500 msを除く）を増えたときに最大2秒ごとに出します（v1 と同じ）。
+- 仮想デバイスを既定の出力にしたときは、切り替えに失敗しても元の既定のデバイスを最後に戻します。Windows は Console と Multimedia の片方だけ切り替えてから失敗することがあるためです。
 - デバイスの切断やUSBの抜けで経路を止めるときは、coreが各スレッドに停止を伝えてjoinします。スレッドの持ち主は常に `StreamSession` 型ひとつで、`Drop` で必ず片付きます。現行版にある `Sleep` を使ったポーリングは、イベント待ちに置き換えます。
 - btstackはスレッド安全ではないので、呼ぶのは bt-runloop スレッドだけにします。`bt-host` の公開型は `!Send` のハンドルを外に出さず、他スレッドからはコマンドを送って `btstack_run_loop_execute_on_main_thread` 経由で実行します。この制約は型で強制します（`btstack-sys` の `Stack` トークンは `!Send` で、ランループのスレッドの中でしか作れません。btstack を呼ぶ安全な関数はすべて `&Stack` を引数に取ります）。
 
@@ -459,6 +465,8 @@ v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動�
 - [ ] `DiInstallDevice` による割り当てが使えない環境の扱い（フェーズ0の検証結果で決める）
 
 ## 改訂履歴
+
+- 2026-10-18（ストリームの v1 との差）: サスペンド中・再接続中はパケットを捨てて ABR を止め、再接続後に ABR を戻すようにした。再接続ではデバイスの能力から設定を作り直し、MTU などが変わればパイプラインを作り直す。SBC XQ の設定を拒否するシンクでは SBC で接続し直す。UI の ABR はエンコーダが実際に動かしているかを表示する。既定の出力デバイスは切り替えの一部失敗でも戻す。取り込みリングのあふれと WASAPI の不連続をログに出す。[音声パイプライン・スレッド設計](#音声パイプラインスレッド設計)の「設計上の決まり」と [v2 で加えたコーデック](#v2-で加えたコーデック)の SBC XQ を参照。
 
 - 2026-10-18（LE Audio）: v1 の実験的な LE Audio を v2 に移植した（クレート `le-audio` と `lc3-sys`、`btstack-sys` の LE、`bt-host` の `le/`、`pipeline` の `le.rs`、`core` の `le_stream.rs`、UI の設定・プロファイル・デバイス一覧・診断）。既定はオフで、実験的な扱いは v1 と同じ。オフのときの HCI コマンドは LE なしのビルドと同じ（LE Set Scan Parameters をトランスポートが応答する点を除く）。[LE Audio（実験的）](#le-audio実験的)を参照。「今回やらないこと」の LE Audio は「正式対応」に書き換えた。
 

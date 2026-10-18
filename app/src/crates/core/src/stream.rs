@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use audio_capture::{Capture, CaptureOptions, Format, Running, SampleFormat, Sink, Source};
-use bt_host::{BtHost, ConnectFailure};
-use codec::caps::{self, Unavailable};
-use codec::{CodecKind, EncoderConfig, PeerParams, Quality};
+use bt_host::{BtHost, ConfigureError, ConnectFailure, MediaSink, ReconnectError};
+use codec::caps::{self, ConfigError, Configuration, RemoteCaps, Unavailable};
+use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
 use pipeline::{BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType};
 
 use crate::messages::Msg;
@@ -229,6 +229,60 @@ impl ActiveSource {
 /// device mode switched it)
 pub(crate) struct DefaultDeviceGuard(pub(crate) Option<String>);
 
+impl DefaultDeviceGuard {
+    /// Makes `id` the default output device. The device before is restored
+    /// at the end even when the switch failed: Windows may have switched
+    /// one role (Console, Multimedia) before the other failed.
+    pub(crate) fn switch_to(id: &str, name: &str) -> DefaultDeviceGuard {
+        let before = audio_capture::default_render_device();
+        if let Err(e) = audio_capture::set_default_render_device(id) {
+            tracing::warn!("failed to make '{name}' the default output device: {e}");
+        }
+        DefaultDeviceGuard(restore_target(before, id))
+    }
+}
+
+/// The device to restore: the one before, unless that is the one switched to
+fn restore_target(before: Option<String>, switched_to: &str) -> Option<String> {
+    before.filter(|b| b != switched_to)
+}
+
+/// Logs the gaps WASAPI reports in the captured audio as they increase, at
+/// most every 2 s (v1 WasapiCapture: "Data discontinuity (count=N)"; the
+/// capture already skips the ones right after it starts)
+#[derive(Default)]
+pub(crate) struct DiscontinuityLog {
+    reported: u64,
+    last: Option<Instant>,
+}
+
+const DISCONTINUITY_LOG_INTERVAL: Duration = Duration::from_secs(2);
+
+impl DiscontinuityLog {
+    /// The capture's count now; Some((count, new since the last log)) when
+    /// it is time to log. A new capture (count below the last) starts over.
+    pub(crate) fn check(&mut self, count: u64, now: Instant) -> Option<(u64, u64)> {
+        if count < self.reported {
+            self.reported = 0;
+        }
+        if count == self.reported
+            || self.last.is_some_and(|t| now.saturating_duration_since(t) < DISCONTINUITY_LOG_INTERVAL)
+        {
+            return None;
+        }
+        let new = count - self.reported;
+        self.reported = count;
+        self.last = Some(now);
+        Some((count, new))
+    }
+
+    pub(crate) fn tick(&mut self, count: u64) {
+        if let Some((count, new)) = self.check(count, Instant::now()) {
+            tracing::warn!("capture: data discontinuity (count={count}, {new} new)");
+        }
+    }
+}
+
 impl Drop for DefaultDeviceGuard {
     fn drop(&mut self) {
         if let Some(id) = self.0.take()
@@ -300,6 +354,65 @@ fn connect_error(f: Option<ConnectFailure>) -> Msg {
     })
 }
 
+fn peer_params(remote: &RemoteCaps, channels: u32) -> PeerParams {
+    let (opus_frame_ms, opus_channels) = remote.opus_stream(channels);
+    PeerParams {
+        lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
+        sbc_min_bitpool: remote.sbc_min_bitpool(),
+        sbc_max_bitpool: remote.sbc_max_bitpool(),
+        opus_frame_ms,
+        opus_channels,
+    }
+}
+
+#[derive(Debug)]
+enum ConfigFailure {
+    /// No configuration of the codec for this capture
+    Build(ConfigError),
+    /// BTstack or the device refused it, or no answer
+    Host(ConfigureError),
+}
+
+/// SET_CONFIGURATION of a `kind` stream; the media payload size
+fn configure_stream(
+    host: &BtHost,
+    remote: &RemoteCaps,
+    kind: CodecKind,
+    sample_rate: u32,
+    channels: u32,
+    bits: u8,
+) -> Result<(Configuration, u16), ConfigFailure> {
+    let config = remote.configuration(kind, sample_rate, channels, bits).map_err(ConfigFailure::Build)?;
+    let mtu = host.configure(&config).map_err(ConfigFailure::Host)?;
+    Ok((config, mtu))
+}
+
+/// SBC XQ refused by the device (one that lists dual channel but does not
+/// take it): worth one more try with plain SBC when the codec was Auto or
+/// codec fallback is on
+fn sbc_xq_fallback(kind: CodecKind, failure: &ConfigFailure, requested: Option<CodecKind>, fallback: bool) -> bool {
+    kind == CodecKind::SbcXq
+        && matches!(failure, ConfigFailure::Host(ConfigureError::Refused | ConfigureError::NoAnswer))
+        && (requested.is_none() || fallback)
+}
+
+/// Starts the encode thread; ABR as the encoder runs it
+fn start_pipeline(
+    encoder: Box<dyn Encoder>,
+    format: Format,
+    channels: u32,
+    mtu: u16,
+    sink: MediaSink,
+    host: &BtHost,
+) -> (Pipeline, CaptureInput) {
+    let abr = encoder.abr_active();
+    Pipeline::start(
+        PipelineConfig { encoder, input: input_format(format), channels, mtu, abr, buffer: BufferPreset::Standard },
+        sink,
+        host.stats().clone(),
+    )
+}
+
 /// The session thread. Returns when stopped or on an error (state reported).
 pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let addr = bt_host::addr_str(&req.device);
@@ -348,7 +461,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         inner.notify(StreamState::Connecting, Msg::new("status.connecting_device"));
         result = connect(&host);
     }
-    let remote = match result {
+    let mut remote = match result {
         Ok(caps) => caps,
         Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
         Err(f) => return inner.notify(StreamState::Error, connect_error(Some(f))),
@@ -376,16 +489,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             return inner.notify(StreamState::Error, msg);
         }
     };
-    let kind = choice.kind;
-    let fallback_text = choice.replaced.as_ref().map(|(wanted, why)| {
+    let mut kind = choice.kind;
+    let mut replaced = choice.replaced;
+    if let Some((wanted, why)) = &replaced {
         tracing::warn!("codec fallback: {} not available ({why:?}), using {}", wanted.name(), kind.name());
-        let key = if matches!(why, Unavailable::SepInUse { .. }) {
-            "status.connected_fallback_in_use"
-        } else {
-            "status.connected_fallback"
-        };
-        Msg::with(key, &[&wanted.name(), &kind.name()])
-    });
+    }
     tracing::info!("codec selected: {}", kind.name());
 
     // ---- audio source ----
@@ -431,11 +539,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 return inner.notify(StreamState::Error, Msg::new("error.no_virtual_device_selected"));
             }
             if *auto_switch {
-                let before = audio_capture::default_render_device();
-                match audio_capture::set_default_render_device(id) {
-                    Ok(()) => default_guard.0 = before,
-                    Err(e) => tracing::warn!("failed to make '{name}' the default output device: {e}"),
-                }
+                default_guard = DefaultDeviceGuard::switch_to(id, name);
             }
             (Some(Source::RenderDevice { id: id.clone() }), None)
         }
@@ -497,17 +601,35 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     };
 
     // ---- stream configuration ----
-    let config = match remote.configuration(kind, format.sample_rate, channels, bits) {
+    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits);
+    if let Err(failure) = &configured
+        && !stopped()
+        && sbc_xq_fallback(kind, failure, req.codec, req.codec_fallback)
+    {
+        // The sink lists dual channel but refuses it. BTstack's A2DP setup
+        // of this connection ends with the refusal: connect again and take
+        // plain SBC (SBC XQ is a dual-channel SBC: same rates, channels and
+        // bits)
+        tracing::warn!("SBC XQ: the device refused its configuration ({failure:?}), connecting again for SBC");
+        host.disconnect();
+        inner.notify(StreamState::Connecting, Msg::new("status.connecting_device"));
+        remote = match connect(&host) {
+            Ok(caps) => caps,
+            Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
+            Err(f) => return inner.notify(StreamState::Error, connect_error(Some(f))),
+        };
+        kind = CodecKind::Sbc;
+        if req.codec.is_some() && replaced.is_none() {
+            replaced = Some((CodecKind::SbcXq, Unavailable::NotSupported));
+        }
+        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits);
+    }
+    let (mut config, mtu) = match configured {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!("{e}");
-            host.disconnect();
-            return inner.notify(StreamState::Error, Msg::new("error.codec_configure"));
-        }
-    };
-    let mtu = match host.configure(&config) {
-        Ok(m) => m,
-        Err(_) => {
+            if let ConfigFailure::Build(e) = &e {
+                tracing::error!("{e}");
+            }
             host.disconnect();
             return if stopped() {
                 inner.notify(StreamState::Idle, Msg::new("status.ready"))
@@ -516,23 +638,23 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             };
         }
     };
-    let encoder_config = EncoderConfig {
+    let kind = kind;
+    let fallback_text = replaced.as_ref().map(|(wanted, why)| {
+        let key = if matches!(why, Unavailable::SepInUse { .. }) {
+            "status.connected_fallback_in_use"
+        } else {
+            "status.connected_fallback"
+        };
+        Msg::with(key, &[&wanted.name(), &kind.name()])
+    });
+    let mut encoder_config = EncoderConfig {
         sample_rate: format.sample_rate,
         channels,
         quality: req.quality,
         mtu,
         bits_per_sample: bits,
         abr: req.abr && matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5),
-        peer: {
-            let (opus_frame_ms, opus_channels) = remote.opus_stream(channels);
-            PeerParams {
-                lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
-                sbc_min_bitpool: remote.sbc_min_bitpool(),
-                sbc_max_bitpool: remote.sbc_max_bitpool(),
-                opus_frame_ms,
-                opus_channels,
-            }
-        },
+        peer: peer_params(&remote, channels),
     };
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,
@@ -544,7 +666,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     };
     let bitrate = encoder.bitrate_kbps();
     let bitrate_capped = encoder.bitrate_capped();
-    tracing::info!("encoder ready: {} {bitrate} kbps, mtu {mtu}, {bits}-bit, ABR {}", kind.name(), encoder_config.abr);
+    // ABR as the encoder runs it (LDAC keeps a fixed quality when its ABR
+    // module fails to start)
+    let abr = encoder.abr_active();
+    tracing::info!("encoder ready: {} {bitrate} kbps, mtu {mtu}, {bits}-bit, ABR {abr}", kind.name());
 
     if !host.start_stream() {
         host.disconnect();
@@ -564,9 +689,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         source_sample_rate: format.sample_rate,
         source_channels: format.channels as u32,
         source_bits: (format.sample_format.bytes_per_sample() * 8) as u32,
-        requested_codec: choice.replaced.as_ref().map(|(w, _)| w.name().to_string()),
-        requested_in_use: matches!(choice.replaced, Some((_, Unavailable::SepInUse { .. }))),
-        abr: encoder_config.abr,
+        requested_codec: replaced.as_ref().map(|(w, _)| w.name().to_string()),
+        requested_in_use: matches!(replaced, Some((_, Unavailable::SepInUse { .. }))),
+        abr,
         bitrate_capped,
         source: req.source.info(),
     };
@@ -577,18 +702,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         host.disconnect();
         return inner.notify(StreamState::Error, Msg::new("error.encode_thread"));
     };
-    let (pipeline, input) = Pipeline::start(
-        PipelineConfig {
-            encoder,
-            input: input_format(format),
-            channels,
-            mtu,
-            abr: encoder_config.abr,
-            buffer: BufferPreset::Standard,
-        },
-        sink,
-        host.stats().clone(),
-    );
+    let (pipeline, input) = start_pipeline(encoder, format, channels, mtu, sink, &host);
     let input = SharedInput(Arc::new(Mutex::new(input)));
     let active = match (capture, &req.source) {
         (Some(c), _) => match c.start(Box::new(input.clone())) {
@@ -623,10 +737,21 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let mut volume = crate::volume_sync::EndpointChoice::for_stream(&req.volume_sync, &req.source)
         .map(crate::volume_sync::VolumeSyncer::new);
 
+    // A reconnect builds the configuration anew from what the device lists
+    // then (v1 read its capabilities again)
+    let rebuild = |r: &RemoteCaps| match r.configuration(kind, format.sample_rate, channels, bits) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            tracing::warn!("reconnect: {e}");
+            None
+        }
+    };
+
     // ---- streaming ----
     let mut pipeline = Some(pipeline);
     let mut app_ticks = 0u32;
     let mut lost_for_good = false;
+    let mut discontinuities = DiscontinuityLog::default();
     while !stopped() {
         inner.wait_tick(Duration::from_millis(200));
         if stopped() {
@@ -652,6 +777,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             info.source.waiting = active.waiting();
             inner.stream_info(info.clone());
         }
+        discontinuities.tick(match &active {
+            ActiveSource::Capture(r) => r.discontinuities(),
+            ActiveSource::App(a) => a.running.as_ref().map_or(0, Running::discontinuities),
+        });
 
         // Sleep, or an adapter that stopped working, leaves a stack that
         // reports no disconnect: it is started anew and the device connected
@@ -681,7 +810,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         inner.notify(StreamState::Reconnecting, Msg::new("status.connection_lost"));
 
-        let mut reconnected = false;
+        let mut reconnected = None;
+        let mut codec_gone = false;
         let mut fresh_stack = false;
         let mut attempt = 0u32;
         while attempt < RECONNECT_ATTEMPTS {
@@ -747,19 +877,25 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             // A new stack knows neither the device nor the stream: connect
             // and configure in full
-            let ok = if fresh_stack {
-                host.connect(req.device).is_ok()
-                    && (host.configure(&config).is_ok() && host.start_stream() || {
-                        host.disconnect();
-                        false
-                    })
+            let result = if fresh_stack {
+                match host.connect(req.device) {
+                    Ok(caps) => host.configure_and_start(caps, &config, &rebuild),
+                    Err(_) => Err(ReconnectError::Failed),
+                }
             } else {
-                host.reconnect()
+                host.reconnect(&rebuild)
             };
-            if ok {
-                tracing::info!("reconnected on attempt {attempt}");
-                reconnected = true;
-                break;
+            match result {
+                Ok(r) => {
+                    tracing::info!("reconnected on attempt {attempt}");
+                    reconnected = Some(r);
+                    break;
+                }
+                Err(ReconnectError::CodecGone) => {
+                    codec_gone = true;
+                    break;
+                }
+                Err(ReconnectError::Failed) => {}
             }
             if inner.power.suspending() {
                 tracing::info!("reconnect attempt {attempt} ended by sleep, not counted");
@@ -768,40 +904,71 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             tracing::warn!("reconnect attempt {attempt} failed");
         }
-        if !reconnected {
+        let Some(r) = reconnected else {
             if !stopped() {
-                inner.notify(StreamState::Error, Msg::new("error.reconnect_failed"));
+                let msg = if codec_gone {
+                    Msg::with("error.codec_not_supported", &[&kind.name()])
+                } else {
+                    Msg::new("error.reconnect_failed")
+                };
+                inner.notify(StreamState::Error, msg);
                 lost_for_good = true;
             }
             break;
+        };
+        // The encoder follows the new stream: its MTU and the device's
+        // settings (e.g. its SBC bitpool range) may have changed
+        let new_config = EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, channels), ..encoder_config };
+        if r.mtu != encoder_config.mtu {
+            tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }
-        // Resume with the same encoder settings; a new stack needs a new
-        // pipeline (its media sink is new)
-        match pipeline.as_ref() {
-            Some(p) => p.reset(),
-            None => {
-                let Some(sink) = host.take_media_sink() else { break };
-                let encoder = match codec::create(kind, &encoder_config) {
-                    Ok(e) => e,
-                    Err(_) => break,
-                };
-                let (p, new_input) = Pipeline::start(
-                    PipelineConfig {
-                        encoder,
-                        input: input_format(format),
-                        channels,
-                        mtu,
-                        abr: encoder_config.abr,
-                        buffer: BufferPreset::Standard,
-                    },
-                    sink,
-                    host.stats().clone(),
-                );
-                if let Ok(mut i) = input.0.lock() {
-                    *i = new_input;
+        let changed = new_config != encoder_config;
+        encoder_config = new_config;
+        config = r.config;
+        // Resume with the same encoder when nothing changed; otherwise, and
+        // on a new stack (its media sink is new), with a new pipeline
+        if let Some(p) = pipeline.as_ref()
+            && !changed
+        {
+            p.reset();
+        } else {
+            let sink = match pipeline.take() {
+                Some(p) => p.stop(),
+                None => host.take_media_sink(),
+            };
+            let Some(sink) = sink else {
+                inner.notify(StreamState::Error, Msg::new("error.encode_thread"));
+                lost_for_good = true;
+                break;
+            };
+            let encoder = match codec::create(kind, &encoder_config) {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::error!("encoder: {e}");
+                    host.return_media_sink(sink);
+                    inner.notify(StreamState::Error, Msg::new("error.encoder_init"));
+                    lost_for_good = true;
+                    break;
                 }
-                pipeline = Some(p);
+            };
+            if changed {
+                tracing::info!(
+                    "encoder set up again: {} {} kbps, mtu {}, ABR {}",
+                    kind.name(),
+                    encoder.bitrate_kbps(),
+                    r.mtu,
+                    encoder.abr_active()
+                );
             }
+            info.bitrate_kbps = encoder.bitrate_kbps();
+            info.bitrate_capped = encoder.bitrate_capped();
+            info.abr = encoder.abr_active();
+            let (p, new_input) = start_pipeline(encoder, format, channels, r.mtu, sink, &host);
+            if let Ok(mut i) = input.0.lock() {
+                *i = new_input;
+            }
+            pipeline = Some(p);
+            inner.stream_info(info.clone());
         }
         inner.notify(StreamState::Streaming, Msg::new("status.reconnected"));
     }
@@ -884,5 +1051,47 @@ mod tests {
     fn going_to_sleep_keeps_a_working_stream() {
         assert_eq!(check_link(false, false, false, true), LinkCheck::Fine);
         assert_eq!(check_link(false, false, true, true), LinkCheck::Fine);
+    }
+
+    #[test]
+    fn the_device_before_is_restored_unless_it_was_the_target() {
+        assert_eq!(restore_target(Some("{a}".into()), "{b}"), Some("{a}".into()));
+        assert_eq!(restore_target(Some("{b}".into()), "{b}"), None);
+        assert_eq!(restore_target(None, "{b}"), None);
+    }
+
+    #[test]
+    fn discontinuities_are_logged_as_they_increase_at_most_every_2_s() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut log = DiscontinuityLog::default();
+        assert_eq!(log.check(0, at(0)), None);
+        assert_eq!(log.check(1, at(200)), Some((1, 1)));
+        // More within 2 s: held back, reported together after
+        assert_eq!(log.check(3, at(400)), None);
+        assert_eq!(log.check(4, at(2000)), None);
+        assert_eq!(log.check(4, at(2200)), Some((4, 3)));
+        // No change: nothing to say, however long
+        assert_eq!(log.check(4, at(9000)), None);
+        assert_eq!(log.check(5, at(9200)), Some((5, 1)));
+        // A new capture counts from 0 again
+        assert_eq!(log.check(2, at(12000)), Some((2, 2)));
+    }
+
+    #[test]
+    fn a_refused_sbc_xq_falls_back_to_sbc_when_allowed() {
+        let refused = ConfigFailure::Host(ConfigureError::Refused);
+        let no_answer = ConfigFailure::Host(ConfigureError::NoAnswer);
+        let xq = CodecKind::SbcXq;
+        assert!(sbc_xq_fallback(xq, &refused, None, false));
+        assert!(sbc_xq_fallback(xq, &no_answer, None, false));
+        assert!(sbc_xq_fallback(xq, &refused, Some(xq), true));
+        // Asked for SBC XQ without codec fallback: an error, as before
+        assert!(!sbc_xq_fallback(xq, &refused, Some(xq), false));
+        // Not connected any more, or no configuration of it: no retry
+        assert!(!sbc_xq_fallback(xq, &ConfigFailure::Host(ConfigureError::NotConnected), None, false));
+        assert!(!sbc_xq_fallback(xq, &ConfigFailure::Build(ConfigError::NotOffered(xq)), None, false));
+        // Other codecs are not retried
+        assert!(!sbc_xq_fallback(CodecKind::Ldac, &refused, None, true));
     }
 }

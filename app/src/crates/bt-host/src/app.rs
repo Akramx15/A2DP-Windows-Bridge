@@ -57,6 +57,10 @@ pub(crate) struct Setup {
 
 /// LMP subversions Realtek chips report while running their ROM code,
 /// before a firmware download (BTstack's btstack_chipset_realtek.c)
+/// AVDTP signal identifiers (AVDTP 8.5)
+const AVDTP_SI_SET_CONFIGURATION: u8 = 0x03;
+const AVDTP_SI_START: u8 = 0x07;
+
 fn is_realtek_rom_lmp(lmp_subver: u16) -> bool {
     matches!(lmp_subver, 0x1200 | 0x8723 | 0x8821 | 0x8761 | 0x8822 | 0x8852 | 0x8851)
 }
@@ -68,6 +72,8 @@ pub(crate) struct HostApp {
     pub jobs: mpsc::Receiver<Job>,
     pub events: mpsc::Sender<HostEvent>,
     pub media: rtrb::Consumer<MediaPacket>,
+    /// The encode thread queues packets only while this is set
+    pub media_streaming: crate::media::StreamingFlag,
     pub setup: Setup,
     pub afh: Option<Box<dyn crate::AfhSource>>,
     /// LE Audio (experimental): None while off
@@ -122,6 +128,7 @@ impl HostApp {
         jobs: mpsc::Receiver<Job>,
         events: mpsc::Sender<HostEvent>,
         media: rtrb::Consumer<MediaPacket>,
+        media_streaming: crate::media::StreamingFlag,
         setup: Setup,
         afh: Option<Box<dyn crate::AfhSource>>,
         le: Option<LeCore>,
@@ -133,6 +140,7 @@ impl HostApp {
             jobs,
             events,
             media,
+            media_streaming,
             setup,
             afh,
             le,
@@ -335,7 +343,7 @@ impl HostApp {
     /// After an abort: this was never a live stream
     pub fn forget_connection(&mut self) {
         self.a2dp_cid = 0;
-        self.streaming = false;
+        self.set_streaming(false);
         self.can_send_requested = false;
     }
 
@@ -400,7 +408,7 @@ impl HostApp {
         if self.a2dp_cid != 0 && self.local_seid != 0 {
             stack.a2dp_pause_stream(self.a2dp_cid, self.local_seid);
         }
-        self.streaming = false;
+        self.set_streaming(false);
     }
 
     /// Paging long after the page timeout: the controller lost the Create
@@ -442,6 +450,24 @@ impl HostApp {
     // ======================================================================
     // Media
     // ======================================================================
+
+    /// The stream started or stopped. Packets left from before a suspend or
+    /// a lost link are stale: dropped before the encode thread may queue
+    /// again (v1 flushed after a reconnect).
+    fn set_streaming(&mut self, on: bool) {
+        if on && !self.streaming {
+            let stale = self.media.slots();
+            if stale > 0 {
+                if let Ok(chunk) = self.media.read_chunk(stale) {
+                    chunk.commit_all();
+                }
+                tracing::info!("dropped {stale} media packet(s) queued before the stream started");
+            }
+            self.stats.queue_depth.store(0, Ordering::Relaxed);
+        }
+        self.streaming = on;
+        self.media_streaming.store(on, Ordering::Release);
+    }
 
     fn kick_media(&mut self, stack: &Stack) {
         if self.streaming && !self.can_send_requested && self.a2dp_cid != 0 && !self.media.is_empty() {
@@ -604,7 +630,7 @@ impl HostApp {
                     false
                 });
                 if lost {
-                    self.streaming = false;
+                    self.set_streaming(false);
                     self.can_send_requested = false;
                     self.stats.queue_depth.store(0, Ordering::Relaxed);
                     tracing::warn!("connection lost");
@@ -928,7 +954,7 @@ impl HostApp {
             Some(A2DP_SUBEVENT_STREAM_STARTED) => {
                 tracing::info!("streaming started");
                 self.stats.mark_stream_start();
-                self.streaming = true;
+                self.set_streaming(true);
                 self.can_send_requested = false;
                 self.shared.update(|s| {
                     s.streaming = true;
@@ -939,12 +965,12 @@ impl HostApp {
             Some(A2DP_SUBEVENT_STREAMING_CAN_SEND_MEDIA_PACKET_NOW) => self.can_send_now(stack),
             Some(A2DP_SUBEVENT_STREAM_SUSPENDED) => {
                 tracing::info!("stream suspended");
-                self.streaming = false;
+                self.set_streaming(false);
                 self.shared.update(|s| s.streaming = false);
             }
             Some(A2DP_SUBEVENT_STREAM_RELEASED) => {
                 tracing::info!("stream released");
-                self.streaming = false;
+                self.set_streaming(false);
                 self.shared.update(|s| s.streaming = false);
             }
             Some(A2DP_SUBEVENT_SIGNALING_CONNECTION_RELEASED) => {
@@ -970,7 +996,7 @@ impl HostApp {
                 }
                 tracing::info!("signaling connection released (cid 0x{cid:04x})");
                 self.a2dp_cid = 0;
-                self.streaming = false;
+                self.set_streaming(false);
                 self.can_send_requested = false;
                 self.stats.queue_depth.store(0, Ordering::Relaxed);
                 self.shared.update(|s| {
@@ -981,7 +1007,29 @@ impl HostApp {
                 });
                 let _ = self.events.send(HostEvent::ConnectionLost);
             }
-            Some(A2DP_SUBEVENT_COMMAND_REJECTED) => tracing::warn!("A2DP command rejected"),
+            Some(A2DP_SUBEVENT_COMMAND_REJECTED) => {
+                // 12111: cid, local seid, is initiator, signal identifier.
+                // A rejected SET_CONFIGURATION / START of ours ends its wait
+                // now instead of at the timeout (BTstack reports neither as
+                // a failed STREAM_ESTABLISHED / STREAM_STARTED).
+                let initiator = u8_at(p, 6).unwrap_or(0) != 0;
+                let signal = u8_at(p, 7).unwrap_or(0);
+                tracing::warn!(
+                    "A2DP command rejected (signal 0x{signal:02x}{})",
+                    if initiator { "" } else { ", remote's" }
+                );
+                if initiator {
+                    match signal {
+                        AVDTP_SI_SET_CONFIGURATION => self.shared.update(|s| {
+                            s.stream_done.get_or_insert(false);
+                        }),
+                        AVDTP_SI_START => self.shared.update(|s| {
+                            s.start_done.get_or_insert(false);
+                        }),
+                        _ => {}
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1339,7 +1387,7 @@ impl App for HostApp {
     }
 
     fn on_exit(&mut self, stack: &Stack) {
-        self.streaming = false;
+        self.set_streaming(false);
         if let Some(le) = self.le.as_mut() {
             le.stack_deinit(stack);
         }

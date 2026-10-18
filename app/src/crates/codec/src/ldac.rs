@@ -33,8 +33,10 @@ const CODEC: CodecKind = CodecKind::Ldac;
 
 pub struct LdacEncoder {
     bt: LdacBt,
-    /// Some when EncoderConfig::abr is set
+    /// Some when EncoderConfig::abr is set and the ABR module started
     abr: Option<LdacAbr>,
+    /// The quality mode asked for, where ABR starts again after a reset
+    eqmid: i32,
     format: PcmFormat,
     channels: usize,
     sample_rate: u32,
@@ -96,11 +98,7 @@ impl LdacEncoder {
         // ABR is optional: without it the stream still works at the fixed
         // quality (v1 turned ABR off when its setup failed)
         let abr = if config.abr {
-            let (critical, dangerous, safety) = ABR_THRESHOLDS;
-            match LdacAbr::new(ABR_INTERVAL_MS).and_then(|mut abr| {
-                abr.set_thresholds(critical, dangerous, safety)?;
-                Ok(abr)
-            }) {
+            match new_abr() {
                 Ok(abr) => Some(abr),
                 Err(e) => {
                     tracing::warn!("LDAC: ABR setup failed, keeping a fixed quality: {e}");
@@ -125,6 +123,7 @@ impl LdacEncoder {
         Ok(LdacEncoder {
             bt,
             abr,
+            eqmid,
             format,
             channels: config.channels as usize,
             sample_rate: config.sample_rate,
@@ -135,6 +134,11 @@ impl LdacEncoder {
     /// Whether adaptive bit rate is active
     pub fn abr_enabled(&self) -> bool {
         self.abr.is_some()
+    }
+
+    /// Quality mode libldac encodes at now (ABR moves it)
+    pub fn eqmid(&self) -> i32 {
+        self.bt.eqmid()
     }
 
     fn encode_error(e: ldac_sys::Error) -> EncoderError {
@@ -213,4 +217,33 @@ impl Encoder for LdacEncoder {
             Err(e) => tracing::warn!("LDAC: ABR step failed: {e}"),
         }
     }
+
+    fn abr_active(&self) -> bool {
+        self.abr.is_some()
+    }
+
+    /// Back to the quality mode asked for, with a fresh ABR module (its
+    /// observation windows start over)
+    fn abr_reset(&mut self) {
+        if self.abr.is_none() {
+            return;
+        }
+        match new_abr() {
+            Ok(abr) => self.abr = Some(abr),
+            Err(e) => tracing::warn!("LDAC: ABR restart failed, keeping its state: {e}"),
+        }
+        if self.bt.eqmid() != self.eqmid {
+            match self.bt.set_eqmid(self.eqmid) {
+                Ok(()) => tracing::debug!("LDAC: ABR reset to quality mode {}", self.eqmid),
+                Err(e) => tracing::warn!("LDAC: ABR reset to quality mode {} failed: {e}", self.eqmid),
+            }
+        }
+    }
+}
+
+fn new_abr() -> Result<LdacAbr, ldac_sys::Error> {
+    let (critical, dangerous, safety) = ABR_THRESHOLDS;
+    let mut abr = LdacAbr::new(ABR_INTERVAL_MS)?;
+    abr.set_thresholds(critical, dangerous, safety)?;
+    Ok(abr)
 }

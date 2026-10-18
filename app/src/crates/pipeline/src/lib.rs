@@ -16,7 +16,7 @@ pub mod le;
 pub mod packetizer;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
 
@@ -70,6 +70,7 @@ pub struct PipelineConfig {
     pub channels: u32,
     /// Media payload size (RTP header excluded)
     pub mtu: u16,
+    /// Adaptive bit rate: the encoder's own [`Encoder::abr_active`]
     pub abr: bool,
     pub buffer: BufferPreset,
 }
@@ -79,6 +80,7 @@ pub struct CaptureInput {
     producer: rtrb::Producer<u8>,
     encode_thread: Thread,
     stats: Arc<LinkStats>,
+    control: Arc<Control>,
     frame_bytes: usize,
 }
 
@@ -90,6 +92,7 @@ impl CaptureInput {
         self.stats.capture_frames.fetch_add(frames, Ordering::Relaxed);
         if !self.write(data) {
             self.stats.capture_dropped_frames.fetch_add(frames, Ordering::Relaxed);
+            self.control.overflows.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -134,6 +137,28 @@ struct Control {
     stop: AtomicBool,
     /// Drop buffered audio and restart timestamps (after a reconnect)
     reset: AtomicBool,
+    /// Captured buffers dropped because the ring was full, since the
+    /// encode thread last reported them
+    overflows: AtomicU32,
+}
+
+impl Control {
+    fn new() -> Arc<Control> {
+        Arc::new(Control { stop: AtomicBool::new(false), reset: AtomicBool::new(false), overflows: AtomicU32::new(0) })
+    }
+
+    /// Logs the capture ring overflows every [`OVERFLOW_REPORT_INTERVAL`]
+    /// (v1: "ring overflow dropped N callbacks in last 5s")
+    fn report_overflows(&self, thread: &str, last: &mut Instant) {
+        if last.elapsed() < OVERFLOW_REPORT_INTERVAL {
+            return;
+        }
+        *last = Instant::now();
+        let n = self.overflows.swap(0, Ordering::Relaxed);
+        if n > 0 {
+            tracing::warn!("{thread}: capture ring overflow dropped {n} buffer(s) in the last 5 s");
+        }
+    }
 }
 
 /// A running encode thread. Stopping it returns the media sink.
@@ -148,7 +173,7 @@ impl Pipeline {
     pub fn start(config: PipelineConfig, sink: MediaSink, stats: Arc<LinkStats>) -> (Pipeline, CaptureInput) {
         let ring = config.buffer.ring_bytes(&config.input);
         let (producer, consumer) = rtrb::RingBuffer::new(ring);
-        let control = Arc::new(Control { stop: AtomicBool::new(false), reset: AtomicBool::new(false) });
+        let control = Control::new();
         let kind = config.encoder.kind();
         let bitrate_kbps = config.encoder.bitrate_kbps();
         let frame_bytes = config.input.frame_bytes();
@@ -159,7 +184,13 @@ impl Pipeline {
                 .spawn(move || encode_thread(config, consumer, sink, &control))
                 .expect("spawning the encode thread")
         };
-        let input = CaptureInput { producer, encode_thread: thread.thread().clone(), stats, frame_bytes };
+        let input = CaptureInput {
+            producer,
+            encode_thread: thread.thread().clone(),
+            stats,
+            control: control.clone(),
+            frame_bytes,
+        };
         (Pipeline { control, thread: Some(thread), kind, bitrate_kbps }, input)
     }
 
@@ -171,7 +202,8 @@ impl Pipeline {
         self.bitrate_kbps
     }
 
-    /// Drops audio buffered for the old stream and restarts the timestamps
+    /// Drops audio buffered for the old stream, restarts the timestamps and
+    /// puts ABR back to where a new stream starts
     pub fn reset(&self) {
         self.control.reset.store(true, Ordering::Release);
         if let Some(t) = &self.thread {
@@ -206,6 +238,33 @@ fn abr_per_packet(kind: CodecKind) -> bool {
 
 const ABR_INTERVAL: Duration = Duration::from_millis(100);
 
+/// How often the encode thread reports capture ring overflows (v1)
+const OVERFLOW_REPORT_INTERVAL: Duration = Duration::from_secs(5);
+
+/// The ABR step of one round. Only while the stream is started: a queue
+/// nothing drains (suspended, reconnecting) says nothing about the radio.
+fn abr_round(
+    encoder: &mut dyn Encoder,
+    sink: &MediaSink,
+    per_packet: bool,
+    queue_before: u32,
+    sent: u32,
+    abr_last: &mut Instant,
+) {
+    if !sink.is_streaming() {
+        *abr_last = Instant::now();
+        return;
+    }
+    if per_packet {
+        for _ in 0..sent {
+            encoder.abr_adjust(queue_before);
+        }
+    } else if abr_last.elapsed() >= ABR_INTERVAL {
+        *abr_last = Instant::now();
+        encoder.abr_adjust(sink.depth());
+    }
+}
+
 fn encode_thread(
     config: PipelineConfig,
     mut ring: rtrb::Consumer<u8>,
@@ -234,6 +293,7 @@ fn encode_thread(
     let mut timestamp: u32 = 0;
     let mut abr_last = Instant::now();
     let mut encode_errors = 0u64;
+    let mut overflow_report = Instant::now();
 
     while !control.stop.load(Ordering::Acquire) {
         if control.reset.swap(false, Ordering::AcqRel) {
@@ -245,7 +305,12 @@ fn encode_thread(
             pcm32.clear();
             timestamp = 0;
             packetizer.reset();
+            if abr {
+                encoder.abr_reset();
+            }
+            abr_last = Instant::now();
         }
+        control.report_overflows("encode thread", &mut overflow_report);
         let available = ring.slots() / frame_bytes;
         if available == 0 {
             std::thread::park_timeout(Duration::from_millis(10));
@@ -308,14 +373,7 @@ fn encode_thread(
         }
 
         if abr {
-            if abr_per_packet(kind) {
-                for _ in 0..sent {
-                    encoder.abr_adjust(queue_before);
-                }
-            } else if abr_last.elapsed() >= ABR_INTERVAL {
-                abr_last = Instant::now();
-                encoder.abr_adjust(sink.depth());
-            }
+            abr_round(encoder.as_mut(), &sink, abr_per_packet(kind), queue_before, sent, &mut abr_last);
         }
     }
     sink
@@ -335,4 +393,113 @@ pub fn set_thread_priority_hook(hook: ThreadPriorityHook) {
 
 fn thread_priority() -> Option<Box<dyn std::any::Any>> {
     PRIORITY_HOOK.get().map(|h| h())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codec::{Encoded, EncoderError};
+    use std::sync::atomic::AtomicU32;
+
+    /// Counts the ABR calls; emits one byte per call so packets go out
+    #[derive(Default)]
+    struct Calls {
+        adjust: AtomicU32,
+        reset: AtomicU32,
+    }
+
+    struct Mock(Arc<Calls>);
+
+    impl Encoder for Mock {
+        fn kind(&self) -> CodecKind {
+            CodecKind::Ldac
+        }
+        fn pcm_format(&self) -> PcmFormat {
+            PcmFormat::I16
+        }
+        fn pcm_frames_per_encode(&self) -> usize {
+            128
+        }
+        fn max_output_bytes(&self) -> usize {
+            16
+        }
+        fn encode(&mut self, _pcm: Pcm<'_>, out: &mut [u8]) -> Result<Encoded, EncoderError> {
+            out[0] = 0;
+            Ok(Encoded { bytes: 1, frames: 1 })
+        }
+        fn bitrate_kbps(&self) -> u32 {
+            0
+        }
+        fn abr_adjust(&mut self, _queue_depth: u32) {
+            self.0.adjust.fetch_add(1, Ordering::Relaxed);
+        }
+        fn abr_active(&self) -> bool {
+            true
+        }
+        fn abr_reset(&mut self) {
+            self.0.reset.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn abr_waits_while_the_stream_is_not_started() {
+        let calls = Arc::new(Calls::default());
+        let mut enc = Mock(calls.clone());
+        let (sink, _consumer, streaming) = bt_host::media::detached_queue(Arc::new(LinkStats::default()));
+        let mut last = Instant::now() - ABR_INTERVAL * 2;
+        abr_round(&mut enc, &sink, true, 40, 3, &mut last);
+        abr_round(&mut enc, &sink, false, 40, 3, &mut last);
+        assert_eq!(calls.adjust.load(Ordering::Relaxed), 0);
+
+        streaming.store(true, Ordering::Release);
+        abr_round(&mut enc, &sink, true, 40, 3, &mut last);
+        assert_eq!(calls.adjust.load(Ordering::Relaxed), 3);
+        // The interval restarted while not streaming: not yet for the 100 ms one
+        abr_round(&mut enc, &sink, false, 0, 3, &mut last);
+        assert_eq!(calls.adjust.load(Ordering::Relaxed), 3);
+        last = Instant::now() - ABR_INTERVAL * 2;
+        abr_round(&mut enc, &sink, false, 0, 3, &mut last);
+        assert_eq!(calls.adjust.load(Ordering::Relaxed), 4);
+    }
+
+    #[test]
+    fn a_reset_resets_abr_and_nothing_queues_while_not_streaming() {
+        let calls = Arc::new(Calls::default());
+        let stats = Arc::new(LinkStats::default());
+        let (sink, mut consumer, streaming) = bt_host::media::detached_queue(stats.clone());
+        let config = PipelineConfig {
+            encoder: Box::new(Mock(calls.clone())),
+            input: InputFormat { sample_rate: 48000, channels: 2, sample: SampleType::I16 },
+            channels: 2,
+            mtu: 600,
+            abr: true,
+            buffer: BufferPreset::Standard,
+        };
+        let (pipeline, mut input) = Pipeline::start(config, sink, stats.clone());
+        let audio = vec![0u8; 480 * 4];
+        let wait = |what: &dyn Fn() -> bool| {
+            let until = Instant::now() + Duration::from_secs(5);
+            while !what() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            what()
+        };
+
+        // Encoded, but not queued (and not counted) while not streaming
+        for _ in 0..10 {
+            input.push(&audio);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(consumer.pop().is_err());
+        assert_eq!(stats.queue_drops.load(Ordering::Relaxed), 0);
+        assert_eq!(calls.adjust.load(Ordering::Relaxed), 0);
+
+        streaming.store(true, Ordering::Release);
+        input.push(&audio);
+        assert!(wait(&|| consumer.slots() > 0));
+
+        pipeline.reset();
+        assert!(wait(&|| calls.reset.load(Ordering::Relaxed) == 1));
+        assert!(pipeline.stop().is_some());
+    }
 }

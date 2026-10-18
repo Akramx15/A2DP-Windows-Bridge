@@ -403,3 +403,26 @@ fn abr_adjust_is_a_no_op_without_abr() {
     }
     assert_eq!(enc.bitrate_kbps(), 500);
 }
+
+#[test]
+fn abr_reset_goes_back_to_the_top_of_the_table() {
+    let cfg = EncoderConfig { abr: true, ..config(48000, Quality::High, 24, MTUS[1]) };
+    let mut enc = LhdcV5Encoder::new(&cfg).unwrap();
+    assert!(enc.abr_active());
+    for _ in 0..5 {
+        enc.abr_adjust(3);
+    }
+    assert_eq!(enc.bitrate_kbps(), 160);
+    enc.abr_reset();
+    assert_eq!(enc.bitrate_kbps(), 400);
+    // The counters started over: 4 packets again before it drops
+    for _ in 0..4 {
+        enc.abr_adjust(3);
+    }
+    assert_eq!(enc.bitrate_kbps(), 400);
+    enc.abr_adjust(3);
+    assert_eq!(enc.bitrate_kbps(), 160);
+
+    let fixed = LhdcV5Encoder::new(&config(48000, Quality::Standard, 16, MTUS[0])).unwrap();
+    assert!(!fixed.abr_active());
+}
