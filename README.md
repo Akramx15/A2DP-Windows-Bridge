@@ -213,9 +213,9 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbcxq   # SBC XQ: dual channel, bitpool 47 / 43 (44.1 / 48 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbcxq   # SBC XQ (experimental): dual channel, bitpool 47 / 43 (44.1 / 48 kHz)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c faststream   # CSR FastStream (music direction)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c faststream   # CSR FastStream (experimental; music direction)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus         # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05       # PipeWire's Opus 05 (experimental; to PipeWire sinks)
 
