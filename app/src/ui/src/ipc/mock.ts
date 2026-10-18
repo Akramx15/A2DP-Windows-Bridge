@@ -196,6 +196,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     log_dir: `${config_dir}\\logs`,
     capture: null,
     clock_ms: null,
+    v1_running: false,
   };
 }
 
@@ -642,6 +643,12 @@ export class MockCore implements Transport {
     this.linkTimer = null;
     if (this.slowTimer) clearInterval(this.slowTimer);
     this.slowTimer = null;
+  }
+
+  /** A2DPWB v1 starts or exits (tests) */
+  setV1Running(on: boolean) {
+    this.snap.v1_running = on;
+    this.emit({ kind: "v1_running", value: on });
   }
 
   // ---- Simulation --------------------------------------------------------

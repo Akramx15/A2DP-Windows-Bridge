@@ -562,5 +562,7 @@
   "error.capture_start": "无法开始 HCI 捕获",
   "error.uac_cancelled": "管理员权限请求已被拒绝：驱动程序未更改",
   "error.driver_failed": "更改驱动程序失败。详情请查看日志。",
-  "error.driver_restore_unverified": "驱动程序已更改，但适配器未恢复为之前的驱动程序。如果它是用 Zadig 设置的，请在设备管理器中删除 Zadig 的驱动程序包。"
+  "error.driver_restore_unverified": "驱动程序已更改，但适配器未恢复为之前的驱动程序。如果它是用 Zadig 设置的，请在设备管理器中删除 Zadig 的驱动程序包。",
+  "ui.v1_running.title": "A2DPWB v1 正在运行，请先退出它",
+  "ui.v1_running.text": "v1 和 v2 不能同时使用蓝牙适配器。请右键单击 v1 的托盘图标并选择“退出”。"
 }

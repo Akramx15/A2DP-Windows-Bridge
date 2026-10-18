@@ -33,4 +33,9 @@ capture: CaptureState | null,
  * a line's time of day is (clock_ms + time_ms) % 86 400 000. None if
  * the core does not know it.
  */
-clock_ms?: number | null, };
+clock_ms?: number | null, 
+/**
+ * A2DPWB v1 runs (its single-instance mutex is held): it may hold the
+ * Bluetooth adapter, so the UI asks to exit it
+ */
+v1_running: boolean, };

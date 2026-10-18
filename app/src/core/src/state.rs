@@ -511,6 +511,8 @@ impl CoreState {
             capture: None,
             // Set by logging::init, first thing in main
             clock_ms: crate::logging::hub().clock(),
+            // Set by the resident core's watch (resident.rs)
+            v1_running: false,
         };
         let (events, _) = broadcast::channel(256);
         let state = Arc::new(CoreState {
@@ -565,6 +567,7 @@ impl CoreState {
                 Event::Settings(x) => s.settings = x.clone(),
                 Event::Update(u) => s.update = u.clone(),
                 Event::Capture(c) => s.capture = c.clone(),
+                Event::V1Running(b) => s.v1_running = *b,
                 // Not state: no revision
                 Event::Link(_) | Event::Log(_) | Event::Receiver(_) | Event::Bye => {
                     let _ = self.events.send((g.0, Arc::new(event)));
@@ -576,6 +579,19 @@ impl CoreState {
         };
         let _ = self.events.send((rev, Arc::new(event)));
         self.update_tray();
+    }
+
+    /// A2DPWB v1 started or exited: published when it changed
+    pub fn set_v1_running(&self, on: bool) {
+        if self.with_snapshot(|s| s.v1_running) == on {
+            return;
+        }
+        if on {
+            tracing::warn!("A2DPWB v1 is running: it may hold the Bluetooth adapter");
+        } else {
+            tracing::info!("A2DPWB v1 exited");
+        }
+        self.publish(Event::V1Running(on));
     }
 
     fn update_tray(&self) {

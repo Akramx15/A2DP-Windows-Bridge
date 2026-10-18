@@ -562,5 +562,7 @@
   "error.capture_start": "No se pudo iniciar la captura HCI",
   "error.uac_cancelled": "Se rechazó la solicitud de administrador: no se cambió el controlador",
   "error.driver_failed": "Error al cambiar el controlador. Consulte el registro para más detalles.",
-  "error.driver_restore_unverified": "Se cambió el controlador, pero el adaptador no volvió a su controlador anterior. Si se configuró con Zadig, elimine el paquete de controlador de Zadig en el Administrador de dispositivos."
+  "error.driver_restore_unverified": "Se cambió el controlador, pero el adaptador no volvió a su controlador anterior. Si se configuró con Zadig, elimine el paquete de controlador de Zadig en el Administrador de dispositivos.",
+  "ui.v1_running.title": "A2DPWB v1 se está ejecutando: ciérrelo primero",
+  "ui.v1_running.text": "v1 y v2 no pueden usar el adaptador Bluetooth a la vez. Haga clic derecho en el icono de v1 en la bandeja y elija Salir."
 }

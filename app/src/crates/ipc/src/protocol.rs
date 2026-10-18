@@ -365,6 +365,10 @@ pub struct Snapshot {
     #[serde(default)]
     #[ts(optional = nullable, type = "number | null")]
     pub clock_ms: Option<u64>,
+    /// A2DPWB v1 runs (its single-instance mutex is held): it may hold the
+    /// Bluetooth adapter, so the UI asks to exit it
+    #[serde(default)]
+    pub v1_running: bool,
 }
 
 /// A running HCI capture
@@ -575,6 +579,8 @@ pub enum Event {
     Log(LogLine),
     /// The HCI capture started, stopped, or wrote more (state)
     Capture(Option<CaptureState>),
+    /// A2DPWB v1 started or exited (state, v1_running)
+    V1Running(bool),
     /// Subscription (diag.subscribe receiver): the receiver test, once a
     /// second and on every change
     Receiver(Box<ReceiverState>),
@@ -1195,6 +1201,7 @@ mod tests {
             log_dir: String::new(),
             capture: None,
             clock_ms: None,
+            v1_running: false,
         })
         .unwrap();
         snap.as_object_mut().unwrap().remove("le_scanning");
