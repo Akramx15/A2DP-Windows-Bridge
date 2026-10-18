@@ -23,7 +23,7 @@ nav_order: 3
 - 建置 UI 所需的 **Node.js** 22 與 **pnpm**（`corepack enable` 即可提供 pnpm）
 - **Git**（用於子模組）
 - 供 `build.ps1` / `build.bat` 使用的 **PowerShell 7**（`pwsh`，`winget install Microsoft.PowerShell`）
-- 建置 ARM64 版本時：Visual Studio 元件「MSVC v143 - VS 2022 C++ ARM64 build tools」，以及 `rustup target add aarch64-pc-windows-msvc`
+- 建置 ARM64 版本時：Visual Studio 元件「MSVC v143 - VS 2022 C++ ARM64 build tools」，在 x64 電腦上還需要「適用於 Windows 的 C++ Clang 編譯器」（rustls 的 `ring` 以 clang 組譯其 ARM64 程式碼；`installer/build-release.ps1` 會自行找到 Visual Studio 的 clang），以及 `rustup target add aarch64-pc-windows-msvc`
 
 ## 快速建置
 

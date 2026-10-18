@@ -23,7 +23,7 @@ nav_order: 3
 - **Node.js** 22 et **pnpm** pour l'interface (`corepack enable` fournit pnpm)
 - **Git** (pour les sous-modules)
 - **PowerShell 7** (`pwsh`) pour `build.ps1` / `build.bat` (`winget install Microsoft.PowerShell`)
-- Pour les versions ARM64 : le composant Visual Studio « MSVC v143 - VS 2022 C++ ARM64 build tools » et `rustup target add aarch64-pc-windows-msvc`
+- Pour les versions ARM64 : le composant Visual Studio « MSVC v143 - VS 2022 C++ ARM64 build tools » et, sur un PC x64, « C++ Clang Compiler for Windows » (`ring`, de rustls, assemble son code ARM64 avec clang ; `installer/build-release.ps1` trouve lui-même le clang de Visual Studio), et `rustup target add aarch64-pc-windows-msvc`
 
 ## Compilation rapide
 

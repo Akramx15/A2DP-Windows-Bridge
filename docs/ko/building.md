@@ -23,7 +23,7 @@ nav_order: 3
 - UI용 **Node.js** 22와 **pnpm** (`corepack enable`로 pnpm을 사용할 수 있음)
 - **Git** (서브모듈용)
 - `build.ps1` / `build.bat`용 **PowerShell 7** (`pwsh`, `winget install Microsoft.PowerShell`)
-- ARM64 빌드의 경우: Visual Studio 구성 요소 "MSVC v143 - VS 2022 C++ ARM64 build tools"와 `rustup target add aarch64-pc-windows-msvc`
+- ARM64 빌드의 경우: Visual Studio 구성 요소 "MSVC v143 - VS 2022 C++ ARM64 build tools", x64 PC에서는 "C++ Clang Compiler for Windows"(rustls의 `ring`이 ARM64 어셈블리를 clang으로 빌드합니다. `installer/build-release.ps1`이 Visual Studio의 clang을 직접 찾습니다), 그리고 `rustup target add aarch64-pc-windows-msvc`
 
 ## 빠른 빌드
 
