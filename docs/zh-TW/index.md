@@ -29,7 +29,7 @@ has_toc: false
 | aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
-| SBC XQ 🧪 | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
+| SBC XQ | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最高約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
 | LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
@@ -45,7 +45,7 @@ has_toc: false
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 實驗性 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ 不在 Ubuntu 的套件中 | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | 🧪 實驗性（SBC 允許雙聲道且 bitpool ≥ 43 的接收端） |
+| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC 允許雙聲道且 bitpool ≥ 43 的接收端） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 實驗性（僅限音樂，需明確選擇） |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
@@ -68,7 +68,7 @@ has_toc: false
 **Opus 05 為實驗性功能，尚未在實際裝置上驗證。** 這是 PipeWire 自有的 A2DP Opus 廠商轉碼器（廠商 ID 0x000005F1，轉碼器 0x1005；PipeWire 的 `opus_05`），只有 PipeWire 實作了它，因此接收端必須是以 PipeWire 作為 A2DP 接收端的 PC。A2DPWB 只傳送立體聲音樂方向（沒有 5.1 / 7.1，也沒有回傳通道）：48 kHz、10 ms 訊框（接收端只支援 20 ms 時用 20 ms），編碼器與位元率和 Opus 相同，並限制在接收端的上限以內。「自動」不會選擇它；請在設定檔中或用 `-c opus05` 選擇。它已通過針對提供 PipeWire 能力的虛擬接收端的端對端測試，但尚未在實際的 PipeWire 接收端上試過。作為 A2DP 接收端的 PipeWire 自 0.3.57 起可解碼 Opus 05，自 1.2.0 起可解碼 Android 的 Opus（`opus_g`）：Ubuntu 24.04 LTS 內附 PipeWire 1.0.5（僅 Opus 05），Ubuntu 25.10（1.4.7）與 26.04 LTS（1.6.2）兩者皆有；兩者都尚未用 A2DPWB 驗證。
 
 {: .warning }
-**SBC XQ 為實驗性功能。** 2026-10-18，Sony WH-1000XM4 接受了它（雙聲道，48 kHz 下 bitpool 43，552 kbps），A2DPWB 向其串流時沒有掉封包，但音質沒有經過聽感評判，也沒有試過其他耳機。拒絕該設定的接收端會改用一般 SBC 重新連線。**FastStream 為實驗性功能：**它已通過針對虛擬接收端的端對端測試，但尚未用實際的 FastStream 耳機試過。僅支援音樂方向；「自動」不會選擇它。
+**SBC XQ** 已用 Sony WH-1000XM4 驗證（雙聲道，48 kHz 下 bitpool 43，552 kbps）。拒絕該設定的接收端會改用一般 SBC 重新連線。**FastStream 為實驗性功能：**它已通過針對虛擬接收端的端對端測試，但尚未用實際的 FastStream 耳機試過。僅支援音樂方向；「自動」不會選擇它。
 
 {: .note }
 **只需要傳統 aptX？** Windows 10 的內建藍牙堆疊已支援傳統 aptX（不含 aptX HD、aptX LL 或 aptX Adaptive），因此不需要 A2DPWB。A2DPWB 主要適用於 LDAC、aptX HD 與 aptX Low Latency。
@@ -93,7 +93,7 @@ A2DPWB 本身僅能在 Windows（Windows 10 22H2 或 Windows 11）上以 x64 與
 
 | 項目 | 環境 | 轉碼器 | 結果 |
 |:-----|:------|:-------|:-------|
-| Sony WH-1000XM4（耳機） | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC; SBC XQ 可串流（未經聽感評判） | ✅ 可播放（XM4 不支援 aptX） |
+| Sony WH-1000XM4（耳機） | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC, SBC XQ | ✅ 可播放（XM4 不支援 aptX） |
 | TP-Link UB500（Realtek RTL8761BU，介面卡） | Windows 11、WinUSB、linux-firmware `rtl8761bu` | – | ✅ |
 | 測量用接收器 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04，透過無線傳輸 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ 已接收並測量 |
 | 虛擬連結 `tools/emu` (Bumble) | Windows 11，無無線電 | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus, Opus 05 | ✅ 端對端測試通過 |
