@@ -267,6 +267,7 @@ libopenaptx は 4 ステレオサンプル単位のパック済み 24-bit リト
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
+| Opus 05 | The Linux Foundation（0x000005F1、PipeWire） | 0x1005 |
 
 AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用します。
 
@@ -314,4 +315,4 @@ AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用�
 - **セカンドアダプター推奨**: Windows には内蔵 Bluetooth、A2DPWB には専用 USB アダプターを使用
 - 一部の Bluetooth アダプターのファームウェアは達成可能なビットレートを制限する場合がある
 - USB Bluetooth 5.0 以上のアダプターは LDAC に適している
-- 自動コーデック選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream は明示的に選んだときだけ）
+- 自動コーデック選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream と Opus 05 は明示的に選んだときだけ）

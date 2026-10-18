@@ -117,9 +117,10 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus（試験的。48 kHz、256 kbps）
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire の Opus 05（試験的。相手が PipeWire のとき）
 ```
 
-自動選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream は明示的に選んだときだけ）
+自動選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream と Opus 05 は明示的に選んだときだけ）
 
 指定したコーデックをヘッドホンが提供していない場合、CLI は理由を表示してエラーで止まります。ヘッドホンが提供する一番良いコーデックを使うには `-c auto`（既定）にしてください。aptX Adaptive は選択されません -- [aptX ファミリーと aptX Adaptive の互換性](#aptx-compatibility)を参照してください。
 
@@ -157,7 +158,7 @@ a2dpwb-core.exe --cli --scan
 | オプション | 説明 |
 |:-----------|:-----|
 | `-d <addr>` | ヘッドホン / 受信機の Bluetooth アドレス（`AA:BB:CC:DD:EE:FF`） |
-| `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`lhdcv5`、`opus`、`auto`（既定: `auto`） |
+| `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`lhdcv5`、`opus`、`opus05`、`auto`（既定: `auto`） |
 | `-q <mode>` | 品質: `hq`（既定）、`sq`、`mq`。LHDC V5 は `mhq`（900 kbps）も可 |
 | `-a` | ABR（LDAC と LHDC V5） |
 | `-m <mode>` | キャプチャモード: `loopback`（既定）、`virtual`、`app` |
@@ -309,7 +310,7 @@ A2DPWB は 3 種類の aptX コーデックに対応しており、いずれも 
 - **ヘッドホンがクラシック aptX も通知している場合** -- Qualcomm は aptX Adaptive を aptX / aptX HD と下位互換があると案内しているため、多くの aptX Adaptive 対応ヘッドホンがこれに該当します。この場合 A2DPWB はクラシック aptX を直接選択します。aptX はヘッドホンの一覧にある独立したコーデックであり、aptX Adaptive の縮退モードではありません。
 - **ヘッドホンが aptX Adaptive のみを通知している場合**（クラシック aptX・aptX HD・aptX LL がない） -- A2DPWB では aptX を使えません。Auto は優先順位に従って次のコーデック（通常は AAC か SBC）を選びます。
 
-自動選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream は明示的に選んだときだけ）
+自動選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream と Opus 05 は明示的に選んだときだけ）
 
 ### 指定したコーデックがない場合 {#codec-fallback}
 

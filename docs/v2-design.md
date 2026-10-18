@@ -405,9 +405,28 @@ Android 13 で入った A2DP の Opus ベンダーコーデック（AOSP `system
 | エンコーダ設定 | `OPUS_APPLICATION_AUDIO`、制約付き VBR（libopus の既定。Android は変更しない）、複雑度 10（libopus と PipeWire の既定。Android は 5） | `a2dp_vendor_opus_encoder.cc` |
 | パケット | RTP ヘッダー + 1 バイトのメディアペイロードヘッダー（下位 4 ビットがフレーム数 = 1）+ Opus パケット 1 つ（1 フレーム）。`opus_encode` にはペイロードの残りを上限として渡す | `A2DP_BuildMediaPayloadHeaderOpus`。PipeWire のデコーダはフレーム数 1 以外を受け付けない |
 
-Android の `tA2DP_OPUS_ENCODER_PARAMS::bitrate` は `uint16_t` なので、256000 は 59392（約 59 kbps）に切り詰められて `OPUS_SET_BITRATE` に渡っています。A2DPWB はこの不具合を真似せず、Android が意図した値を使います。PipeWire 独自の「Opus 05」（ベンダー 0x05F1、サラウンドや双方向に対応）は対応する実機が PipeWire 同士に限られるので、今回は入れません。
+Android の `tA2DP_OPUS_ENCODER_PARAMS::bitrate` は `uint16_t` なので、256000 は 59392（約 59 kbps）に切り詰められて `OPUS_SET_BITRATE` に渡っています。A2DPWB はこの不具合を真似せず、Android が意図した値を使います。PipeWire 独自の「Opus 05」は、ステレオの音楽の方向だけを別のコーデック `opus05` として後から加えました（[Opus 05](#opus-05)）。
 
 Auto の優先順位は LHDC V5 の下、AAC の上です。256 kbps の Opus は同じビットレートの AAC と同等以上で、コーデックの遅延も小さい（20 ms のフレームと 6.5 ms の先読みで 26.5 ms。AAC-LC は約 43 ms）一方、シンク側の実装は新しく数も少ないため、実績のある LDAC / aptX 系 / LHDC V5 よりは下に置きます。
+
+### Opus 05
+
+PipeWire 独自の A2DP Opus（`spa/plugins/bluez5/a2dp-codec-opus.c` の `opus_05`、ベンダー ID 0x000005F1 The Linux Foundation、コーデック ID 0x1005、PipeWire 0.3.57 以降）を、試験的に `opus05`（表示名 "Opus 05"）として加えます。実装しているのは PipeWire だけなので、相手は A2DP シンクとして動く PipeWire（Linux の PC）に限られます。PipeWire のサラウンド（`opus_05_51` / `opus_05_71`）、双方向（`opus_05_duplex`）、Pro Audio（`opus_05_pro`）は実装せず、ソース側のステレオの音楽の方向だけです。
+
+| 項目 | 値 | 根拠 |
+| --- | --- | --- |
+| Codec Information | 24 バイト。ベンダーヘッダーの後に 9 バイトの方向が 2 つ（main = 音楽、bidi = 戻りの音声。0 チャネルなら無し）。各方向はチャネル数、coupled stream 数、オーディオロケーション（LE 4 バイト、Bluetooth のロケーションのビット）、フレーム長のビット（0x01 2.5 ms、0x02 5 ms、0x04 10 ms、0x08 20 ms、0x10 40 ms）、ビットレート（LE 2 バイト、1024 bps 単位、0 は上限なし） | PipeWire `a2dp-codec-caps.h` の `a2dp_opus_05_t` |
+| 提供する能力 | main: 2 チャネル、ロケーション FL + FR（0x3）、10 / 20 ms、上限なし。bidi: なし | PipeWire `codec_fill_caps`（`opus_05`）。フレーム長は A2DPWB のエンコーダが扱う 10 / 20 ms に絞る |
+| 設定 | main: ステレオ = 2 チャネル・coupled 1・FL + FR（シンクが 1 チャネルだけならモノラル = 1 チャネル・coupled 0・ロケーション 0）、10 ms（シンクが持たなければ 20 ms）、ビットレートはシンクの上限と 312（320000 / 1024）の小さいほう（シンクが 0 なら 312）。bidi は 0。サンプリング周波数は設定に含まれないので 48 kHz で送る | PipeWire `select_config` / `set_channel_conf` の `opus_05`。10 ms を優先するのも PipeWire と同じ |
+| SEP の選択 | 双方向の SEP（bidi のチャネル数が 0 でない。PipeWire の `opus_05_duplex`）は、ほかに Opus 05 の SEP がないときだけ使う | PipeWire `caps_preference_cmp`（双方向が要らなければ bidi のない SEP を優先） |
+| ビットレート | Opus と同じ高音質 256 / 標準 192 / モバイル 128 kbps を、設定したビットレート（1024 bps 単位）とメディアペイロードで頭打ちにする。ABR はしない | PipeWire は 96〜320 kbps、初期値 192 kbps で、送信キューを見て変える |
+| エンコーダとパケット | Opus と同じ（`codec::opus::OpusEncoder` を `CodecKind` 付きで共用）。ステレオは coupled stream 1 つ、モノラルは stream 1 つの multistream なので、パケットは普通の Opus パケットと同じ。RTP ヘッダー + 1 バイトのヘッダー（PipeWire の `rtp_payload`。フレーム数 1、分割なし）+ Opus パケット 1 つ | PipeWire の `codec_encode` は MTU を超えると分割するが、A2DPWB はペイロードに収まるように符号化するので分割しない。デコーダは分割なしならフレーム数 1 だけを受け付ける |
+
+Auto は Opus 05 を選びません（FastStream と同じく、明示的に選んだときだけ）。相手が PipeWire に限られ、実機の PipeWire では確かめておらず、PipeWire 1.2 以降のシンクなら Android の Opus（`opus_g`）も出すからです。PipeWire がシンクのときに受けられるのは、Opus 05 が 0.3.57 以降、Android の Opus が 1.2.0 以降です（Ubuntu 24.04 の PipeWire 1.0.5 は Opus 05 だけ、Ubuntu 25.10 の 1.4.7 と 26.04 の 1.6.2 は両方）。
+
+ストリームエンドポイントが 1 つ増えるので、BTstack の `MAX_NR_AVDTP_STREAM_ENDPOINTS` を 10 にしました。24 バイトの能力と設定は、シムのバッファ（32 バイト）に収まります。
+
+検証: 単体テスト（能力の解析、設定、双方向の SEP の扱い、ローカルの SEP、エンコードと libopus での復号、ビットレートの上限）と `tools/emu`（PipeWire の `opus_05` と同じ能力を出すシンクでの `opus05`、44.1 kHz を指定しても 48 kHz で送る `opus05-from-44k`、SBC・AAC・Opus 05 のシンクで Auto が AAC を選ぶ `auto-not-opus05`）。`tools/a2dp_decode` は Opus 05 の設定を解析して、Opus と同じように復号します。実機の PipeWire では未確認です。
 
 ## ARM64
 
@@ -481,6 +500,7 @@ v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動�
 
 ## 改訂履歴
 
+- 2026-10-18（Opus 05）: PipeWire 独自の A2DP Opus（ベンダー 0x000005F1 / 0x1005、`opus_05`）のステレオの音楽の方向を、試験的に `opus05` として追加した。Auto は選ばない。エンコーダは Opus のものを共用し、設定したビットレートで頭打ちにする。ストリームエンドポイントは 10 個になった。サラウンド、双方向、Pro Audio は未実装。[Opus 05](#opus-05)を参照。
 - 2026-10-18（アンインストール時のドライバ復元）: v1 との差の洗い出しで見つかった「v2 をアンインストールしてもアダプタが WinUSB のまま残る」を直した。アンインストーラが確認のうえで `a2dpwb-driver.exe restore --records` を1回昇格して、記録のあるアダプタを Windows に戻す。8言語の文言、セットアップガイドにデバイスマネージャーでの手順。[ドライバ](#ドライバwinusb)の「アンインストール時の復元」を参照。
 - 2026-10-18（v1 との差の修正: UI）: v1 の同名プロファイルに「 (2)」「 (3)」…を付ける（移行時と読み込み時）。settings.json に言語がないときは Windows の表示言語を使う。使用中のプロファイルを保存すると新しい設定でつなぎ直す。「システムトレイに最小化」がオフならメインウィンドウを閉じるとアプリ全体が終了する。v1 が動いている間はホームとセットアップにバナー（スナップショットの `v1_running`）。このアプリについてにサードパーティの一覧を戻し、ライセンスはプログラム横の `licenses` フォルダ（開発ビルドではリリースタグのページ）を開く。Ctrl+Shift+D で診断。トレイのツールチップに配信中のデバイス名。接続フローの列見出し。プロファイル一覧に品質とビットレート。
 - 2026-10-18（ストリームの v1 との差）: サスペンド中・再接続中はパケットを捨てて ABR を止め、再接続後に ABR を戻すようにした。再接続ではデバイスの能力から設定を作り直し、MTU などが変わればパイプラインを作り直す。SBC XQ の設定を拒否するシンクでは SBC で接続し直す。UI の ABR はエンコーダが実際に動かしているかを表示する。既定の出力デバイスは切り替えの一部失敗でも戻す。取り込みリングのあふれと WASAPI の不連続をログに出す。[音声パイプライン・スレッド設計](#音声パイプラインスレッド設計)の「設計上の決まり」と [v2 で加えたコーデック](#v2-で加えたコーデック)の SBC XQ を参照。

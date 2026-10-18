@@ -343,6 +343,7 @@ Non-standard codecs are registered as Vendor Specific in AVDTP:
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
+| Opus 05 | The Linux Foundation (0x000005F1, PipeWire) | 0x1005 |
 
 AAC and SBC use standard A2DP codec IDs defined in the A2DP specification.
 
@@ -424,4 +425,4 @@ formats as v1:
   dedicated USB adapter for A2DPWB
 - Some Bluetooth adapters' firmware limits achievable bitrate
 - USB Bluetooth 5.0+ adapters generally work well for LDAC
-- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream only when chosen)
+- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream and Opus 05 only when chosen)
