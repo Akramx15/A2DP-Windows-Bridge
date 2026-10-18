@@ -19,6 +19,7 @@
 //!   controller idle for the next session
 //! - a failed ACL read is retried the same way (ACL_IN_MAX_ERRORS)
 //! - ACL / ISO writes have no timeout, and a failed one only drops the packet
+//!   (a stalled pipe also drops the writes behind it and is cleared)
 //! - a transfer that fails for good (device gone, a lost command) is
 //!   reported to BTstack's owner through [`Upstream::fail`]: BTstack itself
 //!   cannot recover, it waits for the answer to a command that was lost
@@ -26,13 +27,22 @@
 //!   for the next one the selector takes
 //!
 //! BTstack treats this transport as asynchronous: `send` hands the packet to
-//! a writer thread (one for commands, one for ACL / ISO) and returns; the
-//! writer reports each packet as sent.
+//! a writer thread (one for commands, one for ACL / ISO) and returns. The
+//! command writer reports each command as sent once it is out. ACL / ISO
+//! packets are reported sent as soon as `send` has copied them, so BTstack
+//! hands over the next one (the next fragment of a media packet) at once,
+//! and the ACL writer keeps several bulk transfers in flight. v1 had one
+//! ACL write in flight, finished on the run loop thread; v2 first waited for
+//! each write on the writer thread and then for the run loop to pick up its
+//! completion, so every ACL fragment took two thread hand-overs and the
+//! pipe sat idle in between. The controller's ACL / ISO buffer count, which
+//! BTstack keeps to, bounds how many packets are queued.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::thread::JoinHandle;
+use std::task::{Context, Poll, Wake, Waker};
+use std::thread::{JoinHandle, Thread};
 use std::time::Duration;
 
 use btstack_sys::consts::{HCI_ACL_DATA_PACKET, HCI_COMMAND_DATA_PACKET, HCI_EVENT_PACKET, HCI_ISO_DATA_PACKET};
@@ -58,10 +68,12 @@ const POLL: Duration = Duration::from_millis(100);
 const IN_TRANSFERS: usize = 3;
 const EVENT_TRANSFER_SIZE: usize = 512;
 const ACL_TRANSFER_SIZE: usize = 4096;
+/// Bulk OUT transfers kept in flight
+const ACL_OUT_TRANSFERS: usize = 8;
 
 /// The writer slot of an outgoing packet: 0 commands (control pipe), 1 ACL
-/// and ISO data (bulk OUT pipe). BTstack sends one packet per slot at a time
-/// (one outgoing buffer for ACL and ISO).
+/// and ISO data (bulk OUT pipe). BTstack sends one command at a time; ACL
+/// and ISO packets as the controller's buffers allow.
 fn out_slot(packet_type: u8) -> Option<usize> {
     match packet_type {
         HCI_COMMAND_DATA_PACKET => Some(0),
@@ -207,13 +219,17 @@ struct Opened {
     interface: Interface,
     _device: Device,
     stop: Arc<AtomicBool>,
-    /// The writer of each slot (see [`out_slot`])
-    writer_tx: [mpsc::Sender<(u8, Vec<u8>)>; 2],
-    /// Buffers of written packets come back here for reuse
-    recycle_rx: mpsc::Receiver<Vec<u8>>,
+    /// The command writer; buffers of sent commands come back for reuse
+    command_tx: mpsc::Sender<(u8, Vec<u8>)>,
+    command_recycle_rx: mpsc::Receiver<Vec<u8>>,
+    /// A command is with the writer (BTstack: one at a time)
+    command_in_flight: Arc<AtomicBool>,
+    /// The ACL / ISO writer, woken by unpark; transfer buffers come back
+    acl_tx: mpsc::Sender<Buffer>,
+    acl_recycle_rx: mpsc::Receiver<Buffer>,
+    acl_writer: Thread,
+    upstream: Upstream,
     threads: Vec<JoinHandle<()>>,
-    /// A packet of this type is with the writer (BTstack: one at a time each)
-    in_flight: Arc<[AtomicBool; 2]>,
 }
 
 pub struct UsbTransport {
@@ -360,10 +376,11 @@ impl HciBackend for UsbTransport {
         );
 
         let stop = Arc::new(AtomicBool::new(false));
-        let in_flight = Arc::new([AtomicBool::new(false), AtomicBool::new(false)]);
+        let command_in_flight = Arc::new(AtomicBool::new(false));
         let (command_tx, command_rx) = mpsc::channel::<(u8, Vec<u8>)>();
-        let (data_tx, data_rx) = mpsc::channel::<(u8, Vec<u8>)>();
-        let (recycle_tx, recycle_rx) = mpsc::channel::<Vec<u8>>();
+        let (command_recycle_tx, command_recycle_rx) = mpsc::channel::<Vec<u8>>();
+        let (acl_tx, acl_rx) = mpsc::channel::<Buffer>();
+        let (acl_recycle_tx, acl_recycle_rx) = mpsc::channel::<Buffer>();
         let mut threads = Vec::new();
         let spawn = |name: &str, f: Box<dyn FnOnce() + Send>| {
             std::thread::Builder::new().name(name.into()).spawn(f).map_err(|e| e.to_string())
@@ -377,44 +394,43 @@ impl HciBackend for UsbTransport {
             threads.push(spawn("usb-acl-in", Box::new(move || acl_in_loop(&mut acl_in, &stop, &upstream)))?);
         }
         {
-            let (stop, interface, in_flight) = (stop.clone(), interface.clone(), in_flight.clone());
-            let (upstream, recycle) = (upstream.clone(), recycle_tx.clone());
+            let (stop, interface, in_flight) = (stop.clone(), interface.clone(), command_in_flight.clone());
+            let upstream = upstream.clone();
             threads.push(spawn(
                 "usb-cmd-out",
                 Box::new(move || {
                     let write = |_: u8, p: &[u8]| send_command(&interface, p, COMMAND_TIMEOUT);
-                    writer_loop(write, command_rx, recycle, &in_flight[0], &stop, &upstream)
+                    writer_loop(write, command_rx, command_recycle_tx, &in_flight, &stop, &upstream)
                 }),
             )?);
         }
-        {
-            let (stop, in_flight) = (stop.clone(), in_flight.clone());
-            threads.push(spawn(
+        let acl_writer = {
+            let (stop, upstream) = (stop.clone(), upstream.clone());
+            let t = spawn(
                 "usb-acl-out",
                 Box::new(move || {
-                    let write_stop = stop.clone();
-                    let write = |_: u8, p: &[u8]| {
-                        let r = bulk_write(&mut acl_out, p, &write_stop);
-                        if matches!(r, Err(TransferError::Stall)) {
-                            // Or every later write fails as well
-                            if let Err(e) = acl_out.clear_halt().wait() {
-                                tracing::warn!(target: "hci", "USB: clearing the ACL out pipe failed: {e}");
-                            }
-                        }
-                        r
-                    };
-                    writer_loop(write, data_rx, recycle_tx, &in_flight[1], &stop, &upstream)
+                    // Media data has a deadline: a busy PC must not hold
+                    // the writer back
+                    let _priority = crate::acl_out_priority();
+                    acl_writer_loop(&mut acl_out, acl_rx, acl_recycle_tx, &stop, &upstream)
                 }),
-            )?);
-        }
+            )?;
+            let thread = t.thread().clone();
+            threads.push(t);
+            thread
+        };
         self.opened = Some(Opened {
             interface,
             _device: device,
             stop,
-            writer_tx: [command_tx, data_tx],
-            recycle_rx,
+            command_tx,
+            command_recycle_rx,
+            command_in_flight,
+            acl_tx,
+            acl_recycle_rx,
+            acl_writer,
+            upstream,
             threads,
-            in_flight,
         });
         Ok(())
     }
@@ -422,9 +438,11 @@ impl HciBackend for UsbTransport {
     fn close(&mut self) {
         let Some(opened) = self.opened.take() else { return };
         opened.stop.store(true, Ordering::Release);
-        // The writers finish the packet they have (a command bounded by its
-        // timeout, a data write cancelled on the stop flag)
-        drop(opened.writer_tx);
+        // The command writer finishes the command it has (bounded by its
+        // timeout); the ACL writer cancels its transfers
+        drop(opened.command_tx);
+        drop(opened.acl_tx);
+        opened.acl_writer.unpark();
         for t in opened.threads {
             let _ = t.join();
         }
@@ -439,21 +457,46 @@ impl HciBackend for UsbTransport {
 
     fn can_send(&mut self, packet_type: u8) -> bool {
         let Some(o) = &self.opened else { return false };
-        out_slot(packet_type).is_some_and(|slot| !o.in_flight[slot].load(Ordering::Acquire))
+        match out_slot(packet_type) {
+            Some(0) => !o.command_in_flight.load(Ordering::Acquire),
+            Some(_) => true,
+            None => false,
+        }
     }
 
     fn send(&mut self, packet_type: u8, packet: &[u8]) -> bool {
         let Some(o) = &self.opened else { return false };
-        let Some(slot) = out_slot(packet_type) else { return false };
-        let mut buf = o.recycle_rx.try_recv().unwrap_or_default();
-        buf.clear();
-        buf.extend_from_slice(packet);
-        o.in_flight[slot].store(true, Ordering::Release);
-        if o.writer_tx[slot].send((packet_type, buf)).is_err() {
-            o.in_flight[slot].store(false, Ordering::Release);
-            return false;
+        match out_slot(packet_type) {
+            Some(0) => {
+                let mut buf = o.command_recycle_rx.try_recv().unwrap_or_default();
+                buf.clear();
+                buf.extend_from_slice(packet);
+                o.command_in_flight.store(true, Ordering::Release);
+                if o.command_tx.send((packet_type, buf)).is_err() {
+                    o.command_in_flight.store(false, Ordering::Release);
+                    return false;
+                }
+                true
+            }
+            Some(_) => {
+                let mut buf = o
+                    .acl_recycle_rx
+                    .try_recv()
+                    .ok()
+                    .filter(|b| b.capacity() >= packet.len())
+                    .unwrap_or_else(|| Buffer::new(packet.len().max(ACL_TRANSFER_SIZE)));
+                buf.clear();
+                buf.extend_from_slice(packet);
+                if o.acl_tx.send(buf).is_err() {
+                    return false;
+                }
+                o.acl_writer.unpark();
+                // Copied: BTstack may reuse its buffer and send the next one
+                o.upstream.packet_sent();
+                true
+            }
+            None => false,
         }
-        true
     }
 }
 
@@ -581,34 +624,101 @@ fn write_failure(packet_type: u8, e: &TransferError) -> WriteFailure {
     if packet_type == HCI_COMMAND_DATA_PACKET || device_gone(e) { WriteFailure::Fatal } else { WriteFailure::Dropped }
 }
 
-/// One bulk OUT transfer with no timeout, as v1's ACL writes: a controller
-/// may hold data for a while (a link going down, the air busy), which is not
-/// a failure. Only the stop flag cancels it.
-fn bulk_write(ep: &mut Endpoint<Bulk, Out>, packet: &[u8], stop: &AtomicBool) -> Result<(), TransferError> {
-    let mut buf = Buffer::new(packet.len());
-    buf.extend_from_slice(packet);
-    ep.submit(buf);
-    loop {
-        if let Some(c) = ep.wait_next_complete(POLL) {
-            return c.status;
-        }
-        if stop.load(Ordering::Acquire) {
-            ep.cancel_all();
-            return match ep.wait_next_complete(Duration::from_secs(1)) {
-                Some(c) => c.status,
-                None => {
-                    tracing::warn!(target: "hci", "USB: a cancelled ACL write did not return");
-                    Err(TransferError::Cancelled)
-                }
-            };
-        }
+/// Wakes the ACL writer when one of its transfers completes
+struct ThreadWaker(Thread);
+
+impl Wake for ThreadWaker {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.unpark();
     }
 }
 
-/// Sends the packets of one writer slot in the order BTstack hands them over
-/// and reports each as sent. Commands (control pipe) and ACL / ISO data
-/// (bulk OUT) have a thread each, so data the controller holds back does not
-/// delay commands, as in v1 where both were separate overlapped transfers.
+/// Writes ACL / ISO packets in the order BTstack hands them over, up to
+/// [`ACL_OUT_TRANSFERS`] at a time. BTstack already had them as sent
+/// ([`UsbTransport::send`]). Writes have no timeout, as v1's: a controller
+/// may hold data for a while (a link going down, the air busy), which is not
+/// a failure. The thread sleeps until a packet comes ([`UsbTransport::send`]
+/// unparks it) or a transfer completes (the waker).
+fn acl_writer_loop(
+    ep: &mut Endpoint<Bulk, Out>,
+    rx: mpsc::Receiver<Buffer>,
+    recycle: mpsc::Sender<Buffer>,
+    stop: &AtomicBool,
+    upstream: &Upstream,
+) {
+    let waker = Waker::from(Arc::new(ThreadWaker(std::thread::current())));
+    let mut cx = Context::from_waker(&waker);
+    let mut open = true;
+    while !stop.load(Ordering::Acquire) {
+        while open && ep.pending() < ACL_OUT_TRANSFERS {
+            match rx.try_recv() {
+                Ok(buf) => ep.submit(buf),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => open = false,
+            }
+        }
+        if ep.pending() == 0 {
+            if !open {
+                break;
+            }
+            std::thread::park_timeout(POLL);
+            continue;
+        }
+        let Poll::Ready(c) = ep.poll_next_complete(&mut cx) else {
+            std::thread::park_timeout(POLL);
+            continue;
+        };
+        let _ = recycle.send(c.buffer);
+        let Err(e) = c.status else { continue };
+        if stop.load(Ordering::Acquire) {
+            break;
+        }
+        if write_failure(HCI_ACL_DATA_PACKET, &e) == WriteFailure::Fatal {
+            upstream.fail(&format!("ACL write: {e}"));
+            break;
+        }
+        if matches!(e, TransferError::Stall) {
+            // The writes behind it fail as well, and every later one until
+            // the pipe is cleared
+            let behind = cancel_out(ep, &recycle);
+            tracing::warn!(target: "hci", "USB: ACL write failed ({e}), {} packet(s) dropped", 1 + behind);
+            if let Err(e) = ep.clear_halt().wait() {
+                tracing::warn!(target: "hci", "USB: clearing the ACL out pipe failed: {e}");
+            }
+        } else {
+            tracing::warn!(target: "hci", "USB: ACL write failed ({e}), packet dropped");
+        }
+    }
+    cancel_out(ep, &recycle);
+}
+
+/// Cancels the pending OUT transfers and waits for them; returns how many
+/// were pending
+fn cancel_out(ep: &mut Endpoint<Bulk, Out>, recycle: &mpsc::Sender<Buffer>) -> usize {
+    let pending = ep.pending();
+    ep.cancel_all();
+    while ep.pending() > 0 {
+        match ep.wait_next_complete(Duration::from_secs(1)) {
+            Some(c) => {
+                let _ = recycle.send(c.buffer);
+            }
+            None => {
+                tracing::warn!(target: "hci", "USB: a cancelled ACL write did not return");
+                break;
+            }
+        }
+    }
+    pending
+}
+
+/// Sends the commands in the order BTstack hands them over and reports each
+/// as sent. Commands (control pipe) and ACL / ISO data (bulk OUT) have a
+/// thread each, so data the controller holds back does not delay commands,
+/// as in v1 where both were separate overlapped transfers.
 fn writer_loop(
     mut write: impl FnMut(u8, &[u8]) -> Result<(), TransferError>,
     rx: mpsc::Receiver<(u8, Vec<u8>)>,
