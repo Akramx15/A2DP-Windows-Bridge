@@ -72,7 +72,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 | Démarrage | **Démarrer avec Windows** et **Démarrer dans la zone de notification** (voir [Démarrer avec Windows](#autostart)), **Réduire dans la zone de notification** (voir [Zone de notification et volet](#tray)) |
 | Casque | **Boutons du casque contrôlent la lecture** (voir [Boutons du casque](#headphone-buttons)), **Mémoriser le volume du casque** (voir [Volume](#volume)) |
 | Mises à jour | **Rechercher des mises à jour**, **Rechercher les mises à jour au démarrage**, **Inclure les préversions dans les mises à jour** (propose aussi les versions bêta), **Mettre à jour maintenant** (voir [Mises à jour](#updates)) |
-| Avancé | **LE Audio (expérimental)** et **Faible latence pour casques gaming (GMAP, expérimental)** (voir [LE Audio](#le-audio)), **Mode développeur** (ajoute le test du récepteur au diagnostic et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
+| Avancé | **Mode développeur** (ajoute le test du récepteur au diagnostic et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
 | À propos d'A2DPWB | Version, licence, licences tierces, **Quitter A2DPWB** |
 
 ### Configuration au premier lancement
@@ -431,7 +431,7 @@ L'adaptateur du récepteur n'est pas disponible pour sa propre pile Bluetooth ta
 
 ## LE Audio (expérimental) {#le-audio}
 
-A2DPWB peut aussi diffuser vers des casques et écouteurs LE Audio (LC3 sur des flux isochrones connectés, BAP unicast), avec le volume du casque (VCP), les boutons multimédia (MCP), les deux écouteurs d'une paire (CSIP) et un mode faible latence pour les casques gaming (GMAP). Cette fonction est **expérimentale** et activée par défaut (**Paramètres > Avancé > LE Audio (expérimental)** la désactive) ; elle ne compte que lorsque vous choisissez un appareil LE Audio. Elle n'a été testée qu'avec un émulateur Bluetooth, **pas encore avec de vrais casques LE Audio**, et peut ne pas fonctionner avec les vôtres ; pour l'écoute au quotidien, utilisez les profils A2DP classiques.
+A2DPWB peut aussi diffuser vers des casques et écouteurs LE Audio (LC3 sur des flux isochrones connectés, BAP unicast), avec le volume du casque (VCP), les boutons multimédia (MCP), les deux écouteurs d'une paire (CSIP) et un mode faible latence pour les casques gaming (GMAP). Cette fonction est **expérimentale** et se choisit par profil : seul un profil pour un appareil LE Audio l'utilise. Elle n'a été testée qu'avec un émulateur Bluetooth, **pas encore avec de vrais casques LE Audio**, et peut ne pas fonctionner avec les vôtres ; pour l'écoute au quotidien, utilisez les profils A2DP classiques.
 
 Ce qu'il faut :
 
@@ -440,10 +440,11 @@ Ce qu'il faut :
 
 Utilisation :
 
-1. Vérifiez que **Paramètres > Avancé > LE Audio (expérimental)** est activé (valeur par défaut). Bluetooth démarre avec LE au prochain scan ou à la prochaine connexion (pendant une diffusion ou un scan, le changement attend jusque-là).
-2. Mettez le casque en mode d'appairage et recherchez les appareils dans un profil. Les appareils LE Audio portent l'étiquette **LE Audio**, une paire d'écouteurs **Ensemble LE Audio** (choisissez l'un des deux : A2DPWB trouve l'autre). Un casque qui fait aussi A2DP apparaît deux fois, une fois par type.
-3. Cochez **Appareil LE Audio (expérimental, LC3)** dans le profil. Il n'y a pas de choix de codec ni de qualité (A2DPWB choisit la meilleure configuration LC3 acceptée par le casque), et seules les captures Loopback système et Périphérique virtuel sont disponibles.
-4. En option : **Faible latence pour casques gaming (GMAP, expérimental)**, dans la même section, utilise des trames LC3 plus courtes avec les casques qui prennent en charge le rôle jeu de GMAP, à partir de la connexion suivante.
+1. Mettez le casque en mode d'appairage et recherchez les appareils dans un profil. Les appareils LE Audio portent l'étiquette **LE Audio**, une paire d'écouteurs **Ensemble LE Audio** (choisissez l'un des deux : A2DPWB trouve l'autre). Un casque qui fait aussi A2DP apparaît deux fois, une fois par type.
+2. Cochez **Appareil LE Audio (expérimental, LC3)** dans le profil. Il n'y a pas de choix de codec ni de qualité (A2DPWB choisit la meilleure configuration LC3 acceptée par le casque), et seules les captures Loopback système et Périphérique virtuel sont disponibles.
+3. En dessous, **Faible latence pour casques gaming (GMAP, expérimental)** est activée par défaut : avec les casques qui prennent en charge le rôle jeu de GMAP, elle utilise des trames LC3 plus courtes ; les autres casques reçoivent la configuration média dans les deux cas.
+
+Il n'y a pas de commutateur LE Audio dans les Paramètres. Si le côté LE perturbait un jour un adaptateur, `"le_audio_experimental": false` dans `settings.json` (**Paramètres > Dossier des paramètres**) le désactive entièrement.
 
 En mode CLI, `--le-audio -d <adresse>` diffuse vers un appareil LE Audio, `--le-device <adresse>` ajoute un autre appareil du groupe (le second écouteur), `--le-scan` liste les appareils LE Audio à proximité, et `--le-low-latency` / `--le-preset <nom>` choisissent la configuration (`a2dpwb-core.exe --cli -h` liste toutes les options LE).
 
