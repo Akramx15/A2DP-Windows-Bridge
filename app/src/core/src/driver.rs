@@ -58,7 +58,9 @@ pub fn assign(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, ErrorI
     let (code, result) = run(&["assign", instance_id])?;
     if code != 0 {
         state.refresh_adapters();
-        return Err(err("adapter.driver_failed", "error.driver_failed"));
+        // Some environments refuse DiInstallDevice with the inbox winusb.inf;
+        // Zadig's signed package is the way out there (docs/setup.md#zadig)
+        return Err(err("adapter.driver_failed", "error.driver_assign_failed"));
     }
     let path = record_path(state, instance_id);
     if let Some(dir) = path.parent() {

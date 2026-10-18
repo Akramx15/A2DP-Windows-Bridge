@@ -22,7 +22,7 @@ nav_order: 3
 - **Visual Studio 2022 以降**（Build Tools でも可）と「C++ によるデスクトップ開発」ワークロード。C のライブラリ（BTstack、コーデック）を MSVC でコンパイルします
 - UI 用に **Node.js** 22 と **pnpm**（`corepack enable` で pnpm が使えます）
 - **Git**（サブモジュールの取得）
-- ARM64 版をビルドするとき: Visual Studio のコンポーネント「MSVC v143 - VS 2022 C++ ARM64 ビルド ツール」と `rustup target add aarch64-pc-windows-msvc`
+- ARM64 版をビルドするとき: Visual Studio のコンポーネント「MSVC v143 - VS 2022 C++ ARM64 ビルド ツール」と、x64 の PC では「Windows 用 C++ Clang コンパイラ」（rustls の `ring` が ARM64 のアセンブリを clang で組むため。`installer/build-release.ps1` は Visual Studio の clang を自分で探す）、それに `rustup target add aarch64-pc-windows-msvc`
 
 ## クイックビルド
 

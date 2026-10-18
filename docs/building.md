@@ -21,7 +21,7 @@ nav_order: 4
 - **Visual Studio 2022 or later** (or its Build Tools) with the "Desktop development with C++" workload: the C libraries (BTstack, the codecs) are compiled with MSVC
 - **Node.js** 22 and **pnpm** for the UI (`corepack enable` provides pnpm)
 - **Git** (for the submodules)
-- For ARM64 builds: the Visual Studio component "MSVC v143 - VS 2022 C++ ARM64 build tools" and `rustup target add aarch64-pc-windows-msvc`
+- For ARM64 builds: the Visual Studio components "MSVC v143 - VS 2022 C++ ARM64 build tools" and, on an x64 PC, "C++ Clang Compiler for Windows" (rustls' `ring` assembles its ARM64 code with clang; `installer/build-release.ps1` finds Visual Studio's clang itself), and `rustup target add aarch64-pc-windows-msvc`
 
 ## Quick Build
 

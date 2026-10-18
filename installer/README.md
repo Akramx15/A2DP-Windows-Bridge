@@ -5,7 +5,7 @@ architecture on the release machine, into the same output folder:
 
 ```powershell
 pwsh installer/build-release.ps1 -Arch x64
-pwsh installer/build-release.ps1 -Arch arm64   # needs the VS "MSVC v143 ARM64 build tools"
+pwsh installer/build-release.ps1 -Arch arm64   # needs the VS "MSVC v143 ARM64 build tools" (+ "C++ Clang Compiler" on x64)
 ```
 
 Output (`target/dist`):

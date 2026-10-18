@@ -81,6 +81,18 @@ if (-not $signing) {
     $pubkey = ''
 }
 
+# --- ARM64 on an x64 machine: ring (rustls) builds its assembly with clang ---
+if ($Arch -eq 'arm64' -and -not (Get-Command clang -ErrorAction SilentlyContinue)) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    $clang = if (Test-Path -LiteralPath $vswhere) {
+        & $vswhere -latest -prerelease -products * -find 'VC\Tools\Llvm\x64\bin\clang.exe' | Select-Object -First 1
+    }
+    if (-not $clang) {
+        throw 'ARM64 needs clang: add the Visual Studio component "C++ Clang Compiler for Windows" (or put LLVM on PATH)'
+    }
+    $env:PATH = "$(Split-Path $clang -Parent);$env:PATH"
+}
+
 # --- Folders ---
 $stage = Join-Path $OutDir "stage-$Arch"
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }

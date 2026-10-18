@@ -556,6 +556,7 @@
   "error.capture_start": "HCI キャプチャを開始できませんでした",
   "error.uac_cancelled": "管理者の確認が拒否されたため、ドライバは変更していません",
   "error.driver_failed": "ドライバを変更できませんでした。詳しくはログを見てください。",
+  "error.driver_assign_failed": "Windows がこのアダプタへの WinUSB の割り当てを拒みました。代わりに Zadig で入れてください（セットアップガイドの「Zadig を使う場合」）。詳しくはログを見てください。",
   "error.driver_restore_unverified": "ドライバは変更しましたが、元のドライバには戻りませんでした。Zadig で設定したアダプタなら、デバイス マネージャーで Zadig のドライバ パッケージを削除してください。",
   "ui.v1_running.title": "A2DPWB v1 が起動しています。先に終了してください",
   "ui.v1_running.text": "v1 と v2 は同時に Bluetooth アダプターを使えません。v1 のタスクトレイのアイコンを右クリックして「終了」を選んでください。",

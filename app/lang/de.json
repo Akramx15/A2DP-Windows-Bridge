@@ -556,6 +556,7 @@
   "error.capture_start": "Die HCI-Aufzeichnung konnte nicht gestartet werden",
   "error.uac_cancelled": "Die Administratorabfrage wurde abgelehnt: Der Treiber wurde nicht geändert",
   "error.driver_failed": "Die Änderung des Treibers ist fehlgeschlagen. Details im Protokoll.",
+  "error.driver_assign_failed": "Windows hat die Zuweisung von WinUSB an diesen Adapter abgelehnt. Installieren Sie WinUSB stattdessen mit Zadig (siehe „Stattdessen Zadig verwenden“ in der Einrichtungsanleitung); Details im Protokoll.",
   "error.driver_restore_unverified": "Der Treiber wurde geändert, aber der Adapter ist nicht zu seinem vorherigen Treiber zurückgekehrt. Wurde er mit Zadig eingerichtet, das Treiberpaket von Zadig im Geräte-Manager entfernen.",
   "ui.v1_running.title": "A2DPWB v1 läuft – beenden Sie es zuerst",
   "ui.v1_running.text": "v1 und v2 können den Bluetooth-Adapter nicht gleichzeitig verwenden. Klicken Sie mit der rechten Maustaste auf das Taskleistensymbol von v1 und wählen Sie Beenden.",
