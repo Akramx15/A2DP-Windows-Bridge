@@ -45,7 +45,7 @@ Branchez l'adaptateur Bluetooth USB et lancez A2DPWB. S'il n'existe encore aucun
 1. **Choisir l'adaptateur** : les adaptateurs Bluetooth USB détectés. Si le vôtre n'apparaît pas, branchez-le et appuyez sur **Actualiser**
 2. **Pilote et firmware** : **Attribuer WinUSB** (voir [Étape 2](#winusb)) et, pour les adaptateurs Realtek, les fichiers de firmware (voir [Firmware](#firmware))
 3. **Trouver votre casque** : mettez-le en mode d'association, lancez **Rechercher**, choisissez-le, puis **Créer le profil** (voir [Étape 3](#headphones))
-4. **Test** : connectez-vous, puis **Jouer le signal de test** : un son plus aigu dans l'oreille droite et un son plus grave dans la gauche
+4. **Test** : choisissez ce qui est envoyé (tout l'audio du PC, un périphérique virtuel ou une application), cliquez sur **Connecter** et lancez une lecture sur le PC. Si vous l'entendez dans le casque, la configuration est terminée
 
 **Configurer plus tard** ignore la suite ; **Paramètres > Lancer la configuration** la rouvre.
 

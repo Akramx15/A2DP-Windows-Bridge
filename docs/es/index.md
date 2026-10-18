@@ -139,11 +139,11 @@ A2DPWB omite por completo la pila Bluetooth de Windows. Se comunica directamente
 ## Funciones
 
 - **Varios códecs**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 y (de forma experimental) Opus / Opus 05 con negociación automática
-- **LE Audio (experimental, desactivado por defecto)**: LC3 hacia auriculares LE Audio (BAP unicast, los dos auriculares de un par, volumen del auricular, botones multimedia, baja latencia GMAP). Necesita un adaptador con canales isócronos de Bluetooth 5.2; solo probado con el emulador de Bluetooth, todavía no con auriculares LE Audio reales ([Uso](usage#le-audio))
+- **LE Audio (experimental)**: LC3 hacia auriculares LE Audio (BAP unicast, los dos auriculares de un par, volumen del auricular, botones multimedia, baja latencia GMAP). Necesita un adaptador con canales isócronos de Bluetooth 5.2; solo probado con el emulador de Bluetooth, todavía no con auriculares LE Audio reales ([Uso](usage#le-audio))
 - **Tres modos de captura**: loopback del sistema, enrutamiento a través de un dispositivo de audio virtual o la salida de una sola aplicación
 - **Ventana, bandeja y CLI**: una ventana para la configuración y el diagnóstico, un panel desplegable y un menú en la bandeja para conectarse en el día a día, y una línea de comandos (consulte [Uso](usage))
 - **WinUSB desde la aplicación**: asigna el controlador WinUSB al adaptador y restaura el controlador original, sin necesidad de Zadig (consulte [Configuración](setup#winusb))
-- **Configuración inicial**: adaptador, controlador y firmware, auriculares, tono de prueba
+- **Configuración inicial**: adaptador, controlador y firmware, auriculares, una primera conexión
 - **ABR**: tasa de bits adaptativa para conexiones inestables (LDAC y LHDC V5)
 - **Reconexión automática**: vuelve a conectar si se pierde la conexión (hasta 10 intentos) y cuando el PC sale de la suspensión
 - **Calidad del enlace y AFH**: muestra lo que se envía, el RSSI y los canales en uso; indica al adaptador qué canales Wi-Fi debe evitar (consulte [Uso](usage#link-quality))

@@ -139,11 +139,11 @@ A2DPWB 完全绕过 Windows 的 Bluetooth 堆栈。它通过 WinUSB 直接与 US
 ## 功能
 
 - **多编解码器**：LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5 以及（实验性的）Opus / Opus 05，自动协商
-- **LE Audio（实验性，默认关闭）**：通过 LC3 向 LE Audio 耳机传输（BAP 单播、一对耳机的左右两只、耳机音量、媒体按键、GMAP 低延迟）。需要支持 Bluetooth 5.2 等时通道的适配器；只在 Bluetooth 模拟器上测试过，尚未在真实的 LE Audio 耳机上验证（请参阅[使用方法](usage#le-audio)）
+- **LE Audio（实验性）**：通过 LC3 向 LE Audio 耳机传输（BAP 单播、一对耳机的左右两只、耳机音量、媒体按键、GMAP 低延迟）。需要支持 Bluetooth 5.2 等时通道的适配器；只在 Bluetooth 模拟器上测试过，尚未在真实的 LE Audio 耳机上验证（请参阅[使用方法](usage#le-audio)）
 - **三种捕获模式**：系统环回、虚拟音频设备路由，或单个应用的输出
 - **窗口、托盘和 CLI**：用于设置和诊断的窗口、用于日常连接的托盘浮出窗口和菜单，以及命令行（请参阅[使用方法](usage)）
 - **在应用内分配 WinUSB**：为适配器分配 WinUSB 驱动程序，并可恢复原来的驱动程序，无需 Zadig（请参阅[安装与设置](setup#winusb)）
-- **首次运行设置**：适配器、驱动程序和固件、耳机、测试音
+- **首次运行设置**：适配器、驱动程序和固件、耳机、首次连接
 - **ABR**：针对不稳定连接的自适应比特率（LDAC 和 LHDC V5）
 - **自动重新连接**：断开后自动重新连接（最多 10 次），PC 从睡眠中恢复后也会重新连接
 - **链路质量与 AFH**：显示发送内容、RSSI 和正在使用的信道；告知适配器应避开哪些 Wi-Fi 信道（请参阅[使用方法](usage#link-quality)）

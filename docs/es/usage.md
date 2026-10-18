@@ -431,7 +431,7 @@ Mientras la herramienta se ejecuta, la pila Bluetooth del propio receptor no pue
 
 ## LE Audio (experimental) {#le-audio}
 
-A2DPWB también puede transmitir a auriculares LE Audio (LC3 sobre flujos isócronos conectados, BAP unicast), con el volumen del auricular (VCP), los botones multimedia (MCP), los dos auriculares de un par (CSIP) y un modo de baja latencia para auriculares gaming (GMAP). Esta función es **experimental y está desactivada por defecto**. Solo se ha probado con un emulador de Bluetooth, **todavía no con auriculares LE Audio reales**, y puede que no funcione con los suyos; para el uso diario, use los perfiles A2DP clásicos.
+A2DPWB también puede transmitir a auriculares LE Audio (LC3 sobre flujos isócronos conectados, BAP unicast), con el volumen del auricular (VCP), los botones multimedia (MCP), los dos auriculares de un par (CSIP) y un modo de baja latencia para auriculares gaming (GMAP). Esta función es **experimental** y está activada por defecto (**Configuración > Avanzado > LE Audio (experimental)** la desactiva); solo importa cuando elige un dispositivo LE Audio. Solo se ha probado con un emulador de Bluetooth, **todavía no con auriculares LE Audio reales**, y puede que no funcione con los suyos; para el uso diario, use los perfiles A2DP clásicos.
 
 Qué se necesita:
 
@@ -440,7 +440,7 @@ Qué se necesita:
 
 Cómo usarlo:
 
-1. Active **Configuración > Avanzado > LE Audio (experimental)**. Bluetooth se inicia con LE en la siguiente búsqueda o conexión (durante una transmisión o búsqueda, el cambio espera hasta entonces).
+1. Compruebe que **Configuración > Avanzado > LE Audio (experimental)** está activado (el valor por defecto). Bluetooth se inicia con LE en la siguiente búsqueda o conexión (durante una transmisión o búsqueda, el cambio espera hasta entonces).
 2. Ponga los auriculares en modo de emparejamiento y busque dispositivos en un perfil. Los dispositivos LE Audio llevan la etiqueta **LE Audio**, un par de auriculares **Conjunto LE Audio** (elija cualquiera de los dos: A2DPWB encuentra el otro). Unos auriculares que también admiten A2DP aparecen dos veces, una por tipo.
 3. Marque **Dispositivo LE Audio (experimental, LC3)** en el perfil. No se elige códec ni calidad (A2DPWB elige la mejor configuración LC3 que aceptan los auriculares) y solo están disponibles las capturas Loopback del sistema y Dispositivo virtual.
 4. Opcional: **Baja latencia para auriculares gaming (GMAP, experimental)**, en la misma sección, usa tramas LC3 más cortas con los auriculares que admiten el rol de juego de GMAP, a partir de la siguiente conexión.

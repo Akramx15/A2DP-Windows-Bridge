@@ -431,7 +431,7 @@ Der Adapter des Empfängers steht dessen eigenem Bluetooth-Stack nicht zur Verf�
 
 ## LE Audio (experimentell) {#le-audio}
 
-A2DPWB kann auch an LE-Audio-Kopfhörer und -Ohrhörer streamen (LC3 über verbundene isochrone Streams, BAP Unicast), mit Lautstärke des Headsets (VCP), Medientasten (MCP), beiden Ohrhörern eines Paars (CSIP) und einem Modus mit niedriger Latenz für Gaming-Headsets (GMAP). Diese Funktion ist **experimentell und standardmäßig aus**. Sie wurde nur mit einem Bluetooth-Emulator getestet, **noch nicht mit echten LE-Audio-Kopfhörern**, und funktioniert mit Ihren vielleicht nicht; verwenden Sie zum normalen Hören die klassischen A2DP-Profile.
+A2DPWB kann auch an LE-Audio-Kopfhörer und -Ohrhörer streamen (LC3 über verbundene isochrone Streams, BAP Unicast), mit Lautstärke des Headsets (VCP), Medientasten (MCP), beiden Ohrhörern eines Paars (CSIP) und einem Modus mit niedriger Latenz für Gaming-Headsets (GMAP). Diese Funktion ist **experimentell** und standardmäßig an (unter **Einstellungen > Erweitert > LE Audio (experimentell)** lässt es sich ausschalten); es spielt nur eine Rolle, wenn Sie ein LE-Audio-Gerät wählen. Sie wurde nur mit einem Bluetooth-Emulator getestet, **noch nicht mit echten LE-Audio-Kopfhörern**, und funktioniert mit Ihren vielleicht nicht; verwenden Sie zum normalen Hören die klassischen A2DP-Profile.
 
 Voraussetzungen:
 
@@ -440,7 +440,7 @@ Voraussetzungen:
 
 So geht es:
 
-1. **Einstellungen > Erweitert > LE Audio (experimentell)** einschalten. Bluetooth startet bei der nächsten Suche oder Verbindung mit LE (während des Streamens oder Suchens wartet die Änderung bis dahin).
+1. Stellen Sie sicher, dass **Einstellungen > Erweitert > LE Audio (experimentell)** eingeschaltet ist (Standard). Bluetooth startet bei der nächsten Suche oder Verbindung mit LE (während des Streamens oder Suchens wartet die Änderung bis dahin).
 2. Die Kopfhörer in den Kopplungsmodus versetzen und in einem Profil nach Geräten suchen. LE-Audio-Geräte tragen die Markierung **LE Audio**, ein Ohrhörerpaar **LE-Audio-Set** (einen der beiden wählen: A2DPWB findet den anderen). Kopfhörer, die auch A2DP können, erscheinen zweimal, einmal je Art.
 3. Im Profil **LE-Audio-Gerät (experimentell, LC3)** ankreuzen. Codec und Qualität sind nicht wählbar (A2DPWB wählt die beste LC3-Konfiguration, die die Kopfhörer annehmen), und nur die Aufnahme System-Loopback und virtuelles Gerät ist möglich.
 4. Optional: **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** im selben Abschnitt verwendet ab der nächsten Verbindung kürzere LC3-Frames mit Headsets, die die Spiele-Rolle von GMAP unterstützen.
