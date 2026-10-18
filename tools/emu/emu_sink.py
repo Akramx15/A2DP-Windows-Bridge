@@ -33,10 +33,13 @@ from bumble.a2dp import (
 )
 from bumble.avdtp import (
     AVDTP_AUDIO_MEDIA_TYPE,
+    AVDTP_MEDIA_CODEC_SERVICE_CATEGORY,
+    AVDTP_UNSUPPORTED_CONFIGURATION_ERROR,
     Discover_Response,
     EndPointInfo,
     Listener,
     MediaCodecCapabilities,
+    Set_Configuration_Reject,
 )
 from bumble.controller import Controller
 from bumble.device import Device
@@ -197,6 +200,27 @@ def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53):
     ]
 
 
+def refuse_dual_channel(sink):
+    """The SBC endpoint lists dual channel but rejects a SET_CONFIGURATION
+    with it, as some headsets do (SBC XQ then has to fall back to SBC)."""
+    accept = sink.on_set_configuration_command
+
+    async def on_set_configuration_command(configuration):
+        for capability in configuration:
+            if (isinstance(capability, MediaCodecCapabilities)
+                    and capability.media_codec_type == A2DP_SBC_CODEC_TYPE
+                    and bytes(capability.media_codec_information)[0] & 0x0F
+                    == SbcMediaCodecInformation.ChannelMode.DUAL_CHANNEL):
+                log.info('refusing a dual channel SBC configuration')
+                return Set_Configuration_Reject(
+                    service_category=AVDTP_MEDIA_CODEC_SERVICE_CATEGORY,
+                    error_code=AVDTP_UNSUPPORTED_CONFIGURATION_ERROR,
+                )
+        return await accept(configuration)
+
+    sink.on_set_configuration_command = on_set_configuration_command
+
+
 async def main(args):
     link = LocalLink()
     transport = await open_transport(f'tcp-server:127.0.0.1:{args.port}')
@@ -227,6 +251,8 @@ async def main(args):
             if args.codecs and name not in args.codecs:
                 continue
             sink = server.add_sink(capabilities)
+            if name == 'sbc' and args.sbc_reject_dual:
+                refuse_dual_channel(sink)
             if name in args.in_use:
                 # As a multipoint headset streaming this codec to another
                 # device: listed by Discover with in_use = 1
@@ -260,6 +286,8 @@ if __name__ == '__main__':
                         help='offer only these codecs (default: all)')
     parser.add_argument('--sbc-no-dual', action='store_true',
                         help='SBC without dual channel (no SBC XQ)')
+    parser.add_argument('--sbc-reject-dual', action='store_true',
+                        help='list dual channel but reject a configuration with it')
     parser.add_argument('--sbc-max-bitpool', type=int, default=53,
                         help='largest SBC bitpool the sink takes (default 53)')
     bumble.logging.setup_basic_logging(parser.parse_known_args()[0].log_level)

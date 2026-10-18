@@ -236,6 +236,25 @@ pub enum ConfigureError {
     NoAnswer,
 }
 
+/// A stream set up again by [`BtHost::reconnect`]
+#[derive(Debug, Clone)]
+pub struct Reconnected {
+    /// The device's capabilities as it lists them now
+    pub remote: RemoteCaps,
+    /// The configuration built from them
+    pub config: Configuration,
+    /// Media payload size of the new stream (RTP header excluded)
+    pub mtu: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReconnectError {
+    /// Not connected, configured or started (worth another attempt)
+    Failed,
+    /// The device no longer offers a stream like the one before
+    CodecGone,
+}
+
 /// The stream of the last successful configuration, for [`BtHost::reconnect`]
 struct LastStream {
     addr: [u8; 6],
@@ -340,7 +359,7 @@ impl BtHost {
                         let logger = capture.clone();
                         stack
                             .set_packet_logger(Some(Box::new(move |t, incoming, p| logger.log_packet(t, incoming, p))));
-                        let (sink, consumer) = media::queue(stats.clone(), remote);
+                        let (sink, consumer, media_streaming) = media::queue(stats.clone(), remote);
                         let _ = remote_tx.send((remote, sink));
                         let setup = Setup {
                             tcp,
@@ -350,8 +369,18 @@ impl BtHost {
                             realtek_files,
                             broadcom_ids,
                         };
-                        let mut app =
-                            HostApp::new(shared, controls, stats, jobs_rx, events_tx, consumer, setup, afh, le);
+                        let mut app = HostApp::new(
+                            shared,
+                            controls,
+                            stats,
+                            jobs_rx,
+                            events_tx,
+                            consumer,
+                            media_streaming,
+                            setup,
+                            afh,
+                            le,
+                        );
                         let backend = backend(&transport);
                         if intel_loader && !tcp {
                             // Intel controllers boot into a bootloader and
@@ -904,24 +933,30 @@ impl BtHost {
         self.shared.lock().remote_caps.clone()
     }
 
-    /// Connects again to the last device with the last configuration and
-    /// starts the stream
-    pub fn reconnect(&self) -> bool {
+    /// Connects again to the last device and starts the stream. The
+    /// configuration is built anew from the capabilities the device lists
+    /// now by `rebuild` (its SEIDs or codec settings may have changed, as v1
+    /// read them afresh); None from it: the device no longer offers the
+    /// stream.
+    pub fn reconnect(
+        &self,
+        rebuild: &dyn Fn(&RemoteCaps) -> Option<Configuration>,
+    ) -> Result<Reconnected, ReconnectError> {
         let Some((addr, config)) =
             self.last.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| (l.addr, l.config.clone()))
         else {
             tracing::warn!("cannot reconnect: no earlier stream");
-            return false;
+            return Err(ReconnectError::Failed);
         };
         if !self.hci_ready() || self.stalled() {
             tracing::warn!("cannot reconnect: the Bluetooth adapter stopped working");
-            return false;
+            return Err(ReconnectError::Failed);
         }
         // The cancel of a user stop stays latched across reconnect attempts:
         // a stop arriving between attempts must not be swallowed
         if self.shared.lock().cancel {
             tracing::info!("reconnect aborted (cancel requested)");
-            return false;
+            return Err(ReconnectError::Failed);
         }
         self.shared.update(|s| {
             s.connected = false;
@@ -935,22 +970,46 @@ impl BtHost {
         });
         tracing::info!("reconnecting to {}", addr_str(&addr));
         self.release_leftover_avdtp(addr);
-        if self.establish_and_wait(addr).is_err() {
+        let Ok(remote) = self.establish_and_wait(addr) else {
             tracing::warn!("reconnection failed");
-            return false;
-        }
-        if self.configure(&config).is_err() {
-            tracing::warn!("reconnect: codec configuration failed");
+            return Err(ReconnectError::Failed);
+        };
+        self.configure_and_start(remote, &config, rebuild)
+    }
+
+    /// The stream of a connection just (re)established, with a configuration
+    /// built from the capabilities it reported: what [`BtHost::reconnect`]
+    /// does after connecting, for a caller that connected with
+    /// [`BtHost::connect`] (a new stack)
+    pub fn configure_and_start(
+        &self,
+        remote: RemoteCaps,
+        before: &Configuration,
+        rebuild: &dyn Fn(&RemoteCaps) -> Option<Configuration>,
+    ) -> Result<Reconnected, ReconnectError> {
+        let Some(config) = rebuild(&remote) else {
+            tracing::warn!("reconnect: the device no longer offers {}", before.kind.name());
             self.disconnect();
-            return false;
+            return Err(ReconnectError::CodecGone);
+        };
+        if config != *before {
+            tracing::info!("reconnect: the device's capabilities changed: {before:?} -> {config:?}");
         }
+        let mtu = match self.configure(&config) {
+            Ok(m) => m,
+            Err(_) => {
+                tracing::warn!("reconnect: codec configuration failed");
+                self.disconnect();
+                return Err(ReconnectError::Failed);
+            }
+        };
         if !self.start_stream() {
             tracing::warn!("reconnect: stream start failed");
             self.disconnect();
-            return false;
+            return Err(ReconnectError::Failed);
         }
-        tracing::info!("reconnected and streaming");
-        true
+        tracing::info!("reconnected and streaming (mtu {mtu})");
+        Ok(Reconnected { remote, config, mtu })
     }
 
     // ---- volume, buttons, AFH ----

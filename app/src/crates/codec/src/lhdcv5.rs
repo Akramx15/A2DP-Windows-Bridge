@@ -384,4 +384,25 @@ impl Encoder for LhdcV5Encoder {
         abr.down_count += 1;
         self.abr = Some(abr);
     }
+
+    fn abr_active(&self) -> bool {
+        self.abr.is_some()
+    }
+
+    /// Back to the top of the ABR table (400 kbps), counters cleared
+    fn abr_reset(&mut self) {
+        let Some(abr) = self.abr.as_mut() else { return };
+        let top = abr.table.len() - 1;
+        *abr = Abr { table: abr.table, index: top, down_count: 0, down_sum: 0, up_count: 0, up_sum: 0 };
+        let rate = abr.table[top];
+        match self.enc.bitrate_index(rate) {
+            Ok(inx) if self.current_index() != Some(inx) => {
+                if let Err(e) = self.enc.set_bitrate_index(inx, false) {
+                    tracing::warn!("LHDC V5: ABR reset to {rate} kbps failed: {e}");
+                }
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("LHDC V5: ABR reset to {rate} kbps failed: {e}"),
+        }
+    }
 }

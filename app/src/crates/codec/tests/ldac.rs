@@ -356,3 +356,33 @@ fn abr_adjust_is_a_no_op_without_abr() {
     }
     assert_eq!(enc.bitrate_kbps(), 660);
 }
+
+#[test]
+fn abr_reset_goes_back_to_the_quality_asked_for() {
+    let cfg = EncoderConfig { abr: true, ..config(48000, 2, Quality::High, 16, MTUS[1]) };
+    let mut enc = LdacEncoder::new(&cfg).unwrap();
+    assert!(enc.abr_active());
+    let mut tone = Tone::new(48000, 2, PcmFormat::I16, 128);
+    let mut out = vec![0u8; enc.max_output_bytes()];
+    for _ in 0..10 {
+        enc.abr_adjust(20);
+        encode_packets(&mut enc, &mut tone, &mut out);
+    }
+    assert_eq!(enc.bitrate_kbps(), 330);
+    enc.abr_reset();
+    encode_packets(&mut enc, &mut tone, &mut out);
+    assert_eq!(enc.bitrate_kbps(), 990);
+    // ABR still works after the reset
+    for _ in 0..10 {
+        enc.abr_adjust(20);
+        encode_packets(&mut enc, &mut tone, &mut out);
+    }
+    assert_eq!(enc.bitrate_kbps(), 330);
+
+    // Without ABR there is nothing active and nothing to reset
+    let mut fixed = LdacEncoder::new(&config(48000, 2, Quality::Standard, 16, MTUS[0])).unwrap();
+    assert!(!fixed.abr_active());
+    fixed.abr_reset();
+    encode_packets(&mut fixed, &mut tone, &mut out);
+    assert_eq!(fixed.bitrate_kbps(), 660);
+}

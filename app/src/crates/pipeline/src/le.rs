@@ -21,7 +21,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bt_host::{LeSduSink, LinkStats};
 use codec::lc3::{Lc3ChannelEncoder, Lc3Error, Lc3Params};
@@ -416,10 +416,7 @@ impl LePipeline {
         let encoder = LeEncoder::new(&plan, input)?;
         let layout = encoder.layout().clone();
         let (producer, consumer) = rtrb::RingBuffer::new(buffer.ring_bytes(&input));
-        let control = Arc::new(Control {
-            stop: std::sync::atomic::AtomicBool::new(false),
-            reset: std::sync::atomic::AtomicBool::new(false),
-        });
+        let control = Control::new();
         let thread = {
             let control = control.clone();
             std::thread::Builder::new()
@@ -427,8 +424,13 @@ impl LePipeline {
                 .spawn(move || le_encode_thread(encoder, consumer, sink, &control))
                 .map_err(|e| format!("spawning the LE encode thread: {e}"))?
         };
-        let capture =
-            CaptureInput { producer, encode_thread: thread.thread().clone(), stats, frame_bytes: input.frame_bytes() };
+        let capture = CaptureInput {
+            producer,
+            encode_thread: thread.thread().clone(),
+            stats,
+            control: control.clone(),
+            frame_bytes: input.frame_bytes(),
+        };
         Ok((LePipeline { control, thread: Some(thread), layout }, capture))
     }
 
@@ -471,6 +473,7 @@ fn le_encode_thread(mut encoder: LeEncoder, mut ring: rtrb::Consumer<u8>, sink: 
     // ~10 ms rounds, at least 128 frames (as the A2DP encode thread)
     let round_frames = (encoder.input.sample_rate as usize / 100).max(128);
     let mut read_buf = vec![0u8; round_frames * frame_bytes];
+    let mut overflow_report = Instant::now();
     while !control.stop.load(Ordering::Acquire) {
         if control.reset.swap(false, Ordering::AcqRel) {
             let n = ring.slots();
@@ -479,6 +482,7 @@ fn le_encode_thread(mut encoder: LeEncoder, mut ring: rtrb::Consumer<u8>, sink: 
             }
             encoder.reset();
         }
+        control.report_overflows("LE encode thread", &mut overflow_report);
         let available = ring.slots() / frame_bytes;
         if available == 0 {
             std::thread::park_timeout(Duration::from_millis(10));

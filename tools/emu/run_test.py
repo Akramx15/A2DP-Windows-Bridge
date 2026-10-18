@@ -13,7 +13,8 @@ with a2dpwb_decode:
     decoder) is identical on both sides and is the test tone: 1 kHz left,
     1.5 kHz right, amplitude 0.5
 The cases of NEGOTIATION run the same way with another sink or command line
-(Auto choosing SBC XQ, or SBC on a sink without dual channel; Opus at 48 kHz
+(Auto choosing SBC XQ, or SBC on a sink without dual channel or one that
+refuses it; Opus at 48 kHz
 from a 44.1 kHz request, Auto choosing Opus over AAC and LHDC V5 over Opus).
 
 Outputs (captures, logs, reports, WAV) go to tools/emu/out/<codec>/.
@@ -85,6 +86,8 @@ NEGOTIATION = {
     'sbcxq-44k': ('sbcxq', [], 'sbcxq', ['--rate', '44100']),            # bitpool 47
     'auto-sbcxq': ('auto', ['--codecs', 'sbc'], 'sbcxq', []),            # Auto takes SBC XQ over SBC
     'auto-sbc-no-xq': ('auto', ['--codecs', 'sbc', '--sbc-no-dual'], 'sbc', []),  # no dual channel: SBC
+    # Dual channel listed but refused: SBC XQ falls back to SBC
+    'auto-sbcxq-refused': ('auto', ['--codecs', 'sbc', '--sbc-reject-dual'], 'sbc', []),
     # Max bitpool 35: SBC capped there; Auto does not take SBC XQ (needs 43)
     'auto-sbc-bp35': ('auto', ['--codecs', 'sbc', '--sbc-max-bitpool', '35'], 'sbc-bp35', []),
     'sbcxq-bp45': ('sbcxq', ['--sbc-max-bitpool', '45'], 'sbcxq-bp45', ['--rate', '44100']),

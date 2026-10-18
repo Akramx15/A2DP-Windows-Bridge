@@ -33,7 +33,9 @@ use pipeline::{BufferPreset, CaptureInput};
 
 use crate::messages::Msg;
 use crate::service::Inner;
-use crate::stream::{DefaultDeviceGuard, SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync};
+use crate::stream::{
+    DefaultDeviceGuard, DiscontinuityLog, SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync,
+};
 
 /// Waits for the LE core after BTstack started (v1: 50 x 100 ms)
 const READY_WAIT: Duration = Duration::from_secs(5);
@@ -184,6 +186,11 @@ impl LeAudioPath {
         self.rate
     }
 
+    /// Gaps WASAPI reported in the captured audio
+    pub fn discontinuities(&self) -> u64 {
+        self.capture.as_ref().map_or(0, Running::discontinuities)
+    }
+
     /// Producer first, then the encode thread
     pub fn stop(mut self) {
         self.stop_now();
@@ -286,11 +293,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     if let SourceRequest::VirtualDevice { id, name, auto_switch: true } = &req.source
         && !id.is_empty()
     {
-        let before = audio_capture::default_render_device();
-        match audio_capture::set_default_render_device(id) {
-            Ok(()) => default_guard.0 = before,
-            Err(e) => tracing::warn!("failed to make '{name}' the default output device: {e}"),
-        }
+        default_guard = DefaultDeviceGuard::switch_to(id, name);
     }
     let mut audio = match LeAudioPath::start(&req.source, &started, host.stats().clone()) {
         Ok(a) => Some(a),
@@ -336,6 +339,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         .map(crate::volume_sync::VolumeSyncer::new);
 
     let mut lost_for_good = false;
+    let mut discontinuities = DiscontinuityLog::default();
     while !stopped() {
         inner.wait_tick(Duration::from_millis(200));
         if stopped() {
@@ -344,6 +348,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if let Some(v) = volume.as_mut() {
             v.tick(sync_volume, &crate::volume_sync::LeHeadphones(&host));
         }
+        discontinuities.tick(audio.as_ref().map_or(0, LeAudioPath::discontinuities));
         if !host.le_stream_lost() {
             continue;
         }

@@ -332,6 +332,16 @@ pub trait Encoder: Send {
     /// Adaptive bit rate step with the send queue depth (packets waiting);
     /// called by the encode thread when [`EncoderConfig::abr`] is set
     fn abr_adjust(&mut self, _queue_depth: u32) {}
+
+    /// Adaptive bit rate is running: asked for and set up (LDAC keeps a
+    /// fixed quality when its ABR module fails to start)
+    fn abr_active(&self) -> bool {
+        false
+    }
+
+    /// Puts ABR back to where a stream starts (after a reconnect: what the
+    /// old link's queue made it do says nothing about the new one)
+    fn abr_reset(&mut self) {}
 }
 
 /// Creates the encoder for `kind`
