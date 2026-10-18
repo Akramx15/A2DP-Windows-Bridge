@@ -52,6 +52,7 @@ dependencies = [
 name = "a2dpwb-driver"
 version = "2.0.0-alpha.1"
 dependencies = [
+ "embed-resource",
  "serde",
  "serde_json",
  "tracing",
