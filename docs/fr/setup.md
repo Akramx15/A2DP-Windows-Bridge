@@ -61,7 +61,7 @@ A2DPWB communique directement avec un adaptateur Bluetooth USB via WinUSB, le pi
 {: .warning }
 Tant que WinUSB est attribué, le Bluetooth de Windows ne voit plus l'adaptateur : les appareils associés à Windows par son intermédiaire ne fonctionnent plus tant que le pilote n'est pas restauré. Utilisez votre Bluetooth intégré pour les périphériques courants (clavier, souris, etc.), et **n'attribuez jamais WinUSB à l'adaptateur Bluetooth intégré du PC**.
 
-**Restaurer le pilote**, sur le même écran, rend l'adaptateur à Windows : Windows choisit de nouveau son propre pilote (normalement son pilote Bluetooth) et l'adaptateur fonctionne avec le Bluetooth de Windows. A2DPWB ne peut plus diffuser par son intermédiaire tant que WinUSB n'est pas attribué de nouveau. Restaurez le pilote avant de désinstaller A2DPWB si vous voulez réutiliser l'adaptateur avec Windows.
+**Restaurer le pilote**, sur le même écran, rend l'adaptateur à Windows : Windows choisit de nouveau son propre pilote (normalement son pilote Bluetooth) et l'adaptateur fonctionne avec le Bluetooth de Windows. A2DPWB ne peut plus diffuser par son intermédiaire tant que WinUSB n'est pas attribué de nouveau. Le programme de désinstallation propose la même chose : si A2DPWB a attribué WinUSB à des adaptateurs, il demande s'il faut les rendre à Windows (une seule demande de droits d'administrateur). Les mises à jour conservent WinUSB, de même qu'une désinstallation silencieuse (`/S`).
 
 ### Utiliser Zadig à la place {#zadig}
 
@@ -70,6 +70,23 @@ Un pilote WinUSB installé avec [Zadig](https://zadig.akeo.ie/) fonctionne tout 
 1. Ouvrez Zadig et allez dans **Options > List All Devices**
 2. Sélectionnez votre adaptateur Bluetooth USB dans la liste déroulante
 3. Sélectionnez **WinUSB** comme pilote cible et cliquez sur **Replace Driver**
+
+### À la main dans le Gestionnaire de périphériques {#device-manager}
+
+Si l'adaptateur n'apparaît pas dans la liste d'A2DPWB, si un bouton de l'écran **Adaptateur** échoue ou si votre adaptateur se comporte autrement que les autres de son type, le Gestionnaire de périphériques de Windows (clic droit sur **Démarrer** > **Gestionnaire de périphériques**) fait la même chose à la main. Les deux demandent des droits d'administrateur. Les noms des menus peuvent varier légèrement selon la version de Windows.
+
+**Attribuer WinUSB**
+
+1. Trouvez l'adaptateur : normalement sous **Bluetooth** avec son propre nom (par exemple « TP-Link Bluetooth USB Adapter »), ou avec une marque jaune quand son pilote n'a pas pu démarrer. **Affichage > Périphériques par connexion** aide à le distinguer du Bluetooth intégré du PC, auquel il ne faut pas toucher
+2. Clic droit > **Mettre à jour le pilote** > **Parcourir mon poste de travail pour rechercher des pilotes** > **Choisir parmi une liste de pilotes disponibles sur mon ordinateur**
+3. Si Windows demande un type de périphérique, choisissez **Périphériques USB**. Décochez **Afficher les matériels compatibles**, choisissez le fabricant **Périphérique WinUsb** et le modèle **Périphérique WinUsb**, cliquez sur **Suivant** et confirmez l'avertissement
+4. L'adaptateur apparaît maintenant comme **Périphérique WinUsb** sous **Périphériques USB**. Redémarrez A2DPWB (ou rouvrez l'écran **Adaptateur**) : il utilise l'adaptateur comme avec Zadig
+
+**Restaurer le pilote d'origine**
+
+1. Sous **Périphériques USB**, clic droit sur l'adaptateur (**Périphérique WinUsb**) > **Désinstaller l'appareil**. Si le pilote WinUSB vient de Zadig, cochez aussi **Tenter de supprimer le pilote de ce périphérique**, sinon Windows choisit de nouveau le pilote de Zadig
+2. Débranchez l'adaptateur et rebranchez-le (ou **Action > Rechercher les modifications sur le matériel**). Windows installe son propre pilote et l'adaptateur apparaît sous **Bluetooth**
+3. S'il y porte une marque jaune (son pilote n'a pas pu démarrer, par exemple code 31), le pilote du fabricant ne fonctionne pas avec lui : clic droit > **Mettre à jour le pilote** > **Parcourir mon poste de travail pour rechercher des pilotes** > **Choisir parmi une liste de pilotes disponibles sur mon ordinateur** > **Adaptateur Bluetooth générique**, ou attribuez de nouveau WinUSB comme ci-dessus pour l'utiliser avec A2DPWB
 
 ## Étape 3 : trouver votre casque {#headphones}
 

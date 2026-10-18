@@ -60,7 +60,7 @@ A2DPWB communicates directly with a USB Bluetooth adapter via WinUSB, the generi
 {: .warning }
 While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter: devices paired with Windows through it stop working until the driver is restored. Use your built-in Bluetooth for normal peripherals (keyboard, mouse, etc.), and **never assign WinUSB to the PC's built-in Bluetooth adapter**.
 
-**Restore driver** on the same screen gives the adapter back to Windows: Windows picks its own driver again (normally its Bluetooth driver) and the adapter works with Windows' Bluetooth. A2DPWB cannot stream through it until WinUSB is assigned again. Restore the driver before you uninstall A2DPWB if you want to use the adapter with Windows again.
+**Restore driver** on the same screen gives the adapter back to Windows: Windows picks its own driver again (normally its Bluetooth driver) and the adapter works with Windows' Bluetooth. A2DPWB cannot stream through it until WinUSB is assigned again. The uninstaller offers the same: when A2DPWB put adapters on WinUSB, it asks whether to give them back to Windows (one administrator prompt). Updates keep WinUSB, and so does a silent uninstall (`/S`).
 
 ### Using Zadig instead {#zadig}
 
@@ -69,6 +69,23 @@ A WinUSB driver installed with [Zadig](https://zadig.akeo.ie/) works just as wel
 1. Open Zadig, go to **Options > List All Devices**
 2. Select your USB Bluetooth adapter from the dropdown
 3. Select **WinUSB** as the target driver and click **Replace Driver**
+
+### By hand in Device Manager {#device-manager}
+
+If the adapter is missing from A2DPWB's list, a button on the **Adapter** screen fails, or your adapter behaves differently from others of its kind, Windows' Device Manager (right-click **Start** > **Device Manager**) does the same by hand. Both need administrator rights. Menu names may differ slightly between Windows versions.
+
+**Assign WinUSB**
+
+1. Find the adapter: normally under **Bluetooth** with its own name (for example "TP-Link Bluetooth USB Adapter"), or with a yellow mark when its driver failed to start. **View > Devices by connection** helps tell it apart from the PC's built-in Bluetooth, which you must leave alone
+2. Right-click it > **Update driver** > **Browse my computer for drivers** > **Let me pick from a list of available drivers on my computer**
+3. If Windows asks for a device type, choose **Universal Serial Bus devices**. Clear **Show compatible hardware**, choose the manufacturer **WinUsb Device** and the model **WinUsb Device**, click **Next** and confirm the warning
+4. The adapter now shows as **WinUsb Device** under **Universal Serial Bus devices**. Restart A2DPWB (or open the **Adapter** screen again): it uses the adapter as with Zadig
+
+**Restore the original driver**
+
+1. Under **Universal Serial Bus devices**, right-click the adapter (**WinUsb Device**) > **Uninstall device**. If the WinUSB driver came from Zadig, also tick **Attempt to remove the driver for this device**, or Windows picks Zadig's driver again
+2. Unplug the adapter and plug it in again (or **Action > Scan for hardware changes**). Windows installs its own driver and the adapter appears under **Bluetooth**
+3. If it shows a yellow mark there instead (its driver failed to start, for example Code 31), the manufacturer's driver does not work with it: right-click > **Update driver** > **Browse my computer for drivers** > **Let me pick from a list of available drivers on my computer** > **Generic Bluetooth Adapter**, or assign WinUSB again as above to use it with A2DPWB
 
 ## Step 3: Find Your Headphones {#headphones}
 

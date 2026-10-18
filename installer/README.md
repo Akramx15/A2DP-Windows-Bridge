@@ -77,6 +77,15 @@ not secret; once it is final it may also be committed as `plugins.updater.pubkey
   `settings.json` (`crates/core/src/migrate.rs`).
 - Points "start with Windows" (HKCU Run, value `A2DPWB`) at `a2dpwb-core.exe --background` when
   it was on; the uninstaller removes it when it points at that installation.
+- The uninstaller gives the adapters A2DPWB put on WinUSB back to Windows, after asking. The core
+  keeps one record per assigned adapter in `%APPDATA%\A2DPWB\driver\` (the `assign` result,
+  deleted by **Restore driver**); when there are records, the uninstaller asks (No is the default
+  while v1 is running or installed, since v1 needs WinUSB too) and runs
+  `a2dpwb-driver.exe restore --records <folder>` elevated: one UAC prompt for all adapters, and the
+  records of the adapters given back are deleted. An unplugged adapter keeps its record and the
+  uninstaller points to Device Manager. Not on updates, and not in silent mode (`/S`: nobody to
+  ask, and no UAC prompt), where the adapters stay on WinUSB. An adapter that already had WinUSB
+  (Zadig) when A2DPWB was asked to assign it is left alone.
 - `/KEEPV1` on the command line leaves v1, a running v1 and the Run value alone. Only for testing
   v2 beside v1: both use the same settings folder and cannot use the adapter at the same time.
   For example, a throwaway install: `A2DPWB-<ver>-win64-setup.exe /S /NS /KEEPV1 /D=C:\temp\a2dpwb-test`

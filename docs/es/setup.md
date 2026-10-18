@@ -61,7 +61,7 @@ A2DPWB se comunica directamente con un adaptador Bluetooth USB mediante WinUSB, 
 {: .warning }
 Mientras WinUSB esté asignado, el Bluetooth de Windows ya no ve el adaptador: los dispositivos emparejados con Windows a través de él dejan de funcionar hasta que se restaure el controlador. Use el Bluetooth integrado para los periféricos habituales (teclado, ratón, etc.) y **no asigne nunca WinUSB al adaptador Bluetooth integrado del PC**.
 
-**Restaurar controlador**, en la misma pantalla, devuelve el adaptador a Windows: Windows vuelve a elegir su propio controlador (normalmente su controlador Bluetooth) y el adaptador funciona con el Bluetooth de Windows. A2DPWB no podrá transmitir a través de él hasta que se asigne WinUSB de nuevo. Restaure el controlador antes de desinstalar A2DPWB si quiere volver a usar el adaptador con Windows.
+**Restaurar controlador**, en la misma pantalla, devuelve el adaptador a Windows: Windows vuelve a elegir su propio controlador (normalmente su controlador Bluetooth) y el adaptador funciona con el Bluetooth de Windows. A2DPWB no podrá transmitir a través de él hasta que se asigne WinUSB de nuevo. El desinstalador ofrece lo mismo: si A2DPWB asignó WinUSB a algún adaptador, pregunta si devolverlo a Windows (una sola solicitud de permisos de administrador). Las actualizaciones mantienen WinUSB, igual que una desinstalación silenciosa (`/S`).
 
 ### Usar Zadig en su lugar {#zadig}
 
@@ -70,6 +70,23 @@ Un controlador WinUSB instalado con [Zadig](https://zadig.akeo.ie/) funciona igu
 1. Abra Zadig y vaya a **Options > List All Devices**
 2. Seleccione su adaptador Bluetooth USB en la lista desplegable
 3. Seleccione **WinUSB** como controlador de destino y haga clic en **Replace Driver**
+
+### A mano en el Administrador de dispositivos {#device-manager}
+
+Si el adaptador no aparece en la lista de A2DPWB, falla un botón de la pantalla **Adaptador** o su adaptador se comporta de forma distinta a otros de su tipo, el Administrador de dispositivos de Windows (clic derecho en **Inicio** > **Administrador de dispositivos**) hace lo mismo a mano. Ambas cosas requieren permisos de administrador. Los nombres de los menús pueden variar un poco según la versión de Windows.
+
+**Asignar WinUSB**
+
+1. Busque el adaptador: normalmente en **Bluetooth** con su propio nombre (por ejemplo «TP-Link Bluetooth USB Adapter»), o con una marca amarilla cuando su controlador no pudo iniciarse. **Ver > Dispositivos por conexión** ayuda a distinguirlo del Bluetooth integrado del equipo, que no debe tocar
+2. Clic derecho > **Actualizar controlador** > **Buscar controladores en mi equipo** > **Elegir en una lista de controladores disponibles en el equipo**
+3. Si Windows pide un tipo de dispositivo, elija **Dispositivos de bus serie universal**. Desmarque **Mostrar hardware compatible**, elija el fabricante **Dispositivo WinUsb** y el modelo **Dispositivo WinUsb**, haga clic en **Siguiente** y confirme la advertencia
+4. El adaptador aparece ahora como **Dispositivo WinUsb** en **Dispositivos de bus serie universal**. Reinicie A2DPWB (o vuelva a abrir la pantalla **Adaptador**): lo usa igual que con Zadig
+
+**Restaurar el controlador original**
+
+1. En **Dispositivos de bus serie universal**, clic derecho en el adaptador (**Dispositivo WinUsb**) > **Desinstalar el dispositivo**. Si el controlador WinUSB vino de Zadig, marque también **Intentar quitar el controlador de este dispositivo**; si no, Windows vuelve a elegir el controlador de Zadig
+2. Desconecte el adaptador y vuelva a conectarlo (o **Acción > Buscar cambios de hardware**). Windows instala su propio controlador y el adaptador aparece en **Bluetooth**
+3. Si ahí muestra una marca amarilla (su controlador no pudo iniciarse, por ejemplo código 31), el controlador del fabricante no funciona con él: clic derecho > **Actualizar controlador** > **Buscar controladores en mi equipo** > **Elegir en una lista de controladores disponibles en el equipo** > **Adaptador Bluetooth genérico**, o asigne de nuevo WinUSB como arriba para usarlo con A2DPWB
 
 ## Paso 3: Encontrar los auriculares {#headphones}
 

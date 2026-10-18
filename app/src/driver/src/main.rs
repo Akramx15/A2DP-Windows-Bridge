@@ -6,6 +6,7 @@
 //! a2dpwb-driver state <instance-id> [--out <file>]
 //! a2dpwb-driver assign <instance-id> [--out <file>]
 //! a2dpwb-driver restore <instance-id> [--previous <json> | --previous @<file>] [--out <file>]
+//! a2dpwb-driver restore --records <dir> [--out <file>]
 //! ```
 //!
 //! The result is one JSON object on stdout (and in `--out`), logs go to
@@ -24,6 +25,11 @@
 //! caller keeps it and passes it back to `restore --previous` (the whole
 //! `assign` result is accepted too), which then reports whether the same
 //! driver came back.
+//!
+//! `restore --records <dir>` restores every adapter that has an assignment
+//! record in `<dir>` (the core keeps them in `<settings>\driver\`, one
+//! `assign` result per adapter) and deletes the records of the adapters
+//! given back. The uninstaller uses it: one UAC prompt for all adapters.
 
 #![forbid(unsafe_code)]
 
@@ -56,7 +62,8 @@ const USAGE: &str = "usage:
   a2dpwb-driver list [--all] [--out <file>]
   a2dpwb-driver state <instance-id> [--out <file>]
   a2dpwb-driver assign <instance-id> [--out <file>]
-  a2dpwb-driver restore <instance-id> [--previous <json> | --previous @<file>] [--out <file>]";
+  a2dpwb-driver restore <instance-id> [--previous <json> | --previous @<file>] [--out <file>]
+  a2dpwb-driver restore --records <dir> [--out <file>]";
 
 #[derive(Debug, PartialEq)]
 enum Command {
@@ -64,6 +71,7 @@ enum Command {
     State { instance_id: String },
     Assign { instance_id: String },
     Restore { instance_id: String, previous: Option<String> },
+    RestoreRecords { dir: PathBuf },
 }
 
 #[derive(Debug, PartialEq)]
@@ -110,12 +118,14 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
     let mut positional = Vec::new();
     let mut out = None;
     let mut previous = None;
+    let mut records = None;
     let mut all = false;
     let mut it = argv.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--out" => out = Some(PathBuf::from(it.next().ok_or("--out needs a file")?)),
             "--previous" => previous = Some(it.next().ok_or("--previous needs a value")?.clone()),
+            "--records" => records = Some(PathBuf::from(it.next().ok_or("--records needs a folder")?)),
             "--all" => all = true,
             s if s.starts_with("--") => return Err(format!("unknown option {s}")),
             s => positional.push(s.to_string()),
@@ -128,6 +138,9 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
         "list" => Command::List { all },
         "state" => Command::State { instance_id: instance_id()? },
         "assign" => Command::Assign { instance_id: instance_id()? },
+        "restore" if previous.is_none() && records.is_some() => {
+            Command::RestoreRecords { dir: records.take().unwrap_or_default() }
+        }
         "restore" => Command::Restore { instance_id: instance_id()?, previous: previous.take() },
         other => return Err(format!("unknown command {other}")),
     };
@@ -136,6 +149,9 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
     }
     if previous.is_some() {
         return Err("--previous is for restore only".into());
+    }
+    if records.is_some() {
+        return Err("--records is for restore without an instance ID or --previous only".into());
     }
     Ok(Args { command, out })
 }
@@ -149,6 +165,7 @@ fn run(command: &Command) -> (u8, Value) {
         },
         Command::Assign { instance_id } => assign(instance_id),
         Command::Restore { instance_id, previous } => restore(instance_id, previous.as_deref()),
+        Command::RestoreRecords { dir } => restore_records(dir),
     }
 }
 
@@ -219,6 +236,101 @@ fn restore(instance_id: &str, previous: Option<&str>) -> (u8, Value) {
         }
         Err(e) => driver_error("restore", &e),
     }
+}
+
+/// What to do with one file of `restore --records`
+#[derive(Debug, PartialEq)]
+enum RecordPlan {
+    Restore {
+        instance_id: String,
+    },
+    /// Nothing to restore; `remove`: the record is of no use any more
+    Skip {
+        reason: &'static str,
+        remove: bool,
+    },
+}
+
+fn plan_record(text: &str) -> RecordPlan {
+    let Ok(value) = serde_json::from_str::<Value>(text.trim_start_matches('\u{FEFF}')) else {
+        return RecordPlan::Skip { reason: "not_a_record", remove: false };
+    };
+    let Some(instance_id) = value.get("instance_id").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
+        return RecordPlan::Skip { reason: "not_a_record", remove: false };
+    };
+    // The adapter was on WinUSB (Zadig's, or another tool's) before A2DPWB
+    // was asked to assign it: nothing of A2DPWB's to undo
+    if value.get("already_winusb").and_then(Value::as_bool) == Some(true) {
+        return RecordPlan::Skip { reason: "winusb_before", remove: true };
+    }
+    RecordPlan::Restore { instance_id: instance_id.to_string() }
+}
+
+/// The more telling exit code of two adapters
+fn worse(a: u8, b: u8) -> u8 {
+    let rank = |c: u8| match c {
+        exit::OK => 0,
+        exit::NO_DEVICE => 1,
+        exit::UNVERIFIED => 2,
+        exit::FAILED => 3,
+        _ => 4,
+    };
+    if rank(b) > rank(a) { b } else { a }
+}
+
+/// `restore --records <dir>`: every recorded adapter; a record is deleted
+/// once its adapter is back on its own driver. An unplugged adapter keeps
+/// its record (exit code 4 for the whole run).
+fn restore_records(dir: &std::path::Path) -> (u8, Value) {
+    let mut paths: Vec<PathBuf> = match std::fs::read_dir(dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json")))
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return (exit::FAILED, error_json("records", &format!("cannot read {}: {e}", dir.display()))),
+    };
+    paths.sort();
+    let plans: Vec<(PathBuf, RecordPlan)> = paths
+        .into_iter()
+        .map(|p| {
+            let plan = match std::fs::read_to_string(&p) {
+                Ok(text) => plan_record(&text),
+                Err(_) => RecordPlan::Skip { reason: "unreadable", remove: false },
+            };
+            (p, plan)
+        })
+        .collect();
+    if plans.iter().any(|(_, plan)| matches!(plan, RecordPlan::Restore { .. })) && !win_sys::elevation::is_elevated() {
+        return driver_error("restore", &DriverError::NotElevated);
+    }
+    let mut code = exit::OK;
+    let mut adapters = Vec::new();
+    for (path, plan) in plans {
+        let (one, mut result, remove) = match plan {
+            RecordPlan::Restore { instance_id } => {
+                let (one, result) = restore(&instance_id, Some(&format!("@{}", path.display())));
+                (one, result, one == exit::OK)
+            }
+            RecordPlan::Skip { reason, remove } => (exit::OK, json!({ "ok": true, "skipped": reason }), remove),
+        };
+        if remove && let Err(e) = std::fs::remove_file(&path) {
+            tracing::warn!("cannot delete the record {}: {e}", path.display());
+        }
+        result["record"] = json!(path.display().to_string());
+        result["exit_code"] = json!(one);
+        code = worse(code, one);
+        adapters.push(result);
+    }
+    (
+        code,
+        json!({
+            "ok": code == exit::OK,
+            "command": "restore",
+            "records": dir.display().to_string(),
+            "adapters": adapters,
+        }),
+    )
 }
 
 /// The record from `--previous`: JSON text or @file, either the record
@@ -453,6 +565,64 @@ mod tests {
         assert!(args(&["list", "--out"]).is_err());
         assert!(args(&["list", "--force"]).is_err());
         assert!(args(&["format"]).is_err());
+        assert_eq!(
+            args(&["restore", "--records", r"C:\u\A2DPWB\driver", "--out", "o.json"]).unwrap(),
+            Args {
+                command: Command::RestoreRecords { dir: PathBuf::from(r"C:\u\A2DPWB\driver") },
+                out: Some(PathBuf::from("o.json"))
+            }
+        );
+        assert!(args(&["restore", "--records"]).is_err());
+        assert!(args(&["restore", "X", "--records", "D"]).is_err());
+        assert!(args(&["restore", "--records", "D", "--previous", "{}"]).is_err());
+        assert!(args(&["list", "--records", "D"]).is_err());
+    }
+
+    #[test]
+    fn record_plans() {
+        let assigned = json!({
+            "ok": true, "command": "assign", "instance_id": r"USB\VID_2357&PID_0604\E848B8C82000",
+            "already_winusb": false, "previous": { "inf_name": "oem91.inf", "service": "BTHUSB" },
+        });
+        assert_eq!(
+            plan_record(&format!("\u{FEFF}{assigned}")),
+            RecordPlan::Restore { instance_id: r"USB\VID_2357&PID_0604\E848B8C82000".into() }
+        );
+        let mut before = assigned.clone();
+        before["already_winusb"] = json!(true);
+        assert_eq!(plan_record(&before.to_string()), RecordPlan::Skip { reason: "winusb_before", remove: true });
+        assert_eq!(plan_record("null"), RecordPlan::Skip { reason: "not_a_record", remove: false });
+        assert_eq!(plan_record("{}"), RecordPlan::Skip { reason: "not_a_record", remove: false });
+        assert_eq!(plan_record("garbage"), RecordPlan::Skip { reason: "not_a_record", remove: false });
+    }
+
+    #[test]
+    fn worst_exit_code() {
+        assert_eq!(worse(exit::OK, exit::OK), exit::OK);
+        assert_eq!(worse(exit::OK, exit::NO_DEVICE), exit::NO_DEVICE);
+        assert_eq!(worse(exit::UNVERIFIED, exit::NO_DEVICE), exit::UNVERIFIED);
+        assert_eq!(worse(exit::UNVERIFIED, exit::FAILED), exit::FAILED);
+        assert_eq!(worse(exit::NOT_ELEVATED, exit::FAILED), exit::NOT_ELEVATED);
+    }
+
+    #[test]
+    fn records_folder_without_work() {
+        // A missing folder, and records with nothing to restore: no elevation
+        // needed, the useless record goes, the unreadable one stays
+        let (code, v) = restore_records(std::path::Path::new(r"Z:\no\such\folder"));
+        assert_eq!(code, exit::OK);
+        assert_eq!(v["adapters"].as_array().unwrap().len(), 0);
+        let dir = std::env::temp_dir().join(format!("a2dpwb_driver_records_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.json"), r#"{"instance_id":"USB\\X","already_winusb":true}"#).unwrap();
+        std::fs::write(dir.join("b.json"), "not json").unwrap();
+        std::fs::write(dir.join("c.txt"), "ignored").unwrap();
+        let (code, v) = restore_records(&dir);
+        assert_eq!(code, exit::OK);
+        assert_eq!(v["adapters"].as_array().unwrap().len(), 2);
+        assert!(!dir.join("a.json").exists());
+        assert!(dir.join("b.json").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

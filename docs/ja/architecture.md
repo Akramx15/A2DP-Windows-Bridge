@@ -193,7 +193,7 @@ Windows 8 以降には、Microsoft 署名済みの WinUSB ドライバー（`win
 1. デバイスインスタンス ID でアダプターを開きます。
 2. `Device Parameters` に `DeviceInterfaceGUIDs` を書き込み、WinUSB がデバイスインターフェースを登録するようにします。
 3. `%SystemRoot%\INF\winusb.inf` の "WinUsb Device" を選び、`DiInstallDevice` で割り当てます。標準の署名済みドライバーなので、証明書はインストールしません（Zadig / libwdi は生成した INF を自作の証明書で署名します）。
-4. **復元**: デバイスを削除（`DiUninstallDevice`）して再列挙すると、Windows が一番順位の高いドライバー（通常は `BthUSB` かメーカーのドライバー）を選び直します。割り当て前のドライバーは設定フォルダー（`driver\`）に記録しておき、復元後に一致しているかを確かめます。
+4. **復元**: デバイスを削除（`DiUninstallDevice`）して再列挙すると、Windows が一番順位の高いドライバー（通常は `BthUSB` かメーカーのドライバー）を選び直します。割り当て前のドライバーは設定フォルダー（`driver\`）に記録しておき、復元後に一致しているかを確かめます。`restore --records <フォルダー>` は、記録のあるアダプターをまとめて 1 回の昇格で戻します。アンインストーラーは確認のうえでこれを使います。
 
 コアは管理者として動きません。割り当てと復元のときだけ、UAC の確認付きでヘルパーを起動し（`ShellExecuteEx` の "runas"）、その JSON の結果を読みます。アダプターとドライバーの一覧には昇格は不要です。
 

@@ -247,6 +247,8 @@ driver > Let me pick > WinUsb Device" does, through SetupAPI:
    Windows then picks its best-ranked driver again (normally `BthUSB` or the
    vendor's driver). The driver the adapter had before is recorded in the
    settings folder (`driver\`) and compared after the restore.
+   `restore --records <folder>` restores every recorded adapter in one
+   elevated run; the uninstaller uses it after asking.
 
 The core never runs as administrator: for an assignment or a restore it starts
 the helper with a UAC prompt (`ShellExecuteEx` "runas") and reads its JSON
