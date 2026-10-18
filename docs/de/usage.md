@@ -72,7 +72,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 | Start | **Mit Windows starten** und **Im Infobereich starten** (siehe [Mit Windows starten](#autostart)), **In den Infobereich minimieren** (siehe [Infobereich und Flyout](#tray)) |
 | Kopfhörer | **Kopfhörertasten steuern die Wiedergabe** (siehe [Kopfhörertasten](#headphone-buttons)), **Kopfhörerlautstärke merken** (siehe [Lautstärke](#volume)) |
 | Updates | **Nach Updates suchen**, **Beim Start nach Updates suchen**, **Vorabversionen bei der Updatesuche einbeziehen** (bietet auch Betaversionen an), **Jetzt aktualisieren** (siehe [Updates](#updates)) |
-| Erweitert | **LE Audio (experimentell)** und **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** (siehe [LE Audio](#le-audio)), **Entwicklermodus** (fügt der Diagnose den Empfängertest und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
+| Erweitert | **Entwicklermodus** (fügt der Diagnose den Empfängertest und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
 | Info über A2DPWB | Version, Lizenz, Lizenzen von Drittanbietern, **A2DPWB beenden** |
 
 ### Einrichtung beim ersten Start
@@ -431,7 +431,7 @@ Der Adapter des Empfängers steht dessen eigenem Bluetooth-Stack nicht zur Verf�
 
 ## LE Audio (experimentell) {#le-audio}
 
-A2DPWB kann auch an LE-Audio-Kopfhörer und -Ohrhörer streamen (LC3 über verbundene isochrone Streams, BAP Unicast), mit Lautstärke des Headsets (VCP), Medientasten (MCP), beiden Ohrhörern eines Paars (CSIP) und einem Modus mit niedriger Latenz für Gaming-Headsets (GMAP). Diese Funktion ist **experimentell und standardmäßig aus**. Sie wurde nur mit einem Bluetooth-Emulator getestet, **noch nicht mit echten LE-Audio-Kopfhörern**, und funktioniert mit Ihren vielleicht nicht; verwenden Sie zum normalen Hören die klassischen A2DP-Profile.
+A2DPWB kann auch an LE-Audio-Kopfhörer und -Ohrhörer streamen (LC3 über verbundene isochrone Streams, BAP Unicast), mit Lautstärke des Headsets (VCP), Medientasten (MCP), beiden Ohrhörern eines Paars (CSIP) und einem Modus mit niedriger Latenz für Gaming-Headsets (GMAP). Diese Funktion ist **experimentell** und wird pro Profil gewählt: Sie wird nur von einem Profil für ein LE-Audio-Gerät verwendet. Sie wurde nur mit einem Bluetooth-Emulator getestet, **noch nicht mit echten LE-Audio-Kopfhörern**, und funktioniert mit Ihren vielleicht nicht; verwenden Sie zum normalen Hören die klassischen A2DP-Profile.
 
 Voraussetzungen:
 
@@ -440,10 +440,11 @@ Voraussetzungen:
 
 So geht es:
 
-1. **Einstellungen > Erweitert > LE Audio (experimentell)** einschalten. Bluetooth startet bei der nächsten Suche oder Verbindung mit LE (während des Streamens oder Suchens wartet die Änderung bis dahin).
-2. Die Kopfhörer in den Kopplungsmodus versetzen und in einem Profil nach Geräten suchen. LE-Audio-Geräte tragen die Markierung **LE Audio**, ein Ohrhörerpaar **LE-Audio-Set** (einen der beiden wählen: A2DPWB findet den anderen). Kopfhörer, die auch A2DP können, erscheinen zweimal, einmal je Art.
-3. Im Profil **LE-Audio-Gerät (experimentell, LC3)** ankreuzen. Codec und Qualität sind nicht wählbar (A2DPWB wählt die beste LC3-Konfiguration, die die Kopfhörer annehmen), und nur die Aufnahme System-Loopback und virtuelles Gerät ist möglich.
-4. Optional: **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** im selben Abschnitt verwendet ab der nächsten Verbindung kürzere LC3-Frames mit Headsets, die die Spiele-Rolle von GMAP unterstützen.
+1. Die Kopfhörer in den Kopplungsmodus versetzen und in einem Profil nach Geräten suchen. LE-Audio-Geräte tragen die Markierung **LE Audio**, ein Ohrhörerpaar **LE-Audio-Set** (einen der beiden wählen: A2DPWB findet den anderen). Kopfhörer, die auch A2DP können, erscheinen zweimal, einmal je Art.
+2. Im Profil **LE-Audio-Gerät (experimentell, LC3)** ankreuzen. Codec und Qualität sind nicht wählbar (A2DPWB wählt die beste LC3-Konfiguration, die die Kopfhörer annehmen), und nur die Aufnahme System-Loopback und virtuelles Gerät ist möglich.
+3. Darunter ist **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** standardmäßig an: Mit Headsets, die die Spiele-Rolle von GMAP unterstützen, werden kürzere LC3-Frames verwendet; andere Headsets erhalten in beiden Fällen die Medienkonfiguration.
+
+In den Einstellungen gibt es keinen LE-Audio-Schalter. Wenn die LE-Seite einmal einen Adapter stört, schaltet `"le_audio_experimental": false` in der `settings.json` (**Einstellungen > Einstellungsordner**) sie ganz ab.
 
 Im CLI-Modus streamt `--le-audio -d <Adresse>` an ein LE-Audio-Gerät, `--le-device <Adresse>` fügt ein weiteres Gerät der Gruppe hinzu (den zweiten Ohrhörer), `--le-scan` listet die LE-Audio-Geräte in der Nähe auf, und `--le-low-latency` / `--le-preset <Name>` wählen die Konfiguration (`a2dpwb-core.exe --cli -h` zeigt alle LE-Optionen).
 

@@ -139,11 +139,11 @@ A2DPWB contourne entièrement la pile Bluetooth de Windows. Il communique direct
 ## Fonctionnalités
 
 - **Multi-codec** : LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 et (à titre expérimental) Opus / Opus 05, avec négociation automatique
-- **LE Audio (expérimental, désactivé par défaut)** : LC3 vers des casques et écouteurs LE Audio (BAP unicast, les deux écouteurs d'une paire, volume du casque, boutons multimédia, faible latence GMAP). Nécessite un adaptateur avec canaux isochrones Bluetooth 5.2 ; testé uniquement avec l'émulateur Bluetooth, pas encore avec de vrais casques LE Audio ([Utilisation](usage#le-audio))
+- **LE Audio (expérimental)** : LC3 vers des casques et écouteurs LE Audio (BAP unicast, les deux écouteurs d'une paire, volume du casque, boutons multimédia, faible latence GMAP). Nécessite un adaptateur avec canaux isochrones Bluetooth 5.2 ; testé uniquement avec l'émulateur Bluetooth, pas encore avec de vrais casques LE Audio ([Utilisation](usage#le-audio))
 - **Trois modes de capture** : bouclage système, routage via un périphérique audio virtuel, ou sortie d'une seule application
 - **Fenêtre, zone de notification et CLI** : une fenêtre pour la configuration et le diagnostic, un volet et un menu dans la zone de notification pour se connecter au quotidien, et une ligne de commande (voir [Utilisation](usage))
 - **WinUSB depuis l'application** : attribue le pilote WinUSB à l'adaptateur et restaure le pilote d'origine, sans Zadig (voir [Installation](setup#winusb))
-- **Configuration au premier lancement** : adaptateur, pilote et firmware, casque, signal de test
+- **Configuration au premier lancement** : adaptateur, pilote et firmware, casque, une première connexion
 - **ABR** : débit adaptatif pour les connexions instables (LDAC et LHDC V5)
 - **Reconnexion automatique** : se reconnecte en cas de déconnexion (jusqu'à 10 tentatives), ainsi qu'à la sortie de veille du PC
 - **Qualité de liaison et AFH** : affiche ce qui est envoyé, le RSSI et les canaux utilisés ; indique à l'adaptateur les canaux Wi-Fi à éviter (voir [Utilisation](usage#link-quality))

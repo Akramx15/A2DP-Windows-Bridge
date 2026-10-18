@@ -23,6 +23,9 @@ fn loopback() -> String {
 fn yes() -> bool {
     true
 }
+fn is_true(b: &bool) -> bool {
+    *b
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -67,6 +70,11 @@ pub struct Profile {
     pub max_media_payload: Option<u16>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub le_audio: bool,
+    /// LE Audio: GMAP low-latency presets with a gaming headset. On by
+    /// default (written only when off): other headsets get the media
+    /// configuration either way.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub le_low_latency: bool,
     #[serde(flatten)]
     pub other: BTreeMap<String, serde_json::Value>,
 }
@@ -94,6 +102,7 @@ impl Default for Profile {
             volume_device_name: String::new(),
             max_media_payload: None,
             le_audio: false,
+            le_low_latency: true,
             other: BTreeMap::new(),
         }
     }
@@ -147,8 +156,9 @@ impl Profile {
             max_media_payload: clamp_media_payload_limit(
                 self.max_media_payload.unwrap_or(legacy_max_media_payload) as u32
             ),
-            // The low-latency setting is read by the session (GMAP presets)
-            le: self.le_audio.then(bt_host::LeRequest::default),
+            le: self
+                .le_audio
+                .then(|| bt_host::LeRequest { low_latency: self.le_low_latency, ..bt_host::LeRequest::default() }),
         })
     }
 }
@@ -290,11 +300,16 @@ mod tests {
         assert!(p.le_audio);
         let r = p.to_request(1023).unwrap();
         assert_eq!(r.device, [0x00, 0xA2, 0xD0, 0x00, 0x00, 0x12]);
-        assert_eq!(r.le, Some(bt_host::LeRequest { extra_devices: Vec::new(), preset: None, low_latency: false }));
+        // GMAP low latency: on unless the profile says otherwise
+        assert_eq!(r.le, Some(bt_host::LeRequest { extra_devices: Vec::new(), preset: None, low_latency: true }));
         assert_eq!(r.source, SourceRequest::SystemLoopback);
         // Written back as v1 wrote it; a classic profile has no key
         let out = serde_json::to_value(p).unwrap();
         assert_eq!(out["le_audio"], true);
+        assert!(out.get("le_low_latency").is_none());
+        let off = Profile { le_low_latency: false, ..p.clone() };
+        assert!(!off.to_request(1023).unwrap().le.unwrap().low_latency);
+        assert_eq!(serde_json::to_value(&off).unwrap()["le_low_latency"], false);
         let classic = Profile { le_audio: false, ..p.clone() };
         assert!(serde_json::to_value(&classic).unwrap().get("le_audio").is_none());
         // A bad address is refused as for A2DP

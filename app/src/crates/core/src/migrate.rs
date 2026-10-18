@@ -18,15 +18,18 @@
 //!   logging), which the backup leaves out.
 //!
 //! Call [`prepare`] before the settings are first loaded ([`crate::Service`]
-//! does). A folder v2 already uses (schema_version 2 or later) is left
-//! alone; so is a new one without v1's files.
+//! does). A folder v2 already uses (schema_version 2 or later) only gets the
+//! later schema steps; a new one without v1's files is left alone.
+//!
+//! Schema 3 (2.0.1): LE Audio is on by default, so a folder of schema 2 gets
+//! `le_audio_experimental` turned on once (2.0.0 wrote it off for everyone).
 
 use std::path::Path;
 
 use serde_json::Value;
 
 use crate::profiles;
-use crate::settings::{SCHEMA_VERSION, Settings};
+use crate::settings::{FIRST_V2_SCHEMA, SCHEMA_VERSION, Settings};
 
 /// The copy of the folder as v1 left it
 pub const BACKUP_DIR: &str = "backup-v1";
@@ -123,13 +126,16 @@ pub fn prepare(dir: &Path) -> Report {
     let schema_before = schema_of(dir);
     let v1_files = V1_FILES.iter().any(|f| dir.join(f).is_file());
     let from_v1 = match schema_before {
-        Some(n) => n < SCHEMA_VERSION,
+        Some(n) => n < FIRST_V2_SCHEMA,
         // A settings.json that does not parse is v1's too: Settings::load
         // keeps it as .bad before using the defaults
         None => v1_files || Settings::path(dir).is_file(),
     };
     let mut report = Report { schema_before, from_v1, ..Report::default() };
     if !from_v1 {
+        if schema_before.is_some_and(|n| n < SCHEMA_VERSION) {
+            upgrade_v2(dir, &mut report);
+        }
         return report;
     }
 
@@ -188,6 +194,20 @@ pub fn prepare(dir: &Path) -> Report {
         }
     }
     report
+}
+
+/// The schema steps after v2's first one, for a folder v2 already used
+fn upgrade_v2(dir: &Path, report: &mut Report) {
+    let mut settings = Settings::load(dir);
+    // 3: LE Audio on by default (2.0.0 wrote it off for everyone)
+    if report.schema_before.is_some_and(|n| n < 3) && !settings.le_audio_experimental {
+        settings.le_audio_experimental = true;
+        tracing::info!("settings: LE Audio (experimental) turned on, as it now is by default");
+    }
+    match settings.save(dir) {
+        Ok(()) => report.schema_written = true,
+        Err(e) => tracing::error!("settings: cannot save {}: {e}", Settings::path(dir).display()),
+    }
 }
 
 #[cfg(test)]
@@ -270,6 +290,33 @@ mod tests {
         let r = prepare(dir);
         assert_eq!(r, Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
         assert!(std::fs::read_to_string(b.join("link_keys.txt")).unwrap().starts_with("AA:BB"));
+    }
+
+    #[test]
+    fn v2_settings_get_le_audio_on_once() {
+        let t = TempDir::new("schema3");
+        let dir = &t.0;
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            Settings::path(dir),
+            r#"{"schema_version":2,"language":"ja","le_audio_experimental":false,"le_audio_low_latency":false}"#,
+        )
+        .unwrap();
+        let r = prepare(dir);
+        assert_eq!(r, Report { schema_before: Some(2), schema_written: true, ..Report::default() });
+        assert!(!dir.join(BACKUP_DIR).exists());
+        let s = read_json(&Settings::path(dir));
+        assert_eq!(s["schema_version"], SCHEMA_VERSION);
+        assert_eq!(s["le_audio_experimental"], true);
+        assert_eq!(s["le_audio_low_latency"], false);
+        assert_eq!(s["language"], "ja");
+
+        // Turned off again by the user: stays off
+        let mut off = Settings::load(dir);
+        off.le_audio_experimental = false;
+        off.save(dir).unwrap();
+        assert_eq!(prepare(dir), Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
+        assert!(!Settings::load(dir).le_audio_experimental);
     }
 
     #[test]

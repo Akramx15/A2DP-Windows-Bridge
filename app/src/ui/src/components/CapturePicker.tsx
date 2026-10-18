@@ -3,12 +3,12 @@
 // profile editor. The choice is saved into the profile; a profile in use
 // starts again with it (profile.save in the core).
 
-import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { t } from "../i18n";
 import type { AudioApp, AudioDevice, Profile } from "../ipc/types";
-import { appCaptureSupport, normalizeProfile } from "../lib/profile";
+import { appCaptureSupport, normalizeProfile, toneParams } from "../lib/profile";
 import { Icon } from "./Icon";
 import type { IconName } from "./icons";
 import { CaptureSource, sourceText } from "./stream";
@@ -114,11 +114,19 @@ export function CapturePicker(props: { profile: Profile }) {
 
   const choices = createMemo(() => captureChoices(props.profile, devices(), apps(), appSupport() !== "no"));
   const stream = () => core.state.snap?.stream;
-  // A stream of something else (the test tone, another profile): what it
-  // captures, not a choice for this profile
+  // The test tone (a stream of no profile, e.g. the setup's test): shown in
+  // the picker, and choosing a source ends it and starts this profile
+  const tone = () => {
+    const s = stream();
+    return s?.info?.source?.kind === "tone" && !s.profile;
+  };
+  // Developer mode offers the tone as a source (others hear it only in the
+  // setup's test)
+  const dev = () => !!core.state.snap?.settings.developer_mode;
+  // A stream of another profile: what it captures, not a choice for this one
   const other = () => {
     const s = stream();
-    return s?.info?.source && s.profile !== props.profile.name ? s.info.source : null;
+    return s?.info?.source && s.profile !== props.profile.name && !tone() ? s.info.source : null;
   };
   // While this profile streams: what the core captures ("waiting for <app>" included)
   const shown = () => {
@@ -129,33 +137,72 @@ export function CapturePicker(props: { profile: Profile }) {
 
   let select!: HTMLSelectElement;
   const choose = (value: string) => {
-    if (value === captureValue(props.profile)) return;
+    if (value === "tone") {
+      if (tone()) return;
+      // The profile's headphones and sound, with the tone instead of capture
+      const p = unwrap(props.profile);
+      setSaving(true);
+      void app
+        .run(async () => {
+          const st = stream()?.state;
+          if (st === "connecting" || st === "reconnecting" || st === "streaming") await core.request("stream.stop");
+          await core.request("stream.start_custom", toneParams(p));
+        })
+        .then((ok) => {
+          if (!ok && select) select.value = captureValue(props.profile);
+        })
+        .finally(() => setSaving(false));
+      return;
+    }
+    const same = value === captureValue(props.profile);
+    const fromTone = tone();
+    if (same && !fromTone) return;
+    const name = props.profile.name;
     const next = normalizeProfile(withCapture(structuredClone(unwrap(props.profile)), value, devices(), apps()));
     setSaving(true);
     void app
-      .run(() => core.request("profile.save", { profile: next, original_name: props.profile.name }))
+      .run(async () => {
+        if (!same) await core.request("profile.save", { profile: next, original_name: name });
+        // The tone gives way to the profile with the chosen source
+        if (fromTone) await core.request("stream.start", { profile: name });
+      })
       .then((ok) => {
         // Not saved: back to what the profile has
-        if (!ok) select.value = captureValue(props.profile);
+        if (!ok && select) select.value = fromTone ? "tone" : captureValue(props.profile);
       })
       .finally(() => setSaving(false));
   };
+  const picked = (value: string) => !tone() && value === captureValue(props.profile);
+  // The tone's entry appears with the tone: select it once it is in the list
+  // (a selected attribute alone does not move the selection to a new option)
+  createEffect(() => {
+    const value = tone() ? "tone" : captureValue(props.profile);
+    choices();
+    queueMicrotask(() => {
+      if (select && select.value !== value && [...select.options].some((o) => o.value === value)) select.value = value;
+    });
+  });
 
   return (
     <Show when={!other()} fallback={<CaptureSource profile={props.profile} />}>
       <div class="capture-picker" classList={{ "st-warn": shown().waiting }} title={`${t("capture.mode")}: ${shown().text}`}>
         <div class="capture-picker-row">
-          <Icon name={shown().waiting ? "warning" : shown().icon} />
+          <Icon name={shown().waiting ? "warning" : tone() ? "music_note_2" : shown().icon} />
           <div class="select">
             <select ref={select} aria-label={t("capture.mode")} disabled={saving()} onChange={(e) => choose(e.currentTarget.value)}>
-              <option value="loopback" selected={captureValue(props.profile) === "loopback"}>
+              <Show when={tone() || dev()}>
+                <option value="tone" selected={tone()}>
+                  {t("receiver.source_tone")}
+                </option>
+              </Show>
+              <option value="loopback" selected={picked("loopback")}>
                 {t("capture.loopback")}
               </option>
               <Show when={choices().virtual.length > 0}>
                 <optgroup label={t("capture.virtual")}>
                   <For each={choices().virtual}>
                     {(c) => (
-                      <option value={c.value} selected={c.value === captureValue(props.profile)}>
+                      <option value={c.value} selected={picked(c.value)}>
                         {c.label}
                       </option>
                     )}
@@ -166,7 +213,7 @@ export function CapturePicker(props: { profile: Profile }) {
                 <optgroup label={t("capture.app")}>
                   <For each={choices().apps}>
                     {(c) => (
-                      <option value={c.value} selected={c.value === captureValue(props.profile)}>
+                      <option value={c.value} selected={picked(c.value)}>
                         {c.label}
                       </option>
                     )}

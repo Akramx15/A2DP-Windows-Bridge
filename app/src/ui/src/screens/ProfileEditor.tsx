@@ -175,6 +175,12 @@ export function ProfileEditor(props: { original: string | null }) {
             <Check label={t("profile.le_audio")} title={t("tooltip.le_audio")} checked={p.le_audio} onChange={setLeAudio} />
             <Show when={p.le_audio}>
               <p class="hint">{t("tooltip.le_audio")}</p>
+              <Check
+                label={t("settings.le_low_latency")}
+                title={t("ui.settings.le_low_latency_hint")}
+                checked={p.le_low_latency}
+                onChange={(v) => setP("le_low_latency", v)}
+              />
             </Show>
           </Show>
           <Show when={p.le_audio && !leOn()}>

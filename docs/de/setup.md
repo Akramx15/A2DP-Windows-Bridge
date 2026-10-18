@@ -45,7 +45,7 @@ Stecken Sie den USB-Bluetooth-Adapter ein und starten Sie A2DPWB. Solange es noc
 1. **Adapter auswählen**: die gefundenen USB-Bluetooth-Adapter. Fehlt Ihrer, stecken Sie ihn ein und klicken Sie auf **Aktualisieren**
 2. **Treiber und Firmware**: **WinUSB zuweisen** (siehe [Schritt 2](#winusb)) und bei Realtek-Adaptern die Firmwaredateien (siehe [Firmware](#firmware))
 3. **Kopfhörer finden**: Versetzen Sie die Kopfhörer in den Kopplungsmodus, klicken Sie auf **Geräte suchen**, wählen Sie sie aus und dann **Profil erstellen** (siehe [Schritt 3](#headphones))
-4. **Test**: verbinden, dann **Testton abspielen**: ein höherer Ton im rechten Ohr und ein tieferer im linken
+4. **Test**: wählen Sie, was gesendet wird (gesamtes PC-Audio, ein virtuelles Gerät oder eine App), klicken Sie auf **Verbinden** und spielen Sie am PC etwas ab. Hören Sie es im Kopfhörer, ist die Einrichtung abgeschlossen
 
 **Später einrichten** überspringt den Rest; **Einstellungen > Einrichtung ausführen** öffnet die Einrichtung erneut.
 

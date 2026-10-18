@@ -34,4 +34,9 @@ volume_sync: string, volume_device_id: string, volume_device_name: string, max_m
  * or "virtual" (error.le_audio_capture), and streaming needs
  * Settings.le_audio_experimental (error.le_audio_disabled)
  */
-le_audio: boolean, };
+le_audio: boolean, 
+/**
+ * LE Audio: GMAP low-latency presets with a gaming headset (on by
+ * default; other headsets get the media configuration either way)
+ */
+le_low_latency: boolean, };

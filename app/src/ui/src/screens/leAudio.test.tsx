@@ -1,5 +1,5 @@
-// LE Audio (experimental) in the UI against v1: the settings toggles, the
-// profile's "LE Audio device" check box, the LE Audio entries of the device
+// LE Audio (experimental) in the UI: no switches in Settings, the profile's
+// "LE Audio device" check box and its GMAP low latency, the LE Audio entries of the device
 // list, and the ISO counters of the diagnostics
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
@@ -21,8 +21,7 @@ function start(hash: string, scenario: MockScenario = "normal", speed = 0) {
 }
 
 const named = (label: string) => (n: string) => n.startsWith(label);
-const leSwitch = () => screen.findByRole("switch", { name: named(t("settings.le_audio")) });
-const lowLatencySwitch = () => screen.getByRole("switch", { name: named(t("settings.le_low_latency")) });
+const gmapCheck = () => screen.queryByRole("checkbox", { name: t("settings.le_low_latency") });
 const leCheck = () => screen.queryByRole("checkbox", { name: t("profile.le_audio") });
 
 afterEach(async () => {
@@ -33,40 +32,11 @@ afterEach(async () => {
 });
 
 describe("settings", () => {
-  it("turns LE Audio on with v1's message; low latency only with it on", async () => {
-    const { calls } = start("#/settings");
-    const le = await leSwitch();
-    expect(le).not.toBeChecked();
-    expect(lowLatencySwitch()).toBeDisabled();
-
-    fireEvent.click(le);
-    await waitFor(() => expect(le).toBeChecked());
-    const sent = calls.find((c) => c.method === "settings.set")!.params as { settings: Record<string, unknown> };
-    expect(sent.settings.le_audio_experimental).toBe(true);
-    // v1's settings.le_audio_on, paragraph by paragraph; not deferred while idle
-    const [first, second] = t("settings.le_audio_on").split("\n\n");
-    expect(await screen.findByText(first)).toBeInTheDocument();
-    expect(screen.getByText(second)).toBeInTheDocument();
-    expect(screen.queryByText(t("settings.le_audio_deferred"))).toBeNull();
-    await waitFor(() => expect(lowLatencySwitch()).not.toBeDisabled());
-
-    fireEvent.click(lowLatencySwitch());
-    await waitFor(() => expect(lowLatencySwitch()).toBeChecked());
-    const last = calls.filter((c) => c.method === "settings.set").pop()!.params as { settings: Record<string, unknown> };
-    expect(last.settings).toMatchObject({ le_audio_experimental: true, le_audio_low_latency: true });
-
-    fireEvent.click(le);
-    expect(await screen.findByText(t("settings.le_audio_off"))).toBeInTheDocument();
-    await waitFor(() => expect(lowLatencySwitch()).toBeDisabled());
-  });
-
-  it("says the change waits while a stream runs", async () => {
-    const { core } = start("#/settings");
-    const le = await leSwitch();
-    await core.request("stream.start", { profile: core.state.snap!.profiles[0].name });
-    await waitFor(() => expect(core.state.snap!.stream.state).toBe("streaming"));
-    fireEvent.click(le);
-    expect(await screen.findByText(t("settings.le_audio_deferred"))).toBeInTheDocument();
+  it("has no LE Audio or GMAP switch: both are chosen in the profile", async () => {
+    start("#/settings");
+    await screen.findByRole("switch", { name: named(t("ui.settings.developer_mode")) });
+    expect(screen.queryByRole("switch", { name: named(t("settings.le_audio")) })).toBeNull();
+    expect(screen.queryByRole("switch", { name: named(t("settings.le_low_latency")) })).toBeNull();
   });
 });
 
@@ -115,7 +85,27 @@ describe("profile editor", () => {
     fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
     const saved = (calls.find((c) => c.method === "profile.save")!.params as { profile: Record<string, unknown> }).profile;
-    expect(saved).toMatchObject({ name: "Galaxy Buds2 Pro LE Audio", device_address: "F4:4E:FD:00:11:22", le_audio: true });
+    expect(saved).toMatchObject({
+      name: "Galaxy Buds2 Pro LE Audio",
+      device_address: "F4:4E:FD:00:11:22",
+      le_audio: true,
+      le_low_latency: true,
+    });
+  });
+
+  it("offers GMAP low latency for an LE Audio profile, on by default, saved with it", async () => {
+    const { calls } = start("#/profiles/new", "le");
+    await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
+    expect(gmapCheck()).toBeNull();
+    const row = await screen.findByText(t("device.tag_le_audio_set"));
+    fireEvent.click(within(row.closest(".device-row") as HTMLElement).getByRole("radio"));
+    await waitFor(() => expect(gmapCheck()).toBeChecked());
+    fireEvent.click(gmapCheck()!);
+    await waitFor(() => expect(gmapCheck()).not.toBeChecked());
+    fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    const saved = (calls.find((c) => c.method === "profile.save")!.params as { profile: Record<string, unknown> }).profile;
+    expect(saved).toMatchObject({ le_audio: true, le_low_latency: false });
   });
 
   it("refuses application capture for LE Audio", async () => {
