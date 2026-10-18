@@ -27,8 +27,10 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | 약 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
+| SBC XQ | 약 385/505/552 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | SBC | 최대 약 345 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### 플랫폼별 코덱 지원 (헤드폰으로 전송)
@@ -40,7 +42,9 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 실험적 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu 패키지에 포함되지 않음 | ✅ |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (SBC에서 듀얼 채널과 bitpool 43 이상을 허용하는 수신 장치) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
+| FastStream | ❌ | ❌ | ✅ | ✅ (음악 전용, 직접 선택한 경우) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus (Android의 A2DP Opus) | ❌ | ❌ | 확인하지 않음 | 🧪 실험적 |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
@@ -64,7 +68,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 
 ## 지원 플랫폼 {#platform-support}
 
-| 구성 요소 | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
+| 구성 요소 | Windows 10 (x64 / ARM64) | Windows 11 (x64 / ARM64) | Linux (Ubuntu) |
 |:----------|:----------------:|:----------------:|:--------------:|
 | **A2DPWB** (창, 트레이, CLI) | ✅ (실제 하드웨어에서는 아직 미확인) | ✅ | ❌ |
 | [소스에서 빌드](building) (Rust, Visual Studio 2022 이상, Node.js) | ✅ | ✅ | ❌ |
@@ -73,7 +77,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | 가상 어댑터 `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | [측정용 수신기](usage#receiver) `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB 자체는 Windows(Windows 10 22H2 또는 Windows 11) 전용이며 x64 빌드로 제공됩니다. Linux 도구에는 Python 3.11 이상이 필요합니다(Ubuntu 26.04에서 확인). `setup.sh`는 Ubuntu / Debian용이며, 다른 배포판에서는 패키지를 직접 설치해야 합니다.
+A2DPWB 자체는 Windows(Windows 10 22H2 또는 Windows 11) 전용이며 x64와 ARM64용으로 빌드됩니다. Linux 도구에는 Python 3.11 이상이 필요합니다(Ubuntu 26.04에서 확인). `setup.sh`는 Ubuntu / Debian용이며, 다른 배포판에서는 패키지를 직접 설치해야 합니다.
 
 ## 검증된 하드웨어 {#verified-hardware}
 

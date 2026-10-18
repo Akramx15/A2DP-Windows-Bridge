@@ -17,7 +17,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 | SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### Codec support by platform (sending to headphones)
@@ -50,7 +50,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 
 ## Platform Support
 
-| Component | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
+| Component | Windows 10 (x64 / ARM64) | Windows 11 (x64 / ARM64) | Linux (Ubuntu) |
 |-----------|:----------------:|:----------------:|:--------------:|
 | **A2DPWB** (window, tray, CLI) | ✅ (not yet tried on real hardware) | ✅ | ❌ |
 | Building from source (Rust, Visual Studio 2022+, Node.js) | ✅ | ✅ | ❌ |
@@ -59,7 +59,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 | Virtual adapter `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | Measuring receiver `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), as an x64 build. The window uses the Microsoft Edge WebView2 Runtime, which Windows 11 includes and the installer adds when it is missing. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
+A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), built for x64 and ARM64. The window uses the Microsoft Edge WebView2 Runtime, which Windows 11 includes and the installer adds when it is missing. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
 
 ## Verified Hardware
 
@@ -189,7 +189,7 @@ Start **A2DP Windows Bridge** from the Start menu (or `a2dpwb.exe`). The window 
 - **Adapter**: the detected adapters, their driver (**Assign WinUSB** / **Restore driver**), firmware and Bluetooth chip, AFH, **Restart Bluetooth**
 - **Settings**: language, theme, startup, headphone buttons, remembered volume, updates, developer mode, about
 
-Closing the window leaves A2DPWB in the tray: streaming goes on. **Left-click** the tray icon for the flyout (connect / disconnect, volume, profile, codec, link quality, **Open app**); **right-click** it for the menu (**Open A2DPWB**, up to 10 profiles to connect, **Disconnect**, **Exit**). **Settings > Quit A2DPWB** or the tray's **Exit** stop streaming and close A2DPWB completely.
+With **Settings > Minimize to System Tray** on (the default), minimizing or closing the window leaves A2DPWB in the tray: streaming goes on. With it off, closing the window quits A2DPWB. **Left-click** the tray icon for the flyout (connect / disconnect, volume, profile, codec, link quality, **Open app**); **right-click** it for the menu (**Open A2DPWB**, up to 10 profiles to connect, **Disconnect**, **Exit**). **Settings > Quit A2DPWB** or the tray's **Exit** stop streaming and close A2DPWB completely.
 
 ### CLI Mode
 
@@ -257,15 +257,15 @@ To see exactly which codecs your headphones offer, connect once and look for the
 You can configure A2DPWB to start automatically when you sign in to Windows.
 
 **In the app:**
-Turn on **Settings > Start with Windows**. A2DPWB then starts in the background with only its tray icon; the window opens from the tray.
+Turn on **Settings > Start with Windows**. With **Start in the tray** also on, A2DPWB starts in the background with only its tray icon, and the window opens from the tray; with it off (the default), the main window opens.
 
 **Manual Configuration (regedit):**
 The auto-start behavior is controlled by the standard Windows registry key.
 - **Key**: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
 - **Value Name**: `A2DPWB`
-- **Value Data**: `"<Path-to-a2dpwb-core.exe>" --background`
+- **Value Data**: `"<Path-to-a2dpwb-core.exe>"`, followed by `--background` when **Start in the tray** is on
 
-You can manually add this entry using `regedit` if needed. To disable it manually (e.g., if the window does not open), simply delete the `A2DPWB` value from this registry key. Installing v2 over v1 rewrites v1's value (`A2DPWB.exe --minimized`) to the new one.
+You can manually add this entry using `regedit` if needed. To disable it manually (e.g., if the window does not open), simply delete the `A2DPWB` value from this registry key. Installing v2 over v1 rewrites v1's value (`A2DPWB.exe --minimized`) to the new one and turns **Start in the tray** on, as v1 always started in the tray.
 
 ## Features
 
@@ -279,7 +279,7 @@ You can manually add this entry using `regedit` if needed. To disable it manuall
 - **Link quality and AFH**: Shows what is sent, the RSSI and the channels in use; tells the adapter which Wi-Fi channels to avoid
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones; their play/pause, next and previous buttons control playback on the PC
 - **LE Audio (experimental, off by default)**: LC3 to LE Audio headphones and earbuds (BAP unicast, both earbuds of a pair, headset volume, media buttons, GMAP low latency). Needs an adapter with Bluetooth 5.2 isochronous channels; tested only against the Bluetooth emulator, not yet with real LE Audio headphones ([Usage](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio))
-- **Auto-start**: Optionally start in the background (tray icon only) when you sign in
+- **Auto-start**: Optionally start when you sign in, in the background (tray icon only) or with the window
 - **Profile management**: Device + codec + capture configurations, connectable from the tray
 - **Updates**: Daily update check (optionally including pre-releases); the installed version updates itself with **Update now**, after streaming stops
 - **Localization**: English, Japanese, Simplified / Traditional Chinese, Korean, German, French and Spanish UI (languages other than English and Japanese are machine-translated; corrections welcome — `python tools/check_lang.py` checks a language file against `en.json`)

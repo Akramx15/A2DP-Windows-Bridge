@@ -364,8 +364,8 @@ AAC와 SBC는 A2DP 사양에 정의된 표준 A2DP 코덱 ID를 사용합니다.
   입력이고 싱크가 모노를 지원할 때만). 미디어 패킷에는 1바이트 페이로드 헤더
   (하위 4비트에 frame count 1) 뒤에 Opus 패킷 하나가 담김
 
-**RTP 사용 여부**: LDAC, aptX HD, AAC, SBC, LHDC V5, Opus 미디어 패킷에는
-12바이트 RTP 헤더가 붙습니다. aptX와 aptX LL은 (Android 및
+**RTP 사용 여부**: LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5, Opus 미디어 패킷에는
+12바이트 RTP 헤더가 붙습니다. aptX, aptX LL, FastStream은 (Android 및
 PipeWire와 마찬가지로) RTP 헤더 **없이** 전송되므로, L2CAP MTU 전체를 aptX 프레임에 사용할 수 있습니다.
 
 **aptX Adaptive**는 오픈 소스 인코더가 없으므로(libopenaptx는 이를
@@ -382,6 +382,7 @@ A2DPWB는 로그에만 기록하며, 싱크가 기본 aptX를 별도로 제공�
 | `settings.json` | 앱 설정 (`schema_version` 포함). 알 수 없는 키는 유지됨 |
 | `profiles.json` | 프로필 |
 | `devices.txt`, `link_keys.txt` | 알려진 장치와 그 링크 키: v1에서 페어링한 헤드폰은 다시 페어링하지 않고 다시 연결됨 |
+| `le_audio_devices.txt`, `le_audio_bonds.tlv`, `le_audio_csip.txt` | LE 오디오(실험적): 장치 목록의 LE 오디오 항목, LE 본딩 정보(GATT 서버가 유지하는 CCC 값 포함), 조정 세트 |
 | `*.bin`, `*.hcd`, `ibt-*` | 펌웨어 파일 |
 | `hci_<date>_<time>.pklg` | HCI 캡처 |
 | `logs\a2dpwb-core.<date>.log` | 코어의 로그. 하루에 파일 하나(UTC), 최근 7개 유지 |

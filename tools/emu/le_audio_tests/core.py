@@ -1,5 +1,5 @@
 """BAP unicast cases: the stream set-ups A2DPWB plans from the sink's PACS /
-ASCS (le_audio_presets.cpp), one per emu_le_audio_sink.py layout."""
+ASCS (app/src/crates/le-audio/src/presets.rs), one per emu_le_audio_sink.py layout."""
 
 import re
 

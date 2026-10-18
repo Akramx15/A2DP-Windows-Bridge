@@ -57,7 +57,7 @@ A2DP-Windows-Bridge/
 │   │   ├── ui/             a2dpwb.exe: Tauri 2 + SolidJS（pnpm dev でモックのコアとブラウザで動く）
 │   │   ├── driver/         a2dpwb-driver.exe: WinUSB の割り当て / 解除（管理者権限）
 │   │   └── crates/         ライブラリ: btstack-sys、hci-transport、bt-host、codec、コーデックの -sys クレート、
-│   │                       pipeline、audio-capture、win-sys、core（a2dpwb-core）、ipc
+│   │                       pipeline、audio-capture、win-sys、core（a2dpwb-core）、ipc、le-audio、lc3-sys
 │   ├── lang/               翻訳（en.json が原本。他の言語は tools/check_lang.py で確認）
 │   └── resources/          アイコンとマニフェスト
 ├── Cargo.toml              Cargo workspace
@@ -144,6 +144,8 @@ C のライブラリは git サブモジュールです。Rust のクレート�
 | BTstack | git サブモジュール | v1.8.1-6-g5bc5cbdbe | BTstack License（非商用条項付きの BSD-3-Clause 類似ライセンス） |
 | Bluedroid SBC コーデック | エンコーダは Rust に移植。デコーダ（テストとツール）は BTstack 同梱のもの | BTstack に準拠 | Apache-2.0 |
 | rijndael | BTstack に同梱（`3rd-party/rijndael`） | BTstack に準拠 | パブリックドメイン |
+| liblc3 (lc3-google) | BTstack に同梱（`3rd-party/lc3-google`） | BTstack に準拠 | Apache-2.0 |
+| micro-ecc | BTstack に同梱（`3rd-party/micro-ecc`） | BTstack に準拠 | BSD-2-Clause |
 | libldac (AOSP) | git サブモジュール | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 |
 | libopenaptx | git サブモジュール | 0.2.0（更新しないこと） | LGPL-2.1+ |
 | fdk-aac | git サブモジュール | v2.0.3-158-gd8e6b1a | FDK AAC License |

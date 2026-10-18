@@ -1,5 +1,5 @@
 // Bluetooth chips for the firmware (settings.bt_chip_pid / bt_chip_fw_stem),
-// the table of v1 (app/src/bt_adapter_enum.cpp chip_db) and the core
+// the table of v1 (bt_adapter_enum.cpp chip_db, develop branch) and the core
 // (crates/bt-host/src/chips.rs).
 
 export const CHIP_AUTO = 0;

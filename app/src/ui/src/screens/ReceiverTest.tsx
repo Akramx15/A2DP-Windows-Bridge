@@ -1,4 +1,4 @@
-// The peer receiver test of v1 (Peer Receiver Test, app/src/wx_receiver_dialog.cpp):
+// The peer receiver test of v1 (Peer Receiver Test, wx_receiver_dialog.cpp on the develop branch):
 // finds tools/linux_sink on another PC, streams to its Bluetooth adapter
 // without a saved profile (stream.start_custom), checks each step OK / NG
 // and sets what this PC sent beside what the receiver counted. The logic is

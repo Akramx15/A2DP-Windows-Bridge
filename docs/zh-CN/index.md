@@ -27,8 +27,10 @@ has_toc: false
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | 约 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 约 150 ms |
+| SBC XQ | 约 385/505/552 kbps | 44.1/48 kHz | 16 bit | 约 150 ms |
 | SBC | 最高约 345 kbps | 44.1/48 kHz | 16 bit | 约 150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### 各平台的编解码器支持情况（向耳机发送）
@@ -40,7 +42,9 @@ has_toc: false
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 实验性 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu 软件包中未包含 | ✅ |
+| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC 允许双声道且 bitpool ≥ 43 的接收端） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
+| FastStream | ❌ | ❌ | ✅ | ✅（仅音乐，需明确选择） |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus（Android 的 A2DP Opus） | ❌ | ❌ | 未确认 | 🧪 实验性 |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
@@ -64,7 +68,7 @@ has_toc: false
 
 ## 平台支持 {#platform-support}
 
-| 组件 | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
+| 组件 | Windows 10 (x64 / ARM64) | Windows 11 (x64 / ARM64) | Linux (Ubuntu) |
 |:----------|:----------------:|:----------------:|:--------------:|
 | **A2DPWB**（窗口、托盘、CLI） | ✅（尚未在实机上试用） | ✅ | ❌ |
 | [从源代码构建](building)（Rust、Visual Studio 2022+、Node.js） | ✅ | ✅ | ❌ |
@@ -73,7 +77,7 @@ has_toc: false
 | 虚拟适配器 `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | [测量用接收器](usage#receiver) `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB 本身仅在 Windows 上运行（Windows 10 22H2 或 Windows 11），为 x64 版本。Linux 工具需要 Python 3.11 或更高版本（已在 Ubuntu 26.04 上验证）；`setup.sh` 面向 Ubuntu / Debian，其他发行版需要手动安装所需软件包。
+A2DPWB 本身仅在 Windows 上运行（Windows 10 22H2 或 Windows 11），提供 x64 和 ARM64 版本。Linux 工具需要 Python 3.11 或更高版本（已在 Ubuntu 26.04 上验证）；`setup.sh` 面向 Ubuntu / Debian，其他发行版需要手动安装所需软件包。
 
 ## 已验证的硬件 {#verified-hardware}
 

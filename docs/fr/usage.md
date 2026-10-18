@@ -69,7 +69,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 | Section | Paramètres |
 |:--------|:---------|
 | Apparence | Langue, thème (Système / Clair / Sombre) |
-| Démarrage | **Démarrer avec Windows** (voir [Démarrer avec Windows](#autostart)) |
+| Démarrage | **Démarrer avec Windows** et **Démarrer dans la zone de notification** (voir [Démarrer avec Windows](#autostart)), **Réduire dans la zone de notification** (voir [Zone de notification et volet](#tray)) |
 | Casque | **Boutons du casque contrôlent la lecture** (voir [Boutons du casque](#headphone-buttons)), **Mémoriser le volume du casque** (voir [Volume](#volume)) |
 | Mises à jour | **Rechercher des mises à jour**, **Rechercher les mises à jour au démarrage**, **Inclure les préversions dans les mises à jour** (propose aussi les versions bêta), **Mettre à jour maintenant** (voir [Mises à jour](#updates)) |
 | Avancé | **LE Audio (expérimental)** et **Faible latence pour casques gaming (GMAP, expérimental)** (voir [LE Audio](#le-audio)), **Mode développeur** (ajoute le test du récepteur au diagnostic et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
@@ -87,11 +87,11 @@ A2DPWB continue de s'exécuter dans la zone de notification, avec ou sans la fen
 - **Clic droit** pour le menu : **Ouvrir A2DPWB**, les 10 premiers profils (celui qui est actif est coché ; cliquez sur l'un d'eux pour vous connecter avec), **Déconnecter** et **Quitter**. Le menu s'ouvre immédiatement, sans démarrer la fenêtre
 - L'info-bulle indique si A2DPWB est inactif ou en cours de diffusion
 
-Fermer la fenêtre ne fait que la masquer. **Quitter** dans le menu de la zone de notification ou **Paramètres > Quitter A2DPWB** arrête la diffusion, libère l'adaptateur et ferme complètement A2DPWB.
+Avec **Paramètres > Réduire dans la zone de notification** activé (par défaut), réduire ou fermer la fenêtre ne fait que la masquer dans la zone de notification, et la diffusion continue. Désactivé, la fenêtre se réduit dans la barre des tâches, et la fermer quitte A2DPWB. **Quitter** dans le menu de la zone de notification ou **Paramètres > Quitter A2DPWB** arrête la diffusion, libère l'adaptateur et ferme complètement A2DPWB.
 
 ## Démarrer avec Windows {#autostart}
 
-**Paramètres > Démarrer avec Windows** lance A2DPWB en arrière-plan à l'ouverture de votre session : seule l'icône de la zone de notification apparaît, et la fenêtre s'ouvre depuis celle-ci. Il s'agit de la valeur `A2DPWB` sous `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, avec la donnée `"<folder>\a2dpwb-core.exe" --background`. Pour le désactiver à la main, supprimez cette valeur.
+**Paramètres > Démarrer avec Windows** lance A2DPWB à l'ouverture de votre session. Avec **Démarrer dans la zone de notification** activé, il démarre en arrière-plan : seule l'icône de la zone de notification apparaît, et la fenêtre s'ouvre depuis celle-ci. Désactivé (par défaut), la fenêtre principale s'ouvre. Il s'agit de la valeur `A2DPWB` sous `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, avec la donnée `"<folder>\a2dpwb-core.exe"`, suivie de `--background` lorsque **Démarrer dans la zone de notification** est activé. Pour le désactiver à la main, supprimez cette valeur. L'installation de la v2 par-dessus la v1 active **Démarrer dans la zone de notification**, car la v1 démarrait toujours dans la zone de notification.
 
 ## Mode CLI
 
@@ -173,7 +173,7 @@ Mettez d'abord le casque en mode d'association.
 
 Pour le développement et les tests, il existe aussi `--hci-tcp <host:port>` (un contrôleur virtuel via TCP au lieu de l'adaptateur WinUSB), `--test-tone` (1 kHz à gauche / 1,5 kHz à droite au lieu de l'audio capturé), `--duration <s>` (arrêt après ce nombre de secondes) et `--hci-capture <file.pklg>` (capture HCI de toute l'exécution) ; voir [Compilation](building#emu).
 
-Sans `--cli`, `a2dpwb-core.exe` est le programme résident : il démarre aussi la fenêtre, sauf avec `--background` (icône de la zone de notification uniquement, utilisé par **Démarrer avec Windows**). `a2dpwb-core.exe --quit` demande à un A2DPWB en cours d'exécution d'arrêter la diffusion et de quitter (le programme d'installation l'utilise).
+Sans `--cli`, `a2dpwb-core.exe` est le programme résident : il démarre aussi la fenêtre, sauf avec `--background` (icône de la zone de notification uniquement, utilisé par **Démarrer avec Windows** lorsque **Démarrer dans la zone de notification** est activé). `a2dpwb-core.exe --quit` demande à un A2DPWB en cours d'exécution d'arrêter la diffusion et de quitter (le programme d'installation l'utilise).
 
 ## Modes de capture {#capture-modes}
 

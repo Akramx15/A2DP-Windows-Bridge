@@ -373,8 +373,8 @@ Größen der Codec Information Elements (einschließlich der 6 Byte für Vendor 
   Mono-Eingang an eine Senke, die Mono unterstützt). Medienpakete tragen ein Opus-Paket hinter
   einem 1 Byte langen Nutzdaten-Header (Frame-Anzahl 1 in den unteren 4 Bits)
 
-**RTP oder kein RTP**: Die Medienpakete von LDAC, aptX HD, AAC, SBC, LHDC V5 und Opus tragen den
-12 Byte langen RTP-Header. aptX und aptX LL werden **ohne** RTP-Header gesendet (wie bei Android und
+**RTP oder kein RTP**: Die Medienpakete von LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5 und Opus tragen den
+12 Byte langen RTP-Header. aptX, aptX LL und FastStream werden **ohne** RTP-Header gesendet (wie bei Android und
 PipeWire), sodass die gesamte L2CAP-MTU für aptX-Frames zur Verfügung steht.
 
 **aptX Adaptive** hat keinen Open-Source-Encoder (libopenaptx implementiert es
@@ -392,6 +392,7 @@ Formaten wie bei v1:
 | `settings.json` | App-Einstellungen, mit einer `schema_version`; unbekannte Schlüssel bleiben erhalten |
 | `profiles.json` | Profile |
 | `devices.txt`, `link_keys.txt` | Bekannte Geräte und ihre Link Keys: Mit v1 gekoppelte Kopfhörer verbinden sich ohne erneutes Koppeln |
+| `le_audio_devices.txt`, `le_audio_bonds.tlv`, `le_audio_csip.txt` | LE Audio (experimentell): die LE-Audio-Einträge der Geräteliste, LE-Bonds (mit den dauerhaften CCC-Werten des GATT-Servers) und koordinierte Sets |
 | `*.bin`, `*.hcd`, `ibt-*` | Firmwaredateien |
 | `hci_<date>_<time>.pklg` | HCI-Aufzeichnungen |
 | `logs\a2dpwb-core.<date>.log` | Das Protokoll des Kerns, eine Datei pro Tag (UTC), die letzten 7 werden aufbewahrt |

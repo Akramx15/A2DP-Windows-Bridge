@@ -346,8 +346,8 @@ AAC 與 SBC 使用 A2DP 規格中定義的標準 A2DP Codec ID。
   單聲道時才使用單聲道）。媒體封包在 1 位元組的酬載標頭（低 4 位元為訊框數 1）
   之後帶有一個 Opus 封包
 
-**RTP 與無 RTP**：LDAC、aptX HD、AAC、SBC、LHDC V5 與 Opus 的媒體封包帶有
-12 位元組的 RTP 標頭。aptX 與 aptX LL 則 **不帶** RTP 標頭傳送（與 Android 及
+**RTP 與無 RTP**：LDAC、aptX HD、AAC、SBC、SBC XQ、LHDC V5 與 Opus 的媒體封包帶有
+12 位元組的 RTP 標頭。aptX、aptX LL 與 FastStream 則 **不帶** RTP 標頭傳送（與 Android 及
 PipeWire 相同），因此整個 L2CAP MTU 都可用於 aptX 訊框。
 
 **aptX Adaptive** 沒有開放原始碼的編碼器（libopenaptx 未實作），
@@ -364,6 +364,7 @@ PipeWire 相同），因此整個 L2CAP MTU 都可用於 aptX 訊框。
 | `settings.json` | 應用程式設定，附 `schema_version`；未知的鍵會保留 |
 | `profiles.json` | 設定檔 |
 | `devices.txt`、`link_keys.txt` | 已知裝置及其連結金鑰：與 v1 配對過的耳機不需重新配對即可重新連線 |
+| `le_audio_devices.txt`、`le_audio_bonds.tlv`、`le_audio_csip.txt` | LE Audio（實驗性）：裝置清單中的 LE Audio 項目、LE 綁定資訊（含 GATT 伺服器持久保存的 CCC 值）以及協調集 |
 | `*.bin`、`*.hcd`、`ibt-*` | 韌體檔案 |
 | `hci_<date>_<time>.pklg` | HCI 擷取檔 |
 | `logs\a2dpwb-core.<date>.log` | 核心的記錄，每天一個檔案（UTC），保留最近 7 個 |

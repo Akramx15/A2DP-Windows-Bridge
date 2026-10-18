@@ -1,5 +1,5 @@
 // The codecs a profile can ask for and what each allows, as v1's profile
-// dialog (app/src/wx_profile_dialog.cpp, update_codec_dependent): quality
+// dialog (wx_profile_dialog.cpp on the develop branch, update_codec_dependent): quality
 // modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
 // "mhq" only for LHDC V5, no quality choice for the aptX family or under LHDC
@@ -245,7 +245,7 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
   };
 }
 
-// Max media packet size (app/src/media_payload_limit.h)
+// Max media packet size (crates/bt-host/src/media.rs, MEDIA_PAYLOAD_LIMIT_MIN / MAX / DEFAULT)
 export const PACKET_MIN = 679;
 export const PACKET_MAX = 1679;
 export const PACKET_DEFAULT = 1023;

@@ -372,8 +372,8 @@ Codec information element sizes (including the 6-byte vendor/codec ID):
   input to a sink that has it). Media packets carry one Opus packet behind
   a 1-byte payload header (frame count 1 in the low 4 bits)
 
-**RTP vs no RTP**: LDAC, aptX HD, AAC, SBC, LHDC V5 and Opus media packets carry the
-12-byte RTP header. aptX and aptX LL are sent **without** an RTP header (as Android and
+**RTP vs no RTP**: LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5 and Opus media packets carry the
+12-byte RTP header. aptX, aptX LL and FastStream are sent **without** an RTP header (as Android and
 PipeWire do), so the whole L2CAP MTU is available for aptX frames.
 
 **aptX Adaptive** has no open-source encoder (libopenaptx does not implement
@@ -391,6 +391,7 @@ formats as v1:
 | `settings.json` | App settings, with a `schema_version`; unknown keys are kept |
 | `profiles.json` | Profiles |
 | `devices.txt`, `link_keys.txt` | Known devices and their link keys: headphones paired with v1 reconnect without pairing again |
+| `le_audio_devices.txt`, `le_audio_bonds.tlv`, `le_audio_csip.txt` | LE Audio (experimental): the LE Audio entries of the device list, LE bonds (with the GATT server's persistent CCC values) and coordinated sets |
 | `*.bin`, `*.hcd`, `ibt-*` | Firmware files |
 | `hci_<date>_<time>.pklg` | HCI captures |
 | `logs\a2dpwb-core.<date>.log` | The core's log, one file per day (UTC), the last 7 kept |

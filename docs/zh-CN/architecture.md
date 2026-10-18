@@ -280,7 +280,7 @@ AAC 和 SBC 使用 A2DP 规范中定义的标准 A2DP 编解码器 ID。
 - **FastStream**：8 字节（PipeWire `a2dp_faststream_t`）：第 6 字节为方向（0x01 sink = 音乐，0x02 source = 语音），第 7 字节的低 4 位为接收方向的采样率（0x2 44.1k、0x1 48k），高 4 位为发送方向的采样率（0x2 16k）。A2DPWB 只提供并配置音乐方向
 - **Opus**：7 字节（Android `a2dp_vendor_opus_constants.h`）：第 6 字节的位 2..0 为声道模式（0x01 单声道、0x02 立体声、0x04 双单声道），位 4..3 为帧长（0x08 10 ms、0x10 20 ms），位 7 为 48 kHz。A2DPWB 提供单声道和立体声、10 ms 和 20 ms，并配置为 20 ms 立体声（仅当输入为单声道且接收端支持单声道时才使用单声道）。媒体数据包在 1 字节的负载标头（低 4 位为帧数 1）之后携带一个 Opus 数据包
 
-**有无 RTP**：LDAC、aptX HD、AAC、SBC、LHDC V5 和 Opus 的媒体数据包带有 12 字节的 RTP 标头。aptX 和 aptX LL **不带** RTP 标头发送（与 Android 和 PipeWire 相同），因此整个 L2CAP MTU 都可用于 aptX 帧。
+**有无 RTP**：LDAC、aptX HD、AAC、SBC、SBC XQ、LHDC V5 和 Opus 的媒体数据包带有 12 字节的 RTP 标头。aptX、aptX LL 和 FastStream **不带** RTP 标头发送（与 Android 和 PipeWire 相同），因此整个 L2CAP MTU 都可用于 aptX 帧。
 
 **aptX Adaptive** 没有开源编码器（libopenaptx 未实现它），因此 A2DPWB 从不注册或选择它。当接收端列出它时，A2DPWB 只会记录到日志；如果接收端另外列出了经典 aptX，则使用经典 aptX。
 
@@ -293,6 +293,7 @@ AAC 和 SBC 使用 A2DP 规范中定义的标准 A2DP 编解码器 ID。
 | `settings.json` | 应用设置，带有 `schema_version`；未知的键会被保留 |
 | `profiles.json` | 配置文件 |
 | `devices.txt`、`link_keys.txt` | 已知设备及其链接密钥：与 v1 配对过的耳机无需重新配对即可再次连接 |
+| `le_audio_devices.txt`、`le_audio_bonds.tlv`、`le_audio_csip.txt` | LE Audio（实验性）：设备列表中的 LE Audio 条目、LE 绑定信息（含 GATT 服务器持久保存的 CCC 值）以及协调集 |
 | `*.bin`、`*.hcd`、`ibt-*` | 固件文件 |
 | `hci_<date>_<time>.pklg` | HCI 捕获 |
 | `logs\a2dpwb-core.<date>.log` | 核心的日志，每天一个文件（UTC），保留最近 7 个 |

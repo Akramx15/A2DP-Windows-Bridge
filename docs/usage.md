@@ -68,7 +68,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 | Section | Settings |
 |:--------|:---------|
 | Appearance | Language, theme (System / Light / Dark) |
-| Startup | **Start with Windows** (see [Start with Windows](#autostart)) |
+| Startup | **Start with Windows** and **Start in the tray** (see [Start with Windows](#autostart)), **Minimize to System Tray** (see [Tray and Flyout](#tray)) |
 | Headphones | **Headphone Buttons Control Playback** (see [Headphone buttons](#headphone-buttons)), **Remember Headphone Volume** (see [Volume](#volume)) |
 | Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
 | Advanced | **LE Audio (experimental)** and **Low latency for gaming headsets (GMAP, experimental)** (see [LE Audio](#le-audio)), **Developer mode** (adds the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
@@ -86,11 +86,11 @@ A2DPWB keeps running in the system tray, with or without the window:
 - **Right-click** for the menu: **Open A2DPWB**, the first 10 profiles (the active one checked; click one to connect with it), **Disconnect** and **Exit**. The menu opens at once, without starting the window
 - The tooltip says whether A2DPWB is idle or streaming
 
-Closing the window only hides it. **Exit** in the tray menu or **Settings > Quit A2DPWB** stops streaming, releases the adapter and closes A2DPWB completely.
+With **Settings > Minimize to System Tray** on (the default), minimizing or closing the window only hides it in the tray, and streaming goes on. With it off, the window minimizes to the taskbar, and closing it quits A2DPWB. **Exit** in the tray menu or **Settings > Quit A2DPWB** stops streaming, releases the adapter and closes A2DPWB completely.
 
 ## Start with Windows {#autostart}
 
-**Settings > Start with Windows** starts A2DPWB in the background when you sign in: only the tray icon appears, and the window opens from it. It is the value `A2DPWB` under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, with the data `"<folder>\a2dpwb-core.exe" --background`. To turn it off by hand, delete that value.
+**Settings > Start with Windows** starts A2DPWB when you sign in. With **Start in the tray** on, it starts in the background: only the tray icon appears, and the window opens from it. With it off (the default), the main window opens. It is the value `A2DPWB` under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, with the data `"<folder>\a2dpwb-core.exe"`, followed by `--background` when **Start in the tray** is on. To turn it off by hand, delete that value. Installing v2 over v1 turns **Start in the tray** on, as v1 always started in the tray.
 
 ## CLI Mode
 
@@ -172,7 +172,7 @@ Put the headphones into pairing mode first.
 
 For development and testing there are also `--hci-tcp <host:port>` (a virtual controller over TCP instead of the WinUSB adapter), `--test-tone` (1 kHz left / 1.5 kHz right instead of captured audio), `--duration <s>` (stop after this many seconds) and `--hci-capture <file.pklg>` (HCI capture of the whole run); see [Building](building#emu).
 
-Without `--cli`, `a2dpwb-core.exe` is the resident program: it starts the window too, except with `--background` (tray icon only, used by **Start with Windows**). `a2dpwb-core.exe --quit` asks a running A2DPWB to stop streaming and exit (the installer uses it).
+Without `--cli`, `a2dpwb-core.exe` is the resident program: it starts the window too, except with `--background` (tray icon only, used by **Start with Windows** when **Start in the tray** is on). `a2dpwb-core.exe --quit` asks a running A2DPWB to stop streaming and exit (the installer uses it).
 
 ## Capture Modes {#capture-modes}
 

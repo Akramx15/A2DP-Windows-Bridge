@@ -1,4 +1,4 @@
-// The peer receiver test's logic, as v1's dialog (app/src/wx_receiver_dialog.cpp
+// The peer receiver test's logic, as v1's dialog (wx_receiver_dialog.cpp
 // at b819893): the six OK / NG steps of a measurement and the comparison of
 // what this PC sent with what the receiver (tools/linux_sink) counted. The
 // screen (screens/ReceiverTest.tsx) feeds it the core's ReceiverState, the

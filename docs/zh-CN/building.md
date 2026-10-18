@@ -57,7 +57,7 @@ A2DP-Windows-Bridge/
 │   │   ├── ui/             a2dpwb.exe: Tauri 2 + SolidJS (pnpm dev runs it in a browser with a mock core)
 │   │   ├── driver/         a2dpwb-driver.exe: WinUSB assign / restore (elevated)
 │   │   └── crates/         Libraries: btstack-sys, hci-transport, bt-host, codec, the codec -sys crates,
-│   │                       pipeline, audio-capture, win-sys, core (a2dpwb-core), ipc
+│   │                       pipeline, audio-capture, win-sys, core (a2dpwb-core), ipc, le-audio, lc3-sys
 │   ├── lang/               Localization (en.json is the source; tools/check_lang.py checks the others)
 │   └── resources/          Icon and manifest
 ├── Cargo.toml              Cargo workspace
@@ -144,6 +144,8 @@ C 库以 git 子模块的形式包含；Rust crate 和 UI 的 npm 软件包由 C
 | BTstack | git 子模块 | v1.8.1-6-g5bc5cbdbe | BTstack License（BSD-3-Clause 风格，附带非商业条款） |
 | Bluedroid SBC codec | 编码器已移植为 Rust；解码器（测试、工具用）取自 BTstack 附带的副本 | 与 BTstack 相同 | Apache-2.0 |
 | rijndael | 随 BTstack 附带（`3rd-party/rijndael`） | 与 BTstack 相同 | 公有领域 |
+| liblc3 (lc3-google) | 随 BTstack 附带（`3rd-party/lc3-google`） | 与 BTstack 相同 | Apache-2.0 |
+| micro-ecc | 随 BTstack 附带（`3rd-party/micro-ecc`） | 与 BTstack 相同 | BSD-2-Clause |
 | libldac (AOSP) | git 子模块 | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 |
 | libopenaptx | git 子模块 | 0.2.0（请勿更新） | LGPL-2.1+ |
 | fdk-aac | git 子模块 | v2.0.3-158-gd8e6b1a | FDK AAC License |
