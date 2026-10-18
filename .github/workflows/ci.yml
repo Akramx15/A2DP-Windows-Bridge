@@ -65,6 +65,10 @@ jobs:
       - name: Placeholder for the UI build
         shell: pwsh
         run: New-Item -ItemType Directory -Force app/src/ui/dist | Out-Null
+      # opus-sys takes libopus's version from `git describe` of the
+      # submodule; the shallow checkout has no tags
+      - name: Tags of extern/opus
+        run: git -C extern/opus fetch --depth 1 --tags origin
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -88,7 +92,8 @@ jobs:
           if ($bad) { $bad | ForEach-Object { Write-Host $_ }; exit 1 }
 
   licenses:
-    runs-on: windows-latest
+    # cargo-deny-action is a container action: Linux runners only
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -102,7 +107,10 @@ jobs:
         working-directory: app/src/ui
     steps:
       - uses: actions/checkout@v4
+      # the pnpm version is packageManager in app/src/ui/package.json
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: app/src/ui/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -130,7 +138,7 @@ jobs:
         run: python tools/emu/setup_env.py
       - name: a2dpwb_decode (decoder tool)
         run: |
-          cmake -S tools/a2dp_decode -B build/a2dp_decode -G "Visual Studio 17 2022" -A x64
+          cmake -S tools/a2dp_decode -B build/a2dp_decode -A x64
           cmake --build build/a2dp_decode --config Release
       - name: a2dpwb-core.exe
         run: cargo build --release -p a2dpwb-core-exe

@@ -66,6 +66,15 @@ fn main() {
     if build.get_compiler().is_like_msvc() {
         // stdalign.h (common.h) needs C11
         build.flag("/std:c11").flag("/W1").flag("/utf-8");
+        // MSVC on ARM64 defines __ARM_ARCH, for which common.h includes
+        // <arm_acle.h>, a header MSVC does not have. Nothing from it is used
+        // there (__ARM_FEATURE_SAT / _SIMD32 are GCC / Clang only): an empty one
+        if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64") {
+            let shim = out.join("msvc-arm64");
+            std::fs::create_dir_all(&shim).unwrap();
+            std::fs::write(shim.join("arm_acle.h"), "/* empty: see lc3-sys build.rs */\n").unwrap();
+            build.include(shim);
+        }
     } else {
         build.std("c11").flag("-w").flag("-ffast-math");
     }

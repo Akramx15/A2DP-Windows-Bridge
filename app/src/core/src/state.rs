@@ -1533,12 +1533,8 @@ mod tests {
             afh: None,
             usb: Default::default(),
         };
-        let state = CoreState::new(
-            Arc::new(Service::new(options, tx)),
-            Box::new(|_| {}),
-            Box::new(|| {}),
-            Box::new(|_| {}),
-        );
+        let state =
+            CoreState::new(Arc::new(Service::new(options, tx)), Box::new(|_| {}), Box::new(|| {}), Box::new(|_| {}));
         let event = |st| state.on_service_event(ServiceEvent::State(st, a2dpwb_core::Msg::new("status.ready")));
         // stream.start of B while A streams: the core says Connecting (B),
         // then A's session ends (Idle) and B's starts
