@@ -3,7 +3,8 @@
 //! - [`Encoder`]: what the encode thread drives. One call encodes
 //!   [`Encoder::pcm_frames_per_encode`] PCM frames.
 //! - [`sbc`]: the SBC encoder, ported from Bluedroid to Rust (bit-exact).
-//! - LDAC, aptX family, AAC, LHDC V5, Opus: safe wrappers of the C encoders
+//! - LDAC, aptX family, AAC, LHDC V5, Opus (Android's and PipeWire's Opus
+//!   05): safe wrappers of the C encoders
 //!   (crates `*-sys`), behind cargo features.
 //! - [`caps`]: codec information of the local stream endpoints, parsing of
 //!   the remote's capabilities, the configuration sent with
@@ -46,10 +47,14 @@ pub enum CodecKind {
     /// media payload header nor an RTP header; music direction only
     FastStream,
     Opus,
+    /// PipeWire's own A2DP Opus ("Opus 05", vendor 0x000005F1 / codec
+    /// 0x1005), stereo music direction only; experimental, never Auto's
+    /// choice
+    Opus05,
 }
 
 impl CodecKind {
-    pub const ALL: [CodecKind; 10] = [
+    pub const ALL: [CodecKind; 11] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
         CodecKind::AptxLl,
@@ -59,6 +64,7 @@ impl CodecKind {
         CodecKind::Aac,
         CodecKind::LhdcV5,
         CodecKind::Opus,
+        CodecKind::Opus05,
         CodecKind::FastStream,
     ];
 
@@ -71,7 +77,9 @@ impl CodecKind {
     /// SBC XQ goes just above SBC: it carries more bits than AAC at 256 kbps,
     /// but AAC sounds better per bit and sinks that offer AAC are tuned for
     /// it. FastStream is not here: it sounds worse than SBC, so it is used
-    /// only when chosen.
+    /// only when chosen. Neither is Opus 05: only PipeWire implements it
+    /// (as a sink too), it is not verified with one, and a PipeWire sink
+    /// offers Android's Opus as well from PipeWire 1.2 on.
     pub const AUTO_PRIORITY: [CodecKind; 9] = [
         CodecKind::Ldac,
         CodecKind::AptxHd,
@@ -96,6 +104,7 @@ impl CodecKind {
             CodecKind::Ldac => "LDAC",
             CodecKind::LhdcV5 => "LHDC V5",
             CodecKind::Opus => "Opus",
+            CodecKind::Opus05 => "Opus 05",
             CodecKind::FastStream => "FastStream",
         }
     }
@@ -112,6 +121,7 @@ impl CodecKind {
             CodecKind::Ldac => "ldac",
             CodecKind::LhdcV5 => "lhdcv5",
             CodecKind::Opus => "opus",
+            CodecKind::Opus05 => "opus05",
             CodecKind::FastStream => "faststream",
         }
     }
@@ -121,14 +131,20 @@ impl CodecKind {
     }
 
     /// Bytes of the A2DP media payload header in front of the codec frames:
-    /// SBC (XQ too), LDAC and Opus 1 (frame count), LHDC V5 2 (frame count,
-    /// sequence), the others none
+    /// SBC (XQ too), LDAC and Opus (both) 1 (frame count), LHDC V5 2 (frame
+    /// count, sequence), the others none
     pub fn media_header_len(self) -> usize {
         match self {
-            CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac | CodecKind::Opus => 1,
+            CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05 => 1,
             CodecKind::LhdcV5 => 2,
             _ => 0,
         }
+    }
+
+    /// Android's Opus or PipeWire's Opus 05: the same libopus encoder and
+    /// packets (one frame per packet behind a 1-byte frame count)
+    pub fn is_opus(self) -> bool {
+        matches!(self, CodecKind::Opus | CodecKind::Opus05)
     }
 
     /// Classic aptX, aptX LL and FastStream go out without an RTP header
@@ -154,7 +170,7 @@ impl CodecKind {
             CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => cfg!(feature = "aptx"),
             CodecKind::Ldac => cfg!(feature = "ldac"),
             CodecKind::LhdcV5 => cfg!(feature = "lhdcv5"),
-            CodecKind::Opus => cfg!(feature = "opus"),
+            CodecKind::Opus | CodecKind::Opus05 => cfg!(feature = "opus"),
         }
     }
 }
@@ -246,11 +262,13 @@ pub struct PeerParams {
     /// encoder keeps its bitpool within it
     pub sbc_min_bitpool: u8,
     pub sbc_max_bitpool: u8,
-    /// Opus: the frame duration configured, 10 or 20 ms (0 = 20)
+    /// Opus / Opus 05: the frame duration configured, 10 or 20 ms (0 = 20)
     pub opus_frame_ms: u8,
-    /// Opus: the channels configured on the wire, 1 or 2 (0 = as the
-    /// input); mono input is duplicated for a stereo stream
+    /// Opus / Opus 05: the channels configured on the wire, 1 or 2 (0 = as
+    /// the input); mono input is duplicated for a stereo stream
     pub opus_channels: u8,
+    /// Opus 05: the largest bit rate configured, in bps (0 = no limit)
+    pub opus_max_bitrate: u32,
 }
 
 /// Encoder setup, fixed for a stream
@@ -362,7 +380,7 @@ pub fn create(kind: CodecKind, config: &EncoderConfig) -> Result<Box<dyn Encoder
         #[cfg(feature = "lhdcv5")]
         CodecKind::LhdcV5 => Ok(Box::new(lhdcv5::LhdcV5Encoder::new(config)?)),
         #[cfg(feature = "opus")]
-        CodecKind::Opus => Ok(Box::new(opus::OpusEncoder::new(config)?)),
+        CodecKind::Opus | CodecKind::Opus05 => Ok(Box::new(opus::OpusEncoder::new(kind, config)?)),
         #[allow(unreachable_patterns)]
         _ => Err(EncoderError::NotAvailable(kind)),
     }

@@ -354,14 +354,15 @@ fn connect_error(f: Option<ConnectFailure>) -> Msg {
     })
 }
 
-fn peer_params(remote: &RemoteCaps, channels: u32) -> PeerParams {
-    let (opus_frame_ms, opus_channels) = remote.opus_stream(channels);
+fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32) -> PeerParams {
+    let (opus_frame_ms, opus_channels, opus_max_bitrate) = remote.opus_params(kind, channels);
     PeerParams {
         lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
         sbc_min_bitpool: remote.sbc_min_bitpool(),
         sbc_max_bitpool: remote.sbc_max_bitpool(),
         opus_frame_ms,
         opus_channels,
+        opus_max_bitrate,
     }
 }
 
@@ -514,12 +515,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         preferred = kind.max_sample_rate();
     }
     // aptX family: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates;
-    // Opus: 48 kHz only. WASAPI resamples to the requested rate.
+    // Opus, Opus 05: 48 kHz only. WASAPI resamples to the requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
-        CodecKind::Opus => 48000,
+        CodecKind::Opus | CodecKind::Opus05 => 48000,
         CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Aac if preferred != 44100 => 48000,
         _ => preferred,
     };
@@ -654,7 +655,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         mtu,
         bits_per_sample: bits,
         abr: req.abr && matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5),
-        peer: peer_params(&remote, channels),
+        peer: peer_params(&remote, kind, channels),
     };
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,
@@ -918,7 +919,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         // The encoder follows the new stream: its MTU and the device's
         // settings (e.g. its SBC bitpool range) may have changed
-        let new_config = EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, channels), ..encoder_config };
+        let new_config = EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels), ..encoder_config };
         if r.mtu != encoder_config.mtu {
             tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }

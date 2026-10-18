@@ -887,7 +887,7 @@ impl HostApp {
                 let c = &self.caps;
                 tracing::info!(
                     "capability discovery complete (LDAC={} aptX HD={} aptX LL={} aptX={} aptX Adaptive={} [not encodable] \
-                     SBC={} SBC XQ={} AAC={} LHDC V5={} Opus={} FastStream={}{})",
+                     SBC={} SBC XQ={} AAC={} LHDC V5={} Opus={} Opus 05={} FastStream={}{})",
                     c.ldac.is_some(),
                     c.aptx_hd.is_some(),
                     c.aptx_ll.is_some(),
@@ -898,6 +898,7 @@ impl HostApp {
                     c.aac.is_some(),
                     c.lhdcv5.is_some(),
                     c.opus.is_some(),
+                    c.opus05.is_some(),
                     c.faststream.is_some(),
                     if c.audio_sinks_in_use > 0 {
                         format!(", {} of {} audio sink SEP(s) in use", c.audio_sinks_in_use, c.audio_sinks)
