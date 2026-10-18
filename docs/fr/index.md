@@ -13,6 +13,8 @@ Diffusion audio Bluetooth A2DP pour Windows, avec tous les codecs.
 
 Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** et (à titre expérimental) **Opus** ainsi que l'**Opus 05** de PipeWire grâce à un adaptateur Bluetooth USB en mode WinUSB -- sans pilote noyau ni signature de test.
 
+![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
+
 [Commencer](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
 

@@ -3,6 +3,8 @@
 Bluetooth A2DP audio streaming for Windows with full codec support.
 Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 or (experimental) Opus and PipeWire's Opus 05 using a USB Bluetooth adapter in WinUSB mode — no kernel driver or test signing required.
 
+![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](docs/images/app_sample.png)
+
 **[Download](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)** (installer `-setup.exe` or `-portable.zip`) | **[Documentation](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/)**
 
 ## Supported Codecs
