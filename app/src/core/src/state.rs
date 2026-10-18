@@ -65,6 +65,9 @@ pub struct CoreState {
     /// What the stream moved over the last second (the sampler), for the
     /// flow's "Audio sending" step
     rates: Mutex<Option<AudioRates>>,
+    /// The profile the last stream.start asked for: the session stopped for
+    /// it reports Idle after it, which clears the snapshot's profile
+    starting_profile: Mutex<Option<String>>,
     tray: Box<dyn Fn(TrayView) + Send + Sync>,
     quit: Box<dyn Fn() + Send + Sync>,
     balloon: Box<dyn Fn(BalloonRequest) + Send + Sync>,
@@ -563,6 +566,7 @@ impl CoreState {
             receiver: ReceiverClient::new(),
             started: Instant::now(),
             rates: Mutex::new(None),
+            starting_profile: Mutex::new(None),
             tray,
             quit,
             balloon,
@@ -690,6 +694,11 @@ impl CoreState {
                     if state == CoreStreamState::Idle {
                         stream.profile = None;
                     }
+                }
+                // The new session starts (after the old one's Idle when
+                // switching profiles): its profile is the one asked for
+                if state == CoreStreamState::Connecting {
+                    stream.profile = self.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 }
                 // The stack runs once anything connected
                 let adapter_status = match state {
@@ -847,6 +856,7 @@ impl CoreState {
     }
 
     fn begin_stream(&self, req: StreamRequest, profile: Option<String>) {
+        *self.starting_profile.lock().unwrap_or_else(|e| e.into_inner()) = profile.clone();
         self.publish(Event::Stream(StreamStatus {
             state: StreamState::Connecting,
             message: Msg::new("status.initializing"),
@@ -1510,6 +1520,36 @@ mod tests {
         for state in [StreamState::Idle, StreamState::Error] {
             assert!(!restart_after_save(&status(state, Some("WH LDAC")), "WH LDAC"));
         }
+    }
+
+    #[test]
+    fn switching_profiles_keeps_the_new_profile() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-state-switch-{}", std::process::id()));
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let options = a2dpwb_core::ServiceOptions {
+            config_dir: dir.clone(),
+            hci_tcp: None,
+            capture: bt_host::HciCapture::new(),
+            afh: None,
+            usb: Default::default(),
+        };
+        let state = CoreState::new(
+            Arc::new(Service::new(options, tx)),
+            Box::new(|_| {}),
+            Box::new(|| {}),
+            Box::new(|_| {}),
+        );
+        let event = |st| state.on_service_event(ServiceEvent::State(st, a2dpwb_core::Msg::new("status.ready")));
+        // stream.start of B while A streams: the core says Connecting (B),
+        // then A's session ends (Idle) and B's starts
+        *state.starting_profile.lock().unwrap() = Some("B".into());
+        event(CoreStreamState::Idle);
+        assert_eq!(state.snapshot().1.stream.profile, None);
+        event(CoreStreamState::Connecting);
+        assert_eq!(state.snapshot().1.stream.profile.as_deref(), Some("B"));
+        event(CoreStreamState::Streaming);
+        assert_eq!(state.snapshot().1.stream.profile.as_deref(), Some("B"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
