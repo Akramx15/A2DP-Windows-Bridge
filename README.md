@@ -16,7 +16,7 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | Windows 11 | ✅ |
-| SBC XQ | up to 552 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 |
+| SBC XQ | up to 552 kbps | 44.1/48 kHz | 16 bit | ❌ | ✅ |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 ¹ |
 | Opus (Android) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
@@ -27,7 +27,7 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 
 ¹ Auto never picks it; choose it in a profile. ² Only PipeWire (Linux) receivers implement it. ³ No open-source encoder exists; headphones that also offer classic aptX get aptX.
 
-Auto picks LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC. LHDC V5 was confirmed by a user at 1000 kbps / 192 kHz ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
+Auto picks LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
 
 ## Requirements
 
