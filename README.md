@@ -17,7 +17,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 | SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### Codec support by platform (sending to headphones)
@@ -50,7 +50,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 
 ## Platform Support
 
-| Component | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
+| Component | Windows 10 (x64 / ARM64) | Windows 11 (x64 / ARM64) | Linux (Ubuntu) |
 |-----------|:----------------:|:----------------:|:--------------:|
 | **A2DPWB** (window, tray, CLI) | ✅ (not yet tried on real hardware) | ✅ | ❌ |
 | Building from source (Rust, Visual Studio 2022+, Node.js) | ✅ | ✅ | ❌ |
@@ -59,7 +59,7 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 | Virtual adapter `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | Measuring receiver `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), as an x64 build. The window uses the Microsoft Edge WebView2 Runtime, which Windows 11 includes and the installer adds when it is missing. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
+A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), built for x64 and ARM64. The window uses the Microsoft Edge WebView2 Runtime, which Windows 11 includes and the installer adds when it is missing. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
 
 ## Verified Hardware
 

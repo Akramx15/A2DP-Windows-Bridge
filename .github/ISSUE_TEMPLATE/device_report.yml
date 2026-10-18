@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Tried A2DPWB with your gear? I'd love to hear how it went! 🎧
-        "It just works" reports are super helpful too, especially for the experimental codecs (aptX HD, aptX Low Latency, LHDC V5, Opus).
+        "It just works" reports are super helpful too, especially for the experimental codecs (aptX HD, aptX Low Latency, Opus).
         Just check what you tried and leave the rest blank. If something is clearly broken, a [bug report](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/new?template=bug_report.yml) is a better fit.
 
   - type: input

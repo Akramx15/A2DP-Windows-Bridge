@@ -27,8 +27,10 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bits | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bits | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
+| SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | SBC | hasta ~345 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
+| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bits | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
 
 ### Compatibilidad de códecs por plataforma (envío a los auriculares)
@@ -40,7 +42,9 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ no está en los paquetes de Ubuntu | ✅ |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (receptores cuyo SBC admite canal dual y bitpool ≥ 43) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
+| FastStream | ❌ | ❌ | ✅ | ✅ (solo música, si se elige expresamente) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus (Opus A2DP de Android) | ❌ | ❌ | no comprobado | 🧪 experimental |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
@@ -64,7 +68,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 
 ## Compatibilidad de plataformas {#platform-support}
 
-| Componente | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
+| Componente | Windows 10 (x64 / ARM64) | Windows 11 (x64 / ARM64) | Linux (Ubuntu) |
 |:----------|:----------------:|:----------------:|:--------------:|
 | **A2DPWB** (ventana, bandeja, CLI) | ✅ (aún no probado en hardware real) | ✅ | ❌ |
 | [Compilación desde el código fuente](building) (Rust, Visual Studio 2022+, Node.js) | ✅ | ✅ | ❌ |
@@ -73,7 +77,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | Adaptador virtual `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | [Receptor de medición](usage#receiver) `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB solo funciona en Windows (Windows 10 22H2 o Windows 11), como compilación x64. Las herramientas de Linux necesitan Python 3.11 o posterior (verificado en Ubuntu 26.04); `setup.sh` está pensado para Ubuntu / Debian; en otras distribuciones hay que instalar los paquetes a mano.
+A2DPWB solo funciona en Windows (Windows 10 22H2 o Windows 11), con compilaciones para x64 y ARM64. Las herramientas de Linux necesitan Python 3.11 o posterior (verificado en Ubuntu 26.04); `setup.sh` está pensado para Ubuntu / Debian; en otras distribuciones hay que instalar los paquetes a mano.
 
 ## Hardware verificado {#verified-hardware}
 

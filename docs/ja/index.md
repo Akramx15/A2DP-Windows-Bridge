@@ -27,8 +27,10 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
+| SBC XQ | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最大約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
-| LHDC V5 🧪 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### プラットフォーム別のコーデック対応（ヘッドホンへの送信）
@@ -40,7 +42,9 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 実験的 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu のパッケージに含まれない | ✅ |
+| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC でデュアルチャネルと bitpool 43 以上を許すシンク） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
+| FastStream | ❌ | ❌ | ✅ | ✅（音楽のみ、明示的に選んだとき） |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus（Android の A2DP Opus） | ❌ | ❌ | 未確認 | 🧪 実験的 |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
@@ -64,7 +68,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 
 ## 対応プラットフォーム {#platform-support}
 
-| コンポーネント | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
+| コンポーネント | Windows 10 (x64 / ARM64) | Windows 11 (x64 / ARM64) | Linux (Ubuntu) |
 |:---------------|:----------------:|:----------------:|:--------------:|
 | **A2DPWB**（ウィンドウ / トレイ / CLI） | ✅（実機では未確認） | ✅ | ❌ |
 | [ソースからのビルド](building)（Rust、Visual Studio 2022 以降、Node.js） | ✅ | ✅ | ❌ |
@@ -73,7 +77,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | 仮想アダプター `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
 | [測定用受信機](usage#receiver) `tools/linux_sink` | ❌ | ❌ | ✅ |
 
-A2DPWB 本体は Windows 専用（Windows 10 22H2 または Windows 11）で、x64 ビルドのみです。Linux 側のツールには Python 3.11 以降が必要です（Ubuntu 26.04 で確認済み）。`setup.sh` は Ubuntu / Debian 向けで、他のディストリビューションではパッケージを手動でインストールしてください。
+A2DPWB 本体は Windows 専用（Windows 10 22H2 または Windows 11）で、x64 と ARM64 向けにビルドされます。Linux 側のツールには Python 3.11 以降が必要です（Ubuntu 26.04 で確認済み）。`setup.sh` は Ubuntu / Debian 向けで、他のディストリビューションではパッケージを手動でインストールしてください。
 
 ## 検証済みの機器 {#verified-hardware}
 
