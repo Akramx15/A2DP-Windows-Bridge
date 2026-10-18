@@ -470,6 +470,19 @@ fn chip_changed(before: &CoreSettings, after: &CoreSettings) -> bool {
     before.bt_chip_pid != after.bt_chip_pid || before.bt_chip_fw_stem != after.bt_chip_fw_stem
 }
 
+/// The tray icon's tooltip while streaming: "A2DPWB - Streaming (WH-1000XM4)"
+/// and the codec on a second line
+fn tray_tooltip(base: &str, device: Option<&str>, codec: Option<(&str, u32)>) -> String {
+    let mut t = match device.filter(|d| !d.is_empty()) {
+        Some(d) => format!("{base} ({d})"),
+        None => base.to_string(),
+    };
+    if let Some((c, kbps)) = codec {
+        t.push_str(&format!("\n{c} {kbps} kbps"));
+    }
+    t
+}
+
 /// A saved profile is the one streaming or connecting (under its name before
 /// the save): it is started again with the new settings
 fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
@@ -603,9 +616,17 @@ impl CoreState {
         } else {
             a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DPWB - Idle")
         };
-        let tooltip = match (&s.stream.info, streaming) {
-            (Some(i), true) => format!("{base}\n{} {} kbps", i.codec, i.bitrate_kbps),
-            _ => base,
+        // The streamed profile's device (v1)
+        let device = s
+            .stream
+            .profile
+            .as_ref()
+            .and_then(|n| s.profiles.iter().find(|p| &p.name == n))
+            .map(|p| if p.device_name.is_empty() { p.device_address.as_str() } else { p.device_name.as_str() });
+        let tooltip = if streaming {
+            tray_tooltip(&base, device, s.stream.info.as_ref().map(|i| (i.codec.as_str(), i.bitrate_kbps)))
+        } else {
+            base
         };
         (self.tray)(TrayView {
             streaming,
@@ -1432,6 +1453,20 @@ mod tests {
         assert!(!c.fixed);
         assert!(firmware_change(std::slice::from_ref(&page), std::slice::from_ref(&page)).invalid.is_empty());
         assert_eq!(firmware_change(&[], std::slice::from_ref(&page)).invalid.len(), 1);
+    }
+
+    #[test]
+    fn the_tray_tooltip_names_the_device() {
+        assert_eq!(
+            tray_tooltip("A2DPWB - Streaming", Some("WH-1000XM4"), Some(("LDAC", 990))),
+            "A2DPWB - Streaming (WH-1000XM4)\nLDAC 990 kbps"
+        );
+        assert_eq!(tray_tooltip("A2DPWB - Streaming", None, Some(("SBC", 328))), "A2DPWB - Streaming\nSBC 328 kbps");
+        assert_eq!(tray_tooltip("A2DPWB - Streaming", Some(""), None), "A2DPWB - Streaming");
+        assert_eq!(
+            tray_tooltip("A2DPWB - Streaming", Some("AA:BB:CC:DD:EE:FF"), None),
+            "A2DPWB - Streaming (AA:BB:CC:DD:EE:FF)"
+        );
     }
 
     #[test]
