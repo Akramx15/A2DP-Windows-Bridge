@@ -114,8 +114,8 @@ pub struct Settings {
     /// LE Audio profiles can stream. On by default since 2.0.1 (schema 3):
     /// choosing an LE Audio device is the user's call.
     pub le_audio_experimental: bool,
-    /// LE Audio: GMAP low-latency presets for a gaming headset (read when a
-    /// stream is set up)
+    /// Before 2.0.1: GMAP low latency for every LE Audio profile. Now a
+    /// profile option (`le_low_latency`); kept only so the file round-trips.
     pub le_audio_low_latency: bool,
 
     /// Before v1.1 the max media packet size was a setting; it now seeds

@@ -28,6 +28,7 @@ export function newProfile(): Profile {
     volume_device_name: "",
     max_media_payload: PACKET_DEFAULT,
     le_audio: false,
+    le_low_latency: true,
   };
 }
 

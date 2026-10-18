@@ -116,6 +116,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         volume_device_name: p.volume_device_name.clone(),
         max_media_payload: p.max_media_payload.unwrap_or(legacy),
         le_audio: p.le_audio,
+        le_low_latency: p.le_low_latency,
     }
 }
 
@@ -142,6 +143,7 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.volume_device_name = p.volume_device_name.clone();
     c.max_media_payload = Some(bt_host::media::clamp_media_payload_limit(p.max_media_payload as u32));
     c.le_audio = p.le_audio;
+    c.le_low_latency = p.le_low_latency;
     c
 }
 

@@ -87,6 +87,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     volume_device_name: "",
     max_media_payload: 1023,
     le_audio: false,
+    le_low_latency: true,
     ...over,
   };
 }

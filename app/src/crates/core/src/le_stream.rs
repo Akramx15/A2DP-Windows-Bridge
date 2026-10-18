@@ -215,12 +215,13 @@ impl Drop for LeAudioPath {
 /// The stream request of an [`LeRequest`]: an explicit preset is the only
 /// one tried. GMAP low latency: the request's flag or (from a profile) the
 /// setting, not with an explicit preset.
-pub(crate) fn stream_request(le: &LeRequest, low_latency_setting: bool) -> (LeStreamRequest, bool) {
+pub(crate) fn stream_request(le: &LeRequest) -> (LeStreamRequest, bool) {
     let mut request = LeStreamRequest::default();
     if let Some(p) = &le.preset {
         request.preset_order = vec![p.clone()];
     }
-    let low_latency = (le.low_latency || low_latency_setting) && le.preset.is_none();
+    // The profile's choice (or --le-low-latency); an explicit preset wins
+    let low_latency = le.low_latency && le.preset.is_none();
     (request, low_latency)
 }
 
@@ -264,9 +265,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         return inner.notify(StreamState::Error, Msg::new("error.le_audio_unavailable"));
     }
 
-    let low_latency_setting =
-        !inner.le_cli() && inner.settings.lock().unwrap_or_else(|e| e.into_inner()).le_audio_low_latency;
-    let (request, low_latency) = stream_request(&le, low_latency_setting);
+    let (request, low_latency) = stream_request(&le);
     host.le_set_low_latency(low_latency);
     let mut devices = vec![req.device];
     devices.extend(le.extra_devices.iter().copied());
@@ -493,14 +492,13 @@ mod tests {
 
     #[test]
     fn preset_and_low_latency() {
-        let (r, ll) = stream_request(&LeRequest::default(), false);
+        let (r, ll) = stream_request(&LeRequest::default());
         assert_eq!((r, ll), (LeStreamRequest::default(), false));
-        // The setting (a profile) or the flag
-        assert!(stream_request(&LeRequest::default(), true).1);
-        assert!(stream_request(&LeRequest { low_latency: true, ..LeRequest::default() }, false).1);
+        // The profile's choice or the flag
+        assert!(stream_request(&LeRequest { low_latency: true, ..LeRequest::default() }).1);
         // An explicit preset wins
         let le = LeRequest { preset: Some("48_2_2".into()), low_latency: true, ..LeRequest::default() };
-        let (r, ll) = stream_request(&le, true);
+        let (r, ll) = stream_request(&le);
         assert_eq!(r.preset_order, ["48_2_2"]);
         assert!(!ll);
     }
