@@ -8,7 +8,7 @@ import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import { codecSpec, codecSupport, qualityTag } from "../lib/codecs";
 import { knownCodecs } from "../lib/profile";
-import { captureText } from "./Home";
+import { captureText } from "../components/CapturePicker";
 import { ProfileEditor } from "./ProfileEditor";
 
 export function Profiles() {

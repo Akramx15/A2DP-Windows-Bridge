@@ -1,16 +1,17 @@
 // The tray flyout (360×440): everyday control without the main window.
 // Device and state, the big Connect / Disconnect, volume right below,
-// the profile switcher, codec and link quality, "Open app".
+// the profile switcher, codec and link quality, the capture source,
+// "Open app".
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { CaptureSign } from "../app/indicators";
+import { CapturePicker } from "../components/CapturePicker";
 import { Button, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import { ProfileSwitcher } from "../components/ProfileSwitcher";
 import {
-  CaptureSource,
   CodecBadge,
   ConnectButton,
   copyError,
@@ -76,9 +77,9 @@ export function Flyout() {
         <CodecBadge compact />
         <QualityIndicator />
       </div>
-      <Show when={stream().info?.source || snap().capture}>
+      <Show when={profile() || snap().capture}>
         <div class="fly-meta">
-          <CaptureSource profile={profile()} />
+          <Show when={profile()}>{(p) => <CapturePicker profile={p()} />}</Show>
           <CaptureSign onOpen={() => void openMain("diagnostics")} />
         </div>
       </Show>

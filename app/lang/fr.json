@@ -379,6 +379,7 @@
   "ui.conn.rejected_body": "Cette fenêtre et a2dpwb-core.exe proviennent de versions différentes d'A2DPWB. Installez la même version des deux (installer la dernière version suffit).",
   "ui.home.device": "Appareil",
   "ui.home.firmware_fix": "Configurer le firmware",
+  "ui.home.capture_more": "Plus de réglages de capture",
   "ui.volume.unknown": "Non communiqué par le casque",
   "ui.source.waiting": "En attente du démarrage de %s",
   "ui.codec.none": "Aucune diffusion",

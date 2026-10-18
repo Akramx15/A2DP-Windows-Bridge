@@ -1,14 +1,13 @@
 // Home: the device, its connection ring and the biggest element on the
 // screen, Connect / Disconnect; volume right below; codec, capture source
-// and link quality small but always there.
+// (chosen right there) and link quality small but always there.
 
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { useApp } from "../app/context";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
-import type { IconName } from "../components/icons";
+import { CapturePicker } from "../components/CapturePicker";
 import {
-  CaptureSource,
   CodecBadge,
   ConnectButton,
   currentProfile,
@@ -20,18 +19,7 @@ import {
 } from "../components/stream";
 import { ProfileSwitcher } from "../components/ProfileSwitcher";
 import { t, tm } from "../i18n";
-import { IpcError, type AdapterInfo, type Profile, type Snapshot } from "../ipc/types";
-
-export function captureText(p: Profile): { icon: IconName; text: string } {
-  switch (p.capture_mode) {
-    case "virtual":
-      return { icon: "desktop_speaker", text: p.audio_device_name || t("capture.virtual") };
-    case "app":
-      return { icon: "window_apps", text: p.app_name || p.app_exe || t("capture.app") };
-    default:
-      return { icon: "speaker_2", text: t("capture.loopback") };
-  }
-}
+import { IpcError, type AdapterInfo, type Snapshot } from "../ipc/types";
 
 /** Adapters whose firmware files are missing from the settings folder or
  *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
@@ -160,22 +148,10 @@ export function Home() {
                   {t("capture.mode")}
                 </h2>
                 <div class="mini-body">
-                  {/* While it streams: what the core captures, "waiting for
-                      <app>" included; otherwise what the profile would */}
-                  <Show
-                    when={stream().info?.source}
-                    fallback={
-                      <>
-                        <Icon name={captureText(p()).icon} />
-                        <span class="ellipsis">{captureText(p()).text}</span>
-                      </>
-                    }
-                  >
-                    <CaptureSource profile={p()} />
-                  </Show>
+                  <CapturePicker profile={p()} />
                 </div>
                 <button type="button" class="link" onClick={() => navigate({ name: "profiles", arg: p().name })}>
-                  {t("profile.edit")}
+                  {t("ui.home.capture_more")}
                 </button>
               </section>
               <section class="card mini" aria-labelledby="home-link">

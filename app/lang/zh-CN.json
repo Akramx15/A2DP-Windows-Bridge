@@ -379,6 +379,7 @@
   "ui.conn.rejected_body": "此窗口与 a2dpwb-core.exe 来自不同版本的 A2DPWB。请安装两者的相同版本（安装最新版本即可）。",
   "ui.home.device": "设备",
   "ui.home.firmware_fix": "设置固件",
+  "ui.home.capture_more": "更多捕获设置",
   "ui.volume.unknown": "耳机未报告",
   "ui.source.waiting": "正在等待 %s 启动",
   "ui.codec.none": "未在串流",

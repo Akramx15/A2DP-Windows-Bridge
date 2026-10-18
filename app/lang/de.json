@@ -379,6 +379,7 @@
   "ui.conn.rejected_body": "Dieses Fenster und a2dpwb-core.exe stammen aus unterschiedlichen A2DPWB-Versionen. Von beiden dieselbe Version installieren (die neueste Version zu installieren genügt).",
   "ui.home.device": "Gerät",
   "ui.home.firmware_fix": "Firmware einrichten",
+  "ui.home.capture_more": "Weitere Aufnahmeeinstellungen",
   "ui.volume.unknown": "Vom Kopfhörer nicht gemeldet",
   "ui.source.waiting": "Warten auf den Start von %s",
   "ui.codec.none": "Kein Streaming",
