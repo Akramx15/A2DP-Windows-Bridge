@@ -470,6 +470,13 @@ fn chip_changed(before: &CoreSettings, after: &CoreSettings) -> bool {
     before.bt_chip_pid != after.bt_chip_pid || before.bt_chip_fw_stem != after.bt_chip_fw_stem
 }
 
+/// A saved profile is the one streaming or connecting (under its name before
+/// the save): it is started again with the new settings
+fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
+    matches!(stream.state, StreamState::Connecting | StreamState::Streaming | StreamState::Reconnecting)
+        && stream.profile.as_deref() == Some(saved)
+}
+
 fn unix_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -1095,6 +1102,11 @@ impl CoreState {
                 };
                 self.save_profiles(&list, active)?;
                 self.refresh_devices();
+                // The profile in use starts again with what was saved (v1)
+                if restart_after_save(&s.stream, &key) {
+                    tracing::info!("profile \"{key}\" saved while in use: it starts again as \"{}\"", profile.name);
+                    self.start_profile(&profile.name)?;
+                }
                 Ok(Value::Null)
             }
             Method::ProfileDelete { name } => {
@@ -1404,6 +1416,24 @@ mod tests {
         assert!(!c.fixed);
         assert!(firmware_change(std::slice::from_ref(&page), std::slice::from_ref(&page)).invalid.is_empty());
         assert_eq!(firmware_change(&[], std::slice::from_ref(&page)).invalid.len(), 1);
+    }
+
+    #[test]
+    fn saving_the_profile_in_use_restarts_it() {
+        let status = |state, profile: Option<&str>| StreamStatus {
+            state,
+            profile: profile.map(str::to_owned),
+            ..StreamStatus::default()
+        };
+        for state in [StreamState::Connecting, StreamState::Streaming, StreamState::Reconnecting] {
+            assert!(restart_after_save(&status(state, Some("WH LDAC")), "WH LDAC"));
+            assert!(!restart_after_save(&status(state, Some("WH LDAC")), "Buds AAC"));
+            // A custom stream (receiver test, test tone) has no profile
+            assert!(!restart_after_save(&status(state, None), "WH LDAC"));
+        }
+        for state in [StreamState::Idle, StreamState::Error] {
+            assert!(!restart_after_save(&status(state, Some("WH LDAC")), "WH LDAC"));
+        }
     }
 
     #[test]
