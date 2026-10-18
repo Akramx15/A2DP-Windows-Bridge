@@ -374,8 +374,8 @@ Tailles des Information Elements des codecs (y compris les 6 octets de Vendor ID
   mono vers un récepteur qui le propose). Les paquets média portent un paquet Opus derrière
   un en-tête de charge utile de 1 octet (nombre de trames 1 dans les 4 bits de poids faible)
 
-**RTP ou non** : les paquets média LDAC, aptX HD, AAC, SBC, LHDC V5 et Opus portent
-l'en-tête RTP de 12 octets. aptX et aptX LL sont envoyés **sans** en-tête RTP (comme le font Android et
+**RTP ou non** : les paquets média LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5 et Opus portent
+l'en-tête RTP de 12 octets. aptX, aptX LL et FastStream sont envoyés **sans** en-tête RTP (comme le font Android et
 PipeWire), si bien que toute la MTU L2CAP est disponible pour les trames aptX.
 
 **aptX Adaptive** n'a pas d'encodeur open source (libopenaptx ne l'implémente
@@ -393,6 +393,7 @@ formats qu'en v1 :
 | `settings.json` | Paramètres de l'application, avec un `schema_version` ; les clés inconnues sont conservées |
 | `profiles.json` | Profils |
 | `devices.txt`, `link_keys.txt` | Appareils connus et leurs clés de liaison : les casques associés avec la v1 se reconnectent sans nouvelle association |
+| `le_audio_devices.txt`, `le_audio_bonds.tlv`, `le_audio_csip.txt` | LE Audio (expérimental) : les entrées LE Audio de la liste des appareils, les liaisons LE (avec les valeurs CCC persistantes du serveur GATT) et les ensembles coordonnés |
 | `*.bin`, `*.hcd`, `ibt-*` | Fichiers de firmware |
 | `hci_<date>_<time>.pklg` | Captures HCI |
 | `logs\a2dpwb-core.<date>.log` | Le journal du cœur, un fichier par jour (UTC), les 7 derniers sont conservés |

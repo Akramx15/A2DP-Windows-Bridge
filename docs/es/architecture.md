@@ -373,8 +373,8 @@ Tamaños de los elementos de información de códec (incluidos los 6 bytes de Ve
   mono hacia un receptor que lo admita). Los paquetes multimedia llevan un paquete Opus tras
   un encabezado de carga útil de 1 byte (número de tramas 1 en los 4 bits bajos)
 
-**Con o sin RTP**: los paquetes multimedia de LDAC, aptX HD, AAC, SBC, LHDC V5 y Opus llevan el
-encabezado RTP de 12 bytes. aptX y aptX LL se envían **sin** encabezado RTP (como hacen Android y
+**Con o sin RTP**: los paquetes multimedia de LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5 y Opus llevan el
+encabezado RTP de 12 bytes. aptX, aptX LL y FastStream se envían **sin** encabezado RTP (como hacen Android y
 PipeWire), de modo que toda la MTU de L2CAP queda disponible para las tramas aptX.
 
 **aptX Adaptive** no tiene codificador de código abierto (libopenaptx no lo
@@ -392,6 +392,7 @@ formatos que la v1:
 | `settings.json` | Configuración de la aplicación, con un `schema_version`; las claves desconocidas se conservan |
 | `profiles.json` | Perfiles |
 | `devices.txt`, `link_keys.txt` | Dispositivos conocidos y sus claves de enlace: los auriculares emparejados con la v1 se reconectan sin volver a emparejar |
+| `le_audio_devices.txt`, `le_audio_bonds.tlv`, `le_audio_csip.txt` | LE Audio (experimental): las entradas LE Audio de la lista de dispositivos, los vínculos LE (con los valores CCC persistentes del servidor GATT) y los conjuntos coordinados |
 | `*.bin`, `*.hcd`, `ibt-*` | Archivos de firmware |
 | `hci_<date>_<time>.pklg` | Capturas HCI |
 | `logs\a2dpwb-core.<date>.log` | El registro del núcleo, un archivo por día (UTC); se conservan los 7 últimos |
