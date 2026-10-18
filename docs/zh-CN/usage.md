@@ -69,7 +69,7 @@ nav_order: 2
 | 分区 | 设置项 |
 |:--------|:---------|
 | 外观 | 语言、主题（跟随系统 / 浅色 / 深色） |
-| 启动 | **随 Windows 启动**（请参阅[随 Windows 启动](#autostart)） |
+| 启动 | **随 Windows 启动**和**在托盘中启动**（请参阅[随 Windows 启动](#autostart)）、**最小化到系统托盘**（请参阅[托盘与浮出窗口](#tray)） |
 | 耳机 | **耳机按键控制播放**（请参阅[耳机按键](#headphone-buttons)）、**记住耳机音量**（请参阅[音量](#volume)） |
 | 更新 | **检查更新**、**启动时检查更新**、**检查更新时包括预发布版本**（也会提示 beta 版本）、**立即更新**（请参阅[更新](#updates)） |
 | 高级 | **LE Audio（实验性）**、**游戏耳机低延迟（GMAP，实验性）**（请参阅 [LE Audio](#le-audio)）、**开发者模式**（在“诊断”中添加接收器测试，并在日志中输出更多细节；无需重新启动）、**设置文件夹**及**打开配置文件夹**、**运行设置向导** |
@@ -87,11 +87,11 @@ nav_order: 2
 - **右键单击**打开菜单：**打开 A2DPWB**、前 10 个配置文件（当前使用的配置文件带勾选标记；单击某个配置文件即可用它连接）、**断开连接**和**退出**。菜单会立即打开，无需启动窗口
 - 工具提示会显示 A2DPWB 处于空闲还是正在串流
 
-关闭窗口只是将其隐藏。托盘菜单中的**退出**或**设置 > 退出 A2DPWB** 会停止串流、释放适配器并完全关闭 A2DPWB。
+**设置 > 最小化到系统托盘**开启时（默认），最小化或关闭窗口只是将其隐藏到托盘，串流继续进行。关闭该项时，窗口会最小化到任务栏，关闭窗口则会退出 A2DPWB。托盘菜单中的**退出**或**设置 > 退出 A2DPWB** 会停止串流、释放适配器并完全关闭 A2DPWB。
 
 ## 随 Windows 启动 {#autostart}
 
-**设置 > 随 Windows 启动**会在你登录时于后台启动 A2DPWB：只显示托盘图标，窗口可从托盘打开。它对应 `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` 下名为 `A2DPWB` 的值，数据为 `"<folder>\a2dpwb-core.exe" --background`。如需手动关闭，删除该值即可。
+**设置 > 随 Windows 启动**会在你登录时启动 A2DPWB。开启**在托盘中启动**时，它在后台启动：只显示托盘图标，窗口可从托盘打开。关闭该项时（默认），会打开主窗口。它对应 `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` 下名为 `A2DPWB` 的值，数据为 `"<folder>\a2dpwb-core.exe"`，开启**在托盘中启动**时后面加上 `--background`。如需手动关闭，删除该值即可。在 v1 上覆盖安装 v2 时，**在托盘中启动**会被开启，因为 v1 总是在托盘中启动。
 
 ## CLI 模式
 
@@ -173,7 +173,7 @@ a2dpwb-core.exe --cli --scan
 
 用于开发和测试的选项还有：`--hci-tcp <host:port>`（通过 TCP 使用虚拟控制器，代替 WinUSB 适配器）、`--test-tone`（以左 1 kHz / 右 1.5 kHz 的测试音代替捕获的音频）、`--duration <s>`（运行指定秒数后停止）和 `--hci-capture <file.pklg>`（对整个运行过程进行 HCI 捕获）；请参阅[构建](building#emu)。
 
-不带 `--cli` 时，`a2dpwb-core.exe` 就是常驻程序：它也会启动窗口，但使用 `--background` 时除外（只显示托盘图标，供**随 Windows 启动**使用）。`a2dpwb-core.exe --quit` 会请求正在运行的 A2DPWB 停止串流并退出（安装程序会使用它）。
+不带 `--cli` 时，`a2dpwb-core.exe` 就是常驻程序：它也会启动窗口，但使用 `--background` 时除外（只显示托盘图标，开启**在托盘中启动**时供**随 Windows 启动**使用）。`a2dpwb-core.exe --quit` 会请求正在运行的 A2DPWB 停止串流并退出（安装程序会使用它）。
 
 ## 捕获模式 {#capture-modes}
 

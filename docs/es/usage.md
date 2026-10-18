@@ -69,7 +69,7 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene además una p
 | Sección | Ajustes |
 |:--------|:---------|
 | Apariencia | Idioma, tema (Sistema / Claro / Oscuro) |
-| Inicio | **Iniciar con Windows** (consulte [Iniciar con Windows](#autostart)) |
+| Inicio | **Iniciar con Windows** e **Iniciar en la bandeja** (consulte [Iniciar con Windows](#autostart)), **Minimizar en la bandeja del sistema** (consulte [Bandeja y panel desplegable](#tray)) |
 | Auriculares | **Botones de los auriculares controlan la reproducción** (consulte [Botones de los auriculares](#headphone-buttons)), **Recordar volumen de los auriculares** (consulte [Volumen](#volume)) |
 | Actualizaciones | **Buscar actualizaciones**, **Buscar actualizaciones al iniciar**, **Incluir versiones preliminares al buscar actualizaciones** (también ofrece versiones beta), **Actualizar ahora** (consulte [Actualizaciones](#updates)) |
 | Avanzado | **LE Audio (experimental)** y **Baja latencia para auriculares gaming (GMAP, experimental)** (consulte [LE Audio](#le-audio)), **Modo de desarrollador** (añade la prueba con receptor a Diagnóstico y más detalles al registro; no requiere reiniciar), **Carpeta de configuración** con **Abrir carpeta de configuración**, **Ejecutar la configuración inicial** |
@@ -87,11 +87,11 @@ A2DPWB sigue ejecutándose en la bandeja del sistema, con o sin la ventana:
 - **Clic derecho** abre el menú: **Abrir A2DPWB**, los 10 primeros perfiles (el activo marcado; haga clic en uno para conectar con él), **Desconectar** y **Salir**. El menú se abre al instante, sin iniciar la ventana
 - La información sobre herramientas indica si A2DPWB está inactivo o transmitiendo
 
-Cerrar la ventana solo la oculta. **Salir** en el menú de la bandeja o **Configuración > Salir de A2DPWB** detiene la transmisión, libera el adaptador y cierra A2DPWB por completo.
+Con **Configuración > Minimizar en la bandeja del sistema** activado (el valor predeterminado), minimizar o cerrar la ventana solo la oculta en la bandeja, y la transmisión continúa. Si está desactivado, la ventana se minimiza en la barra de tareas y cerrarla sale de A2DPWB. **Salir** en el menú de la bandeja o **Configuración > Salir de A2DPWB** detiene la transmisión, libera el adaptador y cierra A2DPWB por completo.
 
 ## Iniciar con Windows {#autostart}
 
-**Configuración > Iniciar con Windows** inicia A2DPWB en segundo plano al iniciar sesión: solo aparece el icono de la bandeja, y la ventana se abre desde él. Es el valor `A2DPWB` en `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, con los datos `"<folder>\a2dpwb-core.exe" --background`. Para desactivarlo a mano, elimine ese valor.
+**Configuración > Iniciar con Windows** inicia A2DPWB al iniciar sesión. Con **Iniciar en la bandeja** activado, se inicia en segundo plano: solo aparece el icono de la bandeja, y la ventana se abre desde él. Si está desactivado (el valor predeterminado), se abre la ventana principal. Es el valor `A2DPWB` en `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`, con los datos `"<folder>\a2dpwb-core.exe"`, seguidos de `--background` cuando **Iniciar en la bandeja** está activado. Para desactivarlo a mano, elimine ese valor. Al instalar la v2 sobre la v1, **Iniciar en la bandeja** queda activado, ya que la v1 siempre se iniciaba en la bandeja.
 
 ## Modo CLI
 
@@ -173,7 +173,7 @@ Ponga antes los auriculares en modo de emparejamiento.
 
 Para desarrollo y pruebas también existen `--hci-tcp <host:port>` (un controlador virtual por TCP en lugar del adaptador WinUSB), `--test-tone` (1 kHz a la izquierda / 1.5 kHz a la derecha en lugar del audio capturado), `--duration <s>` (detenerse tras ese número de segundos) y `--hci-capture <file.pklg>` (captura HCI de toda la ejecución); consulte [Compilación](building#emu).
 
-Sin `--cli`, `a2dpwb-core.exe` es el programa residente: también inicia la ventana, salvo con `--background` (solo el icono de la bandeja; lo usa **Iniciar con Windows**). `a2dpwb-core.exe --quit` pide a un A2DPWB en ejecución que detenga la transmisión y se cierre (lo usa el instalador).
+Sin `--cli`, `a2dpwb-core.exe` es el programa residente: también inicia la ventana, salvo con `--background` (solo el icono de la bandeja; lo usa **Iniciar con Windows** cuando **Iniciar en la bandeja** está activado). `a2dpwb-core.exe --quit` pide a un A2DPWB en ejecución que detenga la transmisión y se cierre (lo usa el instalador).
 
 ## Modos de captura {#capture-modes}
 

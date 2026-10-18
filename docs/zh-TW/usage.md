@@ -69,7 +69,7 @@ nav_order: 2
 | 區段 | 設定 |
 |:--------|:---------|
 | 外觀 | 語言、佈景主題（系統 / 淺色 / 深色） |
-| 啟動 | **隨 Windows 啟動**（請參閱 [隨 Windows 啟動](#autostart)） |
+| 啟動 | **隨 Windows 啟動** 與 **在系統匣中啟動**（請參閱 [隨 Windows 啟動](#autostart)）、**最小化至系統匣**（請參閱 [系統匣與快顯視窗](#tray)） |
 | 耳機 | **以耳機按鈕控制播放**（請參閱 [耳機按鈕](#headphone-buttons)）、**記住耳機音量**（請參閱 [音量](#volume)） |
 | 更新 | **檢查更新**、**啟動時檢查更新**、**檢查更新時包含搶先版**（也會通知 Beta 版本）、**立即更新**（請參閱 [更新](#updates)） |
 | 進階 | **LE Audio（實驗性）**、**遊戲耳機低延遲（GMAP，實驗性）**（請參閱 [LE Audio](#le-audio)）、**開發人員模式**（在「診斷」中加入接收器測試，並在記錄中寫入更多詳細資訊；不需要重新啟動）、**設定資料夾** 與 **開啟設定資料夾**、**執行設定精靈** |
@@ -87,11 +87,11 @@ nav_order: 2
 - **按右鍵** 會開啟選單：**開啟 A2DPWB**、前 10 個設定檔（使用中的設定檔會打勾；點選即可以該設定檔連線）、**中斷連線** 與 **結束**。選單會立即開啟，不需要啟動視窗
 - 工具提示會顯示 A2DPWB 目前是閒置還是串流中
 
-關閉視窗只會將它隱藏。系統匣選單中的 **結束** 或 **設定 > 結束 A2DPWB** 會停止串流、釋放介面卡，並完全關閉 A2DPWB。
+**設定 > 最小化至系統匣** 開啟時（預設），最小化或關閉視窗只會將它隱藏到系統匣，串流會繼續進行。關閉此項時，視窗會最小化至工作列，關閉視窗則會結束 A2DPWB。系統匣選單中的 **結束** 或 **設定 > 結束 A2DPWB** 會停止串流、釋放介面卡，並完全關閉 A2DPWB。
 
 ## 隨 Windows 啟動 {#autostart}
 
-**設定 > 隨 Windows 啟動** 會在您登入時於背景啟動 A2DPWB：只會顯示系統匣圖示，視窗可從圖示開啟。它是 `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` 下名為 `A2DPWB` 的值，資料為 `"<folder>\a2dpwb-core.exe" --background`。若要手動關閉，請刪除該值。
+**設定 > 隨 Windows 啟動** 會在您登入時啟動 A2DPWB。開啟 **在系統匣中啟動** 時，它會在背景啟動：只會顯示系統匣圖示，視窗可從圖示開啟。關閉此項時（預設），會開啟主視窗。它是 `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` 下名為 `A2DPWB` 的值，資料為 `"<folder>\a2dpwb-core.exe"`，開啟 **在系統匣中啟動** 時後面會加上 `--background`。若要手動關閉，請刪除該值。在 v1 上覆蓋安裝 v2 時，**在系統匣中啟動** 會被開啟，因為 v1 一律在系統匣中啟動。
 
 ## CLI 模式
 
@@ -173,7 +173,7 @@ a2dpwb-core.exe --cli --scan
 
 開發與測試用途另有 `--hci-tcp <host:port>`（以 TCP 連線的虛擬控制器取代 WinUSB 介面卡）、`--test-tone`（以左 1 kHz / 右 1.5 kHz 取代擷取的音訊）、`--duration <s>`（經過指定秒數後停止）與 `--hci-capture <file.pklg>`（擷取整個執行期間的 HCI）；請參閱 [建置](building#emu)。
 
-未加上 `--cli` 時，`a2dpwb-core.exe` 即為常駐程式：它也會啟動視窗，但加上 `--background` 時除外（只顯示系統匣圖示，**隨 Windows 啟動** 使用此選項）。`a2dpwb-core.exe --quit` 會要求執行中的 A2DPWB 停止串流並結束（安裝程式會使用此選項）。
+未加上 `--cli` 時，`a2dpwb-core.exe` 即為常駐程式：它也會啟動視窗，但加上 `--background` 時除外（只顯示系統匣圖示，開啟 **在系統匣中啟動** 時，**隨 Windows 啟動** 使用此選項）。`a2dpwb-core.exe --quit` 會要求執行中的 A2DPWB 停止串流並結束（安裝程式會使用此選項）。
 
 ## 擷取模式 {#capture-modes}
 

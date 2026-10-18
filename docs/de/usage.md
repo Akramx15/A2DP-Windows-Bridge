@@ -69,7 +69,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 | Abschnitt | Einstellungen |
 |:----------|:--------------|
 | Darstellung | Sprache, Design (System / Hell / Dunkel) |
-| Start | **Mit Windows starten** (siehe [Mit Windows starten](#autostart)) |
+| Start | **Mit Windows starten** und **Im Infobereich starten** (siehe [Mit Windows starten](#autostart)), **In den Infobereich minimieren** (siehe [Infobereich und Flyout](#tray)) |
 | Kopfhörer | **Kopfhörertasten steuern die Wiedergabe** (siehe [Kopfhörertasten](#headphone-buttons)), **Kopfhörerlautstärke merken** (siehe [Lautstärke](#volume)) |
 | Updates | **Nach Updates suchen**, **Beim Start nach Updates suchen**, **Vorabversionen bei der Updatesuche einbeziehen** (bietet auch Betaversionen an), **Jetzt aktualisieren** (siehe [Updates](#updates)) |
 | Erweitert | **LE Audio (experimentell)** und **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** (siehe [LE Audio](#le-audio)), **Entwicklermodus** (fügt der Diagnose den Empfängertest und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
@@ -87,11 +87,11 @@ A2DPWB läuft im Infobereich weiter, mit oder ohne Fenster:
 - **Rechtsklick** öffnet das Menü: **A2DPWB öffnen**, die ersten 10 Profile (das aktive mit Häkchen; ein Klick verbindet damit), **Trennen** und **Beenden**. Das Menü öffnet sich sofort, ohne das Fenster zu starten
 - Der Tooltip zeigt, ob A2DPWB inaktiv ist oder streamt
 
-Das Schließen des Fensters blendet es nur aus. **Beenden** im Menü des Infobereichs oder **Einstellungen > A2DPWB beenden** stoppt das Streaming, gibt den Adapter frei und schließt A2DPWB vollständig.
+Ist **Einstellungen > In den Infobereich minimieren** eingeschaltet (Standard), blendet das Minimieren oder Schließen des Fensters es nur in den Infobereich aus, und das Streaming läuft weiter. Ist die Option ausgeschaltet, wird das Fenster in die Taskleiste minimiert, und das Schließen beendet A2DPWB. **Beenden** im Menü des Infobereichs oder **Einstellungen > A2DPWB beenden** stoppt das Streaming, gibt den Adapter frei und schließt A2DPWB vollständig.
 
 ## Mit Windows starten {#autostart}
 
-**Einstellungen > Mit Windows starten** startet A2DPWB bei der Anmeldung im Hintergrund: Es erscheint nur das Symbol im Infobereich, über das sich das Fenster öffnen lässt. Dahinter steht der Wert `A2DPWB` unter `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` mit den Daten `"<folder>\a2dpwb-core.exe" --background`. Um die Funktion von Hand auszuschalten, löschen Sie diesen Wert.
+**Einstellungen > Mit Windows starten** startet A2DPWB bei der Anmeldung. Ist **Im Infobereich starten** eingeschaltet, startet es im Hintergrund: Es erscheint nur das Symbol im Infobereich, über das sich das Fenster öffnen lässt. Ist die Option ausgeschaltet (Standard), öffnet sich das Hauptfenster. Dahinter steht der Wert `A2DPWB` unter `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` mit den Daten `"<folder>\a2dpwb-core.exe"`, gefolgt von `--background`, wenn **Im Infobereich starten** eingeschaltet ist. Um die Funktion von Hand auszuschalten, löschen Sie diesen Wert. Wird v2 über v1 installiert, ist **Im Infobereich starten** eingeschaltet, da v1 immer im Infobereich startete.
 
 ## CLI-Modus
 
@@ -173,7 +173,7 @@ Versetzen Sie die Kopfhörer vorher in den Kopplungsmodus.
 
 Für Entwicklung und Tests gibt es außerdem `--hci-tcp <host:port>` (ein virtueller Controller über TCP statt des WinUSB-Adapters), `--test-tone` (1 kHz links / 1,5 kHz rechts statt des aufgenommenen Audios), `--duration <s>` (nach dieser Anzahl Sekunden beenden) und `--hci-capture <file.pklg>` (HCI-Aufzeichnung des gesamten Laufs); siehe [Bauen](building#emu).
 
-Ohne `--cli` ist `a2dpwb-core.exe` das residente Programm: Es startet auch das Fenster, außer mit `--background` (nur das Symbol im Infobereich, wird von **Mit Windows starten** verwendet). `a2dpwb-core.exe --quit` fordert ein laufendes A2DPWB auf, das Streaming zu beenden und sich zu schließen (das Installationsprogramm verwendet dies).
+Ohne `--cli` ist `a2dpwb-core.exe` das residente Programm: Es startet auch das Fenster, außer mit `--background` (nur das Symbol im Infobereich, wird von **Mit Windows starten** verwendet, wenn **Im Infobereich starten** eingeschaltet ist). `a2dpwb-core.exe --quit` fordert ein laufendes A2DPWB auf, das Streaming zu beenden und sich zu schließen (das Installationsprogramm verwendet dies).
 
 ## Aufnahmemodi {#capture-modes}
 
