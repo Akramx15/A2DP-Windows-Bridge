@@ -3,10 +3,6 @@
 node_modules/
 dist/
 build/
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
 
 # IDE / Editor
 .vs/
@@ -48,8 +44,6 @@ Desktop.ini
 # Package / distribution
 *.zip
 *.7z
-*.msi
-*.nupkg
 
 # AI
 .claude/
