@@ -139,11 +139,11 @@ A2DPWB umgeht den Bluetooth-Stack von Windows vollständig. Es kommuniziert übe
 ## Funktionen
 
 - **Mehrere Codecs**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 und (experimentell) Opus / Opus 05 mit automatischer Aushandlung
-- **LE Audio (experimentell, standardmäßig aus)**: LC3 an LE-Audio-Kopfhörer und -Ohrhörer (BAP Unicast, beide Ohrhörer eines Paars, Headset-Lautstärke, Medientasten, GMAP mit niedriger Latenz). Benötigt einen Adapter mit isochronen Bluetooth-5.2-Kanälen; nur mit dem Bluetooth-Emulator getestet, noch nicht mit echten LE-Audio-Kopfhörern ([Verwendung](usage#le-audio))
+- **LE Audio (experimentell)**: LC3 an LE-Audio-Kopfhörer und -Ohrhörer (BAP Unicast, beide Ohrhörer eines Paars, Headset-Lautstärke, Medientasten, GMAP mit niedriger Latenz). Benötigt einen Adapter mit isochronen Bluetooth-5.2-Kanälen; nur mit dem Bluetooth-Emulator getestet, noch nicht mit echten LE-Audio-Kopfhörern ([Verwendung](usage#le-audio))
 - **Drei Aufnahmemodi**: System-Loopback, Umleitung über ein virtuelles Audiogerät oder die Ausgabe einer einzelnen Anwendung
 - **Fenster, Infobereich und CLI**: ein Fenster für Einrichtung und Diagnose, ein Flyout und ein Menü im Infobereich für das alltägliche Verbinden sowie eine Kommandozeile (siehe [Verwendung](usage))
 - **WinUSB in der App**: weist dem Adapter den WinUSB-Treiber zu und stellt den ursprünglichen Treiber wieder her, Zadig ist nicht nötig (siehe [Einrichtung](setup#winusb))
-- **Einrichtung beim ersten Start**: Adapter, Treiber und Firmware, Kopfhörer, Testton
+- **Einrichtung beim ersten Start**: Adapter, Treiber und Firmware, Kopfhörer, erste Verbindung
 - **ABR**: Adaptive Bitrate für instabile Verbindungen (LDAC und LHDC V5)
 - **Automatische Neuverbindung**: Verbindet sich nach einem Abbruch erneut (bis zu 10 Versuche) sowie nachdem der PC aus dem Energiesparmodus zurückkehrt
 - **Verbindungsqualität und AFH**: Zeigt, was gesendet wird, den RSSI und die genutzten Kanäle; teilt dem Adapter mit, welche Wi-Fi-Kanäle zu meiden sind (siehe [Verwendung](usage#link-quality))

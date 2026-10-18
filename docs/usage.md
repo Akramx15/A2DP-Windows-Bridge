@@ -71,7 +71,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 | Startup | **Start with Windows** and **Start in the tray** (see [Start with Windows](#autostart)), **Minimize to System Tray** (see [Tray and Flyout](#tray)) |
 | Headphones | **Headphone Buttons Control Playback** (see [Headphone buttons](#headphone-buttons)), **Remember Headphone Volume** (see [Volume](#volume)) |
 | Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
-| Advanced | **LE Audio (experimental)** and **Low latency for gaming headsets (GMAP, experimental)** (see [LE Audio](#le-audio)), **Developer mode** (adds the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
+| Advanced | **Developer mode** (adds the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
 | About A2DPWB | Version, license, third-party licenses, **Quit A2DPWB** |
 
 ### First-Run Setup
@@ -431,7 +431,7 @@ The receiver's adapter is not available to its own Bluetooth stack while the too
 
 ## LE Audio (experimental) {#le-audio}
 
-A2DPWB can also stream to LE Audio headphones and earbuds (LC3 over connected isochronous streams, BAP unicast), with headset volume (VCP), media buttons (MCP), both earbuds of a pair (CSIP) and a low-latency mode for gaming headsets (GMAP). This is **experimental and off by default**. It has only been tested against a Bluetooth emulator, **not yet with real LE Audio headphones**, so it may not work with yours; use the classic A2DP profiles for everyday listening.
+A2DPWB can also stream to LE Audio headphones and earbuds (LC3 over connected isochronous streams, BAP unicast), with headset volume (VCP), media buttons (MCP), both earbuds of a pair (CSIP) and a low-latency mode for gaming headsets (GMAP). This is **experimental**, chosen per profile: it is only used by a profile for an LE Audio device. It has only been tested against a Bluetooth emulator, **not yet with real LE Audio headphones**, so it may not work with yours; use the classic A2DP profiles for everyday listening.
 
 What it needs:
 
@@ -440,10 +440,11 @@ What it needs:
 
 How to use it:
 
-1. Turn on **Settings > Advanced > LE Audio (experimental)**. Bluetooth starts with LE at the next scan or connection (while streaming or scanning, the change waits until then).
-2. Put the headphones into pairing mode and scan for devices in a profile. LE Audio devices are listed with an **LE Audio** tag, a pair of earbuds as **LE Audio set** (pick either one: A2DPWB finds the other). A headphone that also does A2DP is listed twice, once per kind.
-3. Tick **LE Audio device (experimental, LC3)** in the profile. There is no codec or quality choice (A2DPWB picks the best LC3 configuration the headphones accept), and only System Loopback and Virtual Device capture are available.
-4. Optional: **Low latency for gaming headsets (GMAP, experimental)** in the same section uses shorter LC3 frames with headsets that support GMAP's game role, from the next connection.
+1. Put the headphones into pairing mode and scan for devices in a profile. LE Audio devices are listed with an **LE Audio** tag, a pair of earbuds as **LE Audio set** (pick either one: A2DPWB finds the other). A headphone that also does A2DP is listed twice, once per kind.
+2. Tick **LE Audio device (experimental, LC3)** in the profile. There is no codec or quality choice (A2DPWB picks the best LC3 configuration the headphones accept), and only System Loopback and Virtual Device capture are available.
+3. Under it, **Low latency for gaming headsets (GMAP, experimental)** is on by default: with headsets that support GMAP's game role it uses shorter LC3 frames; other headsets get the media configuration either way.
+
+There is no LE Audio switch in Settings. If the LE side ever disturbs an adapter, `"le_audio_experimental": false` in `settings.json` (**Settings > Settings folder**) turns it off altogether.
 
 In CLI mode: `--le-audio -d <address>` streams to an LE Audio device, `--le-device <address>` adds another device of the group (the second earbud), `--le-scan` lists the LE Audio devices nearby, and `--le-low-latency` / `--le-preset <name>` choose the configuration (`a2dpwb-core.exe --cli -h` lists all LE options).
 

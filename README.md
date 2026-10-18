@@ -42,7 +42,7 @@ Windows 10 / 11 load only kernel drivers signed through Microsoft, which needs a
 
 1. **Install**: run `A2DPWB-<version>-win64-setup.exe` (per user, no administrator rights), or extract the portable zip and run `a2dpwb.exe`. Installing over v1 removes v1 and keeps its settings, pairings and firmware.
 2. **Plug in the dedicated adapter.**
-3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, pair the headphones, play the test tone.
+3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, pair the headphones, then choose what to send and connect.
 4. **Connect** from **Home**, or from the tray icon.
 
 > **Warning:** While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter. **Never assign WinUSB to your PC's built-in Bluetooth adapter.** **Adapter > Restore driver** gives the adapter back to Windows at any time, and the uninstaller offers it too.
@@ -74,7 +74,7 @@ To stream LDAC at 96 kHz, set the playback device's format to 96 kHz in Windows 
 - **Diagnostics**: link quality, AFH (avoids your Wi-Fi channels), connection flow, log, HCI capture
 - **Updates**: daily check, in-app update of the installed version
 - **8 languages**: English, Japanese, Chinese (Simplified / Traditional), Korean, German, French, Spanish
-- **LE Audio (experimental, off by default)**: LC3 to LE Audio headphones and earbuds, tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio))
+- **LE Audio (experimental)**: LC3 to LE Audio headphones and earbuds, tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio))
 
 ## Building
 

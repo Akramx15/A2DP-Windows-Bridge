@@ -1466,6 +1466,10 @@ mod tests {
         assert!(text.contains("  (none selected - receiver measurement or not connected)\n"));
         assert!(text.contains("[Stream]\n  not streaming\n"));
         // LE Audio (experimental): off and no LE stack, no section
+        let mut off_settings = settings.clone();
+        off_settings.le_audio_experimental = false;
+        input.settings = &off_settings;
+        let text = diag_text(&input);
         assert!(!text.contains("[LE Audio"));
 
         let mut le_settings = settings.clone();

@@ -290,12 +290,6 @@ impl Inner {
         self.le_active.load(Ordering::Acquire)
     }
 
-    /// From the command line: LE Audio's own options apply; from the
-    /// profile: the low-latency setting applies too
-    pub fn le_cli(&self) -> bool {
-        self.le_cli.lock().unwrap_or_else(|e| e.into_inner()).is_some()
-    }
-
     fn host_config(&self, le_on: bool) -> HostConfig {
         let s = self.settings.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let transport = match &self.opts.hci_tcp {
@@ -333,10 +327,6 @@ impl Inner {
                     h.set_media_keys(s.media_keys);
                     h.set_afh_policy(self.opts.afh.as_deref().unwrap_or(&s.afh));
                     self.le_active.store(le_on, Ordering::Release);
-                    if le_on && !self.le_cli() {
-                        // The setting (the command line sets its flag itself)
-                        h.le_set_low_latency(s.le_audio_low_latency);
-                    }
                     self.pump_events(&h);
                     return Ok(h);
                 }
@@ -585,6 +575,9 @@ impl Service {
         pipeline::set_thread_priority_hook(|| {
             Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
         });
+        hci_transport::set_acl_out_priority_hook(|| {
+            Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
+        });
         Service { inner, worker: Mutex::new(None), _power: power }
     }
 
@@ -614,9 +607,6 @@ impl Service {
         if let Some(h) = &host {
             h.set_media_keys(settings.media_keys);
             h.set_afh_policy(self.inner.opts.afh.as_deref().unwrap_or(&settings.afh));
-            if self.inner.le_active() && !self.inner.le_cli() {
-                h.le_set_low_latency(settings.le_audio_low_latency);
-            }
         }
         let old = std::mem::replace(&mut *self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()), settings);
         let new_le = self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()).le_audio_experimental;
