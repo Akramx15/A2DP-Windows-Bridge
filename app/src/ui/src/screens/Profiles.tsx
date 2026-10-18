@@ -6,7 +6,7 @@ import { useApp } from "../app/context";
 import { Button, Dialog, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
-import { codecSpec, codecSupport } from "../lib/codecs";
+import { codecSpec, codecSupport, qualityTag } from "../lib/codecs";
 import { knownCodecs } from "../lib/profile";
 import { captureText } from "./Home";
 import { ProfileEditor } from "./ProfileEditor";
@@ -68,6 +68,8 @@ function ProfileList() {
                     <Show when={p.le_audio} fallback={<span class="tag">{t(codecSpec(p.codec).label)}</span>}>
                       <span class="tag">{t("ui.codec.lc3")}</span>
                     </Show>
+                    {/* The quality and its bit rate (v1's list) */}
+                    <Show when={qualityTag(p, t)}>{(q) => <span class="tag num">{q()}</span>}</Show>
                     {/* The device did not offer this codec when it last connected */}
                     <Show
                       when={
