@@ -220,8 +220,11 @@ export function bitrateNoteKey(info: { abr: boolean; bitrate_capped: boolean }):
   return null;
 }
 
+/** 0 = auto. Auto may pick LDAC / LHDC V5, so it offers 16 / 24 too (the
+ *  core carries 24-bit only when the codec it picks has it) */
 export function bitDepths(codec: string): number[] {
-  return codecSpec(codec).hiRes ? [0, 16, 24] : [0];
+  const spec = codecSpec(codec);
+  return spec.hiRes || spec.id === "auto" ? [0, 16, 24] : [0];
 }
 
 interface CodecFields {

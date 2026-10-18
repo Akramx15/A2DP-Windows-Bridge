@@ -396,7 +396,7 @@ export function ProfileEditor(props: { original: string | null }) {
                       disabled={bitDepths(p.codec).length === 1}
                       options={bitDepths(p.codec).map((b) => ({
                         value: b,
-                        label: b === 0 ? (spec().hiRes ? t("codec.auto") : t("bitdepth.16")) : t(`bitdepth.${b}`),
+                        label: b === 0 ? (bitDepths(p.codec).length > 1 ? t("codec.auto") : t("bitdepth.16")) : t(`bitdepth.${b}`),
                       }))}
                       onChange={(v) => setP("bit_depth", v)}
                     />

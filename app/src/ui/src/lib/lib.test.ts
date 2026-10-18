@@ -152,6 +152,7 @@ describe("profiles", () => {
     const p = { ...sampleProfile(), codec: "lhdcv5", quality: "mhq", abr: true, sample_rate: 96000, bit_depth: 24 };
     expect(fitToCodec({ ...p, codec: "ldac" })).toMatchObject({ quality: "hq", abr: true, sample_rate: 96000, bit_depth: 24 });
     expect(fitToCodec({ ...p, codec: "aac" })).toMatchObject({ abr: false, sample_rate: 0, bit_depth: 0 });
+    expect(fitToCodec({ ...p, codec: "auto" })).toMatchObject({ abr: true, sample_rate: 0, bit_depth: 24 });
     expect(fitToCodec({ ...p, codec: "aptx" })).toMatchObject({ quality: "mhq", abr: false });
     expect(fitToCodec({ ...p, codec: "opus" })).toMatchObject({ quality: "hq", abr: false, sample_rate: 0, bit_depth: 0 });
     expect(fitToCodec({ ...p, codec: "opus", sample_rate: 48000 }).sample_rate).toBe(48000);
