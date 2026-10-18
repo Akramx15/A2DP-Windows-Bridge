@@ -14,8 +14,9 @@ with a2dpwb_decode:
     1.5 kHz right, amplitude 0.5
 The cases of NEGOTIATION run the same way with another sink or command line
 (Auto choosing SBC XQ, or SBC on a sink without dual channel or one that
-refuses it; Opus at 48 kHz
-from a 44.1 kHz request, Auto choosing Opus over AAC and LHDC V5 over Opus).
+refuses it; Opus and Opus 05 at 48 kHz
+from a 44.1 kHz request, Auto choosing Opus over AAC and LHDC V5 over Opus,
+but never Opus 05).
 
 Outputs (captures, logs, reports, WAV) go to tools/emu/out/<codec>/.
 Exit code 0 when every codec passed. Uses only the Python standard library;
@@ -65,7 +66,7 @@ if not os.path.exists(VENV_PYTHON) and sys.prefix != sys.base_prefix:
 SINK_ADDRESS = '00:A2:D0:00:00:02'
 BASE_PORT = 9101  # A2DP cases; LE Audio cases use BASE_PORT + 100
 
-CODECS = ['sbc', 'sbcxq', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus']
+CODECS = ['sbc', 'sbcxq', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus', 'opus05']
 CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'sbc': r'SBC \d+ Hz, joint stereo, 16 blocks, 8 subbands, loudness, bitpool 2-53$',
     # SBC XQ: dual channel up to bitpool 47 (44.1 kHz) / 43 (48 kHz)
@@ -78,6 +79,8 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
     'faststream': r'FastStream \d+ Hz, direction 0x01 \(music\)',   # no voice backchannel
     'opus': r'Opus 48000 Hz, stereo, 20 ms',
+    # PipeWire's choice: 10 ms, one coupled stream, 312 x 1024 bps, no return channel
+    'opus05': r'Opus 05 48000 Hz, stereo, 10 ms frames, location 0x00000003, max 312 x 1024 bps, no return channel$',
 }
 NO_DECODER = {'ldac', 'lhdcv5'}  # frame headers are validated, audio is not decoded
 # Further cases: name -> (A2DPWB -c, emu_sink.py arguments, the codec expected,
@@ -99,6 +102,9 @@ NEGOTIATION = {
     'opus-from-44k': ('opus', [], 'opus', ['--rate', '44100']),
     'auto-opus': ('auto', ['--codecs', 'sbc', 'aac', 'opus'], 'opus', []),
     'auto-lhdcv5-over-opus': ('auto', ['--codecs', 'sbc', 'aac', 'opus', 'lhdcv5'], 'lhdcv5', []),
+    # Opus 05: 48 kHz from a 44.1 kHz request; Auto never takes it (AAC here)
+    'opus05-from-44k': ('opus05', [], 'opus05', ['--rate', '44100']),
+    'auto-not-opus05': ('auto', ['--codecs', 'sbc', 'aac', 'opus05'], 'aac', []),
 }
 TONES = ((1000.0, 0.5), (1500.0, 0.5))  # (frequency, amplitude) per channel, as --test-tone
 
