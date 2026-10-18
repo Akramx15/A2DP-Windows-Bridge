@@ -83,7 +83,7 @@ function ProfileList() {
                     </Show>
                     <span class="tag">
                       <Icon name={captureText(p).icon} />
-                      {captureText(p).text}
+                      <span class="ellipsis">{captureText(p).text}</span>
                     </span>
                   </div>
                   <div class="profile-card-actions">

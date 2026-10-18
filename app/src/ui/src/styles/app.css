@@ -135,6 +135,9 @@ body {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* A name or path without spaces (device, profile, exe) wraps inside its
+     box instead of pushing the page sideways */
+  overflow-wrap: break-word;
 }
 
 :lang(ja) body,
@@ -736,6 +739,11 @@ option {
   font-size: var(--fs-12);
   color: var(--text-2);
   white-space: nowrap;
+  max-width: 100%;
+  min-width: 0;
+}
+.tag > .icon {
+  flex: none;
 }
 .tag[class*="st-"] {
   color: var(--st-text);
@@ -1191,7 +1199,9 @@ option {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
+  flex-wrap: wrap;
   align-self: flex-start;
+  max-width: 100%;
   min-height: 1.5rem;
   padding: 0 var(--s2);
   border: 1px solid var(--border-strong);
