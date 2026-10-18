@@ -1742,11 +1742,12 @@ mod tests {
 
         let base = CoreSettings::default();
         let ui = to_ipc_settings(&base);
-        assert!(!ui.le_audio_experimental && !ui.le_audio_low_latency);
-        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, ..ui };
-        let merged = merge_settings(&base, &on);
-        assert!(merged.le_audio_experimental && merged.le_audio_low_latency);
-        assert_eq!(to_ipc_settings(&merged), on);
+        // LE Audio on by default, GMAP low latency off
+        assert!(ui.le_audio_experimental && !ui.le_audio_low_latency);
+        let off = Settings { le_audio_experimental: false, le_audio_low_latency: true, ..ui };
+        let merged = merge_settings(&base, &off);
+        assert!(!merged.le_audio_experimental && merged.le_audio_low_latency);
+        assert_eq!(to_ipc_settings(&merged), off);
     }
 
     #[test]

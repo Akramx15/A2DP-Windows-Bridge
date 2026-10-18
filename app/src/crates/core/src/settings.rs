@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use bt_host::media::{MEDIA_PAYLOAD_LIMIT_DEFAULT, clamp_media_payload_limit};
 
 /// settings.json's format: 1 is v1's (which wrote no schema_version), 2 is
-/// v2's (see migrate.rs)
-pub const SCHEMA_VERSION: u32 = 2;
+/// v2's, 3 has LE Audio on by default (see migrate.rs)
+pub const SCHEMA_VERSION: u32 = 3;
+/// The first schema_version v2 wrote: a lower one is v1's folder
+pub const FIRST_V2_SCHEMA: u32 = 2;
 
 fn v1_schema() -> u32 {
     1
@@ -109,7 +111,8 @@ pub struct Settings {
     pub last_profile: String,
 
     /// LE Audio (experimental): BTstack starts with LE (SM, GATT, ISO) and
-    /// LE Audio profiles can stream. Off by default.
+    /// LE Audio profiles can stream. On by default since 2.0.1 (schema 3):
+    /// choosing an LE Audio device is the user's call.
     pub le_audio_experimental: bool,
     /// LE Audio: GMAP low-latency presets for a gaming headset (read when a
     /// stream is set up)
@@ -155,7 +158,7 @@ impl Default for Settings {
             afh: default_afh(),
             remote_sink: String::new(),
             last_profile: String::new(),
-            le_audio_experimental: false,
+            le_audio_experimental: true,
             le_audio_low_latency: false,
             max_media_payload: None,
             other: BTreeMap::new(),
