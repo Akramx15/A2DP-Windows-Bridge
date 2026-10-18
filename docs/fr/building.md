@@ -57,7 +57,7 @@ A2DP-Windows-Bridge/
 │   │   ├── ui/             a2dpwb.exe: Tauri 2 + SolidJS (pnpm dev runs it in a browser with a mock core)
 │   │   ├── driver/         a2dpwb-driver.exe: WinUSB assign / restore (elevated)
 │   │   └── crates/         Libraries: btstack-sys, hci-transport, bt-host, codec, the codec -sys crates,
-│   │                       pipeline, audio-capture, win-sys, core (a2dpwb-core), ipc
+│   │                       pipeline, audio-capture, win-sys, core (a2dpwb-core), ipc, le-audio, lc3-sys
 │   ├── lang/               Localization (en.json is the source; tools/check_lang.py checks the others)
 │   └── resources/          Icon and manifest
 ├── Cargo.toml              Cargo workspace
@@ -144,6 +144,8 @@ Les bibliothèques C sont des sous-modules git ; les crates Rust et les paquets 
 | BTstack | sous-module git | v1.8.1-6-g5bc5cbdbe | BTstack License (de type BSD-3-Clause avec une clause non commerciale) |
 | Codec SBC Bluedroid | encodeur porté en Rust ; le décodeur (tests, outils) provient de la copie de BTstack | celle de BTstack | Apache-2.0 |
 | rijndael | inclus dans BTstack (`3rd-party/rijndael`) | celle de BTstack | Domaine public |
+| liblc3 (lc3-google) | inclus dans BTstack (`3rd-party/lc3-google`) | celle de BTstack | Apache-2.0 |
+| micro-ecc | inclus dans BTstack (`3rd-party/micro-ecc`) | celle de BTstack | BSD-2-Clause |
 | libldac (AOSP) | sous-module git | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 |
 | libopenaptx | sous-module git | 0.2.0 (ne pas mettre à jour) | LGPL-2.1+ |
 | fdk-aac | sous-module git | v2.0.3-158-gd8e6b1a | FDK AAC License |

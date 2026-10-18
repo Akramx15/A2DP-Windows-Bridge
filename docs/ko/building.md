@@ -57,7 +57,7 @@ A2DP-Windows-Bridge/
 │   │   ├── ui/             a2dpwb.exe: Tauri 2 + SolidJS (pnpm dev는 모의 코어와 함께 브라우저에서 실행)
 │   │   ├── driver/         a2dpwb-driver.exe: WinUSB 할당 / 복원 (관리자 권한)
 │   │   └── crates/         라이브러리: btstack-sys, hci-transport, bt-host, codec, 코덱 -sys 크레이트,
-│   │                       pipeline, audio-capture, win-sys, core (a2dpwb-core), ipc
+│   │                       pipeline, audio-capture, win-sys, core (a2dpwb-core), ipc, le-audio, lc3-sys
 │   ├── lang/               다국어 리소스 (en.json이 원본, 나머지는 tools/check_lang.py로 검사)
 │   └── resources/          아이콘과 매니페스트
 ├── Cargo.toml              Cargo 워크스페이스
@@ -144,6 +144,8 @@ C 라이브러리는 git 서브모듈이며, Rust 크레이트와 UI의 npm 패�
 | BTstack | git submodule | v1.8.1-6-g5bc5cbdbe | BTstack License (비상업적 조항이 있는 BSD-3-Clause 형식) |
 | Bluedroid SBC codec | 인코더는 Rust로 포팅, 디코더(테스트, 도구)는 BTstack에 포함된 사본 사용 | BTstack과 동일 | Apache-2.0 |
 | rijndael | BTstack에 포함 (`3rd-party/rijndael`) | BTstack과 동일 | Public domain |
+| liblc3 (lc3-google) | BTstack에 포함 (`3rd-party/lc3-google`) | BTstack과 동일 | Apache-2.0 |
+| micro-ecc | BTstack에 포함 (`3rd-party/micro-ecc`) | BTstack과 동일 | BSD-2-Clause |
 | libldac (AOSP) | git submodule | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 |
 | libopenaptx | git submodule | 0.2.0 (업데이트 금지) | LGPL-2.1+ |
 | fdk-aac | git submodule | v2.0.3-158-gd8e6b1a | FDK AAC License |
