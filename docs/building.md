@@ -21,6 +21,7 @@ nav_order: 4
 - **Visual Studio 2022 or later** (or its Build Tools) with the "Desktop development with C++" workload: the C libraries (BTstack, the codecs) are compiled with MSVC
 - **Node.js** 22 and **pnpm** for the UI (`corepack enable` provides pnpm)
 - **Git** (for the submodules)
+- **PowerShell 7** (`pwsh`) for `build.ps1` / `build.bat` (`winget install Microsoft.PowerShell`)
 - For ARM64 builds: the Visual Studio components "MSVC v143 - VS 2022 C++ ARM64 build tools" and, on an x64 PC, "C++ Clang Compiler for Windows" (rustls' `ring` assembles its ARM64 code with clang; `installer/build-release.ps1` finds Visual Studio's clang itself), and `rustup target add aarch64-pc-windows-msvc`
 
 ## Quick Build
@@ -28,17 +29,23 @@ nav_order: 4
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
+pwsh ./build.ps1
+```
+
+Or double-click `build.bat` in Explorer: it runs `build.ps1` and waits for a key at the end (`build.bat -Test` passes the switches on). `build.ps1` first checks that Rust, Node.js, pnpm and the submodules are there, runs `pnpm install` when `node_modules` is missing, builds the window's page and then the three programs into `target/release/`: `a2dpwb-core.exe` (the resident core: Bluetooth, audio, tray), `a2dpwb.exe` (the window) and `a2dpwb-driver.exe` (the elevated helper that assigns / restores the WinUSB driver). Keep the three in one folder; `a2dpwb-core.exe --cli` streams without the window.
+
+Switches: `-Debug` (dev profile, `target/debug/`), `-Test` (then the checks under Tests), `-Decoder` (also the decoder tool), `-Emu` (also the [emulator test](#emu)), `-Release -Arch x64|arm64` (only the release script, see Release Packages).
+
+**Step by step** (what `build.ps1` does; the window's page must be built before `a2dpwb.exe`, which embeds it):
+
+```bash
 cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
 cd app/src/ui
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 cd ../../..
 cargo build --release -p a2dpwb-ui
 ```
-
-The programs are written to `target/release/`: `a2dpwb-core.exe` (the resident core: Bluetooth, audio, tray), `a2dpwb.exe` (the window) and `a2dpwb-driver.exe` (the elevated helper that assigns / restores the WinUSB driver). Keep the three in one folder; `a2dpwb-core.exe --cli` streams without the window.
-
-**In one step:** `pwsh ./build.ps1` (PowerShell 7) does the same. It first checks that Rust, Node.js, pnpm and the submodules are there, and runs `pnpm install` when `node_modules` is missing. Switches: `-Debug` (dev profile, `target/debug/`), `-Test` (then the checks under Tests), `-Decoder` (also the decoder tool), `-Emu` (also the [emulator test](#emu)), `-Release -Arch x64` (only the release script, see Release Packages).
 
 ## If You Already Cloned Without `--recursive`
 

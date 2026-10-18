@@ -22,6 +22,7 @@ nav_order: 3
 - **Visual Studio 2022 以降**（Build Tools でも可）と「C++ によるデスクトップ開発」ワークロード。C のライブラリ（BTstack、コーデック）を MSVC でコンパイルします
 - UI 用に **Node.js** 22 と **pnpm**（`corepack enable` で pnpm が使えます）
 - **Git**（サブモジュールの取得）
+- `build.ps1` / `build.bat` 用に **PowerShell 7**（`pwsh`。`winget install Microsoft.PowerShell`）
 - ARM64 版をビルドするとき: Visual Studio のコンポーネント「MSVC v143 - VS 2022 C++ ARM64 ビルド ツール」と、x64 の PC では「Windows 用 C++ Clang コンパイラ」（rustls の `ring` が ARM64 のアセンブリを clang で組むため。`installer/build-release.ps1` は Visual Studio の clang を自分で探す）、それに `rustup target add aarch64-pc-windows-msvc`
 
 ## クイックビルド
@@ -29,17 +30,23 @@ nav_order: 3
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
+pwsh ./build.ps1
+```
+
+エクスプローラーで `build.bat` をダブルクリックしても同じです（`build.ps1` を実行し、最後にキー入力を待ちます。`build.bat -Test` のようにスイッチも渡せます）。`build.ps1` は最初に Rust、Node.js、pnpm、サブモジュールがそろっているかを確かめ、`node_modules` がなければ `pnpm install` を実行し、ウィンドウのページを組んでから 3 つのプログラムを `target/release/` に作ります。`a2dpwb-core.exe`（常駐するコア。Bluetooth、音声、タスクトレイ）、`a2dpwb.exe`（ウィンドウ）、`a2dpwb-driver.exe`（WinUSB ドライバの割り当てと解除をする、管理者権限のヘルパー）です。3 つは同じフォルダに置いてください。`a2dpwb-core.exe --cli` ならウィンドウなしで配信できます。
+
+スイッチ: `-Debug`（開発プロファイル、`target/debug/`）、`-Test`（続けて「テスト」のチェック）、`-Decoder`（デコーダツールも）、`-Emu`（[実機なしでのテスト](#emu)も）、`-Release -Arch x64|arm64`（リリーススクリプトのみ。「リリースパッケージ」参照）。
+
+**手順を分けて行う場合**（`build.ps1` がしていること。`a2dpwb.exe` はウィンドウのページを埋め込むので、ページを先に組みます）:
+
+```bash
 cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
 cd app/src/ui
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 cd ../../..
 cargo build --release -p a2dpwb-ui
 ```
-
-`target/release/` に次の 3 つができます。`a2dpwb-core.exe`（常駐するコア。Bluetooth、音声、タスクトレイ）、`a2dpwb.exe`（ウィンドウ）、`a2dpwb-driver.exe`（WinUSB ドライバの割り当てと解除をする、管理者権限のヘルパー）。3 つは同じフォルダに置いてください。`a2dpwb-core.exe --cli` ならウィンドウなしで配信できます。
-
-**一括ビルド**: `pwsh ./build.ps1`（PowerShell 7）で同じことができます。最初に Rust、Node.js、pnpm、サブモジュールがそろっているかを確かめ、`node_modules` がなければ `pnpm install` も実行します。スイッチ: `-Debug`（開発プロファイル、`target/debug/`）、`-Test`（続けて「テスト」のチェック）、`-Decoder`（デコーダツールも）、`-Emu`（[実機なしでのテスト](#emu)も）、`-Release -Arch x64`（リリーススクリプトのみ。「リリースパッケージ」参照）。
 
 ## `--recursive` なしでクローン済みの場合
 
