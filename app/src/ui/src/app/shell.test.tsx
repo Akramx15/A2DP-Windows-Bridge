@@ -162,20 +162,35 @@ describe("setup test step", () => {
     return r;
   }
 
-  it("plays the core's test tone on the headphones", async () => {
+  it("connects with the chosen capture source; no test tone outside developer mode", async () => {
     const { calls } = await toTestStep();
+    expect(screen.queryByRole("button", { name: "Play test tone" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Capture Source" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    expect(calls.some((c) => c.method === "stream.start_custom")).toBe(false);
+  });
+
+  async function devTestStep() {
+    const r = await toTestStep();
+    await r.core.request("settings.set", { settings: { ...r.core.state.snap!.settings, developer_mode: true } });
+    await screen.findByRole("button", { name: "Play test tone" });
+    return r;
+  }
+
+  it("developer mode plays the core's test tone on the headphones", async () => {
+    const { calls } = await devTestStep();
     fireEvent.click(screen.getByRole("button", { name: "Play test tone" }));
     await waitFor(() => expect(calls.some((c) => c.method === "stream.start_custom")).toBe(true));
     const params = calls.find((c) => c.method === "stream.start_custom")!.params;
     expect(params).toMatchObject({ device: "AC:80:0A:12:34:56", codec: "ldac", quality: "hq", source: "tone" });
-    expect(await screen.findByText("Test tone")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
     await waitFor(() => expect(calls.some((c) => c.method === "stream.stop")).toBe(true));
     await screen.findByRole("button", { name: "Play test tone" });
   });
 
   it("says so when the tone cannot be played", async () => {
-    const { mock } = await toTestStep();
+    const { mock } = await devTestStep();
     // The mock refuses to stream without WinUSB
     const m = mock as unknown as { snap: { adapter: { adapters: { driver: string }[] } } };
     m.snap.adapter.adapters[0] = { ...m.snap.adapter.adapters[0], driver: "bluetooth" };

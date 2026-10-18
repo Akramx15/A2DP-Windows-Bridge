@@ -531,7 +531,7 @@
   "ui.setup.device_intro": "Ponga los auriculares en modo de emparejamiento, busque y elíjalos. Un perfil guarda el dispositivo y los ajustes de sonido; los valores predeterminados dan el mejor sonido.",
   "ui.setup.create_profile": "Crear perfil",
   "ui.setup.profile_ready": "Perfil creado",
-  "ui.setup.test_intro_tone": "Reproduzca el tono de prueba: A2DPWB se conecta a los auriculares y envía un tono más grave (1 kHz) al oído izquierdo y uno más agudo (1,5 kHz) al derecho.",
+  "ui.setup.test_intro": "Elija qué se envía a los auriculares (todo el audio del PC, un dispositivo virtual o una aplicación), conéctese y reproduzca algo en el PC. Si lo oye en los auriculares, la configuración ha terminado.",
   "ui.setup.play_tone": "Reproducir tono de prueba",
   "ui.setup.tone_playing_hint": "Tono más grave a la izquierda y más agudo a la derecha: si es lo que oye, la configuración ha terminado.",
   "ui.setup.tone_failed": "No se pudo reproducir el tono de prueba (%s). Conecte con el perfil y reproduzca algo en el PC.",

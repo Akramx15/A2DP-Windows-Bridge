@@ -531,7 +531,7 @@
   "ui.setup.device_intro": "Mettez le casque en mode d'association, lancez la recherche et choisissez-le. Un profil enregistre l'appareil et les réglages sonores ; les valeurs par défaut donnent le meilleur son.",
   "ui.setup.create_profile": "Créer le profil",
   "ui.setup.profile_ready": "Profil créé",
-  "ui.setup.test_intro_tone": "Jouez le signal de test : A2DPWB se connecte au casque et envoie un son plus grave (1 kHz) dans l'oreille gauche et un son plus aigu (1,5 kHz) dans la droite.",
+  "ui.setup.test_intro": "Choisissez ce qui est envoyé au casque (tout le son du PC, un périphérique virtuel ou une application), connectez-vous et lancez une lecture sur le PC. Si vous l'entendez dans le casque, la configuration est terminée.",
   "ui.setup.play_tone": "Jouer le signal de test",
   "ui.setup.tone_playing_hint": "Son plus grave à gauche, plus aigu à droite : si c'est ce que vous entendez, la configuration est terminée.",
   "ui.setup.tone_failed": "Le signal de test n'a pas pu être joué (%s). Connectez-vous plutôt avec le profil et lancez une lecture sur le PC.",

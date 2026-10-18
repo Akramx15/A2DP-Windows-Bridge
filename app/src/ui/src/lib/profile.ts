@@ -1,7 +1,7 @@
 // A new profile's defaults and the checks before profile.save. The values
 // are those of v1's profile dialog; the core checks again.
 
-import type { AudioDevice, Device, Profile } from "../ipc/types";
+import type { AudioDevice, Device, ParamsOf, Profile } from "../ipc/types";
 import { PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
 import { parseAddress } from "./format";
 
@@ -156,4 +156,21 @@ export async function appCaptureSupport(): Promise<AppCaptureSupport> {
   } catch {
     return "unknown";
   }
+}
+
+/** stream.start_custom for the core's test tone (left 1 kHz, right
+ *  1.5 kHz, as v1's) to a profile's headphones, with its sound settings */
+export function toneParams(p: Profile): ParamsOf<"stream.start_custom"> {
+  return {
+    device: p.device_address,
+    device_name: p.device_name || null,
+    codec: p.codec,
+    quality: p.quality,
+    sample_rate: p.sample_rate || null,
+    bit_depth: p.bit_depth || null,
+    source: "tone",
+    max_media_payload: p.max_media_payload || null,
+    abr: p.abr,
+    codec_fallback: p.codec_fallback,
+  };
 }

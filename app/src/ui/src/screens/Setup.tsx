@@ -1,18 +1,21 @@
 // First-run setup, shown when there is no profile or no adapter on WinUSB:
 // 1 choose the adapter, 2 driver and firmware (WinUSB with one button),
-// 3 find the headphones and create a profile, 4 hear the core's test tone
-// on them.
+// 3 find the headphones and create a profile, 4 choose what to send and
+// connect (developer mode also offers the core's test tone).
 
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { Banner, Button, Field } from "../components/controls";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
-import { CaptureSource, CodecBadge, ConnectButton, currentProfile, Ring, WinusbDialog } from "../components/stream";
+import { CapturePicker } from "../components/CapturePicker";
+import { CodecBadge, ConnectButton, currentProfile, Ring, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
-import type { AdapterInfo, ParamsOf, Profile, Snapshot, StreamState } from "../ipc/types";
+import type { AdapterInfo, Snapshot, StreamState } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
-import { newProfile, normalizeProfile, validateProfile } from "../lib/profile";
+import { newProfile, normalizeProfile, toneParams, validateProfile } from "../lib/profile";
+
+export { toneParams };
 import { driverText } from "./Adapter";
 import { V1Running } from "./Home";
 
@@ -314,22 +317,6 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
   );
 }
 
-/** stream.start_custom for the core's test tone (left 1 kHz, right
- *  1.5 kHz, as v1's) to a profile's headphones, with its sound settings */
-export function toneParams(p: Profile): ParamsOf<"stream.start_custom"> {
-  return {
-    device: p.device_address,
-    device_name: p.device_name || null,
-    codec: p.codec,
-    quality: p.quality,
-    sample_rate: p.sample_rate || null,
-    bit_depth: p.bit_depth || null,
-    source: "tone",
-    max_media_payload: p.max_media_payload || null,
-    abr: p.abr,
-    codec_fallback: p.codec_fallback,
-  };
-}
 
 const ACTIVE: StreamState[] = ["connecting", "reconnecting", "streaming"];
 
@@ -345,6 +332,7 @@ function StepTest(props: { profileName: string | null }) {
   // Why the tone could not be played: the fallback message
   const [failed, setFailed] = createSignal<string | null>(null);
   const playing = () => ours() && ACTIVE.includes(stream().state);
+  const dev = () => snap().settings.developer_mode;
 
   createEffect(
     on(
@@ -391,7 +379,7 @@ function StepTest(props: { profileName: string | null }) {
 
   return (
     <div class="stack">
-      <p>{t("ui.setup.test_intro_tone")}</p>
+      <p>{t("ui.setup.test_intro")}</p>
       <div class="test-row">
         <Ring state={stream().state} volume={stream().volume} size="small">
           <Icon name="headphones" />
@@ -402,35 +390,35 @@ function StepTest(props: { profileName: string | null }) {
             {tm(stream().message) || t(`status.${stream().state}`)}
           </span>
           <CodecBadge />
-          <CaptureSource profile={profile()} />
         </div>
       </div>
-      <div class="inline">
-        <Show
-          when={playing()}
-          fallback={
-            <Button kind="strong" icon="music_note_2" busy={busy()} disabled={!profile()} onClick={play}>
-              {t("ui.setup.play_tone")}
+      <Show when={profile()}>{(p) => <CapturePicker profile={p()} />}</Show>
+      <ConnectButton onError={(e) => app.notify(errorText(e), "error")} />
+      <Show when={dev()}>
+        <div class="inline">
+          <Show
+            when={playing()}
+            fallback={
+              <Button icon="music_note_2" busy={busy()} disabled={!profile()} onClick={play}>
+                {t("ui.setup.play_tone")}
+              </Button>
+            }
+          >
+            <Button icon="stop" busy={busy()} onClick={stop}>
+              {t("receiver.stop")}
             </Button>
-          }
-        >
-          <Button icon="stop" busy={busy()} onClick={stop}>
-            {t("receiver.stop")}
-          </Button>
-        </Show>
-        <Show when={playing() && stream().state === "streaming"}>
-          <span class="hint">{t("ui.setup.tone_playing_hint")}</span>
-        </Show>
-      </div>
-      <Show when={failed()}>
-        {(why) => (
-          <>
+          </Show>
+          <Show when={playing() && stream().state === "streaming"}>
+            <span class="hint">{t("ui.setup.tone_playing_hint")}</span>
+          </Show>
+        </div>
+        <Show when={failed()}>
+          {(why) => (
             <Banner kind="warn" title={t("status.error")}>
               {t("ui.setup.tone_failed", why())}
             </Banner>
-            <ConnectButton onError={(e) => app.notify(errorText(e), "error")} />
-          </>
-        )}
+          )}
+        </Show>
       </Show>
     </div>
   );

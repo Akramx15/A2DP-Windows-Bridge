@@ -531,7 +531,7 @@
   "ui.setup.device_intro": "請讓耳機進入配對模式，進行掃描並選擇它。設定檔會儲存裝置與音效設定；預設值的音質最佳。",
   "ui.setup.create_profile": "建立設定檔",
   "ui.setup.profile_ready": "已建立設定檔",
-  "ui.setup.test_intro_tone": "播放測試音: A2DPWB 會連線到耳機，向左耳傳送較低的音 (1 kHz)，向右耳傳送較高的音 (1.5 kHz)。",
+  "ui.setup.test_intro": "選擇要傳送到耳機的聲音（電腦的全部聲音、虛擬裝置或某個應用程式），連線後在電腦上播放一些內容。如果耳機裡聽得到，設定就完成了。",
   "ui.setup.play_tone": "播放測試音",
   "ui.setup.tone_playing_hint": "左耳低音、右耳高音: 若聽到的是這樣，設定就完成了。",
   "ui.setup.tone_failed": "無法播放測試音 (%s)。請改用設定檔連線，並在電腦上播放一些內容。",

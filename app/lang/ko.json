@@ -531,7 +531,7 @@
   "ui.setup.device_intro": "헤드폰을 페어링 모드로 두고 검색하여 선택하십시오. 프로필에는 장치와 음향 설정이 저장되며, 기본값으로 최상의 음질을 얻을 수 있습니다.",
   "ui.setup.create_profile": "프로필 만들기",
   "ui.setup.profile_ready": "프로필을 만들었습니다",
-  "ui.setup.test_intro_tone": "테스트 톤을 재생하십시오. A2DPWB가 헤드폰에 연결하여 왼쪽 귀에는 낮은 소리(1 kHz)를, 오른쪽 귀에는 높은 소리(1.5 kHz)를 보냅니다.",
+  "ui.setup.test_intro": "헤드폰으로 보낼 소리(PC의 모든 소리, 가상 장치 또는 앱 하나)를 고르고 연결한 다음 PC에서 무언가를 재생하세요. 헤드폰에서 들리면 설정이 끝난 것입니다.",
   "ui.setup.play_tone": "테스트 톤 재생",
   "ui.setup.tone_playing_hint": "왼쪽에서 낮은 소리, 오른쪽에서 높은 소리가 들리면 설정이 완료된 것입니다.",
   "ui.setup.tone_failed": "테스트 톤을 재생하지 못했습니다(%s). 대신 프로필로 연결하고 PC에서 무언가를 재생하십시오.",

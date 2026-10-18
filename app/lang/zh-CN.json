@@ -531,7 +531,7 @@
   "ui.setup.device_intro": "请让耳机进入配对模式，进行扫描并选择它。配置文件会保存设备和音效设置；默认值音质最佳。",
   "ui.setup.create_profile": "创建配置文件",
   "ui.setup.profile_ready": "配置文件已创建",
-  "ui.setup.test_intro_tone": "播放测试音：A2DPWB 会连接耳机，向左耳发送较低的音（1 kHz），向右耳发送较高的音（1.5 kHz）。",
+  "ui.setup.test_intro": "选择要发送到耳机的声音（电脑的全部声音、虚拟设备或某个应用），连接后在电脑上播放一些内容。如果耳机里能听到，设置就完成了。",
   "ui.setup.play_tone": "播放测试音",
   "ui.setup.tone_playing_hint": "左耳低音、右耳高音：如果听到的是这样，设置就完成了。",
   "ui.setup.tone_failed": "无法播放测试音（%s）。请改用配置文件连接，并在电脑上播放一些内容。",

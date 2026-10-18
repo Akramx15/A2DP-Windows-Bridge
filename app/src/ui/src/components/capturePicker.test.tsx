@@ -85,11 +85,39 @@ describe("in place", () => {
     await waitFor(() => expect(saved(calls)[0]).toMatchObject({ capture_mode: "app", app_exe: "Spotify.exe" }));
   });
 
-  it("shows the test tone, not a choice, while it plays", async () => {
-    const { mock } = start("", { window: "flyout" });
-    await screen.findByRole("combobox", { name: "Capture Source" });
+  it("shows the test tone in the picker; a source chosen then ends it and starts the profile", async () => {
+    const { mock, calls } = start("", { window: "flyout" });
+    const select = await screen.findByRole("combobox", { name: "Capture Source" });
+    await screen.findByRole("option", { name: "Spotify" });
     await mock.call("stream.start_custom", { device: "AC:80:0A:12:34:56", codec: "sbc", quality: "hq", source: "tone" });
-    expect(await screen.findByText("Test tone")).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Capture Source" })).toBeNull();
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("tone"));
+    expect(screen.getByRole("option", { name: "Test tone" })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "app:spotify.exe" } });
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    expect(saved(calls)[0]).toMatchObject({ capture_mode: "app", app_exe: "Spotify.exe" });
+    const order = calls.map((c) => c.method).filter((m) => m === "profile.save" || m === "stream.start");
+    expect(order).toEqual(["profile.save", "stream.start"]);
+  });
+
+  it("choosing the profile's own source during the tone only starts the profile", async () => {
+    const { mock, calls } = start("", { window: "flyout" });
+    const select = await screen.findByRole("combobox", { name: "Capture Source" });
+    await mock.call("stream.start_custom", { device: "AC:80:0A:12:34:56", codec: "sbc", quality: "hq", source: "tone" });
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("tone"));
+    fireEvent.change(select, { target: { value: "loopback" } });
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    expect(saved(calls)).toHaveLength(0);
+  });
+
+  it("offers the test tone only in developer mode", async () => {
+    const { core, calls } = start("#/home");
+    await screen.findByRole("combobox", { name: "Capture Source" });
+    expect(screen.queryByRole("option", { name: "Test tone" })).toBeNull();
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    await screen.findByRole("option", { name: "Test tone" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Capture Source" }), { target: { value: "tone" } });
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start_custom")).toBe(true));
+    expect(calls.find((c) => c.method === "stream.start_custom")!.params).toMatchObject({ source: "tone" });
+    expect(saved(calls)).toHaveLength(0);
   });
 });

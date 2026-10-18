@@ -531,7 +531,7 @@
   "ui.setup.device_intro": "Put the headphones in pairing mode, scan, and choose them. A profile stores the device and the sound settings; the defaults give the best sound.",
   "ui.setup.create_profile": "Create profile",
   "ui.setup.profile_ready": "Profile created",
-  "ui.setup.test_intro_tone": "Play the test tone: A2DPWB connects to the headphones and sends a lower tone (1 kHz) to the left ear and a higher one (1.5 kHz) to the right.",
+  "ui.setup.test_intro": "Choose what to send to the headphones (all PC audio, a virtual device or one app), connect, and play something on the PC. If you hear it in the headphones, setup is done.",
   "ui.setup.play_tone": "Play test tone",
   "ui.setup.tone_playing_hint": "Lower tone left, higher tone right: if that is what you hear, setup is done.",
   "ui.setup.tone_failed": "The test tone could not be played (%s). Connect with the profile instead and play something on the PC.",
