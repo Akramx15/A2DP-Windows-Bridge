@@ -18,6 +18,7 @@ function fakeTransport() {
     window: "main",
     mica: false,
     version: "test",
+    licensesDir: null,
     async start(onMessage, onStatus) {
       deliver = onMessage;
       status = onStatus;

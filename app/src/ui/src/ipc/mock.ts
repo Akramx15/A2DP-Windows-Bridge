@@ -342,6 +342,7 @@ export class MockCore implements Transport {
   readonly window: WindowKind;
   readonly mica = false;
   readonly version = "2.0.0-alpha.1";
+  readonly licensesDir: string | null = null;
   private snap: Snapshot;
   private scenario: MockScenario;
   private rev = 0;

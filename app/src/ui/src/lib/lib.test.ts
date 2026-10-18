@@ -5,6 +5,7 @@ import type { LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { maskAddresses, parseAddress } from "./format";
+import { thirdPartyUrl } from "./links";
 import { validateProfile } from "./profile";
 
 const line = (time_ms: number, message: string, level: LogLine["level"] = "info"): LogLine => ({
@@ -188,5 +189,13 @@ describe("profiles", () => {
 
   it("masks the device part of addresses", () => {
     expect(maskAddresses("connecting to AC:80:0A:12:34:56 now")).toBe("connecting to AC:80:0A:xx:xx:xx now");
+  });
+});
+
+describe("about", () => {
+  it("links the third-party licences of the release tag", () => {
+    expect(thirdPartyUrl("2.0.0-alpha.1")).toBe(
+      "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/v2.0.0-alpha.1/THIRD_PARTY_LICENSES.md",
+    );
   });
 });
