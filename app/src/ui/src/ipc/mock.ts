@@ -38,7 +38,7 @@ import type {
   StreamInfo,
 } from "./types";
 
-export type MockScenario = "normal" | "fresh" | "error" | "update" | "offline" | "le";
+export type MockScenario = "normal" | "fresh" | "error" | "update" | "offline" | "le" | "long";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -124,10 +124,14 @@ const LE_BUDS = sampleDevice({ address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2
 export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const fresh = scenario === "fresh";
   const le = scenario === "le";
+  // Names long enough to wrap or overflow every place that shows them
+  const long = scenario === "long";
+  const LONG_NAME = "リビングのソニーワイヤレスノイズキャンセリングヘッドホン（LDAC・990kbps・高音質優先）";
+  const LONG_DEVICE = "WH-1000XM5_Wireless_Noise_Cancelling_Stereo_Headset_LivingRoom";
   const profiles = fresh
     ? []
     : [
-        sampleProfile(),
+        long ? sampleProfile({ name: LONG_NAME, device_name: LONG_DEVICE, capture_mode: "app", app_exe: "AVeryLongApplicationExecutableName_With_No_Spaces_Whatsoever.exe", app_name: "" }) : sampleProfile(),
         sampleProfile({
           name: "Desk speaker (AAC)",
           device_address: "00:1A:7D:DA:71:13",
@@ -159,7 +163,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     devices: fresh
       ? []
       : [
-          sampleDevice({ address: "AC:80:0A:12:34:56", name: "WH-1000XM5", saved: true, codecs: ["sbc", "aac", "ldac"] }),
+          sampleDevice({ address: "AC:80:0A:12:34:56", name: long ? LONG_DEVICE : "WH-1000XM5", saved: true, codecs: ["sbc", "aac", "ldac"] }),
           sampleDevice({ address: "00:1A:7D:DA:71:13", name: "SRS-XB13", saved: true }),
           ...(le ? [{ ...LE_BUDS, saved: true }] : []),
         ],
@@ -176,8 +180,8 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
           }
         : { state: "idle", message: { key: "status.idle", args: [] }, profile: null, info: null, volume: null },
     profiles,
-    active_profile: fresh ? null : "WH-1000XM5 (LDAC)",
-    settings: sampleSettings(le ? { le_audio_experimental: true } : {}),
+    active_profile: fresh ? null : long ? LONG_NAME : "WH-1000XM5 (LDAC)",
+    settings: sampleSettings(le ? { le_audio_experimental: true } : long ? { language: "ja" } : {}),
     update: {
       checking: false,
       available:
@@ -878,7 +882,17 @@ export class MockCore implements Transport {
       if (t.address === RECEIVER.bt_address) {
         this.received = { id: this.received.id + 1, packets: 0, bytes: 0, lost: 0, underruns: 0, underrun_ms: 0 };
       }
-      this.snap.stream = { state: "streaming", message: { key: "status.streaming", args: [] }, profile: name, info: info(), volume: 76 };
+      // "long": the longest status line and codec badge there are
+      this.snap.stream =
+        this.scenario === "long"
+          ? {
+              state: "streaming",
+              message: { key: "status.connected_fallback_in_use", args: ["LDAC", "aptX HD"] },
+              profile: name,
+              info: { ...info(), codec: "aptX HD", bitrate_kbps: 576, requested_codec: "LDAC", requested_in_use: true, abr: true },
+              volume: 76,
+            }
+          : { state: "streaming", message: { key: "status.streaming", args: [] }, profile: name, info: info(), volume: 76 };
       this.log("info", "a2dpwb_core::service", "state Streaming: Streaming");
       this.emit({ kind: "stream", value: this.snap.stream });
     });
