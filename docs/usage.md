@@ -431,7 +431,7 @@ The receiver's adapter is not available to its own Bluetooth stack while the too
 
 ## LE Audio (experimental) {#le-audio}
 
-A2DPWB can also stream to LE Audio headphones and earbuds (LC3 over connected isochronous streams, BAP unicast), with headset volume (VCP), media buttons (MCP), both earbuds of a pair (CSIP) and a low-latency mode for gaming headsets (GMAP). This is **experimental and off by default**. It has only been tested against a Bluetooth emulator, **not yet with real LE Audio headphones**, so it may not work with yours; use the classic A2DP profiles for everyday listening.
+A2DPWB can also stream to LE Audio headphones and earbuds (LC3 over connected isochronous streams, BAP unicast), with headset volume (VCP), media buttons (MCP), both earbuds of a pair (CSIP) and a low-latency mode for gaming headsets (GMAP). This is **experimental** and on by default (**Settings > Advanced > LE Audio (experimental)** turns it off); it only matters when you choose an LE Audio device. It has only been tested against a Bluetooth emulator, **not yet with real LE Audio headphones**, so it may not work with yours; use the classic A2DP profiles for everyday listening.
 
 What it needs:
 
@@ -440,7 +440,7 @@ What it needs:
 
 How to use it:
 
-1. Turn on **Settings > Advanced > LE Audio (experimental)**. Bluetooth starts with LE at the next scan or connection (while streaming or scanning, the change waits until then).
+1. Make sure **Settings > Advanced > LE Audio (experimental)** is on (the default). Bluetooth starts with LE at the next scan or connection (while streaming or scanning, the change waits until then).
 2. Put the headphones into pairing mode and scan for devices in a profile. LE Audio devices are listed with an **LE Audio** tag, a pair of earbuds as **LE Audio set** (pick either one: A2DPWB finds the other). A headphone that also does A2DP is listed twice, once per kind.
 3. Tick **LE Audio device (experimental, LC3)** in the profile. There is no codec or quality choice (A2DPWB picks the best LC3 configuration the headphones accept), and only System Loopback and Virtual Device capture are available.
 4. Optional: **Low latency for gaming headsets (GMAP, experimental)** in the same section uses shorter LC3 frames with headsets that support GMAP's game role, from the next connection.

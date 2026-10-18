@@ -44,7 +44,7 @@ Plug in the USB Bluetooth adapter and start A2DPWB. When there is no profile yet
 1. **Choose the adapter**: the USB Bluetooth adapters found. If yours is missing, plug it in and press **Refresh**
 2. **Driver and firmware**: **Assign WinUSB** (see [Step 2](#winusb)), and for Realtek adapters the firmware files (see [Firmware](#firmware))
 3. **Find your headphones**: put them into pairing mode, **Scan Devices**, choose them, then **Create profile** (see [Step 3](#headphones))
-4. **Test**: connect, then **Play test tone**: a higher tone in the right ear and a lower one in the left
+4. **Test**: choose what to send (all PC audio, a virtual device or one app), **Connect**, and play something on the PC. If you hear it in the headphones, setup is done
 
 **Set up later** skips the rest; **Settings > Run setup** opens it again.
 
