@@ -4,7 +4,9 @@
 Reports keys missing from or unknown to each language, and strings whose
 printf conversions (%s, %.1f, %%, ...) differ from English. Missing keys are
 warnings (the app falls back to English); a conversion mismatch is an error,
-since wxString::Format would read the wrong argument.
+since the UI's printf (app/src/ui/src/i18n/printf.ts) and the core's
+format_printf (app/src/crates/core/src/messages.rs) would fill in the wrong
+argument.
 
 Usage: python tools/check_lang.py [lang ...]
 Exit status is 1 if any error was found.

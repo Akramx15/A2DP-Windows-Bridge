@@ -18,23 +18,35 @@ nav_order: 3
 
 ## 必要なもの
 
-- **Visual Studio 2022 以降**（「C++ によるデスクトップ開発」ワークロード）
-- **CMake** 3.16 以上
-- **Git**（サブモジュールおよび wxWidgets FetchContent 用）
+- **Rust**（stable、1.90 以降）。[rustup](https://rustup.rs/) で入れます
+- **Visual Studio 2022 以降**（Build Tools でも可）と「C++ によるデスクトップ開発」ワークロード。C のライブラリ（BTstack、コーデック）を MSVC でコンパイルします
+- UI 用に **Node.js** 22 と **pnpm**（`corepack enable` で pnpm が使えます）
+- **Git**（サブモジュールの取得）
+- `build.ps1` / `build.bat` 用に **PowerShell 7**（`pwsh`。`winget install Microsoft.PowerShell`）
+- ARM64 版をビルドするとき: Visual Studio のコンポーネント「MSVC v143 - VS 2022 C++ ARM64 ビルド ツール」と、x64 の PC では「Windows 用 C++ Clang コンパイラ」（rustls の `ring` が ARM64 のアセンブリを clang で組むため。`installer/build-release.ps1` は Visual Studio の clang を自分で探す）、それに `rustup target add aarch64-pc-windows-msvc`
 
 ## クイックビルド
 
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
-cmake -B build -A x64
-cmake --build build --config Release
+pwsh ./build.ps1
 ```
 
-実行ファイルは `build/app/Release/A2DPWB.exe` に出力されます。
+エクスプローラーで `build.bat` をダブルクリックしても同じです（`build.ps1` を実行し、最後にキー入力を待ちます。`build.bat -Test` のようにスイッチも渡せます）。`build.ps1` は最初に Rust、Node.js、pnpm、サブモジュールがそろっているかを確かめ、`node_modules` がなければ `pnpm install` を実行し、ウィンドウのページを組んでから 3 つのプログラムを `target/release/` に作ります。`a2dpwb-core.exe`（常駐するコア。Bluetooth、音声、タスクトレイ）、`a2dpwb.exe`（ウィンドウ）、`a2dpwb-driver.exe`（WinUSB ドライバの割り当てと解除をする、管理者権限のヘルパー）です。3 つは同じフォルダに置いてください。`a2dpwb-core.exe --cli` ならウィンドウなしで配信できます。
 
-{: .note }
-初回ビルドは CMake FetchContent が wxWidgets (v3.2.6) をダウンロード・コンパイルするため、数分かかります。
+スイッチ: `-Debug`（開発プロファイル、`target/debug/`）、`-Test`（続けて「テスト」のチェック）、`-Decoder`（デコーダツールも）、`-Emu`（[実機なしでのテスト](#emu)も）、`-Release -Arch x64|arm64`（リリーススクリプトのみ。「リリースパッケージ」参照）。
+
+**手順を分けて行う場合**（`build.ps1` がしていること。`a2dpwb.exe` はウィンドウのページを埋め込むので、ページを先に組みます）:
+
+```bash
+cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver
+cd app/src/ui
+pnpm install --frozen-lockfile
+pnpm build
+cd ../../..
+cargo build --release -p a2dpwb-ui
+```
 
 ## `--recursive` なしでクローン済みの場合
 
@@ -46,102 +58,109 @@ git submodule update --init --recursive
 
 ```
 A2DP-Windows-Bridge/
-├── app/                    アプリケーションソース
-│   ├── src/                C++ ソースファイル
-│   ├── lang/               ローカライゼーション（en.json が原文。tools/check_lang.py で他言語を検査）
-│   ├── resources/          アイコン、マニフェスト、リソーススクリプト
-│   └── CMakeLists.txt      アプリビルド設定
-├── cmake/                  リリースパッケージ作成（make_dist.cmake）
-├── installer/              インストーラーの Inno Setup スクリプト（A2DPWB.iss）
-├── compat/                 AOSP コード用 MSVC 互換ヘッダー
-├── docs/                   ドキュメント（このサイト）
-├── extern/                 サードパーティライブラリ（git サブモジュール）
+├── app/
+│   ├── src/
+│   │   ├── core/           a2dpwb-core.exe: 常駐コア、タスクトレイ、IPC サーバー、--cli
+│   │   ├── ui/             a2dpwb.exe: Tauri 2 + SolidJS（pnpm dev でモックのコアとブラウザで動く）
+│   │   ├── driver/         a2dpwb-driver.exe: WinUSB の割り当て / 解除（管理者権限）
+│   │   └── crates/         ライブラリ: btstack-sys、hci-transport、bt-host、codec、コーデックの -sys クレート、
+│   │                       pipeline、audio-capture、win-sys、core（a2dpwb-core）、ipc、le-audio、lc3-sys
+│   ├── lang/               翻訳（en.json が原本。他の言語は tools/check_lang.py で確認）
+│   └── resources/          アイコンとマニフェスト
+├── Cargo.toml              Cargo workspace
+├── installer/              リリース用スクリプト、NSIS のフック、更新の手順（installer/README.md）
+├── compat/                 AOSP コード用の MSVC 互換ヘッダー
+├── docs/                   ドキュメント（このサイト）と設計書（v2-design.md）
+├── extern/                 サードパーティの C ライブラリ（git サブモジュール）
 │   ├── btstack/            BTstack Bluetooth スタック
-│   ├── libldac/            AOSP LDAC エンコーダー
-│   ├── libopenaptx/        aptX / aptX HD / aptX LL エンコーダー
-│   ├── fdk-aac/            Fraunhofer AAC エンコーダー
-│   └── json/               nlohmann/json（ヘッダーオンリー）
-├── tools/
-│   ├── a2dp_decode/        a2dpwb_decode: HCI キャプチャ（.pklg）のメディアストリームを検証・デコード
-│   ├── emu/                仮想 Bluetooth シンクを相手にしたエンドツーエンドテスト（Python）
-│   └── linux_sink/         a2dpwb_sink: Linux で動く測定用 A2DP 受信機（Python、Bumble）
-├── CMakeLists.txt          ルートビルド設定
-└── build.bat.example       ビルドヘルパースクリプト（build.bat にコピーして CMake のパスを設定）
+│   ├── libldac/            AOSP LDAC エンコーダ
+│   ├── libopenaptx/        aptX / aptX HD / aptX LL エンコーダ
+│   ├── fdk-aac/            Fraunhofer AAC エンコーダ
+│   ├── lhdcv5-enc/         LHDC V5 エンコーダ
+│   └── opus/               libopus（Opus エンコーダ）
+└── tools/
+    ├── a2dp_decode/        a2dpwb_decode: HCI キャプチャ（.pklg）内のメディアストリームを検査 / デコード
+    ├── emu/                仮想 Bluetooth シンクを相手にしたエンドツーエンドテスト（Python）
+    └── linux_sink/         a2dpwb_sink: Linux で動く計測用 A2DP 受信機（Python、Bumble）
 ```
 
-## ビルドオプション
-
-| CMake オプション | 既定値 | 説明 |
-|:-----------------|:-------|:-----|
-| `LDAC_SOFT_FLOAT` | `OFF` | libldac にソフトウェア浮動小数点を使用 |
-| `A2DPWB_BUILD_TOOLS` | `ON` | 開発者向けツール（`a2dpwb_decode`。[使い方](usage#verify-stream)を参照）をビルド。リリースパッケージには含まれません |
+## テスト
 
 ```bash
-cmake -B build -A x64 -DA2DPWB_BUILD_TOOLS=OFF
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cd app/src/ui && pnpm exec tsc --noEmit && pnpm exec vitest run
+python tools/check_lang.py
 ```
 
 ## リリースパッケージ
 
-```bash
-cmake --build build --target A2DPWB_dist --config Release
+```powershell
+pwsh installer/build-release.ps1 -Arch x64
 ```
 
-で `build/dist/A2DPWB-<バージョン>-win64-portable.zip` を作成します。[Inno Setup 6](https://jrsoftware.org/isinfo.php) がインストールされていれば（`winget install JRSoftware.InnoSetup` の後に CMake の configure を再実行）、`installer/A2DPWB.iss` から `build/dist/A2DPWB-<バージョン>-win64-setup.exe` も作成します。中身は同じファイルです。
+`target/dist` にインストーラ（`A2DPWB-<バージョン>-win64-setup.exe`）、ポータブル版の zip、更新用のマニフェストを書き出します。アプリ内更新の署名などは `installer/README.md` を見てください。
 
 ## 実機なしでのテスト（tools/emu） {#emu}
 
-`tools/emu` は、アダプターやヘッドホンなしで、A2DPWB から同じ PC 上の仮想 Bluetooth シンクへ全コーデックをストリーミングしてテストします。Windows だけで完結し、ビルドに必要なものに加えて **Python 3.11 以降** が必要です。
+`tools/emu` は、同じ PC 上の仮想 Bluetooth シンクへ全コーデックを配信して確かめます。アダプタもヘッドホンも要りません。Windows 専用で、**Python 3.11 以降**と、デコーダツール用の **CMake**（Visual Studio に同梱）が必要です。
 
 ```bash
-python tools/emu/setup_env.py     # 初回のみ: バージョン固定のパッケージで tools/emu/.venv を作成
-python tools/emu/run_test.py      # Release ビルド後に実行。全コーデックで約 35 秒
+python tools/emu/setup_env.py                       # 初回のみ: tools/emu/.venv を作る（パッケージは固定版）
+cmake -S tools/a2dp_decode -B build/a2dp_decode     # 初回のみ: デコーダツール
+cmake --build build/a2dp_decode --config Release
+cargo build --release -p a2dpwb-core-exe
+python tools/emu/run_test.py                        # 全コーデックで約 35 秒
 ```
 
 仕組み:
 
-- `emu_sink.py` は、[Bumble](https://github.com/google/bumble) の仮想コントローラ 2 台を同じプロセス内の仮想リンクでつなぎます。1 台は A2DPWB 用に H4 over TCP（`127.0.0.1`）で公開し、もう 1 台は Bumble の A2DP シンクが使います。シンクは SBC・AAC・aptX・aptX HD・aptX LL・LDAC を提供し、HCI 通信を記録します。
-- `run_test.py` は、コーデックごとに開発用オプション付きで `A2DPWB.exe --cli` を実行します。`--hci-tcp`（WinUSB の代わりに仮想コントローラ）、`--test-tone`（システム音声の代わりに左 1 kHz / 右 1.5 kHz）、`--duration`、`--hci-capture` です。環境変数 `A2DPWB_CONFIG_DIR` で A2DPWB に別の設定フォルダーを使わせるので、仮想シンクとのペアリングが実際のリンクキーに影響することはありません。
-- 送信側と受信側の HCI キャプチャを `a2dpwb_decode` で検証します（受信側は `--received`）。
+- `emu_sink.py` は、プロセス内のリンクでつないだ 2 つの [Bumble](https://github.com/google/bumble) 仮想コントローラを動かします。1 つは A2DPWB 向けに H4 over TCP（`127.0.0.1`）で公開し、もう 1 つは SBC、AAC、aptX、aptX HD、aptX LL、LDAC を受けられる Bumble の A2DP シンクが使い、その HCI 通信を記録します。
+- `run_test.py` はコーデックごとに `a2dpwb-core.exe --cli` を開発用のオプション付きで動かします。`--hci-tcp`（WinUSB の代わりに仮想コントローラ）、`--test-tone`（システムの音の代わりに左 1 kHz / 右 1.5 kHz）、`--duration`、`--hci-capture`。環境変数 `A2DPWB_CONFIG_DIR` で別の設定フォルダを使うので、仮想シンクとのペアリングが本物のリンクキーに触れることはありません。
+- 最後に両方の HCI キャプチャを `a2dpwb_decode` で調べます（シンク側は `--received`）。
 
-次をすべて満たしたコーデックを合格とします。
+次のすべてを満たしたコーデックが合格です。
 
-- 指定したコーデックで交渉された
-- 送信側・受信側とも `a2dpwb_decode` が問題を検出しない
-- A2DPWB が送信したメディアパケットとフレームをシンクがすべて受信し、指定した時間の 90% 以上の音声が送信された
-- LDAC 以外（オープンソースのデコーダーがないため）は、デコードした音声が両側で完全に一致し、テストトーンである
+- 指定したコーデックで接続した
+- 送信側と受信側のどちらでも `a2dpwb_decode` が問題を見つけない
+- A2DPWB が送ったメディアパケットとフレームをシンクがすべて受け取り、指定した長さの 90% 以上を送った
+- LDAC 以外（オープンソースのデコーダがないため）: デコードした音が両側で一致し、テストトーンである
 
 | オプション | 説明 |
 |:-----------|:-----|
-| `--codecs sbc aac ...` | 指定したコーデックだけをテスト（`sbc aac aptx aptxhd aptxll ldac`。既定: すべて） |
-| `--duration <秒>` | コーデックごとのストリーミング時間（既定 5 秒） |
-| `--max-packet <バイト数>` | A2DPWB に渡す最大メディアパケットサイズ（[使い方](usage)を参照） |
-| `--build-dir`、`--config` | `A2DPWB.exe` / `a2dpwb_decode.exe` の場所（既定 `build`、`Release`） |
-| `--out <フォルダー>` | 出力先（既定 `tools/emu/out`） |
+| `--codecs sbc aac ...` | このコーデックだけを試す（`sbc aac aptx aptxhd aptxll ldac`、既定は全部） |
+| `--duration <秒>` | コーデックごとの配信時間（既定 5） |
+| `--max-packet <バイト>` | A2DPWB に渡す（最大メディアパケットサイズ。[使い方](usage)を参照） |
+| `--a2dpwb <exe>` | 試すコア（既定 `target/release/a2dpwb-core.exe`） |
+| `--decoder <exe>` | デコーダツール（既定 `build/a2dp_decode/Release/a2dpwb_decode.exe`） |
+| `--out <フォルダ>` | 出力先（既定 `tools/emu/out`） |
 
-コーデックごとに `tools/emu/out/<codec>/` へ、キャプチャ（`a2dpwb.pklg`、`sink.pklg`）、ログ、`a2dpwb_decode` のレポート、デコードした WAV を出力します。すべて合格すると終了コード 0 になります。
+`tools/emu/out/<コーデック>/` には、キャプチャ（`a2dpwb.pklg`、`sink.pklg`）、ログ、`a2dpwb_decode` の結果、デコードした WAV が残ります。全コーデックが合格すると終了コードは 0 です。
 
 {: .note }
-仮想リンクには電波がありません。エンコード、パケット化、AVDTP / L2CAP のシグナリング、独立した Bluetooth スタック（Bumble）との相互接続性は検証できますが、電波の状態、実機でのタイミング、実際のヘッドホンでの再生は検証できません。Bumble 関連のパッケージはテスト用で、A2DPWB には含まれません（THIRD_PARTY_LICENSES.md §13 を参照）。
+仮想リンクには電波がありません。エンコード、パケット化、AVDTP / L2CAP のやり取り、独立した Bluetooth スタック（Bumble）との相互接続は確かめられますが、電波の状態、実機でのタイミング、実際のヘッドホンでの鳴り方は確かめられません。Bumble のパッケージはテスト用の道具で、A2DPWB には含まれません（THIRD_PARTY_LICENSES.md を参照）。
 
-`emu_vhci.py` は同じことを Linux の Bluetooth スタックに対して行います。Linux 上で `/dev/vhci` を通して仮想アダプターを作るので、測定用受信機 `tools/linux_sink` がそれを実機のアダプターと同じように使い、実機なしでテストできます。メディアパケットを欠落させたり一時的に止めたりもできます（`--drop`、`--stall`）。`tools/linux_sink/README.md` を参照してください。
+`emu_vhci.py` は同じことを Linux の Bluetooth スタックに向けて行います。Linux 上で `/dev/vhci` から BlueZ に仮想アダプタを付け、計測用受信機 `tools/linux_sink` がそれを本物のアダプタと同じように使うので、実機なしで試せます（メディアパケットの欠落や遅延も `--drop`、`--stall` で再現できます）。`tools/linux_sink/README.md` を見てください。
 
 ## 依存関係
 
-すべての依存関係は git サブモジュールとして含まれるか、ビルド時に取得されます。手動インストールは不要です。
+C のライブラリは git サブモジュールです。Rust のクレートと UI の npm パッケージは Cargo と pnpm が取得します（バージョンは `Cargo.lock` と `app/src/ui/pnpm-lock.yaml` で固定。ライセンスは `cargo deny check` で確認）。
 
 | ライブラリ | 取得方法 | 固定バージョン | ライセンス |
 |:-----------|:---------|:---------------|:-----------|
 | BTstack | git サブモジュール | v1.8.1-6-g5bc5cbdbe | BTstack License（非商用条項付きの BSD-3-Clause 類似ライセンス） |
-| Bluedroid SBC コーデック | BTstack に同梱（`3rd-party/bluedroid`） | BTstack に準拠 | Apache-2.0 |
+| Bluedroid SBC コーデック | エンコーダは Rust に移植。デコーダ（テストとツール）は BTstack 同梱のもの | BTstack に準拠 | Apache-2.0 |
 | rijndael | BTstack に同梱（`3rd-party/rijndael`） | BTstack に準拠 | パブリックドメイン |
+| liblc3 (lc3-google) | BTstack に同梱（`3rd-party/lc3-google`） | BTstack に準拠 | Apache-2.0 |
+| micro-ecc | BTstack に同梱（`3rd-party/micro-ecc`） | BTstack に準拠 | BSD-2-Clause |
 | libldac (AOSP) | git サブモジュール | android-15.0.0_r36-4-geeee1a3 | Apache-2.0 |
 | libopenaptx | git サブモジュール | 0.2.0（更新しないこと） | LGPL-2.1+ |
 | fdk-aac | git サブモジュール | v2.0.3-158-gd8e6b1a | FDK AAC License |
-| nlohmann/json | git サブモジュール（ヘッダーオンリー） | 3.12.0 | MIT |
-| wxWidgets | CMake FetchContent | v3.2.6 | wxWindows Library Licence 3.1 |
-| zlib / libpng / nanosvg | wxWidgets 内蔵のコピー | 1.2.13.1 / 1.6.37 / wxWidgets に準拠 | zlib / PNG Reference Library License v2 / zlib |
+| LHDC V5 エンコーダ | git サブモジュール | 固定したコミット | Apache-2.0 |
+| libopus | git サブモジュール | v1.5.2 | BSD-3-Clause |
+| Tauri、SolidJS、Rust のクレート | Cargo / pnpm | `Cargo.lock`、`pnpm-lock.yaml` | MIT / Apache-2.0 など（リリースの `licenses/rust-crates.txt`） |
 
 {: .warning }
-BTstack をリンクしているため、A2DPWB のソースコード自体は Apache-2.0 / MIT のデュアルライセンスであっても、ビルドした `A2DPWB.exe` は個人的かつ非商用の目的でのみ使用・再配布できます。
+BTstack をリンクしているため、A2DPWB のソースコード自体は Apache-2.0 / MIT のデュアルライセンスであっても、ビルドした A2DPWB は個人的かつ非商用の目的でのみ使用・再配布できます。
 
 ライセンスの全文は [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md) を参照してください。

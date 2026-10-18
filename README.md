@@ -1,292 +1,97 @@
 # A2DP Windows Bridge (A2DPWB)
 
-Bluetooth A2DP audio streaming for Windows with full codec support.
-Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC or LHDC V5 using a USB Bluetooth adapter in WinUSB mode — no kernel driver or test signing required.
+Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, aptX HD, aptX Low Latency, LHDC V5 and more, through a dedicated USB Bluetooth adapter in WinUSB mode — no kernel driver or test signing required.
+
+![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](docs/images/app_sample.png)
 
 **[Download](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/latest)** (installer `-setup.exe` or `-portable.zip`) | **[Documentation](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/)**
 
-![Main window, connection profile and link quality window](docs/images/app_sample.jpg)
+## Codecs
 
-## Supported Codecs
+| Codec | Bitrate | Sample rate | Bit depth | Windows built-in | A2DPWB |
+|-------|---------|-------------|-----------|:----------------:|:------:|
+| LDAC | 330/660/990 kbps | 44.1–96 kHz | 16/24/32 bit | ❌ | ✅ |
+| LHDC V5 | 400–1000 kbps, ABR 160–400 | 44.1–192 kHz | 16/24 bit | ❌ | ✅ |
+| aptX HD | 576 kbps | 44.1/48 kHz | 24 bit | ❌ | 🧪 |
+| aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 |
+| aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
+| AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | Windows 11 | ✅ |
+| SBC XQ | up to 552 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 |
+| SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
+| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 ¹ |
+| Opus (Android) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
+| Opus 05 (PipeWire) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 ¹ ² |
+| aptX Adaptive | | | | ❌ | ❌ ³ |
 
-| Codec | Bitrate | Sample Rate | Bit Depth | Latency |
-|-------|---------|-------------|-----------|---------|
-| LDAC | 330/660/990 kbps | 44.1–96 kHz | 16/24/32 bit | ~200 ms |
-| aptX HD | 576 kbps | 44.1/48 kHz | 24 bit | ~150 ms |
-| aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | ~32 ms |
-| aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
-| AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| LHDC V5 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+✅ supported · 🧪 experimental: passes the encoder tests and the end-to-end test against a virtual Bluetooth sink, but not yet confirmed with real headphones that use it ([reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)) · ❌ not supported
 
-### Codec support by platform (sending to headphones)
+¹ Auto never picks it; choose it in a profile. ² Only PipeWire (Linux) receivers implement it. ³ No open-source encoder exists; headphones that also offer classic aptX get aptX.
 
-| Codec | Windows 10 built-in | Windows 11 built-in | Ubuntu built-in (PipeWire) | **A2DPWB** (Windows 10 / 11) |
-|-------|:-------------------:|:-------------------:|:--------------------------:|:----------------------------:|
-| LDAC | ❌ | ❌ | ✅ | ✅ |
-| aptX HD | ❌ | ❌ | ✅ | 🧪 experimental |
-| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
-| aptX | ✅ | ✅ | ✅ | ✅ |
-| AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
-| SBC | ✅ | ✅ | ✅ | ✅ |
-| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
-| aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
+Auto picks LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC. LHDC V5 was confirmed by a user at 1000 kbps / 192 kHz ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
 
-✅ supported · 🧪 experimental · ❌ not supported. All columns are the sending side (PC → headphones). "Built-in" is the OS's own Bluetooth audio, without A2DPWB; the Ubuntu column is the PipeWire codec set of Ubuntu 26.04 (`libspa-0.2-bluetooth`).
+## Requirements
 
-> **aptX HD and aptX Low Latency are experimental.** They follow the Android / PipeWire implementations and pass encode/decode round-trip tests, but have not yet been verified with real headphones. Latency values in this table are typical figures, not measured with A2DPWB.
+- **Windows 10 (22H2) or 11**, x64 or ARM64 (ARM64 and Windows 10 not yet tried on real hardware)
+- **A dedicated USB Bluetooth adapter**, separate from the PC's built-in Bluetooth. Verified: TP-Link UB500 (Realtek RTL8761BU) with a Sony WH-1000XM4. See [Recommended Adapters](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup#adapters)
 
-> **About LHDC V5.** It uses a C port of the LHDC V5 encoder that Google added to Android 17 (AOSP, Apache-2.0); the port was verified bit-exact against the AOSP Rust encoder over 114 configurations, and the A2DP signaling follows Android's `a2dp_vendor_lhdcv5`. A user verified it with real LHDC V5 headphones at 1000 kbps / 192 kHz ([#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)). Only lossy LHDC V5 is supported: LHDC V2/V3 (older headphones) and the lossless "LHDC-RAW" mode have no open-source encoder. In Auto mode LHDC V5 ranks below LDAC and the aptX family and above AAC / SBC.
+### Why a dedicated adapter?
 
-> **Only need classic aptX?** Windows 10 already supports classic aptX in its built-in Bluetooth stack (not aptX HD, aptX LL or aptX Adaptive), so A2DPWB is not required for it. A2DPWB is mainly useful for LDAC, aptX HD and aptX Low Latency.
-
-> **aptX Adaptive is not supported.** There is no open-source aptX Adaptive encoder, so A2DPWB never selects it. If your headphones also list classic aptX (many aptX Adaptive models do), A2DPWB uses aptX directly; otherwise Auto picks AAC or SBC. See [aptX family and aptX Adaptive](#aptx-family-and-aptx-adaptive) below.
-
-## Platform Support
-
-| Component | Windows 10 (x64) | Windows 11 (x64) | Linux (Ubuntu) |
-|-----------|:----------------:|:----------------:|:--------------:|
-| **A2DPWB** (GUI / CLI) | ✅ (not yet tried on real hardware) | ✅ | ❌ |
-| Building from source (Visual Studio 2022+) | ✅ | ✅ | ❌ |
-| `a2dpwb_decode` (stream checker) | ✅ | ✅ | ❌ |
-| End-to-end test `tools/emu/run_test.py` | ✅ | ✅ | ❌ |
-| Virtual adapter `tools/emu/emu_vhci.py` | ❌ | ❌ | ✅ |
-| Measuring receiver `tools/linux_sink` | ❌ | ❌ | ✅ |
-
-A2DPWB itself runs on Windows only, as an x64 build. The Linux tools need Python 3.11 or later (verified on Ubuntu 26.04); `setup.sh` targets Ubuntu / Debian, other distributions need the packages installed by hand.
-
-## Verified Hardware
-
-| What | Setup | Codecs | Result |
-|-----|------|-------|-------|
-| Sony WH-1000XM4 (headphones) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC | ✅ Plays (the XM4 has no aptX) |
-| TP-Link UB500 (Realtek RTL8761BU, adapter) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
-| Measuring receiver `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 over the air | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Received and measured |
-| Virtual link `tools/emu` (Bumble) | Windows 11, no radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5 | ✅ End-to-end test passes |
-| LHDC V5 headphones (user report, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ Plays at 1000 kbps / 192 kHz |
-
-Windows 10 has not been tried on real hardware yet. Other adapters: see [Recommended Adapters](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup#adapters).
-
-## Architecture
-
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 480
-    rankSpacing: 30
----
-flowchart TB
-    src["Windows audio: system loopback / virtual device / one app"]
-    subgraph exe["A2DPWB.exe (user mode)"]
-        ui["GUI (wxWidgets) / CLI (--cli)"] --> svc["A2DP Service: connection lifecycle, codec selection"]
-        svc --> cap["WASAPI capture"]
-        cap -- PCM --> enc["Encoder: LDAC / aptX family / LHDC V5 / AAC / SBC"]
-        enc --> bt["BTstack: HCI / L2CAP / AVDTP / A2DP"]
-    end
-    src --> cap
-    bt -- WinUSB API --> usb["USB Bluetooth adapter (WinUSB driver via Zadig)"]
-    usb -. Bluetooth .-> hp["Headphones / speakers"]
-```
-
-### Why the setup takes these steps
-
-With an audio driver of its own, A2DPWB could be a plain install: the headphones would show up as a normal Windows audio device on the built-in Bluetooth. But Windows 10 / 11 only loads kernel-mode drivers signed through Microsoft, and Microsoft's signing service requires an EV code signing certificate. Such certificates cost roughly USD 300–700 per year and are generally issued only to registered companies — more than an individual project can carry. A2DPWB therefore takes the long way round: it takes a whole USB Bluetooth adapter away from Windows with the Microsoft-signed WinUSB driver and runs the Bluetooth stack itself, in user mode. That is why a dedicated adapter, Zadig and (for Realtek adapters) firmware files are needed.
-
-If you just want it to be simple, there is commercial software that ships a signed driver and works with the built-in Bluetooth. Honestly, for what it does it is remarkably cheap, so if ease of setup matters most to you, use that instead.
-
-### Components
-
-| Directory | Description |
-|-----------|-------------|
-| `app/src/` | Application: GUI (wxWidgets) + CLI, audio capture, encoding, Bluetooth transport |
-| `app/lang/` | Localization files (JSON, embedded at build time) |
-| `app/resources/` | Application icon, manifest, resource script |
-| `extern/btstack/` | BTstack — user-mode Bluetooth stack (git submodule) |
-| `extern/libldac/` | AOSP libldac — LDAC encoder (git submodule) |
-| `extern/libopenaptx/` | libopenaptx — aptX / aptX HD / aptX LL encoder (git submodule) |
-| `extern/fdk-aac/` | Fraunhofer FDK AAC — AAC-LC encoder (git submodule) |
-| `extern/lhdcv5-enc/` | LHDC V5 encoder — C port of the AOSP encoder (git submodule) |
-| `extern/json/` | nlohmann/json — JSON parser for settings, profiles, localization |
-| `compat/` | MSVC compatibility headers for the AOSP code |
-| `cmake/` | Release packaging script |
-| `installer/` | Inno Setup script for the installer |
-| `tools/a2dp_decode/` | `a2dpwb_decode` — checks / decodes the media stream in an HCI capture (developer tool) |
-| `tools/emu/` | End-to-end test against a virtual Bluetooth sink (Python, Bumble) |
-| `tools/linux_sink/` | `a2dpwb_sink` — measuring A2DP receiver on a second PC with Linux (Python, Bumble) |
-
-## Prerequisites
-
-- **Windows 10/11** (x64)
-- **Visual Studio 2022 or later** with C++ desktop workload
-- **CMake** 3.16+
-- **Git** (for submodules and wxWidgets FetchContent)
-- **Dedicated USB Bluetooth adapter** (separate from built-in Bluetooth)
-- **Zadig** (<https://zadig.akeo.ie/>) to install WinUSB driver on the adapter
+Windows 10 / 11 load only kernel drivers signed through Microsoft, which needs an EV code signing certificate (several hundred US dollars a year, normally for companies only). A2DPWB therefore takes a whole USB adapter away from Windows with the Microsoft-signed WinUSB driver and runs the Bluetooth stack itself, in user mode. If you just want something simple, commercial software with a signed driver works with the built-in Bluetooth.
 
 ## Setup
 
-1. **Plug in a dedicated USB Bluetooth adapter** (keep built-in Bluetooth for normal Windows use)
-2. **Install Zadig** from <https://zadig.akeo.ie/>
-3. Open Zadig → Options → List All Devices
-4. Select your USB Bluetooth adapter from the dropdown
-5. Select **WinUSB** as the target driver and click **Replace Driver**
-6. **Find your headphone's Bluetooth address** in Windows Settings → Bluetooth & devices → your device → Properties
-7. Run `A2DPWB.exe` (GUI) or `A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF`
+1. **Install**: run `A2DPWB-<version>-win64-setup.exe` (per user, no administrator rights), or extract the portable zip and run `a2dpwb.exe`. Installing over v1 removes v1 and keeps its settings, pairings and firmware.
+2. **Plug in the dedicated adapter.**
+3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, pair the headphones, play the test tone.
+4. **Connect** from **Home**, or from the tray icon.
 
-> **Warning**: Replacing the driver with WinUSB makes the adapter invisible to Windows Bluetooth. **Never replace the driver on your PC's built-in Bluetooth adapter** — doing so will disable all normal Bluetooth functionality (keyboards, mice, audio devices, etc.) and may require Device Manager or system recovery to restore. Always use a **separate, dedicated USB Bluetooth adapter** for A2DPWB.
+> **Warning:** While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter. **Never assign WinUSB to your PC's built-in Bluetooth adapter.** **Adapter > Restore driver** gives the adapter back to Windows at any time, and the uninstaller offers it too.
 
-### Firmware Files (Realtek adapters)
+**Realtek adapters** need firmware files such as `rtl8761bu_fw.bin` and `rtl8761bu_config.bin` from [linux-firmware](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) (proprietary, not included). The **Adapter** screen shows which files are needed and opens the download page and the settings folder. See the [Setup guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup).
 
-Realtek-based USB Bluetooth adapters (e.g., TP-Link UB500, RTL8761BU dongles) require proprietary firmware to operate. CSR adapters need no firmware. Intel and Broadcom adapters (experimental) may need firmware files of their own: see the [Setup guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup#adapters).
+## Usage
 
-**GUI (Guided):** Launch `A2DPWB.exe` and choose **Actions > Bluetooth Firmware Selection**. If firmware is missing, a warning is displayed with the required filenames. Use **Open Download Page** to open the [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) page in your browser, and **Open Config Folder** to open the destination folder. Download the `.bin` files and place them in the config folder.
+The resident core streams and owns the tray icon; the window only shows its state, so closing it does not stop the audio. **Left-click** the tray icon for the flyout, **right-click** it for the menu (profiles, **Disconnect**, **Exit**).
 
-**Manual:**
+The core also runs from the command line (quit A2DPWB first: only one program can use the adapter):
 
-1. Download the firmware and config `.bin` files for your chipset from <https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt> (e.g., `rtl8761bu_fw.bin` and `rtl8761bu_config.bin`)
-2. Place both files in the A2DPWB config folder (`%APPDATA%\A2DPWB`, or the path shown in the Firmware dialog)
+```bash
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF                    # Auto codec
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq -a   # LDAC 990 kbps with ABR
+a2dpwb-core.exe --cli --scan                                  # Find nearby devices
+a2dpwb-core.exe --cli -h                                      # All options
+```
 
-> **License**: These firmware files are proprietary Realtek binaries distributed via the linux-firmware project. They are not included in this repository. See [linux-firmware WHENCE](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/WHENCE) for redistribution terms.
+To stream LDAC at 96 kHz, set the playback device's format to 96 kHz in Windows Sound settings. Everything else — profiles, capture modes, volume sync, link quality and AFH, diagnostics, start with Windows, troubleshooting — is in the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage).
+
+## Features
+
+- **Codecs**: LDAC, LHDC V5, the aptX family, AAC, SBC XQ / SBC and experimental Opus, with automatic choice and ABR (LDAC, LHDC V5)
+- **Capture**: all system audio, a virtual audio device (e.g. VB-CABLE), or one application
+- **Resident core with tray**: streams with the window closed; reconnects after link loss and after sleep
+- **WinUSB in the app**: assigns and restores the adapter's driver, no Zadig needed
+- **Headphone controls**: volume sync and play / pause / next / previous (AVRCP)
+- **Diagnostics**: link quality, AFH (avoids your Wi-Fi channels), connection flow, log, HCI capture
+- **Updates**: daily check, in-app update of the installed version
+- **8 languages**: English, Japanese, Chinese (Simplified / Traditional), Korean, German, French, Spanish
+- **LE Audio (experimental, off by default)**: LC3 to LE Audio headphones and earbuds, tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio))
 
 ## Building
+
+Requirements: **Rust** 1.90+, **Visual Studio 2022+** with the C++ desktop workload, **Node.js 22** with **pnpm** (`corepack enable`), **Git**, **PowerShell 7**.
 
 ```bash
 git clone --recursive https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git
 cd A2DP-Windows-Bridge
-cmake -B build -A x64
-cmake --build build --config Release
+pwsh ./build.ps1
 ```
 
-The executable is output to `build/app/Release/A2DPWB.exe`.
-
-> **Note**: The first build takes several minutes because CMake FetchContent downloads and compiles wxWidgets.
-
-## Usage
-
-### GUI Mode (default)
-
-```
-A2DPWB.exe
-```
-
-The graphical interface provides:
-- Bluetooth adapter selection (WinUSB-attached adapters)
-- Audio device selection (WASAPI loopback capture source)
-- Device selection (paired devices, or a scan for nearby devices with the USB adapter)
-- Codec selection (Auto / LDAC / aptX HD / aptX LL / aptX / SBC / AAC)
-- LDAC quality mode (HQ 990 kbps / SQ 660 kbps / MQ 330 kbps)
-- LHDC V5 quality mode (High 1000 / Medium-High 900 / Standard 500 / Mobile 400 kbps, as on Android)
-- ABR (Adaptive Bit Rate) toggle, shown for LDAC and LHDC V5
-- Connection profile management (save / load device + codec settings)
-- Real-time status display (codec, bitrate, connection state)
-- Link quality window (what is sent, RSSI, AFH channels)
-- Headphone volume slider and headphone buttons (play/pause, next / previous track) as Windows media keys (AVRCP)
-
-### CLI Mode
-
-```bash
-# Auto-select best codec
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF
-
-# Specify codec
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxhd
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxll
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aptx
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c aac
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc
-
-# LDAC quality modes
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
-
-# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
-
-# Enable ABR (Adaptive Bit Rate; LDAC and LHDC V5)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a
-
-# Virtual audio device capture (e.g. VB-CABLE)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -m virtual --audio-device "{device-id}"
-
-# Specify USB adapter path (when multiple adapters are connected)
-A2DPWB.exe --cli -d AA:BB:CC:DD:EE:FF -u "\\?\usb#..."
-
-# List paired Bluetooth audio devices
-A2DPWB.exe --cli -l
-
-# Show all options
-A2DPWB.exe --cli -h
-```
-
-All options, including AFH (`--afh`) and the peer receiver test (`--remote-sink`), are listed in the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#all-options).
-
-> **Note**: System loopback and virtual device capture use WASAPI shared mode. The capture sample rate depends on the device's format configured in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the device format to 96 kHz in Sound settings > Advanced. Application capture is converted by Windows to the rate A2DPWB asks for.
-
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > AAC > SBC
-
-### aptX family and aptX Adaptive
-
-A2DPWB encodes aptX, aptX HD and aptX Low Latency with libopenaptx. For these codecs it picks 44.1 or 48 kHz from the rates the headphones advertise and lets WASAPI resample, so no Sound settings change is needed.
-
-**aptX Adaptive is not supported**: no open-source aptX Adaptive encoder exists, so A2DPWB only detects and logs it. A2DPWB does not "fall back" from Adaptive to aptX — the headphones advertise a list of codecs, and aptX Adaptive is simply never a candidate:
-
-- If the headphones also list **classic aptX** (common, as aptX Adaptive is marketed as backward compatible), A2DPWB selects aptX directly.
-- If they list **only aptX Adaptive**, aptX is not possible; Auto picks AAC or SBC.
-- An explicitly requested codec the headphones don't list stops the connection with an error in the **GUI**, while the **CLI** (`-c <codec>`) falls back to the Auto priority order.
-
-To see exactly which codecs your headphones offer, enable debug mode and check the `Capability discovery complete (...)` line in `debug.log`. See the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#aptx-compatibility) for details.
-
-### Auto-start (Run on boot)
-
-You can configure A2DPWB to start automatically when Windows boots.
-
-**Via GUI:**
-Check **Settings > Start with Windows**. When enabled, the application will automatically launch minimized in the system tray upon user login.
-
-**Manual Configuration (regedit):**
-The auto-start behavior is controlled by the standard Windows registry key.
-- **Key**: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
-- **Value Name**: `A2DPWB`
-- **Value Data**: `"<Path-to-A2DPWB.exe>" --minimized`
-
-You can manually add this entry using `regedit` if needed. To disable it manually (e.g., if the GUI is inaccessible), simply delete the `A2DPWB` value from this registry key.
-
-## Features
-
-- **Multi-codec support**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC and LHDC V5 with automatic negotiation
-- **Three capture modes**: System loopback (all system audio), virtual audio device (per-app routing via VB-CABLE etc.), or one application's output (Windows 11 / Windows 10 2004+)
-- **ABR**: Adaptive Bit Rate for unstable connections (LDAC and LHDC V5)
-- **Auto-reconnect**: Reconnects on Bluetooth disconnection (up to 10 attempts); a failed connection is retried (up to 3 attempts)
-- **Link quality and AFH**: Shows what is sent, the RSSI and the channels in use; tells the adapter which Wi-Fi channels to avoid
-- **Headphone controls (AVRCP)**: Volume slider synced with the headphones; their play/pause, next and previous buttons control playback on the PC
-- **Auto-start**: Optionally run minimized in the system tray at Windows startup
-- **Profile management**: Save and load device + codec configurations
-- **Localization**: English, Japanese, Simplified / Traditional Chinese, Korean, German, French and Spanish UI (languages other than English and Japanese are machine-translated; corrections welcome — `python tools/check_lang.py` checks a language file against `en.json`)
-- **Realtek firmware**: Guided firmware download for Realtek adapters
-- **Diagnostics** (debug mode): debug console with the connection flow, HCI capture, peer receiver test against a Linux PC
-- **MTU-aware framing**: Optimal packet utilization for each codec
-- **PCM residual buffering**: Prevents audio data loss at encoder boundaries
+`build.ps1` builds the window's page and the three programs into `target/release/` (`a2dpwb-core.exe`, `a2dpwb.exe`, `a2dpwb-driver.exe`); double-clicking `build.bat` runs the same. Switches: `-Test` (formatting, lints, tests), `-Emu` (end-to-end test against a virtual sink), `-Release -Arch x64|arm64` (installer, portable zip). See [Building](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/building) for the steps one by one, the tests and the release packages, and [Architecture](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/architecture) for how the programs fit together.
 
 ## License
 
-This project is dual-licensed under the **Apache License 2.0** ([LICENSE-APACHE](LICENSE-APACHE)) or the **MIT License** ([LICENSE-MIT](LICENSE-MIT)), at your option (SPDX `Apache-2.0 OR MIT`). See [LICENSE](LICENSE).
+The A2DPWB source code is dual-licensed under the **Apache License 2.0** ([LICENSE-APACHE](LICENSE-APACHE)) or the **MIT License** ([LICENSE-MIT](LICENSE-MIT)), at your option. See [LICENSE](LICENSE).
 
-> **Important:** The A2DPWB source code is dual-licensed under Apache-2.0 or MIT. The distributed `A2DPWB.exe` includes BTstack and therefore may only be used and redistributed for personal, non-commercial purposes.
+> **Important:** The distributed programs include [BTstack](https://github.com/bluekitchen/btstack), whose license allows use and redistribution only for **personal, non-commercial purposes** ("solely for personal benefit and not for any commercial purpose or for monetary gain"). Commercial licenses are available from BlueKitchen GmbH.
 
-Third-party libraries are used under their respective licenses. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for details.
-
-> **BTstack** is licensed under the BTstack License, a BSD-3-Clause-style license with an additional non-commercial clause ("Any redistribution, use, or modification is done solely for personal benefit and not for any commercial purpose or for monetary gain."). It is not BSD-3-Clause. Commercial licenses are available from BlueKitchen GmbH.
-
-## References
-
-- [BTstack](https://github.com/bluekitchen/btstack) — Bluetooth stack with WinUSB support (source-available; non-commercial license)
-- [libldac (AOSP)](https://android.googlesource.com/platform/external/libldac) — LDAC encoder library
-- [libopenaptx](https://github.com/pali/libopenaptx) — Open-source aptX / aptX HD encoder (also used for aptX LL)
-- [fdk-aac](https://github.com/mstorsjo/fdk-aac) — Fraunhofer FDK AAC codec library
-- [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) — portable C port of the [AOSP LHDC V5 encoder](https://android.googlesource.com/platform/packages/modules/Bluetooth/+/refs/heads/android17-release/system/audio/codecs/lhdcv5/) (Apache-2.0)
-- [wxWidgets](https://www.wxwidgets.org/) — Cross-platform GUI library
-- [nlohmann/json](https://github.com/nlohmann/json) — JSON for Modern C++
-- [Zadig](https://zadig.akeo.ie/) — USB driver installer for WinUSB
+Third-party libraries (BTstack, libldac, libopenaptx, fdk-aac, the LHDC V5 encoder, libopus, Tauri, SolidJS and others) are used under their own licenses: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

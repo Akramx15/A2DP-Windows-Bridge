@@ -17,12 +17,11 @@ without any additional terms or conditions.
 
 Exceptions:
 
-  * app/src/hci_transport_h2_winusb.c is a modified copy of a BTstack file
-    and remains under the BTstack License (see THIRD_PARTY_LICENSES.md).
   * Third-party libraries under extern/ and those fetched at build time are
     covered by their own licenses (see THIRD_PARTY_LICENSES.md).
 
-Note: the distributed A2DPWB.exe statically links BTstack, whose license
-permits only personal, non-commercial use and redistribution. That
-restriction applies to the binary regardless of which of the two licenses
-above you choose for the A2DPWB source code.
+Note: the distributed a2dpwb-core.exe statically links BTstack, whose
+license permits only personal, non-commercial use and redistribution. That
+restriction applies to that binary, and so to A2DPWB as distributed,
+regardless of which of the two licenses above you choose for the A2DPWB
+source code.
