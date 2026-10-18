@@ -1,6 +1,6 @@
 // The connection flow of the Diagnostics screen: eleven steps from "start"
 // to "connection upkeep", each with a status, derived from the log lines as
-// v1's debug console did (app/src/debug_log_model.cpp). The real core
+// v1's debug console did (debug_log_model.cpp on the develop branch). The real core
 // follows every line itself (crates/core/src/diag.rs, method diag.flow);
 // this tracker is the mock core's, with rules for the messages of the v2
 // core (crates/core/src/stream.rs and service.rs, crates/bt-host/src).

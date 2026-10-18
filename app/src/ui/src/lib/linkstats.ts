@@ -1,5 +1,5 @@
 // The arithmetic of the Diagnostics screen's link tab, as v1's link quality
-// dialog did it (app/src/wx_link_quality_dialog.cpp): losses since the
+// dialog did it (wx_link_quality_dialog.cpp on the develop branch): losses since the
 // stream started or since the Reset button, drop shares, capture drops in
 // milliseconds. The core keeps cumulative counters only; the baselines are
 // the view's.
