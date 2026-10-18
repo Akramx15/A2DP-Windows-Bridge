@@ -70,8 +70,10 @@ describe("Diagnostics", () => {
       expect(b).not.toBeNull();
       return b!;
     });
-    // The step's time of day, from the core's clock
-    expect(view.container.querySelector(".flow-step .flow-clock")!.textContent).toMatch(/^\d\d:\d\d:\d\d\.\d{3}$/);
+    // The step's time of day, from the core's clock (after its column name
+    // for screen readers)
+    expect(view.container.querySelector(".flow-step .flow-clock")!.textContent).toMatch(/^Time: \d\d:\d\d:\d\d\.\d{3}$/);
+    expect(view.container.querySelector(".flow-head")).toHaveTextContent(/Step\s*Status\s*Time\s*Elapsed\s*Detail/);
     // The details the core computes: the audio rate
     await waitFor(() => expect(view.container.querySelector(".flow-step:nth-child(10) .flow-detail")).toHaveTextContent(/packets\/s/));
     fireEvent.click(jump);

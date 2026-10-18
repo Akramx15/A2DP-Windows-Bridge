@@ -566,5 +566,10 @@
   "ui.v1_running.title": "A2DPWB v1 läuft – beenden Sie es zuerst",
   "ui.v1_running.text": "v1 und v2 können den Bluetooth-Adapter nicht gleichzeitig verwenden. Klicken Sie mit der rechten Maustaste auf das Taskleistensymbol von v1 und wählen Sie Beenden.",
   "help.third_party": "Enthält außerdem libldac (Apache-2.0), libopenaptx (LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár), Fraunhofer FDK AAC, Bluedroid SBC (Apache-2.0), den LHDC V5-Encoder (Apache-2.0, abgeleitet von AOSP; FFT aus KISS FFT, BSD-3-Clause), libopus (BSD-3-Clause), liblc3 (Apache-2.0), Tauri, SolidJS und weitere Rust- und JavaScript-Bibliotheken. Die Lizenztexte befinden sich im Ordner \"licenses\" neben dem Programm.",
-  "ui.settings.core_version": "Kern %s"
+  "ui.settings.core_version": "Kern %s",
+  "dbgc.col_step": "Schritt",
+  "dbgc.col_status": "Status",
+  "dbgc.col_time": "Zeit",
+  "dbgc.col_elapsed": "Dauer",
+  "dbgc.col_detail": "Details"
 }

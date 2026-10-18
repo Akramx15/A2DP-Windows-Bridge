@@ -566,5 +566,10 @@
   "ui.v1_running.title": "A2DPWB v1이 실행 중입니다. 먼저 종료하세요",
   "ui.v1_running.text": "v1과 v2는 블루투스 어댑터를 동시에 사용할 수 없습니다. v1의 트레이 아이콘을 마우스 오른쪽 버튼으로 클릭하고 [종료]를 선택하세요.",
   "help.third_party": "또한 libldac(Apache-2.0), libopenaptx(LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár), Fraunhofer FDK AAC, Bluedroid SBC(Apache-2.0), LHDC V5 인코더(Apache-2.0, AOSP 기반, FFT는 KISS FFT, BSD-3-Clause), libopus(BSD-3-Clause), liblc3(Apache-2.0), Tauri, SolidJS 및 기타 Rust와 JavaScript 라이브러리가 포함되어 있습니다. 라이선스 전문은 프로그램과 같은 위치의 \"licenses\" 폴더에 있습니다.",
-  "ui.settings.core_version": "코어 %s"
+  "ui.settings.core_version": "코어 %s",
+  "dbgc.col_step": "단계",
+  "dbgc.col_status": "상태",
+  "dbgc.col_time": "시각",
+  "dbgc.col_elapsed": "경과",
+  "dbgc.col_detail": "세부 정보"
 }

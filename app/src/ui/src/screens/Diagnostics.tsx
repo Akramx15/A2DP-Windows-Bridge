@@ -573,35 +573,64 @@ function FlowPanel(props: { onJump: (seq: number) => void }) {
           {t("dbgc.copy_flow")}
         </Button>
       </div>
-      <ol class="flow">
-        <For each={STEPS}>
-          {(st) => {
-            const status = () => (stepOf(st)?.status ?? "pending") as StepStatus;
-            const seq = () => stepOf(st)?.seq ?? null;
-            return (
-              <li class={`flow-step st-${status()}`} classList={{ "has-line": seq() !== null }} onDblClick={() => jump(st)}>
-                <span class="flow-icon" aria-hidden="true">
-                  <Show when={STATUS_ICON[status()]} fallback={<span class="flow-dot" />}>
-                    {(i) => <Icon name={i()} />}
-                  </Show>
-                </span>
-                <span class="flow-name">{t(`dbgc.step.${st}`)}</span>
-                <span class="flow-status">{statusText(status())}</span>
-                <span class="flow-clock num">{stepTime(stepOf(st))}</span>
-                <span class="flow-time num">{elapsed(stepOf(st)?.elapsed_ms)}</span>
-                <span class="flow-detail" title={detail(st)}>
-                  {detail(st)}
-                </span>
-                <span class="flow-jump">
-                  <Show when={seq() !== null}>
-                    <IconButton icon="arrow_right" label={t("ui.diag.show_line")} onClick={() => jump(st)} />
-                  </Show>
-                </span>
-              </li>
-            );
-          }}
-        </For>
-      </ol>
+      <div class="flow">
+        {/* Column headers (v1's list columns); screen readers get each cell's
+            name with the cell instead */}
+        <div class="flow-head" aria-hidden="true">
+          <span />
+          <span>{t("dbgc.col_step")}</span>
+          <span>{t("dbgc.col_status")}</span>
+          <span>{t("dbgc.col_time")}</span>
+          <span>{t("dbgc.col_elapsed")}</span>
+          <span>{t("dbgc.col_detail")}</span>
+          <span />
+        </div>
+        <ol class="flow-list" aria-label={t("dbgc.section_flow")}>
+          <For each={STEPS}>
+            {(st) => {
+              const status = () => (stepOf(st)?.status ?? "pending") as StepStatus;
+              const seq = () => stepOf(st)?.seq ?? null;
+              return (
+                <li class={`flow-step st-${status()}`} classList={{ "has-line": seq() !== null }} onDblClick={() => jump(st)}>
+                  <span class="flow-icon" aria-hidden="true">
+                    <Show when={STATUS_ICON[status()]} fallback={<span class="flow-dot" />}>
+                      {(i) => <Icon name={i()} />}
+                    </Show>
+                  </span>
+                  <span class="flow-name">{t(`dbgc.step.${st}`)}</span>
+                  <span class="flow-status">
+                    <span class="sr-only">{t("dbgc.col_status")}: </span>
+                    {statusText(status())}
+                  </span>
+                  <span class="flow-clock num">
+                    <Show when={stepTime(stepOf(st))}>
+                      <span class="sr-only">{t("dbgc.col_time")}: </span>
+                    </Show>
+                    {stepTime(stepOf(st))}
+                  </span>
+                  <span class="flow-time num">
+                    <Show when={elapsed(stepOf(st)?.elapsed_ms)}>
+                      <span class="sr-only">{t("dbgc.col_elapsed")}: </span>
+                    </Show>
+                    {elapsed(stepOf(st)?.elapsed_ms)}
+                  </span>
+                  <span class="flow-detail" title={detail(st)}>
+                    <Show when={detail(st)}>
+                      <span class="sr-only">{t("dbgc.col_detail")}: </span>
+                    </Show>
+                    {detail(st)}
+                  </span>
+                  <span class="flow-jump">
+                    <Show when={seq() !== null}>
+                      <IconButton icon="arrow_right" label={t("ui.diag.show_line")} onClick={() => jump(st)} />
+                    </Show>
+                  </span>
+                </li>
+              );
+            }}
+          </For>
+        </ol>
+      </div>
       <p class="hint">{t("dbgc.flow_hint")}</p>
     </div>
   );

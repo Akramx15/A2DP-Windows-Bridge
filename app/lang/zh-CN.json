@@ -566,5 +566,10 @@
   "ui.v1_running.title": "A2DPWB v1 正在运行，请先退出它",
   "ui.v1_running.text": "v1 和 v2 不能同时使用蓝牙适配器。请右键单击 v1 的托盘图标并选择“退出”。",
   "help.third_party": "还包含 libldac (Apache-2.0)、libopenaptx (LGPL-2.1+, © 2017 Aurelien Jacobs, © 2018-2020 Pali Rohár)、Fraunhofer FDK AAC、Bluedroid SBC (Apache-2.0)、LHDC V5 编码器（Apache-2.0，源自 AOSP；FFT 来自 KISS FFT, BSD-3-Clause）、libopus (BSD-3-Clause)、liblc3 (Apache-2.0)、Tauri、SolidJS 以及其他 Rust 和 JavaScript 库。许可证文本位于程序所在位置的 \"licenses\" 文件夹中。",
-  "ui.settings.core_version": "核心 %s"
+  "ui.settings.core_version": "核心 %s",
+  "dbgc.col_step": "步骤",
+  "dbgc.col_status": "状态",
+  "dbgc.col_time": "时间",
+  "dbgc.col_elapsed": "耗时",
+  "dbgc.col_detail": "详细信息"
 }

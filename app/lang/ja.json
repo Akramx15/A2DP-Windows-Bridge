@@ -566,5 +566,10 @@
   "ui.v1_running.title": "A2DPWB v1 が起動しています。先に終了してください",
   "ui.v1_running.text": "v1 と v2 は同時に Bluetooth アダプターを使えません。v1 のタスクトレイのアイコンを右クリックして「終了」を選んでください。",
   "help.third_party": "このほか libldac（Apache-2.0）、libopenaptx（LGPL-2.1+、© 2017 Aurelien Jacobs、© 2018-2020 Pali Rohár）、Fraunhofer FDK AAC、Bluedroid SBC（Apache-2.0）、LHDC V5 エンコーダー（Apache-2.0、AOSP 由来。FFT は KISS FFT、BSD-3-Clause）、libopus（BSD-3-Clause）、liblc3（Apache-2.0）、Tauri、SolidJS ほかの Rust と JavaScript のライブラリを含みます。ライセンス全文はプログラムと同じ場所の「licenses」フォルダにあります。",
-  "ui.settings.core_version": "コア %s"
+  "ui.settings.core_version": "コア %s",
+  "dbgc.col_step": "手順",
+  "dbgc.col_status": "状態",
+  "dbgc.col_time": "時刻",
+  "dbgc.col_elapsed": "経過",
+  "dbgc.col_detail": "詳細"
 }

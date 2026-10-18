@@ -1661,15 +1661,20 @@ option {
   color: var(--st-text, var(--text));
 }
 
-.flow {
+/* .flow: the bordered list (an <ol>, or a <div> holding headers and one) */
+.flow,
+.flow-list {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+.flow {
   border: 1px solid var(--border);
   border-radius: var(--r-card);
   background: var(--surface);
 }
-.flow-step {
+.flow-step,
+.flow-head {
   display: grid;
   grid-template-columns: 1.5rem minmax(10rem, 14rem) 4.5rem 6.5rem 5rem 1fr 2rem;
   align-items: center;
@@ -1677,8 +1682,17 @@ option {
   padding: var(--s2) var(--s4);
   min-height: 2.5rem;
 }
-.flow-step + .flow-step {
+.flow-step + .flow-step,
+.flow-head + .flow-list {
   border-top: 1px solid var(--border);
+}
+/* The column headers: as the rows' grid, smaller */
+.flow-head {
+  min-height: 0;
+  padding-block: var(--s2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 600;
 }
 .flow-icon {
   display: grid;
@@ -1722,6 +1736,10 @@ option {
 @media (max-width: 760px) {
   .flow-step {
     grid-template-columns: 1.5rem 1fr auto auto;
+  }
+  /* The cells wrap under each other: the headers would not match them */
+  .flow-head {
+    display: none;
   }
   .flow-clock,
   .flow-time {
