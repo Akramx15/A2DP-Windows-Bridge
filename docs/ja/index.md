@@ -11,7 +11,7 @@ has_toc: false
 Windows 向け Bluetooth A2DP オーディオストリーミングツール（全コーデック対応）
 {: .fs-6 .fw-300 }
 
-USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5**（および試験的に **Opus**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
+USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5**（および試験的に **Opus** と PipeWire の **Opus 05**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
 
 [セットアップ](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -23,13 +23,13 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | コーデック | ビットレート | サンプルレート | ビット深度 | レイテンシー |
 |:-----------|:-------------|:---------------|:-----------|:-------------|
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | 約 200 ms |
-| aptX HD | 576 kbps | 44.1/48 kHz | 24 bit | 約 150 ms |
-| aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
+| aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | 約 150 ms |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
-| SBC XQ | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
+| SBC XQ 🧪 | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最大約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
-| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
+| FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
 | LHDC V5 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
@@ -43,9 +43,9 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 実験的 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu のパッケージに含まれない | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC でデュアルチャネルと bitpool 43 以上を許すシンク） |
+| SBC XQ | ❌ | ❌ | ✅ | 🧪 実験的（SBC でデュアルチャネルと bitpool 43 以上を許すシンク） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| FastStream | ❌ | ❌ | ✅ | ✅（音楽のみ、明示的に選んだとき） |
+| FastStream | ❌ | ❌ | ✅ | 🧪 実験的（音楽のみ、明示的に選んだとき） |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus（Android の A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2 以降（`opus_g`）。Ubuntu 24.04（PipeWire 1.0.5）にはない | 🧪 実験的 |
 | Opus 05（PipeWire 独自の Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57 以降（`opus_05`、相手も PipeWire のときだけ） | 🧪 実験的（明示的に選んだとき） |
@@ -64,6 +64,9 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 
 {: .warning }
 **Opus 05 は実験的な対応で、実機では未確認です。** PipeWire 独自の A2DP Opus ベンダーコーデック（ベンダー ID 0x000005F1、コーデック ID 0x1005、PipeWire の `opus_05`）で、実装しているのは PipeWire だけなので、受け手は A2DP シンクとして動く PipeWire の PC に限られます。A2DPWB が送るのはステレオの音楽の方向だけ（5.1 / 7.1 や戻りの音声はなし）で、48 kHz・10 ms フレーム（シンクが 20 ms だけならそれ）、エンコーダーとビットレートは Opus と同じで、シンクの上限で頭打ちにします。自動選択では選ばないので、プロファイルか `-c opus05` で選んでください。PipeWire と同じ能力を出す仮想シンクとのエンドツーエンドテストには合格していますが、実際の PipeWire では試していません。A2DP シンクとしての PipeWire は、Opus 05 を 0.3.57 から、Android の Opus（`opus_g`）を 1.2.0 から受けられます。Ubuntu 24.04 LTS の PipeWire 1.0.5 は Opus 05 だけ、Ubuntu 25.10（1.4.7）と 26.04 LTS（1.6.2）は両方です。どちらも A2DPWB ではまだ確かめていません。
+
+{: .warning }
+**SBC XQ は実験的な対応です。** 2026-10-18 に Sony WH-1000XM4 が受け付け（デュアルチャネル、48 kHz で bitpool 43、552 kbps）、A2DPWB はパケットを落とさずに送れましたが、音を耳で評価してはおらず、ほかのヘッドホンでは試していません。この設定を拒否するシンクには、通常の SBC でつなぎ直します。**FastStream は実験的な対応です。** 仮想シンクとのエンドツーエンドテストには合格していますが、実際の FastStream 対応ヘッドホンでは試していません。音楽の方向のみで、自動選択では選びません。
 
 {: .note }
 **クラシック aptX だけが目的なら**、Windows 10 標準の Bluetooth スタックがクラシック aptX に対応しています（aptX HD・aptX LL・aptX Adaptive は非対応）。その場合 A2DPWB は不要です。A2DPWB が主に役立つのは LDAC・aptX HD・aptX Low Latency です。
@@ -88,10 +91,10 @@ A2DPWB 本体は Windows 専用（Windows 10 22H2 または Windows 11）で、x
 
 | 対象 | 構成 | コーデック | 結果 |
 |:-----|:-----|:-----------|:-----|
-| Sony WH-1000XM4（ヘッドホン） | Windows 11 + TP-Link UB500 | LDAC、AAC、SBC | ✅ 再生できる（XM4 は aptX 非対応） |
+| Sony WH-1000XM4（ヘッドホン） | Windows 11 + TP-Link UB500 | LDAC、AAC、SBC。SBC XQ でも配信できる（耳での評価はまだ） | ✅ 再生できる（XM4 は aptX 非対応） |
 | TP-Link UB500（Realtek RTL8761BU、アダプター） | Windows 11、WinUSB、linux-firmware の `rtl8761bu` | – | ✅ |
 | 測定用受信機 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04（実際の無線） | SBC、AAC、aptX、aptX HD、aptX LL、LDAC | ✅ 受信・測定できる |
-| 仮想リンク `tools/emu`（Bumble） | Windows 11、無線なし | SBC、AAC、aptX、aptX HD、aptX LL、LDAC、LHDC V5、Opus、Opus 05 | ✅ エンドツーエンドテストに合格 |
+| 仮想リンク `tools/emu`（Bumble） | Windows 11、無線なし | SBC、SBC XQ、AAC、aptX、aptX HD、aptX LL、LDAC、LHDC V5、FastStream、Opus、Opus 05 | ✅ エンドツーエンドテストに合格 |
 
 Windows 10 の実機ではまだ試していません。その他のアダプターは[推奨アダプター](setup#adapters)を参照してください。
 
@@ -133,7 +136,8 @@ A2DPWB は Windows の Bluetooth スタックを完全にバイパスします�
 
 ## 主な機能
 
-- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、Opus（試験的）（自動ネゴシエーション対応）
+- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、Opus / Opus 05（試験的）（自動ネゴシエーション対応）
+- **LE Audio（実験的、既定ではオフ）**: LE Audio のヘッドホン・イヤホンへ LC3 で送信（BAP ユニキャスト、左右一組のイヤホン、ヘッドセットの音量、メディアボタン、GMAP の低遅延）。Bluetooth 5.2 のアイソクロナスチャネルに対応したアダプターが必要です。確かめたのは Bluetooth のエミュレータだけで、実機の LE Audio ヘッドホンではまだ試していません（[使い方](usage#le-audio)を参照）
 - **3 つのキャプチャモード**: システムループバック、仮想オーディオデバイスルーティング、または 1 つのアプリの出力
 - **ウィンドウ・トレイ・CLI**: セットアップと診断はウィンドウ、毎日の接続はトレイのフライアウトとメニュー、ほかにコマンドライン（[使い方](usage)を参照）
 - **アプリ内で WinUSB を割り当て**: アダプターへの WinUSB ドライバーの割り当てと元のドライバーへの復元。Zadig は不要です（[セットアップ](setup#winusb)を参照）

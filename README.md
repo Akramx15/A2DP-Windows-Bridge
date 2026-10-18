@@ -10,13 +10,13 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 | Codec | Bitrate | Sample Rate | Bit Depth | Latency |
 |-------|---------|-------------|-----------|---------|
 | LDAC | 330/660/990 kbps | 44.1–96 kHz | 16/24/32 bit | ~200 ms |
-| aptX HD | 576 kbps | 44.1/48 kHz | 24 bit | ~150 ms |
-| aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | ~32 ms |
+| aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | ~150 ms |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
+| SBC XQ 🧪 | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
-| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
+| FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160–400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
@@ -30,9 +30,9 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅ (sinks whose SBC allows dual channel, bitpool ≥ 43) |
+| SBC XQ | ❌ | ❌ | ✅ | 🧪 experimental (sinks whose SBC allows dual channel, bitpool ≥ 43) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| FastStream | ❌ | ❌ | ✅ | ✅ (music only, chosen explicitly) |
+| FastStream | ❌ | ❌ | ✅ | 🧪 experimental (music only, chosen explicitly) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus (Android's A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); not in Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimental |
 | Opus 05 (PipeWire's own Opus) | ❌ | ❌ | ✅ PipeWire 0.3.57+ (`opus_05`, to PipeWire devices only) | 🧪 experimental (chosen explicitly) |
@@ -49,6 +49,8 @@ Streams system audio via LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V
 > **Opus 05 is experimental and unverified.** It is PipeWire's own A2DP Opus vendor codec (vendor ID 0x000005F1, codec 0x1005; PipeWire `opus_05`), which only PipeWire implements, so the receiver has to be a PC running PipeWire as an A2DP sink. A2DPWB sends the stereo music direction only (no 5.1 / 7.1, no return channel): 48 kHz, 10 ms frames (20 ms if the sink has only that), the same libopus encoder and bit rates as Opus, capped at the sink's limit. Auto never picks it; choose it in the profile or with `-c opus05`. It passes the end-to-end test against a virtual sink that offers PipeWire's capabilities, but has not been tried with a real PipeWire receiver.
 >
 > **Ubuntu as the receiver.** PipeWire decodes both Opus variants when it is the A2DP sink: Opus 05 since PipeWire 0.3.57, Android's Opus (`opus_g`) since PipeWire 1.2.0. Ubuntu 24.04 LTS ships PipeWire 1.0.5 (Opus 05 only); Ubuntu 25.10 (1.4.7) and 26.04 LTS (1.6.2) ship both. Neither has been verified with A2DPWB yet.
+
+> **SBC XQ is experimental.** On 2026-10-18 a Sony WH-1000XM4 accepted it (dual channel, bitpool 43 at 48 kHz, 552 kbps) and A2DPWB streamed to it without dropped packets, but the sound has not been judged by ear and no other headphones were tried. Sinks that refuse the configuration are reconnected with plain SBC. **FastStream is experimental:** it passes the end-to-end test against a virtual sink but has not been tried with real FastStream headphones. Music direction only; Auto never picks it.
 
 > **Only need classic aptX?** Windows 10 already supports classic aptX in its built-in Bluetooth stack (not aptX HD, aptX LL or aptX Adaptive), so A2DPWB is not required for it. A2DPWB is mainly useful for LDAC, aptX HD and aptX Low Latency.
 
@@ -71,7 +73,7 @@ A2DPWB itself runs on Windows only (Windows 10 22H2 or Windows 11), built for x6
 
 | What | Setup | Codecs | Result |
 |-----|------|-------|-------|
-| Sony WH-1000XM4 (headphones) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC | ✅ Plays (the XM4 has no aptX) |
+| Sony WH-1000XM4 (headphones) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC; SBC XQ streams (not judged by ear) | ✅ Plays (the XM4 has no aptX) |
 | TP-Link UB500 (Realtek RTL8761BU, adapter) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | LHDC V5 headphones (user report, [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50)) | Windows + A2DPWB v1.1.1-beta.1 | LHDC V5 | ✅ Plays at 1000 kbps / 192 kHz (v1; v2 uses the same encoder) |
 | Measuring receiver `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 over the air | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Received and measured |

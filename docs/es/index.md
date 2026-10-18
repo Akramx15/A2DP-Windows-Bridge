@@ -11,7 +11,7 @@ has_toc: false
 Transmisión de audio Bluetooth A2DP para Windows con compatibilidad completa de códecs.
 {: .fs-6 .fw-300 }
 
-Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** y (de forma experimental) **Opus** con un adaptador Bluetooth USB en modo WinUSB, sin controlador de kernel ni firma de prueba.
+Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** y (de forma experimental) **Opus** y el **Opus 05** de PipeWire con un adaptador Bluetooth USB en modo WinUSB, sin controlador de kernel ni firma de prueba.
 
 [Primeros pasos](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -23,15 +23,16 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | Códec | Tasa de bits | Frecuencia de muestreo | Profundidad de bits | Latencia |
 |:------|:--------|:------------|:----------|:--------|
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bits | ~200 ms |
-| aptX HD | 576 kbps | 44.1/48 kHz | 24 bits | ~150 ms |
-| aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bits | ~32 ms |
+| aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bits | ~150 ms |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bits | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bits | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
-| SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
+| SBC XQ 🧪 | ~385/505/552 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | SBC | hasta ~345 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
-| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bits | -- |
+| FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bits | -- |
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
+| Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
 
 ### Compatibilidad de códecs por plataforma (envío a los auriculares)
 
@@ -42,11 +43,12 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ no está en los paquetes de Ubuntu | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅ (receptores cuyo SBC admite canal dual y bitpool ≥ 43) |
+| SBC XQ | ❌ | ❌ | ✅ | 🧪 experimental (receptores cuyo SBC admite canal dual y bitpool ≥ 43) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| FastStream | ❌ | ❌ | ✅ | ✅ (solo música, si se elige expresamente) |
+| FastStream | ❌ | ❌ | ✅ | 🧪 experimental (solo música, si se elige expresamente) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
-| Opus (Opus A2DP de Android) | ❌ | ❌ | no comprobado | 🧪 experimental |
+| Opus (Opus A2DP de Android) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); no está en Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimental |
+| Opus 05 (Opus propio de PipeWire) | ❌ | ❌ | ✅ PipeWire 0.3.57+ (`opus_05`, solo hacia dispositivos PipeWire) | 🧪 experimental (si se elige expresamente) |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ compatible · 🧪 experimental · ❌ no compatible. Todas las columnas corresponden al lado emisor (PC → auriculares). «Integrado» es el audio Bluetooth propio del sistema operativo, sin A2DPWB; la columna de Ubuntu es el conjunto de códecs de PipeWire en Ubuntu 26.04 (`libspa-0.2-bluetooth`).
@@ -59,6 +61,12 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 
 {: .warning }
 **Opus es experimental.** Es el códec de fabricante Opus A2DP de Android (Android 13+, ID de fabricante 0x000000E0 Google): 48 kHz, tramas de 20 ms, 256 kbps estéreo tal como lo solicita Android (Estándar 192, Móvil 128 kbps), codificado con libopus 1.5.2. Supera la prueba de extremo a extremo contra un receptor virtual, pero aún no se ha verificado con auriculares Opus reales. En modo Automático tiene menos prioridad que LHDC V5 y más que AAC / SBC.
+
+{: .warning }
+**Opus 05 es experimental y no está verificado en hardware real.** Es el códec de fabricante Opus A2DP propio de PipeWire (ID de fabricante 0x000005F1, códec 0x1005; `opus_05` de PipeWire), que solo implementa PipeWire, así que el receptor tiene que ser un PC con PipeWire como receptor A2DP. A2DPWB envía solo la dirección de música estéreo (sin 5.1 / 7.1 ni canal de retorno): 48 kHz, tramas de 10 ms (20 ms si el receptor solo admite esas), el mismo codificador libopus y las mismas tasas de bits que Opus, limitadas al máximo del receptor. El modo Automático nunca lo elige; elíjalo en el perfil o con `-c opus05`. Supera la prueba de extremo a extremo contra un receptor virtual que ofrece las capacidades de PipeWire, pero no se ha probado con un receptor PipeWire real. PipeWire como receptor A2DP decodifica Opus 05 desde la 0.3.57 y el Opus de Android (`opus_g`) desde la 1.2.0: Ubuntu 24.04 LTS incluye PipeWire 1.0.5 (solo Opus 05), Ubuntu 25.10 (1.4.7) y 26.04 LTS (1.6.2) incluyen ambos; ninguno está aún verificado con A2DPWB.
+
+{: .warning }
+**SBC XQ es experimental.** El 18-10-2026 unos Sony WH-1000XM4 lo aceptaron (canal dual, bitpool 43 a 48 kHz, 552 kbps) y A2DPWB transmitió hacia ellos sin paquetes perdidos, pero el sonido no se ha juzgado de oído y no se probaron otros auriculares. Los receptores que rechazan la configuración se reconectan con SBC normal. **FastStream es experimental:** supera la prueba de extremo a extremo contra un receptor virtual, pero no se ha probado con auriculares FastStream reales. Solo la dirección de música; Automático nunca lo elige.
 
 {: .note }
 **¿Solo necesita aptX clásico?** Windows 10 ya admite aptX clásico en su pila Bluetooth integrada (no aptX HD, aptX LL ni aptX Adaptive), así que A2DPWB no es necesario para ese códec. A2DPWB es útil sobre todo para LDAC, aptX HD y aptX Low Latency.
@@ -83,10 +91,10 @@ A2DPWB solo funciona en Windows (Windows 10 22H2 o Windows 11), con compilacione
 
 | Qué | Configuración | Códecs | Resultado |
 |:-----|:------|:-------|:-------|
-| Sony WH-1000XM4 (auriculares) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC | ✅ Reproduce (los XM4 no tienen aptX) |
+| Sony WH-1000XM4 (auriculares) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC; SBC XQ transmite (no evaluado de oído) | ✅ Reproduce (los XM4 no tienen aptX) |
 | TP-Link UB500 (Realtek RTL8761BU, adaptador) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
 | Receptor de medición `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 por radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Recibido y medido |
-| Enlace virtual `tools/emu` (Bumble) | Windows 11, sin radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, Opus | ✅ La prueba de extremo a extremo se supera |
+| Enlace virtual `tools/emu` (Bumble) | Windows 11, sin radio | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus, Opus 05 | ✅ La prueba de extremo a extremo se supera |
 
 Windows 10 aún no se ha probado en hardware real. Otros adaptadores: consulte [Adaptadores recomendados](setup#adapters).
 
@@ -128,7 +136,8 @@ A2DPWB omite por completo la pila Bluetooth de Windows. Se comunica directamente
 
 ## Funciones
 
-- **Varios códecs**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 y (de forma experimental) Opus con negociación automática
+- **Varios códecs**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 y (de forma experimental) Opus / Opus 05 con negociación automática
+- **LE Audio (experimental, desactivado por defecto)**: LC3 hacia auriculares LE Audio (BAP unicast, los dos auriculares de un par, volumen del auricular, botones multimedia, baja latencia GMAP). Necesita un adaptador con canales isócronos de Bluetooth 5.2; solo probado con el emulador de Bluetooth, todavía no con auriculares LE Audio reales ([Uso](usage#le-audio))
 - **Tres modos de captura**: loopback del sistema, enrutamiento a través de un dispositivo de audio virtual o la salida de una sola aplicación
 - **Ventana, bandeja y CLI**: una ventana para la configuración y el diagnóstico, un panel desplegable y un menú en la bandeja para conectarse en el día a día, y una línea de comandos (consulte [Uso](usage))
 - **WinUSB desde la aplicación**: asigna el controlador WinUSB al adaptador y restaura el controlador original, sin necesidad de Zadig (consulte [Configuración](setup#winusb))

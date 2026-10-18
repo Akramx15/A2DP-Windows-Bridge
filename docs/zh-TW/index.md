@@ -11,7 +11,7 @@ has_toc: false
 適用於 Windows、支援所有轉碼器的藍牙 A2DP 音訊串流工具。
 {: .fs-6 .fw-300 }
 
-使用處於 WinUSB 模式的 USB 藍牙介面卡，以 **LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5** 及（實驗性的）**Opus** 串流系統音訊 -- 不需要核心驅動程式，也不需要測試簽章。
+使用處於 WinUSB 模式的 USB 藍牙介面卡，以 **LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5** 及（實驗性的）**Opus** 與 PipeWire 的 **Opus 05** 串流系統音訊 -- 不需要核心驅動程式，也不需要測試簽章。
 
 [開始使用](setup){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [GitHub](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge){: .btn .fs-5 .mb-4 .mb-md-0 }
@@ -23,15 +23,16 @@ has_toc: false
 | 轉碼器 | 位元率 | 取樣率 | 位元深度 | 延遲 |
 |:------|:--------|:------------|:----------|:--------|
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | 約 200 ms |
-| aptX HD | 576 kbps | 44.1/48 kHz | 24 bit | 約 150 ms |
-| aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
+| aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | 約 150 ms |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
-| SBC XQ | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
+| SBC XQ 🧪 | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最高約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
-| FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
+| FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
 | LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 
 ### 各平台的轉碼器支援（傳送到耳機）
 
@@ -42,11 +43,12 @@ has_toc: false
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 實驗性 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ 不在 Ubuntu 的套件中 | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC 允許雙聲道且 bitpool ≥ 43 的接收端） |
+| SBC XQ | ❌ | ❌ | ✅ | 🧪 實驗性（SBC 允許雙聲道且 bitpool ≥ 43 的接收端） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
-| FastStream | ❌ | ❌ | ✅ | ✅（僅限音樂，需明確選擇） |
+| FastStream | ❌ | ❌ | ✅ | 🧪 實驗性（僅限音樂，需明確選擇） |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
-| Opus（Android 的 A2DP Opus） | ❌ | ❌ | 未確認 | 🧪 實驗性 |
+| Opus（Android 的 A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2+（`opus_g`）；Ubuntu 24.04（PipeWire 1.0.5）中沒有 | 🧪 實驗性 |
+| Opus 05（PipeWire 自有的 Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57+（`opus_05`，僅限 PipeWire 裝置） | 🧪 實驗性（需明確選擇） |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 支援 · 🧪 實驗性 · ❌ 不支援。所有欄位皆為傳送端（PC → 耳機）。「內建」指不使用 A2DPWB 時作業系統本身的藍牙音訊；Ubuntu 欄位為 Ubuntu 26.04 的 PipeWire 轉碼器組合（`libspa-0.2-bluetooth`）。
@@ -59,6 +61,12 @@ has_toc: false
 
 {: .warning }
 **Opus 為實驗性功能。** 這是 Android 的 A2DP Opus 廠商轉碼器（Android 13 以上，廠商 ID 0x000000E0 Google）：48 kHz、20 ms 訊框，依 Android 的要求以 256 kbps 立體聲傳送（標準 192 kbps、行動 128 kbps），使用 libopus 1.5.2 編碼。它通過了針對虛擬接收端的端對端測試，但尚未在實際的 Opus 耳機上驗證。在「自動」模式下，其優先順序低於 LHDC V5，高於 AAC / SBC。
+
+{: .warning }
+**Opus 05 為實驗性功能，尚未在實際裝置上驗證。** 這是 PipeWire 自有的 A2DP Opus 廠商轉碼器（廠商 ID 0x000005F1，轉碼器 0x1005；PipeWire 的 `opus_05`），只有 PipeWire 實作了它，因此接收端必須是以 PipeWire 作為 A2DP 接收端的 PC。A2DPWB 只傳送立體聲音樂方向（沒有 5.1 / 7.1，也沒有回傳通道）：48 kHz、10 ms 訊框（接收端只支援 20 ms 時用 20 ms），編碼器與位元率和 Opus 相同，並限制在接收端的上限以內。「自動」不會選擇它；請在設定檔中或用 `-c opus05` 選擇。它已通過針對提供 PipeWire 能力的虛擬接收端的端對端測試，但尚未在實際的 PipeWire 接收端上試過。作為 A2DP 接收端的 PipeWire 自 0.3.57 起可解碼 Opus 05，自 1.2.0 起可解碼 Android 的 Opus（`opus_g`）：Ubuntu 24.04 LTS 內附 PipeWire 1.0.5（僅 Opus 05），Ubuntu 25.10（1.4.7）與 26.04 LTS（1.6.2）兩者皆有；兩者都尚未用 A2DPWB 驗證。
+
+{: .warning }
+**SBC XQ 為實驗性功能。** 2026-10-18，Sony WH-1000XM4 接受了它（雙聲道，48 kHz 下 bitpool 43，552 kbps），A2DPWB 向其串流時沒有掉封包，但音質沒有經過聽感評判，也沒有試過其他耳機。拒絕該設定的接收端會改用一般 SBC 重新連線。**FastStream 為實驗性功能：**它已通過針對虛擬接收端的端對端測試，但尚未用實際的 FastStream 耳機試過。僅支援音樂方向；「自動」不會選擇它。
 
 {: .note }
 **只需要傳統 aptX？** Windows 10 的內建藍牙堆疊已支援傳統 aptX（不含 aptX HD、aptX LL 或 aptX Adaptive），因此不需要 A2DPWB。A2DPWB 主要適用於 LDAC、aptX HD 與 aptX Low Latency。
@@ -83,10 +91,10 @@ A2DPWB 本身僅能在 Windows（Windows 10 22H2 或 Windows 11）上以 x64 與
 
 | 項目 | 環境 | 轉碼器 | 結果 |
 |:-----|:------|:-------|:-------|
-| Sony WH-1000XM4（耳機） | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC | ✅ 可播放（XM4 不支援 aptX） |
+| Sony WH-1000XM4（耳機） | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC; SBC XQ 可串流（未經聽感評判） | ✅ 可播放（XM4 不支援 aptX） |
 | TP-Link UB500（Realtek RTL8761BU，介面卡） | Windows 11、WinUSB、linux-firmware `rtl8761bu` | – | ✅ |
 | 測量用接收器 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04，透過無線傳輸 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ 已接收並測量 |
-| 虛擬連結 `tools/emu` (Bumble) | Windows 11，無無線電 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, Opus | ✅ 端對端測試通過 |
+| 虛擬連結 `tools/emu` (Bumble) | Windows 11，無無線電 | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus, Opus 05 | ✅ 端對端測試通過 |
 
 尚未在實機上試過 Windows 10。其他介面卡：請參閱 [建議的介面卡](setup#adapters)。
 
@@ -128,7 +136,8 @@ A2DPWB 完全繞過 Windows 藍牙堆疊。它透過 WinUSB 直接與 USB 藍牙
 
 ## 功能
 
-- **多轉碼器**：LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5 及（實驗性的）Opus，自動協商
+- **多轉碼器**：LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5 及（實驗性的）Opus / Opus 05，自動協商
+- **LE Audio（實驗性，預設關閉）**：以 LC3 傳送到 LE Audio 耳機（BAP 單播、一對耳機的左右兩耳、耳機音量、媒體按鍵、GMAP 低延遲）。需要支援 Bluetooth 5.2 等時通道的介面卡；只在藍牙模擬器上測試過，尚未在實際的 LE Audio 耳機上確認（請參閱[使用方式](usage#le-audio)）
 - **三種擷取模式**：系統回送、虛擬音訊裝置路由，或單一應用程式的輸出
 - **視窗、系統匣與 CLI**：用於設定與診斷的視窗、日常連線用的系統匣快顯視窗與選單，以及命令列（請參閱 [使用方式](usage)）
 - **應用程式內的 WinUSB 設定**：為介面卡指派 WinUSB 驅動程式，並可還原原本的驅動程式，不需要 Zadig（請參閱 [安裝設定](setup#winusb)）
