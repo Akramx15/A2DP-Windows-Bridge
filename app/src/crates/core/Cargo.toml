@@ -13,7 +13,7 @@ bt-host.workspace = true
 # LE Audio (experimental): plans, SDU sets, --le-sim-volume, the MCP backend
 le-audio.workspace = true
 hci-transport.workspace = true
-codec.workspace = true
+codec = { workspace = true, features = ["default"] }
 pipeline.workspace = true
 audio-capture.workspace = true
 win-sys.workspace = true

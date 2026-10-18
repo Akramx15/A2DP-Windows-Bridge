@@ -14,7 +14,7 @@ a2dpwb-core.workspace = true
 bt-host.workspace = true
 # cli.rs: -u (UsbSelector)
 hci-transport.workspace = true
-codec.workspace = true
+codec = { workspace = true, features = ["default"] }
 ipc.workspace = true
 win-sys.workspace = true
 audio-capture.workspace = true

@@ -32,7 +32,8 @@ repository = "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge"
 [workspace.dependencies]
 btstack-sys = { path = "app/src/crates/btstack-sys" }
 hci-transport = { path = "app/src/crates/hci-transport" }
-codec = { path = "app/src/crates/codec" }
+# Members opt in to codecs: core takes "default", the others only what they use
+codec = { path = "app/src/crates/codec", default-features = false }
 bt-host = { path = "app/src/crates/bt-host" }
 pipeline = { path = "app/src/crates/pipeline" }
 a2dpwb-core = { path = "app/src/crates/core" }

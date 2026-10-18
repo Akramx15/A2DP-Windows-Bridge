@@ -78,10 +78,13 @@ jobs:
       - name: No unsafe outside the FFI crates
         shell: pwsh
         run: |
-          $allowed = 'btstack-sys','ldac-sys','openaptx-sys','fdkaac-sys','lhdcv5-sys','opus-sys','win-sys'
+          $allowed = 'btstack-sys','ldac-sys','openaptx-sys','fdkaac-sys','lhdcv5-sys','opus-sys','lc3-sys','win-sys'
+          # a counting GlobalAlloc (unsafe impl by definition) in a test
+          $allowedFiles = 'crates/pipeline/tests/le_no_alloc.rs'
           $src = (Resolve-Path app/src).Path
           $bad = Get-ChildItem $src -Recurse -Filter *.rs |
             Where-Object { $_.FullName -notmatch '\\(node_modules|target)\\' } |
+            Where-Object { $allowedFiles -notcontains ([IO.Path]::GetRelativePath($src, $_.FullName) -replace '\\', '/') } |
             Where-Object {
               # app/src/crates/<crate>/... or app/src/<core|driver|ui>/...
               $parts = [IO.Path]::GetRelativePath($src, $_.FullName) -split '[\\/]'
