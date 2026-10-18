@@ -8,6 +8,7 @@ pub mod bt_paired;
 pub mod console;
 pub mod driver;
 pub mod elevation;
+pub mod locale;
 pub mod media_keys;
 pub mod mmcss;
 pub mod notify;
