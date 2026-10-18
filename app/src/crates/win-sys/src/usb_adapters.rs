@@ -9,6 +9,8 @@
 //! and version (to check a restore), and for a WinUSB device the class of
 //! interface 0 read through WinUSB (v1 is_bluetooth_class: E0/01/01, or
 //! the vendor class FF/01/01 with the HCI endpoints, as on the ASUS BT400).
+//! A device whose driver failed to start has no such interface and is
+//! found among the USB enumerator's device nodes instead.
 //!
 //! Which VID:PID are Realtek chips is bt-host's chips table; this module
 //! knows nothing of chips. `UsbDevice::looks_like_bluetooth` is v1's
@@ -17,11 +19,12 @@
 //! Also holds the SetupAPI helpers the driver module shares.
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_DEVNODE_STATUS_FLAGS, CM_Get_DevNode_Status, CM_PROB, CR_SUCCESS, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT,
-    DN_HAS_PROBLEM, HDEVINFO, SETUP_DI_REGISTRY_PROPERTY, SP_DEVICE_INTERFACE_DATA, SP_DEVICE_INTERFACE_DETAIL_DATA_W,
-    SP_DEVINFO_DATA, SPDRP_CLASS, SPDRP_COMPATIBLEIDS, SPDRP_DEVICEDESC, SPDRP_FRIENDLYNAME, SPDRP_HARDWAREID,
-    SPDRP_MFG, SPDRP_SERVICE, SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces,
-    SetupDiGetClassDevsW, SetupDiGetDeviceInstanceIdW, SetupDiGetDeviceInterfaceDetailW, SetupDiGetDevicePropertyW,
+    CM_DEVNODE_STATUS_FLAGS, CM_Get_DevNode_Status, CM_PROB, CR_SUCCESS, DIGCF_ALLCLASSES, DIGCF_DEVICEINTERFACE,
+    DIGCF_PRESENT, DN_HAS_PROBLEM, HDEVINFO, SETUP_DI_REGISTRY_PROPERTY, SP_DEVICE_INTERFACE_DATA,
+    SP_DEVICE_INTERFACE_DETAIL_DATA_W, SP_DEVINFO_DATA, SPDRP_CLASS, SPDRP_COMPATIBLEIDS, SPDRP_DEVICEDESC,
+    SPDRP_FRIENDLYNAME, SPDRP_HARDWAREID, SPDRP_MFG, SPDRP_SERVICE, SetupDiCreateDeviceInfoList,
+    SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW,
+    SetupDiGetDeviceInstanceIdW, SetupDiGetDeviceInterfaceDetailW, SetupDiGetDevicePropertyW,
     SetupDiGetDeviceRegistryPropertyW, SetupDiOpenDeviceInfoW,
 };
 use windows::Win32::Devices::Properties::{
@@ -40,7 +43,7 @@ use windows::Win32::Foundation::{
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OVERLAPPED, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
-use windows::core::{GUID, HSTRING, PCWSTR};
+use windows::core::{GUID, HSTRING, PCWSTR, w};
 
 use crate::driver::{DriverInfo, DriverKind};
 
@@ -80,7 +83,8 @@ pub struct UsbDevice {
     /// e.g. `USB\VID_0BDA&PID_8771\00E04C239987`; what the driver module and
     /// the helper take to name the device
     pub instance_id: String,
-    /// Path of its GUID_DEVINTERFACE_USB_DEVICE interface (for CreateFile)
+    /// Path of its GUID_DEVINTERFACE_USB_DEVICE interface (for CreateFile);
+    /// empty for a device without an active one (its driver failed)
     pub device_path: String,
     pub vid: u16,
     pub pid: u16,
@@ -145,6 +149,12 @@ impl UsbDevice {
 /// WinUSB-bound device is opened for a moment to read interface 0; one in
 /// use by another program (v1, or a running A2DPWB) cannot be opened and
 /// says so in `probe`, nothing else happens to it.
+///
+/// A device whose function driver failed to start (Code 31, as a vendor
+/// Bluetooth driver after a restore) has no active USB device interface;
+/// those come from a second pass over the USB enumerator's device nodes,
+/// with an empty `device_path` and their `problem_code`, so the adapter
+/// can still be given WinUSB.
 pub fn enumerate(probe_winusb: bool) -> windows::core::Result<Vec<UsbDevice>> {
     // SAFETY: interface class GUID and flags as documented; no window.
     let set = DevInfoSet(unsafe {
@@ -169,37 +179,59 @@ pub fn enumerate(probe_winusb: bool) -> windows::core::Result<Vec<UsbDevice>> {
         }
         let Some((path, data)) = set.interface_detail(&intf) else { continue };
         let Some(instance_id) = set.instance_id(&data) else { continue };
-        let Some((vid, pid)) = parse_vid_pid(&instance_id).or_else(|| parse_vid_pid(&path)) else { continue };
-        // VMware's virtual USB controller adapters, as v1 skips them
-        if vid == 0x0E0F {
-            continue;
+        if let Some(d) = set.usb_device(&data, instance_id, path, probe_winusb) {
+            result.push(d);
         }
-        let driver = set.driver_info(&data);
-        let driver_kind = DriverKind::classify(&driver.service, &driver.class_name);
-        let compatible_ids = set.registry_multi_sz(&data, SPDRP_COMPATIBLEIDS);
-        let usb_class = compatible_ids.iter().find_map(|id| parse_usb_class_id(id));
-        let probe = (probe_winusb && driver_kind == DriverKind::WinUsb).then(|| probe_interface(&path));
-        result.push(UsbDevice {
-            name: set
-                .registry_string(&data, SPDRP_FRIENDLYNAME)
-                .or_else(|| set.registry_string(&data, SPDRP_DEVICEDESC))
-                .unwrap_or_default(),
-            bus_reported_name: set.property_string(&data, &DEVPKEY_Device_BusReportedDeviceDesc),
-            manufacturer: set.registry_string(&data, SPDRP_MFG).unwrap_or_default(),
-            hardware_ids: set.registry_multi_sz(&data, SPDRP_HARDWAREID),
-            problem_code: problem_code(data.DevInst),
-            instance_id,
-            device_path: path,
-            vid,
-            pid,
-            compatible_ids,
-            usb_class,
-            driver,
-            driver_kind,
-            probe,
-        });
+    }
+    match devices_without_interface(&result) {
+        Ok(extra) => result.extend(extra),
+        Err(e) => tracing::debug!("usb_adapters: listing USB device nodes failed: {e}"),
     }
     Ok(result)
+}
+
+/// Present device nodes of the USB enumerator that `listed` does not have
+/// (no active USB device interface: a failed or missing driver)
+fn devices_without_interface(listed: &[UsbDevice]) -> windows::core::Result<Vec<UsbDevice>> {
+    // SAFETY: enumerator name and flags as documented; no window.
+    let set = DevInfoSet(unsafe { SetupDiGetClassDevsW(None, w!("USB"), None, DIGCF_ALLCLASSES | DIGCF_PRESENT) }?);
+    let listed: Vec<&str> = listed.iter().map(|d| d.instance_id.as_str()).collect();
+    let mut result = Vec::new();
+    for index in 0.. {
+        let mut data = SP_DEVINFO_DATA { cbSize: size_of::<SP_DEVINFO_DATA>() as u32, ..Default::default() };
+        // SAFETY: valid set; out structure with its size set.
+        if let Err(e) = unsafe { SetupDiEnumDeviceInfo(set.0, index, &mut data) } {
+            if e.code() != ERROR_NO_MORE_ITEMS.to_hresult() {
+                tracing::debug!("usb_adapters: SetupDiEnumDeviceInfo stopped: {e}");
+            }
+            break;
+        }
+        let Some(instance_id) = set.instance_id(&data) else { continue };
+        if !is_unlisted_usb_device(&instance_id, &listed) {
+            continue;
+        }
+        if let Some(d) = set.usb_device(&data, instance_id, String::new(), false) {
+            tracing::debug!(
+                "usb_adapters: {} has no USB device interface (problem code {:?})",
+                d.instance_id,
+                d.problem_code
+            );
+            result.push(d);
+        }
+    }
+    Ok(result)
+}
+
+/// A device node of the USB enumerator worth adding to the interface list:
+/// a device with a VID:PID (not a root hub, not one interface of a
+/// composite device, `&MI_xx`) not listed already
+fn is_unlisted_usb_device(instance_id: &str, listed: &[&str]) -> bool {
+    let upper = instance_id.to_ascii_uppercase();
+    let Some(hw) = upper.strip_prefix(r"USB\").and_then(|rest| rest.split('\\').next()) else { return false };
+    !hw.starts_with("ROOT_HUB")
+        && !hw.contains("&MI_")
+        && parse_vid_pid(hw).is_some()
+        && !listed.iter().any(|l| l.eq_ignore_ascii_case(instance_id))
 }
 
 /// VID and PID from an instance ID or device path (`VID_0BDA&PID_8771`,
@@ -386,6 +418,47 @@ impl DevInfoSet {
         Some((path, data))
     }
 
+    /// A device of the set as `enumerate` lists it; None without a VID:PID
+    /// or for VMware's virtual USB controller adapters (as v1 skips them).
+    /// The probe needs `path`, so runs only for a device with an interface.
+    fn usb_device(
+        &self,
+        data: &SP_DEVINFO_DATA,
+        instance_id: String,
+        path: String,
+        probe_winusb: bool,
+    ) -> Option<UsbDevice> {
+        let (vid, pid) = parse_vid_pid(&instance_id).or_else(|| parse_vid_pid(&path))?;
+        if vid == 0x0E0F {
+            return None;
+        }
+        let driver = self.driver_info(data);
+        let driver_kind = DriverKind::classify(&driver.service, &driver.class_name);
+        let compatible_ids = self.registry_multi_sz(data, SPDRP_COMPATIBLEIDS);
+        let usb_class = compatible_ids.iter().find_map(|id| parse_usb_class_id(id));
+        let probe =
+            (probe_winusb && driver_kind == DriverKind::WinUsb && !path.is_empty()).then(|| probe_interface(&path));
+        Some(UsbDevice {
+            name: self
+                .registry_string(data, SPDRP_FRIENDLYNAME)
+                .or_else(|| self.registry_string(data, SPDRP_DEVICEDESC))
+                .unwrap_or_default(),
+            bus_reported_name: self.property_string(data, &DEVPKEY_Device_BusReportedDeviceDesc),
+            manufacturer: self.registry_string(data, SPDRP_MFG).unwrap_or_default(),
+            hardware_ids: self.registry_multi_sz(data, SPDRP_HARDWAREID),
+            problem_code: problem_code(data.DevInst),
+            instance_id,
+            device_path: path,
+            vid,
+            pid,
+            compatible_ids,
+            usb_class,
+            driver,
+            driver_kind,
+            probe,
+        })
+    }
+
     pub(crate) fn instance_id(&self, data: &SP_DEVINFO_DATA) -> Option<String> {
         let mut buf = [0u16; 512];
         let mut needed = 0u32;
@@ -492,6 +565,54 @@ mod tests {
         let data: Vec<u16> = "a\0bc\0\0".encode_utf16().collect();
         assert_eq!(parse_multi_sz(&data), ["a", "bc"]);
         assert!(parse_multi_sz(&[0, 0]).is_empty());
+    }
+
+    #[test]
+    fn devnodes_added_without_interface() {
+        let listed = [r"USB\VID_0BDA&PID_8771\00E04C239987"];
+        // TP-Link UB500 whose vendor driver failed (Code 31): no interface
+        assert!(is_unlisted_usb_device(r"USB\VID_2357&PID_0604\00E04C000001", &listed));
+        // already listed through its interface (any case)
+        assert!(!is_unlisted_usb_device(r"usb\vid_0bda&pid_8771\00e04c239987", &listed));
+        // root hubs, a composite device's interfaces, other enumerators
+        assert!(!is_unlisted_usb_device(r"USB\ROOT_HUB30\4&1234&0&0", &listed));
+        assert!(!is_unlisted_usb_device(r"USB\VID_8087&PID_0026&MI_00\6&2B0A&0&0000", &listed));
+        assert!(!is_unlisted_usb_device(r"BTH\MS_BTHPAN\7&1234", &listed));
+        assert!(!is_unlisted_usb_device(r"USB\VID_8087&PID", &listed));
+    }
+
+    /// A UB500 with TP-Link's BTHUSB driver failed (Code 31), as the second
+    /// pass lists it: still offered as an adapter
+    #[test]
+    fn failed_driver_still_looks_like_bluetooth() {
+        let driver = DriverInfo {
+            service: "BTHUSB".into(),
+            inf_name: "oem91.inf".into(),
+            class_name: "Bluetooth".into(),
+            ..Default::default()
+        };
+        let mut d = UsbDevice {
+            instance_id: r"USB\VID_2357&PID_0604\00E04C000001".into(),
+            device_path: String::new(),
+            vid: 0x2357,
+            pid: 0x0604,
+            name: "TP-Link Bluetooth USB Adapter".into(),
+            bus_reported_name: None,
+            manufacturer: String::new(),
+            hardware_ids: vec![],
+            compatible_ids: vec![r"USB\Class_E0&SubClass_01&Prot_01".into(), r"USB\Class_E0&SubClass_01".into()],
+            usb_class: Some(UsbClass::BLUETOOTH),
+            driver_kind: DriverKind::classify(&driver.service, &driver.class_name),
+            driver,
+            problem_code: Some(31),
+            probe: None,
+        };
+        assert_eq!(d.driver_kind, DriverKind::Bluetooth);
+        assert!(d.looks_like_bluetooth());
+        // no driver left at all: the compatible ID still tells
+        d.driver = DriverInfo::default();
+        d.driver_kind = DriverKind::None;
+        assert!(d.looks_like_bluetooth());
     }
 
     /// Read-only enumeration; WinUSB devices in use (e.g. by v1) are only
