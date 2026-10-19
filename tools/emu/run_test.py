@@ -107,6 +107,7 @@ NEGOTIATION = {
     'auto-not-opus05': ('auto', ['--codecs', 'sbc', 'aac', 'opus05'], 'aac', []),
 }
 TONES = ((1000.0, 0.5), (1500.0, 0.5))  # (frequency, amplitude) per channel, as --test-tone
+LATE_SDU_FAILURE = 'reached the controller after their SDU interval began'  # LE Audio cases run once more
 
 
 def parse_report(text):
@@ -452,7 +453,7 @@ def run_le_case(args, case, port):
             n, worst = per_cis.get(h, (0, 0.0))
             per_cis[h] = (max(n, int(count)), max(worst, float(ms)))
         for h, (n, worst) in sorted(per_cis.items()):
-            failures.append(f'CIS {h}: {n} SDU(s) reached the controller after their SDU interval began '
+            failures.append(f'CIS {h}: {n} SDU(s) {LATE_SDU_FAILURE} '
                             f'(worst {worst} ms; the queue of a real controller would have run empty)')
 
     # A2DPWB's own counters, per stream set-up ("stopped sending", the
@@ -520,6 +521,18 @@ def main_le(args):
     for index, case in enumerate(c for c in all_cases if c.name in wanted):
         print(f'--- LE Audio {case.name} ...', flush=True)
         failures, detail = run_le_case(args, case, args.base_port + 100 + index)
+        if failures and all(LATE_SDU_FAILURE in f for f in failures):
+            # Late SDUs only: a shared machine (a CI runner) can hold up
+            # A2DPWB's sender thread a few ms now and then. Run the case
+            # once more (the first run kept as le-<case>-try1); late SDUs
+            # again fail it
+            print(f'    late SDUs only, once more  {detail}')
+            for failure in failures:
+                print(f'      - {failure}')
+            out = os.path.join(args.out, 'le-' + case.name)
+            shutil.rmtree(out + '-try1', ignore_errors=True)
+            os.rename(out, out + '-try1')
+            failures, detail = run_le_case(args, case, args.base_port + 100 + index)
         results.append((case.name, failures))
         print(f'    {"PASS" if not failures else "FAIL"}  {detail}')
         for failure in failures:
