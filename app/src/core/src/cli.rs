@@ -441,6 +441,7 @@ pub fn run(args: &[String]) -> i32 {
         max_media_payload: a.max_packet,
         le: None,
         spatial: a.spatial.clone(),
+        spatial_keep_rate: a.rate == Some(96_000),
     });
 
     let mut streaming_since: Option<Instant> = None;

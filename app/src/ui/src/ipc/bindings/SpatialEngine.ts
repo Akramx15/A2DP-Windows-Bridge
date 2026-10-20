@@ -15,4 +15,8 @@ label: string,
 /**
  * The engine program
  */
-path: string, };
+path: string, 
+/**
+ * The stage's family ("sony", "upmixer")
+ */
+family: string, };

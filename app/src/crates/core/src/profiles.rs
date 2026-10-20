@@ -177,6 +177,9 @@ impl Profile {
                 .spatial_engine
                 .then(|| PathBuf::from(self.spatial_engine_path.trim()))
                 .filter(|p| !p.as_os_str().is_empty()),
+            // A profile asking for the high LDAC rate keeps it and the
+            // pipeline resamples around the engine
+            spatial_keep_rate: self.sample_rate == 96_000,
         })
     }
 }

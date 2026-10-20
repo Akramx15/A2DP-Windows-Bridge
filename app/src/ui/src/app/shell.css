@@ -80,6 +80,17 @@
   flex: none;
   padding: 0 var(--s2);
 }
+/* The effect choices (Sony / Upmixer / off) in the flyout */
+.fly-modes {
+  margin-top: var(--s2);
+}
+.fly-modes .inline {
+  gap: var(--s1);
+}
+.fly-modes .hint {
+  flex-basis: 100%;
+  margin: 0;
+}
 .fly-foot .spacer {
   flex: 1;
 }

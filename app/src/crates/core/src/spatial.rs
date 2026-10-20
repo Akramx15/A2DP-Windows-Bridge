@@ -16,6 +16,59 @@ pub struct SpatialEngine {
     pub label: String,
     /// The engine program
     pub path: String,
+    /// The stage's family ("sony", "upmixer"): what the effect is
+    pub family: String,
+}
+
+/// How a stage is started: the program, its arguments and the folder it runs
+/// in. A stage's manifest carries the command; without one the engine's own
+/// convention is used (the program with "- stream 1 1024").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageCommand {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+}
+
+/// The command of the stage the engine program belongs to
+pub fn command_for(program: &Path) -> StageCommand {
+    let dir = program.parent().map(Path::to_path_buf).unwrap_or_default();
+    let manifest = std::fs::read_to_string(dir.join("STAGE-MANIFEST.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    let declared = manifest
+        .as_ref()
+        .and_then(|m| m.get("command"))
+        .and_then(|c| c.as_array())
+        .map(|items| items.iter().filter_map(|i| i.as_str().map(str::to_string)).collect::<Vec<String>>())
+        .filter(|items| !items.is_empty());
+    let (program, args) = match declared {
+        Some(items) => {
+            let mut it = items.into_iter();
+            let first = it.next().unwrap_or_default();
+            let rest: Vec<String> = it.collect();
+            (resolve(&dir, &first), rest)
+        }
+        None => (
+            resolve(&dir, "sony_native_stream"),
+            vec!["-".to_string(), "stream".to_string(), "1".to_string(), "1024".to_string()],
+        ),
+    };
+    StageCommand { program, args, cwd: dir }
+}
+
+/// The program of a stage: relative to the stage folder, and with the
+/// Windows executable suffix when the file carries none
+fn resolve(dir: &Path, name: &str) -> PathBuf {
+    let candidate = Path::new(name);
+    let path = if candidate.is_absolute() { candidate.to_path_buf() } else { dir.join(candidate) };
+    if path.extension().is_none() {
+        let with_exe = path.with_extension("exe");
+        if with_exe.is_file() {
+            return with_exe;
+        }
+    }
+    path
 }
 
 /// The engines in `dir`: the folder itself when it holds a program, then every
@@ -40,15 +93,26 @@ pub fn list(dir: &Path) -> Vec<SpatialEngine> {
 
 /// The engine program of one stage folder, with its label
 fn engine_in(dir: &Path) -> Option<SpatialEngine> {
-    let program = ["sony_native_stream.exe", "sony_native_stream"].iter().map(|n| dir.join(n)).find(|p| p.is_file())?;
-    let id = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    let label = std::fs::read_to_string(dir.join("STAGE-MANIFEST.json"))
+    let manifest = std::fs::read_to_string(dir.join("STAGE-MANIFEST.json"))
         .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .and_then(|v| v.get("label").and_then(|l| l.as_str()).map(str::to_string))
-        .filter(|l| !l.is_empty())
-        .unwrap_or_else(|| id.clone());
-    Some(SpatialEngine { id, label, path: program.to_string_lossy().to_string() })
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    // The program of the stage: the one its manifest names (a stage can be a
+    // program of its own, e.g. a Python runtime with a native library), or the
+    // engine's own executable.
+    let named = manifest
+        .as_ref()
+        .and_then(|m| m.get("program"))
+        .and_then(|p| p.as_str())
+        .map(|name| resolve(dir, name))
+        .filter(|p| p.is_file() && p.starts_with(dir));
+    let program = named.or_else(|| {
+        ["sony_native_stream.exe", "sony_native_stream"].iter().map(|n| dir.join(n)).find(|p| p.is_file())
+    })?;
+    let id = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let text = |key: &str| manifest.as_ref().and_then(|m| m.get(key)).and_then(|v| v.as_str()).map(str::to_string);
+    let label = text("label").filter(|l| !l.is_empty()).unwrap_or_else(|| id.clone());
+    let family = text("family").unwrap_or_default();
+    Some(SpatialEngine { id, label, path: program.to_string_lossy().to_string(), family })
 }
 
 #[cfg(test)]

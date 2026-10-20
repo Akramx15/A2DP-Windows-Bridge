@@ -58,6 +58,24 @@ pub fn append_i16(raw: &[u8], t: SampleType, in_ch: usize, out_ch: usize, out: &
     }
 }
 
+/// Appends `raw` (interleaved, `in_ch` channels of `t`) to `out` as
+/// interleaved stereo float32, the format the spatial stage and the resampler
+/// work on. Mono reaches both channels, extra channels are dropped.
+pub fn append_f32(raw: &[u8], t: SampleType, in_ch: usize, out: &mut Vec<f32>) {
+    let frames = raw.len() / (in_ch * t.bytes());
+    for f in 0..frames {
+        for c in 0..2 {
+            let i = f * in_ch + c.min(in_ch - 1);
+            let s = sample(raw, i, t);
+            out.push(match t {
+                SampleType::F32 => f32::from_le_bytes(s),
+                SampleType::I16 => i16::from_le_bytes([s[0], s[1]]) as f32 / 32768.0,
+                SampleType::I32 => (i32::from_le_bytes(s) >> 16) as f32 / 32768.0,
+            });
+        }
+    }
+}
+
 /// As [`append_i16`], to 32-bit MSB-aligned
 pub fn append_i32(raw: &[u8], t: SampleType, in_ch: usize, out_ch: usize, out: &mut Vec<i32>) {
     let frames = raw.len() / (in_ch * t.bytes());
@@ -71,6 +89,29 @@ pub fn append_i32(raw: &[u8], t: SampleType, in_ch: usize, out_ch: usize, out: &
                 SampleType::I16 => i16::from_le_bytes([s[0], s[1]]) as i32 * 65536,
                 SampleType::I32 => i32::from_le_bytes(s),
             });
+        }
+    }
+}
+
+/// Appends interleaved float32 (as the resampler returns it) to `out` as
+/// 16-bit with `out_ch` channels. `out` must have the capacity.
+pub fn append_i16_f32(samples: &[f32], in_ch: usize, out_ch: usize, out: &mut Vec<i16>) {
+    let frames = samples.len() / in_ch;
+    let use_ch = out_ch.min(in_ch);
+    for f in 0..frames {
+        for c in 0..out_ch {
+            out.push(f32_to_i16(samples[f * in_ch + c.min(use_ch - 1)]));
+        }
+    }
+}
+
+/// As [`append_i16_f32`], to 32-bit MSB-aligned
+pub fn append_i32_f32(samples: &[f32], in_ch: usize, out_ch: usize, out: &mut Vec<i32>) {
+    let frames = samples.len() / in_ch;
+    let use_ch = out_ch.min(in_ch);
+    for f in 0..frames {
+        for c in 0..out_ch {
+            out.push(f32_to_i32(samples[f * in_ch + c.min(use_ch - 1)]));
         }
     }
 }
@@ -107,5 +148,18 @@ mod tests {
         let raw: Vec<u8> = [-1i16, 1].iter().flat_map(|s| s.to_le_bytes()).collect();
         append_i32(&raw, SampleType::I16, 2, 2, &mut out);
         assert_eq!(out, vec![-65536, 65536]);
+    }
+
+    #[test]
+    fn float_stereo_goes_through_the_resampler_helpers() {
+        let mut samples = Vec::with_capacity(4);
+        append_f32(&f32_bytes(&[0.5, -0.5]), SampleType::F32, 2, &mut samples);
+        assert_eq!(samples, vec![0.5, -0.5]);
+        let mut i16s = Vec::with_capacity(2);
+        append_i16_f32(&samples, 2, 2, &mut i16s);
+        assert_eq!(i16s, vec![16383, -16383]);
+        let mut i32s = Vec::with_capacity(2);
+        append_i32_f32(&samples, 2, 2, &mut i32s);
+        assert_eq!(i32s, vec![1073741823, -1073741823]);
     }
 }

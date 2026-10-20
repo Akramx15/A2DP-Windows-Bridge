@@ -7,6 +7,7 @@ import { useApp } from "../app/context";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
+import { SpatialModes } from "../components/SpatialModes";
 import { SpatialPicker } from "../components/SpatialPicker";
 import {
   CodecBadge,
@@ -161,6 +162,7 @@ export function Home() {
                     {t("profile.spatial_engine")}
                   </h2>
                   <div class="mini-body">
+                    <SpatialModes profile={p()} />
                     <SpatialPicker profile={p()} />
                   </div>
                 </section>

@@ -11,7 +11,10 @@ use audio_capture::{Capture, CaptureOptions, Format, Running, SampleFormat, Sink
 use bt_host::{BtHost, ConfigureError, ConnectFailure, MediaSink, ReconnectError};
 use codec::caps::{self, ConfigError, Configuration, RemoteCaps, Unavailable};
 use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
-use pipeline::{BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType, SpatialConfig};
+use pipeline::resample::CAPTURE_RATE;
+use pipeline::{
+    BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, ResampleConfig, SampleType, SpatialConfig,
+};
 
 use crate::messages::Msg;
 use crate::service::Inner;
@@ -39,6 +42,10 @@ pub struct StreamRequest {
     /// Spatial engine (the xm6 360 chain) as a child process: the captured
     /// audio runs through it before it is encoded. None: no such stage.
     pub spatial: Option<PathBuf>,
+    /// Keep the requested capture rate and resample around the spatial
+    /// engine's 48 kHz instead of forcing the capture to 48 kHz (the 96 kHz
+    /// transport). Only honored when the rate is [`CAPTURE_RATE`].
+    pub spatial_keep_rate: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -401,6 +408,27 @@ fn sbc_xq_fallback(kind: CodecKind, failure: &ConfigFailure, requested: Option<C
         && (requested.is_none() || fallback)
 }
 
+/// The spatial engine of a stream: its executable, and whether the capture
+/// keeps its rate and resamples around the engine's 48 kHz (the 96 kHz
+/// transport)
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpatialStage {
+    exe: PathBuf,
+    resample: bool,
+    /// How the stage is started (from its manifest)
+    command: crate::spatial::StageCommand,
+}
+
+impl SpatialStage {
+    /// The stage of a request, or None without an engine
+    fn of(req: &StreamRequest, resample: bool) -> Option<Self> {
+        req.spatial.clone().map(|exe| {
+            let command = crate::spatial::command_for(&exe);
+            SpatialStage { exe, resample, command }
+        })
+    }
+}
+
 /// Starts the encode thread; ABR as the encoder runs it
 fn start_pipeline(
     encoder: Box<dyn Encoder>,
@@ -409,9 +437,21 @@ fn start_pipeline(
     mtu: u16,
     sink: MediaSink,
     host: &BtHost,
-    spatial: Option<PathBuf>,
+    spatial: Option<SpatialStage>,
 ) -> (Pipeline, CaptureInput) {
     let abr = encoder.abr_active();
+    let (spatial, resample) = match spatial {
+        Some(s) => (
+            Some(SpatialConfig {
+                exe: s.exe,
+                program: s.command.program,
+                args: s.command.args,
+                cwd: Some(s.command.cwd),
+            }),
+            s.resample.then_some(ResampleConfig { capture_rate: format.sample_rate }),
+        ),
+        None => (None, None),
+    };
     Pipeline::start(
         PipelineConfig {
             encoder,
@@ -420,7 +460,8 @@ fn start_pipeline(
             mtu,
             abr,
             buffer: BufferPreset::Standard,
-            spatial: spatial.map(|exe| SpatialConfig { exe }),
+            spatial,
+            resample,
         },
         sink,
         host.stats().clone(),
@@ -541,8 +582,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz (supported rate)", kind.name());
         preferred = picked;
     }
-    // The spatial engine works on 48 kHz stereo float32 and nothing else
-    if req.spatial.is_some() && preferred != 48000 {
+    // The spatial engine works on 48 kHz stereo float32 and nothing else.
+    // The 96 kHz transport keeps the capture at 96 kHz and resamples around
+    // the engine instead (the pipeline does the two 2:1 steps).
+    let resample_around_engine = req.spatial.is_some() && req.spatial_keep_rate && preferred == CAPTURE_RATE;
+    if req.spatial.is_some() && preferred != 48000 && !resample_around_engine {
         tracing::info!("spatial engine: capturing at 48000 Hz instead of {preferred} Hz (engine rate)");
         preferred = 48000;
     }
@@ -721,7 +765,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         host.disconnect();
         return inner.notify(StreamState::Error, Msg::new("error.encode_thread"));
     };
-    let (pipeline, input) = start_pipeline(encoder, format, channels, mtu, sink, &host, req.spatial.clone());
+    let (pipeline, input) =
+        start_pipeline(encoder, format, channels, mtu, sink, &host, SpatialStage::of(&req, resample_around_engine));
     let input = SharedInput(Arc::new(Mutex::new(input)));
     let active = match (capture, &req.source) {
         (Some(c), _) => match c.start(Box::new(input.clone())) {
@@ -982,7 +1027,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             info.bitrate_kbps = encoder.bitrate_kbps();
             info.bitrate_capped = encoder.bitrate_capped();
             info.abr = encoder.abr_active();
-            let (p, new_input) = start_pipeline(encoder, format, channels, r.mtu, sink, &host, req.spatial.clone());
+            let (p, new_input) = start_pipeline(
+                encoder,
+                format,
+                channels,
+                r.mtu,
+                sink,
+                &host,
+                SpatialStage::of(&req, resample_around_engine),
+            );
             if let Ok(mut i) = input.0.lock() {
                 *i = new_input;
             }

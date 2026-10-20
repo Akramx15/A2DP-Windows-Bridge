@@ -11,6 +11,7 @@ import { Button, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import { ProfileSwitcher } from "../components/ProfileSwitcher";
+import { SpatialModes } from "../components/SpatialModes";
 import {
   CodecBadge,
   ConnectButton,
@@ -82,6 +83,14 @@ export function Flyout() {
           <Show when={profile()}>{(p) => <CapturePicker profile={p()} />}</Show>
           <CaptureSign onOpen={() => void openMain("diagnostics")} />
         </div>
+      </Show>
+
+      <Show when={profile()}>
+        {(p) => (
+          <div class="fly-modes">
+            <SpatialModes profile={p()} />
+          </div>
+        )}
       </Show>
 
       <Show when={error()}>

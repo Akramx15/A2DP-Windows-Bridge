@@ -305,6 +305,8 @@ pub struct SpatialEngine {
     pub label: String,
     /// The engine program
     pub path: String,
+    /// The stage's family ("sony", "upmixer")
+    pub family: String,
 }
 
 /// Application settings the UI edits

@@ -13,13 +13,13 @@
 //! produced, which is a constant one-block delay, not a growing one.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use crate::convert::SampleType;
 
 /// Frames the engine processes at once
-const ENGINE_FRAMES: usize = 1024;
+pub const ENGINE_FRAMES: usize = 1024;
 /// Stereo float32 bytes of one engine block
 const ENGINE_BLOCK: usize = ENGINE_FRAMES * 2 * 4;
 
@@ -28,6 +28,13 @@ const ENGINE_BLOCK: usize = ENGINE_FRAMES * 2 * 4;
 pub struct SpatialConfig {
     /// The engine executable; its assets sit next to it
     pub exe: PathBuf,
+    /// The program to start (the engine, or the interpreter of a stage that
+    /// is a program itself)
+    pub program: PathBuf,
+    /// Its arguments
+    pub args: Vec<String>,
+    /// The folder it runs in
+    pub cwd: Option<PathBuf>,
 }
 
 /// The engine as a child process
@@ -47,11 +54,9 @@ impl SpatialEngine {
     /// Starts the engine. The child reads the assets next to its executable
     /// ("-"), streams 1024-frame blocks and reports on stderr.
     pub fn start(cfg: &SpatialConfig) -> std::io::Result<Self> {
-        let mut child = Command::new(&cfg.exe)
-            .arg("-")
-            .arg("stream")
-            .arg("1")
-            .arg(ENGINE_FRAMES.to_string())
+        let mut child = Command::new(&cfg.program)
+            .args(&cfg.args)
+            .current_dir(cfg.cwd.as_deref().unwrap_or_else(|| cfg.exe.parent().unwrap_or(Path::new("."))))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -96,13 +101,47 @@ impl SpatialEngine {
                 self.pending.extend_from_slice(&s.to_le_bytes());
             }
         }
+        if !self.forward() {
+            return None;
+        }
+        Some(std::mem::take(&mut self.ready))
+    }
+
+    /// Runs interleaved stereo float32 at 48 kHz (the resampling stage feeds
+    /// it) through the engine and appends the processed frames to `out`.
+    /// False when the engine is not running: the caller then passes the audio
+    /// through unchanged.
+    pub fn process_f32(&mut self, samples: &[f32], out: &mut Vec<f32>) -> bool {
+        if self.failed {
+            return false;
+        }
+        if samples.is_empty() {
+            return true;
+        }
+        self.pending.reserve(samples.len() * 4);
+        for &s in samples {
+            self.pending.extend_from_slice(&s.to_le_bytes());
+        }
+        if !self.forward() {
+            return false;
+        }
+        out.reserve(self.ready.len() / 4);
+        for b in self.ready.as_chunks::<4>().0 {
+            out.push(f32::from_le_bytes(*b));
+        }
+        self.ready.clear();
+        true
+    }
+
+    /// Hands whole engine blocks over and takes their processed output
+    fn forward(&mut self) -> bool {
         while self.pending.len() >= ENGINE_BLOCK {
             let block: Vec<u8> = self.pending.drain(..ENGINE_BLOCK).collect();
             if !self.feed(&block) {
-                return None;
+                return false;
             }
         }
-        Some(std::mem::take(&mut self.ready))
+        true
     }
 
     /// Drops what is in flight (the stream restarted)
@@ -130,12 +169,28 @@ impl SpatialEngine {
             self.failed = true;
             return false;
         };
+        // The engine answers with the block it was given; a stage that ends
+        // early (the last partial block) answers with less.
         let mut out = vec![0u8; ENGINE_BLOCK];
-        if let Err(e) = stdout.read_exact(&mut out) {
-            tracing::error!("spatial engine: {e}");
+        let mut got = 0usize;
+        while got < out.len() {
+            match stdout.read(&mut out[got..]) {
+                Ok(0) => break,
+                Ok(n) => got += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => {
+                    tracing::error!("spatial engine: {e}");
+                    self.failed = true;
+                    return false;
+                }
+            }
+        }
+        if got == 0 {
+            tracing::info!("spatial engine: the stage ended");
             self.failed = true;
             return false;
         }
+        out.truncate(got);
         self.ready.extend_from_slice(&out);
         true
     }

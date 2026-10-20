@@ -29,7 +29,13 @@ fn stage_passes_one_block_through_the_engine() {
         eprintln!("skipped: A2DPWB_SPATIAL_ENGINE is not set");
         return;
     };
-    let mut engine = SpatialEngine::start(&SpatialConfig { exe: PathBuf::from(exe) }).expect("engine starts");
+    let mut engine = SpatialEngine::start(&SpatialConfig {
+        exe: PathBuf::from(&exe),
+        program: PathBuf::from(&exe),
+        args: vec!["-".into(), "stream".into(), "1".into(), "1024".into()],
+        cwd: None,
+    })
+    .expect("engine starts");
     let block = tone_block();
     let out = engine.process(&block, SampleType::F32, 2).expect("the engine answers");
     assert_eq!(out.len(), block.len(), "the engine returns as many bytes as it got");
@@ -45,7 +51,13 @@ fn a_fresh_engine_gives_the_same_first_block() {
     };
     let block = tone_block();
     let run = || {
-        let mut engine = SpatialEngine::start(&SpatialConfig { exe: PathBuf::from(&exe) }).expect("engine starts");
+        let mut engine = SpatialEngine::start(&SpatialConfig {
+            exe: PathBuf::from(&exe),
+            program: PathBuf::from(&exe),
+            args: vec!["-".into(), "stream".into(), "1".into(), "1024".into()],
+            cwd: None,
+        })
+        .expect("engine starts");
         engine.process(&block, SampleType::F32, 2).expect("the engine answers")
     };
     assert_eq!(run(), run(), "the same input gives the same output");
@@ -57,7 +69,13 @@ fn a_partial_block_waits_for_the_rest() {
         eprintln!("skipped: A2DPWB_SPATIAL_ENGINE is not set");
         return;
     };
-    let mut engine = SpatialEngine::start(&SpatialConfig { exe: PathBuf::from(exe) }).expect("engine starts");
+    let mut engine = SpatialEngine::start(&SpatialConfig {
+        exe: PathBuf::from(&exe),
+        program: PathBuf::from(&exe),
+        args: vec!["-".into(), "stream".into(), "1".into(), "1024".into()],
+        cwd: None,
+    })
+    .expect("engine starts");
     let block = tone_block();
     let half = block.len() / 2;
     let out = engine.process(&block[..half], SampleType::F32, 2).expect("the engine answers");
@@ -116,7 +134,13 @@ fn the_encoder_gets_the_engine_output() {
         mtu: 600,
         abr: false,
         buffer: BufferPreset::Standard,
-        spatial: Some(SpatialConfig { exe: PathBuf::from(exe) }),
+        spatial: Some(SpatialConfig {
+            exe: PathBuf::from(&exe),
+            program: PathBuf::from(&exe),
+            args: vec!["-".into(), "stream".into(), "1".into(), "1024".into()],
+            cwd: None,
+        }),
+        resample: None,
     };
     let (_pipeline, mut input) = Pipeline::start(config, sink, stats);
     let block = tone_block();
@@ -134,4 +158,32 @@ fn the_encoder_gets_the_engine_output() {
     // What the encoder got is the engine's output, not the tone we pushed
     let tone_as_i16: Vec<i16> = tone_block().chunks(4).map(|s| i16::from_le_bytes([s[0], s[1]])).collect();
     assert_ne!(got, tone_as_i16, "the encoder did not get the raw tone");
+}
+
+/// A stage that is a program of its own (the Upmixer stage: a Python runtime
+/// with a native library) is started with the command its stage names.
+#[test]
+fn a_stage_with_its_own_command_runs() {
+    let Ok(program) = std::env::var("A2DPWB_SPATIAL_PROGRAM") else {
+        eprintln!("skipped: A2DPWB_SPATIAL_PROGRAM is not set");
+        return;
+    };
+    let args: Vec<String> = std::env::var("A2DPWB_SPATIAL_ARGS")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let cwd = std::env::var("A2DPWB_SPATIAL_CWD").ok().map(std::path::PathBuf::from);
+    let mut engine = SpatialEngine::start(&SpatialConfig {
+        exe: std::path::PathBuf::from(&program),
+        program: std::path::PathBuf::from(&program),
+        args,
+        cwd,
+    })
+    .expect("the stage starts");
+    let block = tone_block();
+    let out = engine.process(&block, SampleType::F32, 2).expect("the stage answers");
+    assert_eq!(out.len(), block.len(), "the stage returns as many bytes as it got");
+    assert_ne!(out, block, "the stage changes the audio");
 }
