@@ -1,12 +1,12 @@
 // The profile editor: device, codec (cards comparing quality, latency and
 // stability, and whether the device offered it when it last connected; the
-// ones it did not offer hidden until asked for, each with its quality,
+// ones it did not offer hidden unless forced, each with its quality,
 // sample rate and bit depth behind "..."), capture source (with the capture
-// device's format), volume sync, and the packet size behind "Advanced". The
-// defaults give the best sound; the codec settings only offer what that codec
-// can do (lib/codecs.ts). With LE Audio (experimental) on and an adapter that
-// can stream it, "LE Audio device" makes an LE Audio profile: LC3, so no
-// codec, quality, sample rate or bit depth, and no application capture.
+// device's format), volume sync, and the packet size. The defaults give the
+// best sound; the codec settings only offer what that codec can do
+// (lib/codecs.ts). With LE Audio (experimental) on and an adapter known to
+// stream it, "LE Audio device" makes an LE Audio profile: LC3, so no codec,
+// quality, sample rate or bit depth, and no application capture.
 
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
@@ -58,7 +58,6 @@ export function ProfileEditor(props: { original: string | null }) {
   const [tried, setTried] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [advanced, setAdvanced] = createSignal(false);
 
   const taken = () => snap().profiles.map((x) => x.name).filter((n) => n !== props.original);
   // Re-check while the user fixes things, once a save was tried
@@ -92,8 +91,10 @@ export function ProfileEditor(props: { original: string | null }) {
   );
 
   const leOn = () => snap().settings.le_audio_experimental;
-  // The adapter cannot stream LE Audio (known once a stack with LE Audio ran)
-  const leUnsupported = () => snap().adapter.le_audio === false;
+  // Whether the adapter can stream LE Audio: checked when the stack first
+  // runs on it, and remembered; not known yet counts as no
+  const leSupport = () => snap().adapter.le_audio;
+  const leUnsupported = () => leSupport() !== true;
   const followName = () => {
     if (!nameTouched()) setP("name", defaultProfileName(p.device_name, p.device_address, p.le_audio));
   };
@@ -120,8 +121,6 @@ export function ProfileEditor(props: { original: string | null }) {
     const found = validateProfile(p, taken());
     setProblems(found);
     if (Object.keys(found).length > 0) {
-      // Bring the first problem into view (the advanced ones are hidden)
-      if (found.packet) setAdvanced(true);
       queueMicrotask(() => document.querySelector<HTMLElement>(".field.invalid input, .field.invalid select")?.focus());
       return;
     }
@@ -144,7 +143,7 @@ export function ProfileEditor(props: { original: string | null }) {
   const known = createMemo(() => knownCodecs(snap().devices, p.device_address));
   const support = (id: string) => codecSupport(id, known());
   // Codecs the device did not offer are hidden (the profile's own stays)
-  // until asked for: it may offer them after a change in its app
+  // unless forced: it may offer them after a change in its app
   const [showAll, setShowAll] = createSignal(false);
   const notOffered = () => CODECS.filter((c) => c.id !== p.codec && support(c.id) === "not_offered").length;
   const shownCodecs = () => CODECS.filter((c) => showAll() || c.id === p.codec || support(c.id) !== "not_offered");
@@ -198,8 +197,19 @@ export function ProfileEditor(props: { original: string | null }) {
           <Show when={p.le_audio && !leOn()}>
             <Banner kind="warn">{t("error.le_audio_disabled")}</Banner>
           </Show>
-          <Show when={p.le_audio && leOn() && leUnsupported()}>
-            <Banner kind="warn">{t("ui.profile.le_audio_unsupported")}</Banner>
+          <Show when={leOn() && leUnsupported()}>
+            <Show
+              when={p.le_audio}
+              fallback={
+                <p class="hint">
+                  {leSupport() === false ? t("ui.profile.le_audio_unsupported") : t("ui.profile.le_audio_unchecked")}
+                </p>
+              }
+            >
+              <Banner kind="warn">
+                {leSupport() === false ? t("ui.profile.le_audio_unsupported") : t("ui.profile.le_audio_unchecked")}
+              </Banner>
+            </Show>
           </Show>
           <DevicePicker
             address={p.device_address}
@@ -224,10 +234,13 @@ export function ProfileEditor(props: { original: string | null }) {
                 )}
               </For>
             </div>
-            <Show when={notOffered() > 0}>
-              <button type="button" class="link codec-show-all" aria-expanded={showAll()} onClick={() => setShowAll(!showAll())}>
-                {showAll() ? t("ui.profile.codecs_hide_unoffered") : t("ui.profile.codecs_show_all", notOffered())}
-              </button>
+            <Show when={notOffered() > 0 || showAll()}>
+              <Check
+                label={t("ui.profile.codecs_force", notOffered())}
+                title={t("ui.profile.codecs_force_hint")}
+                checked={showAll()}
+                onChange={setShowAll}
+              />
             </Show>
             <Show when={p.device_address && known().length === 0}>
               <p class="hint">{t("ui.profile.codecs_unknown")}</p>
@@ -380,53 +393,39 @@ export function ProfileEditor(props: { original: string | null }) {
           </Field>
         </Section>
 
-        <section class="card section disclosure">
-          <button
-            type="button"
-            class="disclosure-head"
-            aria-expanded={advanced()}
-            aria-controls="advanced-body"
-            onClick={() => setAdvanced(!advanced())}
+        {/* The one setting left of "Advanced": shown as it is (issue #86) */}
+        <Section title={t("ui.profile.advanced")}>
+          <Field
+            label={t("advanced.max_packet")}
+            hint={t("advanced.max_packet_help", PACKET_MIN, PACKET_MAX, PACKET_DEFAULT)}
+            error={tp(problems().packet)}
           >
-            <Icon name={advanced() ? "chevron_down" : "chevron_right"} />
-            <h2>{t("ui.profile.advanced")}</h2>
-            <span class="muted">{t("ui.profile.advanced_hint")}</span>
-          </button>
-          <Show when={advanced()}>
-            <div id="advanced-body" class="advanced-grid">
-              <Field
-                label={t("advanced.max_packet")}
-                hint={t("advanced.max_packet_help", PACKET_MIN, PACKET_MAX, PACKET_DEFAULT)}
-                error={tp(problems().packet)}
-              >
-                {(id, described) => (
-                  <div class="inline">
-                    <input
-                      id={id}
-                      class="input num narrow"
-                      type="number"
-                      inputmode="numeric"
-                      min={PACKET_MIN}
-                      max={PACKET_MAX}
-                      step="1"
-                      value={p.max_media_payload}
-                      aria-describedby={described}
-                      aria-invalid={problems().packet ? "true" : undefined}
-                      onInput={(e) => setP("max_media_payload", e.currentTarget.valueAsNumber)}
-                    />
-                    <Button
-                      kind="subtle"
-                      disabled={p.max_media_payload === PACKET_DEFAULT}
-                      onClick={() => setP("max_media_payload", PACKET_DEFAULT)}
-                    >
-                      {t("advanced.max_packet_recommended", PACKET_DEFAULT)}
-                    </Button>
-                  </div>
-                )}
-              </Field>
-            </div>
-          </Show>
-        </section>
+            {(id, described) => (
+              <div class="inline">
+                <input
+                  id={id}
+                  class="input num narrow"
+                  type="number"
+                  inputmode="numeric"
+                  min={PACKET_MIN}
+                  max={PACKET_MAX}
+                  step="1"
+                  value={p.max_media_payload}
+                  aria-describedby={described}
+                  aria-invalid={problems().packet ? "true" : undefined}
+                  onInput={(e) => setP("max_media_payload", e.currentTarget.valueAsNumber)}
+                />
+                <Button
+                  kind="subtle"
+                  disabled={p.max_media_payload === PACKET_DEFAULT}
+                  onClick={() => setP("max_media_payload", PACKET_DEFAULT)}
+                >
+                  {t("advanced.max_packet_recommended", PACKET_DEFAULT)}
+                </Button>
+              </div>
+            )}
+          </Field>
+        </Section>
 
         <Show when={saveError()}>
           <Banner kind="error" title={t("status.error")}>

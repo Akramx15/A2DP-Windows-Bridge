@@ -32,7 +32,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::consts::{
     ERROR_CODE_UNKNOWN_HCI_COMMAND, HCI_COMMAND_DATA_PACKET, HCI_EVENT_COMMAND_COMPLETE, HCI_EVENT_PACKET,
@@ -78,6 +78,9 @@ static RX: Mutex<RxQueue> = Mutex::new(RxQueue { packets: VecDeque::new(), free:
 static SENT: AtomicU32 = AtomicU32::new(0);
 static FAILED: AtomicBool = AtomicBool::new(false);
 static LOSS_EXPECTED: AtomicBool = AtomicBool::new(false);
+/// The controller's answer to Read Local Supported Commands of this run, as
+/// it sent it: 0 not seen, 1 without, 2 with the isochronous commands
+static CONTROLLER_ISO: AtomicU8 = AtomicU8::new(0);
 
 thread_local! {
     static BACKEND: RefCell<Option<Box<dyn HciBackend>>> = const { RefCell::new(None) };
@@ -100,6 +103,21 @@ pub const LE_HIDDEN_COMMAND_BITS: [(usize, u8); 10] =
 
 /// LMP feature bit 38, LE Supported (Controller): octet 4, bit 6
 pub const LE_SUPPORTED_FEATURE: (usize, u8) = (4, 6);
+
+/// LE Read Buffer Size v2 in the supported commands: the controller has the
+/// isochronous channels LE Audio streams over (Bluetooth 5.2)
+pub const ISO_COMMAND_BIT: (usize, u8) = (41, 5);
+
+/// Whether a successful Read Local Supported Commands answer lists the
+/// isochronous commands; None for every other packet
+pub fn iso_commands_in(packet: &[u8]) -> Option<bool> {
+    if packet.len() < 6 + 64 || packet[0] != HCI_EVENT_COMMAND_COMPLETE || packet[5] != 0 {
+        return None;
+    }
+    let opcode = u16::from_le_bytes([packet[3], packet[4]]);
+    let (octet, bit) = ISO_COMMAND_BIT;
+    (opcode == HCI_OPCODE_READ_LOCAL_SUPPORTED_COMMANDS).then(|| packet[6 + octet] & (1 << bit) != 0)
+}
 
 /// The opcode of a command that is answered locally while LE is hidden (an
 /// LE controller command, OGF 0x08, or Write LE Host Supported), None for
@@ -152,6 +170,14 @@ pub(crate) fn set_le_hidden(hidden: bool) -> bool {
 
 pub(crate) fn le_hidden() -> bool {
     LE_HIDDEN.with(|h| h.get())
+}
+
+/// See [`crate::Stack::controller_iso`]
+pub(crate) fn controller_iso() -> Option<bool> {
+    match CONTROLLER_ISO.load(Ordering::Acquire) {
+        0 => None,
+        v => Some(v == 2),
+    }
 }
 
 impl Upstream {
@@ -218,6 +244,7 @@ pub(crate) fn reset() {
     q.packets.clear();
     SENT.store(0, Ordering::Release);
     FAILED.store(false, Ordering::Release);
+    CONTROLLER_ISO.store(0, Ordering::Release);
     LE_HIDDEN.with(|h| h.set(true));
 }
 
@@ -311,8 +338,14 @@ pub(crate) fn pump() {
     loop {
         let next = RX.lock().unwrap_or_else(|e| e.into_inner()).packets.pop_front();
         let Some((packet_type, mut buf)) = next else { break };
-        if hidden && packet_type == HCI_EVENT_PACKET {
-            le_hidden_patch_event(&mut buf);
+        if packet_type == HCI_EVENT_PACKET {
+            // As the controller sent it, before LE hidden clears its LE bits
+            if let Some(iso) = iso_commands_in(&buf) {
+                CONTROLLER_ISO.store(if iso { 2 } else { 1 }, Ordering::Release);
+            }
+            if hidden {
+                le_hidden_patch_event(&mut buf);
+            }
         }
         if buf.len() <= u16::MAX as usize {
             // SAFETY: on the run loop thread; buf is valid for its length;
@@ -403,6 +436,20 @@ mod tests {
         assert_eq!(commands[24], 0xBF);
         assert_eq!(commands[35], 0xD5);
         assert_eq!(commands[48], 0x7F);
+    }
+
+    #[test]
+    fn iso_commands_from_supported_commands() {
+        let mut commands = [0u8; 64];
+        assert_eq!(iso_commands_in(&command_complete(0x1002, &commands)), Some(false));
+        commands[41] = 1 << 5;
+        assert_eq!(iso_commands_in(&command_complete(0x1002, &commands)), Some(true));
+        // Other commands, a failed answer, a short one
+        assert_eq!(iso_commands_in(&command_complete(0x1003, &[0xFF; 64])), None);
+        let mut failed = command_complete(0x1002, &[0xFF; 64]);
+        failed[5] = 1;
+        assert_eq!(iso_commands_in(&failed), None);
+        assert_eq!(iso_commands_in(&command_complete(0x1002, &[0xFF; 8])), None);
     }
 
     #[test]

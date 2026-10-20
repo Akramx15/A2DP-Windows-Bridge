@@ -698,9 +698,15 @@ impl HostApp {
                 self.shared.update(|s| s.realtek_rom = true);
             }
         }
+        let le_audio_capable = stack.controller_iso() == Some(true);
+        tracing::info!(
+            "controller: LE Audio isochronous channels {}",
+            if le_audio_capable { "supported" } else { "not supported" }
+        );
         self.shared.update(|s| {
             s.hci_ready = true;
             s.hci_off = false;
+            s.le_audio_capable = le_audio_capable;
             s.init_done = Some(Ok(()));
         });
         self.afh_ticks = 0;

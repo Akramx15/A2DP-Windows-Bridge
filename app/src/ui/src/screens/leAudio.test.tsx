@@ -74,6 +74,13 @@ describe("profile editor", () => {
     expect(screen.getByRole("radio", { name: /SRS-XB13/ })).toBeInTheDocument();
   });
 
+  it("counts an adapter not checked yet as unsupported, and says so", async () => {
+    start("#/profiles/new", "le_unchecked");
+    await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
+    expect(leCheck()).toBeNull();
+    expect(screen.getByText(t("ui.profile.le_audio_unchecked"))).toBeInTheDocument();
+  });
+
   it("keeps the check box of an LE Audio profile and says the adapter cannot stream it", async () => {
     start(`#/profiles/edit/${encodeURIComponent("Buds (LE Audio)")}`, "le_unsupported");
     await waitFor(() => expect(leCheck()).toBeChecked());

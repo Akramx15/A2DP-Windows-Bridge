@@ -38,7 +38,16 @@ import type {
   StreamInfo,
 } from "./types";
 
-export type MockScenario = "normal" | "fresh" | "error" | "update" | "offline" | "le" | "le_unsupported" | "long";
+export type MockScenario =
+  | "normal"
+  | "fresh"
+  | "error"
+  | "update"
+  | "offline"
+  | "le"
+  | "le_unsupported"
+  | "le_unchecked"
+  | "long";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -64,6 +73,7 @@ const RTL: AdapterInfo = {
   firmware_invalid: null,
   vendor_note: null,
   restart_needed: false,
+  le_audio: null,
 };
 
 export function sampleProfile(over: Partial<Profile> = {}): Profile {
@@ -125,8 +135,9 @@ const LE_BUDS = sampleDevice({ address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2
 
 export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const fresh = scenario === "fresh";
-  // le_unsupported: LE Audio on, but the adapter has no ISO buffers
-  const le = scenario === "le" || scenario === "le_unsupported";
+  // LE Audio on; le_unsupported: an adapter without isochronous channels,
+  // le_unchecked: one no stack ran on yet
+  const le = scenario === "le" || scenario === "le_unsupported" || scenario === "le_unchecked";
   // Names long enough to wrap or overflow every place that shows them
   const long = scenario === "long";
   const LONG_NAME = "リビングのソニーワイヤレスノイズキャンセリングヘッドホン（LDAC・990kbps・高音質優先）";
@@ -162,7 +173,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
       status: "stopped",
       adapters: [fresh ? { ...RTL, driver: "bluetooth", driver_service: "BTHUSB", firmware_present: false } : RTL],
       error: null,
-      le_audio: scenario === "le_unsupported" ? false : null,
+      le_audio: scenario === "le_unsupported" ? false : scenario === "le" ? true : null,
     },
     devices: fresh
       ? []

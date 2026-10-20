@@ -32,6 +32,8 @@ describe("Home", () => {
     const disconnect = await screen.findByRole("button", { name: "Disconnect" });
     expect(calls.some((c) => c.method === "stream.start")).toBe(true);
     await waitFor(() => expect(screen.getAllByText("990 kbps").length).toBeGreaterThan(0));
+    // The badge on Home has the bit depth too
+    expect(document.querySelector(".device-card .codec-badge")).toHaveTextContent("24-bit");
     expect(screen.getByRole("slider", { name: "Volume" })).not.toBeDisabled();
     fireEvent.click(disconnect);
     await screen.findByRole("button", { name: "Connect" });
@@ -99,8 +101,8 @@ describe("profile editor", () => {
 
   it("checks the packet size in the advanced settings", async () => {
     const { calls } = start(`#/profiles/edit/${encodeURIComponent("WH-1000XM5 (LDAC)")}`);
-    fireEvent.click(await screen.findByRole("button", { name: /Advanced/ }));
-    const packet = screen.getByLabelText("Max media packet size (bytes)");
+    // Shown as it is: nothing to unfold (issue #86)
+    const packet = await screen.findByLabelText("Max media packet size (bytes)");
     fireEvent.input(packet, { target: { value: "2000" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("Enter a value from 679 to 1679");
