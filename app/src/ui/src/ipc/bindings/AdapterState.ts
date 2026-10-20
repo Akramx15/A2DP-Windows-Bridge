@@ -3,4 +3,10 @@ import type { AdapterInfo } from "./AdapterInfo";
 import type { AdapterStatus } from "./AdapterStatus";
 import type { Msg } from "./Msg";
 
-export type AdapterState = { status: AdapterStatus, adapters: Array<AdapterInfo>, error: Msg | null, };
+export type AdapterState = { status: AdapterStatus, adapters: Array<AdapterInfo>, error: Msg | null, 
+/**
+ * The controller can stream LE Audio (it has ISO buffers). None: not
+ * known until the stack ran with LE Audio (experimental) on; the UI
+ * hides the LE Audio choices only on false
+ */
+le_audio: boolean | null, };

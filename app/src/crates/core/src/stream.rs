@@ -86,6 +86,9 @@ pub struct StreamInfo {
     pub bitrate_kbps: u32,
     pub sample_rate: u32,
     pub channels: u32,
+    /// Bits per sample the codec carries (16, 24); 0: not reported (LE
+    /// Audio)
+    pub bits: u32,
     pub source_sample_rate: u32,
     pub source_channels: u32,
     pub source_bits: u32,
@@ -712,6 +715,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         bitrate_kbps: bitrate,
         sample_rate: format.sample_rate,
         channels,
+        bits: bits as u32,
         source_sample_rate: format.sample_rate,
         source_channels: format.channels as u32,
         source_bits: (format.sample_format.bytes_per_sample() * 8) as u32,

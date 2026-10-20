@@ -88,9 +88,17 @@ describe("codec cards", () => {
     start(edit("WH-1000XM5 (LDAC)"));
     const ldac = await screen.findByRole("radio", { name: /LDAC/ });
     expect(ldac.closest("label")).toHaveTextContent(t("ui.profile.codec_offered"));
-    const hd = screen.getByRole("radio", { name: /aptX HD/ });
-    expect(hd.closest("label")).toHaveTextContent(t("ui.profile.codec_not_offered"));
     expect(screen.queryByText(t("ui.profile.codecs_unknown"))).toBeNull();
+
+    // The ones it did not offer only when asked for (issue #86): SBC, AAC
+    // and LDAC are offered, Auto is always there
+    expect(screen.queryByRole("radio", { name: /aptX HD/ })).toBeNull();
+    expect(screen.getAllByRole("radio", { name: /./ }).filter((r) => r.closest(".codec-grid"))).toHaveLength(4);
+    const more = screen.getByRole("button", { name: t("ui.profile.codecs_show_all", 8) });
+    fireEvent.click(more);
+    const hd = await screen.findByRole("radio", { name: /aptX HD/ });
+    expect(hd.closest("label")).toHaveTextContent(t("ui.profile.codec_not_offered"));
+    expect(more).toHaveTextContent(t("ui.profile.codecs_hide_unoffered"));
 
     // A codec it does not offer: said plainly, with what happens instead
     fireEvent.click(hd);
@@ -106,25 +114,53 @@ describe("codec cards", () => {
   });
 });
 
-describe("LHDC V5", () => {
-  it("offers 192 kHz and greys out the quality while ABR is on", async () => {
+/** Opens a codec's settings ("...") and returns its dialog */
+async function codecSettings(label: string) {
+  fireEvent.click(await screen.findByRole("button", { name: t("ui.profile.codec_settings", t(label)) }));
+  return screen.findByRole("dialog");
+}
+
+describe("codec settings", () => {
+  it("LHDC V5 offers 192 kHz and greys out the quality while ABR is on", async () => {
     start("#/profiles/new");
-    fireEvent.click(await screen.findByRole("radio", { name: new RegExp(t("codec.lhdc_v5")) }));
-    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-    const rate = screen.getByLabelText(t("connection.sample_rate"));
+    const dialog = await codecSettings("codec.lhdc_v5");
+    const rate = within(dialog).getByLabelText(t("connection.sample_rate"));
     expect(within(rate).getByRole("option", { name: /192/ })).toBeInTheDocument();
-    const quality = screen.getByLabelText(t("connection.quality"));
+    const quality = within(dialog).getByLabelText(t("connection.quality"));
     expect(quality).not.toBeDisabled();
-    fireEvent.click(screen.getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
     await waitFor(() => expect(quality).toBeDisabled());
-    fireEvent.click(screen.getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
     await waitFor(() => expect(quality).not.toBeDisabled());
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     // LDAC's ABR keeps the quality, and has no 192 kHz
-    fireEvent.click(screen.getByRole("radio", { name: new RegExp(t("codec.ldac")) }));
-    fireEvent.click(screen.getByRole("checkbox", { name: t("connection.abr") }));
-    expect(screen.getByLabelText(t("connection.quality"))).not.toBeDisabled();
-    expect(within(screen.getByLabelText(t("connection.sample_rate"))).queryByRole("option", { name: /192/ })).toBeNull();
+    const ldac = await codecSettings("codec.ldac");
+    fireEvent.click(within(ldac).getByRole("checkbox", { name: t("connection.abr") }));
+    expect(within(ldac).getByLabelText(t("connection.quality"))).not.toBeDisabled();
+    expect(within(within(ldac).getByLabelText(t("connection.sample_rate"))).queryByRole("option", { name: /192/ })).toBeNull();
+  });
+
+  it("OK chooses the codec with its settings, Cancel changes nothing", async () => {
+    const { calls } = start(edit("WH-1000XM5 (LDAC)"));
+    let dialog = await codecSettings("codec.aac");
+    expect(within(dialog).getByText(t("ui.profile.codec_settings_apply", t("codec.aac")))).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(t("connection.quality")), { target: { value: "sq" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("radio", { name: /LDAC/ })).toBeChecked();
+
+    dialog = await codecSettings("codec.aac");
+    fireEvent.change(within(dialog).getByLabelText(t("connection.quality")), { target: { value: "sq" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("radio", { name: /AAC/ })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    const saved = calls.find((c) => c.method === "profile.save")!.params as { profile: { codec: string; quality: string } };
+    expect(saved.profile).toMatchObject({ codec: "aac", quality: "sq" });
   });
 });
 
@@ -135,8 +171,9 @@ describe("capture source", () => {
     const line = await screen.findByText(t("capture.device_format", 48000, 32));
     expect(line).not.toHaveClass("field-error");
 
-    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-    fireEvent.change(screen.getByLabelText(t("connection.sample_rate")), { target: { value: "96000" } });
+    const dialog = await codecSettings("codec.ldac");
+    fireEvent.change(within(dialog).getByLabelText(t("connection.sample_rate")), { target: { value: "96000" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
     await waitFor(() => expect(document.querySelector(".field-error")).not.toBeNull());
     const warning = document.querySelector(".field-error")!;
     expect(warning).toHaveTextContent(t("capture.device_format", 48000, 32));

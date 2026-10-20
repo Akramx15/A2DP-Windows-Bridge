@@ -122,6 +122,7 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
         bitrate_kbps: i.bitrate_kbps,
         sample_rate: i.sample_rate,
         channels: i.channels,
+        bits: i.bits,
         source_sample_rate: i.source_sample_rate,
         source_channels: i.source_channels,
         source_bits: i.source_bits,

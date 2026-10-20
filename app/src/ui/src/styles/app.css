@@ -864,9 +864,9 @@ option {
 
 .status-pill {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--s2);
-  padding: var(--s2);
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--border);
   border-radius: var(--r);
   background: var(--surface);
@@ -875,21 +875,35 @@ option {
   text-align: left;
   cursor: pointer;
 }
+/* Level with the device name's first line */
+.status-pill > .dot {
+  margin-top: 0.4rem;
+}
 .status-pill-text {
   display: flex;
   flex-direction: column;
+  gap: 0.125rem;
   min-width: 0;
   font-size: var(--fs-12);
+}
+.status-pill-device {
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+.status-pill-sub {
+  color: var(--text-2);
 }
 .status-pill-state {
   color: var(--st-text);
 }
-.status-pill .codec-badge {
-  font-size: var(--fs-12);
-  border: none;
-  padding: 0;
-  min-height: 0;
-  background: none;
+.status-pill-codec {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-top: var(--s1);
+}
+.status-pill-details {
+  color: var(--text-2);
 }
 
 /* Collapsed to icons: narrow windows, or by the toggle */
@@ -910,6 +924,10 @@ option {
   }
   .shell:not(.nav-expanded) .status-pill {
     min-height: 2.25rem;
+    align-items: center;
+  }
+  .shell:not(.nav-expanded) .status-pill > .dot {
+    margin-top: 0;
   }
 }
 .shell.nav-collapsed {
@@ -928,6 +946,10 @@ option {
 }
 .shell.nav-collapsed .status-pill {
   min-height: 2.25rem;
+  align-items: center;
+}
+.shell.nav-collapsed .status-pill > .dot {
+  margin-top: 0;
 }
 
 .content {
@@ -1474,6 +1496,33 @@ option {
 }
 .codec-card-name {
   font-weight: 600;
+  /* Room for the settings button in the corner */
+  padding-right: 1.75rem;
+}
+.codec-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.codec-cell .codec-card {
+  flex: 1;
+}
+/* Over the card's radio, which covers the whole card */
+.codec-more {
+  position: absolute;
+  top: var(--s1);
+  right: var(--s1);
+  z-index: 1;
+  width: 1.75rem;
+  min-height: 1.75rem;
+}
+.codec-show-all {
+  align-self: flex-start;
+}
+.codec-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
 }
 .codec-card-desc {
   font-size: var(--fs-12);

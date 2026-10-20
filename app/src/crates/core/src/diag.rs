@@ -1400,6 +1400,7 @@ mod tests {
             bitrate_kbps: 990,
             sample_rate: 48000,
             channels: 2,
+            bits: 24,
             source_sample_rate: 48000,
             source_channels: 2,
             source_bits: 32,
