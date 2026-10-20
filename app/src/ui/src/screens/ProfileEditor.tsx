@@ -193,6 +193,7 @@ export function ProfileEditor(props: { original: string | null }) {
             address={p.device_address}
             leAudio={p.le_audio}
             onPick={pickDevice}
+            savedOnly
             error={tp(problems().device)}
           />
         </Section>

@@ -415,7 +415,7 @@
   "ui.profile.fixed_bitrate": "由编解码器固定",
   "ui.profile.err_name_empty": "请输入配置文件名称",
   "ui.profile.err_name_taken": "已有其他配置文件使用此名称",
-  "ui.profile.err_device": "请选择耳机（扫描或输入地址）",
+  "ui.profile.err_device": "请选择耳机(请先在“音频设备”中添加)",
   "ui.profile.err_packet": "请输入 %d 到 %d 之间的值",
   "ui.profile.fix_problems": "部分字段需要处理",
   "ui.profile.saved": "已保存 %s",
@@ -626,5 +626,6 @@
   "dbgc.col_status": "状态",
   "dbgc.col_time": "时间",
   "dbgc.col_elapsed": "耗时",
-  "dbgc.col_detail": "详细信息"
+  "dbgc.col_detail": "详细信息",
+  "ui.nav.devices": "音频设备"
 }

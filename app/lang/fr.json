@@ -415,7 +415,7 @@
   "ui.profile.fixed_bitrate": "Fixé par le codec",
   "ui.profile.err_name_empty": "Saisissez un nom pour le profil",
   "ui.profile.err_name_taken": "Un autre profil porte déjà ce nom",
-  "ui.profile.err_device": "Choisissez le casque (recherchez-le ou saisissez l'adresse)",
+  "ui.profile.err_device": "Choisissez le casque (ajoutez-le d'abord dans Périphériques audio)",
   "ui.profile.err_packet": "Saisissez une valeur de %d à %d",
   "ui.profile.fix_problems": "Certains champs nécessitent votre attention",
   "ui.profile.saved": "%s enregistré",
@@ -626,5 +626,6 @@
   "dbgc.col_status": "État",
   "dbgc.col_time": "Heure",
   "dbgc.col_elapsed": "Écoulé",
-  "dbgc.col_detail": "Détail"
+  "dbgc.col_detail": "Détail",
+  "ui.nav.devices": "Périphériques audio"
 }

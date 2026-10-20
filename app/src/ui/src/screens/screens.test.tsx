@@ -77,7 +77,7 @@ describe("profile editor", () => {
     const save = await screen.findByRole("button", { name: "Save" });
     fireEvent.click(save);
     await screen.findByText("Enter a name for the profile");
-    expect(screen.getAllByText("Choose the headphones (scan, or enter the address)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Choose the headphones (add them under Audio Devices first)").length).toBeGreaterThan(0);
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
 
     // A name another profile has
@@ -86,16 +86,15 @@ describe("profile editor", () => {
     await screen.findByText("Another profile already has this name");
 
     fireEvent.input(name, { target: { value: "Test profile" } });
-    fireEvent.input(screen.getByLabelText("Manual:"), { target: { value: "aa-bb-cc-dd-ee-ff" } });
-    fireEvent.click(screen.getByRole("button", { name: "Use" }));
-    fireEvent.click(screen.getByRole("radio", { name: /aptX HD/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /WH-1000XM5/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /LDAC/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
     const saved = calls.find((c) => c.method === "profile.save")!.params as {
       profile: { name: string; device_address: string; codec: string };
       original_name: string | null;
     };
-    expect(saved.profile).toMatchObject({ name: "Test profile", device_address: "AA:BB:CC:DD:EE:FF", codec: "aptxhd" });
+    expect(saved.profile).toMatchObject({ name: "Test profile", device_address: "AC:80:0A:12:34:56", codec: "ldac" });
     expect(saved.original_name).toBeNull();
   });
 
@@ -114,6 +113,7 @@ describe("every screen renders", () => {
   const routes: [string, string][] = [
     ["#/home", "Home"],
     ["#/profiles", "Profiles"],
+    ["#/devices", "Audio Devices"],
     ["#/profiles/new", "New Profile"],
     ["#/diagnostics", "Diagnostics"],
     ["#/adapter", "Adapter"],

@@ -415,7 +415,7 @@
   "ui.profile.fixed_bitrate": "Fijado por el códec",
   "ui.profile.err_name_empty": "Introduzca un nombre para el perfil",
   "ui.profile.err_name_taken": "Otro perfil ya tiene este nombre",
-  "ui.profile.err_device": "Elija los auriculares (búsquelos o introduzca la dirección)",
+  "ui.profile.err_device": "Elija los auriculares (agréguelos antes en Dispositivos de audio)",
   "ui.profile.err_packet": "Introduzca un valor de %d a %d",
   "ui.profile.fix_problems": "Algunos campos requieren atención",
   "ui.profile.saved": "%s guardado",
@@ -626,5 +626,6 @@
   "dbgc.col_status": "Estado",
   "dbgc.col_time": "Hora",
   "dbgc.col_elapsed": "Transcurrido",
-  "dbgc.col_detail": "Detalle"
+  "dbgc.col_detail": "Detalle",
+  "ui.nav.devices": "Dispositivos de audio"
 }
