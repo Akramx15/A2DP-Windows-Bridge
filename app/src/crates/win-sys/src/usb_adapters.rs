@@ -107,6 +107,14 @@ pub struct UsbDevice {
 }
 
 impl UsbDevice {
+    /// The name to show: the product string the device reports, else
+    /// FriendlyName / description. FriendlyName can be stale: a vendor
+    /// driver's INF writes it and switching to WinUSB leaves it behind
+    /// (a UB500 showed "TP-TP+ UB500 Adapter").
+    pub fn display_name(&self) -> &str {
+        self.bus_reported_name.as_deref().map(str::trim).filter(|n| !n.is_empty()).unwrap_or(&self.name)
+    }
+
     /// The compatible IDs name the Bluetooth class (E0/01/01), whatever
     /// driver owns the device
     pub fn has_bluetooth_compat_id(&self) -> bool {
