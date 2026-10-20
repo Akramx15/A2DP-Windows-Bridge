@@ -268,6 +268,13 @@ pub struct Profile {
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
+    /// Spatial engine (the xm6 360 chain): the captured audio runs through
+    /// this program before it is encoded
+    #[serde(default)]
+    pub spatial_engine: bool,
+    /// Path to the spatial engine executable (its assets sit next to it)
+    #[serde(default)]
+    pub spatial_engine_path: String,
     pub max_media_payload: u16,
     /// An LE Audio device (experimental, LC3): codec, quality, abr,
     /// sample_rate and bit_depth do not apply, capture_mode is "loopback"

@@ -64,6 +64,13 @@ pub struct Profile {
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
+    /// Spatial engine (the xm6 360 chain): the captured audio runs through
+    /// this program before it is encoded
+    #[serde(default)]
+    pub spatial_engine: bool,
+    /// Path to the spatial engine executable (its assets sit next to it)
+    #[serde(default)]
+    pub spatial_engine_path: String,
     /// Max media packet size (None in files from before v1.1: the legacy
     /// setting applies)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,6 +107,8 @@ impl Default for Profile {
             volume_sync: auto(),
             volume_device_id: String::new(),
             volume_device_name: String::new(),
+            spatial_engine: false,
+            spatial_engine_path: String::new(),
             max_media_payload: None,
             le_audio: false,
             le_low_latency: true,
@@ -159,6 +168,10 @@ impl Profile {
             le: self
                 .le_audio
                 .then(|| bt_host::LeRequest { low_latency: self.le_low_latency, ..bt_host::LeRequest::default() }),
+            spatial: self
+                .spatial_engine
+                .then(|| PathBuf::from(self.spatial_engine_path.trim()))
+                .filter(|p| !p.as_os_str().is_empty()),
         })
     }
 }

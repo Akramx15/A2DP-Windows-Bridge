@@ -14,6 +14,7 @@
 pub mod convert;
 pub mod le;
 pub mod packetizer;
+pub mod spatial;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -25,6 +26,8 @@ use codec::{CodecKind, Encoder, Pcm, PcmFormat};
 
 pub use convert::SampleType;
 use packetizer::Packetizer;
+pub use spatial::SpatialConfig;
+use spatial::SpatialEngine;
 
 /// Format of the captured audio as it arrives
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +76,9 @@ pub struct PipelineConfig {
     /// Adaptive bit rate: the encoder's own [`Encoder::abr_active`]
     pub abr: bool,
     pub buffer: BufferPreset,
+    /// Optional PCM processing stage (the spatial engine) between the
+    /// capture and the encoder
+    pub spatial: Option<SpatialConfig>,
 }
 
 /// The capture thread's end: copies captured audio into the ring
@@ -271,7 +277,7 @@ fn encode_thread(
     mut sink: MediaSink,
     control: &Control,
 ) -> MediaSink {
-    let PipelineConfig { mut encoder, input, channels, mtu, abr, .. } = config;
+    let PipelineConfig { mut encoder, input, channels, mtu, abr, spatial, .. } = config;
     let _priority = thread_priority();
     let kind = encoder.kind();
     let fmt = encoder.pcm_format();
@@ -294,6 +300,22 @@ fn encode_thread(
     let mut abr_last = Instant::now();
     let mut encode_errors = 0u64;
     let mut overflow_report = Instant::now();
+    // The spatial engine, when the profile asks for it: it processes the
+    // captured audio before it reaches the encoder. If it cannot run, the
+    // audio passes through unchanged rather than the stream dying.
+    let mut spatial_stage = match spatial {
+        Some(cfg) => match SpatialEngine::start(&cfg) {
+            Ok(s) => {
+                tracing::info!("spatial engine: {}", cfg.exe.display());
+                Some(s)
+            }
+            Err(e) => {
+                tracing::error!("spatial engine {}: {e} (audio passes through)", cfg.exe.display());
+                None
+            }
+        },
+        None => None,
+    };
 
     while !control.stop.load(Ordering::Acquire) {
         if control.reset.swap(false, Ordering::AcqRel) {
@@ -305,6 +327,9 @@ fn encode_thread(
             pcm32.clear();
             timestamp = 0;
             packetizer.reset();
+            if let Some(s) = spatial_stage.as_mut() {
+                s.reset();
+            }
             if abr {
                 encoder.abr_reset();
             }
@@ -325,9 +350,18 @@ fn encode_thread(
             chunk.commit_all();
         }
         let raw = &read_buf[..bytes];
+        // The spatial engine, when it runs, returns processed stereo float32
+        // (a constant one-block delay behind the capture).
+        let staged = spatial_stage.as_mut().and_then(|s| s.process(raw, input.sample, in_ch));
         match fmt {
-            PcmFormat::I16 => convert::append_i16(raw, input.sample, in_ch, out_ch, &mut pcm16),
-            PcmFormat::I32 => convert::append_i32(raw, input.sample, in_ch, out_ch, &mut pcm32),
+            PcmFormat::I16 => match &staged {
+                Some(s) => convert::append_i16(s, SampleType::F32, 2, out_ch, &mut pcm16),
+                None => convert::append_i16(raw, input.sample, in_ch, out_ch, &mut pcm16),
+            },
+            PcmFormat::I32 => match &staged {
+                Some(s) => convert::append_i32(s, SampleType::F32, 2, out_ch, &mut pcm32),
+                None => convert::append_i32(raw, input.sample, in_ch, out_ch, &mut pcm32),
+            },
         }
 
         let queue_before = sink.depth();
@@ -474,6 +508,7 @@ mod tests {
             mtu: 600,
             abr: true,
             buffer: BufferPreset::Standard,
+            spatial: None,
         };
         let (pipeline, mut input) = Pipeline::start(config, sink, stats.clone());
         let audio = vec![0u8; 480 * 4];

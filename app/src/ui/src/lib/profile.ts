@@ -26,6 +26,8 @@ export function newProfile(): Profile {
     volume_sync: "auto",
     volume_device_id: "",
     volume_device_name: "",
+    spatial_engine: false,
+    spatial_engine_path: "",
     max_media_payload: PACKET_DEFAULT,
     le_audio: false,
     le_low_latency: true,

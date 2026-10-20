@@ -85,6 +85,8 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     volume_sync: "auto",
     volume_device_id: "",
     volume_device_name: "",
+    spatial_engine: false,
+    spatial_engine_path: "",
     max_media_payload: 1023,
     le_audio: false,
     le_low_latency: true,

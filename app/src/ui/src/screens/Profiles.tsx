@@ -85,6 +85,10 @@ function ProfileList() {
                       <Icon name={captureText(p).icon} />
                       <span class="ellipsis">{captureText(p).text}</span>
                     </span>
+                    {/* The captured audio runs through the spatial engine */}
+                    <Show when={p.spatial_engine}>
+                      <span class="tag">{t("profile.spatial_engine")}</span>
+                    </Show>
                   </div>
                   <div class="profile-card-actions">
                     <Button

@@ -348,6 +348,25 @@ export function ProfileEditor(props: { original: string | null }) {
               />
             )}
           </Field>
+          <Toggle
+            label={t("profile.spatial_engine")}
+            hint={t("profile.spatial_engine_hint")}
+            checked={p.spatial_engine}
+            onChange={(v) => setP("spatial_engine", v)}
+          />
+          <Show when={p.spatial_engine}>
+            <Field label={t("profile.spatial_engine_path")}>
+              {(id, described) => (
+                <input
+                  id={id}
+                  class="input"
+                  value={p.spatial_engine_path}
+                  aria-describedby={described}
+                  onInput={(e) => setP("spatial_engine_path", e.currentTarget.value)}
+                />
+              )}
+            </Field>
+          </Show>
         </Section>
 
         <section class="card section disclosure">
