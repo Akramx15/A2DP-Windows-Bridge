@@ -12,6 +12,7 @@ import { errorText, useApp } from "../app/context";
 import { Banner, Button, Check, Field, IconButton, Section, Segmented, Select, Toggle } from "../components/controls";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
+import { SpatialPicker } from "../components/SpatialPicker";
 import { t } from "../i18n";
 import type { AudioApp, AudioDevice, Profile } from "../ipc/types";
 import {
@@ -366,6 +367,21 @@ export function ProfileEditor(props: { original: string | null }) {
                 />
               )}
             </Field>
+            <Field label={t("profile.spatial_engine_registry")} hint={t("profile.spatial_engine_registry_hint")}>
+              {(id, described) => (
+                <input
+                  id={id}
+                  class="input"
+                  value={p.spatial_engine_registry}
+                  aria-describedby={described}
+                  onInput={(e) => setP("spatial_engine_registry", e.currentTarget.value)}
+                />
+              )}
+            </Field>
+            <SpatialPicker
+              profile={p}
+              onPick={(engine) => setP({ spatial_engine: true, spatial_engine_path: engine.path })}
+            />
           </Show>
         </Section>
 

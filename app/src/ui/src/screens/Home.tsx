@@ -7,6 +7,7 @@ import { useApp } from "../app/context";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
+import { SpatialPicker } from "../components/SpatialPicker";
 import {
   CodecBadge,
   ConnectButton,
@@ -154,6 +155,16 @@ export function Home() {
                   {t("ui.home.capture_more")}
                 </button>
               </section>
+              <Show when={p().spatial_engine || p().spatial_engine_path || p().spatial_engine_registry}>
+                <section class="card mini" aria-labelledby="home-spatial">
+                  <h2 id="home-spatial" class="mini-title">
+                    {t("profile.spatial_engine")}
+                  </h2>
+                  <div class="mini-body">
+                    <SpatialPicker profile={p()} />
+                  </div>
+                </section>
+              </Show>
               <section class="card mini" aria-labelledby="home-link">
                 <h2 id="home-link" class="mini-title">
                   {t("quality.title")}

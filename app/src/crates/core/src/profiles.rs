@@ -71,6 +71,10 @@ pub struct Profile {
     /// Path to the spatial engine executable (its assets sit next to it)
     #[serde(default)]
     pub spatial_engine_path: String,
+    /// Folder with the spatial engine programs (the registry the user picks
+    /// from)
+    #[serde(default)]
+    pub spatial_engine_registry: String,
     /// Max media packet size (None in files from before v1.1: the legacy
     /// setting applies)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,6 +113,7 @@ impl Default for Profile {
             volume_device_name: String::new(),
             spatial_engine: false,
             spatial_engine_path: String::new(),
+            spatial_engine_registry: String::new(),
             max_media_payload: None,
             le_audio: false,
             le_low_latency: true,

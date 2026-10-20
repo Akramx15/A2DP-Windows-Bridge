@@ -36,7 +36,12 @@ spatial_engine: boolean,
 /**
  * Path to the spatial engine executable (its assets sit next to it)
  */
-spatial_engine_path: string, max_media_payload: number, 
+spatial_engine_path: string, 
+/**
+ * Folder with the spatial engine programs (the registry the user picks
+ * from)
+ */
+spatial_engine_registry: string, max_media_payload: number, 
 /**
  * An LE Audio device (experimental, LC3): codec, quality, abr,
  * sample_rate and bit_depth do not apply, capture_mode is "loopback"

@@ -28,6 +28,7 @@ export function newProfile(): Profile {
     volume_device_name: "",
     spatial_engine: false,
     spatial_engine_path: "",
+    spatial_engine_registry: "",
     max_media_payload: PACKET_DEFAULT,
     le_audio: false,
     le_low_latency: true,
