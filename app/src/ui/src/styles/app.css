@@ -1982,6 +1982,151 @@ option {
   background: var(--st, var(--accent-1));
   transition: width var(--t-mid) var(--ease);
 }
+
+/* Codec details: settings as chips (in use, offered, not offered) and the
+   SBC bitpool bar */
+.cd-codec {
+  font-weight: 400;
+}
+.cd-sub {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  padding-top: var(--s2);
+  border-top: 1px solid var(--border);
+}
+.cd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cd-chip {
+  padding: 0 var(--s2);
+  min-height: 1.25rem;
+  line-height: 1.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: var(--fs-12);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.cd-chip.cd-used {
+  border-color: var(--accent-1);
+  background: var(--accent-1);
+  /* Dark text: 12 px white on the accent is below 4.5:1 */
+  color: #0b1220;
+  font-weight: 600;
+}
+.cd-chip.cd-off {
+  border-style: dashed;
+  border-color: var(--border);
+  color: var(--text-3);
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+.bitpool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.bitpool-track {
+  position: relative;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.bitpool-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+.bitpool-range.device,
+.bitpool-swatch.device {
+  background: color-mix(in srgb, var(--accent-2) 35%, transparent);
+}
+.bitpool-range.config {
+  top: 0.1875rem;
+  bottom: 0.1875rem;
+}
+.bitpool-range.config,
+.bitpool-swatch.config {
+  background: var(--accent-2);
+}
+.bitpool-used {
+  position: absolute;
+  top: -0.1875rem;
+  bottom: -0.1875rem;
+  width: 0.25rem;
+  margin-left: -0.125rem;
+  border-radius: 2px;
+  background: var(--accent-1);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.bitpool-swatch.used {
+  background: var(--accent-1);
+}
+.bitpool-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-12);
+  color: var(--text-3);
+}
+.bitpool-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.bitpool-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+.bitpool-swatch {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+}
+@media (forced-colors: active) {
+  .cd-chip.cd-used {
+    forced-color-adjust: none;
+    background: Highlight;
+    border-color: Highlight;
+    color: HighlightText;
+  }
+  .bitpool-track,
+  .bitpool-range,
+  .bitpool-used,
+  .bitpool-swatch {
+    forced-color-adjust: none;
+  }
+  .bitpool-track {
+    background: Canvas;
+    outline: 1px solid GrayText;
+  }
+  .bitpool-range.device,
+  .bitpool-swatch.device {
+    background: GrayText;
+  }
+  .bitpool-range.config,
+  .bitpool-swatch.config {
+    background: CanvasText;
+  }
+  .bitpool-used,
+  .bitpool-swatch.used {
+    background: Highlight;
+  }
+}
 @media (forced-colors: active) {
   .gauge {
     forced-color-adjust: none;

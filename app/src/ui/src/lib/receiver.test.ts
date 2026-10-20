@@ -45,6 +45,7 @@ const SBC: StreamInfo = {
   bitrate_capped: false,
   source: null,
   le: null,
+  details: null,
 };
 
 function recv(id: number, o: Partial<ReceivedStream> = {}): ReceivedStream {

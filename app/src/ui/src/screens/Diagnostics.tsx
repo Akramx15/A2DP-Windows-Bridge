@@ -6,6 +6,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { Gauge, LineChart } from "../components/charts";
+import { CodecDetailsCard } from "../components/CodecDetails";
 import { Button, Check, IconButton, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/icons";
@@ -428,6 +429,11 @@ function LinkPanel() {
             <Row label={t("ui.diag.afh")} value={afhText()} />
           </dl>
         </section>
+
+        {/* What the A2DP codec runs with and what the device offered */}
+        <Show when={streaming() && !le() && stream().info}>
+          {(i) => <Show when={i().details}>{(d) => <CodecDetailsCard info={i()} details={d()} />}</Show>}
+        </Show>
 
         <Show when={le() || iso()}>
           <section class="card lq-group" aria-labelledby="lq-iso">

@@ -204,6 +204,90 @@ pub struct StreamInfo {
     /// A2DP.
     #[serde(default)]
     pub le: Option<LeStreamInfo>,
+    /// What an A2DP stream's codec runs with (Diagnostics); None for LE
+    /// Audio and from an older core
+    #[serde(default)]
+    pub details: Option<Box<CodecDetails>>,
+}
+
+/// What an A2DP stream's codec runs with beyond the summary: the
+/// configuration sent, what the device offered and the encoder's setup
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct CodecDetails {
+    /// Bytes a packet may carry after its RTP header: media payload
+    /// header and codec data (codecs without an RTP header use those 12
+    /// bytes too; FastStream and aptX LL packets are shorter by design)
+    pub mtu: u32,
+    /// Packets start with an RTP header (not classic aptX, aptX LL,
+    /// FastStream)
+    pub rtp: bool,
+    /// Bytes of the media payload header (frame count ...)
+    pub media_header: u32,
+    /// PCM frames one codec frame stands for
+    pub frame_samples: u32,
+    /// Bytes of every codec frame, when they all have the same length
+    pub frame_bytes: Option<u32>,
+    /// Codec frames per packet, when that follows from the frame length
+    pub frames_per_packet: Option<u32>,
+    pub sbc: Option<SbcDetails>,
+    pub aac: Option<AacDetails>,
+}
+
+/// SBC, SBC XQ and FastStream frames
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct SbcDetails {
+    /// "mono", "dual_channel", "stereo", "joint_stereo"
+    pub channel_mode: String,
+    pub blocks: u32,
+    pub subbands: u32,
+    /// "loudness", "snr"
+    pub allocation: String,
+    /// The bitpool the encoder uses
+    pub bitpool: u32,
+    /// The bitpool range of the configuration (SET_CONFIGURATION), min and
+    /// max; None for FastStream (its codec information has none)
+    pub config_bitpool: Option<(u32, u32)>,
+    /// What the device's SBC endpoint offers, when it said
+    pub device: Option<SbcDeviceCaps>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct SbcDeviceCaps {
+    pub sample_rates: Vec<u32>,
+    /// As SbcDetails.channel_mode
+    pub channel_modes: Vec<String>,
+    pub blocks: Vec<u32>,
+    pub subbands: Vec<u32>,
+    /// As SbcDetails.allocation
+    pub allocations: Vec<String>,
+    pub min_bitpool: u32,
+    pub max_bitpool: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct AacDetails {
+    /// "MPEG-2 AAC-LC" or "MPEG-4 AAC-LC"
+    pub object_type: String,
+    /// Constant bit rate in bps (the encoder never uses VBR)
+    pub bit_rate: u32,
+    /// What the device's AAC endpoint offers, when it said
+    pub device: Option<AacDeviceCaps>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct AacDeviceCaps {
+    /// By name ("MPEG-2 AAC-LC", "MPEG-4 HE-AAC", ...)
+    pub object_types: Vec<String>,
+    pub sample_rates: Vec<u32>,
+    pub channels: Vec<u32>,
+    /// Its peak bit rate in bps (0 = not said)
+    pub max_bitrate: u32,
+    pub vbr: bool,
 }
 
 /// The LE Audio stream that was set up (BAP unicast; v1 StreamPlan)
@@ -1183,6 +1267,7 @@ mod tests {
         let lc3 = StreamInfo {
             codec: "LC3".into(),
             bitrate_kbps: 192,
+            details: None,
             le: Some(LeStreamInfo {
                 preset: "48_4_2".into(),
                 frame_us: 10000,

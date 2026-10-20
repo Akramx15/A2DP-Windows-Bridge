@@ -103,6 +103,161 @@ pub struct StreamInfo {
     /// Where the audio comes from (sent again when an application capture
     /// starts or stops waiting for the app)
     pub source: SourceInfo,
+    /// What the codec runs with (A2DP; None for LE Audio)
+    pub details: Option<Box<CodecDetails>>,
+}
+
+/// What an A2DP stream's codec runs with beyond the summary (Diagnostics)
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CodecDetails {
+    /// Bytes a packet may carry after its RTP header: media payload
+    /// header and codec data (codecs without an RTP header use those 12
+    /// bytes too; FastStream and aptX LL packets are shorter by design)
+    pub mtu: u32,
+    /// Packets start with an RTP header (not classic aptX, aptX LL,
+    /// FastStream)
+    pub rtp: bool,
+    /// Bytes of the media payload header (frame count ...)
+    pub media_header: u32,
+    /// PCM frames one codec frame stands for
+    pub frame_samples: u32,
+    /// Bytes of every codec frame, when they all have the same length
+    pub frame_bytes: Option<u32>,
+    /// Codec frames per packet, when that follows from the frame length
+    pub frames_per_packet: Option<u32>,
+    pub sbc: Option<SbcDetails>,
+    pub aac: Option<AacDetails>,
+}
+
+/// SBC, SBC XQ and FastStream frames
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SbcDetails {
+    /// "mono", "dual_channel", "stereo", "joint_stereo"
+    pub channel_mode: String,
+    pub blocks: u32,
+    pub subbands: u32,
+    /// "loudness", "snr"
+    pub allocation: String,
+    /// The bitpool the encoder uses
+    pub bitpool: u32,
+    /// The bitpool range of the configuration (SET_CONFIGURATION); None
+    /// for FastStream (its codec information has none)
+    pub config_bitpool: Option<(u32, u32)>,
+    /// What the device's SBC endpoint offers, when it said
+    pub device: Option<SbcDeviceCaps>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SbcDeviceCaps {
+    pub sample_rates: Vec<u32>,
+    pub channel_modes: Vec<String>,
+    pub blocks: Vec<u32>,
+    pub subbands: Vec<u32>,
+    pub allocations: Vec<String>,
+    pub min_bitpool: u32,
+    pub max_bitpool: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AacDetails {
+    /// "MPEG-2 AAC-LC" or "MPEG-4 AAC-LC"
+    pub object_type: String,
+    /// Constant bit rate (the encoder never uses VBR)
+    pub bit_rate: u32,
+    /// What the device's AAC endpoint offers, when it said
+    pub device: Option<AacDeviceCaps>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AacDeviceCaps {
+    pub object_types: Vec<String>,
+    pub sample_rates: Vec<u32>,
+    pub channels: Vec<u32>,
+    /// Its peak bit rate in bps (0 = not said)
+    pub max_bitrate: u32,
+    pub vbr: bool,
+}
+
+fn channel_mode_key(m: codec::sbc::ChannelMode) -> String {
+    use codec::sbc::ChannelMode::*;
+    match m {
+        Mono => "mono",
+        DualChannel => "dual_channel",
+        Stereo => "stereo",
+        JointStereo => "joint_stereo",
+    }
+    .into()
+}
+
+fn allocation_key(a: codec::sbc::Allocation) -> String {
+    match a {
+        codec::sbc::Allocation::Loudness => "loudness",
+        codec::sbc::Allocation::Snr => "snr",
+    }
+    .into()
+}
+
+/// What the stream's codec runs with: the configuration sent, what the
+/// device offered and the encoder's setup
+pub fn codec_details(
+    kind: CodecKind,
+    config: &Configuration,
+    remote: &RemoteCaps,
+    encoder: &dyn Encoder,
+    mtu: u16,
+    sample_rate: u32,
+) -> CodecDetails {
+    let e = encoder.details();
+    let raw = pipeline::packetizer::max_raw(kind, mtu, sample_rate) as u32;
+    let frames_per_packet = e.frame_bytes.filter(|&b| b > 0).map(|b| {
+        let n = raw / b;
+        // SBC counts frames in 4 bits
+        if kind.media_header_len() == 1 { n.min(15) } else { n }
+    });
+    let sbc = e.sbc.map(|c| SbcDetails {
+        channel_mode: channel_mode_key(c.channel_mode),
+        blocks: c.blocks.into(),
+        subbands: c.subbands.into(),
+        allocation: allocation_key(c.allocation),
+        bitpool: c.bitpool.into(),
+        config_bitpool: match config.request {
+            caps::ConfigRequest::Sbc { min_bitpool, max_bitpool, .. } => Some((min_bitpool.into(), max_bitpool.into())),
+            _ => None,
+        },
+        device: remote.sbc_caps.filter(|_| kind != CodecKind::FastStream).map(|d| SbcDeviceCaps {
+            sample_rates: d.sample_rates(),
+            channel_modes: d.channel_modes().into_iter().map(channel_mode_key).collect(),
+            blocks: d.block_lengths().into_iter().map(u32::from).collect(),
+            subbands: d.subband_counts().into_iter().map(u32::from).collect(),
+            allocations: d.allocations().into_iter().map(allocation_key).collect(),
+            min_bitpool: d.min_bitpool.into(),
+            max_bitpool: d.max_bitpool.into(),
+        }),
+    });
+    let aac = match config.request {
+        caps::ConfigRequest::Aac { object_type, bit_rate, .. } => Some(AacDetails {
+            object_type: object_type.name().into(),
+            bit_rate,
+            device: remote.aac_caps.map(|d| AacDeviceCaps {
+                object_types: d.object_type_names().into_iter().map(String::from).collect(),
+                sample_rates: d.sample_rates(),
+                channels: d.channel_counts().into_iter().map(u32::from).collect(),
+                max_bitrate: d.bit_rate,
+                vbr: d.vbr,
+            }),
+        }),
+        _ => None,
+    };
+    CodecDetails {
+        mtu: raw + kind.media_header_len() as u32,
+        rtp: kind.uses_rtp(),
+        media_header: kind.media_header_len() as u32,
+        frame_samples: encoder.pcm_frames_per_codec_frame() as u32,
+        frame_bytes: e.frame_bytes,
+        frames_per_packet,
+        sbc,
+        aac,
+    }
 }
 
 /// The audio source of a stream
@@ -724,6 +879,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         abr,
         bitrate_capped,
         source: req.source.info(),
+        details: Some(Box::new(codec_details(kind, &config, &remote, &*encoder, mtu, format.sample_rate))),
     };
     inner.save_device(&addr, &req.device_name);
 
@@ -993,6 +1149,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             info.bitrate_kbps = encoder.bitrate_kbps();
             info.bitrate_capped = encoder.bitrate_capped();
             info.abr = encoder.abr_active();
+            info.details =
+                Some(Box::new(codec_details(kind, &config, &r.remote, &*encoder, r.mtu, format.sample_rate)));
             let (p, new_input) = start_pipeline(encoder, format, channels, r.mtu, sink, &host);
             if let Ok(mut i) = input.0.lock() {
                 *i = new_input;

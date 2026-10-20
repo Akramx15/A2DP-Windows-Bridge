@@ -8,7 +8,7 @@
 //! follows Android and PipeWire.
 
 use crate::CodecKind;
-use crate::sbc::{self, ChannelMode};
+use crate::sbc::{self, Allocation, ChannelMode};
 
 pub const LDAC_VENDOR_ID: u32 = 0x0000_012D; // Sony
 pub const LDAC_CODEC_ID: u16 = 0x00AA;
@@ -168,6 +168,33 @@ impl SbcCapabilities {
             && self.max_bitpool >= SBC_XQ_MIN_MAX_BITPOOL
             && self.min_bitpool <= SBC_XQ_MIN_MAX_BITPOOL
     }
+
+    /// Sampling frequencies offered, in Hz
+    pub fn sample_rates(&self) -> Vec<u32> {
+        offered(self.sampling_frequency.into(), &[(0x08, 16000), (0x04, 32000), (0x02, 44100), (0x01, 48000)])
+    }
+
+    pub fn channel_modes(&self) -> Vec<ChannelMode> {
+        use ChannelMode::*;
+        offered(self.channel_mode.into(), &[(0x08, Mono), (0x04, DualChannel), (0x02, Stereo), (0x01, JointStereo)])
+    }
+
+    pub fn block_lengths(&self) -> Vec<u8> {
+        offered(self.block_length.into(), &[(0x08, 4), (0x04, 8), (0x02, 12), (0x01, 16)])
+    }
+
+    pub fn subband_counts(&self) -> Vec<u8> {
+        offered(self.subbands.into(), &[(0x02, 4), (0x01, 8)])
+    }
+
+    pub fn allocations(&self) -> Vec<Allocation> {
+        offered(self.allocation_method.into(), &[(0x02, Allocation::Snr), (0x01, Allocation::Loudness)])
+    }
+}
+
+/// The values whose bit is set in `bits`, in the order of `table`
+fn offered<T: Copy>(bits: u16, table: &[(u16, T)]) -> Vec<T> {
+    table.iter().filter(|(bit, _)| bits & bit != 0).map(|&(_, v)| v).collect()
 }
 
 // AAC codec information (A2DP 4.5.2), as BTstack's AAC capability event
@@ -201,6 +228,56 @@ impl AacCapabilities {
         self.object_types & (AAC_OBJ_MPEG2_LC | AAC_OBJ_MPEG4_LC) != 0
             && self.sampling_frequency & (AAC_FREQ_44100 | AAC_FREQ_48000) != 0
             && self.channels & (AAC_CH_1 | AAC_CH_2) != 0
+    }
+
+    /// Object types offered, by name
+    pub fn object_type_names(&self) -> Vec<&'static str> {
+        offered(
+            self.object_types.into(),
+            &[
+                (0x40, "MPEG-2 AAC-LC"),
+                (0x20, "MPEG-4 AAC-LC"),
+                (0x10, "MPEG-4 AAC-LTP"),
+                (0x08, "MPEG-4 AAC scalable"),
+                (0x04, "MPEG-4 HE-AAC"),
+                (0x02, "MPEG-4 HE-AAC v2"),
+                (0x01, "MPEG-4 AAC-ELD v2"),
+            ],
+        )
+    }
+
+    /// Sampling frequencies offered, in Hz
+    pub fn sample_rates(&self) -> Vec<u32> {
+        offered(
+            self.sampling_frequency,
+            &[
+                (0x800, 8000),
+                (0x400, 11025),
+                (0x200, 12000),
+                (0x100, 16000),
+                (0x080, 22050),
+                (0x040, 24000),
+                (0x020, 32000),
+                (0x010, 44100),
+                (0x008, 48000),
+                (0x004, 64000),
+                (0x002, 88200),
+                (0x001, 96000),
+            ],
+        )
+    }
+
+    pub fn channel_counts(&self) -> Vec<u8> {
+        offered(self.channels.into(), &[(AAC_CH_1.into(), 1), (AAC_CH_2.into(), 2)])
+    }
+}
+
+impl AacObjectType {
+    pub fn name(self) -> &'static str {
+        match self {
+            AacObjectType::Mpeg2Lc => "MPEG-2 AAC-LC",
+            AacObjectType::Mpeg4Lc => "MPEG-4 AAC-LC",
+        }
     }
 }
 
@@ -1169,6 +1246,34 @@ mod tests {
             min_bitpool: 2,
             max_bitpool: 53,
         }
+    }
+
+    #[test]
+    fn capabilities_as_lists() {
+        let c = SbcCapabilities {
+            sampling_frequency: 0x03,
+            channel_mode: 0x09,
+            block_length: 0x05,
+            subbands: 0x01,
+            allocation_method: 0x01,
+            ..sbc_all()
+        };
+        assert_eq!(c.sample_rates(), vec![44100, 48000]);
+        assert_eq!(c.channel_modes(), vec![ChannelMode::Mono, ChannelMode::JointStereo]);
+        assert_eq!((c.block_lengths(), c.subband_counts()), (vec![8, 16], vec![8]));
+        assert_eq!(c.allocations(), vec![Allocation::Loudness]);
+        let all = sbc_all();
+        assert_eq!((all.sample_rates().len(), all.channel_modes().len(), all.allocations().len()), (4, 4, 2));
+        let a = AacCapabilities {
+            object_types: AAC_OBJ_MPEG2_LC | 0x04,
+            sampling_frequency: AAC_FREQ_44100 | AAC_FREQ_48000 | 0x001,
+            channels: AAC_CH_1 | AAC_CH_2,
+            bit_rate: 320_000,
+            vbr: true,
+        };
+        assert_eq!(a.object_type_names(), vec!["MPEG-2 AAC-LC", "MPEG-4 HE-AAC"]);
+        assert_eq!(a.sample_rates(), vec![44100, 48000, 96000]);
+        assert_eq!(a.channel_counts(), vec![1, 2]);
     }
 
     #[test]

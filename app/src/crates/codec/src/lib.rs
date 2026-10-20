@@ -290,6 +290,16 @@ pub struct EncoderConfig {
     pub peer: PeerParams,
 }
 
+/// What an encoder runs with besides its bit rate (Diagnostics)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EncoderDetails {
+    /// Bytes of every codec frame, when they all have the same length
+    pub frame_bytes: Option<u32>,
+    /// SBC, SBC XQ and FastStream: the frame setup, with the bitpool the
+    /// encoder uses
+    pub sbc: Option<sbc::SbcConfig>,
+}
+
 /// One [`Encoder::encode`] call's output
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Encoded {
@@ -362,6 +372,11 @@ pub trait Encoder: Send {
     /// Puts ABR back to where a stream starts (after a reconnect: what the
     /// old link's queue made it do says nothing about the new one)
     fn abr_reset(&mut self) {}
+
+    /// The setup for Diagnostics; nothing beyond the bit rate by default
+    fn details(&self) -> EncoderDetails {
+        EncoderDetails::default()
+    }
 }
 
 /// Creates the encoder for `kind`

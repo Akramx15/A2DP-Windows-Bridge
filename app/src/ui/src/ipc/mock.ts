@@ -19,6 +19,7 @@ import type {
   AudioApp,
   AudioDevice,
   CaptureState,
+  CodecDetails,
   Device,
   ErrorInfo,
   Event,
@@ -277,11 +278,63 @@ const RECEIVER: ReceiverInfo = {
   buffer_ms: 200,
 };
 
+/** What the codecs run with, as a typical headset reports it */
+const SBC_DETAILS: CodecDetails = {
+  mtu: 894,
+  rtp: true,
+  media_header: 1,
+  frame_samples: 128,
+  frame_bytes: 119,
+  frames_per_packet: 7,
+  sbc: {
+    channel_mode: "joint_stereo",
+    blocks: 16,
+    subbands: 8,
+    allocation: "loudness",
+    bitpool: 53,
+    config_bitpool: [2, 53],
+    device: {
+      sample_rates: [44100, 48000],
+      channel_modes: ["mono", "dual_channel", "stereo", "joint_stereo"],
+      blocks: [4, 8, 12, 16],
+      subbands: [4, 8],
+      allocations: ["loudness", "snr"],
+      min_bitpool: 2,
+      max_bitpool: 53,
+    },
+  },
+  aac: null,
+};
+const AAC_DETAILS: CodecDetails = {
+  mtu: 894,
+  rtp: true,
+  media_header: 0,
+  frame_samples: 1024,
+  frame_bytes: null,
+  frames_per_packet: null,
+  sbc: null,
+  aac: {
+    object_type: "MPEG-2 AAC-LC",
+    bit_rate: 256000,
+    device: { object_types: ["MPEG-2 AAC-LC"], sample_rates: [44100, 48000], channels: [1, 2], max_bitrate: 320000, vbr: true },
+  },
+};
+const LDAC_DETAILS: CodecDetails = {
+  mtu: 894,
+  rtp: true,
+  media_header: 1,
+  frame_samples: 256,
+  frame_bytes: null,
+  frames_per_packet: null,
+  sbc: null,
+  aac: null,
+};
+
 const CODEC_INFO: Record<string, StreamInfo> = {
-  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, bits: 24, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
-  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, bits: 16, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
-  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, bits: 16, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
-  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, bits: 24, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, bits: 24, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null, details: LDAC_DETAILS },
+  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, bits: 16, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null, details: AAC_DETAILS },
+  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, bits: 16, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null, details: SBC_DETAILS },
+  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, bits: 24, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null, details: { ...LDAC_DETAILS, frame_samples: 128 } },
 };
 
 /** An LE Audio stream as the core reports it: BAP preset 48_4_2 (GMAP
@@ -311,6 +364,7 @@ function lc3Info(lowLatency: boolean, set: boolean): StreamInfo {
       low_latency: lowLatency,
       summary: `LC3 48 kHz 10 ms 120 octets (96 kbps/ch), 2 ch over 2 CIS, ${preset}`,
     },
+    details: null,
   };
 }
 

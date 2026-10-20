@@ -26,7 +26,7 @@ pub use faststream::{
 };
 pub use frame::{Allocation, ChannelMode, SbcConfig, SbcFrameEncoder};
 
-use crate::{CodecKind, Encoded, Encoder, EncoderConfig, EncoderError, Pcm, PcmFormat, Quality};
+use crate::{CodecKind, Encoded, Encoder, EncoderConfig, EncoderDetails, EncoderError, Pcm, PcmFormat, Quality};
 
 const BLOCKS: u8 = 16;
 const SUBBANDS: u8 = 8;
@@ -164,6 +164,14 @@ impl Encoder for SbcEncoder {
     /// rounded down
     fn bitrate_kbps(&self) -> u32 {
         (8 * self.frame_len as u32 * self.sample_rate) / (SUBBANDS as u32 * BLOCKS as u32) / 1000
+    }
+
+    fn details(&self) -> EncoderDetails {
+        let c = *self.frame.config();
+        EncoderDetails {
+            frame_bytes: Some(self.frame_len as u32),
+            sbc: Some(SbcConfig { bitpool: c.effective_bitpool(), ..c }),
+        }
     }
 }
 
