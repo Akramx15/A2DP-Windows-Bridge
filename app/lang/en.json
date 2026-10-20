@@ -415,7 +415,7 @@
   "ui.profile.fixed_bitrate": "Fixed by the codec",
   "ui.profile.err_name_empty": "Enter a name for the profile",
   "ui.profile.err_name_taken": "Another profile already has this name",
-  "ui.profile.err_device": "Choose the headphones (scan, or enter the address)",
+  "ui.profile.err_device": "Choose the headphones (add them under Audio Devices first)",
   "ui.profile.err_packet": "Enter a value from %d to %d",
   "ui.profile.fix_problems": "Some fields need attention",
   "ui.profile.saved": "Saved %s",
@@ -626,5 +626,16 @@
   "dbgc.col_status": "Status",
   "dbgc.col_time": "Time",
   "dbgc.col_elapsed": "Elapsed",
-  "dbgc.col_detail": "Detail"
+  "dbgc.col_detail": "Detail",
+  "ui.adapter.address": "Address",
+  "connection.vbr": "VBR (Variable Bit Rate)",
+  "tooltip.vbr": "Variable bit rate AAC: the encoder spends bits where the music needs them. Used only if the headphones list VBR; otherwise the bit rate stays constant. Takes effect when AAC is chosen by name (not Auto).",
+  "connection.sbc_bitpool": "Bitpool",
+  "tooltip.sbc_bitpool": "How many bits each SBC frame gets: higher sounds better and needs a higher bit rate (%d-%d). Auto follows the quality setting. The headphones' own range always applies.",
+  "error.sbc_bitpool_range": "Enter a bitpool from %d to %d, or Auto",
+  "ui.nav.devices": "Audio Devices",
+  "ui.devices.page_hint": "The headphones and speakers A2DPWB can stream to. Scan for new ones, add one by its address, rename or remove one. A profile then picks its device from this list.",
+  "ui.devices.add": "Add",
+  "ui.devices.manage": "Manage devices",
+  "ui.devices.saved_empty": "No saved devices yet. Add one under Audio Devices."
 }

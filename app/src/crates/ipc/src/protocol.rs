@@ -110,6 +110,10 @@ pub struct AdapterInfo {
     /// on it found out (remembered); None if none ran on it yet
     #[serde(default)]
     pub le_audio: Option<bool>,
+    /// The adapter's own Bluetooth address, as a stack running on it read
+    /// it (remembered); None if none ran on it yet
+    #[serde(default)]
+    pub address: Option<String>,
 }
 
 /// A Realtek firmware pair found in the settings folder
@@ -391,6 +395,10 @@ pub struct Profile {
     /// default; other headsets get the media configuration either way)
     #[serde(default = "yes")]
     pub le_low_latency: bool,
+    /// SBC / SBC XQ: the bitpool to encode with, within what the device
+    /// allows (0 = by quality)
+    #[serde(default)]
+    pub sbc_bitpool: u8,
 }
 
 fn yes() -> bool {

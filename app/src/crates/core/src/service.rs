@@ -350,13 +350,25 @@ impl Inner {
 
     /// Remembers whether the adapter the stack opened has LE Audio's
     /// isochronous channels, also for the next start (adapter_caps.json)
-    fn note_le_capable(&self, host: &BtHost) {
+    fn note_le_capable(&self, host: &Arc<BtHost>) {
         let capable = host.le_audio_capable();
         *self.le_support.lock().unwrap_or_else(|e| e.into_inner()) = Some(capable);
         if self.opts.hci_tcp.is_none()
             && let Some((vid, pid)) = hci_transport::usb::last_opened()
         {
             crate::adapter::save_le_audio(&self.opts.config_dir, vid, pid, capable);
+            // The address comes with the controller's answer, a moment after init
+            let dir = self.opts.config_dir.clone();
+            let host = host.clone();
+            let _ = std::thread::Builder::new().name("adapter-address".into()).spawn(move || {
+                for _ in 0..20 {
+                    if let Some(a) = host.local_address() {
+                        crate::adapter::save_address(&dir, vid, pid, &a);
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+            });
         }
     }
 

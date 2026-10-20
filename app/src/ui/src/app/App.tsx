@@ -10,6 +10,7 @@ import { codecDetails, codecName, currentProfile, stateLabel } from "../componen
 import { lang, setLanguage, t } from "../i18n";
 import type { Core } from "../ipc/store";
 import { Adapter } from "../screens/Adapter";
+import { Devices } from "../screens/Devices";
 import { Diagnostics } from "../screens/Diagnostics";
 import { Flyout } from "../screens/Flyout";
 import { Home } from "../screens/Home";
@@ -86,6 +87,7 @@ function ConnectionScreen(props: { compact?: boolean }) {
 const NAV: { name: RouteName; icon: IconName; label: string }[] = [
   { name: "home", icon: "home", label: "ui.nav.home" },
   { name: "profiles", icon: "headphones", label: "ui.nav.profiles" },
+  { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
   { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
   { name: "adapter", icon: "usb_stick", label: "ui.nav.adapter" },
   { name: "settings", icon: "settings", label: "ui.nav.settings" },
@@ -194,6 +196,9 @@ function MainWindow() {
               </Match>
               <Match when={route().name === "profiles"}>
                 <Profiles />
+              </Match>
+              <Match when={route().name === "devices"}>
+                <Devices />
               </Match>
               <Match when={route().name === "diagnostics"}>
                 <Diagnostics />

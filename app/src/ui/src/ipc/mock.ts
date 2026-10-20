@@ -76,6 +76,7 @@ const RTL: AdapterInfo = {
   vendor_note: null,
   restart_needed: false,
   le_audio: null,
+  address: "00:1A:7D:DA:71:13",
 };
 
 export function sampleProfile(over: Partial<Profile> = {}): Profile {
@@ -101,6 +102,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     max_media_payload: 1023,
     le_audio: false,
     le_low_latency: true,
+    sbc_bitpool: 0,
     ...over,
   };
 }

@@ -247,3 +247,29 @@ fn sink_bit_rate_limit() {
         assert_eq!(enc.bitrate_kbps(), kbps, "limit {limit}, {quality:?}");
     }
 }
+
+/// Variable bit rate: every access unit still fits a 672-byte L2CAP MTU's
+/// media payload (660 bytes), also for noise
+#[test]
+fn vbr_frames_fit_the_media_payload() {
+    for quality in [Quality::High, Quality::Standard, Quality::Mobile] {
+        let cfg = EncoderConfig { abr: true, ..config(44100, 2, quality, 660) };
+        let mut e = AacEncoder::new(&cfg).unwrap();
+        let n = e.pcm_frames_per_encode() * 2;
+        let mut out = vec![0u8; e.max_output_bytes()];
+        let mut seed = 7u32;
+        let mut biggest = 0;
+        for _ in 0..200 {
+            let pcm: Vec<i16> = (0..n)
+                .map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 17;
+                    seed ^= seed << 5;
+                    (seed >> 16) as i16
+                })
+                .collect();
+            biggest = biggest.max(e.encode(Pcm::I16(&pcm), &mut out).unwrap().bytes);
+        }
+        assert!(biggest <= 660, "{quality:?}: a frame of {biggest} bytes");
+    }
+}

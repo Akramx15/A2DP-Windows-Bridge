@@ -30,6 +30,8 @@ use crate::{CodecKind, Encoded, Encoder, EncoderConfig, EncoderDetails, EncoderE
 
 const BLOCKS: u8 = 16;
 const SUBBANDS: u8 = 8;
+/// The local SEP's largest bitpool
+const SBC_MAX_BITPOOL: u8 = 53;
 
 /// SBC bitpool for a quality mode (joint stereo; mono takes the same)
 pub fn quality_bitpool(quality: Quality) -> u8 {
@@ -86,14 +88,23 @@ impl SbcEncoder {
     /// SBC: joint stereo (mono for one channel), the bitpool by quality
     /// within the sink's range
     pub fn new(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
-        let bitpool = sink_bitpool(quality_bitpool(config.quality), config);
+        let wanted = match config.peer.sbc_bitpool {
+            0 => quality_bitpool(config.quality),
+            n => n.min(SBC_MAX_BITPOOL),
+        };
+        let bitpool = sink_bitpool(wanted, config);
         Self::with_mode(CodecKind::Sbc, config, ChannelMode::JointStereo, bitpool)
     }
 
     /// SBC XQ: dual channel (mono for one channel), [`xq_bitpool`] within
     /// the sink's range
     pub fn new_xq(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
-        let bitpool = sink_bitpool(xq_bitpool(config.quality, config.sample_rate), config);
+        // Never above the configuration's maximum for the rate
+        let wanted = match config.peer.sbc_bitpool {
+            0 => xq_bitpool(config.quality, config.sample_rate),
+            n => n.min(xq_max_bitpool(config.sample_rate)),
+        };
+        let bitpool = sink_bitpool(wanted, config);
         Self::with_mode(CodecKind::SbcXq, config, ChannelMode::DualChannel, bitpool)
     }
 
@@ -190,6 +201,21 @@ mod tests {
             abr: false,
             peer: PeerParams::default(),
         }
+    }
+
+    #[test]
+    fn profile_bitpool_overrides_quality_within_limits() {
+        let with = |bitpool: u8, peer_max: u8| EncoderConfig {
+            peer: crate::PeerParams { sbc_bitpool: bitpool, sbc_max_bitpool: peer_max, ..Default::default() },
+            ..config(44100, 2, Quality::Mobile)
+        };
+        assert_eq!(SbcEncoder::new(&with(0, 0)).unwrap().bitpool(), 19);
+        assert_eq!(SbcEncoder::new(&with(40, 0)).unwrap().bitpool(), 40);
+        assert_eq!(SbcEncoder::new(&with(200, 0)).unwrap().bitpool(), 53);
+        // The sink's range still wins
+        assert_eq!(SbcEncoder::new(&with(50, 35)).unwrap().bitpool(), 35);
+        // XQ never goes above its configured maximum
+        assert_eq!(SbcEncoder::new_xq(&with(53, 0)).unwrap().bitpool(), xq_max_bitpool(44100));
     }
 
     #[test]

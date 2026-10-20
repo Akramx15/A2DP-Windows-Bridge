@@ -27,6 +27,8 @@ import {
   PACKET_DEFAULT,
   PACKET_MAX,
   PACKET_MIN,
+  BITPOOL_MAX,
+  BITPOOL_MIN,
   qualityIgnored,
   sampleRates,
   type CodecSpec,
@@ -113,7 +115,12 @@ export function ProfileEditor(props: { original: string | null }) {
     followName();
   };
 
-  const pickCodec = (c: CodecSpec) => setP(fitToCodec({ ...unwrap(p), codec: c.id }));
+  const pickCodec = (c: CodecSpec) => {
+    const cur = unwrap(p);
+    // The flag is VBR under AAC and ABR elsewhere: not carried across
+    const abr = (c.id === "aac") !== (cur.codec === "aac") ? false : cur.abr;
+    setP(fitToCodec({ ...cur, abr, codec: c.id }));
+  };
   // The codec whose settings dialog is open
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
 
@@ -186,6 +193,7 @@ export function ProfileEditor(props: { original: string | null }) {
             address={p.device_address}
             leAudio={p.le_audio}
             onPick={pickDevice}
+            savedOnly
             error={tp(problems().device)}
           />
         </Section>
@@ -542,7 +550,7 @@ function CodecCard(props: {
   );
 }
 
-type CodecValues = Pick<Profile, "codec" | "quality" | "sample_rate" | "bit_depth" | "abr">;
+type CodecValues = Pick<Profile, "codec" | "quality" | "sample_rate" | "bit_depth" | "abr" | "sbc_bitpool">;
 
 /**
  * One codec's quality, sample rate, bit depth and ABR (what "Advanced" had
@@ -555,26 +563,48 @@ function CodecSettings(props: {
   onApply: (values: CodecValues) => void;
   onCancel: () => void;
 }) {
-  const [v, setV] = createStore<CodecValues>({ codec: "auto", quality: "hq", sample_rate: 0, bit_depth: 0, abr: false });
+  const [v, setV] = createStore<CodecValues>({
+    codec: "auto",
+    quality: "hq",
+    sample_rate: 0,
+    bit_depth: 0,
+    abr: false,
+    sbc_bitpool: 0,
+  });
   createEffect(
     on(
       () => props.spec,
       (s) => {
         if (!s) return;
         const p = props.profile;
-        setV(fitToCodec({ codec: s.id, quality: p.quality, sample_rate: p.sample_rate, bit_depth: p.bit_depth, abr: p.abr }));
+        setV(
+          fitToCodec({
+            codec: s.id,
+            quality: p.quality,
+            sample_rate: p.sample_rate,
+            bit_depth: p.bit_depth,
+            abr: (s.id === "aac") !== (p.codec === "aac") ? false : p.abr,
+            sbc_bitpool: p.sbc_bitpool,
+          }),
+        );
       },
     ),
   );
   const spec = () => codecSpec(v.codec);
   const name = () => t(spec().label);
+  const bitpoolError = () =>
+    v.sbc_bitpool !== 0 && !(Number.isInteger(v.sbc_bitpool) && v.sbc_bitpool >= BITPOOL_MIN && v.sbc_bitpool <= BITPOOL_MAX)
+      ? t("error.sbc_bitpool_range", BITPOOL_MIN, BITPOOL_MAX)
+      : undefined;
   return (
     <Dialog
       open={props.spec !== null}
       title={t("ui.profile.codec_settings", name())}
       confirm={t("modal.ok")}
       cancel={t("modal.cancel")}
-      onConfirm={() => props.onApply({ ...v })}
+      onConfirm={() => {
+        if (!bitpoolError()) props.onApply({ ...v });
+      }}
       onCancel={() => props.onCancel()}
     >
       <div class="codec-settings">
@@ -622,6 +652,37 @@ function CodecSettings(props: {
         </Field>
         <Show when={spec().abr}>
           <Check label={t("connection.abr")} title={t("tooltip.abr")} checked={v.abr} onChange={(x) => setV("abr", x)} />
+        </Show>
+        <Show when={spec().vbr}>
+          <Check label={t("connection.vbr")} title={t("tooltip.vbr")} checked={v.abr} onChange={(x) => setV("abr", x)} />
+        </Show>
+        <Show when={spec().bitpool}>
+          <Field
+            label={t("connection.sbc_bitpool")}
+            hint={t("tooltip.sbc_bitpool", BITPOOL_MIN, BITPOOL_MAX)}
+            error={bitpoolError()}
+          >
+            {(id, described) => (
+              <div class="inline">
+                <input
+                  id={id}
+                  class="input num narrow"
+                  type="number"
+                  inputmode="numeric"
+                  min={BITPOOL_MIN}
+                  max={BITPOOL_MAX}
+                  step="1"
+                  placeholder={t("codec.auto")}
+                  value={v.sbc_bitpool === 0 ? "" : v.sbc_bitpool}
+                  aria-describedby={described}
+                  onInput={(e) => setV("sbc_bitpool", e.currentTarget.value === "" ? 0 : e.currentTarget.valueAsNumber)}
+                />
+                <Button kind="subtle" disabled={v.sbc_bitpool === 0} onClick={() => setV("sbc_bitpool", 0)}>
+                  {t("codec.auto")}
+                </Button>
+              </div>
+            )}
+          </Field>
         </Show>
         <Show when={v.codec !== props.profile.codec}>
           <p class="hint">{t("ui.profile.codec_settings_apply", name())}</p>

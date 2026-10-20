@@ -262,6 +262,9 @@ pub struct PeerParams {
     /// encoder keeps its bitpool within it
     pub sbc_min_bitpool: u8,
     pub sbc_max_bitpool: u8,
+    /// SBC / SBC XQ: the bitpool the profile asks for (0 = by quality),
+    /// still within the sink's range
+    pub sbc_bitpool: u8,
     /// Opus / Opus 05: the frame duration configured, 10 or 20 ms (0 = 20)
     pub opus_frame_ms: u8,
     /// Opus / Opus 05: the channels configured on the wire, 1 or 2 (0 = as

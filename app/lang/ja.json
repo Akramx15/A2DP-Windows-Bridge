@@ -415,7 +415,7 @@
   "ui.profile.fixed_bitrate": "コーデックで固定",
   "ui.profile.err_name_empty": "プロファイルの名前を入力してください",
   "ui.profile.err_name_taken": "同じ名前のプロファイルがすでにあります",
-  "ui.profile.err_device": "ヘッドホンを選んでください（検索するか、アドレスを入力）",
+  "ui.profile.err_device": "ヘッドホンを選んでください(先に「オーディオデバイス」で追加)",
   "ui.profile.err_packet": "%d から %d までの値を入力してください",
   "ui.profile.fix_problems": "入力内容を確認してください",
   "ui.profile.saved": "%s を保存しました",
@@ -626,5 +626,16 @@
   "dbgc.col_status": "状態",
   "dbgc.col_time": "時刻",
   "dbgc.col_elapsed": "経過",
-  "dbgc.col_detail": "詳細"
+  "dbgc.col_detail": "詳細",
+  "ui.adapter.address": "アドレス",
+  "connection.vbr": "VBR(可変ビットレート)",
+  "tooltip.vbr": "可変ビットレートのAAC: 音楽に応じてビット数を配分します。ヘッドホンがVBRに対応している場合のみ有効で、非対応なら固定ビットレートのままです。Autoではなく AAC を直接選んだときに適用されます。",
+  "connection.sbc_bitpool": "ビットプール",
+  "tooltip.sbc_bitpool": "SBCの1フレームに割り当てるビット数です。大きいほど高音質でビットレートも上がります(%d-%d)。Autoは品質設定に従います。ヘッドホン側の範囲が常に優先されます。",
+  "error.sbc_bitpool_range": "ビットプールは%dから%dの値、またはAutoにしてください",
+  "ui.nav.devices": "オーディオデバイス",
+  "ui.devices.page_hint": "A2DPWBが接続できるヘッドホンやスピーカーの一覧です。スキャンで新しいデバイスを探したり、アドレスで追加したり、名前の変更や削除ができます。プロファイルはこの一覧からデバイスを選びます。",
+  "ui.devices.add": "追加",
+  "ui.devices.manage": "デバイスの管理",
+  "ui.devices.saved_empty": "保存されたデバイスがありません。「オーディオデバイス」で追加してください。"
 }

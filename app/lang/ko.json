@@ -415,7 +415,7 @@
   "ui.profile.fixed_bitrate": "코덱에서 고정됨",
   "ui.profile.err_name_empty": "프로필 이름을 입력하십시오",
   "ui.profile.err_name_taken": "다른 프로필이 이미 이 이름을 사용하고 있습니다",
-  "ui.profile.err_device": "헤드폰을 선택하십시오(검색하거나 주소를 입력)",
+  "ui.profile.err_device": "헤드폰을 선택하십시오(먼저 오디오 장치에서 추가)",
   "ui.profile.err_packet": "%d에서 %d 사이의 값을 입력하십시오",
   "ui.profile.fix_problems": "확인이 필요한 항목이 있습니다",
   "ui.profile.saved": "%s을(를) 저장했습니다",
@@ -626,5 +626,6 @@
   "dbgc.col_status": "상태",
   "dbgc.col_time": "시각",
   "dbgc.col_elapsed": "경과",
-  "dbgc.col_detail": "세부 정보"
+  "dbgc.col_detail": "세부 정보",
+  "ui.nav.devices": "오디오 장치"
 }

@@ -51,9 +51,9 @@ describe("a new profile", () => {
   });
 });
 
-describe("saved devices in the picker", () => {
+describe("saved devices on the Audio Devices screen", () => {
   it("renames a saved device", async () => {
-    const { calls } = start("#/profiles/new");
+    const { calls } = start("#/devices");
     fireEvent.click(await screen.findByRole("button", { name: `${t("device.edit_name")}: SRS-XB13` }));
     const dialog = await screen.findByRole("dialog");
     const input = within(dialog).getByLabelText(t("device.enter_name"));
@@ -72,37 +72,36 @@ describe("saved devices in the picker", () => {
       address: "00:1A:7D:DA:71:13",
       name: "Desk speaker",
     });
-    expect(await screen.findByRole("radio", { name: /Desk speaker/ })).toBeInTheDocument();
-  });
-
-  it("renaming the chosen device updates the profile's device name", async () => {
-    start(edit("WH-1000XM5 (LDAC)"));
-    fireEvent.click(await screen.findByRole("button", { name: `${t("device.edit_name")}: WH-1000XM5` }));
-    const dialog = await screen.findByRole("dialog");
-    const input = within(dialog).getByLabelText(t("device.enter_name"));
-    fireEvent.input(input, { target: { value: "My XM5" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    // The selected-device line shows it (the profile's own name stays)
-    expect(document.querySelector(".selected-device")).toHaveTextContent("My XM5");
-    expect(screen.getByLabelText("Profile Name")).toHaveValue("WH-1000XM5 (LDAC)");
+    expect(await screen.findByText(/Desk speaker/)).toBeInTheDocument();
   });
 
   it("removes a saved device after asking", async () => {
-    const { calls } = start("#/profiles/new");
+    const { calls } = start("#/devices");
     fireEvent.click(await screen.findByRole("button", { name: `${t("ui.device.forget")}: SRS-XB13` }));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("00:1A:7D:DA:71:13");
     fireEvent.click(within(dialog).getByRole("button", { name: t("ui.device.forget") }));
-    await waitFor(() => expect(screen.queryByRole("radio", { name: /SRS-XB13/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/SRS-XB13/)).toBeNull());
     expect(calls.find((c) => c.method === "device.forget")?.params).toEqual({ address: "00:1A:7D:DA:71:13" });
   });
 
-  it("offers no rename or removal for devices that are not saved", async () => {
-    start("#/profiles/new");
+  it("offers no rename or removal for devices that are not saved, but adding them", async () => {
+    const { calls } = start("#/devices");
     fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
-    await screen.findByRole("radio", { name: /Galaxy Buds2 Pro/ });
-    expect(screen.queryByRole("button", { name: /Galaxy Buds2 Pro/ })).toBeNull();
+    const row = (await screen.findByText(/Galaxy Buds2 Pro/)).closest(".device-row") as HTMLElement;
+    expect(within(row).queryByRole("button", { name: new RegExp(t("device.edit_name")) })).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: t("ui.devices.add") }));
+    await waitFor(() => expect(calls.find((c) => c.method === "device.rename")?.params).toMatchObject({ name: "Galaxy Buds2 Pro" }));
+    await waitFor(() => expect(within(row).queryByRole("button", { name: t("ui.devices.add") })).toBeNull());
+  });
+
+  it("is only a list to choose from in the profile editor", async () => {
+    start("#/profiles/new");
+    await screen.findByRole("radio", { name: /WH-1000XM5/ });
+    expect(screen.queryByRole("button", { name: t("connection.scan") })).toBeNull();
+    expect(screen.queryByRole("button", { name: new RegExp(t("device.edit_name")) })).toBeNull();
+    expect(screen.queryByRole("button", { name: new RegExp(t("ui.device.forget")) })).toBeNull();
+    expect(screen.queryByLabelText(t("connection.manual"))).toBeNull();
   });
 });
 

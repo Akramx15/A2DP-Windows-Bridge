@@ -29,6 +29,7 @@ export function newProfile(): Profile {
     max_media_payload: PACKET_DEFAULT,
     le_audio: false,
     le_low_latency: true,
+    sbc_bitpool: 0,
   };
 }
 

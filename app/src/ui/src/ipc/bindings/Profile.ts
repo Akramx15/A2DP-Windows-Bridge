@@ -39,4 +39,9 @@ le_audio: boolean,
  * LE Audio: GMAP low-latency presets with a gaming headset (on by
  * default; other headsets get the media configuration either way)
  */
-le_low_latency: boolean, };
+le_low_latency: boolean, 
+/**
+ * SBC / SBC XQ: the bitpool to encode with, within what the device
+ * allows (0 = by quality)
+ */
+sbc_bitpool: number, };

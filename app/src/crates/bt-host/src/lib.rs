@@ -538,6 +538,11 @@ impl BtHost {
         self.shared.lock().realtek_rom
     }
 
+    /// The controller's own address, once it has answered
+    pub fn local_address(&self) -> Option<String> {
+        self.shared.lock().local_address.clone()
+    }
+
     /// The controller has LE Audio's isochronous channels (its supported
     /// commands at HCI init; also known with LE Audio off). Streaming still
     /// needs ISO buffers ([`BtHost::le_iso_buffers`]).

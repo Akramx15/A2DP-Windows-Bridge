@@ -415,7 +415,7 @@
   "ui.profile.fixed_bitrate": "由轉碼器固定",
   "ui.profile.err_name_empty": "請輸入設定檔名稱",
   "ui.profile.err_name_taken": "已有其他設定檔使用此名稱",
-  "ui.profile.err_device": "請選擇耳機 (掃描或輸入位址)",
+  "ui.profile.err_device": "請選擇耳機 (請先在「音訊裝置」新增)",
   "ui.profile.err_packet": "請輸入 %d 到 %d 之間的值",
   "ui.profile.fix_problems": "部分欄位需要處理",
   "ui.profile.saved": "已儲存 %s",
@@ -626,5 +626,6 @@
   "dbgc.col_status": "狀態",
   "dbgc.col_time": "時間",
   "dbgc.col_elapsed": "經過時間",
-  "dbgc.col_detail": "詳細資料"
+  "dbgc.col_detail": "詳細資料",
+  "ui.nav.devices": "音訊裝置"
 }

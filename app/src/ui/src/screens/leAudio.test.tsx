@@ -160,49 +160,56 @@ describe("profile editor", () => {
 
 describe("device list", () => {
   it("lists a dual-mode device twice with LE Audio on, with its tags", async () => {
-    start("#/profiles/new", "le");
+    start("#/devices", "le");
     fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
-    await screen.findByRole("radio", { name: /LE Audio Speaker/ });
-    const buds = screen.getAllByRole("radio", { name: /Galaxy Buds2 Pro/ });
-    expect(buds).toHaveLength(2);
-    const rows = buds.map((r) => r.closest(".device-row") as HTMLElement);
+    await screen.findByText(/LE Audio Speaker/);
+    const rows = screen.getAllByText(/Galaxy Buds2 Pro/).map((r) => r.closest(".device-row") as HTMLElement);
+    expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.dataset.key).sort()).toEqual(["F4:4E:FD:00:11:22", "F4:4E:FD:00:11:22/le"]);
     const le = rows.find((r) => r.dataset.key!.endsWith("/le"))!;
     const classic = rows.find((r) => !r.dataset.key!.endsWith("/le"))!;
     expect(le).toHaveTextContent(t("device.tag_le_audio_set"));
     expect(classic).toHaveTextContent(t("device.tag_audio"));
     expect(classic).not.toHaveTextContent(t("device.tag_le_audio"));
-    const speaker = screen.getByRole("radio", { name: /LE Audio Speaker/ }).closest(".device-row")!;
+    const speaker = screen.getByText(/LE Audio Speaker/).closest(".device-row")!;
     expect(speaker).toHaveTextContent(t("device.tag_le_audio"));
     expect(speaker).not.toHaveTextContent(t("device.tag_le_audio_set"));
+  });
 
-    // Picking one entry checks only that one
-    fireEvent.click(within(classic).getByRole("radio"));
-    await waitFor(() => expect(within(classic).getByRole("radio")).toBeChecked());
-    expect(within(le).getByRole("radio")).not.toBeChecked();
-    expect(leCheck()).not.toBeChecked();
+  it("picks one entry of a dual-mode device in the profile editor", async () => {
+    start("#/profiles/new", "le");
+    // The saved LE Audio entry (the classic one is not saved here)
+    const buds = await screen.findAllByRole("radio", { name: /Galaxy Buds2 Pro/ });
+    expect(buds).toHaveLength(1);
+    expect((buds[0].closest(".device-row") as HTMLElement).dataset.key).toBe("F4:4E:FD:00:11:22/le");
+    fireEvent.click(buds[0]);
+    await waitFor(() => expect(buds[0]).toBeChecked());
+    expect(leCheck()).toBeChecked();
+    // No scanning, renaming or removing here: that is the Audio Devices screen
+    expect(screen.queryByRole("button", { name: t("connection.scan") })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Galaxy Buds2 Pro/ })).toBeNull();
   });
 
   it("hides the LE Audio entries with LE Audio off", async () => {
-    start("#/profiles/new");
+    start("#/devices");
     fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
-    await screen.findByRole("radio", { name: /MX Keys/ });
-    expect(screen.getAllByRole("radio", { name: /Galaxy Buds2 Pro/ })).toHaveLength(1);
-    expect(screen.queryByRole("radio", { name: /LE Audio Speaker/ })).toBeNull();
+    await screen.findByText(/MX Keys/);
+    expect(screen.getAllByText(/Galaxy Buds2 Pro/)).toHaveLength(1);
+    expect(screen.queryByText(/LE Audio Speaker/)).toBeNull();
     expect(screen.queryByText(t("device.tag_le_audio"))).toBeNull();
   });
 
   it("says when it scans for LE Audio devices", async () => {
     // Slower than the other tests: the LE part of the scan lasts long enough to see
-    start("#/profiles/new", "le", 0.2);
+    start("#/devices", "le", 0.2);
     fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
     expect(await screen.findByText(t("status.le_scanning"), {}, { timeout: 3000 })).toBeInTheDocument();
-    await screen.findByRole("radio", { name: /LE Audio Speaker/ }, { timeout: 3000 });
+    await screen.findByText(/LE Audio Speaker/, {}, { timeout: 3000 });
     expect(screen.queryByText(t("status.le_scanning"))).toBeNull();
   });
 
   it("forgets and renames the LE Audio entry by address and kind", async () => {
-    const { calls } = start("#/profiles/new", "le");
+    const { calls } = start("#/devices", "le");
     const le = (await screen.findByText(t("device.tag_le_audio_set"))).closest(".device-row") as HTMLElement;
     fireEvent.click(within(le).getByRole("button", { name: `${t("device.edit_name")}: Galaxy Buds2 Pro` }));
     const dialog = await screen.findByRole("dialog");
@@ -218,7 +225,7 @@ describe("device list", () => {
     fireEvent.click(await screen.findByRole("button", { name: `${t("ui.device.forget")}: Buds LE` }));
     const confirm = await screen.findByRole("dialog");
     fireEvent.click(within(confirm).getByRole("button", { name: t("ui.device.forget") }));
-    await waitFor(() => expect(screen.queryByRole("radio", { name: /Buds LE/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/Buds LE/)).toBeNull());
     expect(calls.find((c) => c.method === "device.forget")!.params).toEqual({ address: "F4:4E:FD:00:11:22", le_audio: true });
   });
 });
