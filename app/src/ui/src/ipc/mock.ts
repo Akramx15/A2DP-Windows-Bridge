@@ -38,7 +38,7 @@ import type {
   StreamInfo,
 } from "./types";
 
-export type MockScenario = "normal" | "fresh" | "error" | "update" | "offline" | "le" | "long";
+export type MockScenario = "normal" | "fresh" | "error" | "update" | "offline" | "le" | "le_unsupported" | "long";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -125,7 +125,8 @@ const LE_BUDS = sampleDevice({ address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2
 
 export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const fresh = scenario === "fresh";
-  const le = scenario === "le";
+  // le_unsupported: LE Audio on, but the adapter has no ISO buffers
+  const le = scenario === "le" || scenario === "le_unsupported";
   // Names long enough to wrap or overflow every place that shows them
   const long = scenario === "long";
   const LONG_NAME = "リビングのソニーワイヤレスノイズキャンセリングヘッドホン（LDAC・990kbps・高音質優先）";
@@ -161,6 +162,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
       status: "stopped",
       adapters: [fresh ? { ...RTL, driver: "bluetooth", driver_service: "BTHUSB", firmware_present: false } : RTL],
       error: null,
+      le_audio: scenario === "le_unsupported" ? false : null,
     },
     devices: fresh
       ? []
@@ -276,10 +278,10 @@ const RECEIVER: ReceiverInfo = {
 };
 
 const CODEC_INFO: Record<string, StreamInfo> = {
-  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
-  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
-  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
-  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  ldac: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 96000, channels: 2, bits: 24, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  aac: { codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, channels: 2, bits: 16, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  sbc: { codec: "SBC", bitrate_kbps: 328, sample_rate: 48000, channels: 2, bits: 16, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
+  auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, bits: 24, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null },
 };
 
 /** An LE Audio stream as the core reports it: BAP preset 48_4_2 (GMAP
@@ -291,6 +293,7 @@ function lc3Info(lowLatency: boolean, set: boolean): StreamInfo {
     bitrate_kbps: 192,
     sample_rate: 48000,
     channels: 2,
+    bits: 0,
     source_sample_rate: 48000,
     source_channels: 2,
     source_bits: 32,

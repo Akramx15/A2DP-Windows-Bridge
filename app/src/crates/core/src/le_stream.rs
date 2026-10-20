@@ -264,6 +264,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     if !host.le_ready() {
         return inner.notify(StreamState::Error, Msg::new("error.le_audio_unavailable"));
     }
+    inner.note_le_ready(&host);
 
     let (request, low_latency) = stream_request(&le);
     host.le_set_low_latency(low_latency);
@@ -318,6 +319,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             bitrate_kbps: plan.preset.kbps_per_channel() * channels,
             sample_rate: rate,
             channels,
+            bits: 0,
             source_sample_rate: format.map_or(rate, |f| f.sample_rate),
             source_channels: format.map_or(2, |f| f.channels as u32),
             source_bits: format.map_or(16, |f| (f.sample_format.bytes_per_sample() * 8) as u32),

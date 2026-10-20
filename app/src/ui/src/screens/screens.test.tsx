@@ -38,6 +38,19 @@ describe("Home", () => {
     expect(calls.some((c) => c.method === "stream.stop")).toBe(true);
   });
 
+  it("shows the headphones, the codec and its details in the sidebar on every screen (issue #86)", async () => {
+    const { core } = start("#/settings");
+    const card = () => document.querySelector(".status-pill") as HTMLElement;
+    await waitFor(() => expect(card()).toHaveTextContent("WH-1000XM5"));
+    expect(card()).toHaveTextContent("AC:80:0A:12:34:56");
+    expect(card()).toHaveTextContent("Idle");
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(card().querySelector(".status-pill-codec")).toHaveTextContent("LDAC"));
+    expect(card()).toHaveTextContent("Streaming");
+    expect(card().querySelector(".status-pill-details")).toHaveTextContent(/^990 kbps \| [\d.]+ kHz \| 24-bit$/);
+    expect(card()).toHaveAccessibleName(/^WH-1000XM5, .*, LDAC 990 kbps/);
+  });
+
   it("asks to exit v1 while it runs", async () => {
     start("#/home");
     await screen.findByRole("button", { name: "Connect" });

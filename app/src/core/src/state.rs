@@ -544,7 +544,7 @@ impl CoreState {
         let adapters = adapter_infos(&dir, &settings);
         warn_invalid_firmware(&dir, &firmware_change(&[], &adapters).invalid);
         let snapshot = Snapshot {
-            adapter: AdapterState { status: AdapterStatus::Stopped, adapters, error: None },
+            adapter: AdapterState { status: AdapterStatus::Stopped, adapters, error: None, le_audio: None },
             devices: saved_devices(&dir, &[], &service.device_codecs()),
             scanning: false,
             le_scanning: false,
@@ -732,6 +732,7 @@ impl CoreState {
                     bitrate_kbps: i.bitrate_kbps,
                     sample_rate: i.sample_rate,
                     channels: i.channels,
+                    bits: i.bits,
                     source_sample_rate: i.source_sample_rate,
                     source_channels: i.source_channels,
                     source_bits: i.source_bits,
@@ -750,6 +751,12 @@ impl CoreState {
         self.publish(Event::Stream(stream));
         if devices_changed {
             self.refresh_devices();
+        }
+        // A stack with LE Audio became ready (a scan or an LE Audio stream)
+        let le_audio = self.service.le_audio_supported();
+        if le_audio != s.adapter.le_audio {
+            let (_, s) = self.snapshot();
+            self.publish(Event::Adapter(AdapterState { le_audio, ..s.adapter }));
         }
     }
 
@@ -832,7 +839,12 @@ impl CoreState {
         let idle = !s.scanning && matches!(s.stream.state, StreamState::Idle | StreamState::Error);
         if self.service.reload_adapter(idle) {
             tracing::info!("adapter settings changed: Bluetooth stopped, it starts again at the next use");
-            self.publish(Event::Adapter(AdapterState { status: AdapterStatus::Stopped, error: None, ..s.adapter }));
+            self.publish(Event::Adapter(AdapterState {
+                status: AdapterStatus::Stopped,
+                error: None,
+                le_audio: self.service.le_audio_supported(),
+                ..s.adapter
+            }));
         } else {
             tracing::info!("adapter settings changed: Bluetooth restarts at its next use");
         }

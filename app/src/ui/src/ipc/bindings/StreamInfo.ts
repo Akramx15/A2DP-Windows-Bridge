@@ -2,7 +2,12 @@
 import type { LeStreamInfo } from "./LeStreamInfo";
 import type { SourceInfo } from "./SourceInfo";
 
-export type StreamInfo = { codec: string, bitrate_kbps: number, sample_rate: number, channels: number, source_sample_rate: number, source_channels: number, source_bits: number, 
+export type StreamInfo = { codec: string, bitrate_kbps: number, sample_rate: number, channels: number, 
+/**
+ * Bits per sample the codec carries (16, 24); 0: not reported (LE
+ * Audio, an older core)
+ */
+bits: number, source_sample_rate: number, source_channels: number, source_bits: number, 
 /**
  * The profile's codec, when the device did not offer it (fallback)
  */

@@ -35,6 +35,7 @@ const SBC: StreamInfo = {
   bitrate_kbps: 328,
   sample_rate: 48000,
   channels: 2,
+  bits: 16,
   source_sample_rate: 48000,
   source_channels: 2,
   source_bits: 32,

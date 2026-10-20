@@ -6,7 +6,7 @@ import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch } f
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import type { IconName } from "../components/icons";
-import { CodecBadge, stateLabel } from "../components/stream";
+import { codecDetails, codecName, currentProfile, stateLabel } from "../components/stream";
 import { lang, setLanguage, t } from "../i18n";
 import type { Core } from "../ipc/store";
 import { Adapter } from "../screens/Adapter";
@@ -225,23 +225,59 @@ export async function hideToTray(core: Core): Promise<void> {
   await core.request("app.hidden_to_tray").catch(() => {});
 }
 
-/** Always visible (design principle 2): stream state, codec, bitrate */
+/** Always visible (design principle 2): the headphones, the stream state,
+ *  the codec and what it runs with, so other screens need no trip to Home
+ *  (issue #86) */
 function StatusPill() {
   const { core, navigate } = useApp();
-  const stream = () => core.state.snap!.stream;
+  const snap = () => core.state.snap!;
+  const stream = () => snap().stream;
+  const profile = () => currentProfile(snap());
+  const device = () => {
+    const p = profile();
+    return p ? p.device_name || p.device_address : "";
+  };
+  const details = () => {
+    const i = stream().info;
+    return i ? codecDetails(i).join(" | ") : "";
+  };
+  // Also the name while collapsed to the dot
+  const label = () => {
+    const i = stream().info;
+    return [device(), stateLabel(stream().state), i ? `${codecName(i)} ${details()}` : ""].filter((x) => x).join(", ");
+  };
   return (
     <button
       type="button"
       class={`status-pill st-${stream().state}`}
       onClick={() => navigate({ name: "home" })}
-      aria-label={`${stateLabel(stream().state)}`}
-      title={stateLabel(stream().state)}
+      aria-label={label()}
+      title={label()}
     >
       <span class="dot" aria-hidden="true" />
       <span class="status-pill-text">
+        <Show when={profile()}>
+          {(p) => (
+            <>
+              <span class="status-pill-device ellipsis">{device()}</span>
+              <span class="status-pill-sub ellipsis">{p().name}</span>
+              <span class="status-pill-sub mono">{p().device_address}</span>
+            </>
+          )}
+        </Show>
         <span class="status-pill-state">{stateLabel(stream().state)}</span>
         <Show when={stream().info}>
-          <CodecBadge compact />
+          {(i) => (
+            <>
+              <span class="status-pill-codec">
+                <Show when={i().requested_codec}>
+                  <Icon name="warning" class="st-warn" />
+                </Show>
+                <strong>{codecName(i())}</strong>
+              </span>
+              <span class="status-pill-details num">{details()}</span>
+            </>
+          )}
         </Show>
       </span>
     </button>

@@ -53,19 +53,31 @@ describe("profile editor", () => {
     expect(leCheck()).not.toBeNull();
   });
 
-  it("hides codec, quality, sample rate and bit depth for an LE Audio profile", async () => {
+  it("hides the codecs and their settings for an LE Audio profile", async () => {
     start("#/profiles/new", "le");
-    fireEvent.click(await screen.findByRole("button", { name: /Advanced/ }));
-    expect(screen.getByRole("radiogroup", { name: t("connection.codec") })).toBeInTheDocument();
-    expect(screen.getByLabelText(t("connection.quality"))).toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: t("connection.codec") })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("ui.profile.codec_settings", t("codec.ldac")) })).toBeInTheDocument();
 
     fireEvent.click(leCheck()!);
     await waitFor(() => expect(screen.queryByRole("radiogroup", { name: t("connection.codec") })).toBeNull());
-    expect(screen.queryByLabelText(t("connection.quality"))).toBeNull();
-    expect(screen.queryByLabelText(t("connection.sample_rate"))).toBeNull();
-    expect(screen.queryByLabelText(t("connection.bit_depth"))).toBeNull();
+    expect(screen.queryByRole("button", { name: t("ui.profile.codec_settings", t("codec.ldac")) })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: t("connection.codec_fallback") })).toBeNull();
     expect(screen.getByText(t("tooltip.le_audio"))).toBeInTheDocument();
+  });
+
+  it("offers no LE Audio when the adapter cannot stream it (issue #86)", async () => {
+    start("#/profiles/new", "le_unsupported");
+    await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
+    expect(leCheck()).toBeNull();
+    // ... nor the LE Audio entries of the device list
+    expect(screen.queryByText(t("device.tag_le_audio_set"))).toBeNull();
+    expect(screen.getByRole("radio", { name: /SRS-XB13/ })).toBeInTheDocument();
+  });
+
+  it("keeps the check box of an LE Audio profile and says the adapter cannot stream it", async () => {
+    start(`#/profiles/edit/${encodeURIComponent("Buds (LE Audio)")}`, "le_unsupported");
+    await waitFor(() => expect(leCheck()).toBeChecked());
+    expect(screen.getByText(t("ui.profile.le_audio_unsupported"))).toBeInTheDocument();
   });
 
   it("names the profile after the device with LE Audio and saves it as one", async () => {

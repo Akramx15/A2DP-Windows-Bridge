@@ -125,6 +125,11 @@ pub struct AdapterState {
     pub status: AdapterStatus,
     pub adapters: Vec<AdapterInfo>,
     pub error: Option<Msg>,
+    /// The controller can stream LE Audio (it has ISO buffers). None: not
+    /// known until the stack ran with LE Audio (experimental) on; the UI
+    /// hides the LE Audio choices only on false
+    #[serde(default)]
+    pub le_audio: Option<bool>,
 }
 
 /// A device known from the saved list or a scan
@@ -174,6 +179,10 @@ pub struct StreamInfo {
     pub bitrate_kbps: u32,
     pub sample_rate: u32,
     pub channels: u32,
+    /// Bits per sample the codec carries (16, 24); 0: not reported (LE
+    /// Audio, an older core)
+    #[serde(default)]
+    pub bits: u32,
     pub source_sample_rate: u32,
     pub source_channels: u32,
     pub source_bits: u32,

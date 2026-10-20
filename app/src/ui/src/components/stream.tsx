@@ -134,14 +134,26 @@ export function VolumeControl() {
   );
 }
 
+/** A stream's codec by its translated name ("LDAC", "aptX HD") */
+export function codecName(info: StreamInfo): string {
+  const key = codecLabelKey(info.codec);
+  return key ? t(key) : info.codec;
+}
+
+/** What the codec runs with, in short: "990 kbps", "48 kHz", "24-bit", "ABR" */
+export function codecDetails(info: StreamInfo): string[] {
+  const out = [`${info.bitrate_kbps} kbps`, `${khz(info.sample_rate)} kHz`];
+  if (info.bits > 0) out.push(t(`bitdepth.${info.bits}`));
+  if (info.abr) out.push("ABR");
+  return out;
+}
+
 export function CodecBadge(props: { compact?: boolean }) {
   const { core } = useApp();
   const info = () => core.state.snap?.stream.info ?? null;
   const name = () => {
     const i = info();
-    if (!i) return "";
-    const key = codecLabelKey(i.codec);
-    return key ? t(key) : i.codec;
+    return i ? codecName(i) : "";
   };
   // "400 kbps — ABR on": why the bit rate is below the profile's
   const bitrateNote = (i: StreamInfo) => {

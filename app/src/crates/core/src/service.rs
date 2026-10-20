@@ -243,6 +243,9 @@ pub(crate) struct Inner {
     le_stream: Mutex<Option<crate::le_stream::LeStreamDetails>>,
     /// An A2DP stream ran on the running stack (issue #84)
     streamed: AtomicBool,
+    /// The controller can stream LE Audio (ISO buffers), once a stack
+    /// with LE Audio was ready (issue #86)
+    le_support: Mutex<Option<bool>>,
 }
 
 impl Inner {
@@ -254,6 +257,13 @@ impl Inner {
         tracing::info!("state {state:?}: {}", msg.english());
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = state;
         let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::State(state, msg));
+    }
+
+    /// Notes whether the controller of a stack whose LE Audio is ready
+    /// can stream it (ISO buffers)
+    pub fn note_le_ready(&self, host: &BtHost) {
+        let (len, count) = host.le_iso_buffers();
+        *self.le_support.lock().unwrap_or_else(|e| e.into_inner()) = Some(len > 0 && count > 0);
     }
 
     pub fn stream_info(&self, info: StreamInfo) {
@@ -567,6 +577,7 @@ impl Service {
             le_active: AtomicBool::new(false),
             scanning: AtomicBool::new(false),
             le_stream: Mutex::new(None),
+            le_support: Mutex::new(None),
             streamed: AtomicBool::new(false),
         });
         // Without a window, also while only the tray runs
@@ -696,6 +707,8 @@ impl Service {
     /// next connection or scan), so the firmware is loaded again. `idle`:
     /// nothing streams or scans. True when it was released now.
     pub fn reload_adapter(&self, idle: bool) -> bool {
+        // Maybe another adapter: its LE Audio support is not known yet
+        *self.inner.le_support.lock().unwrap_or_else(|e| e.into_inner()) = None;
         if idle && !self.is_running() {
             self.inner.reload.store(false, Ordering::Release);
             self.inner.shutdown_host();
@@ -704,6 +717,12 @@ impl Service {
             self.inner.reload.store(self.host().is_some(), Ordering::Release);
             false
         }
+    }
+
+    /// The controller can stream LE Audio; None until a stack with LE Audio
+    /// (experimental) was ready
+    pub fn le_audio_supported(&self) -> Option<bool> {
+        *self.inner.le_support.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Codec keys each device (upper-case address) offered when it last
@@ -801,6 +820,7 @@ impl Service {
                 std::thread::sleep(Duration::from_millis(100));
             }
             if host.le_ready() {
+                self.inner.note_le_ready(&host);
                 self.inner.notify(StreamState::Idle, Msg::new("status.le_scanning"));
                 let results = host.le_scan(LE_SCAN);
                 let saved = crate::devices::load_le(&self.inner.opts.config_dir);
