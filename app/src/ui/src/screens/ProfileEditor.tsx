@@ -6,7 +6,9 @@
 // best sound; the codec settings only offer what that codec can do
 // (lib/codecs.ts). With LE Audio (experimental) on and an adapter known to
 // stream it, "LE Audio device" makes an LE Audio profile: LC3, so no codec,
-// quality, sample rate or bit depth, and no application capture.
+// quality, sample rate or bit depth, and no application capture; that choice
+// sits with the codecs. Codec and what follows wait for a device: the codecs
+// offered are the device's.
 
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
@@ -180,37 +182,6 @@ export function ProfileEditor(props: { original: string | null }) {
               </span>
             </Show>
           </div>
-          {/* LE Audio device (experimental): only offered with the setting on
-              and an adapter that can stream it */}
-          <Show when={leOn() && (!leUnsupported() || p.le_audio)}>
-            <Check label={t("profile.le_audio")} title={t("tooltip.le_audio")} checked={p.le_audio} onChange={setLeAudio} />
-            <Show when={p.le_audio}>
-              <p class="hint">{t("tooltip.le_audio")}</p>
-              <Check
-                label={t("settings.le_low_latency")}
-                title={t("ui.settings.le_low_latency_hint")}
-                checked={p.le_low_latency}
-                onChange={(v) => setP("le_low_latency", v)}
-              />
-            </Show>
-          </Show>
-          <Show when={p.le_audio && !leOn()}>
-            <Banner kind="warn">{t("error.le_audio_disabled")}</Banner>
-          </Show>
-          <Show when={leOn() && leUnsupported()}>
-            <Show
-              when={p.le_audio}
-              fallback={
-                <p class="hint">
-                  {leSupport() === false ? t("ui.profile.le_audio_unsupported") : t("ui.profile.le_audio_unchecked")}
-                </p>
-              }
-            >
-              <Banner kind="warn">
-                {leSupport() === false ? t("ui.profile.le_audio_unsupported") : t("ui.profile.le_audio_unchecked")}
-              </Banner>
-            </Show>
-          </Show>
           <DevicePicker
             address={p.device_address}
             leAudio={p.le_audio}
@@ -219,213 +190,261 @@ export function ProfileEditor(props: { original: string | null }) {
           />
         </Section>
 
-        <Show when={!p.le_audio}>
+        {/* The codecs offered are the device's: chosen once there is one */}
+        <Show when={p.device_address}>
           <Section title={t("connection.codec")}>
-            <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")}>
-              <For each={shownCodecs()}>
-                {(c) => (
-                  <CodecCard
-                    spec={c}
-                    selected={p.codec === c.id}
-                    support={c.id === "auto" ? null : support(c.id)}
-                    onPick={() => pickCodec(c)}
-                    onSettings={() => setSettingsOf(c)}
-                  />
-                )}
-              </For>
-            </div>
-            <Show when={notOffered() > 0 || showAll()}>
-              <Check
-                label={t("ui.profile.codecs_force", notOffered())}
-                title={t("ui.profile.codecs_force_hint")}
-                checked={showAll()}
-                onChange={setShowAll}
-              />
-            </Show>
-            <Show when={p.device_address && known().length === 0}>
-              <p class="hint">{t("ui.profile.codecs_unknown")}</p>
-            </Show>
-            <Show when={support(p.codec) === "not_offered"}>
-              <Banner kind="warn" title={t("error.codec_not_supported", t(spec().label))}>
-                {p.codec_fallback ? t("ui.profile.codec_fallback_on") : t("ui.profile.codec_fallback_off")}
-              </Banner>
-            </Show>
-            <Check
-              label={t("connection.codec_fallback")}
-              title={t("tooltip.codec_fallback")}
-              checked={p.codec_fallback}
-              // Auto already takes the best codec the device offers
-              disabled={p.codec === "auto"}
-              onChange={(v) => setP("codec_fallback", v)}
-            />
-            <CodecSettings
-              spec={settingsOf()}
-              profile={p}
-              onApply={(values) => {
-                setP(fitToCodec({ ...unwrap(p), ...values }));
-                setSettingsOf(null);
-              }}
-              onCancel={() => setSettingsOf(null)}
-            />
-          </Section>
-        </Show>
-
-        <Section title={t("capture.mode")}>
-          <Segmented
-            label={t("capture.mode")}
-            value={p.capture_mode}
-            options={[
-              { value: "loopback", label: t("capture.loopback"), icon: "speaker_2" },
-              { value: "virtual", label: t("capture.virtual"), icon: "desktop_speaker" },
-              { value: "app", label: t("capture.app"), icon: "window_apps" },
-            ]}
-            onChange={(v) => setP("capture_mode", v)}
-          />
-          <p class="hint">
-            {p.capture_mode === "virtual"
-              ? t("capture.hint_virtual")
-              : p.capture_mode === "app"
-                ? t("capture.hint_app")
-                : t("capture.hint_loopback")}
-          </p>
-          <Show when={p.le_audio && p.capture_mode === "app"}>
-            <Banner kind="warn">{t("error.le_audio_capture")}</Banner>
-          </Show>
-          <CaptureFormat profile={p} devices={devices()} />
-          <Show when={p.capture_mode === "virtual"}>
-            <Field label={t("capture.audio_device")} hint={t("tooltip.audio_device")} error={tp(problems().audio_device)}>
-              {(id, described) => (
-                <Show
-                  when={virtualDevices().length > 0 || devices() === null}
-                  fallback={
-                    <div class="inline">
-                      <span class="muted">{t("capture.no_virtual_device")}</span>
-                      <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
-                        {t("vbcable.download")}
-                      </Button>
-                    </div>
-                  }
-                >
-                  <Select
-                    id={id}
-                    describedBy={described}
-                    value={p.audio_device_id}
-                    options={[
-                      { value: "", label: "—", disabled: true },
-                      ...virtualDevices().map((d) => ({ value: d.id, label: d.name })),
-                    ]}
-                    onChange={(v) => {
-                      const d = virtualDevices().find((x) => x.id === v);
-                      setP({ audio_device_id: v, audio_device_name: d?.name ?? "" });
-                    }}
-                  />
-                </Show>
-              )}
-            </Field>
-            <Toggle
-              label={t("capture.auto_switch")}
-              hint={t("tooltip.auto_switch")}
-              checked={p.auto_switch_device}
-              onChange={(v) => setP("auto_switch_device", v)}
-            />
-          </Show>
-          <Show when={p.capture_mode === "app"}>
-            {/* Whether this Windows can capture one app: only the core knows
-                the build for sure (it refuses the stream on an older Windows); the UI asks
-                the WebView's client hints and shows a hint without them */}
             <Show
-              when={appSupport() === "no"}
+              when={!p.le_audio}
               fallback={
-                <Show when={appSupport() !== "yes"}>
-                  <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
-                </Show>
+                // LE Audio: LC3, the configuration the device offers best
+                <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")}>
+                  <div class="codec-cell">
+                    <label class="codec-card on">
+                      <input type="radio" name="codec" value="lc3" checked />
+                      <span class="codec-card-name">{t("ui.codec.lc3")}</span>
+                      <span class="muted codec-card-desc">{t("ui.codec.lc3_desc")}</span>
+                    </label>
+                  </div>
+                </div>
               }
             >
-              <Banner kind="warn">{t("ui.profile.app_capture_unsupported")}</Banner>
+                <div class="codec-grid" role="radiogroup" aria-label={t("connection.codec")}>
+                  <For each={shownCodecs()}>
+                    {(c) => (
+                      <CodecCard
+                        spec={c}
+                        selected={p.codec === c.id}
+                        support={c.id === "auto" ? null : support(c.id)}
+                        onPick={() => pickCodec(c)}
+                        onSettings={() => setSettingsOf(c)}
+                      />
+                    )}
+                  </For>
+                </div>
+                <Show when={notOffered() > 0 || showAll()}>
+                  <Check
+                    label={t("ui.profile.codecs_force", notOffered())}
+                    title={t("ui.profile.codecs_force_hint")}
+                    checked={showAll()}
+                    onChange={setShowAll}
+                  />
+                </Show>
+                <Show when={p.device_address && known().length === 0}>
+                  <p class="hint">{t("ui.profile.codecs_unknown")}</p>
+                </Show>
+                <Show when={support(p.codec) === "not_offered"}>
+                  <Banner kind="warn" title={t("error.codec_not_supported", t(spec().label))}>
+                    {p.codec_fallback ? t("ui.profile.codec_fallback_on") : t("ui.profile.codec_fallback_off")}
+                  </Banner>
+                </Show>
+                <Check
+                  label={t("connection.codec_fallback")}
+                  title={t("tooltip.codec_fallback")}
+                  checked={p.codec_fallback}
+                  // Auto already takes the best codec the device offers
+                  disabled={p.codec === "auto"}
+                  onChange={(v) => setP("codec_fallback", v)}
+                />
+                <CodecSettings
+                  spec={settingsOf()}
+                  profile={p}
+                  onApply={(values) => {
+                    setP(fitToCodec({ ...unwrap(p), ...values }));
+                    setSettingsOf(null);
+                  }}
+                  onCancel={() => setSettingsOf(null)}
+                />
             </Show>
-            <Field label={t("capture.app_select")} hint={t("capture.app_hint")} error={tp(problems().app)}>
+            {/* LE Audio device (experimental): only offered with the setting on
+                and an adapter that can stream it */}
+            <Show when={leOn() && (!leUnsupported() || p.le_audio)}>
+              <Check label={t("profile.le_audio")} title={t("tooltip.le_audio")} checked={p.le_audio} onChange={setLeAudio} />
+              <Show when={p.le_audio}>
+                <p class="hint">{t("tooltip.le_audio")}</p>
+                <Check
+                  label={t("settings.le_low_latency")}
+                  title={t("ui.settings.le_low_latency_hint")}
+                  checked={p.le_low_latency}
+                  onChange={(v) => setP("le_low_latency", v)}
+                />
+              </Show>
+            </Show>
+            <Show when={p.le_audio && !leOn()}>
+              <Banner kind="warn">{t("error.le_audio_disabled")}</Banner>
+            </Show>
+            <Show when={leOn() && leUnsupported()}>
+              <Show
+                when={p.le_audio}
+                fallback={
+                  <p class="hint">
+                    {leSupport() === false ? t("ui.profile.le_audio_unsupported") : t("ui.profile.le_audio_unchecked")}
+                  </p>
+                }
+              >
+                <Banner kind="warn">
+                  {leSupport() === false ? t("ui.profile.le_audio_unsupported") : t("ui.profile.le_audio_unchecked")}
+                </Banner>
+              </Show>
+            </Show>
+          </Section>
+
+          <Section title={t("capture.mode")}>
+            <Segmented
+              label={t("capture.mode")}
+              value={p.capture_mode}
+              options={[
+                { value: "loopback", label: t("capture.loopback"), icon: "speaker_2" },
+                { value: "virtual", label: t("capture.virtual"), icon: "desktop_speaker" },
+                { value: "app", label: t("capture.app"), icon: "window_apps" },
+              ]}
+              onChange={(v) => setP("capture_mode", v)}
+            />
+            <p class="hint">
+              {p.capture_mode === "virtual"
+                ? t("capture.hint_virtual")
+                : p.capture_mode === "app"
+                  ? t("capture.hint_app")
+                  : t("capture.hint_loopback")}
+            </p>
+            <Show when={p.le_audio && p.capture_mode === "app"}>
+              <Banner kind="warn">{t("error.le_audio_capture")}</Banner>
+            </Show>
+            <CaptureFormat profile={p} devices={devices()} />
+            <Show when={p.capture_mode === "virtual"}>
+              <Field label={t("capture.audio_device")} hint={t("tooltip.audio_device")} error={tp(problems().audio_device)}>
+                {(id, described) => (
+                  <Show
+                    when={virtualDevices().length > 0 || devices() === null}
+                    fallback={
+                      <div class="inline">
+                        <span class="muted">{t("capture.no_virtual_device")}</span>
+                        <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
+                          {t("vbcable.download")}
+                        </Button>
+                      </div>
+                    }
+                  >
+                    <Select
+                      id={id}
+                      describedBy={described}
+                      value={p.audio_device_id}
+                      options={[
+                        { value: "", label: "—", disabled: true },
+                        ...virtualDevices().map((d) => ({ value: d.id, label: d.name })),
+                      ]}
+                      onChange={(v) => {
+                        const d = virtualDevices().find((x) => x.id === v);
+                        setP({ audio_device_id: v, audio_device_name: d?.name ?? "" });
+                      }}
+                    />
+                  </Show>
+                )}
+              </Field>
+              <Toggle
+                label={t("capture.auto_switch")}
+                hint={t("tooltip.auto_switch")}
+                checked={p.auto_switch_device}
+                onChange={(v) => setP("auto_switch_device", v)}
+              />
+            </Show>
+            <Show when={p.capture_mode === "app"}>
+              {/* Whether this Windows can capture one app: only the core knows
+                  the build for sure (it refuses the stream on an older Windows); the UI asks
+                  the WebView's client hints and shows a hint without them */}
+              <Show
+                when={appSupport() === "no"}
+                fallback={
+                  <Show when={appSupport() !== "yes"}>
+                    <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
+                  </Show>
+                }
+              >
+                <Banner kind="warn">{t("ui.profile.app_capture_unsupported")}</Banner>
+              </Show>
+              <Field label={t("capture.app_select")} hint={t("capture.app_hint")} error={tp(problems().app)}>
+                {(id, described) => (
+                  <div class="inline">
+                    <Select
+                      id={id}
+                      describedBy={described}
+                      value={p.app_exe}
+                      disabled={appSupport() === "no"}
+                      options={appOptions(apps(), p)}
+                      onChange={(v) => {
+                        const a = (apps() ?? []).find((x) => x.exe === v);
+                        setP({ app_exe: v, app_name: a?.name ?? v });
+                      }}
+                    />
+                    <IconButton
+                      icon="arrow_sync"
+                      label={t("capture.app_refresh")}
+                      disabled={appSupport() === "no"}
+                      onClick={() => void loadApps()}
+                    />
+                  </div>
+                )}
+              </Field>
+            </Show>
+            <Field label={t("capture.volume_sync")} hint={t("tooltip.volume_sync")}>
+              {(id, described) => (
+                <Select
+                  id={id}
+                  describedBy={described}
+                  value={p.volume_sync === "device" ? `device:${p.volume_device_id}` : p.volume_sync}
+                  options={[
+                    { value: "auto", label: t("capture.volume_sync_auto") },
+                    { value: "off", label: t("capture.volume_sync_off") },
+                    ...volumeDevices(devices(), p).map((d) => ({ value: `device:${d.id}`, label: d.name })),
+                  ]}
+                  onChange={(v) => {
+                    if (v.startsWith("device:")) {
+                      const did = v.slice("device:".length);
+                      const d = (devices() ?? []).find((x) => x.id === did);
+                      setP({ volume_sync: "device", volume_device_id: did, volume_device_name: d?.name ?? p.volume_device_name });
+                    } else {
+                      setP({ volume_sync: v });
+                      if (devices() === null) void loadDevices();
+                    }
+                  }}
+                />
+              )}
+            </Field>
+          </Section>
+
+          {/* The one setting left of "Advanced": shown as it is (issue #86) */}
+          <Section title={t("ui.profile.advanced")}>
+            <Field
+              label={t("advanced.max_packet")}
+              hint={t("advanced.max_packet_help", PACKET_MIN, PACKET_MAX, PACKET_DEFAULT)}
+              error={tp(problems().packet)}
+            >
               {(id, described) => (
                 <div class="inline">
-                  <Select
+                  <input
                     id={id}
-                    describedBy={described}
-                    value={p.app_exe}
-                    disabled={appSupport() === "no"}
-                    options={appOptions(apps(), p)}
-                    onChange={(v) => {
-                      const a = (apps() ?? []).find((x) => x.exe === v);
-                      setP({ app_exe: v, app_name: a?.name ?? v });
-                    }}
+                    class="input num narrow"
+                    type="number"
+                    inputmode="numeric"
+                    min={PACKET_MIN}
+                    max={PACKET_MAX}
+                    step="1"
+                    value={p.max_media_payload}
+                    aria-describedby={described}
+                    aria-invalid={problems().packet ? "true" : undefined}
+                    onInput={(e) => setP("max_media_payload", e.currentTarget.valueAsNumber)}
                   />
-                  <IconButton
-                    icon="arrow_sync"
-                    label={t("capture.app_refresh")}
-                    disabled={appSupport() === "no"}
-                    onClick={() => void loadApps()}
-                  />
+                  <Button
+                    kind="subtle"
+                    disabled={p.max_media_payload === PACKET_DEFAULT}
+                    onClick={() => setP("max_media_payload", PACKET_DEFAULT)}
+                  >
+                    {t("advanced.max_packet_recommended", PACKET_DEFAULT)}
+                  </Button>
                 </div>
               )}
             </Field>
-          </Show>
-          <Field label={t("capture.volume_sync")} hint={t("tooltip.volume_sync")}>
-            {(id, described) => (
-              <Select
-                id={id}
-                describedBy={described}
-                value={p.volume_sync === "device" ? `device:${p.volume_device_id}` : p.volume_sync}
-                options={[
-                  { value: "auto", label: t("capture.volume_sync_auto") },
-                  { value: "off", label: t("capture.volume_sync_off") },
-                  ...volumeDevices(devices(), p).map((d) => ({ value: `device:${d.id}`, label: d.name })),
-                ]}
-                onChange={(v) => {
-                  if (v.startsWith("device:")) {
-                    const did = v.slice("device:".length);
-                    const d = (devices() ?? []).find((x) => x.id === did);
-                    setP({ volume_sync: "device", volume_device_id: did, volume_device_name: d?.name ?? p.volume_device_name });
-                  } else {
-                    setP({ volume_sync: v });
-                    if (devices() === null) void loadDevices();
-                  }
-                }}
-              />
-            )}
-          </Field>
-        </Section>
-
-        {/* The one setting left of "Advanced": shown as it is (issue #86) */}
-        <Section title={t("ui.profile.advanced")}>
-          <Field
-            label={t("advanced.max_packet")}
-            hint={t("advanced.max_packet_help", PACKET_MIN, PACKET_MAX, PACKET_DEFAULT)}
-            error={tp(problems().packet)}
-          >
-            {(id, described) => (
-              <div class="inline">
-                <input
-                  id={id}
-                  class="input num narrow"
-                  type="number"
-                  inputmode="numeric"
-                  min={PACKET_MIN}
-                  max={PACKET_MAX}
-                  step="1"
-                  value={p.max_media_payload}
-                  aria-describedby={described}
-                  aria-invalid={problems().packet ? "true" : undefined}
-                  onInput={(e) => setP("max_media_payload", e.currentTarget.valueAsNumber)}
-                />
-                <Button
-                  kind="subtle"
-                  disabled={p.max_media_payload === PACKET_DEFAULT}
-                  onClick={() => setP("max_media_payload", PACKET_DEFAULT)}
-                >
-                  {t("advanced.max_packet_recommended", PACKET_DEFAULT)}
-                </Button>
-              </div>
-            )}
-          </Field>
-        </Section>
+          </Section>
+        </Show>
 
         <Show when={saveError()}>
           <Banner kind="error" title={t("status.error")}>

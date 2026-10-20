@@ -395,6 +395,7 @@
   "ui.codec.bar_latency": "Niedrige Latenz",
   "ui.codec.bar_stability": "Stabilität",
   "ui.codec.lc3": "LC3 (LE Audio)",
+  "ui.codec.lc3_desc": "Die beste LC3-Konfiguration, die das Gerät anbietet",
   "ui.quality.good": "Gut",
   "ui.quality.fair": "Mittel",
   "ui.quality.poor": "Schwach",

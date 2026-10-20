@@ -395,6 +395,7 @@
   "ui.codec.bar_latency": "낮은 지연",
   "ui.codec.bar_stability": "안정성",
   "ui.codec.lc3": "LC3 (LE 오디오)",
+  "ui.codec.lc3_desc": "장치가 제공하는 최상의 LC3 구성",
   "ui.quality.good": "좋음",
   "ui.quality.fair": "보통",
   "ui.quality.poor": "나쁨",

@@ -23,6 +23,8 @@ function start(hash: string, scenario: MockScenario = "normal", speed = 0) {
 const named = (label: string) => (n: string) => n.startsWith(label);
 const gmapCheck = () => screen.queryByRole("checkbox", { name: t("settings.le_low_latency") });
 const leCheck = () => screen.queryByRole("checkbox", { name: t("profile.le_audio") });
+/** A new profile's classic device: the codecs (LE Audio with them) wait for one */
+const pickClassic = async () => fireEvent.click(await screen.findByRole("radio", { name: /WH-1000XM5/ }));
 
 afterEach(async () => {
   cleanup();
@@ -43,23 +45,30 @@ describe("settings", () => {
 describe("profile editor", () => {
   it("offers the LE Audio device check box only with the setting on", async () => {
     start("#/profiles/new");
+    await pickClassic();
     await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
     expect(leCheck()).toBeNull();
     cleanup();
     mock?.dispose();
 
     start("#/profiles/new", "le");
+    await screen.findByRole("radio", { name: /WH-1000XM5/ });
+    // With the codecs: none before a device is chosen
+    expect(leCheck()).toBeNull();
+    await pickClassic();
     await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
     expect(leCheck()).not.toBeNull();
   });
 
-  it("hides the codecs and their settings for an LE Audio profile", async () => {
+  it("offers LC3 alone, without settings, for an LE Audio profile", async () => {
     start("#/profiles/new", "le");
+    await pickClassic();
     expect(await screen.findByRole("radiogroup", { name: t("connection.codec") })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("ui.profile.codec_settings", t("codec.ldac")) })).toBeInTheDocument();
 
     fireEvent.click(leCheck()!);
-    await waitFor(() => expect(screen.queryByRole("radiogroup", { name: t("connection.codec") })).toBeNull());
+    await waitFor(() => expect(screen.getByRole("radio", { name: (n) => n.startsWith(t("ui.codec.lc3")) })).toBeChecked());
+    expect(screen.queryByRole("radio", { name: new RegExp(t("codec.ldac")) })).toBeNull();
     expect(screen.queryByRole("button", { name: t("ui.profile.codec_settings", t("codec.ldac")) })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: t("connection.codec_fallback") })).toBeNull();
     expect(screen.getByText(t("tooltip.le_audio"))).toBeInTheDocument();
@@ -67,15 +76,17 @@ describe("profile editor", () => {
 
   it("offers no LE Audio when the adapter cannot stream it (issue #86)", async () => {
     start("#/profiles/new", "le_unsupported");
-    await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
-    expect(leCheck()).toBeNull();
+    expect(await screen.findByRole("radio", { name: /SRS-XB13/ })).toBeInTheDocument();
     // ... nor the LE Audio entries of the device list
     expect(screen.queryByText(t("device.tag_le_audio_set"))).toBeNull();
-    expect(screen.getByRole("radio", { name: /SRS-XB13/ })).toBeInTheDocument();
+    await pickClassic();
+    await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
+    expect(leCheck()).toBeNull();
   });
 
   it("counts an adapter not checked yet as unsupported, and says so", async () => {
     start("#/profiles/new", "le_unchecked");
+    await pickClassic();
     await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
     expect(leCheck()).toBeNull();
     expect(screen.getByText(t("ui.profile.le_audio_unchecked"))).toBeInTheDocument();
@@ -114,7 +125,7 @@ describe("profile editor", () => {
 
   it("offers GMAP low latency for an LE Audio profile, on by default, saved with it", async () => {
     const { calls } = start("#/profiles/new", "le");
-    await screen.findByRole("radio", { name: new RegExp(t("codec.ldac")) });
+    await screen.findByText(t("device.tag_le_audio_set"));
     expect(gmapCheck()).toBeNull();
     const row = await screen.findByText(t("device.tag_le_audio_set"));
     fireEvent.click(within(row.closest(".device-row") as HTMLElement).getByRole("radio"));

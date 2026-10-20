@@ -395,6 +395,7 @@
   "ui.codec.bar_latency": "低延迟",
   "ui.codec.bar_stability": "稳定性",
   "ui.codec.lc3": "LC3（LE Audio）",
+  "ui.codec.lc3_desc": "设备提供的最佳 LC3 配置",
   "ui.quality.good": "良好",
   "ui.quality.fair": "一般",
   "ui.quality.poor": "较差",

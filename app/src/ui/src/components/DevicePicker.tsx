@@ -38,15 +38,9 @@ export function DevicePicker(props: {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   // LE Audio entries with the setting on and an adapter known to stream it
-  const leListed = () =>
-    snap().settings.le_audio_experimental &&
-    snap().adapter.le_audio === true &&
-    !props.classicOnly;
-  const devices = createMemo(() =>
-    sortDevices(listedDevices(snap().devices, leListed())),
-  );
-  const chosen = (d: Device) =>
-    d.address === props.address && d.le_audio === (props.leAudio ?? false);
+  const leListed = () => snap().settings.le_audio_experimental && snap().adapter.le_audio === true && !props.classicOnly;
+  const devices = createMemo(() => sortDevices(listedDevices(snap().devices, leListed())));
+  const chosen = (d: Device) => d.address === props.address && d.le_audio === (props.leAudio ?? false);
   // Rename and forget name the entry: the LE Audio one with le_audio
   const kind = (d: Device) => (d.le_audio ? { le_audio: true } : {});
   // Picked here: the list shows the chosen entry only
@@ -61,9 +55,7 @@ export function DevicePicker(props: {
   const scanning = () => snap().scanning;
   const scan = () => {
     setFolded(false);
-    return app.run(() =>
-      app.core.request("device.scan", { seconds: SCAN_SECONDS }),
-    );
+    return app.run(() => app.core.request("device.scan", { seconds: SCAN_SECONDS }));
   };
   const name = "device-pick";
   const uid = createUniqueId();
@@ -72,10 +64,7 @@ export function DevicePicker(props: {
   const [renaming, setRenaming] = createSignal<Device | null>(null);
   const [newName, setNewName] = createSignal("");
   const [renameTried, setRenameTried] = createSignal(false);
-  const nameError = () =>
-    renameTried() && !validDeviceName(newName())
-      ? t("ui.device.err_name")
-      : null;
+  const nameError = () => (renameTried() && !validDeviceName(newName()) ? t("ui.device.err_name") : null);
   const [forgetting, setForgetting] = createSignal<Device | null>(null);
   const [busy, setBusy] = createSignal(false);
 
@@ -85,13 +74,7 @@ export function DevicePicker(props: {
     setRenameTried(true);
     if (!d || !validDeviceName(n) || busy()) return;
     setBusy(true);
-    const ok = await app.run(() =>
-      app.core.request("device.rename", {
-        address: d.address,
-        name: n,
-        ...kind(d),
-      }),
-    );
+    const ok = await app.run(() => app.core.request("device.rename", { address: d.address, name: n, ...kind(d) }));
     setBusy(false);
     if (!ok) return;
     setRenaming(null);
@@ -102,9 +85,7 @@ export function DevicePicker(props: {
     const d = forgetting();
     if (!d || busy()) return;
     setBusy(true);
-    await app.run(() =>
-      app.core.request("device.forget", { address: d.address, ...kind(d) }),
-    );
+    await app.run(() => app.core.request("device.forget", { address: d.address, ...kind(d) }));
     setBusy(false);
     setForgetting(null);
   };
@@ -114,11 +95,7 @@ export function DevicePicker(props: {
       <div class="picker-head">
         <span class="muted" role="status" aria-live="polite">
           {scanning()
-            ? t(
-                snap().le_scanning
-                  ? "status.le_scanning"
-                  : "connection.scanning_hint",
-              )
+            ? t(snap().le_scanning ? "status.le_scanning" : "connection.scanning_hint")
             : t("ui.devices.count", devices().length)}
         </span>
         <Button icon="search" busy={scanning()} onClick={scan}>
@@ -127,28 +104,15 @@ export function DevicePicker(props: {
       </div>
       {/* Folded with a typed address: no row, only the button below */}
       <Show when={!folded() || shown().length > 0}>
-        <div
-          class="device-list"
-          role="radiogroup"
-          aria-label={t("connection.device_addr")}
-        >
-          <Show
-            when={shown().length > 0}
-            fallback={
-              <p class="muted empty-line">{t("connection.no_devices")}</p>
-            }
-          >
+        <div class="device-list" role="radiogroup" aria-label={t("connection.device_addr")}>
+          <Show when={shown().length > 0} fallback={<p class="muted empty-line">{t("connection.no_devices")}</p>}>
             <For each={shown()}>
               {(d, i) => {
                 const label = () => d.name || t("device.name_unknown");
                 const nameId = () => `${uid}-${i()}`;
                 return (
                   // The radio covers the row (app.css); the buttons sit above it
-                  <div
-                    class="device-row"
-                    classList={{ on: chosen(d), dim: !d.audio }}
-                    data-key={deviceKey(d)}
-                  >
+                  <div class="device-row" classList={{ on: chosen(d), dim: !d.audio }} data-key={deviceKey(d)}>
                     <input
                       type="radio"
                       name={name}
@@ -159,8 +123,7 @@ export function DevicePicker(props: {
                     />
                     <Icon name={d.audio ? "headphones" : "bluetooth"} />
                     <span class="device-row-text" id={nameId()}>
-                      <span class="device-row-name">{label()}</span>{" "}
-                      <span class="mono muted">{d.address}</span>
+                      <span class="device-row-name">{label()}</span> <span class="mono muted">{d.address}</span>
                     </span>
                     <span class="tags">
                       <Show when={d.saved}>
@@ -174,13 +137,7 @@ export function DevicePicker(props: {
                           </Show>
                         }
                       >
-                        <span class="tag">
-                          {t(
-                            d.le_audio_set
-                              ? "device.tag_le_audio_set"
-                              : "device.tag_le_audio",
-                          )}
-                        </span>
+                        <span class="tag">{t(d.le_audio_set ? "device.tag_le_audio_set" : "device.tag_le_audio")}</span>
                       </Show>
                       <Show when={d.rssi !== null}>
                         <span class="tag num">{d.rssi} dBm</span>
@@ -213,11 +170,7 @@ export function DevicePicker(props: {
       </Show>
       <Show when={folded() && others() > 0}>
         <div>
-          <Button
-            kind="subtle"
-            icon="chevron_down"
-            onClick={() => setFolded(false)}
-          >
+          <Button kind="subtle" icon="chevron_down" onClick={() => setFolded(false)}>
             {t("ui.devices.show_others", others())}
           </Button>
         </div>
@@ -225,11 +178,7 @@ export function DevicePicker(props: {
       <Field
         label={t("connection.manual")}
         hint={t("ui.devices.manual_hint")}
-        error={
-          manual() && !parseAddress(manual())
-            ? t("error.invalid_address_format")
-            : props.error
-        }
+        error={manual() && !parseAddress(manual()) ? t("error.invalid_address_format") : props.error}
       >
         {(id, described) => (
           <div class="inline">
@@ -266,11 +215,7 @@ export function DevicePicker(props: {
       >
         <Field
           label={t("device.enter_name")}
-          hint={
-            renaming()
-              ? `${renaming()!.address}${renaming()!.le_audio ? ` (${t("device.tag_le_audio")})` : ""}`
-              : undefined
-          }
+          hint={renaming() ? `${renaming()!.address}${renaming()!.le_audio ? ` (${t("device.tag_le_audio")})` : ""}` : undefined}
           error={nameError()}
         >
           {(id, described) => (
