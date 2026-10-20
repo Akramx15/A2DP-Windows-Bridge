@@ -135,6 +135,11 @@ pub struct AdapterState {
     /// Audio)
     #[serde(default)]
     pub le_audio: Option<bool>,
+    /// The running stack's Realtek adapter came up on its ROM code: the
+    /// firmware was not loaded, so it opens but cannot connect or stream
+    /// (issue #81)
+    #[serde(default)]
+    pub rom_firmware: bool,
 }
 
 /// A device known from the saved list or a scan

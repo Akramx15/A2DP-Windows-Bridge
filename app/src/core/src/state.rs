@@ -556,6 +556,7 @@ impl CoreState {
                 le_audio: le_audio_now(service.le_audio_supported(), &adapters),
                 adapters,
                 error: None,
+                rom_firmware: false,
             },
             devices: saved_devices(&dir, &[], &service.device_codecs()),
             scanning: false,
@@ -769,6 +770,13 @@ impl CoreState {
         if le_audio_now(self.service.le_audio_supported(), &s.adapter.adapters) != s.adapter.le_audio {
             self.list_adapters();
         }
+        // The stack found its Realtek adapter on the ROM code, or a new
+        // stack loaded the firmware
+        let rom = self.service.host().is_some_and(|h| h.realtek_rom_firmware());
+        let (_, s) = self.snapshot();
+        if rom != s.adapter.rom_firmware {
+            self.publish(Event::Adapter(AdapterState { rom_firmware: rom, ..s.adapter }));
+        }
     }
 
     /// The device list again (saved file, last scan, codecs); published if
@@ -855,6 +863,7 @@ impl CoreState {
                 status: AdapterStatus::Stopped,
                 error: None,
                 le_audio: le_audio_now(self.service.le_audio_supported(), &s.adapter.adapters),
+                rom_firmware: false,
                 ..s.adapter
             }));
         } else {
@@ -1260,6 +1269,7 @@ impl CoreState {
                     me.publish(Event::Adapter(AdapterState {
                         status: AdapterStatus::Stopped,
                         error: None,
+                        rom_firmware: false,
                         ..s.adapter
                     }));
                     Ok(Value::Null)

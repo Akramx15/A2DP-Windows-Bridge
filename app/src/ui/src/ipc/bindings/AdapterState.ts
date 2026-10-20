@@ -10,4 +10,10 @@ export type AdapterState = { status: AdapterStatus, adapters: Array<AdapterInfo>
  * AdapterInfo::le_audio. None: not known yet (the UI then offers no LE
  * Audio)
  */
-le_audio: boolean | null, };
+le_audio: boolean | null, 
+/**
+ * The running stack's Realtek adapter came up on its ROM code: the
+ * firmware was not loaded, so it opens but cannot connect or stream
+ * (issue #81)
+ */
+rom_firmware: boolean, };

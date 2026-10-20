@@ -44,6 +44,8 @@ fn realtek_pid_resolution() {
     assert_eq!(resolve_realtek_pid(0x0BDA, 0x0129, &btstack), None);
     // TP-Link UB500
     assert_eq!(resolve_realtek_pid(0x2357, 0x0604, &btstack), Some(0x8771));
+    // A Realtek PID BTstack lacks, from the OEM table (issue #86)
+    assert_eq!(resolve_realtek_pid(0x0BDA, 0xA729, &btstack), Some(0x8771));
     assert_eq!(resolve_realtek_pid(0x8087, 0x0033, &btstack), None);
 }
 

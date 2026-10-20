@@ -91,14 +91,7 @@ A2DPWB lui-même ne fonctionne que sous Windows (Windows 10 22H2 ou Windows 11),
 
 ## Matériel vérifié {#verified-hardware}
 
-| Quoi | Configuration | Codecs | Résultat |
-|:-----|:------|:-------|:-------|
-| Sony WH-1000XM4 (casque) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC, SBC XQ | ✅ Lecture OK (le XM4 n'a pas d'aptX) |
-| TP-Link UB500 (Realtek RTL8761BU, adaptateur) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
-| Récepteur de mesure `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04 par radio | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ Reçu et mesuré |
-| Liaison virtuelle `tools/emu` (Bumble) | Windows 11, sans radio | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus, Opus 05 | ✅ Le test de bout en bout réussit |
-
-Windows 10 n'a pas encore été essayé sur du vrai matériel. Autres adaptateurs : voir [Adaptateurs recommandés](setup#adapters).
+Testé avec les Sony WH-1000XM4 et WH-1000XM6, les EarFun Air Pro 4+, le Grado GW100x et d'autres, sur les adaptateurs TP-Link UB500, RTL8761B générique, RTL8852BE intégré d'un portable, ASUS BT400 et CSR8510. La liste complète avec les codecs, les versions et les rapports d'origine : **[Matériel vérifié](../hardware)** (en anglais).
 
 ## Modes de capture audio
 

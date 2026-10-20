@@ -63,7 +63,7 @@ pub static REALTEK_CHIPS: &[RealtekChip] = &[
 ];
 
 /// An OEM adapter (TP-Link, ASUS, Edimax, ...) with a Realtek chip under its
-/// own VID:PID. BTstack's Realtek table holds only Realtek's own PIDs.
+/// own VID:PID, or a Realtek PID BTstack's Realtek table does not hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OemChipMapping {
     pub vid: u16,
@@ -77,6 +77,8 @@ pub struct OemChipMapping {
 /// VID:PIDs so it opens them.
 pub static OEM_TABLE: &[OemChipMapping] = &[
     OemChipMapping { vid: 0x2357, pid: 0x0604, realtek_pid: 0x8771 }, // TP-Link UB500 (RTL8761BU)
+    // Generic RTL8761B dongles (issues #66, #86: rtl8761bu firmware)
+    OemChipMapping { vid: 0x0BDA, pid: 0xA729, realtek_pid: 0x8771 },
 ];
 
 /// The controller vendor, guessed from the USB VID:PID. Decides which
@@ -151,16 +153,17 @@ pub fn realtek_cfg_name(pid: u16) -> Option<&'static str> {
 /// module at 0BDA:4853 is the RTL8852BU of 0xB85B. None if not a known
 /// Realtek-based adapter.
 pub fn resolve_realtek_pid(vid: u16, pid: u16, btstack_table: &[(u16, u16, &str)]) -> Option<u16> {
-    if vid == REALTEK_VID {
+    let oem = OEM_TABLE.iter().find(|m| m.vid == vid && m.pid == pid).map(|m| m.realtek_pid);
+    if vid == REALTEK_VID && oem.is_none() {
         // Realtek's VID is also on card readers and Wi-Fi: only PIDs
-        // BTstack knows are Bluetooth
+        // BTstack or the OEM table know are Bluetooth
         let &(_, _, fw_name) = btstack_table.iter().find(|&&(v, p, _)| v == vid && p == pid)?;
         let family = REALTEK_CHIPS.iter().find(|c| {
             c.fw_name == fw_name && btstack_table.iter().any(|&(v, p, f)| v == vid && p == c.pid && f == fw_name)
         });
         return Some(family.map_or(pid, |c| c.pid));
     }
-    OEM_TABLE.iter().find(|m| m.vid == vid && m.pid == pid).map(|m| m.realtek_pid)
+    oem
 }
 
 /// The vendor of a USB VID:PID (`realtek_pid` from resolve_realtek_pid:

@@ -19,7 +19,7 @@ nav_order: 1
 ## 前提条件
 
 - **Windows 10 (22H2) / 11** (x64)
-- **専用 USB Bluetooth アダプター**（内蔵 Bluetooth とは別）
+- **A2DPWB 用の USB Bluetooth アダプター**: 別の USB ドングルを推奨。USB 接続の内蔵アダプターも使えますが、その間 Windows の Bluetooth は使えません（[手順 2](#winusb) 参照）
 
 A2DPWB はアダプターへの WinUSB ドライバーの割り当てを自分で行います。[Zadig](https://zadig.akeo.ie/) はもう必要ありません（使うこともできます。[Zadig を使う場合](#zadig)を参照）。
 

@@ -18,7 +18,7 @@ nav_order: 2
 ## Prerequisites
 
 - **Windows 10 (22H2) / 11** (x64)
-- **Dedicated USB Bluetooth adapter** (separate from built-in Bluetooth)
+- **A USB Bluetooth adapter for A2DPWB**: a separate dongle is recommended; a built-in USB adapter works too, but Windows then has no Bluetooth of its own (see [Step 2](#winusb))
 
 A2DPWB assigns the WinUSB driver to the adapter itself. [Zadig](https://zadig.akeo.ie/) is not needed any more (it still works, see [Using Zadig instead](#zadig)).
 
@@ -146,6 +146,8 @@ These firmware files are proprietary Realtek binaries distributed via the linux-
 ---
 
 ## Recommended Adapters {#adapters}
+
+Which adapters and headphones have actually been used with A2DPWB, with the codecs and the reports: [Verified Hardware](hardware).
 
 | Chipset | Example Products | Notes |
 |:--------|:-----------------|:------|

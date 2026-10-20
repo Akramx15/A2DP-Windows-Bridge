@@ -19,7 +19,7 @@ nav_order: 1
 ## 必要條件
 
 - **Windows 10 (22H2) / 11** (x64)
-- **專用的 USB 藍牙介面卡**（與內建藍牙分開）
+- **供 A2DPWB 使用的 USB 藍牙介面卡**：建議使用另外的介面卡；USB 類型的內建介面卡也可以，但期間 Windows 將無法使用自己的藍牙（參見[步驟 2](#winusb)）
 
 A2DPWB 會自行為介面卡指派 WinUSB 驅動程式，不再需要 [Zadig](https://zadig.akeo.ie/)（Zadig 仍可使用，請參閱 [改用 Zadig](#zadig)）。
 
