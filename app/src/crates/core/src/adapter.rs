@@ -197,6 +197,9 @@ struct AdapterCaps {
     /// LE Audio's isochronous channels (issue #86)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     le_audio: Option<bool>,
+    /// The adapter's own Bluetooth address
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    address: Option<String>,
 }
 
 fn caps_key(vid: u16, pid: u16) -> String {
@@ -221,6 +224,25 @@ pub fn save_le_audio(dir: &Path, vid: u16, pid: u16, capable: bool) {
         return;
     }
     entry.le_audio = Some(capable);
+    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
+    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
+        tracing::warn!("cannot write {CAPS_FILE}: {e}");
+    }
+}
+
+/// The adapter's own Bluetooth address, as a stack running on it read it
+pub fn address(dir: &Path, vid: u16, pid: u16) -> Option<String> {
+    load_caps(dir).get(&caps_key(vid, pid)).and_then(|c| c.address.clone())
+}
+
+/// Remembers the adapter's own address
+pub fn save_address(dir: &Path, vid: u16, pid: u16, address: &str) {
+    let mut caps = load_caps(dir);
+    let entry = caps.entry(caps_key(vid, pid)).or_default();
+    if entry.address.as_deref() == Some(address) {
+        return;
+    }
+    entry.address = Some(address.to_owned());
     let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
     if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
         tracing::warn!("cannot write {CAPS_FILE}: {e}");
@@ -261,6 +283,10 @@ mod tests {
         save_le_audio(&dir, 0x8087, 0x0032, true);
         assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), Some(false));
         assert_eq!(le_audio(&dir, 0x8087, 0x0032), Some(true));
+        assert_eq!(address(&dir, 0x0BDA, 0xA729), None);
+        save_address(&dir, 0x0BDA, 0xA729, "00:11:22:33:44:55");
+        assert_eq!(address(&dir, 0x0BDA, 0xA729).as_deref(), Some("00:11:22:33:44:55"));
+        assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), Some(false));
         assert!(std::fs::read_to_string(dir.join(CAPS_FILE)).unwrap().contains("\"0BDA:A729\""));
         std::fs::remove_dir_all(&dir).unwrap();
     }

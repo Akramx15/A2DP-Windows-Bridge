@@ -117,6 +117,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         max_media_payload: p.max_media_payload.unwrap_or(legacy),
         le_audio: p.le_audio,
         le_low_latency: p.le_low_latency,
+        sbc_bitpool: p.sbc_bitpool,
     }
 }
 
@@ -144,6 +145,7 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.max_media_payload = Some(bt_host::media::clamp_media_payload_limit(p.max_media_payload as u32));
     c.le_audio = p.le_audio;
     c.le_low_latency = p.le_low_latency;
+    c.sbc_bitpool = p.sbc_bitpool;
     c
 }
 
@@ -240,6 +242,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 vendor_note: vendor_note(a.vendor),
                 restart_needed: a.device.problem_code == Some(CM_PROB_NEED_RESTART),
                 le_audio: a2dpwb_core::adapter::le_audio(config_dir, a.device.vid, a.device.pid),
+                address: a2dpwb_core::adapter::address(config_dir, a.device.vid, a.device.pid),
             }
         })
         .collect()
@@ -1571,6 +1574,7 @@ mod tests {
             vendor_note: None,
             restart_needed: false,
             le_audio: None,
+            address: None,
         }
     }
 

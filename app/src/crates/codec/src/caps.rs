@@ -587,6 +587,11 @@ impl RemoteCaps {
         }
     }
 
+    /// The sink lists variable bit rate AAC
+    pub fn aac_vbr(&self) -> bool {
+        self.aac_caps.is_some_and(|c| c.vbr)
+    }
+
     /// Capture rate for AAC: 44.1 or 48 kHz as the sink lists them,
     /// preferring 44.1k for `wanted` 44.1k, else 48k
     pub fn pick_aac_sample_rate(&self, wanted: u32) -> u32 {
@@ -834,6 +839,19 @@ impl RemoteCaps {
         channels: u32,
         bits_per_sample: u8,
     ) -> Result<Configuration, ConfigError> {
+        self.configuration_vbr(kind, sample_rate, channels, bits_per_sample, false)
+    }
+
+    /// [`Self::configuration`] with AAC's variable bit rate asked for (taken
+    /// only where the sink lists it)
+    pub fn configuration_vbr(
+        &self,
+        kind: CodecKind,
+        sample_rate: u32,
+        channels: u32,
+        bits_per_sample: u8,
+        vbr: bool,
+    ) -> Result<Configuration, ConfigError> {
         let Some(sep) = self.sep(kind) else {
             return Err(ConfigError::NotOffered(kind));
         };
@@ -891,6 +909,7 @@ impl RemoteCaps {
                     sampling_frequency: sample_rate,
                     channels: channels as u8,
                     bit_rate: self.aac_max_bitrate(),
+                    vbr: vbr && self.aac_vbr(),
                 }
             }
             CodecKind::Ldac => {
@@ -1041,8 +1060,8 @@ pub enum ConfigRequest {
     /// 16 blocks, 8 subbands, loudness; SBC joint stereo, SBC XQ dual
     /// channel (both mono for one channel)
     Sbc { sampling_frequency: u16, channel_mode: ChannelMode, min_bitpool: u8, max_bitpool: u8 },
-    /// AAC-LC, constant bit rate up to `bit_rate`
-    Aac { object_type: AacObjectType, sampling_frequency: u32, channels: u8, bit_rate: u32 },
+    /// AAC-LC, constant bit rate up to `bit_rate` (variable when `vbr`)
+    Aac { object_type: AacObjectType, sampling_frequency: u32, channels: u8, bit_rate: u32, vbr: bool },
     /// Vendor codec information
     Vendor(Vec<u8>),
 }
@@ -1191,7 +1210,8 @@ mod tests {
                 object_type: AacObjectType::Mpeg2Lc,
                 sampling_frequency: 48000,
                 channels: 2,
-                bit_rate: 256_000
+                bit_rate: 256_000,
+                vbr: false
             }
         );
 
@@ -1219,9 +1239,27 @@ mod tests {
                 object_type: AacObjectType::Mpeg4Lc,
                 sampling_frequency: 44100,
                 channels: 2,
-                bit_rate: 128_000
+                bit_rate: 128_000,
+                vbr: false
             }
         );
+        // VBR asked for: taken only where the sink lists it
+        let vbr = |c: Configuration| matches!(c.request, ConfigRequest::Aac { vbr: true, .. });
+        assert!(vbr(caps.configuration_vbr(CodecKind::Aac, 44100, 2, 16, true).unwrap()));
+        let mut cbr = RemoteCaps::default();
+        cbr.add_aac_caps(
+            3,
+            AacCapabilities {
+                object_types: AAC_OBJ_MPEG4_LC,
+                sampling_frequency: AAC_FREQ_44100,
+                bit_rate: 128_000,
+                vbr: false,
+                ..all
+            },
+        );
+        assert!(!vbr(cbr.configuration_vbr(CodecKind::Aac, 44100, 2, 16, true).unwrap()));
+        assert!(vbr(caps.configuration_vbr(CodecKind::Aac, 44100, 2, 16, true).unwrap()));
+        assert!(!vbr(caps.configuration(CodecKind::Aac, 44100, 2, 16).unwrap()));
 
         // HE-AAC only: no AAC for Auto; a later usable SEP is taken
         let mut caps = RemoteCaps::default();

@@ -56,4 +56,9 @@ restart_needed: boolean,
  * The adapter has LE Audio's isochronous channels, as a stack running
  * on it found out (remembered); None if none ran on it yet
  */
-le_audio: boolean | null, };
+le_audio: boolean | null, 
+/**
+ * The adapter's own Bluetooth address, as a stack running on it read
+ * it (remembered); None if none ran on it yet
+ */
+address: string | null, };

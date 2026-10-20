@@ -25,6 +25,8 @@ pub struct StreamRequest {
     pub codec_fallback: bool,
     pub quality: Quality,
     pub abr: bool,
+    /// SBC / SBC XQ: the bitpool wanted (0 = by quality)
+    pub sbc_bitpool: u8,
     /// None = the device's rate
     pub sample_rate: Option<u32>,
     /// None = auto (24-bit where the codec carries it)
@@ -523,12 +525,13 @@ fn connect_error(f: Option<ConnectFailure>) -> Msg {
     })
 }
 
-fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32) -> PeerParams {
+fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, sbc_bitpool: u8) -> PeerParams {
     let (opus_frame_ms, opus_channels, opus_max_bitrate) = remote.opus_params(kind, channels);
     PeerParams {
         lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
         sbc_min_bitpool: remote.sbc_min_bitpool(),
         sbc_max_bitpool: remote.sbc_max_bitpool(),
+        sbc_bitpool: if matches!(kind, CodecKind::Sbc | CodecKind::SbcXq) { sbc_bitpool } else { 0 },
         opus_frame_ms,
         opus_channels,
         opus_max_bitrate,
@@ -552,8 +555,9 @@ fn configure_stream(
     sample_rate: u32,
     channels: u32,
     bits: u8,
+    vbr: bool,
 ) -> Result<(Configuration, u16), ConfigFailure> {
-    let config = remote.configuration(kind, sample_rate, channels, bits).map_err(ConfigFailure::Build)?;
+    let config = remote.configuration_vbr(kind, sample_rate, channels, bits, vbr).map_err(ConfigFailure::Build)?;
     let mtu = host.configure(&config).map_err(ConfigFailure::Host)?;
     Ok((config, mtu))
 }
@@ -784,8 +788,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         _ => 16,
     };
 
+    // AAC with variable bit rate: asked for by name, and the sink lists it
+    let vbr = req.abr && req.codec == Some(CodecKind::Aac) && kind == CodecKind::Aac && remote.aac_vbr();
+
     // ---- stream configuration ----
-    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits);
+    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr);
     if let Err(failure) = &configured
         && !stopped()
         && sbc_xq_fallback(kind, failure, req.codec, req.codec_fallback)
@@ -806,7 +813,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if req.codec.is_some() && replaced.is_none() {
             replaced = Some((CodecKind::SbcXq, Unavailable::NotSupported));
         }
-        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits);
+        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr);
     }
     let (mut config, mtu) = match configured {
         Ok(c) => c,
@@ -837,8 +844,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         quality: req.quality,
         mtu,
         bits_per_sample: bits,
-        abr: req.abr && matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5),
-        peer: peer_params(&remote, kind, channels),
+        // For AAC: variable bit rate, where the sink lists it
+        abr: req.abr && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5) || (kind == CodecKind::Aac && vbr)),
+        peer: peer_params(&remote, kind, channels, req.sbc_bitpool),
     };
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,
@@ -925,7 +933,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // A reconnect builds the configuration anew from what the device lists
     // then (v1 read its capabilities again)
-    let rebuild = |r: &RemoteCaps| match r.configuration(kind, format.sample_rate, channels, bits) {
+    let rebuild = |r: &RemoteCaps| match r.configuration_vbr(kind, format.sample_rate, channels, bits, vbr) {
         Ok(c) => Some(c),
         Err(e) => {
             tracing::warn!("reconnect: {e}");
@@ -1104,7 +1112,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         // The encoder follows the new stream: its MTU and the device's
         // settings (e.g. its SBC bitpool range) may have changed
-        let new_config = EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels), ..encoder_config };
+        let new_config = EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels, req.sbc_bitpool), ..encoder_config };
         if r.mtu != encoder_config.mtu {
             tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }

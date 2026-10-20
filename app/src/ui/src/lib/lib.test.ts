@@ -151,7 +151,10 @@ describe("profiles", () => {
   it("drops what the new codec cannot do", () => {
     const p = { ...sampleProfile(), codec: "lhdcv5", quality: "mhq", abr: true, sample_rate: 96000, bit_depth: 24 };
     expect(fitToCodec({ ...p, codec: "ldac" })).toMatchObject({ quality: "hq", abr: true, sample_rate: 96000, bit_depth: 24 });
-    expect(fitToCodec({ ...p, codec: "aac" })).toMatchObject({ abr: false, sample_rate: 0, bit_depth: 0 });
+    // AAC takes the flag as VBR (the editor clears it when the codec changes to or from AAC)
+    expect(fitToCodec({ ...p, codec: "aac" })).toMatchObject({ abr: true, sample_rate: 0, bit_depth: 0 });
+    expect(fitToCodec({ ...p, codec: "sbc", sbc_bitpool: 40 })).toMatchObject({ abr: false, sbc_bitpool: 40 });
+    expect(fitToCodec({ ...p, codec: "ldac", sbc_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0 });
     expect(fitToCodec({ ...p, codec: "auto" })).toMatchObject({ abr: true, sample_rate: 0, bit_depth: 24 });
     expect(fitToCodec({ ...p, codec: "aptx" })).toMatchObject({ quality: "mhq", abr: false });
     expect(fitToCodec({ ...p, codec: "opus" })).toMatchObject({ quality: "hq", abr: false, sample_rate: 0, bit_depth: 0 });

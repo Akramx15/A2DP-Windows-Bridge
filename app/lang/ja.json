@@ -626,5 +626,11 @@
   "dbgc.col_status": "状態",
   "dbgc.col_time": "時刻",
   "dbgc.col_elapsed": "経過",
-  "dbgc.col_detail": "詳細"
+  "dbgc.col_detail": "詳細",
+  "ui.adapter.address": "アドレス",
+  "connection.vbr": "VBR(可変ビットレート)",
+  "tooltip.vbr": "可変ビットレートのAAC: 音楽に応じてビット数を配分します。ヘッドホンがVBRに対応している場合のみ有効で、非対応なら固定ビットレートのままです。Autoではなく AAC を直接選んだときに適用されます。",
+  "connection.sbc_bitpool": "ビットプール",
+  "tooltip.sbc_bitpool": "SBCの1フレームに割り当てるビット数です。大きいほど高音質でビットレートも上がります(%d-%d)。Autoは品質設定に従います。ヘッドホン側の範囲が常に優先されます。",
+  "error.sbc_bitpool_range": "ビットプールは%dから%dの値、またはAutoにしてください"
 }

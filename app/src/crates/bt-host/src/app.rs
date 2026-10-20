@@ -407,7 +407,7 @@ impl HostApp {
                     *min_bitpool,
                     *max_bitpool,
                 ),
-            ConfigRequest::Aac { object_type, sampling_frequency, channels, bit_rate } => stack.a2dp_set_config_aac(
+            ConfigRequest::Aac { object_type, sampling_frequency, channels, bit_rate, vbr } => stack.a2dp_set_config_aac(
                 cid,
                 local,
                 config.remote_seid,
@@ -418,7 +418,7 @@ impl HostApp {
                 *sampling_frequency,
                 *channels,
                 *bit_rate,
-                false,
+                *vbr,
             ),
             ConfigRequest::Vendor(info) => stack.a2dp_set_config_other(cid, local, config.remote_seid, info),
         }
@@ -566,6 +566,12 @@ impl HostApp {
                     self.on_local_version(stack, p);
                 }
                 if opcode == HCI_OPCODE_READ_BD_ADDR {
+                    // Status, then the address little-endian
+                    if p.len() >= 12 && p[5] == 0 {
+                        let a: Vec<String> = p[6..12].iter().rev().map(|b| format!("{b:02X}")).collect();
+                        let addr = a.join(":");
+                        self.shared.update(|s| s.local_address = Some(addr));
+                    }
                     self.shared.update(|s| {
                         if s.probe_pending {
                             s.probe_pending = false;
@@ -729,6 +735,8 @@ impl HostApp {
             s.le_audio_capable = le_audio_capable;
             s.init_done = Some(Ok(()));
         });
+        // The adapter's own address, for the Adapter screen
+        let _ = stack.cmd_read_bd_addr();
         self.afh_ticks = 0;
         self.afh_policy_version_seen = None;
         self.afh_sent_map = None;

@@ -426,6 +426,7 @@ pub fn run(args: &[String]) -> i32 {
         codec_fallback: false,
         quality: a.quality,
         abr: a.abr,
+        sbc_bitpool: 0,
         sample_rate: a.rate,
         bit_depth: a.bits,
         source,

@@ -28,6 +28,9 @@ pub struct State {
     /// The controller has LE Audio's isochronous channels (from its
     /// supported commands at HCI init, with LE Audio on or off)
     pub le_audio_capable: bool,
+    /// The controller's own Bluetooth address ("AA:BB:CC:DD:EE:FF"), once it
+    /// has answered Read BD_ADDR
+    pub local_address: Option<String>,
 
     // ---- one-shot completions, cleared by the caller before each request ----
     pub connect_done: Option<bool>,

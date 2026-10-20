@@ -24,6 +24,15 @@ fn quality_bitrate(quality: Quality) -> u32 {
     }
 }
 
+/// fdk-aac's variable bit rate mode (3 medium .. 5 very high) per quality
+fn vbr_mode(quality: Quality) -> u32 {
+    match quality {
+        Quality::High | Quality::MediumHigh => 5,
+        Quality::Standard => 4,
+        Quality::Mobile => 3,
+    }
+}
+
 /// AAC-LC encoder for A2DP: 44.1 / 48 kHz, mono or stereo, 16-bit PCM, one
 /// 1024-sample access unit per [`Encoder::encode`] call
 pub struct AacEncoder {
@@ -84,7 +93,11 @@ impl AacEncoder {
         // StreamMuxConfig in every frame (AudioMuxVersion 0, as PipeWire:
         // fdk-aac's default of every 10th frame leaves some sinks silent,
         // issue #87), afterburner for quality
-        let params: [(ffi::AACENC_PARAM, &str, u32); 8] = [
+        let vbr = config.abr;
+        let params: [(ffi::AACENC_PARAM, &str, u32); 9] = [
+            // 0 = constant bit rate; 3..5 variable (very high is the
+            // High quality's), the sink having listed VBR
+            (ffi::AACENC_BITRATEMODE, "AACENC_BITRATEMODE", if vbr { vbr_mode(config.quality) } else { 0 }),
             (ffi::AACENC_AOT, "AACENC_AOT", ffi::AOT_AAC_LC as u32),
             (ffi::AACENC_SAMPLERATE, "AACENC_SAMPLERATE", config.sample_rate),
             (ffi::AACENC_CHANNELMODE, "AACENC_CHANNELMODE", channel_mode as u32),
@@ -103,7 +116,7 @@ impl AacEncoder {
         // fdk-aac raises a bit rate below what the configuration needs; then
         // the frames would no longer fit the media payload
         let effective = enc.param(ffi::AACENC_BITRATE);
-        if effective > mtu_bitrate {
+        if !vbr && effective > mtu_bitrate {
             return unsupported(format!(
                 "media MTU {} allows {mtu_bitrate} bps, below the {effective} bps AAC needs",
                 config.mtu

@@ -123,6 +123,12 @@ export function Adapter() {
                   </div>
                 </div>
                 <dl class="kv">
+                  <Show when={a.address}>
+                    <div>
+                      <dt>{t("ui.adapter.address")}</dt>
+                      <dd class="mono">{a.address}</dd>
+                    </div>
+                  </Show>
                   <div>
                     <dt>{t("ui.adapter.driver")}</dt>
                     <dd>

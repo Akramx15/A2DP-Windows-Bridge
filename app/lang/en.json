@@ -626,5 +626,11 @@
   "dbgc.col_status": "Status",
   "dbgc.col_time": "Time",
   "dbgc.col_elapsed": "Elapsed",
-  "dbgc.col_detail": "Detail"
+  "dbgc.col_detail": "Detail",
+  "ui.adapter.address": "Address",
+  "connection.vbr": "VBR (Variable Bit Rate)",
+  "tooltip.vbr": "Variable bit rate AAC: the encoder spends bits where the music needs them. Used only if the headphones list VBR; otherwise the bit rate stays constant. Takes effect when AAC is chosen by name (not Auto).",
+  "connection.sbc_bitpool": "Bitpool",
+  "tooltip.sbc_bitpool": "How many bits each SBC frame gets: higher sounds better and needs a higher bit rate (%d-%d). Auto follows the quality setting. The headphones' own range always applies.",
+  "error.sbc_bitpool_range": "Enter a bitpool from %d to %d, or Auto"
 }

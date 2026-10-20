@@ -39,7 +39,15 @@ export interface CodecSpec {
   hiRes: boolean;
   /** The only capture rates it takes (0 = auto), when not the usual ones */
   rates?: number[];
+  /** Variable bit rate (where the headphones list it), on the "abr" setting */
+  vbr?: boolean;
+  /** The SBC bitpool can be chosen */
+  bitpool?: boolean;
 }
+
+/** SBC's largest bitpool (the local SEP's) */
+export const BITPOOL_MAX = 53;
+export const BITPOOL_MIN = 2;
 
 const HQ = "quality.high";
 const MHQ = "quality.medium_high";
@@ -112,6 +120,7 @@ export const CODECS: CodecSpec[] = [
       { id: "mq", label: MQ, kbps: "128" },
     ],
     abr: false,
+    vbr: true,
     hiRes: false,
   },
   {
@@ -126,6 +135,7 @@ export const CODECS: CodecSpec[] = [
       { id: "mq", label: MQ, kbps: "~385" },
     ],
     abr: false,
+    bitpool: true,
     hiRes: false,
   },
   {
@@ -138,6 +148,7 @@ export const CODECS: CodecSpec[] = [
       { id: "mq", label: MQ, kbps: "~150" },
     ],
     abr: false,
+    bitpool: true,
     hiRes: false,
   },
   // CSR FastStream: fixed SBC (bitpool 29, ~200 kbps), music only; never
@@ -261,6 +272,7 @@ interface CodecFields {
   abr: boolean;
   sample_rate: number;
   bit_depth: number;
+  sbc_bitpool?: number;
 }
 
 /** Values the codec cannot use go back to the defaults (v1 did the same when the codec changed) */
@@ -270,9 +282,10 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
   return {
     ...p,
     quality,
-    abr: spec.abr ? p.abr : false,
+    abr: spec.abr || spec.vbr ? p.abr : false,
     sample_rate: sampleRates(p.codec).includes(p.sample_rate) ? p.sample_rate : 0,
     bit_depth: bitDepths(p.codec).includes(p.bit_depth) ? p.bit_depth : 0,
+    ...(p.sbc_bitpool === undefined ? {} : { sbc_bitpool: spec.bitpool ? p.sbc_bitpool : 0 }),
   };
 }
 
