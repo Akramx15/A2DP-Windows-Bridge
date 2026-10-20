@@ -136,7 +136,8 @@ unsafe extern "C" {
     pub fn btstack_chipset_realtek_set_product_id(id: u16);
     pub fn btstack_chipset_realtek_set_firmware_folder_path(path: *const c_char);
     pub fn btstack_chipset_realtek_set_config_folder_path(path: *const c_char);
-    pub fn btstack_chipset_realtek_instance() -> *const core::ffi::c_void;
+    /// csrc/realtek.c: the Realtek chipset opening the .bin files
+    pub fn a2dpwb_realtek_instance() -> *const core::ffi::c_void;
     pub fn btstack_chipset_bcm_set_hcd_file_path(path: *const c_char);
     pub fn btstack_chipset_bcm_instance() -> *const core::ffi::c_void;
     pub fn hci_set_chipset(chipset: *const core::ffi::c_void);

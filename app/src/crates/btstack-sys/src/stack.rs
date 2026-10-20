@@ -200,10 +200,11 @@ impl Stack {
         }
     }
 
-    /// Registers the Realtek chipset driver (runs its init at once)
+    /// Registers the Realtek chipset driver (runs its init at once); it
+    /// opens "<name>.bin", else "<name>" (csrc/realtek.c)
     pub fn set_chipset_realtek(&self) {
         // SAFETY: on the BTstack thread after hci_init; the instance is static.
-        unsafe { ffi::hci_set_chipset(ffi::btstack_chipset_realtek_instance()) };
+        unsafe { ffi::hci_set_chipset(ffi::a2dpwb_realtek_instance()) };
     }
 
     /// Registers the Broadcom chipset driver with a PatchRAM (.hcd) file
