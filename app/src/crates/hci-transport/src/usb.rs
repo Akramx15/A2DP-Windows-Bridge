@@ -335,7 +335,14 @@ impl HciBackend for UsbTransport {
                     let interface = device
                         .claim_interface(0)
                         .wait()
-                        .map_err(|e| format!("cannot claim interface 0 of {vid:04X}:{pid:04X}: {e}"))?;
+                        .map_err(|e| {
+                            // Seen right after WinUSB was assigned while
+                            // Windows still had the old driver loaded (issue
+                            // #81: "failed to initialize WinUSB (error 50)")
+                            format!(
+                                "cannot claim interface 0 of {vid:04X}:{pid:04X}: {e} (if WinUSB was just assigned: replug the adapter or restart Windows)"
+                            )
+                        })?;
                     let endpoints = hci_endpoints(&interface)
                         .ok_or_else(|| format!("{vid:04X}:{pid:04X} lacks the HCI event / ACL endpoints"))?;
                     Ok((device, interface, endpoints))

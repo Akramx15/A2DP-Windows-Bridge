@@ -97,6 +97,11 @@ pub struct AdapterInfo {
     /// _broadcom, _csr, _unsupported); None for Realtek and unknown chips
     #[serde(default)]
     pub vendor_note: Option<Msg>,
+    /// Windows has not loaded the driver yet: it needs the adapter
+    /// replugged or Windows restarted (Device Manager's problem code 14, or
+    /// the WinUSB assignment just asked for it)
+    #[serde(default)]
+    pub restart_needed: bool,
 }
 
 /// A Realtek firmware pair found in the settings folder

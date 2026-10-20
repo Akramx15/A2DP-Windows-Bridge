@@ -201,6 +201,9 @@ fn vendor_note(vendor: ChipVendor) -> Option<Msg> {
     Some(Msg::new(key))
 }
 
+/// Device Manager's "Windows cannot start this device until it restarts"
+const CM_PROB_NEED_RESTART: u32 = 14;
+
 fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo> {
     a2dpwb_core::adapter::adapters(false)
         .into_iter()
@@ -228,6 +231,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 firmware_files: files.map(|(f, c)| vec![f, c]).unwrap_or_default(),
                 firmware_invalid: check.and_then(|c| c.invalid_file),
                 vendor_note: vendor_note(a.vendor),
+                restart_needed: a.device.problem_code == Some(CM_PROB_NEED_RESTART),
             }
         })
         .collect()
@@ -1469,6 +1473,7 @@ mod tests {
             firmware_files: vec!["rtl8761bu_fw.bin".into(), "rtl8761bu_config.bin".into()],
             firmware_invalid: invalid.map(str::to_owned),
             vendor_note: None,
+            restart_needed: false,
         }
     }
 

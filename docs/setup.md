@@ -57,6 +57,8 @@ A2DPWB communicates directly with a USB Bluetooth adapter via WinUSB, the generi
 3. Read the confirmation and continue: Windows asks for administrator permission (UAC)
 4. The driver now reads **WinUSB (used by A2DPWB)**
 
+If Windows could not load WinUSB right away (the adapter was in use), A2DPWB says so and the driver line shows **Replug or restart Windows**. Unplug the adapter and plug it back in; for a built-in adapter, restart Windows. Until then, connecting fails with `failed to initialize WinUSB (error 50)` in the log.
+
 {: .warning }
 While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter: devices paired with Windows through it stop working until the driver is restored. Use your built-in Bluetooth for normal peripherals (keyboard, mouse, etc.). A built-in adapter that is a USB device (a Realtek one on many laptops) can be given to A2DPWB too, but then **the PC has no Windows Bluetooth at all** (Bluetooth settings, mice, keyboards, other audio devices) until you restore its driver.
 
@@ -117,6 +119,8 @@ Realtek-based USB Bluetooth adapters (e.g., TP-Link UB500, RTL8761BU dongles) re
 The **Adapter** screen (and the setup's **Driver and firmware** step) shows the firmware of the adapter: **Firmware OK**, **No firmware files needed**, or **Firmware not found** with the required file names. Use the **Open Download Page** button to open the [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) page in your browser, then use **Open Config Folder** to open the destination folder. Download the required `.bin` files and place them in the config folder.
 
 A2DPWB detects the adapter's chipset and shows which firmware files are needed.
+
+Without the firmware, a Realtek adapter still opens and answers on its ROM code, so it looks fine, but connecting or streaming fails. A2DPWB then says that the firmware is not loaded. A module keeps firmware uploaded in an earlier session until it loses power, so with the files gone it may keep working until the PC is restarted or the adapter is unplugged.
 
 ### Bluetooth Chip setting
 

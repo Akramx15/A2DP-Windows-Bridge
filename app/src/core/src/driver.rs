@@ -69,7 +69,19 @@ pub fn assign(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, ErrorI
     if let Err(e) = std::fs::write(&path, serde_json::to_vec_pretty(&result).unwrap_or_default()) {
         tracing::warn!("cannot keep the driver record {}: {e}", path.display());
     }
-    Ok(serde_json::to_value(state.refresh_adapters()).unwrap_or(Value::Null))
+    let mut adapters = state.refresh_adapters();
+    // Even after the helper restarted the device, Windows may load WinUSB
+    // only after a replug or a restart (issue #81: until then opening the
+    // adapter fails with "failed to initialize WinUSB (error 50)")
+    if result.get("reboot_required").and_then(Value::as_bool) == Some(true) {
+        tracing::warn!(
+            "driver: WinUSB takes effect for {instance_id} after the adapter is replugged or Windows restarts"
+        );
+        for a in adapters.iter_mut().filter(|a| a.instance_id == instance_id) {
+            a.restart_needed = true;
+        }
+    }
+    Ok(serde_json::to_value(adapters).unwrap_or(Value::Null))
 }
 
 pub fn restore(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, ErrorInfo> {

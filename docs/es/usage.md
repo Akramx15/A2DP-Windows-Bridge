@@ -490,4 +490,6 @@ Una conexión fallida se reintenta automáticamente (hasta 3 intentos) cuando el
 | El dispositivo respondió, pero luego cerró la conexión por sí mismo | Ahora no acepta conexiones: se está apagando, se está cargando o está conectado a otro dispositivo |
 | Error de autenticación, también tras volver a emparejar | Ponga el dispositivo en modo de emparejamiento, o elimine su entrada de la lista de emparejamientos, y vuelva a intentarlo |
 
+**La primera conexión** con unos auriculares necesita el modo de emparejamiento; las siguientes se reconectan con la clave de enlace guardada. Si falla aunque estén en modo de emparejamiento, puede que sigan conectados a un teléfono u otro PC (también mediante LE Audio): desconéctelos allí, desactive LE Audio en la app de los auriculares si tiene esa opción, póngalos en modo de emparejamiento y vuelva a conectar. El registro muestra entonces `signaling connection failed (0x66)` (rechazado por seguridad: los auriculares conservan la clave de un emparejamiento anterior, por ejemplo con el Bluetooth de Windows de este PC) o `(0x67)` (rechazado por falta de recursos: ocupados con otro dispositivo).
+
 Una conexión perdida se restablece automáticamente (hasta 10 intentos). Si el PC entra en suspensión durante la transmisión, A2DPWB vuelve a conectar al reanudarse; estos intentos no se cuentan.

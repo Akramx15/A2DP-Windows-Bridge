@@ -63,6 +63,7 @@ const RTL: AdapterInfo = {
   firmware_files: ["rtl8761bu_fw.bin", "rtl8761bu_config.bin"],
   firmware_invalid: null,
   vendor_note: null,
+  restart_needed: false,
 };
 
 export function sampleProfile(over: Partial<Profile> = {}): Profile {

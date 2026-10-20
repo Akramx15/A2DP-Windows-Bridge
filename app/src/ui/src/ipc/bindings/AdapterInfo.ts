@@ -40,4 +40,10 @@ firmware_invalid: string | null,
  * What to tell about other vendors' firmware (firmware.vendor_intel,
  * _broadcom, _csr, _unsupported); None for Realtek and unknown chips
  */
-vendor_note: Msg | null, };
+vendor_note: Msg | null, 
+/**
+ * Windows has not loaded the driver yet: it needs the adapter
+ * replugged or Windows restarted (Device Manager's problem code 14, or
+ * the WinUSB assignment just asked for it)
+ */
+restart_needed: boolean, };

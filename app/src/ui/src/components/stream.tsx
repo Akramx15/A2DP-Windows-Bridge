@@ -336,6 +336,10 @@ export function useFixes() {
       if (a) return { label: t("ui.adapter.assign_winusb"), icon: "shield", run: () => void setWinusbFor(a) };
       return { label: t("ui.nav.adapter"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
     }
+    if (key === "firmware.rom_running") {
+      // The Adapter screen names the files and opens the download page
+      return { label: t("ui.nav.adapter"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
+    }
     if (code === "adapter.firmware_missing" || key.startsWith("firmware.")) {
       const vendor = snap.adapter.adapters[0]?.vendor ?? "";
       return { label: t("firmware.open_download_page"), icon: "open", run: () => core.transport.openUrl(firmwareUrl(vendor)) };
@@ -432,9 +436,18 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
     if (!a) return;
     setBusy(true);
     try {
-      if (props.mode === "assign") await app.core.request("adapter.assign_winusb", { instance_id: a.instance_id });
-      else await app.core.request("adapter.restore_driver", { instance_id: a.instance_id });
-      app.notify(props.mode === "assign" ? t("ui.adapter.assigned", a.display_name) : t("ui.adapter.restored", a.display_name));
+      if (props.mode === "assign") {
+        const list = await app.core.request("adapter.assign_winusb", { instance_id: a.instance_id });
+        // Windows loads WinUSB only after a replug or a restart (issue #81)
+        if (list.some((x) => x.instance_id === a.instance_id && x.restart_needed)) {
+          app.notify(t("ui.adapter.assigned_restart", a.display_name), "error");
+        } else {
+          app.notify(t("ui.adapter.assigned", a.display_name));
+        }
+      } else {
+        await app.core.request("adapter.restore_driver", { instance_id: a.instance_id });
+        app.notify(t("ui.adapter.restored", a.display_name));
+      }
       props.onClose(true);
     } catch (e) {
       app.notify(errorText(e), "error");

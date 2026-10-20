@@ -37,12 +37,14 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_Parent, CM_LOCATE_DEVNODE_NORMAL, CM_Locate_DevNodeW, CM_REENUMERATE_SYNCHRONOUS, CM_Reenumerate_DevNode,
-    CMP_WaitNoPendingInstallEvents, CR_SUCCESS, DI_ENUMSINGLEINF, DI_FLAGSEX_ALLOWEXCLUDEDDRVS, DICS_FLAG_GLOBAL,
-    DIIDFLAG_NOFINISHINSTALLUI, DIREG_DEV, DiInstallDevice, DiUninstallDevice, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W,
-    SP_DRVINFO_DATA_V2_W, SP_DRVINFO_DETAIL_DATA_W, SPDIT_CLASSDRIVER, SPDRP_CLASSGUID, SetupDiBuildDriverInfoList,
-    SetupDiCreateDevRegKeyW, SetupDiDestroyDriverInfoList, SetupDiEnumDriverInfoW, SetupDiGetDeviceInstallParamsW,
-    SetupDiGetDriverInfoDetailW, SetupDiOpenDevRegKey, SetupDiSetDeviceInstallParamsW,
-    SetupDiSetDeviceRegistryPropertyW, SetupDiSetSelectedDriverW,
+    CMP_WaitNoPendingInstallEvents, CR_SUCCESS, DI_ENUMSINGLEINF, DI_FLAGSEX_ALLOWEXCLUDEDDRVS, DI_NEEDREBOOT,
+    DI_NEEDRESTART, DICS_FLAG_GLOBAL, DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIIDFLAG_NOFINISHINSTALLUI, DIREG_DEV,
+    DiInstallDevice, DiUninstallDevice, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W,
+    SP_DRVINFO_DATA_V2_W, SP_DRVINFO_DETAIL_DATA_W, SP_PROPCHANGE_PARAMS, SPDIT_CLASSDRIVER, SPDRP_CLASSGUID,
+    SetupDiBuildDriverInfoList, SetupDiCallClassInstaller, SetupDiCreateDevRegKeyW, SetupDiDestroyDriverInfoList,
+    SetupDiEnumDriverInfoW, SetupDiGetDeviceInstallParamsW, SetupDiGetDriverInfoDetailW, SetupDiOpenDevRegKey,
+    SetupDiSetClassInstallParamsW, SetupDiSetDeviceInstallParamsW, SetupDiSetDeviceRegistryPropertyW,
+    SetupDiSetSelectedDriverW,
 };
 use windows::Win32::Foundation::{
     ERROR_INVALID_DEVINST_NAME, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, HWND, WAIT_OBJECT_0,
@@ -308,7 +310,15 @@ pub fn assign_winusb(instance_id: &str) -> Result<AssignOutcome, DriverError> {
     // Steps 3 and 4
     let mut class_changed = false;
     match install(&set, &mut data, &inf, &mut class_changed) {
-        Ok(reboot_required) => {
+        Ok(mut reboot_required) => {
+            if reboot_required {
+                // Windows could not stop the device to load WinUSB (issue
+                // #81: the core then fails with "failed to initialize WinUSB
+                // (error 50)" until the adapter is replugged or Windows
+                // restarts). Restart it as Device Manager does; only what
+                // still needs a restart after that is reported
+                reboot_required = restart_device(&set, &mut data);
+            }
             let state = driver_state(instance_id)?;
             tracing::info!(
                 "driver: {instance_id} is now on {} ({:?}){}",
@@ -442,6 +452,49 @@ fn install(
     unsafe { DiInstallDevice(None, set.0, data, Some(&driver), DIIDFLAG_NOFINISHINSTALLUI, Some(&mut reboot)) }
         .map_err(step("DiInstallDevice"))?;
     Ok(reboot.as_bool())
+}
+
+/// Restarts the device (DIF_PROPERTYCHANGE / DICS_PROPCHANGE, as Device
+/// Manager and devcon restart do) so that the driver just installed loads.
+/// Returns whether Windows still needs a restart for it.
+fn restart_device(set: &DevInfoSet, data: &mut SP_DEVINFO_DATA) -> bool {
+    let params = SP_PROPCHANGE_PARAMS {
+        ClassInstallHeader: SP_CLASSINSTALL_HEADER {
+            cbSize: size_of::<SP_CLASSINSTALL_HEADER>() as u32,
+            InstallFunction: DIF_PROPERTYCHANGE,
+        },
+        StateChange: DICS_PROPCHANGE,
+        Scope: DICS_FLAG_GLOBAL,
+        HwProfile: 0,
+    };
+    // SAFETY: valid set and element; the header starts the parameters,
+    // which are passed with their full size.
+    let restarted = unsafe {
+        SetupDiSetClassInstallParamsW(
+            set.0,
+            Some(data),
+            Some(&params.ClassInstallHeader),
+            size_of::<SP_PROPCHANGE_PARAMS>() as u32,
+        )
+    }
+    .and_then(|()| {
+        // SAFETY: valid set and element with its class install parameters.
+        unsafe { SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, set.0, Some(data)) }
+    });
+    if let Err(e) = restarted {
+        tracing::warn!("driver: restarting the device failed: {e}");
+        return true;
+    }
+    let mut install =
+        SP_DEVINSTALL_PARAMS_W { cbSize: size_of::<SP_DEVINSTALL_PARAMS_W>() as u32, ..Default::default() };
+    // SAFETY: valid set and element; out structure with its size set.
+    if let Err(e) = unsafe { SetupDiGetDeviceInstallParamsW(set.0, Some(data), &mut install) } {
+        tracing::warn!("driver: reading the install parameters failed: {e}");
+        return true;
+    }
+    let still = (install.Flags & (DI_NEEDRESTART | DI_NEEDREBOOT)).0 != 0;
+    tracing::info!("driver: device restarted{}", if still { ", Windows still asks for a restart" } else { "" });
+    still
 }
 
 /// Step 3: the class driver list from winusb.inf alone; its WINUSB model

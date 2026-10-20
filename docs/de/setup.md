@@ -51,15 +51,17 @@ Stecken Sie den USB-Bluetooth-Adapter ein und starten Sie A2DPWB. Solange es noc
 
 ## Schritt 2: WinUSB dem Adapter zuweisen {#winusb}
 
-A2DPWB kommuniziert über WinUSB, den in Windows enthaltenen generischen USB-Treiber, direkt mit einem USB-Bluetooth-Adapter. Sie benötigen einen **eigenen Adapter** -- Ihr integriertes Bluetooth funktioniert für das normale Windows-Bluetooth weiterhin wie gewohnt.
+A2DPWB kommuniziert über WinUSB, den in Windows enthaltenen generischen USB-Treiber, direkt mit einem USB-Bluetooth-Adapter. Ein **eigener Adapter** wird empfohlen -- Ihr integriertes Bluetooth funktioniert dann für das normale Windows-Bluetooth weiterhin wie gewohnt.
 
 1. Öffnen Sie die Seite **Adapter** (oder den Einrichtungsschritt **Treiber und Firmware**)
 2. Beim **Treiber** des Adapters steht **Windows-Bluetooth** (oder **Anderer Treiber** / **Kein Treiber**). Klicken Sie auf **WinUSB zuweisen**
 3. Lesen Sie die Bestätigung und fahren Sie fort: Windows fragt nach Administratorrechten (UAC)
 4. Beim Treiber steht jetzt **WinUSB (wird von A2DPWB verwendet)**
 
+Konnte Windows WinUSB nicht sofort laden (der Adapter war in Gebrauch), meldet A2DPWB das, und in der Treiberzeile steht **Neu einstecken oder Windows neu starten**. Ziehen Sie den Adapter ab und stecken Sie ihn wieder ein; bei einem eingebauten Adapter starten Sie Windows neu. Bis dahin schlägt das Verbinden mit `failed to initialize WinUSB (error 50)` im Protokoll fehl.
+
 {: .warning }
-Solange WinUSB zugewiesen ist, sieht das Bluetooth von Windows den Adapter nicht mehr: Geräte, die über ihn mit Windows gekoppelt wurden, funktionieren nicht mehr, bis der Treiber wiederhergestellt ist. Nutzen Sie für normale Peripheriegeräte (Tastatur, Maus usw.) Ihr integriertes Bluetooth, und **weisen Sie WinUSB niemals dem integrierten Bluetooth-Adapter des PCs zu**.
+Solange WinUSB zugewiesen ist, sieht das Bluetooth von Windows den Adapter nicht mehr: Geräte, die über ihn mit Windows gekoppelt wurden, funktionieren nicht mehr, bis der Treiber wiederhergestellt ist. Nutzen Sie für normale Peripheriegeräte (Tastatur, Maus usw.) Ihr integriertes Bluetooth. Ein eingebauter Adapter, der ein USB-Gerät ist (bei vielen Notebooks ein Realtek-Adapter), kann ebenfalls A2DPWB überlassen werden, dann hat der PC aber **überhaupt kein Windows-Bluetooth mehr** (Bluetooth-Einstellungen, Mäuse, Tastaturen, andere Audiogeräte), bis Sie seinen Treiber wiederherstellen.
 
 **Treiber wiederherstellen** auf derselben Seite gibt den Adapter an Windows zurück: Windows wählt wieder seinen eigenen Treiber (normalerweise den Bluetooth-Treiber), und der Adapter funktioniert mit dem Bluetooth von Windows. A2DPWB kann darüber erst wieder streamen, wenn WinUSB erneut zugewiesen ist. Das Deinstallationsprogramm bietet dasselbe an: Hat A2DPWB Adaptern WinUSB zugewiesen, fragt es, ob sie an Windows zurückgegeben werden sollen (eine Abfrage der Administratorrechte). Updates behalten WinUSB bei, ebenso eine stille Deinstallation (`/S`).
 
@@ -77,7 +79,7 @@ Fehlt der Adapter in der Liste von A2DPWB, schlägt eine Schaltfläche auf der S
 
 **WinUSB zuweisen**
 
-1. Suchen Sie den Adapter: normalerweise unter **Bluetooth** mit seinem eigenen Namen (zum Beispiel „TP-Link Bluetooth USB Adapter“), oder mit einem gelben Zeichen, wenn sein Treiber nicht starten konnte. **Ansicht > Geräte nach Verbindung** hilft, ihn vom eingebauten Bluetooth des PCs zu unterscheiden, das Sie nicht anfassen dürfen
+1. Suchen Sie den Adapter: normalerweise unter **Bluetooth** mit seinem eigenen Namen (zum Beispiel „TP-Link Bluetooth USB Adapter“), oder mit einem gelben Zeichen, wenn sein Treiber nicht starten konnte. **Ansicht > Geräte nach Verbindung** hilft, ihn vom eingebauten Bluetooth des PCs zu unterscheiden, das Sie nicht anfassen, außer Sie wollen es A2DPWB überlassen
 2. Rechtsklick > **Treiber aktualisieren** > **Auf meinem Computer nach Treibern suchen** > **Aus einer Liste verfügbarer Treiber auf meinem Computer auswählen**
 3. Fragt Windows nach einem Gerätetyp, wählen Sie **USB-Geräte**. Deaktivieren Sie **Kompatible Hardware anzeigen**, wählen Sie den Hersteller **WinUsb-Gerät** und das Modell **WinUsb-Gerät**, klicken Sie auf **Weiter** und bestätigen Sie die Warnung
 4. Der Adapter erscheint jetzt als **WinUsb-Gerät** unter **USB-Geräte**. Starten Sie A2DPWB neu (oder öffnen Sie die Seite **Adapter** erneut): Es verwendet den Adapter wie mit Zadig
@@ -118,6 +120,8 @@ USB-Bluetooth-Adapter mit Realtek-Chip (z. B. TP-Link UB500, RTL8761BU-Dongles) 
 Die Seite **Adapter** (und der Einrichtungsschritt **Treiber und Firmware**) zeigt die Firmware des Adapters an: **Firmware OK**, **Keine Firmwaredateien nötig** oder **Firmware nicht gefunden** mit den Namen der benötigten Dateien. Öffnen Sie mit der Schaltfläche **Downloadseite öffnen** die Seite [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) im Browser und anschließend mit **Konfigurationsordner öffnen** den Zielordner. Laden Sie die benötigten `.bin`-Dateien herunter und legen Sie sie im Konfigurationsordner ab.
 
 A2DPWB erkennt den Chipsatz des Adapters und zeigt an, welche Firmwaredateien benötigt werden.
+
+Ohne Firmware öffnet sich ein Realtek-Adapter trotzdem und antwortet mit seinem ROM-Code, wirkt also in Ordnung, aber Verbinden oder Streamen schlägt fehl. A2DPWB meldet dann, dass die Firmware nicht geladen ist. Ein Modul behält die in einer früheren Sitzung hochgeladene Firmware, bis es stromlos wird; ohne die Dateien kann es daher weiterlaufen, bis der PC neu startet oder der Adapter abgezogen wird.
 
 ### Einstellung Bluetooth-Chip
 

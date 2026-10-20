@@ -121,6 +121,11 @@ export function Adapter() {
                     <dd>
                       <span class={`tag st-${drv().status}`}>{drv().text}</span>
                       <span class="muted mono"> {a.driver_service}</span>
+                      <Show when={a.restart_needed}>
+                        <span class="tag st-warn" title={t("ui.adapter.restart_needed_hint")}>
+                          {t("ui.adapter.restart_needed")}
+                        </span>
+                      </Show>
                     </dd>
                   </div>
                   <div>

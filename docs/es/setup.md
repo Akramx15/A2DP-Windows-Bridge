@@ -51,15 +51,17 @@ Conecte el adaptador Bluetooth USB e inicie A2DPWB. Si aún no hay ningún perfi
 
 ## Paso 2: Asignar WinUSB al adaptador {#winusb}
 
-A2DPWB se comunica directamente con un adaptador Bluetooth USB mediante WinUSB, el controlador USB genérico incluido en Windows. Necesita un **adaptador dedicado**: el Bluetooth integrado sigue funcionando con normalidad para el Bluetooth habitual de Windows.
+A2DPWB se comunica directamente con un adaptador Bluetooth USB mediante WinUSB, el controlador USB genérico incluido en Windows. Se recomienda un **adaptador dedicado**: así el Bluetooth integrado sigue funcionando con normalidad para el Bluetooth habitual de Windows.
 
 1. Abra la pantalla **Adaptador** (o el paso **Controlador y firmware** de la configuración inicial)
 2. El **Controlador** del adaptador indica **Bluetooth de Windows** (u **Otro controlador** / **Sin controlador**). Haga clic en **Asignar WinUSB**
 3. Lea la confirmación y continúe: Windows solicita permiso de administrador (UAC)
 4. El controlador indica ahora **WinUSB (lo usa A2DPWB)**
 
+Si Windows no pudo cargar WinUSB en ese momento (el adaptador estaba en uso), A2DPWB lo indica y la línea del controlador muestra **Reconecta o reinicia Windows**. Desconecte el adaptador y vuelva a conectarlo; si es un adaptador integrado, reinicie Windows. Hasta entonces, la conexión falla con `failed to initialize WinUSB (error 50)` en el registro.
+
 {: .warning }
-Mientras WinUSB esté asignado, el Bluetooth de Windows ya no ve el adaptador: los dispositivos emparejados con Windows a través de él dejan de funcionar hasta que se restaure el controlador. Use el Bluetooth integrado para los periféricos habituales (teclado, ratón, etc.) y **no asigne nunca WinUSB al adaptador Bluetooth integrado del PC**.
+Mientras WinUSB esté asignado, el Bluetooth de Windows ya no ve el adaptador: los dispositivos emparejados con Windows a través de él dejan de funcionar hasta que se restaure el controlador. Use el Bluetooth integrado para los periféricos habituales (teclado, ratón, etc.). Un adaptador integrado que sea un dispositivo USB (uno de Realtek en muchos portátiles) también puede cederse a A2DPWB, pero entonces **el PC se queda sin Bluetooth de Windows** (configuración de Bluetooth, ratones, teclados, otros dispositivos de audio) hasta que restaure su controlador.
 
 **Restaurar controlador**, en la misma pantalla, devuelve el adaptador a Windows: Windows vuelve a elegir su propio controlador (normalmente su controlador Bluetooth) y el adaptador funciona con el Bluetooth de Windows. A2DPWB no podrá transmitir a través de él hasta que se asigne WinUSB de nuevo. El desinstalador ofrece lo mismo: si A2DPWB asignó WinUSB a algún adaptador, pregunta si devolverlo a Windows (una sola solicitud de permisos de administrador). Las actualizaciones mantienen WinUSB, igual que una desinstalación silenciosa (`/S`).
 
@@ -77,7 +79,7 @@ Si el adaptador no aparece en la lista de A2DPWB, falla un botón de la pantalla
 
 **Asignar WinUSB**
 
-1. Busque el adaptador: normalmente en **Bluetooth** con su propio nombre (por ejemplo «TP-Link Bluetooth USB Adapter»), o con una marca amarilla cuando su controlador no pudo iniciarse. **Ver > Dispositivos por conexión** ayuda a distinguirlo del Bluetooth integrado del equipo, que no debe tocar
+1. Busque el adaptador: normalmente en **Bluetooth** con su propio nombre (por ejemplo «TP-Link Bluetooth USB Adapter»), o con una marca amarilla cuando su controlador no pudo iniciarse. **Ver > Dispositivos por conexión** ayuda a distinguirlo del Bluetooth integrado del equipo, que no debe tocar salvo que quiera cederlo a A2DPWB
 2. Clic derecho > **Actualizar controlador** > **Buscar controladores en mi equipo** > **Elegir en una lista de controladores disponibles en el equipo**
 3. Si Windows pide un tipo de dispositivo, elija **Dispositivos de bus serie universal**. Desmarque **Mostrar hardware compatible**, elija el fabricante **Dispositivo WinUsb** y el modelo **Dispositivo WinUsb**, haga clic en **Siguiente** y confirme la advertencia
 4. El adaptador aparece ahora como **Dispositivo WinUsb** en **Dispositivos de bus serie universal**. Reinicie A2DPWB (o vuelva a abrir la pantalla **Adaptador**): lo usa igual que con Zadig
@@ -118,6 +120,8 @@ Los adaptadores Bluetooth USB basados en Realtek (p. ej., TP-Link UB500, llaves 
 La pantalla **Adaptador** (y el paso **Controlador y firmware** de la configuración inicial) muestra el firmware del adaptador: **Firmware correcto**, **No necesita archivos de firmware** o **Firmware no encontrado** con los nombres de los archivos necesarios. Use el botón **Abrir página de descarga** para abrir la página [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) en el navegador y, después, **Abrir carpeta de configuración** para abrir la carpeta de destino. Descargue los archivos `.bin` necesarios y colóquelos en la carpeta de configuración.
 
 A2DPWB detecta el chipset del adaptador y muestra qué archivos de firmware se necesitan.
+
+Sin el firmware, un adaptador Realtek se abre igualmente y responde con su código de ROM, así que parece correcto, pero la conexión o la transmisión fallan. A2DPWB indica entonces que el firmware no está cargado. Un módulo conserva el firmware cargado en una sesión anterior hasta que pierde la alimentación, así que, sin los archivos, puede seguir funcionando hasta que se reinicie el PC o se desconecte el adaptador.
 
 ### Opción Chip Bluetooth
 

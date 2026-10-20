@@ -21,6 +21,10 @@ pub struct State {
     pub init_done: Option<Result<(), InitFailure>>,
     pub hci_ready: bool,
     pub hci_off: bool,
+    /// A Realtek controller came up on its ROM code: the firmware download
+    /// did not run or did not take (issue #81: the adapter opens, but
+    /// connections and streams fail)
+    pub realtek_rom: bool,
 
     // ---- one-shot completions, cleared by the caller before each request ----
     pub connect_done: Option<bool>,
