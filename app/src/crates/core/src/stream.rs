@@ -1112,7 +1112,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         // The encoder follows the new stream: its MTU and the device's
         // settings (e.g. its SBC bitpool range) may have changed
-        let new_config = EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels, req.sbc_bitpool), ..encoder_config };
+        let new_config = EncoderConfig {
+            mtu: r.mtu,
+            peer: peer_params(&r.remote, kind, channels, req.sbc_bitpool),
+            ..encoder_config
+        };
         if r.mtu != encoder_config.mtu {
             tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }
