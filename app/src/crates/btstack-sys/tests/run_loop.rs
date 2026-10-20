@@ -106,4 +106,9 @@ fn run_twice() {
 fn realtek_table() {
     let ids = btstack_sys::realtek_usb_ids();
     assert!(ids.contains(&(0x2357, 0x0604)) || ids.iter().any(|(v, _)| *v == 0x0BDA), "{ids:?}");
+    // The firmware names read from the same table
+    let table = btstack_sys::realtek_usb_firmware();
+    assert_eq!(table.len(), ids.len());
+    assert!(table.contains(&(0x0BDA, 0x4853, "rtl8852bu_fw")), "{table:?}");
+    assert!(table.iter().all(|(_, _, fw)| fw.ends_with("_fw")), "{table:?}");
 }

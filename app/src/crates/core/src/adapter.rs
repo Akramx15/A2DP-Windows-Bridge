@@ -26,7 +26,7 @@ pub struct Adapter {
 /// `probe_winusb` opens WinUSB-bound ones for a moment (not while the stack
 /// has the adapter open).
 pub fn adapters(probe_winusb: bool) -> Vec<Adapter> {
-    let ids = bt_host::realtek_usb_ids();
+    let ids = bt_host::realtek_usb_firmware();
     let devices = match usb_adapters::enumerate(probe_winusb) {
         Ok(d) => d,
         Err(e) => {
@@ -37,7 +37,7 @@ pub fn adapters(probe_winusb: bool) -> Vec<Adapter> {
     devices
         .into_iter()
         .filter_map(|d| {
-            let realtek_pid = chips::resolve_realtek_pid(d.vid, d.pid, &ids);
+            let realtek_pid = chips::resolve_realtek_pid(d.vid, d.pid, ids);
             let vendor = chips::vendor_for_usb(d.vid, d.pid, realtek_pid);
             let bluetooth =
                 d.looks_like_bluetooth() || realtek_pid.is_some() || chips::is_bluetooth_vendor_vid(d.vid, d.pid);
@@ -108,11 +108,13 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
     let pid =
         chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, winusb.iter().map(|a| a.realtek_pid));
     if pid != 0 {
-        tracing::info!(
-            "chip: {} (0x{pid:04X}){}",
-            chips::realtek_chip_name(pid).unwrap_or("unknown"),
-            if auto { " (auto)" } else { "" }
-        );
+        let chip_name = chips::realtek_chip_name(pid);
+        tracing::info!("chip: {} (0x{pid:04X}){}", chip_name.unwrap_or("unknown"), if auto { " (auto)" } else { "" });
+        if chip_name.is_none() && settings.bt_chip_fw_stem.is_empty() {
+            tracing::warn!(
+                "chip 0x{pid:04X} is not in A2DPWB's chip table: choose its firmware on the Adapter screen (Firmware), else no firmware file is checked or prepared for it"
+            );
+        }
         config.realtek_pid = pid;
     } else {
         tracing::info!(

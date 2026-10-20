@@ -294,9 +294,9 @@ fn backend(transport: &TransportConfig) -> Box<dyn HciBackend> {
     }
 }
 
-/// USB VID:PID pairs of the Realtek controllers BTstack's driver knows
-pub fn realtek_usb_ids() -> Vec<(u16, u16)> {
-    btstack_sys::realtek_usb_ids()
+/// BTstack's Realtek firmware table: VID, PID, firmware name ("rtl8852bu_fw")
+pub fn realtek_usb_firmware() -> &'static [(u16, u16, &'static str)] {
+    btstack_sys::realtek_usb_firmware()
 }
 
 fn exe_dir() -> PathBuf {

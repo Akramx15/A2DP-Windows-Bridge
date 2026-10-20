@@ -48,7 +48,6 @@ pub use transport::{
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 /// Where a packet handed to [`App::on_packet`] comes from
@@ -280,19 +279,35 @@ pub fn poisoned() -> bool {
 /// USB VID:PID pairs of the Realtek controllers BTstack's Realtek driver
 /// knows (its firmware table). A static table: callable from any thread.
 pub fn realtek_usb_ids() -> Vec<(u16, u16)> {
-    static IDS: Mutex<Vec<(u16, u16)>> = Mutex::new(Vec::new());
-    let mut ids = IDS.lock().unwrap_or_else(|e| e.into_inner());
-    if ids.is_empty() {
+    realtek_usb_firmware().iter().map(|&(vid, pid, _)| (vid, pid)).collect()
+}
+
+/// BTstack's Realtek firmware table: VID, PID and the firmware name without
+/// extension ("rtl8852bu_fw"), which tells the chip family. A static table:
+/// callable from any thread.
+pub fn realtek_usb_firmware() -> &'static [(u16, u16, &'static str)] {
+    static TABLE: std::sync::OnceLock<Vec<(u16, u16, &'static str)>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
         // SAFETY: reads BTstack's constant firmware table; no state involved.
         let n = unsafe { ffi::btstack_chipset_realtek_get_num_usb_controllers() };
-        for i in 0..n {
-            let (mut vid, mut pid) = (0u16, 0u16);
-            // SAFETY: i < n; both pointers are valid for writes.
-            unsafe { ffi::btstack_chipset_realtek_get_vendor_product_id(i, &mut vid, &mut pid) };
-            ids.push((vid, pid));
-        }
-    }
-    ids.clone()
+        (0..n)
+            .map(|i| {
+                let (mut vid, mut pid) = (0u16, 0u16);
+                // SAFETY: i < n; both pointers are valid for writes.
+                unsafe { ffi::btstack_chipset_realtek_get_vendor_product_id(i, &mut vid, &mut pid) };
+                // SAFETY: i < n; the name is a string literal of the table
+                // (static), or NULL
+                let name = unsafe { ffi::a2dpwb_realtek_usb_fw_name(i) };
+                let name = if name.is_null() {
+                    ""
+                } else {
+                    // SAFETY: a NUL-terminated literal that lives forever
+                    unsafe { std::ffi::CStr::from_ptr(name) }.to_str().unwrap_or("")
+                };
+                (vid, pid, name)
+            })
+            .collect()
+    })
 }
 
 #[cfg(feature = "sbc-reference")]

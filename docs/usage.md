@@ -490,4 +490,6 @@ A failed connection is tried again by itself (up to 3 attempts) when the link ca
 | The device answered but then ended the connection itself | It does not accept a connection now: turning off, charging, or connected to another device |
 | Authentication failed, also after pairing again | Put the device into pairing mode, or remove its pairing list entry, and try again |
 
+**The first connection** to a headphone needs pairing mode; later ones reconnect with the saved link key. If it fails although the headphones are in pairing mode, they may still be connected to a phone or another PC (also through LE Audio): disconnect them there, turn LE Audio off in the headphones' app if it has the option, put them into pairing mode and connect once more. The log then shows `signaling connection failed (0x66)` (refused for security: the headphones kept the key of an earlier pairing, for example with this PC's Windows Bluetooth) or `(0x67)` (refused for lack of resources: busy with another device).
+
 A lost connection is reconnected by itself (up to 10 attempts). When the PC goes to sleep while streaming, A2DPWB reconnects after it resumes; these attempts are not counted.

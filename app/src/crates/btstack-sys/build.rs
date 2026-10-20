@@ -109,7 +109,8 @@ fn main() {
     // ENABLE_PRINTF_TO_LOG sends those lines to the HCI dump log instead
     // (HCI_DUMP_LOG_LEVEL_PRINT), for this file only
     let mut realtek = build.clone();
-    realtek.define("ENABLE_PRINTF_TO_LOG", None).file(btstack.join("chipset/realtek/btstack_chipset_realtek.c"));
+    // csrc/realtek.c includes btstack_chipset_realtek.c (reads its firmware table)
+    realtek.define("ENABLE_PRINTF_TO_LOG", None).file(csrc.join("realtek.c"));
     realtek.compile("btstack_realtek");
 
     let mut core: Vec<PathBuf> = std::fs::read_dir(btstack.join("src"))
