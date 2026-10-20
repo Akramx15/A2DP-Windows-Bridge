@@ -228,7 +228,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 vid: a.device.vid,
                 pid: a.device.pid,
                 display_name: a.display_name.clone(),
-                device_name: a.device.name.clone(),
+                device_name: a.device.display_name().to_owned(),
                 vendor: a.vendor.name().to_string(),
                 driver,
                 driver_service: a.device.driver.service.clone(),
