@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "a2dpwb-core"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "audio-capture",
  "bt-host",
@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "a2dpwb-core-exe"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "a2dpwb-core",
  "audio-capture",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "a2dpwb-driver"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "embed-resource",
  "serde",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "a2dpwb-ui"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "ipc",
  "serde",
@@ -285,7 +285,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "audio-capture"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "thiserror 2.0.21",
  "tracing",
@@ -454,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "bt-host"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "btstack-sys",
  "codec",
@@ -466,7 +466,7 @@ dependencies = [
 
 [[package]]
 name = "btstack-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "cc",
  "tracing",
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "codec"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "btstack-sys",
  "fdkaac-sys",
@@ -1177,7 +1177,7 @@ dependencies = [
 
 [[package]]
 name = "fdkaac-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "cc",
  "codec",
@@ -1658,7 +1658,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hci-transport"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "btstack-sys",
  "nusb",
@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "ipc"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2238,28 +2238,28 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lc3-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "ldac-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "le-audio"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "tracing",
 ]
 
 [[package]]
 name = "lhdcv5-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "cc",
 ]
@@ -2839,7 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "openaptx-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "cc",
 ]
@@ -2858,7 +2858,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "opus-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "cc",
 ]
@@ -3008,7 +3008,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pipeline"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "bt-host",
  "codec",
@@ -5343,7 +5343,7 @@ dependencies = [
 
 [[package]]
 name = "win-sys"
-version = "2.0.2-beta.1"
+version = "2.0.2-beta.2"
 dependencies = [
  "thiserror 2.0.21",
  "tokio",
