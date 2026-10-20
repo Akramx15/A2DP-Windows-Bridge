@@ -135,6 +135,12 @@ export function Adapter() {
                       <Show when={a.realtek_chip}>
                         <span class="muted"> {a.realtek_chip}</span>
                       </Show>
+                      {/* The running stack found it on its ROM code (issue #81) */}
+                      <Show when={adapter().rom_firmware && a.realtek_chip && a.driver === "winusb"}>
+                        <span class="tag st-bad" title={t("firmware.rom_status")}>
+                          {t("ui.adapter.rom_firmware")}
+                        </span>
+                      </Show>
                     </dd>
                   </div>
                 </dl>

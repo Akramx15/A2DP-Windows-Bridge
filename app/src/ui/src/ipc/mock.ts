@@ -176,6 +176,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
       adapters: [fresh ? { ...RTL, driver: "bluetooth", driver_service: "BTHUSB", firmware_present: false } : RTL],
       error: null,
       le_audio: scenario === "le_unsupported" ? false : scenario === "le" ? true : null,
+      rom_firmware: false,
     },
     devices: fresh
       ? []

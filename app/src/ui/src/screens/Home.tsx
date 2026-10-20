@@ -27,12 +27,30 @@ export function adaptersMissingFirmware(snap: Snapshot): AdapterInfo[] {
   return snap.adapter.adapters.filter((a) => a.firmware_present === false);
 }
 
-/** The bar over Home while an adapter lacks its firmware files */
+/** The bar over Home while an adapter lacks its firmware files, or the
+ *  running stack found its Realtek adapter on the ROM code (issue #81) */
 function FirmwareMissing() {
   const { core, navigate } = useApp();
   const missing = () => adaptersMissingFirmware(core.state.snap!);
   return (
-    <Show when={missing().length > 0}>
+    <Show
+      when={missing().length > 0}
+      fallback={
+        <Show when={core.state.snap!.adapter.rom_firmware}>
+          <Banner
+            kind="warn"
+            title={t("ui.adapter.rom_firmware")}
+            actions={
+              <Button kind="strong" icon="usb_stick" onClick={() => navigate({ name: "adapter" })}>
+                {t("ui.home.firmware_fix")}
+              </Button>
+            }
+          >
+            {t("firmware.rom_status")}
+          </Banner>
+        </Show>
+      }
+    >
       <Banner
         kind="warn"
         title={missing().some((a) => a.firmware_invalid) ? t("firmware.invalid_short") : t("firmware.missing_manual")}

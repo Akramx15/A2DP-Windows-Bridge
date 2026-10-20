@@ -91,14 +91,7 @@ A2DPWB 자체는 Windows(Windows 10 22H2 또는 Windows 11) 전용이며 x64와 
 
 ## 검증된 하드웨어 {#verified-hardware}
 
-| 대상 | 구성 | 코덱 | 결과 |
-|:-----|:-----|:-----|:-----|
-| Sony WH-1000XM4 (헤드폰) | Windows 11 + TP-Link UB500 | LDAC, AAC, SBC, SBC XQ | ✅ 재생됨 (XM4는 aptX 미지원) |
-| TP-Link UB500 (Realtek RTL8761BU, 어댑터) | Windows 11, WinUSB, linux-firmware `rtl8761bu` | – | ✅ |
-| 측정용 수신기 `tools/linux_sink` | Windows 11 + UB500 → Ubuntu 26.04, 실제 무선 | SBC, AAC, aptX, aptX HD, aptX LL, LDAC | ✅ 수신 및 측정됨 |
-| 가상 링크 `tools/emu` (Bumble) | Windows 11, 무선 없음 | SBC, SBC XQ, AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5, FastStream, Opus, Opus 05 | ✅ 엔드투엔드 테스트 통과 |
-
-Windows 10은 아직 실제 하드웨어에서 시험하지 않았습니다. 다른 어댑터는 [권장 어댑터](setup#adapters)를 참조하십시오.
+Sony WH-1000XM4·WH-1000XM6, EarFun Air Pro 4+, Grado GW100x 등을 TP-Link UB500, 범용 RTL8761B, 노트북 내장 RTL8852BE, ASUS BT400, CSR8510 어댑터에서 확인했습니다. 코덱, 버전, 근거가 된 보고까지 담은 전체 목록은 **[검증된 하드웨어](../hardware)** (영어)에 있습니다.
 
 ## 오디오 캡처 모드
 

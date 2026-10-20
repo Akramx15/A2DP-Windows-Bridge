@@ -1,6 +1,6 @@
 # A2DP Windows Bridge (A2DPWB)
 
-Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, aptX HD, aptX Low Latency, LHDC V5 and more, through a dedicated USB Bluetooth adapter in WinUSB mode — no kernel driver or test signing required.
+Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, aptX HD, aptX Low Latency, LHDC V5 and more, through a USB Bluetooth adapter it takes over in WinUSB mode — no kernel driver or test signing required.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](docs/images/app_sample.png)
 
@@ -32,16 +32,16 @@ Auto picks LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC
 ## Requirements
 
 - **Windows 10 (22H2) or 11**, x64 or ARM64 (ARM64 and Windows 10 not yet tried on real hardware)
-- **A dedicated USB Bluetooth adapter**, separate from the PC's built-in Bluetooth. Verified: TP-Link UB500 (Realtek RTL8761BU) with a Sony WH-1000XM4. See [Recommended Adapters](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup#adapters)
+- **A USB Bluetooth adapter for A2DPWB**: a separate USB dongle is recommended. The PC's built-in adapter works too when it is a USB device (many laptops' Realtek adapters), but Windows then has no Bluetooth of its own while A2DPWB has it. See [Recommended Adapters](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup#adapters) and the [verified hardware](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/hardware)
 
-### Why a dedicated adapter?
+### Why does A2DPWB take over a whole adapter?
 
 Windows 10 / 11 load only kernel drivers signed through Microsoft, which needs an EV code signing certificate (several hundred US dollars a year, normally for companies only). A2DPWB therefore takes a whole USB adapter away from Windows with the Microsoft-signed WinUSB driver and runs the Bluetooth stack itself, in user mode. If you just want something simple, commercial software with a signed driver works with the built-in Bluetooth.
 
 ## Setup
 
 1. **Install**: run `A2DPWB-<version>-win64-setup.exe` (per user, no administrator rights), or extract the portable zip and run `a2dpwb.exe`. Installing over v1 removes v1 and keeps its settings, pairings and firmware.
-2. **Plug in the dedicated adapter.**
+2. **Plug in the adapter** (or use the built-in one, see the warning below).
 3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, pair the headphones, then choose what to send and connect.
 4. **Connect** from **Home**, or from the tray icon.
 

@@ -19,7 +19,7 @@ nav_order: 1
 ## 준비 사항
 
 - **Windows 10 (22H2) / 11** (x64)
-- **전용 USB Bluetooth 어댑터** (내장 Bluetooth와 별도)
+- **A2DPWB용 USB Bluetooth 어댑터**: 별도의 동글을 권장합니다. USB 방식의 내장 어댑터도 사용할 수 있지만, 그동안 Windows 자체 Bluetooth는 사용할 수 없습니다([2단계](#winusb) 참조)
 
 A2DPWB가 어댑터에 WinUSB 드라이버를 직접 할당합니다. 이제 [Zadig](https://zadig.akeo.ie/)는 필요 없습니다(계속 사용할 수는 있습니다. [Zadig 사용하기](#zadig) 참조).
 

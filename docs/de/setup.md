@@ -19,7 +19,7 @@ nav_order: 1
 ## Voraussetzungen
 
 - **Windows 10 (22H2) / 11** (x64)
-- **Eigener USB-Bluetooth-Adapter** (getrennt vom integrierten Bluetooth)
+- **Ein USB-Bluetooth-Adapter für A2DPWB**: ein separater Dongle wird empfohlen; ein eingebauter USB-Adapter geht auch, dann hat Windows aber kein eigenes Bluetooth (siehe [Schritt 2](#winusb))
 
 A2DPWB weist dem Adapter den WinUSB-Treiber selbst zu. [Zadig](https://zadig.akeo.ie/) wird nicht mehr benötigt (es funktioniert weiterhin, siehe [Stattdessen Zadig verwenden](#zadig)).
 

@@ -19,7 +19,7 @@ nav_order: 1
 ## 前提条件
 
 - **Windows 10（22H2）/ 11**（x64）
-- **专用 USB Bluetooth 适配器**（独立于内置 Bluetooth）
+- **供 A2DPWB 使用的 USB Bluetooth 适配器**：建议使用单独的适配器；USB 类型的内置适配器也可以，但期间 Windows 将无法使用自己的 Bluetooth（参见[第 2 步](#winusb)）
 
 A2DPWB 会自行为适配器分配 WinUSB 驱动程序，不再需要 [Zadig](https://zadig.akeo.ie/)（Zadig 仍然可用，请参阅[改用 Zadig](#zadig)）。
 
