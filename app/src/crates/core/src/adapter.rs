@@ -109,7 +109,18 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
         chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, winusb.iter().map(|a| a.realtek_pid));
     if pid != 0 {
         let chip_name = chips::realtek_chip_name(pid);
-        tracing::info!("chip: {} (0x{pid:04X}){}", chip_name.unwrap_or("unknown"), if auto { " (auto)" } else { "" });
+        // The adapter's own VID:PID when it differs from the PID BTstack is
+        // given (a family's other PID, an OEM adapter): "0BDA:4853 -> 0xB85B"
+        let usb = winusb
+            .iter()
+            .find(|a| a.realtek_pid == Some(pid) && (a.device.vid, a.device.pid) != (chips::REALTEK_VID, pid))
+            .map(|a| format!("{:04X}:{:04X} -> ", a.device.vid, a.device.pid))
+            .unwrap_or_default();
+        tracing::info!(
+            "chip: {} ({usb}0x{pid:04X}){}",
+            chip_name.unwrap_or("unknown"),
+            if auto { " (auto)" } else { "" }
+        );
         if chip_name.is_none() && settings.bt_chip_fw_stem.is_empty() {
             tracing::warn!(
                 "chip 0x{pid:04X} is not in A2DPWB's chip table: choose its firmware on the Adapter screen (Firmware), else no firmware file is checked or prepared for it"

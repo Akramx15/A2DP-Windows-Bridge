@@ -490,4 +490,6 @@ Une connexion échouée est retentée automatiquement (jusqu'à 3 tentatives) lo
 | L'appareil a répondu puis a lui-même mis fin à la connexion | Il n'accepte pas de connexion pour le moment : en cours d'extinction, en charge, ou connecté à un autre appareil |
 | Échec de l'authentification, même après une nouvelle association | Mettez l'appareil en mode d'association, ou supprimez son entrée dans la liste d'association, et réessayez |
 
+**La première connexion** à un casque nécessite le mode d'association ; les suivantes se reconnectent avec la clé de liaison enregistrée. Si elle échoue alors que le casque est en mode d'association, il est peut-être encore connecté à un téléphone ou à un autre PC (y compris via LE Audio) : déconnectez-le là-bas, désactivez LE Audio dans l'application du casque si elle le propose, mettez-le en mode d'association et reconnectez-vous. Le journal indique alors `signaling connection failed (0x66)` (refusé pour raison de sécurité : le casque a gardé la clé d'une association précédente, par exemple avec le Bluetooth Windows de ce PC) ou `(0x67)` (refusé faute de ressources : occupé avec un autre appareil).
+
 Une connexion perdue est rétablie automatiquement (jusqu'à 10 tentatives). Si le PC se met en veille pendant la diffusion, A2DPWB se reconnecte à la sortie de veille ; ces tentatives ne sont pas comptées.

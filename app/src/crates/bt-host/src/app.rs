@@ -251,7 +251,10 @@ impl HostApp {
         self.rtk_lmp_first = 0;
         self.rtk_verify_pending = false;
         self.init_started = Instant::now();
-        self.shared.update(|s| s.power_on_at = Some(Instant::now()));
+        self.shared.update(|s| {
+            s.power_on_at = Some(Instant::now());
+            s.realtek_rom = false;
+        });
         tracing::info!("hci_init done, powering on");
         if stack.power_on().is_err() {
             tracing::error!("could not open the Bluetooth adapter");
@@ -689,6 +692,7 @@ impl HostApp {
                 }
             } else if elapsed < 500 {
                 tracing::warn!("HCI init took < 500 ms: Realtek firmware likely NOT loaded");
+                self.shared.update(|s| s.realtek_rom = true);
             }
         }
         self.shared.update(|s| {
@@ -727,6 +731,7 @@ impl HostApp {
                     tracing::warn!(
                         "Realtek firmware NOT loaded (LMP subversion 0x{lmp_subver:04X} is the ROM code); check the firmware files"
                     );
+                    self.shared.update(|s| s.realtek_rom = true);
                 } else {
                     tracing::info!(
                         "Realtek firmware loaded (LMP subversion 0x{:04X} -> 0x{lmp_subver:04X})",

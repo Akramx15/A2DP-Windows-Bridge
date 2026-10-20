@@ -51,15 +51,17 @@ v2 首次启动时，会先将 v1 的设置复制到 `%APPDATA%\A2DPWB\backup-v1
 
 ## 第 2 步：为适配器分配 WinUSB {#winusb}
 
-A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB Bluetooth 适配器通信。你需要一个**专用适配器**——内置 Bluetooth 仍可照常用于 Windows 的普通 Bluetooth 功能。
+A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB Bluetooth 适配器通信。建议使用**专用适配器**——这样内置 Bluetooth 仍可照常用于 Windows 的普通 Bluetooth 功能。
 
 1. 打开**适配器**页面（或设置向导中的**驱动程序和固件**步骤）
 2. 适配器的**驱动程序**显示为 **Windows Bluetooth**（或**其他驱动程序** / **无驱动程序**）。单击**分配 WinUSB**
 3. 阅读确认信息后继续：Windows 会请求管理员权限（UAC）
 4. 驱动程序现在显示为 **WinUSB（由 A2DPWB 使用）**
 
+如果 Windows 未能立即加载 WinUSB（适配器正在使用中），A2DPWB 会给出提示，驱动程序一行会显示**请重新插拔或重启 Windows**。请拔下适配器后重新插入；内置适配器请重启 Windows。在此之前，连接会失败，日志中出现 `failed to initialize WinUSB (error 50)`。
+
 {: .warning }
-分配 WinUSB 期间，Windows 自带的 Bluetooth 将不再识别该适配器：通过它与 Windows 配对的设备在恢复驱动程序之前都无法使用。键盘、鼠标等普通外设请使用内置 Bluetooth，并且**切勿为 PC 的内置 Bluetooth 适配器分配 WinUSB**。
+分配 WinUSB 期间，Windows 自带的 Bluetooth 将不再识别该适配器：通过它与 Windows 配对的设备在恢复驱动程序之前都无法使用。键盘、鼠标等普通外设请使用内置 Bluetooth。属于 USB 设备的内置适配器（许多笔记本电脑上的 Realtek 适配器）也可以交给 A2DPWB 使用，但在恢复其驱动程序之前，**PC 将完全无法使用 Windows Bluetooth**（Bluetooth 设置、鼠标、键盘、其他音频设备）。
 
 同一页面上的**恢复驱动程序**会将适配器交还给 Windows：Windows 会重新为其选择自己的驱动程序（通常是其 Bluetooth 驱动程序），适配器即可配合 Windows 的 Bluetooth 使用。在重新分配 WinUSB 之前，A2DPWB 无法通过它串流。卸载程序也会提供同样的操作：如果 A2DPWB 为适配器分配了 WinUSB，它会询问是否将其交还给 Windows（只请求一次管理员权限）。更新时以及静默卸载（`/S`）时会保留 WinUSB。
 
@@ -77,7 +79,7 @@ A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB 
 
 **分配 WinUSB**
 
-1. 找到适配器：通常在 **Bluetooth** 下，显示其自身名称（例如“TP-Link Bluetooth USB Adapter”）；如果其驱动程序启动失败，会带有黄色标记。**查看 > 依连接排序设备**有助于将它与电脑内置的 Bluetooth 区分开（请勿改动内置的 Bluetooth）
+1. 找到适配器：通常在 **Bluetooth** 下，显示其自身名称（例如“TP-Link Bluetooth USB Adapter”）；如果其驱动程序启动失败，会带有黄色标记。**查看 > 依连接排序设备**有助于将它与电脑内置的 Bluetooth 区分开（除非要交给 A2DPWB 使用，否则请勿改动内置的 Bluetooth）
 2. 右键单击 > **更新驱动程序** > **浏览我的电脑以查找驱动程序** > **让我从计算机上的可用驱动程序列表中选取**
 3. 如果 Windows 询问设备类型，请选择**通用串行总线设备**。取消勾选**显示兼容硬件**，选择厂商 **WinUsb 设备** 和型号 **WinUsb 设备**，单击**下一页**并确认警告
 4. 适配器现在显示在**通用串行总线设备**下，名为 **WinUsb 设备**。重新启动 A2DPWB（或重新打开**适配器**页面），即可像使用 Zadig 时一样使用它
@@ -118,6 +120,8 @@ a2dpwb-core.exe --cli --scan
 **适配器**页面（以及设置向导的**驱动程序和固件**步骤）会显示适配器的固件状态：**固件正常**、**无需固件文件**，或**未找到固件**并列出所需的文件名。使用**打开下载页面**按钮在浏览器中打开 [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) 页面，然后使用**打开配置文件夹**打开目标文件夹。下载所需的 `.bin` 文件并放入该配置文件夹。
 
 A2DPWB 会检测适配器的芯片组，并显示需要哪些固件文件。
+
+没有固件时，Realtek 适配器仍会以 ROM 代码打开并应答，看起来一切正常，但连接或串流会失败。此时 A2DPWB 会提示固件未加载。此外，在之前的会话中上传的固件会一直保留到模块断电为止，因此即使删除了文件，在重启电脑或拔下适配器之前，它也可能继续工作。
 
 ### Bluetooth 芯片设置
 

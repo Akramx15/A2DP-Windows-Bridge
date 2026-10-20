@@ -528,6 +528,11 @@ impl BtHost {
         self.shared.lock().hci_ready
     }
 
+    /// The Realtek controller runs its ROM code: the firmware was not loaded
+    pub fn realtek_rom_firmware(&self) -> bool {
+        self.shared.lock().realtek_rom
+    }
+
     // ---- scanning ----
 
     /// GAP inquiry for about `seconds` (3..30)

@@ -343,6 +343,17 @@ fn sleep_through(inner: &Inner, pipeline: &mut Option<Pipeline>) -> Option<&'sta
     Some(if inner.power.stale() { RESUMED } else { ADAPTER_STOPPED })
 }
 
+/// A Bluetooth failure on a Realtek adapter that runs its ROM code is the
+/// missing firmware, whatever the step that failed (issue #81: the adapter
+/// opens and HCI comes up, then nothing connects or streams)
+fn rom_or(host: &BtHost, msg: Msg) -> Msg {
+    if !host.realtek_rom_firmware() {
+        return msg;
+    }
+    tracing::warn!("{}: the Realtek firmware is not loaded", msg.english());
+    Msg::new("firmware.rom_running")
+}
+
 fn connect_error(f: Option<ConnectFailure>) -> Msg {
     Msg::new(match f {
         Some(ConnectFailure::Stalled) => "error.btstack_no_answer",
@@ -475,7 +486,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let mut remote = match result {
         Ok(caps) => caps,
         Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
-        Err(f) => return inner.notify(StreamState::Error, connect_error(Some(f))),
+        Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
     };
     // However the session ends, the next one starts on a new stack
     let _streamed = StreamedMark(inner);
@@ -629,7 +640,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         remote = match connect(&host) {
             Ok(caps) => caps,
             Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
-            Err(f) => return inner.notify(StreamState::Error, connect_error(Some(f))),
+            Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
         };
         kind = CodecKind::Sbc;
         if req.codec.is_some() && replaced.is_none() {
@@ -647,7 +658,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             return if stopped() {
                 inner.notify(StreamState::Idle, Msg::new("status.ready"))
             } else {
-                inner.notify(StreamState::Error, Msg::new("error.codec_configure"))
+                inner.notify(StreamState::Error, rom_or(&host, Msg::new("error.codec_configure")))
             };
         }
     };
@@ -689,7 +700,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         return if stopped() {
             inner.notify(StreamState::Idle, Msg::new("status.ready"))
         } else {
-            inner.notify(StreamState::Error, Msg::new("error.stream_start"))
+            inner.notify(StreamState::Error, rom_or(&host, Msg::new("error.stream_start")))
         };
     }
 
