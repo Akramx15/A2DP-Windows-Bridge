@@ -414,7 +414,6 @@ fn start_pipeline(
     )
 }
 
-/// The session thread. Returns when stopped or on an error (state reported).
 /// Marks the stack as having carried a stream when the session ends (after
 /// any restart during it)
 struct StreamedMark<'a>(&'a Inner);
@@ -425,6 +424,7 @@ impl Drop for StreamedMark<'_> {
     }
 }
 
+/// The session thread. Returns when stopped or on an error (state reported).
 pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let addr = bt_host::addr_str(&req.device);
     tracing::info!(
