@@ -310,7 +310,7 @@ tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py --le-audio stereo earbu
 tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py          # the A2DP codecs: must keep passing
 ```
 
-`--le-audio` without names runs all 39 cases; CI runs them after the A2DP set
+`--le-audio` without names runs all 42 cases; CI runs them after the A2DP set
 (`.github/workflows/ci.yml`, emulator job). Each case gets its own config
 folder (`A2DPWB_CONFIG_DIR=<out>/le-<case>/config`), so nothing touches
 `%APPDATA%\A2DPWB`. Parallel runs need distinct `--base-port`s (each case

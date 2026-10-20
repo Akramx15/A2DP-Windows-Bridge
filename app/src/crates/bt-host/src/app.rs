@@ -417,19 +417,20 @@ impl HostApp {
                     *min_bitpool,
                     *max_bitpool,
                 ),
-            ConfigRequest::Aac { object_type, sampling_frequency, channels, bit_rate, vbr } => stack.a2dp_set_config_aac(
-                cid,
-                local,
-                config.remote_seid,
-                match object_type {
-                    AacObjectType::Mpeg2Lc => AVDTP_AAC_MPEG2_LC,
-                    AacObjectType::Mpeg4Lc => AVDTP_AAC_MPEG4_LC,
-                },
-                *sampling_frequency,
-                *channels,
-                *bit_rate,
-                *vbr,
-            ),
+            ConfigRequest::Aac { object_type, sampling_frequency, channels, bit_rate, vbr } => stack
+                .a2dp_set_config_aac(
+                    cid,
+                    local,
+                    config.remote_seid,
+                    match object_type {
+                        AacObjectType::Mpeg2Lc => AVDTP_AAC_MPEG2_LC,
+                        AacObjectType::Mpeg4Lc => AVDTP_AAC_MPEG4_LC,
+                    },
+                    *sampling_frequency,
+                    *channels,
+                    *bit_rate,
+                    *vbr,
+                ),
             ConfigRequest::Vendor(info) => stack.a2dp_set_config_other(cid, local, config.remote_seid, info),
         }
     }

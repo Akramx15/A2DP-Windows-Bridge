@@ -340,6 +340,7 @@ impl BtHost {
         let thread = {
             let (shared, controls, stats) = (shared.clone(), controls.clone(), stats.clone());
             let (le_shared, le_jobs) = (le_shared.clone(), jobs_tx.clone());
+            let le_events = events_tx.clone();
             std::thread::Builder::new()
                 .name("bt-runloop".into())
                 .spawn(move || {
@@ -366,7 +367,7 @@ impl BtHost {
                         }
                         let le = le_audio.map(|cfg| {
                             let poster = le::core::LePoster::new(le_jobs, remote);
-                            le::core::LeCore::new(cfg, le_shared, controls.clone(), poster)
+                            le::core::LeCore::new(cfg, le_shared, controls.clone(), poster, le_events, battery)
                         });
                         capture.reset_tracking();
                         let logger = capture.clone();
