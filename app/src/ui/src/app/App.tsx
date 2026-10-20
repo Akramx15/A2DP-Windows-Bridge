@@ -261,7 +261,10 @@ function StatusPill() {
             <>
               <span class="status-pill-device ellipsis">{device()}</span>
               <span class="status-pill-sub ellipsis">{p().name}</span>
-              <span class="status-pill-sub mono">{p().device_address}</span>
+              {/* The address only stands in for a device without a name */}
+              <Show when={!p().device_name}>
+                <span class="status-pill-sub mono">{p().device_address}</span>
+              </Show>
             </>
           )}
         </Show>

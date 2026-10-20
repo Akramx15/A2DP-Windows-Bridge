@@ -1178,6 +1178,8 @@ impl HostApp {
                 tracing::info!("AVRCP absolute volume confirmed: {vol} ({}%)", vol as u32 * 100 / 127);
                 self.volume_in_flight = None;
                 self.controls.volume.store(vol as i32, Ordering::Release);
+                // The UI follows what the headphones took, not only their own changes
+                let _ = self.events.send(HostEvent::Volume(vol));
                 self.send_pending_volume(stack);
             }
             Some(AVRCP_SUBEVENT_OPERATION) => {
