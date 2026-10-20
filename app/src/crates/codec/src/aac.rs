@@ -58,11 +58,20 @@ impl AacEncoder {
         // 683 bytes: more than the 660 bytes a 672-byte L2CAP MTU leaves
         // (BlueZ sinks, some headphones), and every packet was dropped as
         // oversized.
-        let max_bitrate =
+        let mtu_bitrate =
             u32::try_from(u64::from(config.mtu) * 8 * u64::from(config.sample_rate) / 1024).unwrap_or(u32::MAX);
+        // The configuration's bit rate (the sink's largest) caps it too
+        let max_bitrate = match config.peer.aac_max_bitrate {
+            0 => mtu_bitrate,
+            b => b.min(mtu_bitrate),
+        };
         let mut bitrate = quality_bitrate(config.quality);
         if bitrate > max_bitrate {
-            tracing::info!("AAC: bit rate limited to {max_bitrate} bps by the {}-byte media payload", config.mtu);
+            if max_bitrate == mtu_bitrate {
+                tracing::info!("AAC: bit rate limited to {max_bitrate} bps by the {}-byte media payload", config.mtu);
+            } else {
+                tracing::info!("AAC: bit rate limited to {max_bitrate} bps by the sink");
+            }
             bitrate = max_bitrate;
         }
 
@@ -70,17 +79,19 @@ impl AacEncoder {
             |what: &str, e: fdkaac_sys::EncError| EncoderError::Init { codec: CODEC, what: format!("{what}: {e}") };
         let mut enc = FdkEncoder::open(0, config.channels).map_err(|e| init_err("aacEncOpen", e))?;
         let channel_mode = if config.channels == 1 { ffi::MODE_1 } else { ffi::MODE_2 };
-        // As v1: AAC-LC (what A2DP requires), CBR (the default bit rate mode;
-        // the codec configuration says VBR off), LATM with in-band
-        // StreamMuxConfig and fdk-aac's defaults for it (AudioMuxVersion 0,
-        // StreamMuxConfig every 10th frame), afterburner for quality
-        let params: [(ffi::AACENC_PARAM, &str, u32); 7] = [
+        // AAC-LC (what A2DP requires), CBR (the default bit rate mode; the
+        // codec configuration says VBR off), LATM with in-band
+        // StreamMuxConfig in every frame (AudioMuxVersion 0, as PipeWire:
+        // fdk-aac's default of every 10th frame leaves some sinks silent,
+        // issue #87), afterburner for quality
+        let params: [(ffi::AACENC_PARAM, &str, u32); 8] = [
             (ffi::AACENC_AOT, "AACENC_AOT", ffi::AOT_AAC_LC as u32),
             (ffi::AACENC_SAMPLERATE, "AACENC_SAMPLERATE", config.sample_rate),
             (ffi::AACENC_CHANNELMODE, "AACENC_CHANNELMODE", channel_mode as u32),
             (ffi::AACENC_BITRATE, "AACENC_BITRATE", bitrate),
             (ffi::AACENC_PEAK_BITRATE, "AACENC_PEAK_BITRATE", max_bitrate),
             (ffi::AACENC_TRANSMUX, "AACENC_TRANSMUX", ffi::TT_MP4_LATM_MCP1 as u32),
+            (ffi::AACENC_HEADER_PERIOD, "AACENC_HEADER_PERIOD", 1),
             (ffi::AACENC_AFTERBURNER, "AACENC_AFTERBURNER", 1),
         ];
         for (param, name, value) in params {
@@ -92,9 +103,9 @@ impl AacEncoder {
         // fdk-aac raises a bit rate below what the configuration needs; then
         // the frames would no longer fit the media payload
         let effective = enc.param(ffi::AACENC_BITRATE);
-        if effective > max_bitrate {
+        if effective > mtu_bitrate {
             return unsupported(format!(
-                "media MTU {} allows {max_bitrate} bps, below the {effective} bps AAC needs",
+                "media MTU {} allows {mtu_bitrate} bps, below the {effective} bps AAC needs",
                 config.mtu
             ));
         }

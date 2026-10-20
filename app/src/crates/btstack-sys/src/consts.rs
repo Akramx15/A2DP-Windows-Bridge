@@ -86,6 +86,7 @@ pub const AVDTP_SBC_SUBBANDS_8: i32 = 1;
 pub const AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS: i32 = 1;
 /// avdtp_aac_object_type_t
 pub const AVDTP_AAC_MPEG2_LC: i32 = 1;
+pub const AVDTP_AAC_MPEG4_LC: i32 = 2;
 
 // ---- AVRCP ----
 pub const AVRCP_FEATURE_MASK_CATEGORY_PLAYER_OR_RECORDER: u16 = 0x0001;

@@ -269,6 +269,8 @@ pub struct PeerParams {
     pub opus_channels: u8,
     /// Opus 05: the largest bit rate configured, in bps (0 = no limit)
     pub opus_max_bitrate: u32,
+    /// AAC: the largest bit rate configured, in bps (0 = no limit)
+    pub aac_max_bitrate: u32,
 }
 
 /// Encoder setup, fixed for a stream

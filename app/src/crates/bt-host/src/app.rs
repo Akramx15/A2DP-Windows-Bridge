@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use btstack_sys::consts::*;
 use btstack_sys::{AclState, App, AvdtpState, HciBackend, HciState, Source, Stack};
 use codec::CodecKind;
-use codec::caps::{ConfigRequest, Configuration, SbcCapabilities, VendorCapability};
+use codec::caps::{AacCapabilities, AacObjectType, ConfigRequest, Configuration, SbcCapabilities, VendorCapability};
 use codec::sbc::ChannelMode;
 
 use crate::events::{addr_at, addr_str, event_type, hci_error_string, le16, le24, subevent, u8_at};
@@ -408,11 +408,14 @@ impl HostApp {
                     *min_bitpool,
                     *max_bitpool,
                 ),
-            ConfigRequest::Aac { sampling_frequency, channels, bit_rate } => stack.a2dp_set_config_aac(
+            ConfigRequest::Aac { object_type, sampling_frequency, channels, bit_rate } => stack.a2dp_set_config_aac(
                 cid,
                 local,
                 config.remote_seid,
-                AVDTP_AAC_MPEG2_LC,
+                match object_type {
+                    AacObjectType::Mpeg2Lc => AVDTP_AAC_MPEG2_LC,
+                    AacObjectType::Mpeg4Lc => AVDTP_AAC_MPEG4_LC,
+                },
                 *sampling_frequency,
                 *channels,
                 *bit_rate,
@@ -907,8 +910,27 @@ impl HostApp {
             }
             Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CAPABILITY) => {
                 let seid = u8_at(p, 5).unwrap_or(0);
-                self.caps.add_aac(seid);
-                tracing::info!("remote supports AAC (SEID {seid})");
+                // 1211121311: subevent, cid, SEID, media type, object types,
+                // frequencies, channels, bit rate, VBR, DRC
+                let at = |i: usize| u8_at(p, i).unwrap_or(0);
+                let aac = AacCapabilities {
+                    object_types: at(7),
+                    sampling_frequency: le16(p, 8).unwrap_or(0),
+                    channels: at(10),
+                    bit_rate: le24(p, 11).unwrap_or(0),
+                    vbr: at(14) != 0,
+                };
+                self.caps.add_aac_caps(seid, aac);
+                tracing::info!(
+                    "remote supports AAC (SEID {seid}, object types 0x{:X}, frequencies 0x{:X}, channels 0x{:X}, \
+                     bit rate {}, VBR {}){}",
+                    aac.object_types,
+                    aac.sampling_frequency,
+                    aac.channels,
+                    aac.bit_rate,
+                    aac.vbr,
+                    if aac.usable() { "" } else { " - not usable" }
+                );
             }
             Some(A2DP_SUBEVENT_SIGNALING_CAPABILITIES_COMPLETE) => {
                 let c = &self.caps;
