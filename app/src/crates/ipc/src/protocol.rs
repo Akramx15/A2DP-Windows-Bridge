@@ -354,6 +354,10 @@ pub struct StreamStatus {
     pub info: Option<StreamInfo>,
     /// Headphone volume (AVRCP, 0..127), None while unknown
     pub volume: Option<u8>,
+    /// Headphone battery level in percent, None while unknown (needs
+    /// Settings.battery_experimental and headphones that report it)
+    #[serde(default)]
+    pub battery: Option<u8>,
 }
 
 /// A connection profile, as in profiles.json
@@ -437,6 +441,11 @@ pub struct Settings {
     /// LE Audio stream is set up); only with le_audio_experimental
     #[serde(default)]
     pub le_audio_low_latency: bool,
+    /// Headphone battery level (experimental; off by default): HFP's service
+    /// level connection to the headphones. Read when Bluetooth starts
+    /// (Restart Bluetooth).
+    #[serde(default)]
+    pub battery_experimental: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]

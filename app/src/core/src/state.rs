@@ -167,6 +167,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         remote_sink: s.remote_sink.clone(),
         le_audio_experimental: s.le_audio_experimental,
         le_audio_low_latency: s.le_audio_low_latency,
+        battery_experimental: s.battery_experimental,
     }
 }
 
@@ -188,6 +189,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.remote_sink = s.remote_sink.clone();
     c.le_audio_experimental = s.le_audio_experimental;
     c.le_audio_low_latency = s.le_audio_low_latency;
+    c.battery_experimental = s.battery_experimental;
     c
 }
 
@@ -754,6 +756,7 @@ impl CoreState {
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error) {
                     stream.info = None;
                     stream.volume = None;
+                    stream.battery = None;
                     if state == CoreStreamState::Idle {
                         stream.profile = None;
                     }
@@ -805,6 +808,7 @@ impl CoreState {
                 devices_changed = true;
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
+            ServiceEvent::Battery(v) => stream.battery = Some(v),
         }
         self.publish(Event::Stream(stream));
         if devices_changed {
@@ -947,6 +951,7 @@ impl CoreState {
             profile,
             info: None,
             volume: None,
+            battery: None,
         }));
         let service = self.service.clone();
         // start_streaming joins a running session first: not on a runtime thread

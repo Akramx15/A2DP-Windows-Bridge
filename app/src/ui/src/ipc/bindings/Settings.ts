@@ -31,4 +31,10 @@ le_audio_experimental: boolean,
  * LE Audio: GMAP low latency for gaming headsets (read when the next
  * LE Audio stream is set up); only with le_audio_experimental
  */
-le_audio_low_latency: boolean, };
+le_audio_low_latency: boolean, 
+/**
+ * Headphone battery level (experimental; off by default): HFP's service
+ * level connection to the headphones. Read when Bluetooth starts
+ * (Restart Bluetooth).
+ */
+battery_experimental: boolean, };

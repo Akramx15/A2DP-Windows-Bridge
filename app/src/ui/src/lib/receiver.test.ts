@@ -112,6 +112,7 @@ const stream = (s: StreamStatus["state"], info: StreamInfo | null = null, key = 
   profile: null,
   info,
   volume: null,
+  battery: null,
 });
 
 const IDLE = stream("idle");

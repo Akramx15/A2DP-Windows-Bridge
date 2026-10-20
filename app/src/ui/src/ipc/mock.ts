@@ -125,6 +125,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     remote_sink: "",
     le_audio_experimental: false,
     le_audio_low_latency: false,
+    battery_experimental: false,
     ...over,
   };
 }
@@ -196,9 +197,9 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
             message: { key: "error.connect_no_answer", args: [] },
             profile: "WH-1000XM5 (LDAC)",
             info: null,
-            volume: null,
+            volume: null, battery: null,
           }
-        : { state: "idle", message: { key: "status.idle", args: [] }, profile: null, info: null, volume: null },
+        : { state: "idle", message: { key: "status.idle", args: [] }, profile: null, info: null, volume: null, battery: null },
     profiles,
     active_profile: fresh ? null : long ? LONG_NAME : "WH-1000XM5 (LDAC)",
     settings: sampleSettings(le ? { le_audio_experimental: true } : long ? { language: "ja" } : {}),
@@ -571,6 +572,7 @@ export class MockCore implements Transport {
           ...(p.settings as Settings),
           le_audio_experimental: next.le_audio_experimental ?? before.le_audio_experimental,
           le_audio_low_latency: next.le_audio_low_latency ?? before.le_audio_low_latency,
+          battery_experimental: next.battery_experimental ?? before.battery_experimental,
         };
         this.emit({ kind: "settings", value: this.snap.settings });
         let le_audio_deferred = false;
@@ -879,7 +881,7 @@ export class MockCore implements Transport {
           ? "error.le_audio_capture"
           : null;
       if (refused) {
-        this.snap.stream = { state: "error", message: { key: refused, args: [] }, profile: name, info: null, volume: null };
+        this.snap.stream = { state: "error", message: { key: refused, args: [] }, profile: name, info: null, volume: null, battery: null };
         this.log("error", "a2dpwb_core::le_stream", englishText({ key: refused, args: [] }));
         this.emit({ kind: "stream", value: this.snap.stream });
         return null;
@@ -924,12 +926,12 @@ export class MockCore implements Transport {
     const adapter = this.snap.adapter.adapters[0];
     if (!adapter || adapter.driver !== "winusb") {
       const e = errorInfo("adapter.driver_missing", "error.btstack_init");
-      this.snap.stream = { state: "error", message: e.message, profile: name, info: null, volume: null };
+      this.snap.stream = { state: "error", message: e.message, profile: name, info: null, volume: null, battery: null };
       this.emit({ kind: "stream", value: this.snap.stream });
       throw e;
     }
     this.dropped = 0;
-    this.snap.stream = { state: "connecting", message: { key: "status.initializing_btstack", args: [] }, profile: name, info: null, volume: null };
+    this.snap.stream = { state: "connecting", message: { key: "status.initializing_btstack", args: [] }, profile: name, info: null, volume: null, battery: null };
     this.emit({ kind: "stream", value: this.snap.stream });
     this.log("info", "a2dpwb_core::stream", `stream: device ${t.address} codec ${t.codec} quality hq source ${t.source.kind}`);
     this.log("info", "a2dpwb_core::service", "state Connecting: Initializing BTstack...");
@@ -991,8 +993,9 @@ export class MockCore implements Transport {
               profile: name,
               info: { ...info(), codec: "aptX HD", bitrate_kbps: 576, requested_codec: "LDAC", requested_in_use: true, abr: true },
               volume: 76,
+              battery: 80,
             }
-          : { state: "streaming", message: { key: "status.streaming", args: [] }, profile: name, info: info(), volume: 76 };
+          : { state: "streaming", message: { key: "status.streaming", args: [] }, profile: name, info: info(), volume: 76, battery: 80 };
       this.log("info", "a2dpwb_core::service", "state Streaming: Streaming");
       this.emit({ kind: "stream", value: this.snap.stream });
     });
@@ -1020,7 +1023,7 @@ export class MockCore implements Transport {
 
   private stopStream() {
     const was = this.snap.stream.state;
-    this.snap.stream = { state: "idle", message: { key: "status.idle", args: [] }, profile: null, info: null, volume: null };
+    this.snap.stream = { state: "idle", message: { key: "status.idle", args: [] }, profile: null, info: null, volume: null, battery: null };
     if (was !== "idle") this.log("info", "a2dpwb_core::stream", "streaming stopped, cleaning up");
     this.emit({ kind: "stream", value: this.snap.stream });
   }
