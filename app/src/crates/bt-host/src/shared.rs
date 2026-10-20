@@ -36,6 +36,7 @@ pub struct State {
     pub released: bool,
     pub acl_down: bool,
     pub inquiry_done: bool,
+    pub name_done: bool,
     pub probe_answered: bool,
     pub probe_pending: bool,
 
@@ -56,6 +57,9 @@ pub struct State {
     pub a2dp_con_handle: Option<u16>,
     pub remote_caps: RemoteCaps,
     pub discovered: Vec<DiscoveredDevice>,
+    /// How to page each device found (page scan repetition mode, clock
+    /// offset): what a name request for it needs
+    pub discovered_paging: Vec<([u8; 6], u8, u16)>,
     /// Media payload size of the stream (RTP header excluded)
     pub media_mtu: u16,
     /// The stack stopped working (see BtHost::stalled)

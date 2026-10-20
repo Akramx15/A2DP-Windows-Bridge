@@ -404,6 +404,7 @@
   "ui.error.copied": "Mensaje de error copiado al portapapeles",
   "ui.devices.count": "%u dispositivo(s)",
   "ui.devices.manual_hint": "La dirección Bluetooth de los auriculares, si la búsqueda no los encuentra",
+  "ui.devices.show_others": "Mostrar otros dispositivos (%u)",
   "ui.devices.use_address": "Usar",
   "ui.device.forget": "Quitar",
   "ui.device.forget_confirm": "¿Quitar este dispositivo de los dispositivos guardados? Los perfiles que lo usan conservan su dirección.",

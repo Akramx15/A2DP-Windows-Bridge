@@ -404,6 +404,7 @@
   "ui.error.copied": "Message d'erreur copié dans le presse-papiers",
   "ui.devices.count": "%u appareil(s)",
   "ui.devices.manual_hint": "L'adresse Bluetooth du casque, si la recherche ne le trouve pas",
+  "ui.devices.show_others": "Afficher les autres appareils (%u)",
   "ui.devices.use_address": "Utiliser",
   "ui.device.forget": "Retirer",
   "ui.device.forget_confirm": "Retirer cet appareil des appareils enregistrés ? Les profils qui l'utilisent conservent son adresse.",

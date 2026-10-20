@@ -404,6 +404,7 @@
   "ui.error.copied": "エラーメッセージをクリップボードにコピーしました",
   "ui.devices.count": "%u 台",
   "ui.devices.manual_hint": "検索で見つからないときは、ヘッドホンの Bluetooth アドレスを入力します",
+  "ui.devices.show_others": "ほかのデバイスを表示 (%u 台)",
   "ui.devices.use_address": "使う",
   "ui.device.forget": "削除",
   "ui.device.forget_confirm": "このデバイスを保存済みデバイスから削除しますか？ このデバイスを使うプロファイルのアドレスはそのまま残ります。",

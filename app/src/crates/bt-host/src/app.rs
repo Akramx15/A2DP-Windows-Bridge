@@ -609,7 +609,11 @@ impl HostApp {
                 }
             }
             GAP_EVENT_INQUIRY_RESULT => {
-                let (Some(addr), Some(cod), Some(rssi)) = (addr_at(p, 2), le24(p, 9), u8_at(p, 15)) else { return };
+                let (Some(addr), Some(psrm), Some(cod), Some(clock), Some(rssi)) =
+                    (addr_at(p, 2), u8_at(p, 8), le24(p, 9), le16(p, 12), u8_at(p, 15))
+                else {
+                    return;
+                };
                 let name = if u8_at(p, 25) == Some(1) {
                     let len = u8_at(p, 26).unwrap_or(0) as usize;
                     p.get(27..27 + len).map(|n| String::from_utf8_lossy(n).into_owned()).unwrap_or_default()
@@ -620,7 +624,24 @@ impl HostApp {
                 self.shared.update(|s| {
                     if !s.inquiry_done {
                         s.discovered.push(DiscoveredDevice { addr, name, class_of_device: cod, rssi: rssi as i8 });
+                        s.discovered_paging.push((addr, psrm, clock));
                     }
+                });
+            }
+            HCI_EVENT_REMOTE_NAME_REQUEST_COMPLETE => {
+                let (Some(status), Some(addr)) = (u8_at(p, 2), addr_at(p, 3)) else { return };
+                // Up to 248 bytes, NUL-terminated when shorter
+                let raw = p.get(9..).unwrap_or_default();
+                let raw = &raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())];
+                let name = String::from_utf8_lossy(raw).trim().to_string();
+                tracing::info!("remote name of {}: status 0x{status:02X} name={name}", addr_str(&addr));
+                self.shared.update(|s| {
+                    if status == 0 && !name.is_empty() {
+                        for d in s.discovered.iter_mut().filter(|d| d.addr == addr && d.name.is_empty()) {
+                            d.name = name.clone();
+                        }
+                    }
+                    s.name_done = true;
                 });
             }
             GAP_EVENT_INQUIRY_COMPLETE => {

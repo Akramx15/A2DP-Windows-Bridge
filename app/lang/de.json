@@ -404,6 +404,7 @@
   "ui.error.copied": "Fehlermeldung in die Zwischenablage kopiert",
   "ui.devices.count": "%u Gerät(e)",
   "ui.devices.manual_hint": "Bluetooth-Adresse des Kopfhörers, falls die Suche ihn nicht findet",
+  "ui.devices.show_others": "Andere Geräte anzeigen (%u)",
   "ui.devices.use_address": "Verwenden",
   "ui.device.forget": "Entfernen",
   "ui.device.forget_confirm": "Dieses Gerät aus den gespeicherten Geräten entfernen? Profile, die es verwenden, behalten seine Adresse.",
