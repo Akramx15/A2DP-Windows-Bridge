@@ -316,6 +316,13 @@ impl Stack {
         unsafe { ffi::gap_inquiry_stop() }
     }
 
+    /// Asks a device found by an inquiry for its name (`clock_offset` with
+    /// bit 15 set when known)
+    pub fn remote_name_request(&self, addr: &[u8; 6], page_scan_repetition_mode: u8, clock_offset: u16) -> i32 {
+        // SAFETY: on the BTstack thread; addr is 6 bytes.
+        unsafe { ffi::gap_remote_name_request(addr.as_ptr(), page_scan_repetition_mode, clock_offset) }
+    }
+
     pub fn ssp_confirmation_response(&self, addr: &[u8; 6]) {
         // SAFETY: on the BTstack thread; addr is 6 bytes.
         unsafe { ffi::gap_ssp_confirmation_response(addr.as_ptr()) };

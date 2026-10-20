@@ -20,12 +20,35 @@ function start(hash: string) {
 }
 
 const edit = (name: string) => `#/profiles/edit/${encodeURIComponent(name)}`;
+/** A new profile's device: the codecs and what follows wait for one */
+const pickDevice = async () => fireEvent.click(await screen.findByRole("radio", { name: /WH-1000XM5/ }));
 
 afterEach(async () => {
   cleanup();
   mock?.dispose();
   mock = null;
   await setLanguage("en");
+});
+
+describe("a new profile", () => {
+  it("offers the codecs and the capture source once a device is chosen", async () => {
+    start("#/profiles/new");
+    await screen.findByRole("radio", { name: /WH-1000XM5/ });
+    expect(screen.queryByRole("radiogroup", { name: t("connection.codec") })).toBeNull();
+    expect(screen.queryByRole("radio", { name: t("capture.virtual") })).toBeNull();
+    await pickDevice();
+    expect(await screen.findByRole("radiogroup", { name: t("connection.codec") })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: t("capture.virtual") })).toBeInTheDocument();
+  });
+
+  it("folds the other devices away once one is picked", async () => {
+    start("#/profiles/new");
+    await pickDevice();
+    await waitFor(() => expect(screen.queryByRole("radio", { name: /SRS-XB13/ })).toBeNull());
+    expect(screen.getByRole("radio", { name: /WH-1000XM5/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: t("ui.devices.show_others", 1) }));
+    expect(await screen.findByRole("radio", { name: /SRS-XB13/ })).toBeInTheDocument();
+  });
 });
 
 describe("saved devices in the picker", () => {
@@ -124,6 +147,8 @@ async function codecSettings(label: string) {
 describe("codec settings", () => {
   it("LHDC V5 offers 192 kHz and greys out the quality while ABR is on", async () => {
     start("#/profiles/new");
+    // A device whose codecs are not known yet: all of them offered
+    fireEvent.click(await screen.findByRole("radio", { name: /SRS-XB13/ }));
     const dialog = await codecSettings("codec.lhdc_v5");
     const rate = within(dialog).getByLabelText(t("connection.sample_rate"));
     expect(within(rate).getByRole("option", { name: /192/ })).toBeInTheDocument();
@@ -183,6 +208,7 @@ describe("capture source", () => {
 
   it("follows the virtual device by default", async () => {
     start("#/profiles/new");
+    await pickDevice();
     fireEvent.click(await screen.findByRole("radio", { name: t("capture.virtual") }));
     expect(await screen.findByRole("switch", { name: (n) => n.startsWith(t("capture.auto_switch")) })).toBeChecked();
   });

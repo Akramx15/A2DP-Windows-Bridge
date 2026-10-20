@@ -52,6 +52,11 @@ const STREAM_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A job the run loop should take at once
 const JOB_TIMEOUT: Duration = Duration::from_secs(5);
+/// One remote name request: a device that does not answer takes the page
+/// timeout (5.12 s)
+const NAME_REQUEST_TIMEOUT: Duration = Duration::from_secs(7);
+/// The name requests after an inquiry, all together
+const NAME_REQUESTS_BUDGET: Duration = Duration::from_secs(12);
 /// Wait for the BTstack thread to end at shutdown: 10 s while the PC is awake
 const THREAD_END_STEP: Duration = Duration::from_millis(20);
 const THREAD_END_STEPS: u32 = 500;
@@ -553,6 +558,7 @@ impl BtHost {
         self.shared.update(|s| {
             s.cancel = false;
             s.discovered.clear();
+            s.discovered_paging.clear();
             s.inquiry_done = false;
         });
         match self.call(JOB_TIMEOUT, move |_, s| s.inquiry_start(units)) {
@@ -568,9 +574,62 @@ impl BtHost {
             self.call(Duration::from_secs(2), |_, s| s.inquiry_stop());
             self.shared.update(|s| s.inquiry_done = true);
         }
+        self.request_names();
         let found = self.shared.lock().discovered.clone();
         tracing::info!("inquiry complete, {} device(s) found", found.len());
         found
+    }
+
+    /// Asks the devices the inquiry found without a name (no name in their
+    /// extended inquiry response) for it, one at a time: audio devices
+    /// first, within [`NAME_REQUESTS_BUDGET`]
+    fn request_names(&self) {
+        let mut ask: Vec<(bool, [u8; 6], u8, u16)> = {
+            let s = self.shared.lock();
+            if s.cancel {
+                return;
+            }
+            let mut seen = Vec::new();
+            s.discovered
+                .iter()
+                .filter(|d| d.name.is_empty())
+                .filter(|d| {
+                    let new = !seen.contains(&d.addr);
+                    seen.push(d.addr);
+                    new
+                })
+                .filter_map(|d| {
+                    let &(_, psrm, clock) = s.discovered_paging.iter().find(|x| x.0 == d.addr)?;
+                    Some((d.is_audio(), d.addr, psrm, clock))
+                })
+                .collect()
+        };
+        ask.sort_by_key(|x| !x.0);
+        let until = Instant::now() + NAME_REQUESTS_BUDGET;
+        for (_, addr, psrm, clock) in ask {
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                tracing::info!("no time left to ask the other devices for their names");
+                break;
+            }
+            self.shared.update(|s| s.name_done = false);
+            if self.call(JOB_TIMEOUT, move |_, s| s.remote_name_request(&addr, psrm, clock | 0x8000)) != Some(0) {
+                tracing::warn!("remote name request to {} not sent", addr_str(&addr));
+                continue;
+            }
+            // A device that does not answer: the page timeout (~5 s)
+            match self.shared.wait(left.min(NAME_REQUEST_TIMEOUT), true, |s| s.name_done) {
+                Wait::Done => {}
+                Wait::Cancelled => break,
+                Wait::TimedOut => {
+                    tracing::warn!("remote name request to {} timed out", addr_str(&addr));
+                    // The next request waits until this one completes
+                    // (BTstack runs one at a time)
+                    let _ = self.shared.wait(NAME_REQUEST_TIMEOUT, true, |s| s.name_done);
+                    break;
+                }
+            }
+        }
     }
 
     // ---- connection ----

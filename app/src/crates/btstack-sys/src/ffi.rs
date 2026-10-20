@@ -93,6 +93,7 @@ unsafe extern "C" {
     // ---- BTstack: GAP ----
     pub fn gap_inquiry_start(duration_in_1280ms_units: u8) -> c_int;
     pub fn gap_inquiry_stop() -> c_int;
+    pub fn gap_remote_name_request(addr: *const u8, page_scan_repetition_mode: u8, clock_offset: u16) -> c_int;
     pub fn gap_ssp_confirmation_response(addr: *const u8) -> c_int;
     pub fn gap_pin_code_response(addr: *const u8, pin: *const c_char) -> c_int;
     pub fn gap_disconnect(handle: u16) -> u8;
