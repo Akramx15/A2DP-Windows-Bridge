@@ -45,7 +45,7 @@ A2DPWB のソースコードは Apache-2.0 / MIT のデュアルライセンス�
 
 BTstack と各コーデックのライブラリは `a2dpwb-core.exe`、ウィンドウ（Tauri、SolidJS、アイコン）は `a2dpwb.exe` に入っています。`a2dpwb-driver.exe` は Rust のコードだけです。ウィンドウの表示には Microsoft Edge WebView2 ランタイムを使いますが、A2DPWB には含めていません（ない場合はインストーラーが Microsoft のブートストラッパーを実行します）。
 
-ライセンス全文とコンプライアンスの詳細は [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md) を参照してください。インストーラーとポータブル zip は、プログラムの隣の `licenses/` フォルダーに各ライセンス文（Rust のクレートは cargo-about で生成した `licenses/rust-crates.txt`）を置き、`THIRD_PARTY_LICENSES.md` と、正確なソースのコミットを記した `SOURCE.txt` も同梱します。Realtek ファームウェアと Zadig は A2DPWB と一緒には配布していません（リンクのみ）。
+ライセンス全文とコンプライアンスの詳細は [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md) を参照してください。インストーラーとポータブル zip は、プログラムの隣の `licenses/` フォルダーに各ライセンス文（Rust のクレートは cargo-about で生成した `licenses/rust-crates.txt`）を置き、`THIRD_PARTY_LICENSES.md` と、正確なソースのコミットを記した `SOURCE.txt` も同梱します。Realtek ファームウェアと Zadig は A2DPWB と一緒には配布していません。Zadig はドキュメントからのリンクのみで、Realtek ファームウェアはユーザー自身がダウンロードします（ダウンロードページから、または確認後に kernel.org から取得する **ファームウェアをダウンロード** で）。
 
 ## 重要な注意事項
 

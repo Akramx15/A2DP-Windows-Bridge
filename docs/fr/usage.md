@@ -60,7 +60,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 
 - Les adaptateurs Bluetooth USB détectés, avec leur puce, leur **Pilote** et leur **Firmware**. **Actualiser** relance la détection
 - **Attribuer WinUSB** / **Restaurer le pilote** (voir [Installation](setup#winusb)) ; Windows demande à chaque fois l'autorisation de l'administrateur
-- **Puce Bluetooth** pour le firmware, avec **Ouvrir la page de téléchargement** et **Ouvrir le dossier de configuration** (voir [Firmware](setup#firmware))
+- **Puce Bluetooth** pour le firmware, avec **Télécharger le firmware**, **Ouvrir la page de téléchargement** et **Ouvrir le dossier de configuration** (voir [Firmware](setup#firmware))
 - **AFH** : Auto, Désactivé ou canaux Wi-Fi en Manuel (voir [Qualité de liaison et AFH](#link-quality))
 - **Pile Bluetooth** : arrêtée (elle démarre à la première recherche ou connexion), en démarrage, prête ou en erreur, et **Redémarrer le Bluetooth**
 

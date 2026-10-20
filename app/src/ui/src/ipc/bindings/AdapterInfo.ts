@@ -37,6 +37,11 @@ firmware_files: Array<string>,
  */
 firmware_invalid: string | null, 
 /**
+ * A2DPWB can fetch those files from linux-firmware
+ * (adapter.download_firmware)
+ */
+firmware_download: boolean, 
+/**
  * What to tell about other vendors' firmware (firmware.vendor_intel,
  * _broadcom, _csr, _unsupported); None for Realtek and unknown chips
  */

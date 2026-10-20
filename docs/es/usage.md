@@ -60,7 +60,7 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene además una p
 
 - Los adaptadores Bluetooth USB detectados con su chip, **Controlador** y **Firmware**. **Actualizar** vuelve a buscarlos
 - **Asignar WinUSB** / **Restaurar controlador** (consulte [Instalación](setup#winusb)); Windows solicita permiso de administrador cada vez
-- **Chip Bluetooth** para el firmware, con **Abrir página de descarga** y **Abrir carpeta de configuración** (consulte [Firmware](setup#firmware))
+- **Chip Bluetooth** para el firmware, con **Descargar firmware**, **Abrir página de descarga** y **Abrir carpeta de configuración** (consulte [Firmware](setup#firmware))
 - **AFH**: Automático, Desactivado o canales Wi-Fi en Manual (consulte [Calidad del enlace y AFH](#link-quality))
 - **Pila Bluetooth**: detenida (se inicia con la primera búsqueda o conexión), iniciando, lista o error, y **Reiniciar Bluetooth**
 

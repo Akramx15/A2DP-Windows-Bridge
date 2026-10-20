@@ -119,6 +119,8 @@ USB-Bluetooth-Adapter mit Realtek-Chip (z. B. TP-Link UB500, RTL8761BU-Dongles) 
 
 Die Seite **Adapter** (und der Einrichtungsschritt **Treiber und Firmware**) zeigt die Firmware des Adapters an: **Firmware OK**, **Keine Firmwaredateien nötig** oder **Firmware nicht gefunden** mit den Namen der benötigten Dateien. Öffnen Sie mit der Schaltfläche **Downloadseite öffnen** die Seite [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) im Browser und anschließend mit **Konfigurationsordner öffnen** den Zielordner. Laden Sie die benötigten `.bin`-Dateien herunter und legen Sie sie im Konfigurationsordner ab.
 
+Für die Chips der Liste **Bluetooth-Chip** erledigt **Firmware herunterladen** das für Sie: Nach Ihrer Bestätigung lädt A2DPWB die Dateien von linux-firmware (kernel.org) herunter, prüft jede gegen den erwarteten SHA-256 und speichert sie im Konfigurationsordner. Ein Chip, für den linux-firmware keine Config-Datei hat, erhält eine leere `_config.bin` (der Chip nutzt dann seine eigenen Einstellungen). Die Dateien sind nicht Teil von A2DPWB; sie werden nur heruntergeladen, wenn Sie es verlangen.
+
 A2DPWB erkennt den Chipsatz des Adapters und zeigt an, welche Firmwaredateien benötigt werden.
 
 Ohne Firmware öffnet sich ein Realtek-Adapter trotzdem und antwortet mit seinem ROM-Code, wirkt also in Ordnung, aber Verbinden oder Streamen schlägt fehl. A2DPWB meldet dann, dass die Firmware nicht geladen ist. Ein Modul behält die in einer früheren Sitzung hochgeladene Firmware, bis es stromlos wird; ohne die Dateien kann es daher weiterlaufen, bis der PC neu startet oder der Adapter abgezogen wird.

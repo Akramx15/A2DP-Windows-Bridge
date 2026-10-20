@@ -59,7 +59,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 
 - The detected USB Bluetooth adapters with their chip, **Driver** and **Firmware**. **Refresh** looks again
 - **Assign WinUSB** / **Restore driver** (see [Setup](setup#winusb)); Windows asks for administrator permission each time
-- **Bluetooth Chip** for the firmware, with **Open Download Page** and **Open Config Folder** (see [Firmware](setup#firmware))
+- **Bluetooth Chip** for the firmware, with **Download Firmware**, **Open Download Page** and **Open Config Folder** (see [Firmware](setup#firmware))
 - **AFH**: Auto, Off or Manual Wi-Fi channels (see [Link Quality and AFH](#link-quality))
 - **Bluetooth stack**: stopped (it starts with the first scan or connection), starting, ready or error, and **Restart Bluetooth**
 

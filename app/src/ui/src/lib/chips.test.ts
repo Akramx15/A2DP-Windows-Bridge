@@ -107,6 +107,12 @@ describe("firmware state", () => {
     expect(chipStatus(setting(0x8771, "rtl8761bu"), [other("Intel", "firmware.vendor_intel"), rtl(false)], []).kind).toBe(
       "missing",
     );
+    // The core can fetch the files: the Download button
+    expect(chipStatus(setting(CHIP_AUTO), [{ ...rtl(false), firmware_download: true }], [])).toEqual({
+      kind: "missing",
+      files: ["rtl8761bu_fw.bin", "rtl8761bu_config.bin"],
+      download: true,
+    });
   });
 
   it("tells about another vendor where v1 did, instead of 'no files needed'", () => {
@@ -160,6 +166,7 @@ describe("firmware state", () => {
       kind: "invalid",
       files: ["rtl8761bu_fw.bin", "rtl8761bu_config.bin"],
       file: "rtl8761bu_fw.bin",
+      download: false,
     });
     expect(adapterFirmwareTag(page, setting(CHIP_AUTO))).toEqual({ key: "firmware.invalid_short", status: "bad" });
     expect(chipStatus(setting(CHIP_AUTO), [{ ...rtl(false), firmware_invalid: null }], []).kind).toBe("missing");

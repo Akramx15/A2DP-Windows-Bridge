@@ -9,7 +9,7 @@ import { Banner, Button, Field } from "../components/controls";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
-import { CodecBadge, ConnectButton, currentProfile, Ring, WinusbDialog } from "../components/stream";
+import { CodecBadge, ConnectButton, currentProfile, FirmwareDownload, Ring, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
 import type { AdapterInfo, Snapshot, StreamState } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
@@ -225,6 +225,9 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
                 title={a().firmware_invalid ? t("firmware.invalid_short") : t("firmware.missing_manual")}
                 actions={
                   <>
+                    <Show when={a().firmware_download}>
+                      <FirmwareDownload files={a().firmware_files} kind="strong" />
+                    </Show>
                     <Button icon="open" onClick={() => app.core.transport.openUrl(firmwareUrl(a().vendor))}>
                       {t("firmware.open_download_page")}
                     </Button>

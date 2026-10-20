@@ -45,7 +45,7 @@ A2DPWB 原始碼採用 Apache-2.0 或 MIT 雙重授權。發佈的 `a2dpwb-core.
 
 `a2dpwb-core.exe` 包含 BTstack 與各轉碼器程式庫，`a2dpwb.exe` 包含視窗（Tauri、SolidJS、圖示），`a2dpwb-driver.exe` 只包含 Rust 程式碼。視窗由 Microsoft Edge WebView2 Runtime 繪製，A2DPWB 並未隨附此執行階段（缺少時，安裝程式會執行 Microsoft 的啟動程式進行安裝）。
 
-完整授權條文與合規細節，請參閱 [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md)。安裝程式與免安裝版 zip 會將授權條文放在程式旁的 `licenses/` 資料夾中（Rust crate 的授權位於由 cargo-about 產生的 `licenses/rust-crates.txt`），並附上 `THIRD_PARTY_LICENSES.md` 以及列出確切原始碼 commit 的 `SOURCE.txt`。Realtek 韌體與 Zadig 不隨 A2DPWB 散布（僅提供連結）。
+完整授權條文與合規細節，請參閱 [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md)。安裝程式與免安裝版 zip 會將授權條文放在程式旁的 `licenses/` 資料夾中（Rust crate 的授權位於由 cargo-about 產生的 `licenses/rust-crates.txt`），並附上 `THIRD_PARTY_LICENSES.md` 以及列出確切原始碼 commit 的 `SOURCE.txt`。Realtek 韌體與 Zadig 不隨 A2DPWB 散布：文件僅提供 Zadig 的連結，Realtek 韌體由使用者自行下載（透過下載頁面，或使用確認後從 kernel.org 取得的 **下載韌體**）。
 
 ## 重要說明
 

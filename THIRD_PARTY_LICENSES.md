@@ -83,8 +83,12 @@ WebView2 Runtime is missing (§11). Its uninstaller removes the files above.
 Not distributed:
 
 - **Realtek Bluetooth firmware** — proprietary Realtek binaries from the
-  linux-firmware project. A2DPWB only links to the download page; the user
-  downloads the files. See
+  linux-firmware project ("Redistributable", LICENCE.rtlwifi_firmware.txt).
+  Neither the programs, the installer nor this repository contain them. The
+  user downloads the files: through the download page A2DPWB links to, or
+  with **Download Firmware**, where the user's PC fetches them from
+  kernel.org at a pinned linux-firmware commit after the user confirms
+  (`app/src/crates/core/src/firmware.rs`). See
   [linux-firmware WHENCE](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/WHENCE).
 - **Zadig** — not bundled; the documentation only links to <https://zadig.akeo.ie/>.
   A2DPWB assigns WinUSB with Windows' own SetupAPI and inbox `winusb.inf`, not

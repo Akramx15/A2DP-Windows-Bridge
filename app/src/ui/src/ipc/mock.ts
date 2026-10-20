@@ -71,6 +71,7 @@ const RTL: AdapterInfo = {
   firmware_present: true,
   firmware_files: ["rtl8761bu_fw.bin", "rtl8761bu_config.bin"],
   firmware_invalid: null,
+  firmware_download: true,
   vendor_note: null,
   restart_needed: false,
   le_audio: null,
@@ -267,13 +268,15 @@ export function adapterWithFirmware(a: AdapterInfo, s: ChipSetting, folder: read
   const detected = REALTEK_CHIPS.find((c) => c.name === a.realtek_chip)?.pid ?? 0;
   const pid = s.bt_chip_pid === CHIP_NOT_REALTEK ? 0 : isAutoChip(s) ? detected : s.bt_chip_pid;
   const stem = firmwareStem(pid, s.bt_chip_fw_stem);
-  if (stem === null) return { ...a, firmware_present: null, firmware_files: [], firmware_invalid: null };
+  if (stem === null) return { ...a, firmware_present: null, firmware_files: [], firmware_invalid: null, firmware_download: false };
   const entry = folder.find((f) => f.stem.toLowerCase() === stem.toLowerCase());
   return {
     ...a,
     firmware_present: entry?.has_config ?? false,
     firmware_files: [`${stem}_fw.bin`, `${stem}_config.bin`],
     firmware_invalid: null,
+    // core firmware::available: every table chip but Custom
+    firmware_download: REALTEK_CHIPS.some((c) => c.stem === stem.toLowerCase()),
   };
 }
 
@@ -544,6 +547,8 @@ export class MockCore implements Transport {
         return null;
       case "adapter.firmware_files":
         return this.firmwareFolder();
+      case "adapter.download_firmware":
+        return this.downloadFirmware(String(p.file));
       case "audio.devices":
         return AUDIO_DEVICES;
       case "audio.apps":
@@ -760,9 +765,31 @@ export class MockCore implements Transport {
     };
   }
 
+  /** Pairs fetched with adapter.download_firmware */
+  private downloaded: FirmwareFile[] = [];
+
   /** The firmware pairs in the settings folder: none yet on a first run */
   private firmwareFolder(): FirmwareFile[] {
-    return this.scenario === "fresh" ? [] : FIRMWARE_FILES;
+    const files = this.scenario === "fresh" ? [] : FIRMWARE_FILES;
+    const stems = new Set(this.downloaded.map((f) => f.stem));
+    return [...this.downloaded, ...files.filter((f) => !stems.has(f.stem))];
+  }
+
+  /** core firmware::download: kernel.org takes a moment */
+  private downloadFirmware(file: string): Promise<AdapterInfo[]> {
+    const chip = REALTEK_CHIPS.find((c) => `${c.stem}_fw.bin` === file.toLowerCase());
+    if (!chip) return Promise.reject(errorInfo("firmware.no_download", "firmware.download_failed"));
+    return new Promise((resolve) => {
+      this.later(1200, () => {
+        this.downloaded = [
+          ...this.downloaded.filter((f) => f.stem !== chip.stem),
+          { stem: chip.stem, display_name: chip.name, pid: chip.pid, has_config: true },
+        ];
+        this.log("info", "a2dpwb_core::firmware", `firmware download for ${chip.name}: saved ["${file}", "${chip.stem}_config.bin"]`);
+        this.refreshFirmware();
+        resolve(this.snap.adapter.adapters);
+      });
+    });
   }
 
   /** The adapters' firmware state anew and the adapter event (core refresh_adapters) */

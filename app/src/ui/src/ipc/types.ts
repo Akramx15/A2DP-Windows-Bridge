@@ -99,6 +99,7 @@ interface Results {
   "adapter.assign_winusb": AdapterInfo[];
   "adapter.restore_driver": AdapterInfo[];
   "adapter.firmware_files": FirmwareFile[];
+  "adapter.download_firmware": AdapterInfo[];
   "audio.devices": AudioDevice[];
   "audio.apps": AudioApp[];
   "diag.capture_start": string;

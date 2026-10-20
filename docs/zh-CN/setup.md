@@ -119,6 +119,8 @@ a2dpwb-core.exe --cli --scan
 
 **适配器**页面（以及设置向导的**驱动程序和固件**步骤）会显示适配器的固件状态：**固件正常**、**无需固件文件**，或**未找到固件**并列出所需的文件名。使用**打开下载页面**按钮在浏览器中打开 [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) 页面，然后使用**打开配置文件夹**打开目标文件夹。下载所需的 `.bin` 文件并放入该配置文件夹。
 
+对于 **Bluetooth 芯片** 列表中的芯片，**下载固件** 可以代劳：确认后，A2DPWB 会从 linux-firmware (kernel.org) 下载文件，逐个按预期的 SHA-256 校验，并保存到配置文件夹。linux-firmware 中没有 config 文件的芯片会得到一个空的 `_config.bin`（芯片将使用自身的设置）。这些文件不属于 A2DPWB，只在您请求时下载。
+
 A2DPWB 会检测适配器的芯片组，并显示需要哪些固件文件。
 
 没有固件时，Realtek 适配器仍会以 ROM 代码打开并应答，看起来一切正常，但连接或串流会失败。此时 A2DPWB 会提示固件未加载。此外，在之前的会话中上传的固件会一直保留到模块断电为止，因此即使删除了文件，在重启电脑或拔下适配器之前，它也可能继续工作。

@@ -114,6 +114,8 @@ export interface AdapterFirmware {
   firmware_files: string[];
   /** A file that is there but is no Realtek firmware (a saved web page) */
   firmware_invalid?: string | null;
+  /** The core can fetch the files from linux-firmware */
+  firmware_download?: boolean;
   vendor_note: { key: string; args: string[] } | null;
 }
 
@@ -124,6 +126,7 @@ export interface AdapterFirmware {
  *   detected) chip, as the core checked them for the adapters
  * - invalid: one of them is there but is no Realtek firmware, usually a web
  *   page saved instead of the file (v1 firmware.invalid)
+ * - missing and invalid say whether the core can download the files
  * - unchecked: no adapter to check them for; from the folder scan if it
  *   lists the file, unknown for Custom (the scan leaves it out)
  * - vendor: no Realtek chip, and an adapter of a vendor the core has a note
@@ -132,8 +135,8 @@ export interface AdapterFirmware {
  */
 export type ChipStatus =
   | { kind: "present"; files: string[] }
-  | { kind: "missing"; files: string[] }
-  | { kind: "invalid"; files: string[]; file: string }
+  | { kind: "missing"; files: string[]; download: boolean }
+  | { kind: "invalid"; files: string[]; file: string; download: boolean }
   | { kind: "unchecked"; files: string[]; present: boolean | null }
   | { kind: "vendor"; note: { key: string; args: string[] }; vendor: string }
   | { kind: "non_realtek" | "auto_no_adapter" | "auto_unrecognized" | "select_chip" };
@@ -156,10 +159,12 @@ export function chipStatus(
   // The core resolves the setting for each adapter; Auto by its own chip
   const checked = auto ? realtek : adapters.find((a) => a.firmware_present !== null);
   if (checked && checked.firmware_present !== null) {
-    if (!checked.firmware_present && checked.firmware_invalid) {
-      return { kind: "invalid", files: checked.firmware_files, file: checked.firmware_invalid };
+    const download = checked.firmware_download ?? false;
+    if (checked.firmware_present) return { kind: "present", files: checked.firmware_files };
+    if (checked.firmware_invalid) {
+      return { kind: "invalid", files: checked.firmware_files, file: checked.firmware_invalid, download };
     }
-    return { kind: checked.firmware_present ? "present" : "missing", files: checked.firmware_files };
+    return { kind: "missing", files: checked.firmware_files, download };
   }
   const stem = firmwareStem(setting.bt_chip_pid, setting.bt_chip_fw_stem);
   if (stem === null) return { kind: "select_chip" };
