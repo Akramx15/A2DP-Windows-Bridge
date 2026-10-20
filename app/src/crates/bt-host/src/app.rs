@@ -255,6 +255,28 @@ impl HostApp {
         tracing::info!("hci_init done, powering on");
         if stack.power_on().is_err() {
             tracing::error!("could not open the Bluetooth adapter");
+            // Issue #81: an RTL8852BU whose firmware was missing failed here
+            // with "failed to initialize WinUSB (error 50)", which reads as
+            // a driver problem; the firmware was all it lacked
+            let missing: Vec<String> = match (pid, &self.setup.realtek_files) {
+                (0, _) | (_, None) => Vec::new(),
+                (_, Some((fw, cfg))) => [fw, cfg]
+                    .into_iter()
+                    // ensure_alias also takes the extension-less file alone
+                    .filter(|s| {
+                        let dir = &self.setup.firmware_dir;
+                        !dir.join(format!("{s}.bin")).is_file() && !dir.join(s.as_str()).is_file()
+                    })
+                    .map(|s| format!("{s}.bin"))
+                    .collect(),
+            };
+            if !missing.is_empty() {
+                tracing::warn!(
+                    "the Realtek firmware is missing too ({} in {}): add it, then start again",
+                    missing.join(", "),
+                    self.setup.firmware_dir.display()
+                );
+            }
             self.init_failed(InitFailure::Failed);
         }
     }

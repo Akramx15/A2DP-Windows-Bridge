@@ -131,6 +131,8 @@ unsafe extern "C" {
     // ---- BTstack: chipsets ----
     pub fn btstack_chipset_realtek_get_num_usb_controllers() -> u16;
     pub fn btstack_chipset_realtek_get_vendor_product_id(index: u16, vendor_id: *mut u16, product_id: *mut u16);
+    /// csrc/realtek.c
+    pub fn a2dpwb_realtek_usb_fw_name(index: u16) -> *const c_char;
     pub fn btstack_chipset_realtek_set_product_id(id: u16);
     pub fn btstack_chipset_realtek_set_firmware_folder_path(path: *const c_char);
     pub fn btstack_chipset_realtek_set_config_folder_path(path: *const c_char);

@@ -45,7 +45,7 @@ Windows 10 / 11 load only kernel drivers signed through Microsoft, which needs a
 3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, pair the headphones, then choose what to send and connect.
 4. **Connect** from **Home**, or from the tray icon.
 
-> **Warning:** While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter. **Never assign WinUSB to your PC's built-in Bluetooth adapter.** **Adapter > Restore driver** gives the adapter back to Windows at any time, and the uninstaller offers it too.
+> **Warning:** While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter. A built-in adapter can be used too, but **the PC then has no Windows Bluetooth at all** until the driver is restored, so a separate USB adapter is recommended. **Adapter > Restore driver** gives the adapter back to Windows at any time, and the uninstaller offers it too.
 
 **Realtek adapters** need firmware files such as `rtl8761bu_fw.bin` and `rtl8761bu_config.bin` from [linux-firmware](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) (proprietary, not included). The **Adapter** screen shows which files are needed and opens the download page and the settings folder. See the [Setup guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup).
 

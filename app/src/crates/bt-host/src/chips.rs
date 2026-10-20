@@ -9,7 +9,7 @@
 //! - the firmware file rules (v1 a2dp_service.cpp check_firmware_present)
 //!
 //! Plain data and std only: the USB enumeration (win-sys::usb_adapters) and
-//! BTstack's Realtek firmware table (btstack-sys::realtek_usb_ids) are
+//! BTstack's Realtek firmware table (btstack-sys::realtek_usb_firmware) are
 //! passed in by the caller.
 
 use std::path::{Path, PathBuf};
@@ -43,7 +43,9 @@ const fn chip(pid: u16, chip_name: &'static str, fw_name: &'static str, cfg_name
 
 /// Known Realtek chip families, one PID each (the most common one), from
 /// BTstack's fw_patch_table_usb. All but Custom have firmware in
-/// linux-firmware (kernel.org).
+/// linux-firmware (kernel.org). The family's other PIDs (0x4853 and the
+/// other RTL8852BE modules for RTL8852BU, ...) resolve to this one by their
+/// firmware name: see resolve_realtek_pid.
 pub static REALTEK_CHIPS: &[RealtekChip] = &[
     chip(0x8771, "RTL8761BU", "rtl8761bu_fw", "rtl8761bu_config"),
     chip(0x876C, "RTL8761CU", "rtl8761cu_fw", "rtl8761cu_config"),
@@ -142,14 +144,22 @@ pub fn realtek_cfg_name(pid: u16) -> Option<&'static str> {
 }
 
 /// The Realtek PID for firmware lookup of any USB VID:PID: Realtek's own
-/// VID when BTstack's firmware table has the PID (`btstack_ids`, from
-/// btstack-sys::realtek_usb_ids), else the OEM table. None if not a known
+/// VID when BTstack's firmware table has the PID (`btstack_table`: VID,
+/// PID, firmware name, from btstack-sys::realtek_usb_firmware), else the
+/// OEM table. A PID of a family in REALTEK_CHIPS gives the family's PID
+/// when BTstack's table has that one with the same firmware (BTstack picks
+/// the files by the PID it is given, so it loads the same ones): an RTL8852BE
+/// module at 0BDA:4853 is the RTL8852BU of 0xB85B. None if not a known
 /// Realtek-based adapter.
-pub fn resolve_realtek_pid(vid: u16, pid: u16, btstack_ids: &[(u16, u16)]) -> Option<u16> {
+pub fn resolve_realtek_pid(vid: u16, pid: u16, btstack_table: &[(u16, u16, &str)]) -> Option<u16> {
     if vid == REALTEK_VID {
         // Realtek's VID is also on card readers and Wi-Fi: only PIDs
         // BTstack knows are Bluetooth
-        return btstack_ids.iter().any(|&(_, p)| p == pid).then_some(pid);
+        let &(_, _, fw_name) = btstack_table.iter().find(|&&(v, p, _)| v == vid && p == pid)?;
+        let family = REALTEK_CHIPS.iter().find(|c| {
+            c.fw_name == fw_name && btstack_table.iter().any(|&(v, p, f)| v == vid && p == c.pid && f == fw_name)
+        });
+        return Some(family.map_or(pid, |c| c.pid));
     }
     OEM_TABLE.iter().find(|m| m.vid == vid && m.pid == pid).map(|m| m.realtek_pid)
 }

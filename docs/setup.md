@@ -50,7 +50,7 @@ Plug in the USB Bluetooth adapter and start A2DPWB. When there is no profile yet
 
 ## Step 2: Assign WinUSB to the Adapter {#winusb}
 
-A2DPWB communicates directly with a USB Bluetooth adapter via WinUSB, the generic USB driver included in Windows. You need a **dedicated adapter** -- your built-in Bluetooth continues to work normally for regular Windows Bluetooth.
+A2DPWB communicates directly with a USB Bluetooth adapter via WinUSB, the generic USB driver included in Windows. A **dedicated adapter** is recommended -- your built-in Bluetooth then continues to work normally for regular Windows Bluetooth.
 
 1. Open the **Adapter** screen (or the setup's **Driver and firmware** step)
 2. The adapter's **Driver** reads **Windows Bluetooth** (or **Another driver** / **No driver**). Click **Assign WinUSB**
@@ -58,7 +58,7 @@ A2DPWB communicates directly with a USB Bluetooth adapter via WinUSB, the generi
 4. The driver now reads **WinUSB (used by A2DPWB)**
 
 {: .warning }
-While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter: devices paired with Windows through it stop working until the driver is restored. Use your built-in Bluetooth for normal peripherals (keyboard, mouse, etc.), and **never assign WinUSB to the PC's built-in Bluetooth adapter**.
+While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter: devices paired with Windows through it stop working until the driver is restored. Use your built-in Bluetooth for normal peripherals (keyboard, mouse, etc.). A built-in adapter that is a USB device (a Realtek one on many laptops) can be given to A2DPWB too, but then **the PC has no Windows Bluetooth at all** (Bluetooth settings, mice, keyboards, other audio devices) until you restore its driver.
 
 **Restore driver** on the same screen gives the adapter back to Windows: Windows picks its own driver again (normally its Bluetooth driver) and the adapter works with Windows' Bluetooth. A2DPWB cannot stream through it until WinUSB is assigned again. The uninstaller offers the same: when A2DPWB put adapters on WinUSB, it asks whether to give them back to Windows (one administrator prompt). Updates keep WinUSB, and so does a silent uninstall (`/S`).
 
@@ -76,7 +76,7 @@ If the adapter is missing from A2DPWB's list, a button on the **Adapter** screen
 
 **Assign WinUSB**
 
-1. Find the adapter: normally under **Bluetooth** with its own name (for example "TP-Link Bluetooth USB Adapter"), or with a yellow mark when its driver failed to start. **View > Devices by connection** helps tell it apart from the PC's built-in Bluetooth, which you must leave alone
+1. Find the adapter: normally under **Bluetooth** with its own name (for example "TP-Link Bluetooth USB Adapter"), or with a yellow mark when its driver failed to start. **View > Devices by connection** helps tell it apart from the PC's built-in Bluetooth, which you leave alone unless you mean to give it to A2DPWB
 2. Right-click it > **Update driver** > **Browse my computer for drivers** > **Let me pick from a list of available drivers on my computer**
 3. If Windows asks for a device type, choose **Universal Serial Bus devices**. Clear **Show compatible hardware**, choose the manufacturer **WinUsb Device** and the model **WinUsb Device**, click **Next** and confirm the warning
 4. The adapter now shows as **WinUsb Device** under **Universal Serial Bus devices**. Restart A2DPWB (or open the **Adapter** screen again): it uses the adapter as with Zadig
