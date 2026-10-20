@@ -1,7 +1,7 @@
 // Adapter: the USB Bluetooth adapters with their driver and firmware,
 // WinUSB assign / restore, the chip for the firmware, and AFH.
 
-import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { type AppContext, useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
@@ -9,7 +9,14 @@ import { Icon } from "../components/Icon";
 import { ErrorPanel, FirmwareDownload, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
 import type { AdapterInfo, DriverKind, FirmwareFile } from "../ipc/types";
-import { adapterFirmwareTag, buildChipOptions, type ChipStatus, chipStatus, isAutoChip } from "../lib/chips";
+import {
+  adapterFirmwareTag,
+  buildChipOptions,
+  type ChipStatus,
+  chipStatus,
+  chipTargetIndex,
+  isAutoChip,
+} from "../lib/chips";
 import { LINKS, vendorFirmwareUrl } from "../lib/links";
 
 const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
@@ -101,7 +108,7 @@ export function Adapter() {
         }
       >
         <For each={adapter().adapters}>
-          {(a) => {
+          {(a, i) => {
             const drv = () => driverText(a.driver);
             const fw = () => adapterFirmwareTag(a, snap().settings);
             return (
@@ -162,13 +169,20 @@ export function Adapter() {
                     <span class="hint">{t("ui.adapter.restore_short")}</span>
                   </Show>
                 </div>
+                {/* The chip setting is one for all adapters: with the one it applies to */}
+                <Show when={i() === chipTargetIndex(adapter().adapters)}>
+                  <ChipSection files={files()} onChanged={loadFiles} embedded />
+                </Show>
               </section>
             );
           }}
         </For>
       </Show>
 
-      <ChipSection files={files()} onChanged={loadFiles} />
+      {/* No adapter to put it with: on its own, to choose the chip beforehand */}
+      <Show when={adapter().adapters.length === 0}>
+        <ChipSection files={files()} onChanged={loadFiles} />
+      </Show>
       <AfhSection />
 
       <WinusbDialog adapter={dialog()?.adapter ?? null} mode={dialog()?.mode ?? "assign"} onClose={() => setDialog(null)} />
@@ -177,7 +191,7 @@ export function Adapter() {
 }
 
 /** v1 FirmwareDialog: the chip choice and the firmware state of that chip */
-function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<void> }) {
+function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<void>; embedded?: boolean }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const settings = () => snap().settings;
@@ -196,8 +210,8 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
     // (and releases an idle stack); the folder may have changed as well
     if (await saveSettings(app, { bt_chip_pid: o.pid, bt_chip_fw_stem: o.stem })) await props.onChanged();
   };
-  return (
-    <Section title={t("firmware.title")}>
+  const body = () => (
+    <>
       <Field label={t("settings.bt_chip")} hint={hint()}>
         {(id, described) => (
           <Select
@@ -222,7 +236,16 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
           {t("ui.setup.guide")}
         </Button>
       </div>
-    </Section>
+    </>
+  );
+  const headId = createUniqueId();
+  return (
+    <Show when={props.embedded} fallback={<Section title={t("firmware.title")}>{body()}</Section>}>
+      <div class="adapter-firmware" role="group" aria-labelledby={headId}>
+        <h3 id={headId}>{t("firmware.title")}</h3>
+        {body()}
+      </div>
+    </Show>
   );
 }
 
