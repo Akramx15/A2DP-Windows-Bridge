@@ -144,7 +144,9 @@ export function Home() {
                 <div class="device-name">{p().device_name || p().device_address}</div>
                 <div class="muted device-sub">
                   <span>{p().name}</span>
-                  <span class="mono">{p().device_address}</span>
+                  <Show when={!p().device_name}>
+                    <span class="mono">{p().device_address}</span>
+                  </Show>
                 </div>
                 <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
                   <span class="dot" aria-hidden="true" />
