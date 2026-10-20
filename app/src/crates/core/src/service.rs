@@ -241,6 +241,8 @@ pub(crate) struct Inner {
     scanning: AtomicBool,
     /// The LE Audio stream being sent (le_stream)
     le_stream: Mutex<Option<crate::le_stream::LeStreamDetails>>,
+    /// An A2DP stream ran on the running stack (issue #84)
+    streamed: AtomicBool,
 }
 
 impl Inner {
@@ -327,6 +329,7 @@ impl Inner {
                     h.set_media_keys(s.media_keys);
                     h.set_afh_policy(self.opts.afh.as_deref().unwrap_or(&s.afh));
                     self.le_active.store(le_on, Ordering::Release);
+                    self.streamed.store(false, Ordering::Release);
                     self.pump_events(&h);
                     return Ok(h);
                 }
@@ -411,6 +414,27 @@ impl Inner {
         let h = self.start_host()?;
         *slot = Some(h.clone());
         Ok(h)
+    }
+
+    /// The stack for a new A2DP stream. One a stream already ran on is
+    /// replaced: streams after a Disconnect / Connect on the same stack
+    /// stuttered until the app was restarted (issue #84), and a new stack
+    /// (HCI Reset; a running Realtek firmware is kept) is what a restart
+    /// gave. While idle the old stack stays up, for headphones that connect
+    /// by themselves.
+    pub fn host_for_stream(self: &Arc<Self>) -> Result<Arc<BtHost>, Msg> {
+        if self.streamed.swap(false, Ordering::AcqRel) && self.host.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+        {
+            tracing::info!("restarting BTstack: a stream ran on it before");
+            self.shutdown_host();
+        }
+        self.ensure_host()
+    }
+
+    /// The running stack carried an A2DP stream: the next one starts on a
+    /// new stack
+    pub fn mark_streamed(&self) {
+        self.streamed.store(true, Ordering::Release);
     }
 
     /// Shuts the stack down and starts a new one (the session thread, for a
@@ -543,6 +567,7 @@ impl Service {
             le_active: AtomicBool::new(false),
             scanning: AtomicBool::new(false),
             le_stream: Mutex::new(None),
+            streamed: AtomicBool::new(false),
         });
         // Without a window, also while only the tray runs
         let weak = Arc::downgrade(&inner);

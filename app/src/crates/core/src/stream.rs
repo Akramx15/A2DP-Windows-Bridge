@@ -414,6 +414,16 @@ fn start_pipeline(
     )
 }
 
+/// Marks the stack as having carried a stream when the session ends (after
+/// any restart during it)
+struct StreamedMark<'a>(&'a Inner);
+
+impl Drop for StreamedMark<'_> {
+    fn drop(&mut self) {
+        self.0.mark_streamed();
+    }
+}
+
 /// The session thread. Returns when stopped or on an error (state reported).
 pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let addr = bt_host::addr_str(&req.device);
@@ -428,7 +438,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let stopped = || inner.stop_requested();
 
     inner.notify(StreamState::Connecting, Msg::new("status.initializing_btstack"));
-    let mut host = match inner.ensure_host() {
+    let mut host = match inner.host_for_stream() {
         Ok(h) => h,
         Err(m) => return inner.notify(StreamState::Error, m),
     };
@@ -467,6 +477,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
         Err(f) => return inner.notify(StreamState::Error, connect_error(Some(f))),
     };
+    // However the session ends, the next one starts on a new stack
+    let _streamed = StreamedMark(inner);
     inner.record_codecs(&addr, codec_keys(&remote));
     tracing::info!("device connected, choosing the codec");
     if stopped() {
