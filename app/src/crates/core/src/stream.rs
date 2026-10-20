@@ -11,9 +11,7 @@ use audio_capture::{Capture, CaptureOptions, Format, Running, SampleFormat, Sink
 use bt_host::{BtHost, ConfigureError, ConnectFailure, MediaSink, ReconnectError};
 use codec::caps::{self, ConfigError, Configuration, RemoteCaps, Unavailable};
 use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
-use pipeline::{
-    BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType, SpatialConfig,
-};
+use pipeline::{BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType, SpatialConfig};
 
 use crate::messages::Msg;
 use crate::service::Inner;
