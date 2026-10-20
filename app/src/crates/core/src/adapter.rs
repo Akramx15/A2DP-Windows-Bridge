@@ -3,6 +3,7 @@
 //! Intel bootloader download and Broadcom PatchRAM (experimental), and the
 //! AFH classification from the PC's Wi-Fi.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use bt_host::afh;
@@ -186,6 +187,46 @@ impl AfhSource for WifiAfh {
     }
 }
 
+// ---- What a stack learnt about an adapter (adapter_caps.json) ----
+
+const CAPS_FILE: &str = "adapter_caps.json";
+
+/// What A2DPWB learnt about an adapter when a stack ran on it
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct AdapterCaps {
+    /// LE Audio's isochronous channels (issue #86)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    le_audio: Option<bool>,
+}
+
+fn caps_key(vid: u16, pid: u16) -> String {
+    format!("{vid:04X}:{pid:04X}")
+}
+
+fn load_caps(dir: &Path) -> BTreeMap<String, AdapterCaps> {
+    std::fs::read_to_string(dir.join(CAPS_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// Whether the adapter with this VID:PID has LE Audio's isochronous
+/// channels, as a stack found out; None if none ran on it yet
+pub fn le_audio(dir: &Path, vid: u16, pid: u16) -> Option<bool> {
+    load_caps(dir).get(&caps_key(vid, pid)).and_then(|c| c.le_audio)
+}
+
+/// Remembers what a stack found out about the adapter's LE Audio
+pub fn save_le_audio(dir: &Path, vid: u16, pid: u16, capable: bool) {
+    let mut caps = load_caps(dir);
+    let entry = caps.entry(caps_key(vid, pid)).or_default();
+    if entry.le_audio == Some(capable) {
+        return;
+    }
+    entry.le_audio = Some(capable);
+    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
+    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
+        tracing::warn!("cannot write {CAPS_FILE}: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +250,19 @@ mod tests {
             problem_code: None,
             probe,
         }
+    }
+
+    #[test]
+    fn le_audio_remembered_per_adapter() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-caps-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), None);
+        save_le_audio(&dir, 0x0BDA, 0xA729, false);
+        save_le_audio(&dir, 0x8087, 0x0032, true);
+        assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), Some(false));
+        assert_eq!(le_audio(&dir, 0x8087, 0x0032), Some(true));
+        assert!(std::fs::read_to_string(dir.join(CAPS_FILE)).unwrap().contains("\"0BDA:A729\""));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

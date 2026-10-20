@@ -104,6 +104,13 @@ impl Stack {
         transport::le_hidden()
     }
 
+    /// Whether the controller has the isochronous channels of LE Audio (LE
+    /// Read Buffer Size v2 in its supported commands), from its answer
+    /// during HCI init, also while LE is hidden. None before that answer.
+    pub fn controller_iso(&self) -> Option<bool> {
+        transport::controller_iso()
+    }
+
     /// After hci_init (and l2cap_init): LE bonds in the TLV file `tlv_path`
     /// (le_device_db_tlv + btstack_tlv_windows, the format of v1's
     /// le_audio_bonds.tlv; the PC's GATT server keeps its bonded clients'

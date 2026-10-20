@@ -38,9 +38,9 @@
 //! pipe sat idle in between. The controller's ACL / ISO buffer count, which
 //! BTstack keeps to, bounds how many packets are queued.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{JoinHandle, Thread};
 use std::time::Duration;
@@ -80,6 +80,15 @@ fn out_slot(packet_type: u8) -> Option<usize> {
         HCI_ACL_DATA_PACKET | HCI_ISO_DATA_PACKET => Some(1),
         _ => None,
     }
+}
+
+/// VID and PID of the adapter opened last (what a stack runs on)
+static LAST_OPENED: Mutex<Option<(u16, u16)>> = Mutex::new(None);
+
+/// VID and PID of the adapter a [`UsbTransport`] opened last; None before
+/// the first open
+pub fn last_opened() -> Option<(u16, u16)> {
+    *LAST_OPENED.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Which adapter to open
@@ -362,6 +371,7 @@ impl HciBackend for UsbTransport {
             return Err(last_error);
         };
         let (vid, pid) = (info.vendor_id(), info.product_id());
+        *LAST_OPENED.lock().unwrap_or_else(|e| e.into_inner()) = Some((vid, pid));
         let mut event_in = interface.endpoint::<Interrupt, In>(event_addr).map_err(|e| e.to_string())?;
         let mut acl_in = interface.endpoint::<Bulk, In>(acl_in_addr).map_err(|e| e.to_string())?;
         let mut acl_out = interface.endpoint::<Bulk, Out>(acl_out_addr).map_err(|e| e.to_string())?;

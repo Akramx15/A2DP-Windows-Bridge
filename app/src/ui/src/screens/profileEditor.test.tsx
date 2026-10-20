@@ -94,11 +94,12 @@ describe("codec cards", () => {
     // and LDAC are offered, Auto is always there
     expect(screen.queryByRole("radio", { name: /aptX HD/ })).toBeNull();
     expect(screen.getAllByRole("radio", { name: /./ }).filter((r) => r.closest(".codec-grid"))).toHaveLength(4);
-    const more = screen.getByRole("button", { name: t("ui.profile.codecs_show_all", 8) });
-    fireEvent.click(more);
+    // Forced: shown with their "Not offered" tag
+    const force = screen.getByRole("checkbox", { name: t("ui.profile.codecs_force", 8) });
+    fireEvent.click(force);
     const hd = await screen.findByRole("radio", { name: /aptX HD/ });
     expect(hd.closest("label")).toHaveTextContent(t("ui.profile.codec_not_offered"));
-    expect(more).toHaveTextContent(t("ui.profile.codecs_hide_unoffered"));
+    expect(force).toBeChecked();
 
     // A codec it does not offer: said plainly, with what happens instead
     fireEvent.click(hd);

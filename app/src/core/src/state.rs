@@ -204,6 +204,12 @@ fn vendor_note(vendor: ChipVendor) -> Option<Msg> {
 /// Device Manager's "Windows cannot start this device until it restarts"
 const CM_PROB_NEED_RESTART: u32 = 14;
 
+/// LE Audio of the adapter A2DPWB uses (AdapterState::le_audio): the
+/// running stack's, else what a stack found out on the first WinUSB adapter
+fn le_audio_now(running: Option<bool>, adapters: &[AdapterInfo]) -> Option<bool> {
+    running.or_else(|| adapters.iter().find(|a| a.driver == DriverKind::Winusb).and_then(|a| a.le_audio))
+}
+
 fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo> {
     a2dpwb_core::adapter::adapters(false)
         .into_iter()
@@ -232,6 +238,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 firmware_invalid: check.and_then(|c| c.invalid_file),
                 vendor_note: vendor_note(a.vendor),
                 restart_needed: a.device.problem_code == Some(CM_PROB_NEED_RESTART),
+                le_audio: a2dpwb_core::adapter::le_audio(config_dir, a.device.vid, a.device.pid),
             }
         })
         .collect()
@@ -544,7 +551,12 @@ impl CoreState {
         let adapters = adapter_infos(&dir, &settings);
         warn_invalid_firmware(&dir, &firmware_change(&[], &adapters).invalid);
         let snapshot = Snapshot {
-            adapter: AdapterState { status: AdapterStatus::Stopped, adapters, error: None, le_audio: None },
+            adapter: AdapterState {
+                status: AdapterStatus::Stopped,
+                le_audio: le_audio_now(service.le_audio_supported(), &adapters),
+                adapters,
+                error: None,
+            },
             devices: saved_devices(&dir, &[], &service.device_codecs()),
             scanning: false,
             le_scanning: false,
@@ -752,11 +764,10 @@ impl CoreState {
         if devices_changed {
             self.refresh_devices();
         }
-        // A stack with LE Audio became ready (a scan or an LE Audio stream)
-        let le_audio = self.service.le_audio_supported();
-        if le_audio != s.adapter.le_audio {
-            let (_, s) = self.snapshot();
-            self.publish(Event::Adapter(AdapterState { le_audio, ..s.adapter }));
+        // A stack started and found out the adapter's LE Audio (remembered
+        // in adapter_caps.json): the adapters anew
+        if le_audio_now(self.service.le_audio_supported(), &s.adapter.adapters) != s.adapter.le_audio {
+            self.list_adapters();
         }
     }
 
@@ -821,7 +832,8 @@ impl CoreState {
         let list = adapter_infos(&self.config_dir(), &self.service.settings());
         let change = firmware_change(&s.adapter.adapters, &list);
         warn_invalid_firmware(&self.config_dir(), &change.invalid);
-        self.publish(Event::Adapter(AdapterState { adapters: list.clone(), ..s.adapter }));
+        let le_audio = le_audio_now(self.service.le_audio_supported(), &list);
+        self.publish(Event::Adapter(AdapterState { adapters: list.clone(), le_audio, ..s.adapter }));
         (list, change.fixed)
     }
 
@@ -842,7 +854,7 @@ impl CoreState {
             self.publish(Event::Adapter(AdapterState {
                 status: AdapterStatus::Stopped,
                 error: None,
-                le_audio: self.service.le_audio_supported(),
+                le_audio: le_audio_now(self.service.le_audio_supported(), &s.adapter.adapters),
                 ..s.adapter
             }));
         } else {
@@ -1486,6 +1498,7 @@ mod tests {
             firmware_invalid: invalid.map(str::to_owned),
             vendor_note: None,
             restart_needed: false,
+            le_audio: None,
         }
     }
 

@@ -264,7 +264,6 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     if !host.le_ready() {
         return inner.notify(StreamState::Error, Msg::new("error.le_audio_unavailable"));
     }
-    inner.note_le_ready(&host);
 
     let (request, low_latency) = stream_request(&le);
     host.le_set_low_latency(low_latency);

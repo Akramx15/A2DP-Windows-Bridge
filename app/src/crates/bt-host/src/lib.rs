@@ -533,6 +533,13 @@ impl BtHost {
         self.shared.lock().realtek_rom
     }
 
+    /// The controller has LE Audio's isochronous channels (its supported
+    /// commands at HCI init; also known with LE Audio off). Streaming still
+    /// needs ISO buffers ([`BtHost::le_iso_buffers`]).
+    pub fn le_audio_capable(&self) -> bool {
+        self.shared.lock().le_audio_capable
+    }
+
     // ---- scanning ----
 
     /// GAP inquiry for about `seconds` (3..30)

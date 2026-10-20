@@ -184,6 +184,9 @@ export function CodecBadge(props: { compact?: boolean }) {
           </Show>
           <Show when={!props.compact}>
             <span class="num">{khz(i().sample_rate)} kHz</span>
+            <Show when={i().bits > 0}>
+              <span class="num">{t(`bitdepth.${i().bits}`)}</span>
+            </Show>
           </Show>
         </span>
       )}

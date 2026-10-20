@@ -46,4 +46,9 @@ vendor_note: Msg | null,
  * replugged or Windows restarted (Device Manager's problem code 14, or
  * the WinUSB assignment just asked for it)
  */
-restart_needed: boolean, };
+restart_needed: boolean, 
+/**
+ * The adapter has LE Audio's isochronous channels, as a stack running
+ * on it found out (remembered); None if none ran on it yet
+ */
+le_audio: boolean | null, };

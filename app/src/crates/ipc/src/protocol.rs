@@ -102,6 +102,10 @@ pub struct AdapterInfo {
     /// the WinUSB assignment just asked for it)
     #[serde(default)]
     pub restart_needed: bool,
+    /// The adapter has LE Audio's isochronous channels, as a stack running
+    /// on it found out (remembered); None if none ran on it yet
+    #[serde(default)]
+    pub le_audio: Option<bool>,
 }
 
 /// A Realtek firmware pair found in the settings folder
@@ -125,9 +129,10 @@ pub struct AdapterState {
     pub status: AdapterStatus,
     pub adapters: Vec<AdapterInfo>,
     pub error: Option<Msg>,
-    /// The controller can stream LE Audio (it has ISO buffers). None: not
-    /// known until the stack ran with LE Audio (experimental) on; the UI
-    /// hides the LE Audio choices only on false
+    /// The adapter A2DPWB uses has LE Audio's isochronous channels: the
+    /// running stack's, else the first WinUSB adapter's remembered
+    /// AdapterInfo::le_audio. None: not known yet (the UI then offers no LE
+    /// Audio)
     #[serde(default)]
     pub le_audio: Option<bool>,
 }

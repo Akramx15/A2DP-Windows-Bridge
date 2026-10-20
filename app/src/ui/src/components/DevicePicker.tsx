@@ -36,8 +36,8 @@ export function DevicePicker(props: {
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
-  // LE Audio entries with the setting on, unless the adapter cannot stream it
-  const leListed = () => snap().settings.le_audio_experimental && snap().adapter.le_audio !== false && !props.classicOnly;
+  // LE Audio entries with the setting on and an adapter known to stream it
+  const leListed = () => snap().settings.le_audio_experimental && snap().adapter.le_audio === true && !props.classicOnly;
   const devices = createMemo(() => sortDevices(listedDevices(snap().devices, leListed())));
   const chosen = (d: Device) => d.address === props.address && d.le_audio === (props.leAudio ?? false);
   // Rename and forget name the entry: the LE Audio one with le_audio

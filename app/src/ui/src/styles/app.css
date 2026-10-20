@@ -1516,9 +1516,6 @@ option {
   width: 1.75rem;
   min-height: 1.75rem;
 }
-.codec-show-all {
-  align-self: flex-start;
-}
 .codec-settings {
   display: flex;
   flex-direction: column;
@@ -1555,38 +1552,13 @@ option {
   background: var(--text);
 }
 
-.disclosure {
-  padding: 0;
-}
-.disclosure-head {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  width: 100%;
-  padding: var(--s4);
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--r-card);
-}
-.disclosure-head .muted {
-  margin-left: auto;
-  font-size: var(--fs-12);
-}
 .advanced-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: var(--s4);
-  padding: 0 var(--s4) var(--s4);
 }
 .advanced-grid .field:has(.input.narrow) {
   grid-column: 1 / -1;
-}
-.section:not(.disclosure) .advanced-grid {
-  padding: 0;
 }
 
 /* ---------------------------------------------------------------- */

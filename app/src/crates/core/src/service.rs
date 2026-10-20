@@ -243,8 +243,8 @@ pub(crate) struct Inner {
     le_stream: Mutex<Option<crate::le_stream::LeStreamDetails>>,
     /// An A2DP stream ran on the running stack (issue #84)
     streamed: AtomicBool,
-    /// The controller can stream LE Audio (ISO buffers), once a stack
-    /// with LE Audio was ready (issue #86)
+    /// The running adapter has LE Audio's isochronous channels: known once
+    /// a stack started on it (issue #86)
     le_support: Mutex<Option<bool>>,
 }
 
@@ -257,13 +257,6 @@ impl Inner {
         tracing::info!("state {state:?}: {}", msg.english());
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = state;
         let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::State(state, msg));
-    }
-
-    /// Notes whether the controller of a stack whose LE Audio is ready
-    /// can stream it (ISO buffers)
-    pub fn note_le_ready(&self, host: &BtHost) {
-        let (len, count) = host.le_iso_buffers();
-        *self.le_support.lock().unwrap_or_else(|e| e.into_inner()) = Some(len > 0 && count > 0);
     }
 
     pub fn stream_info(&self, info: StreamInfo) {
@@ -340,6 +333,7 @@ impl Inner {
                     h.set_afh_policy(self.opts.afh.as_deref().unwrap_or(&s.afh));
                     self.le_active.store(le_on, Ordering::Release);
                     self.streamed.store(false, Ordering::Release);
+                    self.note_le_capable(&h);
                     self.pump_events(&h);
                     return Ok(h);
                 }
@@ -352,6 +346,18 @@ impl Inner {
             }
         }
         Err(Msg::new(if last == InitFailure::NoAnswer { "error.btstack_no_answer" } else { "error.btstack_init" }))
+    }
+
+    /// Remembers whether the adapter the stack opened has LE Audio's
+    /// isochronous channels, also for the next start (adapter_caps.json)
+    fn note_le_capable(&self, host: &BtHost) {
+        let capable = host.le_audio_capable();
+        *self.le_support.lock().unwrap_or_else(|e| e.into_inner()) = Some(capable);
+        if self.opts.hci_tcp.is_none()
+            && let Some((vid, pid)) = hci_transport::usb::last_opened()
+        {
+            crate::adapter::save_le_audio(&self.opts.config_dir, vid, pid, capable);
+        }
     }
 
     /// Headphone buttons to Windows media keys, volume reports to the
@@ -719,8 +725,8 @@ impl Service {
         }
     }
 
-    /// The controller can stream LE Audio; None until a stack with LE Audio
-    /// (experimental) was ready
+    /// The running adapter has LE Audio's isochronous channels; None until a
+    /// stack started on it since the adapter settings last changed
     pub fn le_audio_supported(&self) -> Option<bool> {
         *self.inner.le_support.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -820,7 +826,6 @@ impl Service {
                 std::thread::sleep(Duration::from_millis(100));
             }
             if host.le_ready() {
-                self.inner.note_le_ready(&host);
                 self.inner.notify(StreamState::Idle, Msg::new("status.le_scanning"));
                 let results = host.le_scan(LE_SCAN);
                 let saved = crate::devices::load_le(&self.inner.opts.config_dir);
