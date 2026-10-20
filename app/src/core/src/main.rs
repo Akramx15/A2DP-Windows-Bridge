@@ -243,6 +243,7 @@ mod tests {
             firmware_present: Some(false),
             firmware_files: vec!["rtl8761bu_fw.bin".into(), "rtl8761bu_config.bin".into()],
             firmware_invalid: None,
+            firmware_download: true,
             vendor_note: None,
             restart_needed: false,
         };

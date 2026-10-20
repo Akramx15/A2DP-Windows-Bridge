@@ -1,15 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
-import { MockCore } from "../ipc/mock";
+import { MockCore, type MockScenario } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 
 let mock: MockCore | null = null;
 
-function start() {
+function start(scenario: MockScenario = "normal") {
   location.hash = "#/adapter";
   const calls: { method: string; params: unknown }[] = [];
-  mock = new MockCore({ speed: 0, onCall: (method, params) => calls.push({ method, params }) });
+  mock = new MockCore({ speed: 0, scenario, onCall: (method, params) => calls.push({ method, params }) });
   const core = createCore(mock);
   render(() => <App core={core} />);
   return { calls, mock };
@@ -50,5 +50,23 @@ describe("Adapter firmware", () => {
     const open = vi.spyOn(mock, "openFolder");
     fireEvent.click(await screen.findByRole("button", { name: "Open Config Folder" }));
     await waitFor(() => expect(open).toHaveBeenCalledWith("C:\\Users\\you\\AppData\\Roaming\\A2DPWB"));
+  });
+
+  it("downloads the missing firmware after the user has read the terms", async () => {
+    const { calls } = start();
+    // A chip whose files are not in the sample folder
+    const chip = (await screen.findByLabelText("Bluetooth Chip")) as HTMLSelectElement;
+    fireEvent.change(chip, { target: { value: [...chip.options].find((o) => o.text.startsWith("RTL8852BU"))!.value } });
+    expect(await screen.findByText("Firmware not found")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Download Firmware" }));
+    const dialog = await screen.findByRole("dialog", { name: "Download the Realtek firmware" });
+    expect(dialog).toHaveTextContent("LICENCE.rtlwifi_firmware.txt");
+    expect(calls.some((c) => c.method === "adapter.download_firmware")).toBe(false);
+    fireEvent.click([...dialog.querySelectorAll("button")].find((b) => b.textContent === "Download Firmware")!);
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "adapter.download_firmware")?.params).toEqual({ file: "rtl8852bu_fw.bin" }),
+    );
+    expect(await screen.findByText("Firmware downloaded. Bluetooth loads it at the next connection.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Firmware not found")).not.toBeInTheDocument());
   });
 });

@@ -6,7 +6,7 @@ import { type AppContext, useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
-import { ErrorPanel, WinusbDialog } from "../components/stream";
+import { ErrorPanel, FirmwareDownload, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
 import type { AdapterInfo, DriverKind, FirmwareFile } from "../ipc/types";
 import { adapterFirmwareTag, buildChipOptions, type ChipStatus, chipStatus, isAutoChip } from "../lib/chips";
@@ -228,6 +228,15 @@ function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
       {t("firmware.open_download_page")}
     </Button>
   );
+  // The core fetches the files itself; the page stays for doing it by hand
+  const realtekActions = (files: string[], fetch: boolean) => (
+    <>
+      <Show when={fetch}>
+        <FirmwareDownload files={files} kind="strong" />
+      </Show>
+      {download(LINKS.firmwareRealtek)}
+    </>
+  );
   const fileList = (files: string[]) => (
     <ul class="mono files">
       <For each={files}>{(f) => <li>{f}</li>}</For>
@@ -255,7 +264,7 @@ function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
         <Banner
           kind={missing ? "warn" : "info"}
           title={missing ? t("firmware.missing_manual") : undefined}
-          actions={download(LINKS.firmwareRealtek)}
+          actions={realtekActions(st.files, st.kind === "missing" && st.download)}
         >
           <p>{t("firmware.required_files")}</p>
           {fileList(st.files)}
@@ -265,7 +274,7 @@ function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
     }
     case "invalid":
       return (
-        <Banner kind="warn" title={t("firmware.invalid_short")} actions={download(LINKS.firmwareRealtek)}>
+        <Banner kind="warn" title={t("firmware.invalid_short")} actions={realtekActions(st.files, st.download)}>
           <p>{t("firmware.invalid", st.file)}</p>
           <p>{t("firmware.required_files")}</p>
           {fileList(st.files)}

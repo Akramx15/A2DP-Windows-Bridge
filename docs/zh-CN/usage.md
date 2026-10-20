@@ -60,7 +60,7 @@ nav_order: 2
 
 - 检测到的 USB Bluetooth 适配器及其芯片、**驱动程序**和**固件**。**刷新**会重新检测
 - **分配 WinUSB** / **恢复驱动程序**（请参阅[安装与设置](setup#winusb)）；每次操作 Windows 都会请求管理员权限
-- 用于固件的 **Bluetooth 芯片**，以及**打开下载页面**和**打开配置文件夹**（请参阅[固件](setup#firmware)）
+- 用于固件的 **Bluetooth 芯片**，以及**下载固件**、**打开下载页面**和**打开配置文件夹**（请参阅[固件](setup#firmware)）
 - **AFH**：自动、关或手动指定 Wi-Fi 信道（请参阅[链路质量与 AFH](#link-quality)）
 - **Bluetooth 堆栈**：已停止（在首次扫描或连接时启动）、正在启动、就绪或错误，以及**重新启动 Bluetooth**
 

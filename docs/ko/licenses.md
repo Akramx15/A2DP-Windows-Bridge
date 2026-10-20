@@ -45,7 +45,7 @@ A2DPWB 소스 코드는 Apache-2.0 또는 MIT 이중 라이선스입니다. 배�
 
 `a2dpwb-core.exe`에는 BTstack과 코덱 라이브러리가, `a2dpwb.exe`에는 창(Tauri, SolidJS, 아이콘)이 포함되어 있으며, `a2dpwb-driver.exe`는 Rust 코드로만 이루어져 있습니다. 창은 Microsoft Edge WebView2 Runtime이 렌더링하며, A2DPWB는 이를 함께 배포하지 않습니다(설치 프로그램은 Runtime이 없으면 Microsoft의 부트스트래퍼를 실행합니다).
 
-전체 라이선스 텍스트와 준수 사항은 [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md)를 참조하십시오. 설치 프로그램과 포터블 zip은 프로그램 옆의 `licenses/` 폴더에 라이선스 텍스트를 넣으며(Rust 크레이트는 cargo-about이 생성한 `licenses/rust-crates.txt`), `THIRD_PARTY_LICENSES.md`와 정확한 소스 커밋 목록인 `SOURCE.txt`도 함께 들어 있습니다. Realtek 펌웨어와 Zadig는 A2DPWB와 함께 배포되지 않습니다(링크만 제공).
+전체 라이선스 텍스트와 준수 사항은 [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md)를 참조하십시오. 설치 프로그램과 포터블 zip은 프로그램 옆의 `licenses/` 폴더에 라이선스 텍스트를 넣으며(Rust 크레이트는 cargo-about이 생성한 `licenses/rust-crates.txt`), `THIRD_PARTY_LICENSES.md`와 정확한 소스 커밋 목록인 `SOURCE.txt`도 함께 들어 있습니다. Realtek 펌웨어와 Zadig는 A2DPWB와 함께 배포되지 않습니다. Zadig는 문서에서 링크만 제공하며, Realtek 펌웨어는 사용자가 직접 다운로드합니다(다운로드 페이지에서, 또는 확인 후 kernel.org에서 가져오는 **펌웨어 다운로드**로).
 
 ## 중요 참고 사항
 

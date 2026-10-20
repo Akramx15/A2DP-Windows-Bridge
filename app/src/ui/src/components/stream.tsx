@@ -2,7 +2,7 @@
 // ring, the Connect / Disconnect button, volume, codec badge, link quality
 // and the error panel with its fix.
 
-import { createMemo, createSignal, onCleanup, Show, type JSX } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { t, tm } from "../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
@@ -353,6 +353,10 @@ export function useFixes() {
       return { label: t("ui.nav.adapter"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
     }
     if (code === "adapter.firmware_missing" || key.startsWith("firmware.")) {
+      // The Adapter screen downloads the files where the core can fetch them
+      if (snap.adapter.adapters.some((a) => a.firmware_present === false && a.firmware_download)) {
+        return { label: t("ui.home.firmware_fix"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
+      }
       const vendor = snap.adapter.adapters[0]?.vendor ?? "";
       return { label: t("firmware.open_download_page"), icon: "open", run: () => core.transport.openUrl(firmwareUrl(vendor)) };
     }
@@ -489,3 +493,44 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
   );
 }
 
+/** Fetches an adapter's Realtek files from linux-firmware once the user
+ *  has read where they come from and under which terms (issue #81) */
+export function FirmwareDownload(props: { files: string[]; kind?: "strong" }) {
+  const app = useApp();
+  const [open, setOpen] = createSignal(false);
+  const [busy, setBusy] = createSignal(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      await app.core.request("adapter.download_firmware", { file: props.files[0] });
+      app.notify(t("firmware.downloaded"));
+    } catch (e) {
+      app.notify(errorText(e), "error");
+    } finally {
+      setBusy(false);
+      setOpen(false);
+    }
+  };
+  return (
+    <>
+      <Button kind={props.kind} icon="arrow_download" busy={busy()} onClick={() => setOpen(true)}>
+        {t("firmware.download")}
+      </Button>
+      <Dialog
+        open={open()}
+        title={t("firmware.download_title")}
+        confirm={t("firmware.download")}
+        cancel={t("modal.cancel")}
+        busy={busy()}
+        onConfirm={go}
+        onCancel={() => setOpen(false)}
+      >
+        <p>{t("firmware.download_explain")}</p>
+        <ul class="mono files">
+          <For each={props.files}>{(f) => <li>{f}</li>}</For>
+        </ul>
+        <p class="muted">{t("firmware.download_license")}</p>
+      </Dialog>
+    </>
+  );
+}

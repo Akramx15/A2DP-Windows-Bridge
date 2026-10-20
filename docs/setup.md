@@ -118,6 +118,8 @@ Realtek-based USB Bluetooth adapters (e.g., TP-Link UB500, RTL8761BU dongles) re
 
 The **Adapter** screen (and the setup's **Driver and firmware** step) shows the firmware of the adapter: **Firmware OK**, **No firmware files needed**, or **Firmware not found** with the required file names. Use the **Open Download Page** button to open the [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) page in your browser, then use **Open Config Folder** to open the destination folder. Download the required `.bin` files and place them in the config folder.
 
+For the chips in the **Bluetooth Chip** list, **Download Firmware** does this for you: after you confirm, A2DPWB downloads the files from linux-firmware (kernel.org), checks each one against the SHA-256 it expects and saves it in the config folder. A chip that linux-firmware has no config file for gets an empty `_config.bin` (the chip then uses its own settings). The files are not part of A2DPWB; they are downloaded only when you ask for them.
+
 A2DPWB detects the adapter's chipset and shows which firmware files are needed.
 
 Without the firmware, a Realtek adapter still opens and answers on its ROM code, so it looks fine, but connecting or streaming fails. A2DPWB then says that the firmware is not loaded. A module keeps firmware uploaded in an earlier session until it loses power, so with the files gone it may keep working until the PC is restarted or the adapter is unplugged.

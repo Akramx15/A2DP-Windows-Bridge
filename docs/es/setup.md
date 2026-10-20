@@ -119,6 +119,8 @@ Los adaptadores Bluetooth USB basados en Realtek (p. ej., TP-Link UB500, llaves 
 
 La pantalla **Adaptador** (y el paso **Controlador y firmware** de la configuración inicial) muestra el firmware del adaptador: **Firmware correcto**, **No necesita archivos de firmware** o **Firmware no encontrado** con los nombres de los archivos necesarios. Use el botón **Abrir página de descarga** para abrir la página [linux-firmware/rtl_bt](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) en el navegador y, después, **Abrir carpeta de configuración** para abrir la carpeta de destino. Descargue los archivos `.bin` necesarios y colóquelos en la carpeta de configuración.
 
+Para los chips de la lista **Chip Bluetooth**, **Descargar firmware** lo hace por usted: tras confirmar, A2DPWB descarga los archivos de linux-firmware (kernel.org), comprueba cada uno con el SHA-256 esperado y lo guarda en la carpeta de configuración. Un chip para el que linux-firmware no tiene archivo config recibe un `_config.bin` vacío (el chip usa entonces su propia configuración). Los archivos no forman parte de A2DPWB; solo se descargan cuando usted lo pide.
+
 A2DPWB detecta el chipset del adaptador y muestra qué archivos de firmware se necesitan.
 
 Sin el firmware, un adaptador Realtek se abre igualmente y responde con su código de ROM, así que parece correcto, pero la conexión o la transmisión fallan. A2DPWB indica entonces que el firmware no está cargado. Un módulo conserva el firmware cargado en una sesión anterior hasta que pierde la alimentación, así que, sin los archivos, puede seguir funcionando hasta que se reinicie el PC o se desconecte el adaptador.

@@ -93,6 +93,10 @@ pub struct AdapterInfo {
     /// page): firmware.invalid
     #[serde(default)]
     pub firmware_invalid: Option<String>,
+    /// A2DPWB can fetch those files from linux-firmware
+    /// (adapter.download_firmware)
+    #[serde(default)]
+    pub firmware_download: bool,
     /// What to tell about other vendors' firmware (firmware.vendor_intel,
     /// _broadcom, _csr, _unsupported); None for Realtek and unknown chips
     #[serde(default)]
@@ -714,6 +718,11 @@ pub enum Method {
     /// -> FirmwareFile[]: the Realtek firmware pairs in the settings folder
     #[serde(rename = "adapter.firmware_files")]
     AdapterFirmwareFiles,
+    /// Fetches the Realtek files of the chip whose firmware file this is
+    /// (an AdapterInfo.firmware_files entry) from linux-firmware into the
+    /// settings folder -> AdapterInfo[]
+    #[serde(rename = "adapter.download_firmware")]
+    AdapterDownloadFirmware { file: String },
     /// -> AudioDevice[]
     #[serde(rename = "audio.devices")]
     AudioDevices,

@@ -45,7 +45,7 @@ Der Quellcode von A2DPWB ist unter Apache-2.0 oder MIT doppelt lizenziert. Die v
 
 `a2dpwb-core.exe` enthält BTstack und die Codec-Bibliotheken, `a2dpwb.exe` das Fenster (Tauri, SolidJS, die Symbole), `a2dpwb-driver.exe` nur Rust-Code. Das Fenster wird von der Microsoft Edge WebView2 Runtime dargestellt, die A2DPWB nicht mitliefert (das Installationsprogramm führt den Bootstrapper von Microsoft aus, wenn sie fehlt).
 
-Die vollständigen Lizenztexte und Hinweise zur Einhaltung finden Sie in [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md). Das Installationsprogramm und das portable ZIP legen die Lizenztexte in einem Ordner `licenses/` neben den Programmen ab (die Rust-Crates in `licenses/rust-crates.txt`, erzeugt von cargo-about), zusammen mit `THIRD_PARTY_LICENSES.md` und einer Datei `SOURCE.txt` mit den genauen Quellcode-Commits. Realtek-Firmware und Zadig werden nicht mit A2DPWB verteilt (nur Links).
+Die vollständigen Lizenztexte und Hinweise zur Einhaltung finden Sie in [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md). Das Installationsprogramm und das portable ZIP legen die Lizenztexte in einem Ordner `licenses/` neben den Programmen ab (die Rust-Crates in `licenses/rust-crates.txt`, erzeugt von cargo-about), zusammen mit `THIRD_PARTY_LICENSES.md` und einer Datei `SOURCE.txt` mit den genauen Quellcode-Commits. Realtek-Firmware und Zadig werden nicht mit A2DPWB verteilt: Die Dokumentation verlinkt Zadig, und die Realtek-Firmware lädt der Benutzer selbst herunter, über die Downloadseite oder mit **Firmware herunterladen**, das sie nach Bestätigung von kernel.org holt.
 
 ## Wichtige Hinweise
 

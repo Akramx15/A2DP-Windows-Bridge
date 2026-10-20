@@ -45,7 +45,7 @@ A2DPWB 源代码采用 Apache-2.0 或 MIT 双重许可。分发的 `a2dpwb-core.
 
 `a2dpwb-core.exe` 包含 BTstack 和各编解码器库，`a2dpwb.exe` 包含窗口（Tauri、SolidJS、图标），`a2dpwb-driver.exe` 只包含 Rust 代码。窗口由 Microsoft Edge WebView2 Runtime 渲染，A2DPWB 不附带该运行时（缺少时，安装程序会运行 Microsoft 的引导程序）。
 
-完整的许可证文本和合规详情请参阅 [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md)。安装程序和便携版 zip 会在程序旁的 `licenses/` 文件夹中放入各许可证文本（Rust crate 的许可证位于由 cargo-about 生成的 `licenses/rust-crates.txt`），并附有 `THIRD_PARTY_LICENSES.md` 以及列出确切源代码提交的 `SOURCE.txt`。Realtek 固件和 Zadig 不随 A2DPWB 分发（仅提供链接）。
+完整的许可证文本和合规详情请参阅 [THIRD_PARTY_LICENSES.md](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/main/THIRD_PARTY_LICENSES.md)。安装程序和便携版 zip 会在程序旁的 `licenses/` 文件夹中放入各许可证文本（Rust crate 的许可证位于由 cargo-about 生成的 `licenses/rust-crates.txt`），并附有 `THIRD_PARTY_LICENSES.md` 以及列出确切源代码提交的 `SOURCE.txt`。Realtek 固件和 Zadig 不随 A2DPWB 分发：文档仅提供 Zadig 的链接，Realtek 固件由用户自行下载（通过下载页面，或使用确认后从 kernel.org 获取的**下载固件**）。
 
 ## 重要说明
 

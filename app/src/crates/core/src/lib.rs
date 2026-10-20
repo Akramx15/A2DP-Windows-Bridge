@@ -23,6 +23,7 @@ pub use messages::Msg;
 pub use service::{LeCliOptions, ScannedDevice, Service, ServiceEvent, ServiceOptions};
 pub use stream::{SourceInfo, SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync};
 pub mod diag;
+pub mod firmware;
 pub mod receiver;
 pub mod update;
 pub mod volume_sync;

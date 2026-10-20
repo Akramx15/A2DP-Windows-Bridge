@@ -60,7 +60,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 
 - Die erkannten USB-Bluetooth-Adapter mit ihrem Chip, **Treiber** und **Firmware**. **Aktualisieren** sucht erneut
 - **WinUSB zuweisen** / **Treiber wiederherstellen** (siehe [Einrichtung](setup#winusb)); Windows fragt jedes Mal nach Administratorrechten
-- **Bluetooth-Chip** für die Firmware, mit **Downloadseite öffnen** und **Konfigurationsordner öffnen** (siehe [Firmware](setup#firmware))
+- **Bluetooth-Chip** für die Firmware, mit **Firmware herunterladen**, **Downloadseite öffnen** und **Konfigurationsordner öffnen** (siehe [Firmware](setup#firmware))
 - **AFH**: Automatisch, Aus oder Manuell (Wi-Fi-Kanäle) (siehe [Verbindungsqualität und AFH](#link-quality))
 - **Bluetooth-Stack**: angehalten (startet mit der ersten Suche oder Verbindung), wird gestartet, bereit oder Fehler, sowie **Bluetooth neu starten**
 

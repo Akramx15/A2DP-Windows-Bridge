@@ -228,6 +228,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 driver_service: a.device.driver.service.clone(),
                 realtek_chip: a.realtek_pid.and_then(chips::realtek_chip_name).map(str::to_owned),
                 firmware_present: check.as_ref().map(|c| c.present),
+                firmware_download: files.as_ref().is_some_and(|(f, _)| a2dpwb_core::firmware::available(f)),
                 firmware_files: files.map(|(f, c)| vec![f, c]).unwrap_or_default(),
                 firmware_invalid: check.and_then(|c| c.invalid_file),
                 vendor_note: vendor_note(a.vendor),
@@ -1269,6 +1270,25 @@ impl CoreState {
                 }))
                 .await
             }
+            Method::AdapterDownloadFirmware { file } => {
+                blocking(Box::new(move |me| {
+                    if !a2dpwb_core::firmware::available(&file) {
+                        return Err(bad_request(
+                            "firmware.no_download",
+                            "adapter.download_firmware",
+                            format!("no download for {file}"),
+                        ));
+                    }
+                    if let Err(e) = a2dpwb_core::firmware::download(&me.config_dir(), &file) {
+                        tracing::warn!("firmware download failed: {e}");
+                        return Err(err("firmware.download_failed", "firmware.download_failed"));
+                    }
+                    // The files are there now: a stack started without them
+                    // loads them anew
+                    Ok(json(&me.refresh_adapters()))
+                }))
+                .await
+            }
             Method::AudioDevices => {
                 blocking(Box::new(|_| {
                     let list: Vec<AudioDevice> = audio_capture::render_devices()
@@ -1484,6 +1504,7 @@ mod tests {
             firmware_present: present,
             firmware_files: vec!["rtl8761bu_fw.bin".into(), "rtl8761bu_config.bin".into()],
             firmware_invalid: invalid.map(str::to_owned),
+            firmware_download: true,
             vendor_note: None,
             restart_needed: false,
         }
