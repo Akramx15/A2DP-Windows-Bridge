@@ -202,12 +202,11 @@ impl HostApp {
         let pid = self.setup.realtek_pid;
         if pid != 0 {
             tracing::info!("Realtek adapter PID 0x{pid:04X}, firmware folder {}", self.setup.firmware_dir.display());
-            // BTstack's Realtek driver builds "${folder}/${name}" without the
-            // .bin extension the files have (linux-firmware, our download):
-            // make extension-less aliases (hard link, else copy)
+            // The driver opens the .bin files (csrc/realtek.c); the
+            // extension-less copies earlier versions made are not needed
             if let Some((fw, cfg)) = self.setup.realtek_files.clone() {
-                ensure_alias(&self.setup.firmware_dir, &fw);
-                ensure_alias(&self.setup.firmware_dir, &cfg);
+                remove_alias(&self.setup.firmware_dir, &fw);
+                remove_alias(&self.setup.firmware_dir, &cfg);
             }
             stack.realtek_setup(pid, &self.setup.firmware_dir.to_string_lossy());
             stack.set_chipset_realtek();
@@ -265,7 +264,7 @@ impl HostApp {
                 (0, _) | (_, None) => Vec::new(),
                 (_, Some((fw, cfg))) => [fw, cfg]
                     .into_iter()
-                    // ensure_alias also takes the extension-less file alone
+                    // The driver also takes the extension-less file alone
                     .filter(|s| {
                         let dir = &self.setup.firmware_dir;
                         !dir.join(format!("{s}.bin")).is_file() && !dir.join(s.as_str()).is_file()
@@ -1464,12 +1463,12 @@ impl App for HostApp {
     }
 }
 
-/// BTstack's Realtek driver opens "${folder}/${stem}" (no extension):
-/// create it from "${stem}.bin", and replace one that differs from it (a
-/// copy of an older file, or a hard link to a .bin replaced since: BTstack
-/// would upload the old one). The sizes go to the log, for telling why the
+/// Earlier versions copied (hard linked) "${stem}.bin" to "${stem}" for
+/// BTstack's Realtek driver, which now opens the .bin itself: delete such a
+/// copy. One that differs from the .bin, or has no .bin beside it, is the
+/// user's own and stays. The sizes go to the log, for telling why the
 /// firmware was not loaded.
-fn ensure_alias(dir: &Path, stem: &str) {
+fn remove_alias(dir: &Path, stem: &str) {
     if stem.is_empty() {
         return;
     }
@@ -1484,20 +1483,11 @@ fn ensure_alias(dir: &Path, stem: &str) {
         return;
     };
     tracing::info!("{stem}.bin: {} bytes", source_data.len());
-    if let Some(a) = alias_data {
-        if a == source_data {
-            return;
+    if alias_data.is_some_and(|a| a == source_data) {
+        match std::fs::remove_file(&alias) {
+            Ok(()) => tracing::info!("deleted {}, a copy of {stem}.bin", alias.display()),
+            Err(e) => tracing::warn!("could not delete {}: {e}", alias.display()),
         }
-        tracing::info!("{stem} ({} bytes) differs from {stem}.bin, replacing it", a.len());
-        if let Err(e) = std::fs::remove_file(&alias) {
-            tracing::error!("could not delete {}: {e}", alias.display());
-            return;
-        }
-    }
-    if std::fs::hard_link(&source, &alias).is_ok() {
-        tracing::info!("linked {stem} -> {}", source.display());
-    } else if let Err(e) = std::fs::copy(&source, &alias) {
-        tracing::error!("could not create {}: {e}", alias.display());
     }
 }
 
@@ -1529,31 +1519,33 @@ fn find_bcm_hcd(dir: &Path, adapters: &[(u16, u16)]) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::ensure_alias;
+    use super::remove_alias;
 
     #[test]
-    fn firmware_alias_follows_the_bin() {
+    fn firmware_alias_is_removed() {
         let dir = std::env::temp_dir().join(format!("a2dpwb_alias_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let (alias, bin) = (dir.join("rtl8761bu_fw"), dir.join("rtl8761bu_fw.bin"));
 
-        ensure_alias(&dir, "rtl8761bu_fw"); // neither there: nothing to do
+        remove_alias(&dir, "rtl8761bu_fw"); // neither there: nothing to do
+        std::fs::write(&bin, b"firmware").unwrap();
+        remove_alias(&dir, "rtl8761bu_fw");
+        assert!(!alias.exists(), "no alias is made");
+
+        // A copy the earlier versions made goes
+        std::fs::hard_link(&bin, &alias).unwrap();
+        remove_alias(&dir, "rtl8761bu_fw");
         assert!(!alias.exists());
-        std::fs::write(&bin, b"new firmware").unwrap();
-        ensure_alias(&dir, "rtl8761bu_fw");
-        assert_eq!(std::fs::read(&alias).unwrap(), b"new firmware");
+        assert_eq!(std::fs::read(&bin).unwrap(), b"firmware");
 
-        // An alias left from an older file is replaced
-        std::fs::remove_file(&alias).unwrap();
-        std::fs::write(&alias, b"old").unwrap();
-        ensure_alias(&dir, "rtl8761bu_fw");
-        assert_eq!(std::fs::read(&alias).unwrap(), b"new firmware");
-
-        // Without the .bin the alias stays
+        // A different file, or one without a .bin, stays
+        std::fs::write(&alias, b"other").unwrap();
+        remove_alias(&dir, "rtl8761bu_fw");
+        assert!(alias.exists());
         std::fs::remove_file(&bin).unwrap();
-        ensure_alias(&dir, "rtl8761bu_fw");
-        assert_eq!(std::fs::read(&alias).unwrap(), b"new firmware");
+        remove_alias(&dir, "rtl8761bu_fw");
+        assert!(alias.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
