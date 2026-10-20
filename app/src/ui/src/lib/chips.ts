@@ -187,3 +187,21 @@ export function adapterFirmwareTag(
   if (a.vendor_note || setting.bt_chip_pid === CHIP_NOT_REALTEK) return { key: "ui.adapter.firmware_not_realtek", status: "good" };
   return { key: "ui.adapter.firmware_choose_chip", status: "warn" };
 }
+
+/**
+ * The adapter the chip choice is shown with on the Adapter screen, -1 for
+ * none: the one chipStatus reports on (the Realtek adapter, else one the core
+ * checked files for, else one with a vendor note), else the first. The
+ * setting is one for all adapters; the other cards keep their short tag.
+ */
+export function chipTargetIndex(adapters: readonly AdapterFirmware[]): number {
+  for (const pick of [
+    (a: AdapterFirmware) => a.realtek_chip !== null,
+    (a: AdapterFirmware) => a.firmware_present !== null,
+    (a: AdapterFirmware) => a.vendor_note !== null,
+  ]) {
+    const i = adapters.findIndex(pick);
+    if (i >= 0) return i;
+  }
+  return adapters.length > 0 ? 0 : -1;
+}

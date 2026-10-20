@@ -2187,6 +2187,19 @@ option {
   gap: var(--s3);
   flex-wrap: wrap;
 }
+/* The chip choice inside the card of the adapter it applies to */
+.adapter-firmware {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+.adapter-firmware > h3 {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
 
 .about {
   display: flex;

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
 import { MockCore, type MockScenario } from "../ipc/mock";
@@ -29,6 +29,9 @@ describe("Adapter firmware", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "adapter.firmware_files")).toBe(true));
     const chip = screen.getByLabelText("Bluetooth Chip") as HTMLSelectElement;
     expect(chip.options[chip.selectedIndex].text).toBe("Auto (RTL8761BU)");
+    // In the card of the adapter it applies to, not a section of its own
+    expect(chip.closest(".adapter-card")).not.toBeNull();
+    expect(within(chip.closest(".adapter-card") as HTMLElement).getByRole("group", { name: "Bluetooth Firmware Selection" })).toContainElement(chip);
     // The section lists the files the detected chip needs
     expect(await screen.findByText("rtl8761bu_config.bin")).toBeInTheDocument();
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chipTargetIndex,
   type AdapterFirmware,
   adapterFirmwareTag,
   buildChipOptions,
@@ -197,5 +198,17 @@ describe("mock core firmware state", () => {
     expect(adapterWithFirmware(rtl, setting(CHIP_CUSTOM, "custom"), folder)).toMatchObject({ firmware_present: false, firmware_files: pair("custom") });
     // Auto without a detected Realtek chip: nothing to load
     expect(adapterWithFirmware({ ...rtl, realtek_chip: null }, setting(CHIP_AUTO), folder)).toMatchObject({ firmware_present: null });
+  });
+});
+
+describe("chipTargetIndex", () => {
+  const base = { vendor: "x", realtek_chip: null, firmware_present: null, firmware_files: [], vendor_note: null };
+  it("picks the Realtek adapter, then a checked one, then a vendor note, then the first", () => {
+    expect(chipTargetIndex([])).toBe(-1);
+    expect(chipTargetIndex([base, base])).toBe(0);
+    const note = { ...base, vendor_note: { key: "firmware.vendor_intel", args: [] } };
+    expect(chipTargetIndex([base, note])).toBe(1);
+    expect(chipTargetIndex([note, { ...base, firmware_present: false }])).toBe(1);
+    expect(chipTargetIndex([note, base, { ...base, realtek_chip: "RTL8761BU" }])).toBe(2);
   });
 });
