@@ -5,7 +5,7 @@
 //! the next round (as v1). The media payload header goes in front: SBC,
 //! LDAC and Opus (and Opus 05) carry the frame count in the low 4 bits (no fragmentation),
 //! LHDC V5 the frame count shifted left by 2 and a sequence number; the
-//! others none. LDAC and Opus send each encoder output as a packet of its
+//! others none. LDAC, Opus and AAC send each encoder output as a packet of its
 //! own. FastStream packets are always three padded SBC frames (PipeWire), so
 //! a round does not flush a partly filled one ([`Packetizer::end_round`]).
 
@@ -94,8 +94,11 @@ impl Packetizer {
         }
         // libldac sizes each output for one packet (frames per 2-DH5 / 3-DH5):
         // send it as is, as Android does, rather than merging outputs. Opus:
-        // one frame per packet (Android; PipeWire's decoder takes no other)
-        if matches!(self.kind, CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05) {
+        // one frame per packet (Android; PipeWire's decoder takes no other).
+        // AAC: one LATM AudioMuxElement per packet; concatenated ones (small
+        // frames of quiet audio) are not decodable, and sinks such as the JBL
+        // Tune 510BT stay silent (issue #87)
+        if matches!(self.kind, CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05 | CodecKind::Aac) {
             sent += self.flush(send);
         }
         sent
@@ -230,6 +233,17 @@ mod tests {
             assert_eq!(out, vec![(vec![1, 0xFC, 1, 2], 0), (vec![1, 0xFC, 3], 960)], "{kind}");
             assert_eq!(max_raw(kind, 1011, 48000), 1010);
         }
+    }
+
+    #[test]
+    fn aac_one_frame_per_packet() {
+        // Small AAC frames (silence) are not merged into one packet
+        let mut p = Packetizer::new(CodecKind::Aac, 660, 48000);
+        let mut out = Vec::new();
+        p.push(&[0x47, 1, 2], 1, 0, &mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+        p.push(&[0x47, 3], 1, 1024, &mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+        p.flush(&mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+        assert_eq!(out, vec![(vec![0x47, 1, 2], 0), (vec![0x47, 3], 1024)]);
     }
 
     #[test]
