@@ -11,8 +11,6 @@ use codec::{CodecKind, Encoder, EncoderConfig, EncoderError, Pcm, PcmFormat, Pee
 use std::f64::consts::PI;
 
 const SECONDS: usize = 3;
-/// fdk-aac's default StreamMuxConfig repetition for LATM (v1 keeps it)
-const SMC_PERIOD: usize = 10;
 
 fn config(sample_rate: u32, channels: u32, quality: Quality, mtu: u16) -> EncoderConfig {
     EncoderConfig { sample_rate, channels, quality, mtu, bits_per_sample: 16, abr: false, peer: PeerParams::default() }
@@ -116,7 +114,8 @@ fn encode_tone(cfg: &EncoderConfig) -> (AacEncoder, Vec<Vec<u8>>) {
         assert_eq!(e.frames, 1, "call {call}");
         assert!(e.bytes > 0 && e.bytes <= usize::from(cfg.mtu), "call {call}: {} bytes, MTU {}", e.bytes, cfg.mtu);
         let latm = parse_latm(&out[..e.bytes], cfg.sample_rate, cfg.channels);
-        assert_eq!(latm.smc, packets.len() % SMC_PERIOD == 0, "StreamMuxConfig in frame {}", packets.len());
+        // StreamMuxConfig in every frame (issue #87)
+        assert!(latm.smc, "no StreamMuxConfig in frame {}", packets.len());
         assert!(latm.payload_len > 0);
         timestamp += e.frames as usize * enc.pcm_frames_per_codec_frame();
         packets.push(out[..e.bytes].to_vec());
@@ -232,4 +231,19 @@ fn create_dispatches() {
     let enc = codec::create(CodecKind::Aac, &config(44100, 2, Quality::Standard, 1000)).unwrap();
     assert_eq!(enc.kind(), CodecKind::Aac);
     assert_eq!(enc.bitrate_kbps(), 192);
+}
+
+/// The sink's largest bit rate (the configuration's) caps every quality
+#[test]
+fn sink_bit_rate_limit() {
+    for (limit, quality, kbps) in
+        [(128_000, Quality::High, 128), (200_000, Quality::Standard, 192), (0, Quality::High, 256)]
+    {
+        let cfg = EncoderConfig {
+            peer: PeerParams { aac_max_bitrate: limit, ..PeerParams::default() },
+            ..config(44100, 2, quality, 1000)
+        };
+        let enc = AacEncoder::new(&cfg).unwrap();
+        assert_eq!(enc.bitrate_kbps(), kbps, "limit {limit}, {quality:?}");
+    }
 }

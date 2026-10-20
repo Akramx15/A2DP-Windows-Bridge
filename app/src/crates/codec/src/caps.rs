@@ -170,6 +170,47 @@ impl SbcCapabilities {
     }
 }
 
+// AAC codec information (A2DP 4.5.2), as BTstack's AAC capability event
+// splits it: object types (byte 0 >> 1) 0x40 MPEG-2 AAC-LC 0x20 MPEG-4
+// AAC-LC; sampling frequencies (12 bits) 0x010 44.1k 0x008 48k; channels
+// 0x08 one 0x04 two; the largest bit rate (0 = not given)
+pub const AAC_OBJ_MPEG2_LC: u8 = 0x40;
+pub const AAC_OBJ_MPEG4_LC: u8 = 0x20;
+pub const AAC_FREQ_44100: u16 = 0x010;
+pub const AAC_FREQ_48000: u16 = 0x008;
+pub const AAC_CH_1: u8 = 0x08;
+pub const AAC_CH_2: u8 = 0x04;
+/// The largest AAC bit rate configured (the High quality's)
+const AAC_MAX_BITRATE: u32 = 256_000;
+
+/// A remote SEP's AAC capabilities (the fields of BTstack's
+/// A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CAPABILITY)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AacCapabilities {
+    pub object_types: u8,
+    pub sampling_frequency: u16,
+    pub channels: u8,
+    pub bit_rate: u32,
+    pub vbr: bool,
+}
+
+impl AacCapabilities {
+    /// AAC-LC (MPEG-2 or MPEG-4) at 44.1 or 48 kHz, mono or stereo: what
+    /// the encoder makes
+    pub fn usable(&self) -> bool {
+        self.object_types & (AAC_OBJ_MPEG2_LC | AAC_OBJ_MPEG4_LC) != 0
+            && self.sampling_frequency & (AAC_FREQ_44100 | AAC_FREQ_48000) != 0
+            && self.channels & (AAC_CH_1 | AAC_CH_2) != 0
+    }
+}
+
+/// AAC object type of a configuration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AacObjectType {
+    Mpeg2Lc,
+    Mpeg4Lc,
+}
+
 /// The local SEP a codec streams from: SBC XQ shares SBC's (it offers all
 /// channel modes and a bitpool up to 53)
 pub fn endpoint_kind(kind: CodecKind) -> CodecKind {
@@ -268,12 +309,13 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
         config: vec![0x11, 0x15, 2, 53],
     });
     if CodecKind::Aac.available() {
-        // MPEG-2 AAC-LC, 44.1+48k, 2 channels, 256 kbps
+        // MPEG-2 and MPEG-4 AAC-LC, 44.1+48k (byte 1 0x01, byte 2 0x80),
+        // 1 or 2 channels, 256 kbps; configured 44.1k stereo
         eps.push(LocalEndpoint {
             kind: CodecKind::Aac,
             codec_type: CODEC_TYPE_AAC,
-            caps: vec![0x80, 0x0C, 0x04, 0x03, 0xE8, 0x00],
-            config: vec![0x80, 0x04, 0x04, 0x03, 0xE8, 0x00],
+            caps: vec![0xC0, 0x01, 0x8C, 0x03, 0xE8, 0x00],
+            config: vec![0x80, 0x01, 0x04, 0x03, 0xE8, 0x00],
         });
     }
     if CodecKind::LhdcV5.available() {
@@ -334,6 +376,8 @@ pub struct RemoteCaps {
     /// The SBC SEP's capabilities, when reported (SBC XQ needs them)
     pub sbc_caps: Option<SbcCapabilities>,
     pub aac: Option<RemoteSep>,
+    /// The AAC SEP's capabilities, when reported
+    pub aac_caps: Option<AacCapabilities>,
     pub ldac: Option<RemoteSep>,
     pub aptx: Option<RemoteSep>,
     pub aptx_hd: Option<RemoteSep>,
@@ -394,7 +438,7 @@ impl RemoteCaps {
         match kind {
             CodecKind::Sbc => self.sbc,
             CodecKind::SbcXq => self.sbc.filter(|_| self.sbc_caps.is_some_and(|c| c.allows_xq())),
-            CodecKind::Aac => self.aac,
+            CodecKind::Aac => self.aac.filter(|_| self.aac_caps.is_none_or(|c| c.usable())),
             CodecKind::Ldac => self.ldac,
             CodecKind::Aptx => self.aptx,
             CodecKind::AptxHd => self.aptx_hd,
@@ -441,8 +485,38 @@ impl RemoteCaps {
         (min.max(2).min(max), max)
     }
 
+    /// An AAC SEP whose capabilities are not known
     pub fn add_aac(&mut self, seid: u8) {
         self.aac = Some(RemoteSep { seid });
+        self.aac_caps = None;
+    }
+
+    /// An AAC SEP with its capabilities. With several, the first usable one
+    /// wins, else the last.
+    pub fn add_aac_caps(&mut self, seid: u8, caps: AacCapabilities) {
+        if self.aac_caps.is_some_and(|c| c.usable()) {
+            return;
+        }
+        self.aac = Some(RemoteSep { seid });
+        self.aac_caps = Some(caps);
+    }
+
+    /// The largest AAC bit rate of the configuration: the sink's when it
+    /// gives one below [`AAC_MAX_BITRATE`] (as PipeWire's select_config)
+    pub fn aac_max_bitrate(&self) -> u32 {
+        match self.aac_caps.map_or(0, |c| c.bit_rate) {
+            0 => AAC_MAX_BITRATE,
+            b => b.min(AAC_MAX_BITRATE),
+        }
+    }
+
+    /// Capture rate for AAC: 44.1 or 48 kHz as the sink lists them,
+    /// preferring 44.1k for `wanted` 44.1k, else 48k
+    pub fn pick_aac_sample_rate(&self, wanted: u32) -> u32 {
+        let freqs = self.aac_caps.map_or(AAC_FREQ_44100 | AAC_FREQ_48000, |c| c.sampling_frequency);
+        let has441 = freqs & AAC_FREQ_44100 != 0;
+        let has48 = freqs & AAC_FREQ_48000 != 0;
+        if (wanted == 44100 && has441) || !has48 { 44100 } else { 48000 }
     }
 
     /// A vendor codec capability (media codec information) of SEP `seid`
@@ -720,7 +794,27 @@ impl RemoteCaps {
                 }
             }
             CodecKind::Aac => {
-                ConfigRequest::Aac { sampling_frequency: sample_rate, channels: channels as u8, bit_rate: 256_000 }
+                let caps = self.aac_caps;
+                let freq = match sample_rate {
+                    44100 => AAC_FREQ_44100,
+                    48000 => AAC_FREQ_48000,
+                    _ => 0,
+                };
+                if freq == 0 || caps.is_some_and(|c| c.sampling_frequency & freq == 0) {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                // MPEG-2 AAC-LC (mandatory for sinks) unless the sink lists
+                // MPEG-4 AAC-LC only; the bit stream is the same
+                let object_type = match caps {
+                    Some(c) if c.object_types & AAC_OBJ_MPEG2_LC == 0 => AacObjectType::Mpeg4Lc,
+                    _ => AacObjectType::Mpeg2Lc,
+                };
+                ConfigRequest::Aac {
+                    object_type,
+                    sampling_frequency: sample_rate,
+                    channels: channels as u8,
+                    bit_rate: self.aac_max_bitrate(),
+                }
             }
             CodecKind::Ldac => {
                 let freq = match sample_rate {
@@ -870,8 +964,8 @@ pub enum ConfigRequest {
     /// 16 blocks, 8 subbands, loudness; SBC joint stereo, SBC XQ dual
     /// channel (both mono for one channel)
     Sbc { sampling_frequency: u16, channel_mode: ChannelMode, min_bitpool: u8, max_bitpool: u8 },
-    /// MPEG-2 AAC-LC, constant bit rate
-    Aac { sampling_frequency: u32, channels: u8, bit_rate: u32 },
+    /// AAC-LC, constant bit rate up to `bit_rate`
+    Aac { object_type: AacObjectType, sampling_frequency: u32, channels: u8, bit_rate: u32 },
     /// Vendor codec information
     Vendor(Vec<u8>),
 }
@@ -994,6 +1088,74 @@ mod tests {
         assert_eq!(c.kind, CodecKind::Sbc);
         assert_eq!(c.replaced, Some((CodecKind::Ldac, Unavailable::SepInUse { in_use: 1, total: 2 })));
         assert!(choose(&caps, Some(CodecKind::Ldac), false).is_err());
+    }
+
+    #[test]
+    fn aac_caps_and_configuration() {
+        let all = AacCapabilities {
+            object_types: AAC_OBJ_MPEG2_LC | AAC_OBJ_MPEG4_LC,
+            sampling_frequency: AAC_FREQ_44100 | AAC_FREQ_48000,
+            channels: AAC_CH_1 | AAC_CH_2,
+            bit_rate: 320_000,
+            vbr: true,
+        };
+        // Unknown capabilities: as before
+        let mut caps = RemoteCaps::default();
+        caps.add_aac(2);
+        assert_eq!(caps.aac_max_bitrate(), 256_000);
+        assert_eq!((caps.pick_aac_sample_rate(44100), caps.pick_aac_sample_rate(96000)), (44100, 48000));
+
+        // A sink above 256 kbps: 256 kbps, MPEG-2 AAC-LC
+        caps.add_aac_caps(2, all);
+        let c = caps.configuration(CodecKind::Aac, 48000, 2, 16).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Aac {
+                object_type: AacObjectType::Mpeg2Lc,
+                sampling_frequency: 48000,
+                channels: 2,
+                bit_rate: 256_000
+            }
+        );
+
+        // 128 kbps, 44.1 kHz, MPEG-4 AAC-LC only
+        let mut caps = RemoteCaps::default();
+        caps.add_aac_caps(
+            3,
+            AacCapabilities {
+                object_types: AAC_OBJ_MPEG4_LC,
+                sampling_frequency: AAC_FREQ_44100,
+                bit_rate: 128_000,
+                ..all
+            },
+        );
+        assert_eq!(caps.aac_max_bitrate(), 128_000);
+        assert_eq!(caps.pick_aac_sample_rate(48000), 44100);
+        assert_eq!(
+            caps.configuration(CodecKind::Aac, 48000, 2, 16),
+            Err(ConfigError::SampleRate(CodecKind::Aac, 48000))
+        );
+        let c = caps.configuration(CodecKind::Aac, 44100, 2, 16).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Aac {
+                object_type: AacObjectType::Mpeg4Lc,
+                sampling_frequency: 44100,
+                channels: 2,
+                bit_rate: 128_000
+            }
+        );
+
+        // HE-AAC only: no AAC for Auto; a later usable SEP is taken
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        caps.add_aac_caps(2, AacCapabilities { object_types: 0x08, ..all });
+        assert!(!caps.has(CodecKind::Aac));
+        assert_eq!(caps.best(), Some(CodecKind::Sbc));
+        caps.add_aac_caps(4, all);
+        assert_eq!(caps.sep(CodecKind::Aac), Some(RemoteSep { seid: 4 }));
+        caps.add_aac_caps(5, AacCapabilities { object_types: 0x08, ..all });
+        assert_eq!(caps.sep(CodecKind::Aac), Some(RemoteSep { seid: 4 }));
     }
 
     /// A headset's SBC SEP: everything, bitpool 2..53

@@ -363,6 +363,7 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32) -> PeerParam
         opus_frame_ms,
         opus_channels,
         opus_max_bitrate,
+        aac_max_bitrate: if kind == CodecKind::Aac { remote.aac_max_bitrate() } else { 0 },
     }
 }
 
@@ -526,14 +527,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         );
         preferred = kind.max_sample_rate();
     }
-    // aptX family: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates;
+    // aptX family, AAC: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates;
     // Opus, Opus 05: 48 kHz only. WASAPI resamples to the requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
         CodecKind::Opus | CodecKind::Opus05 => 48000,
-        CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Aac if preferred != 44100 => 48000,
+        CodecKind::Aac => remote.pick_aac_sample_rate(preferred),
+        CodecKind::Sbc | CodecKind::SbcXq if preferred != 44100 => 48000,
         _ => preferred,
     };
     if picked != preferred {
