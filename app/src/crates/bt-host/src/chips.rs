@@ -43,22 +43,21 @@ const fn chip(pid: u16, chip_name: &'static str, fw_name: &'static str, cfg_name
 
 /// Known Realtek chip families, one PID each (the most common one), from
 /// BTstack's fw_patch_table_usb. All but Custom have firmware in
-/// linux-firmware (kernel.org). The family's other PIDs (0x4853 and the
+/// linux-firmware (kernel.org). Each PID must be one BTstack's table has
+/// with the same firmware: BTstack picks the files by the PID it is given,
+/// and loads none for a PID it does not know. The family's other PIDs (0x4853 and the
 /// other RTL8852BE modules for RTL8852BU, ...) resolve to this one by their
 /// firmware name: see resolve_realtek_pid.
 pub static REALTEK_CHIPS: &[RealtekChip] = &[
     chip(0x8771, "RTL8761BU", "rtl8761bu_fw", "rtl8761bu_config"),
-    chip(0x876C, "RTL8761CU", "rtl8761cu_fw", "rtl8761cu_config"),
     chip(0xB82C, "RTL8822BU", "rtl8822bu_fw", "rtl8822bu_config"),
     chip(0xC821, "RTL8821CU", "rtl8821cu_fw", "rtl8821cu_config"),
     chip(0xC82C, "RTL8822CU", "rtl8822cu_fw", "rtl8822cu_config"),
     chip(0xD723, "RTL8723DU", "rtl8723du_fw", "rtl8723du_config"),
     chip(0xC852, "RTL8852AU", "rtl8852au_fw", "rtl8852au_config"),
     chip(0xB85B, "RTL8852BU", "rtl8852bu_fw", "rtl8852bu_config"),
-    chip(0xB85D, "RTL8852BTU", "rtl8852btu_fw", "rtl8852btu_config"),
     chip(0xC85A, "RTL8852CU", "rtl8852cu_fw", "rtl8852cu_config"),
-    chip(0xB083, "RTL8851BU", "rtl8851bu_fw", "rtl8851bu_config"),
-    chip(0x922A, "RTL8922AU", "rtl8922au_fw", "rtl8922au_config"),
+    chip(0xB851, "RTL8851BU", "rtl8851bu_fw", "rtl8851bu_config"),
     // User-supplied firmware
     chip(CUSTOM_CHIP_PID, "Custom", "custom_fw", "custom_config"),
 ];

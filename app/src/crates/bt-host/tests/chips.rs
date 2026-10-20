@@ -31,15 +31,15 @@ fn realtek_pid_resolution() {
         (0x0BDA, 0xB85B, "rtl8852bu_fw"),
         (0x0BDA, 0x4853, "rtl8852bu_fw"),
         (0x0BDA, 0xB733, "rtl8723fu_fw"),
-        (0x0BDA, 0xB851, "rtl8851bu_fw"),
+        (0x0BDA, 0x1234, "rtl8851bu_fw"),
     ];
     assert_eq!(resolve_realtek_pid(0x0BDA, 0x8771, &btstack), Some(0x8771));
     // Another PID of a family in the chip table: the family's PID (issue #81)
     assert_eq!(resolve_realtek_pid(0x0BDA, 0x4853, &btstack), Some(0xB85B));
     // A family not in the chip table keeps its own PID, and so does one
-    // whose chip table PID BTstack does not know (RTL8851BU: 0xB083)
+    // whose chip table PID is not in BTstack's table (here 0xB851)
     assert_eq!(resolve_realtek_pid(0x0BDA, 0xB733, &btstack), Some(0xB733));
-    assert_eq!(resolve_realtek_pid(0x0BDA, 0xB851, &btstack), Some(0xB851));
+    assert_eq!(resolve_realtek_pid(0x0BDA, 0x1234, &btstack), Some(0x1234));
     // Realtek's VID but not in BTstack's table: a card reader, Wi-Fi
     assert_eq!(resolve_realtek_pid(0x0BDA, 0x0129, &btstack), None);
     // TP-Link UB500
@@ -53,6 +53,10 @@ fn realtek_pid_resolution() {
 fn realtek_pid_resolution_btstack_table() {
     let table = bt_host::realtek_usb_firmware();
     assert!(table.iter().any(|&(v, p, fw)| (v, p, fw) == (0x0BDA, 0x4853, "rtl8852bu_fw")), "{table:?}");
+    // Every chip table PID is one BTstack loads the same firmware for
+    for c in REALTEK_CHIPS.iter().filter(|c| c.pid != CUSTOM_CHIP_PID) {
+        assert!(table.iter().any(|&(_, p, fw)| p == c.pid && fw == c.fw_name), "{} 0x{:04X}", c.chip_name, c.pid);
+    }
     // A family PID BTstack knows, with the same firmware: what it is given
     let in_btstack = |c: &RealtekChip| table.iter().any(|&(_, p, fw)| p == c.pid && fw == c.fw_name);
     for &(vid, pid, fw) in table {
