@@ -21,7 +21,10 @@ pub mod stream;
 pub use le_stream::{LeAudioPath, LeStreamDetails, le_silence_set, le_stats_line};
 pub use messages::Msg;
 pub use service::{LeCliOptions, ScannedDevice, Service, ServiceEvent, ServiceOptions};
-pub use stream::{SourceInfo, SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync};
+pub use stream::{
+    AacDetails, AacDeviceCaps, CodecDetails, SbcDetails, SbcDeviceCaps, SourceInfo, SourceRequest, StreamInfo,
+    StreamRequest, StreamState, VolumeSync,
+};
 pub mod diag;
 pub mod firmware;
 pub mod receiver;

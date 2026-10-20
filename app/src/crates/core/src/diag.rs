@@ -776,6 +776,74 @@ impl Environment {
     }
 }
 
+/// "a/b/c"
+fn joined<T: std::fmt::Display>(v: &[T]) -> String {
+    v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("/")
+}
+
+fn khz(rates: &[u32]) -> String {
+    joined(&rates.iter().map(|&r| r as f64 / 1000.0).collect::<Vec<_>>()) + " kHz"
+}
+
+/// The codec's setup and what the device offered
+fn codec_details(out: &mut String, c: &crate::CodecDetails) {
+    let _ = write!(
+        out,
+        "  Packets: media payload up to {} bytes, {}, {}-byte payload header",
+        c.mtu,
+        if c.rtp { "RTP" } else { "no RTP" },
+        c.media_header
+    );
+    match (c.frames_per_packet, c.frame_bytes) {
+        (Some(n), Some(b)) => {
+            let _ = write!(out, "; {n} frames of {b} bytes");
+        }
+        (None, Some(b)) => {
+            let _ = write!(out, "; frames of {b} bytes");
+        }
+        _ => {}
+    }
+    let _ = writeln!(out, " ({} samples per frame)", c.frame_samples);
+    if let Some(s) = &c.sbc {
+        let _ = write!(
+            out,
+            "  SBC: {}, {} blocks, {} subbands, {}, bitpool {}",
+            s.channel_mode, s.blocks, s.subbands, s.allocation, s.bitpool
+        );
+        if let Some((lo, hi)) = s.config_bitpool {
+            let _ = write!(out, " (configured {lo}-{hi})");
+        }
+        out.push('\n');
+        if let Some(d) = &s.device {
+            let _ = writeln!(
+                out,
+                "  Device SBC: {}; {}; blocks {}; subbands {}; {}; bitpool {}-{}",
+                khz(&d.sample_rates),
+                d.channel_modes.join("/"),
+                joined(&d.blocks),
+                joined(&d.subbands),
+                d.allocations.join("/"),
+                d.min_bitpool,
+                d.max_bitpool
+            );
+        }
+    }
+    if let Some(a) = &c.aac {
+        let _ = writeln!(out, "  AAC: {}, CBR {} bps", a.object_type, a.bit_rate);
+        if let Some(d) = &a.device {
+            let _ = writeln!(
+                out,
+                "  Device AAC: {}; {}; {} ch; peak {}; VBR {}",
+                d.object_types.join(", "),
+                khz(&d.sample_rates),
+                joined(&d.channels),
+                if d.max_bitrate == 0 { "not given".to_string() } else { format!("{} bps", d.max_bitrate) },
+                if d.vbr { "yes" } else { "no" }
+            );
+        }
+    }
+}
+
 /// Why the bit rate is below the profile's: ABR, or the device's maximum
 fn bitrate_note(i: &StreamInfo) -> &'static str {
     if i.abr {
@@ -1000,6 +1068,9 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
                     "  Codec fallback: {req} requested{}",
                     if i.requested_in_use { " (in use by another connection)" } else { "" }
                 );
+            }
+            if let Some(c) = &i.details {
+                codec_details(&mut out, c);
             }
         }
         _ => out.push_str("  not streaming\n"),
@@ -1409,6 +1480,32 @@ mod tests {
             abr: false,
             bitrate_capped: false,
             source: crate::stream::SourceInfo { kind: "app", name: "Spotify.exe".into(), waiting: true },
+            details: Some(Box::new(crate::CodecDetails {
+                mtu: 679,
+                rtp: true,
+                media_header: 1,
+                frame_samples: 128,
+                frame_bytes: Some(119),
+                frames_per_packet: Some(5),
+                sbc: Some(crate::SbcDetails {
+                    channel_mode: "joint_stereo".into(),
+                    blocks: 16,
+                    subbands: 8,
+                    allocation: "loudness".into(),
+                    bitpool: 53,
+                    config_bitpool: Some((2, 53)),
+                    device: Some(crate::SbcDeviceCaps {
+                        sample_rates: vec![44100, 48000],
+                        channel_modes: vec!["mono".into(), "joint_stereo".into()],
+                        blocks: vec![4, 8, 12, 16],
+                        subbands: vec![4, 8],
+                        allocations: vec!["snr".into(), "loudness".into()],
+                        min_bitpool: 2,
+                        max_bitpool: 53,
+                    }),
+                }),
+                aac: None,
+            })),
         };
         let stats = LinkStats::default();
         stats.packets_sent.store(1500, std::sync::atomic::Ordering::Relaxed);
@@ -1447,6 +1544,13 @@ mod tests {
         assert!(text.contains("  Codec: ldac, quality hq, ABR off, fallback on, sample rate auto, bit depth auto\n"));
         assert!(text.contains("  LDAC 48000 Hz 2 ch, 990 kbps; source 48000 Hz 2 ch 32 bit\n"));
         assert!(text.contains("  Source: app 'Spotify.exe' (waiting for the app to start)\n"));
+        assert!(text.contains(
+            "  Packets: media payload up to 679 bytes, RTP, 1-byte payload header; 5 frames of 119 bytes (128 samples per frame)\n"
+        ));
+        assert!(text.contains("  SBC: joint_stereo, 16 blocks, 8 subbands, loudness, bitpool 53 (configured 2-53)\n"));
+        assert!(text.contains(
+            "  Device SBC: 44.1/48 kHz; mono/joint_stereo; blocks 4/8/12/16; subbands 4/8; snr/loudness; bitpool 2-53\n"
+        ));
         assert!(text.contains("  Media packets sent 1500 (0 bytes), queue drops 0, send errors 0\n"));
         assert!(text.contains("  HCI capture running: C:\\a2dpwb\\hci.pklg (3.0 MB)\n"));
         assert!(text.contains("[Flow]\nConnection flow: attempt #1, started T+1.001\n"));

@@ -327,6 +327,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             abr: false,
             bitrate_capped: false,
             source: req.source.info(),
+            details: None,
         });
         tracing::info!("LE Audio streaming: {}", started.status.summary);
     };

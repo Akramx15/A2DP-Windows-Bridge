@@ -102,6 +102,46 @@ fn firmware_text(adapters: &[ipc::AdapterInfo]) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("; "))
 }
 
+/// The codec details back in the core's types (the same fields)
+fn core_codec_details(d: ipc::CodecDetails) -> a2dpwb_core::CodecDetails {
+    a2dpwb_core::CodecDetails {
+        mtu: d.mtu,
+        rtp: d.rtp,
+        media_header: d.media_header,
+        frame_samples: d.frame_samples,
+        frame_bytes: d.frame_bytes,
+        frames_per_packet: d.frames_per_packet,
+        sbc: d.sbc.map(|s| a2dpwb_core::SbcDetails {
+            channel_mode: s.channel_mode,
+            blocks: s.blocks,
+            subbands: s.subbands,
+            allocation: s.allocation,
+            bitpool: s.bitpool,
+            config_bitpool: s.config_bitpool,
+            device: s.device.map(|c| a2dpwb_core::SbcDeviceCaps {
+                sample_rates: c.sample_rates,
+                channel_modes: c.channel_modes,
+                blocks: c.blocks,
+                subbands: c.subbands,
+                allocations: c.allocations,
+                min_bitpool: c.min_bitpool,
+                max_bitpool: c.max_bitpool,
+            }),
+        }),
+        aac: d.aac.map(|a| a2dpwb_core::AacDetails {
+            object_type: a.object_type,
+            bit_rate: a.bit_rate,
+            device: a.device.map(|c| a2dpwb_core::AacDeviceCaps {
+                object_types: c.object_types,
+                sample_rates: c.sample_rates,
+                channels: c.channels,
+                max_bitrate: c.max_bitrate,
+                vbr: c.vbr,
+            }),
+        }),
+    }
+}
+
 /// The text of "copy diagnostic info"
 pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
     use a2dpwb_core::diag;
@@ -131,6 +171,7 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
         abr: i.abr,
         bitrate_capped: i.bitrate_capped,
         source: core_source(i.source.as_ref()),
+        details: i.details.clone().map(|d| Box::new(core_codec_details(*d))),
     });
     let firmware = firmware_text(&s.adapter.adapters);
     // LE Audio (experimental) of the running stack: stream, ISO counters,

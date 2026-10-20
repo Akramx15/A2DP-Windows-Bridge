@@ -338,6 +338,46 @@ const LE_CODEC: &str = "LC3";
 const LE_SCANNING_KEY: &str = "status.le_scanning";
 
 /// StreamInfo.le of an LE Audio (experimental) stream
+/// The codec details as the IPC sends them (the same fields)
+fn to_ipc_codec_details(d: a2dpwb_core::CodecDetails) -> ipc::CodecDetails {
+    ipc::CodecDetails {
+        mtu: d.mtu,
+        rtp: d.rtp,
+        media_header: d.media_header,
+        frame_samples: d.frame_samples,
+        frame_bytes: d.frame_bytes,
+        frames_per_packet: d.frames_per_packet,
+        sbc: d.sbc.map(|s| ipc::SbcDetails {
+            channel_mode: s.channel_mode,
+            blocks: s.blocks,
+            subbands: s.subbands,
+            allocation: s.allocation,
+            bitpool: s.bitpool,
+            config_bitpool: s.config_bitpool,
+            device: s.device.map(|c| ipc::SbcDeviceCaps {
+                sample_rates: c.sample_rates,
+                channel_modes: c.channel_modes,
+                blocks: c.blocks,
+                subbands: c.subbands,
+                allocations: c.allocations,
+                min_bitpool: c.min_bitpool,
+                max_bitpool: c.max_bitpool,
+            }),
+        }),
+        aac: d.aac.map(|a| ipc::AacDetails {
+            object_type: a.object_type,
+            bit_rate: a.bit_rate,
+            device: a.device.map(|c| ipc::AacDeviceCaps {
+                object_types: c.object_types,
+                sample_rates: c.sample_rates,
+                channels: c.channels,
+                max_bitrate: c.max_bitrate,
+                vbr: c.vbr,
+            }),
+        }),
+    }
+}
+
 fn to_ipc_le_stream(d: &LeStreamDetails) -> LeStreamInfo {
     LeStreamInfo {
         preset: d.preset.clone(),
@@ -755,6 +795,7 @@ impl CoreState {
                     bitrate_capped: i.bitrate_capped,
                     source: Some(to_ipc_source(&i.source)),
                     le,
+                    details: i.details.map(|d| Box::new(to_ipc_codec_details(*d))),
                 });
                 // The device was saved when it connected
                 devices_changed = true;
