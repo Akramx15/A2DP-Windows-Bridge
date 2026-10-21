@@ -200,9 +200,9 @@ fn system_text(config: &Path) -> String {
     );
     let _ = writeln!(s, "executable: {}", std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default());
     let _ = writeln!(s, "settings folder: {}", config.display());
-    match crate::logging::verbose() {
-        Some(v) => {
-            let _ = writeln!(s, "verbose logging: {:?}", v.level);
+    match crate::logging::verbose_now() {
+        Some(l) => {
+            let _ = writeln!(s, "verbose logging: {l:?}");
         }
         None => s.push_str("verbose logging: off\n"),
     }

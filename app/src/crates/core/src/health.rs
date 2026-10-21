@@ -23,7 +23,7 @@
 //! plays, an air or send gap over [`GAP_WARN`]).
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use bt_host::LinkStats;
@@ -37,6 +37,15 @@ const VERBOSE_FOR: Duration = Duration::from_secs(60);
 const QUIET_EVERY: u32 = 6;
 /// A gap this long in what goes out is audible on most sinks
 const GAP_WARN: Duration = Duration::from_millis(150);
+
+/// Developer mode: every interval is logged for the whole stream
+static EVERY_INTERVAL: AtomicBool = AtomicBool::new(false);
+
+/// Log every interval of a stream (developer mode), not only its first
+/// minute and the unusual ones
+pub fn set_every_interval(on: bool) {
+    EVERY_INTERVAL.store(on, Ordering::Relaxed);
+}
 
 /// Streams this process ran (the log says which one a line belongs to)
 static STREAMS: AtomicU32 = AtomicU32::new(0);
@@ -178,7 +187,9 @@ impl StreamHealth {
         self.intervals += 1;
         let d = Delta::between(&self.prev, &c);
         let unusual = d.unusual(&peaks);
-        let verbose = now - self.started <= VERBOSE_FOR + INTERVAL / 2 || self.intervals.is_multiple_of(QUIET_EVERY);
+        let verbose = now - self.started <= VERBOSE_FOR + INTERVAL / 2
+            || self.intervals.is_multiple_of(QUIET_EVERY)
+            || EVERY_INTERVAL.load(Ordering::Relaxed);
         if unusual || verbose {
             let line = self.line(elapsed, &d, &peaks, Some(&process));
             if unusual {

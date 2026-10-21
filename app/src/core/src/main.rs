@@ -31,10 +31,14 @@ fn main() {
     // The command line logs to the console only; the resident process to
     // daily files in the settings folder
     let config = a2dpwb_core::paths::config_dir();
+    // Developer mode's logging from the first line (the settings are read
+    // again, with their log lines, when the service starts)
+    let dev = if cli_mode { Default::default() } else { a2dpwb_core::settings::Settings::load(&config).log() };
     let log = logging::init(&logging::LogOptions {
         dir: (!cli_mode).then(|| a2dpwb_core::paths::log_dir(&config)),
         console: cli_mode,
         crash_dir: Some(a2dpwb_core::paths::crash_dir(&config)),
+        dev,
     });
     let code = if cli_mode { cli::run(&args) } else { resident::run(&args) };
     // process::exit skips destructors: flush the log first
@@ -221,9 +225,13 @@ fn logging_line(config: &std::path::Path) -> String {
         }
         None => "normal".into(),
     };
+    let always = match logging::always_verbose() {
+        Some(l) => format!(", always {l:?} (developer mode)"),
+        None => String::new(),
+    };
     let capped = if logging::file_capped() { " (today's file is full: debug lines stopped)" } else { "" };
     format!(
-        "{verbose}{capped}; {} crash report(s); {} HCI flight recording(s)",
+        "{verbose}{always}{capped}; {} crash report(s); {} HCI flight recording(s)",
         count(paths::crash_dir(config), "txt"),
         count(paths::recorder_dir(config), "pklg")
     )

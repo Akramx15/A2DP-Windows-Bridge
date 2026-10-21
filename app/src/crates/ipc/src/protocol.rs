@@ -443,6 +443,32 @@ pub struct DevOverrides {
     pub aac_latm_v0: bool,
 }
 
+/// Developer mode's logging (a2dpwb_core::settings::DevLog), in force while
+/// developer_mode is on
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(default)]
+pub struct DevLog {
+    /// Daily log files kept (1..=365, 7 by default)
+    #[ts(type = "number")]
+    pub keep_days: u32,
+    /// MB a day's log file takes before its debug and trace lines stop
+    /// (10..=10240, 100 by default)
+    #[ts(type = "number")]
+    pub day_cap_mb: u32,
+    /// Verbose logging without a time limit, from the core's start
+    /// (debug or trace); None: off
+    #[ts(optional = nullable)]
+    pub always_verbose: Option<LogLevel>,
+    /// The stream health line every 10 s for the whole stream
+    pub health_every_interval: bool,
+}
+
+impl Default for DevLog {
+    fn default() -> Self {
+        DevLog { keep_days: 7, day_cap_mb: 100, always_verbose: None, health_every_interval: false }
+    }
+}
+
 /// Application settings the UI edits
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
@@ -463,6 +489,10 @@ pub struct Settings {
     /// while developer_mode is on (read when the next stream is set up)
     #[serde(default)]
     pub dev_overrides: DevOverrides,
+    /// Developer mode: log retention, the daily size cap, verbose logging
+    /// that stays on, the stream health line every interval
+    #[serde(default)]
+    pub dev_log: DevLog,
     /// 0 = auto, a Realtek PID, 0xFFFE = not Realtek
     pub bt_chip_pid: u16,
     pub bt_chip_fw_stem: String,
@@ -948,6 +978,10 @@ pub enum Method {
     /// also across restarts of the core; None: back to info -> VerboseState | null
     #[serde(rename = "diag.set_verbose")]
     DiagSetVerbose { level: Option<LogLevel> },
+    /// A marker line in the log ("===== MARK n: note =====", info), to find
+    /// a moment again (the stutter starts now) -> number (n)
+    #[serde(rename = "diag.mark")]
+    DiagMark { note: String },
     /// Collects the logs, HCI captures, crash reports and the diagnostic
     /// info into one .zip in the logs folder -> DiagBundle
     #[serde(rename = "diag.bundle")]
