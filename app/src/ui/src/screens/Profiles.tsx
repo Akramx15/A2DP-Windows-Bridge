@@ -26,7 +26,10 @@ function ProfileList() {
   const snap = () => core.state.snap!;
   const [deleting, setDeleting] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  // The profile of the last start: its card shows the state (also an error)
   const streamingName = () => (snap().stream.state !== "idle" ? snap().stream.profile : null);
+  // Still running (Disconnect / Cancel); after an error it connects again
+  const running = () => ["streaming", "connecting", "reconnecting"].includes(snap().stream.state);
 
   const remove = async () => {
     const name = deleting();
@@ -50,7 +53,8 @@ function ProfileList() {
           <For each={snap().profiles}>
             {(p) => {
               const active = () => p.name === snap().active_profile;
-              const live = () => p.name === streamingName();
+              const shown = () => p.name === streamingName();
+              const live = () => shown() && running();
               return (
                 <li class="card profile-card" classList={{ active: active() }}>
                   <div class="profile-card-head">
@@ -59,7 +63,7 @@ function ProfileList() {
                       <h2 class="ellipsis">{p.name}</h2>
                       <span class="muted ellipsis">{p.device_name || p.device_address}</span>
                     </div>
-                    <Show when={live()}>
+                    <Show when={shown()}>
                       <span class={`tag st-${snap().stream.state}`}>{t(`status.${snap().stream.state}`)}</span>
                     </Show>
                   </div>

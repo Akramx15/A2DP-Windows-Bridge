@@ -694,7 +694,73 @@ impl HostApp {
             HCI_EVENT_PIN_CODE_REQUEST => {
                 // Legacy pairing: the default PIN
                 if let Some(addr) = addr_at(p, 2) {
+                    tracing::info!("PIN code requested by {} (legacy pairing), answering 0000", addr_str(&addr));
                     stack.pin_code_response(&addr, "0000");
+                }
+            }
+            // Security steps, logged so that an authentication failure
+            // shows which side refused (BTstack answers these itself)
+            HCI_EVENT_LINK_KEY_REQUEST => {
+                if let Some(addr) = addr_at(p, 2) {
+                    tracing::info!("link key requested for {}", addr_str(&addr));
+                }
+            }
+            HCI_EVENT_LINK_KEY_NOTIFICATION => {
+                // The key itself (bytes 8..24) is never logged
+                if let (Some(addr), Some(kind)) = (addr_at(p, 2), u8_at(p, 24)) {
+                    tracing::info!("new link key from pairing with {} (type {kind})", addr_str(&addr));
+                }
+            }
+            HCI_EVENT_IO_CAPABILITY_RESPONSE => {
+                if let (Some(addr), Some(io), Some(oob), Some(auth)) =
+                    (addr_at(p, 2), u8_at(p, 8), u8_at(p, 9), u8_at(p, 10))
+                {
+                    tracing::info!(
+                        "pairing: {} answers IO capability {io}, OOB {oob}, authentication requirements 0x{auth:02X}",
+                        addr_str(&addr)
+                    );
+                }
+            }
+            HCI_EVENT_SIMPLE_PAIRING_COMPLETE => {
+                if let (Some(status), Some(addr)) = (u8_at(p, 2), addr_at(p, 3)) {
+                    if status == 0 {
+                        tracing::info!("pairing with {} complete", addr_str(&addr));
+                    } else {
+                        tracing::warn!(
+                            "pairing with {} failed: 0x{status:02X} ({})",
+                            addr_str(&addr),
+                            hci_error_string(status)
+                        );
+                    }
+                }
+            }
+            HCI_EVENT_AUTHENTICATION_COMPLETE => {
+                if let (Some(status), Some(handle)) = (u8_at(p, 2), le16(p, 3)) {
+                    let handle = handle & 0x0FFF;
+                    if status == 0 {
+                        tracing::info!("authentication complete (handle 0x{handle:04x})");
+                    } else {
+                        tracing::warn!(
+                            "authentication failed (handle 0x{handle:04x}): 0x{status:02X} ({})",
+                            hci_error_string(status)
+                        );
+                    }
+                }
+            }
+            // LE links log theirs in le::core
+            HCI_EVENT_ENCRYPTION_CHANGE => {
+                if let (Some(status), Some(handle), Some(on)) = (u8_at(p, 2), le16(p, 3), u8_at(p, 5)) {
+                    let handle = handle & 0x0FFF;
+                    if self.shared.lock().target_acl_handle == Some(handle) {
+                        if status == 0 {
+                            tracing::info!("encryption {} (handle 0x{handle:04x})", if on != 0 { "on" } else { "off" });
+                        } else {
+                            tracing::warn!(
+                                "encryption failed (handle 0x{handle:04x}): 0x{status:02X} ({})",
+                                hci_error_string(status)
+                            );
+                        }
+                    }
                 }
             }
             HCI_EVENT_CONNECTION_COMPLETE => {

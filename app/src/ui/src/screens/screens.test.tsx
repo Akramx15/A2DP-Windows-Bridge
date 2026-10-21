@@ -71,6 +71,18 @@ describe("Home", () => {
   });
 });
 
+describe("profiles", () => {
+  it("connects a profile again after an error instead of offering Disconnect", async () => {
+    const { calls } = start("#/profiles", { scenario: "error" });
+    const card = (await screen.findByRole("heading", { name: "WH-1000XM5 (LDAC)" })).closest("li")!;
+    expect(card).toHaveTextContent("Error");
+    expect(within(card).queryByRole("button", { name: "Disconnect" })).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    expect(calls.some((c) => c.method === "stream.stop")).toBe(false);
+  });
+});
+
 describe("profile editor", () => {
   it("does not save until the profile is valid", async () => {
     const { calls } = start("#/profiles/new");

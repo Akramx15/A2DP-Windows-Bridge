@@ -73,7 +73,11 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "time",
  "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
  "win-sys",
  "windows-version",
 ]
