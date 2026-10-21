@@ -638,5 +638,8 @@
   "ui.devices.add": "追加",
   "ui.devices.manage": "デバイスの管理",
   "ui.devices.saved_empty": "保存されたデバイスがありません。「オーディオデバイス」で追加してください。",
-  "ui.home.battery": "バッテリー %d%%"
+  "ui.home.battery": "バッテリー %d%%",
+  "ui.nav.about": "このソフトについて",
+  "ui.home.no_device": "オーディオデバイスがまだありません。ヘッドホンを追加してください。",
+  "ui.home.add_device": "デバイスを追加"
 }

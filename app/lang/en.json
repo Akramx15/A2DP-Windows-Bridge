@@ -376,7 +376,7 @@
   "ui.nav.home": "Home",
   "ui.nav.profiles": "Profiles",
   "ui.nav.diagnostics": "Diagnostics",
-  "ui.nav.adapter": "Adapter",
+  "ui.nav.adapter": "Adapters",
   "ui.nav.settings": "Settings",
   "ui.skip_to_content": "Skip to content",
   "ui.conn.connecting": "Connecting to the A2DPWB core...",
@@ -638,5 +638,8 @@
   "ui.devices.add": "Add",
   "ui.devices.manage": "Manage devices",
   "ui.devices.saved_empty": "No saved devices yet. Add one under Audio Devices.",
-  "ui.home.battery": "Battery %d%%"
+  "ui.home.battery": "Battery %d%%",
+  "ui.nav.about": "About",
+  "ui.home.no_device": "No audio device yet. Add your headphones to get started.",
+  "ui.home.add_device": "Add a device"
 }

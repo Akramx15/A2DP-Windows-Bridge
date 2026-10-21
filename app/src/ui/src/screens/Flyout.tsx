@@ -12,6 +12,7 @@ import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import { ProfileSwitcher } from "../components/ProfileSwitcher";
 import {
+  BatteryLevel,
   CodecBadge,
   ConnectButton,
   copyError,
@@ -78,7 +79,7 @@ export function Flyout() {
         <QualityIndicator />
       </div>
       <Show when={stream().battery !== null}>
-        <div class="muted fly-battery">{t("ui.home.battery", stream().battery!)}</div>
+        <BatteryLevel class="fly-battery" percent={stream().battery!} />
       </Show>
       <Show when={profile() || snap().capture}>
         <div class="fly-meta">

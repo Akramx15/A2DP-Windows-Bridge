@@ -116,7 +116,8 @@ describe("every screen renders", () => {
     ["#/devices", "Audio Devices"],
     ["#/profiles/new", "New Profile"],
     ["#/diagnostics", "Diagnostics"],
-    ["#/adapter", "Adapter"],
+    ["#/adapter", "Adapters"],
+    ["#/about", "About"],
     ["#/settings", "Settings"],
   ];
   for (const [hash, heading] of routes) {

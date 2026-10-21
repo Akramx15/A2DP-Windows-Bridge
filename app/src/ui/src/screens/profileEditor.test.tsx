@@ -95,6 +95,18 @@ describe("saved devices on the Audio Devices screen", () => {
     await waitFor(() => expect(within(row).queryByRole("button", { name: t("ui.devices.add") })).toBeNull());
   });
 
+  it("makes a profile that picks the best codec for a device added without one", async () => {
+    const { calls } = start("#/devices");
+    fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
+    const row = (await screen.findByText(/Galaxy Buds2 Pro/)).closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: t("ui.devices.add") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    expect(calls.find((c) => c.method === "profile.save")!.params).toMatchObject({
+      profile: { name: "Galaxy Buds2 Pro | Auto", codec: "auto", device_name: "Galaxy Buds2 Pro" },
+      original_name: null,
+    });
+  });
+
   it("is only a list to choose from in the profile editor", async () => {
     start("#/profiles/new");
     await screen.findByRole("radio", { name: /WH-1000XM5/ });

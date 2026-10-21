@@ -25,7 +25,7 @@ afterEach(() => {
 describe("Adapter firmware", () => {
   it("shows the chip's firmware and saves another chip", async () => {
     const { calls } = start();
-    await screen.findByRole("heading", { level: 1, name: "Adapter" });
+    await screen.findByRole("heading", { level: 1, name: "Adapters" });
     await waitFor(() => expect(calls.some((c) => c.method === "adapter.firmware_files")).toBe(true));
     const chip = screen.getByLabelText("Bluetooth Chip") as HTMLSelectElement;
     expect(chip.options[chip.selectedIndex].text).toBe("Auto (RTL8761BU)");

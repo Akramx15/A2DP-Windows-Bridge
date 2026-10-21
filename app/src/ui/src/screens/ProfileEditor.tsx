@@ -28,6 +28,7 @@ import {
   PACKET_MAX,
   PACKET_MIN,
   BITPOOL_MAX,
+  BITPOOL_MAX_XQ,
   BITPOOL_MIN,
   qualityIgnored,
   sampleRates,
@@ -100,7 +101,9 @@ export function ProfileEditor(props: { original: string | null }) {
   const leSupport = () => snap().adapter.le_audio;
   const leUnsupported = () => leSupport() !== true;
   const followName = () => {
-    if (!nameTouched()) setP("name", defaultProfileName(p.device_name, p.device_address, p.le_audio));
+    if (!nameTouched()) {
+      setP("name", defaultProfileName(p.device_name, p.device_address, p.le_audio, t(codecSpec(p.codec).label)));
+    }
   };
   const pickDevice = (address: string, name: string, leAudio: boolean) => {
     setP({ device_address: address, device_name: name });
@@ -120,6 +123,7 @@ export function ProfileEditor(props: { original: string | null }) {
     // The flag is VBR under AAC and ABR elsewhere: not carried across
     const abr = (c.id === "aac") !== (cur.codec === "aac") ? false : cur.abr;
     setP(fitToCodec({ ...cur, abr, codec: c.id }));
+    followName();
   };
   // The codec whose settings dialog is open
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
@@ -550,7 +554,7 @@ function CodecCard(props: {
   );
 }
 
-type CodecValues = Pick<Profile, "codec" | "quality" | "sample_rate" | "bit_depth" | "abr" | "sbc_bitpool">;
+type CodecValues = Pick<Profile, "codec" | "quality" | "sample_rate" | "bit_depth" | "abr" | "sbc_bitpool" | "sbcxq_bitpool">;
 
 /**
  * One codec's quality, sample rate, bit depth and ABR (what "Advanced" had
@@ -570,6 +574,7 @@ function CodecSettings(props: {
     bit_depth: 0,
     abr: false,
     sbc_bitpool: 0,
+    sbcxq_bitpool: 0,
   });
   createEffect(
     on(
@@ -585,6 +590,7 @@ function CodecSettings(props: {
             bit_depth: p.bit_depth,
             abr: (s.id === "aac") !== (p.codec === "aac") ? false : p.abr,
             sbc_bitpool: p.sbc_bitpool,
+            sbcxq_bitpool: p.sbcxq_bitpool,
           }),
         );
       },
@@ -592,9 +598,13 @@ function CodecSettings(props: {
   );
   const spec = () => codecSpec(v.codec);
   const name = () => t(spec().label);
+  // SBC and SBC XQ keep their own bitpool
+  const bpKey = () => (v.codec === "sbcxq" ? "sbcxq_bitpool" : "sbc_bitpool");
+  const bp = () => v[bpKey()];
+  const bpMax = () => (v.codec === "sbcxq" ? BITPOOL_MAX_XQ : BITPOOL_MAX);
   const bitpoolError = () =>
-    v.sbc_bitpool !== 0 && !(Number.isInteger(v.sbc_bitpool) && v.sbc_bitpool >= BITPOOL_MIN && v.sbc_bitpool <= BITPOOL_MAX)
-      ? t("error.sbc_bitpool_range", BITPOOL_MIN, BITPOOL_MAX)
+    bp() !== 0 && !(Number.isInteger(bp()) && bp() >= BITPOOL_MIN && bp() <= bpMax())
+      ? t("error.sbc_bitpool_range", BITPOOL_MIN, bpMax())
       : undefined;
   return (
     <Dialog
@@ -659,7 +669,7 @@ function CodecSettings(props: {
         <Show when={spec().bitpool}>
           <Field
             label={t("connection.sbc_bitpool")}
-            hint={t("tooltip.sbc_bitpool", BITPOOL_MIN, BITPOOL_MAX)}
+            hint={t("tooltip.sbc_bitpool", BITPOOL_MIN, bpMax())}
             error={bitpoolError()}
           >
             {(id, described) => (
@@ -670,14 +680,14 @@ function CodecSettings(props: {
                   type="number"
                   inputmode="numeric"
                   min={BITPOOL_MIN}
-                  max={BITPOOL_MAX}
+                  max={bpMax()}
                   step="1"
                   placeholder={t("codec.auto")}
-                  value={v.sbc_bitpool === 0 ? "" : v.sbc_bitpool}
+                  value={bp() === 0 ? "" : bp()}
                   aria-describedby={described}
-                  onInput={(e) => setV("sbc_bitpool", e.currentTarget.value === "" ? 0 : e.currentTarget.valueAsNumber)}
+                  onInput={(e) => setV(bpKey(), e.currentTarget.value === "" ? 0 : e.currentTarget.valueAsNumber)}
                 />
-                <Button kind="subtle" disabled={v.sbc_bitpool === 0} onClick={() => setV("sbc_bitpool", 0)}>
+                <Button kind="subtle" disabled={bp() === 0} onClick={() => setV(bpKey(), 0)}>
                   {t("codec.auto")}
                 </Button>
               </div>

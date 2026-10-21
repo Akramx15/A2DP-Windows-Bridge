@@ -44,4 +44,8 @@ le_low_latency: boolean,
  * SBC / SBC XQ: the bitpool to encode with, within what the device
  * allows (0 = by quality)
  */
-sbc_bitpool: number, };
+sbc_bitpool: number, 
+/**
+ * The same for SBC XQ
+ */
+sbcxq_bitpool: number, };

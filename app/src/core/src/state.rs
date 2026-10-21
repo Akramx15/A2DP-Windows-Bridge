@@ -118,6 +118,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         le_audio: p.le_audio,
         le_low_latency: p.le_low_latency,
         sbc_bitpool: p.sbc_bitpool,
+        sbcxq_bitpool: p.sbcxq_bitpool,
     }
 }
 
@@ -146,6 +147,7 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.le_audio = p.le_audio;
     c.le_low_latency = p.le_low_latency;
     c.sbc_bitpool = p.sbc_bitpool;
+    c.sbcxq_bitpool = p.sbcxq_bitpool;
     c
 }
 

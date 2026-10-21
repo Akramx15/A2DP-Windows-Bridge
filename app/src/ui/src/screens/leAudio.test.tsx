@@ -108,7 +108,7 @@ describe("profile editor", () => {
 
     // Untick: the classic name; tick again
     fireEvent.click(leCheck()!);
-    await waitFor(() => expect(screen.getByLabelText("Profile Name")).toHaveValue("Galaxy Buds2 Pro"));
+    await waitFor(() => expect(screen.getByLabelText("Profile Name")).toHaveValue("Galaxy Buds2 Pro | Auto"));
     fireEvent.click(leCheck()!);
     await waitFor(() => expect(screen.getByLabelText("Profile Name")).toHaveValue("Galaxy Buds2 Pro LE Audio"));
 
