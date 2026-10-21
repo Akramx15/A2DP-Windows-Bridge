@@ -908,7 +908,7 @@ impl RemoteCaps {
                     object_type,
                     sampling_frequency: sample_rate,
                     channels: channels as u8,
-                    bit_rate: self.aac_max_bitrate(),
+                    bit_rate: if crate::aac_test::aac_test().cfg_bitrate0 { 0 } else { self.aac_max_bitrate() },
                     vbr: vbr && self.aac_vbr(),
                 }
             }

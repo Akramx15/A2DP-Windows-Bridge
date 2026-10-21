@@ -74,7 +74,8 @@ impl AacEncoder {
             0 => mtu_bitrate,
             b => b.min(mtu_bitrate),
         };
-        let mut bitrate = quality_bitrate(config.quality);
+        let test = crate::aac_test::aac_test();
+        let mut bitrate = test.bitrate.unwrap_or_else(|| quality_bitrate(config.quality));
         if bitrate > max_bitrate {
             if max_bitrate == mtu_bitrate {
                 tracing::info!("AAC: bit rate limited to {max_bitrate} bps by the {}-byte media payload", config.mtu);
@@ -94,7 +95,7 @@ impl AacEncoder {
         // fdk-aac's default of every 10th frame leaves some sinks silent,
         // issue #87), afterburner for quality
         let vbr = config.abr;
-        let params: [(ffi::AACENC_PARAM, &str, u32); 9] = [
+        let mut params = vec![
             // 0 = constant bit rate; 3..5 variable (very high is the
             // High quality's), the sink having listed VBR
             (ffi::AACENC_BITRATEMODE, "AACENC_BITRATEMODE", if vbr { vbr_mode(config.quality) } else { 0 }),
@@ -102,11 +103,15 @@ impl AacEncoder {
             (ffi::AACENC_SAMPLERATE, "AACENC_SAMPLERATE", config.sample_rate),
             (ffi::AACENC_CHANNELMODE, "AACENC_CHANNELMODE", channel_mode as u32),
             (ffi::AACENC_BITRATE, "AACENC_BITRATE", bitrate),
-            (ffi::AACENC_PEAK_BITRATE, "AACENC_PEAK_BITRATE", max_bitrate),
             (ffi::AACENC_TRANSMUX, "AACENC_TRANSMUX", ffi::TT_MP4_LATM_MCP1 as u32),
             (ffi::AACENC_HEADER_PERIOD, "AACENC_HEADER_PERIOD", 1),
-            (ffi::AACENC_AFTERBURNER, "AACENC_AFTERBURNER", 1),
         ];
+        if !test.no_peak {
+            params.push((ffi::AACENC_PEAK_BITRATE, "AACENC_PEAK_BITRATE", max_bitrate));
+        }
+        if !test.no_afterburner {
+            params.push((ffi::AACENC_AFTERBURNER, "AACENC_AFTERBURNER", 1));
+        }
         for (param, name, value) in params {
             enc.set_param(param, value).map_err(|e| init_err(&format!("{name} = {value}"), e))?;
         }
