@@ -5,6 +5,7 @@
 pub mod audio_policy;
 pub mod autostart;
 pub mod bt_paired;
+pub mod com;
 pub mod console;
 pub mod crash;
 pub mod driver;
