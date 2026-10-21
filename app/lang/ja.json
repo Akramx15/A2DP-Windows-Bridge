@@ -665,5 +665,7 @@
   "ui.profile.sbc_frame": "フレーム設定",
   "ui.profile.sbc_frame_hint": "SBCの各フレームのブロック数、サブバンド数、ビット割り当て、チャンネルモードです。Autoは16ブロック、8サブバンド、Loudness、Joint stereo(SBC XQはデュアルチャンネル)のままです。ヘッドホンが対応を示した値だけを表示します。ヘッドホンが受け付けない値は接続時にAutoに戻ります。",
   "ui.profile.sbc_not_offered": "%s(非対応)",
-  "ui.profile.sbc_bitrate": "約%d kbps(%s kHz)"
+  "ui.profile.sbc_bitrate": "約%d kbps(%s kHz)",
+  "status.device_off": "ヘッドホンの電源が切れたか、切断されました",
+  "status.device_unreachable": "ヘッドホンの電源が切れているか、範囲外です"
 }

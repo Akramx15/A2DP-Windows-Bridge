@@ -1041,6 +1041,14 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         let check = check_link(lost, host.stalled(), inner.power.stale(), inner.power.suspending());
         let mut restart_why = match check {
             LinkCheck::Fine => continue,
+            LinkCheck::Reconnect if host.lost_to_the_device() => {
+                // As Windows and Android: the headphones went off, nothing
+                // to retry; the user connects again when they are back
+                tracing::info!("the headphones were turned off or disconnected themselves");
+                inner.notify(StreamState::Idle, Msg::new("status.device_off"));
+                lost_for_good = true;
+                break;
+            }
             LinkCheck::Reconnect => {
                 tracing::warn!("connection lost, reconnecting");
                 None
@@ -1158,12 +1166,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         }
         let Some(r) = reconnected else {
             if !stopped() {
-                let msg = if codec_gone {
-                    Msg::with("error.codec_not_supported", &[&kind.name()])
+                if codec_gone {
+                    inner.notify(StreamState::Error, Msg::with("error.codec_not_supported", &[&kind.name()]));
+                } else if restart_why.is_none() {
+                    // The adapter works, the headphones never answered: off
+                    // or out of range, not an error of A2DPWB
+                    inner.notify(StreamState::Idle, Msg::new("status.device_unreachable"));
                 } else {
-                    Msg::new("error.reconnect_failed")
-                };
-                inner.notify(StreamState::Error, msg);
+                    inner.notify(StreamState::Error, Msg::new("error.reconnect_failed"));
+                }
                 lost_for_good = true;
             }
             break;

@@ -782,6 +782,7 @@ impl HostApp {
                         s.connected = false;
                         s.streaming = false;
                         s.disconnect_occurred = true;
+                        s.link_lost_reason = reason;
                         return true;
                     }
                     false
@@ -1198,6 +1199,7 @@ impl HostApp {
                     s.connected = false;
                     s.streaming = false;
                     s.disconnect_occurred = true;
+                    s.link_lost_reason = 0;
                     s.released = true;
                 });
                 let _ = self.events.send(HostEvent::ConnectionLost);
