@@ -27,6 +27,7 @@ unsafe extern "C" {
     pub fn a2dpwb_hfp_ag_init();
     pub fn a2dpwb_hfp_ag_connect(addr: *const u8) -> u8;
     pub fn a2dpwb_hfp_ag_release(acl_handle: u16) -> u8;
+    pub fn a2dpwb_hfp_ag_deinit();
 
     // ---- shim.c: GAP, SDP, endpoints, configuration ----
     pub fn a2dpwb_gap_setup(class_of_device: u32, page_timeout: u16);

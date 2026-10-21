@@ -386,6 +386,13 @@ uint8_t a2dpwb_hfp_ag_release(uint16_t acl_handle) {
     return hfp_ag_release_service_level_connection(acl_handle);
 }
 
+/* RFCOMM keeps its services in a static list: cleared here, or the next run
+ * in this process finds the service freed by btstack_memory_deinit there */
+void a2dpwb_hfp_ag_deinit(void) {
+    hfp_ag_deinit();
+    rfcomm_deinit();
+}
+
 /* ======================================================================== */
 /* GAP, SDP records, stream endpoints                                       */
 /* ======================================================================== */
