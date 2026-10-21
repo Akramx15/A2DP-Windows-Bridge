@@ -16,6 +16,7 @@ import {
   CodecBadge,
   ConnectButton,
   copyError,
+  isAppFault,
   reportError,
   currentProfile,
   QualityIndicator,
@@ -101,11 +102,13 @@ export function Flyout() {
                 label={t("ui.error.copy_hint")}
                 onClick={() => void copyError(app, e().message, e().code)}
               />
-              <IconButton
-                icon="open"
-                label={t("ui.error.report_hint")}
-                onClick={() => void reportError(app, e().message, e().code)}
-              />
+              <Show when={isAppFault(e().message.key, e().code)}>
+                <IconButton
+                  icon="open"
+                  label={t("ui.error.report_hint")}
+                  onClick={() => void reportError(app, e().message, e().code)}
+                />
+              </Show>
               <Show when={fix()}>
                 {(f) => (
                   <Button

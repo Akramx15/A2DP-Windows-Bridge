@@ -411,6 +411,57 @@ export function errorCopyText(message: Msg, code?: string | null): string {
   return code ? `${text}\n[${code}]` : text;
 }
 
+/** Errors with a cause on the user's side (the device off or out of range,
+ *  pairing, the adapter's setup, a choice the profile lacks): their fix is
+ *  the answer, a bug report would only say "it does not connect" */
+const USER_SIDE_ERRORS = new Set([
+  "error.connect_no_answer",
+  "error.connect_link_lost",
+  "error.connect_refused",
+  "error.connect_auth_failed",
+  "error.pairing_hint",
+  "error.reconnect_failed",
+  "error.btstack_init",
+  "error.btstack_no_answer",
+  "error.codec_not_supported",
+  "error.codec_adaptive_only",
+  "error.codec_sep_in_use",
+  "error.no_compatible_codec",
+  "error.le_audio_disabled",
+  "error.le_audio_unavailable",
+  "error.le_audio_connect",
+  "error.le_audio_capture",
+  "error.no_virtual_device_selected",
+  "error.no_app_selected",
+  "error.app_capture_unsupported",
+  "error.uac_cancelled",
+  "error.driver_assign_failed",
+  "error.invalid_address",
+  "error.invalid_address_format",
+  "error.sbc_bitpool_range",
+  "error.profile_not_found",
+]);
+/** Request errors with such a cause: an input or choice to correct, a
+ *  prompt declined */
+const USER_SIDE_CODES = new Set([
+  "adapter.driver_missing",
+  "adapter.uac_cancelled",
+  "app.streaming",
+  "device.invalid_address",
+  "device.invalid_name",
+  "profile.invalid",
+  "profile.invalid_address",
+  "profile.not_found",
+  "stream.bad_codec",
+  "stream.bad_source",
+]);
+
+/** Whether an error points at A2DPWB itself (worth a bug report); anything
+ *  not known to be on the user's side is */
+export function isAppFault(key: string, code?: string | null): boolean {
+  return !USER_SIDE_ERRORS.has(key) && !(code && USER_SIDE_CODES.has(code));
+}
+
 /** A bug report's URL with what the state tells (the issue form's fields)
  *  around the diagnostic info */
 export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugReport> = {}): string {
@@ -501,14 +552,16 @@ export function ErrorPanel(props: { code?: string | null; message: Msg; title?: 
             >
               {t("ui.error.copy")}
             </Button>
-            <Button
-              kind="subtle"
-              icon="open"
-              title={t("ui.error.report_hint")}
-              onClick={() => void reportError(app, props.message, props.code)}
-            >
-              {t("ui.diag.report_github")}
-            </Button>
+            <Show when={isAppFault(props.message.key, props.code)}>
+              <Button
+                kind="subtle"
+                icon="open"
+                title={t("ui.error.report_hint")}
+                onClick={() => void reportError(app, props.message, props.code)}
+              >
+                {t("ui.diag.report_github")}
+              </Button>
+            </Show>
           </>
         }
       >
