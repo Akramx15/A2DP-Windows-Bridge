@@ -35,6 +35,8 @@ has_toc: false
 | LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| LC3（LE Audio） 🧪 | 每聲道 32--124 kbps | 16/24/32/48 kHz | 16 bit | 約 140 ms |
+| LC3 低延遲（LE Audio GMAP） 🧪 | 每聲道 64--96 kbps | 32/48 kHz | 16 bit | 約 30 ms |
 
 ### 各平台的轉碼器支援（傳送到耳機）
 
@@ -51,6 +53,7 @@ has_toc: false
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus（Android 的 A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2+（`opus_g`）；Ubuntu 24.04（PipeWire 1.0.5）中沒有 | 🧪 實驗性 |
 | Opus 05（PipeWire 自有的 Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57+（`opus_05`，僅限 PipeWire 裝置） | 🧪 實驗性（需明確選擇） |
+| LC3（LE Audio，BAP 單播） | ❌ | ✅ 僅限藍牙硬體與驅動程式支援 LE Audio 的 PC | ✅ PipeWire BAP `lc3`（BlueZ LE Audio） | 🧪 實驗性（LE Audio 設定檔；電競耳機使用 GMAP 低延遲；需要支援 ISO 的 Bluetooth 5.2 介面卡，[使用方式](usage#le-audio)） |
 | aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 支援 · 🧪 實驗性 · ❌ 不支援。所有欄位皆為傳送端（PC → 耳機）。「內建」指不使用 A2DPWB 時作業系統本身的藍牙音訊；Ubuntu 欄位為 Ubuntu 26.04 的 PipeWire 轉碼器組合（`libspa-0.2-bluetooth`）。

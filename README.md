@@ -21,11 +21,12 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 ¹ |
 | Opus (Android) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
 | Opus 05 (PipeWire) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 ¹ ² |
+| LC3 (LE Audio) | 32–124 kbps per channel | 16–48 kHz | 16 bit | Windows 11 ⁴ | 🧪 ⁵ |
 | aptX Adaptive | | | | ❌ | ❌ ³ |
 
 ✅ supported · 🧪 experimental: passes the encoder tests and the end-to-end test against a virtual Bluetooth sink, but not yet confirmed with real headphones that use it ([reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)) · ❌ not supported
 
-¹ Auto never picks it; choose it in a profile. ² Only PipeWire (Linux) receivers implement it. ³ No open-source encoder exists; headphones that also offer classic aptX get aptX.
+¹ Auto never picks it; choose it in a profile. ² Only PipeWire (Linux) receivers implement it. ³ No open-source encoder exists; headphones that also offer classic aptX get aptX. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per profile with **LE Audio device**, and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
 
 Auto picks LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
 
