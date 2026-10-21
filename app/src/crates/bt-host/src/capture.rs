@@ -70,17 +70,72 @@ fn packetlogger_type(packet_type: u8, incoming: bool) -> Option<u8> {
     })
 }
 
-/// PacketLogger record: length (4, BE) = 9 + payload, seconds (4, BE),
-/// microseconds (4, BE), type (1), payload
-fn record(pl_type: u8, payload: &[u8]) -> Vec<u8> {
+/// PacketLogger record header: length (4, BE) = 9 + payload, seconds (4,
+/// BE), microseconds (4, BE), type (1); the payload follows
+fn record_header(pl_type: u8, payload_len: usize) -> [u8; 13] {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let mut h = [0u8; 13];
+    h[..4].copy_from_slice(&(9 + payload_len as u32).to_be_bytes());
+    h[4..8].copy_from_slice(&(now.as_secs() as u32).to_be_bytes());
+    h[8..12].copy_from_slice(&now.subsec_micros().to_be_bytes());
+    h[12] = pl_type;
+    h
+}
+
+fn record(pl_type: u8, payload: &[u8]) -> Vec<u8> {
     let mut r = Vec::with_capacity(13 + payload.len());
-    r.extend_from_slice(&(9 + payload.len() as u32).to_be_bytes());
-    r.extend_from_slice(&(now.as_secs() as u32).to_be_bytes());
-    r.extend_from_slice(&now.subsec_micros().to_be_bytes());
-    r.push(pl_type);
+    r.extend_from_slice(&record_header(pl_type, payload.len()));
     r.extend_from_slice(payload);
     r
+}
+
+/// The flight recorder's records in one ring of bytes (no allocation per
+/// packet, and nothing over [`RECENT_BYTES`] besides): each is its number
+/// (8 bytes, LE), then the PacketLogger record
+#[derive(Default)]
+struct Recorder {
+    buf: VecDeque<u8>,
+}
+
+impl Recorder {
+    fn push(&mut self, seq: u64, pl_type: u8, payload: &[u8]) {
+        if self.buf.capacity() == 0 {
+            // Room for the budget and one more large packet
+            self.buf.reserve_exact(RECENT_BYTES + 0x10000);
+        }
+        self.buf.extend(seq.to_le_bytes());
+        self.buf.extend(record_header(pl_type, payload.len()));
+        self.buf.extend(payload.iter().copied());
+        while self.buf.len() > RECENT_BYTES {
+            let n = self.front_len();
+            self.buf.drain(..n);
+        }
+    }
+
+    /// Bytes of the oldest entry (number and record)
+    fn front_len(&self) -> usize {
+        let b = |i: usize| self.buf[8 + i];
+        12 + u32::from_be_bytes([b(0), b(1), b(2), b(3)]) as usize
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
+    /// The records with their numbers, oldest first
+    fn records(&self) -> Vec<(u64, Vec<u8>)> {
+        let all: Vec<u8> = self.buf.iter().copied().collect();
+        let mut out = Vec::new();
+        let mut off = 0;
+        while off + 12 <= all.len() {
+            let seq = u64::from_le_bytes(all[off..off + 8].try_into().unwrap_or_default());
+            let len = 4 + u32::from_be_bytes(all[off + 8..off + 12].try_into().unwrap_or_default()) as usize;
+            let Some(rec) = all.get(off + 8..off + 8 + len) else { break };
+            out.push((seq, rec.to_vec()));
+            off += 8 + len;
+        }
+        out
+    }
 }
 
 /// The packet with its pairing keys zeroed, for the flight recorder (its
@@ -143,9 +198,8 @@ struct State {
     path: PathBuf,
     /// Connection setup records per ACL handle, with their number
     setup: Vec<(u16, u64, Vec<u8>)>,
-    /// Flight recorder: the last records with their number, oldest first
-    recent: VecDeque<(u64, Vec<u8>)>,
-    recent_bytes: usize,
+    /// Flight recorder: the last records
+    recent: Recorder,
     /// Records so far (numbers the flight recorder's and the setup records)
     seq: u64,
     /// When the flight recorder was last saved
@@ -174,16 +228,6 @@ impl State {
         self.avdtp.get(&handle).is_some_and(|chans| {
             chans.iter().skip(1).any(|ch| cid == if incoming { ch.local_cid } else { ch.remote_cid })
         })
-    }
-
-    fn remember(&mut self, rec: Vec<u8>) {
-        self.recent_bytes += rec.len();
-        self.recent.push_back((self.seq, rec));
-        while self.recent_bytes > RECENT_BYTES
-            && let Some((_, old)) = self.recent.pop_front()
-        {
-            self.recent_bytes -= old.len();
-        }
     }
 
     /// Whether this packet belongs to a connection's setup (and its handle)
@@ -305,12 +349,11 @@ impl HciCapture {
         let setup = s.track(packet_type, incoming, packet);
         let bulky = matches!(packet_type, HCI_SCO_DATA_PACKET | HCI_ISO_DATA_PACKET)
             || s.is_media(packet_type, incoming, packet);
-        let kept = if bulky {
-            record(pl_type, &packet[..packet.len().min(RECORDER_PAYLOAD)])
+        if bulky {
+            s.recent.push(seq, pl_type, &packet[..packet.len().min(RECORDER_PAYLOAD)]);
         } else {
-            record(pl_type, &without_keys(packet_type, packet))
-        };
-        s.remember(kept);
+            s.recent.push(seq, pl_type, &without_keys(packet_type, packet));
+        }
         if setup.is_none() && s.file.is_none() {
             return;
         }
@@ -361,10 +404,10 @@ impl HciCapture {
     pub fn write_recent(&self, path: &Path, why: &str) -> std::io::Result<u64> {
         let (setup, recent) = {
             let s = self.lock();
-            let first = s.recent.front().map_or(u64::MAX, |r| r.0);
+            let recent = s.recent.records();
+            let first = recent.first().map_or(u64::MAX, |r| r.0);
             let setup: Vec<Vec<u8>> = s.setup.iter().filter(|r| r.1 < first).map(|r| r.2.clone()).collect();
-            let recent: Vec<Vec<u8>> = s.recent.iter().map(|r| r.1.clone()).collect();
-            (setup, recent)
+            (setup, recent.into_iter().map(|r| r.1).collect::<Vec<_>>())
         };
         let mut out = std::io::BufWriter::new(File::create(path)?);
         let mut written = 0u64;
@@ -553,8 +596,10 @@ mod tests {
         }
         {
             let s = cap.lock();
-            assert!(s.recent_bytes <= RECENT_BYTES);
-            assert!(s.recent.front().unwrap().0 > 1, "the Connection Complete fell out");
+            assert!(s.recent.buf.len() <= RECENT_BYTES);
+            // Allocated once, never grown
+            assert_eq!(s.recent.buf.capacity(), RECENT_BYTES + 0x10000);
+            assert!(s.recent.records()[0].0 > 1, "the Connection Complete fell out");
         }
         let path = std::env::temp_dir().join(format!("a2dpwb-rec2-{}.pklg", std::process::id()));
         cap.write_recent(&path, "test").unwrap();
@@ -577,12 +622,12 @@ mod tests {
         let mut reply = vec![0x0B, 0x04, 22, 1, 2, 3, 4, 5, 6];
         reply.extend([0x22; 16]);
         cap.log_packet(HCI_COMMAND_DATA_PACKET, false, &reply);
-        let s = cap.lock();
-        for (_, r) in &s.recent {
+        let recent = cap.lock().recent.records();
+        for (_, r) in &recent {
             assert!(!r.windows(16).any(|w| w == [0x11; 16] || w == [0x22; 16]), "{r:02X?}");
         }
         // The address stays
-        assert_eq!(&s.recent[0].1[13 + 2..13 + 8], &[1, 2, 3, 4, 5, 6]);
+        assert_eq!(&recent[0].1[13 + 2..13 + 8], &[1, 2, 3, 4, 5, 6]);
         assert_eq!(without_keys(HCI_EVENT_PACKET, &[0x0E, 1, 0]).len(), 3);
     }
 

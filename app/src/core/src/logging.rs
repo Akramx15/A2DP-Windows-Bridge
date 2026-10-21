@@ -437,6 +437,10 @@ struct Ring {
     head: usize,
     capacity: usize,
     flow: ConnectionFlow,
+    /// Debug and trace lines (verbose logging) take no slot: at trace they
+    /// would push every warning out of the ring within a second. They are
+    /// formatted here for the flow and the subscribers, and are in the file.
+    verbose: LogLine,
 }
 
 impl Ring {
@@ -446,18 +450,22 @@ impl Ring {
     }
 }
 
+fn empty_line() -> LogLine {
+    LogLine {
+        time_ms: 0,
+        level: LogLevel::Info,
+        target: String::new(),
+        message: String::new(),
+        seq: None,
+        session: None,
+    }
+}
+
 /// The slot for a new line: a new one until the ring is full, then the
 /// oldest
 fn next_slot<'a>(lines: &'a mut Vec<LogLine>, head: &mut usize, capacity: usize) -> &'a mut LogLine {
     if lines.len() < capacity {
-        lines.push(LogLine {
-            time_ms: 0,
-            level: LogLevel::Info,
-            target: String::new(),
-            message: String::new(),
-            seq: None,
-            session: None,
-        });
+        lines.push(empty_line());
         let last = lines.len() - 1;
         &mut lines[last]
     } else {
@@ -499,6 +507,7 @@ impl LogHub {
                 head: 0,
                 capacity,
                 flow: ConnectionFlow::new(),
+                verbose: empty_line(),
             }),
             subscribers: Mutex::new(Vec::new()),
             active: AtomicUsize::new(0),
@@ -595,8 +604,8 @@ impl LogHub {
         let level = log_level(meta.level());
         let shared = {
             let mut ring = lock(&self.0.ring);
-            let Ring { lines, head, capacity, flow } = &mut *ring;
-            let slot = next_slot(lines, head, *capacity);
+            let Ring { lines, head, capacity, flow, verbose } = &mut *ring;
+            let slot = if level > LogLevel::Info { verbose } else { next_slot(lines, head, *capacity) };
             slot.time_ms = time_ms;
             slot.level = level;
             slot.target.clear();
@@ -694,6 +703,25 @@ mod tests {
         assert_eq!(msgs, ["line 2", "line 3", "line 4"]);
         assert_eq!(lines[0].target, "t");
         assert!(lines.windows(2).all(|w| w[0].time_ms <= w[1].time_ms));
+    }
+
+    #[test]
+    fn verbose_lines_do_not_push_warnings_out() {
+        let hub = LogHub::new(3);
+        let rx = hub.subscribe(LogLevel::Trace);
+        with_hub(&hub, || {
+            tracing::warn!(target: "t", "the warning");
+            for i in 0..100 {
+                tracing::trace!(target: "t", "packet {i}");
+            }
+            tracing::debug!(target: "t", "a decision");
+        });
+        let kept: Vec<String> = hub.recent().into_iter().map(|l| l.message).collect();
+        assert_eq!(kept, ["the warning"]);
+        // Subscribers still get them, numbered
+        let got: Vec<LogLine> = rx.try_iter().collect();
+        assert_eq!(got.len(), 102);
+        assert_eq!((got[101].message.as_str(), got[101].seq), ("a decision", Some(102)));
     }
 
     #[test]
