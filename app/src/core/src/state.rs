@@ -19,9 +19,9 @@ use a2dpwb_core::{
 use bt_host::LinkStats;
 use bt_host::chips::{self, ChipVendor};
 use ipc::{
-    AdapterInfo, AdapterState, AdapterStatus, AudioApp, AudioDevice, CaptureState, Device, DiagInfo, DriverKind,
-    ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, Method, Msg, Profile, ReceiverConnection, ReceiverState,
-    Settings, SettingsApplied, Snapshot, SourceInfo, StreamState, StreamStatus, UpdateState,
+    AdapterInfo, AdapterState, AdapterStatus, AudioApp, AudioDevice, CaptureState, DevOverrides, Device, DiagInfo,
+    DriverKind, ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, Method, Msg, Profile, ReceiverConnection,
+    ReceiverState, Settings, SettingsApplied, Snapshot, SourceInfo, StreamState, StreamStatus, UpdateState,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -164,6 +164,15 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         media_keys: s.media_keys,
         remember_volume: s.remember_volume,
         developer_mode: s.debug_mode,
+        dev_overrides: DevOverrides {
+            rtp_marker: s.dev_overrides.rtp_marker,
+            packet_dump: s.dev_overrides.packet_dump,
+            aac_config_bitrate0: s.dev_overrides.aac_config_bitrate0,
+            aac_bitrate_kbps: s.dev_overrides.aac_bitrate_kbps,
+            aac_no_peak: s.dev_overrides.aac_no_peak,
+            aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
+            aac_latm_v0: s.dev_overrides.aac_latm_v0,
+        },
         bt_chip_pid: s.bt_chip_pid,
         bt_chip_fw_stem: s.bt_chip_fw_stem.clone(),
         afh: s.afh.clone(),
@@ -185,6 +194,19 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.media_keys = s.media_keys;
     c.remember_volume = s.remember_volume;
     c.debug_mode = s.developer_mode;
+    c.dev_overrides = codec::dev::DevOverrides {
+        rtp_marker: s.dev_overrides.rtp_marker,
+        packet_dump: s.dev_overrides.packet_dump,
+        aac_config_bitrate0: s.dev_overrides.aac_config_bitrate0,
+        // A bit rate AAC can use at all: 0 (off) or 32..=512 kbit/s
+        aac_bitrate_kbps: match s.dev_overrides.aac_bitrate_kbps {
+            0 => 0,
+            k => k.clamp(32, 512),
+        },
+        aac_no_peak: s.dev_overrides.aac_no_peak,
+        aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
+        aac_latm_v0: s.dev_overrides.aac_latm_v0,
+    };
     c.bt_chip_pid = s.bt_chip_pid;
     c.bt_chip_fw_stem = s.bt_chip_fw_stem.clone();
     c.afh = s.afh.clone();

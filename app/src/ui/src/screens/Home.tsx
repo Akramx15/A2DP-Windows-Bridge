@@ -75,6 +75,10 @@ function FirmwareMissing() {
             </span>
           )}
         </For>
+        {/* Missing files and the ROM code at once: say it is not usable (issue #81) */}
+        <Show when={core.state.snap!.adapter.rom_firmware}>
+          <span>{t("firmware.rom_short")}</span>
+        </Show>
       </Banner>
     </Show>
   );

@@ -12,6 +12,7 @@ import type { Core } from "../ipc/store";
 import { About } from "../screens/About";
 import { Adapter } from "../screens/Adapter";
 import { Devices } from "../screens/Devices";
+import { Developer } from "../screens/Developer";
 import { Diagnostics } from "../screens/Diagnostics";
 import { Flyout } from "../screens/Flyout";
 import { Home } from "../screens/Home";
@@ -90,6 +91,7 @@ const NAV: { name: RouteName; icon: IconName; label: string }[] = [
   { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
   { name: "profiles", icon: "headphones", label: "ui.nav.profiles" },
   { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
+  { name: "developer", icon: "wrench", label: "ui.nav.developer" },
   { name: "adapter", icon: "usb_stick", label: "ui.nav.adapter" },
   { name: "settings", icon: "settings", label: "ui.nav.settings" },
   { name: "about", icon: "info", label: "ui.nav.about" },
@@ -168,7 +170,7 @@ function MainWindow() {
               <span class="nav-title">{t("app.title")}</span>
             </div>
             <ul class="nav-list">
-              <For each={NAV}>
+              <For each={NAV.filter((n) => n.name !== "developer" || core.state.snap?.settings.developer_mode)}>
                 {(item) => (
                   <li>
                     <a
@@ -204,6 +206,9 @@ function MainWindow() {
               </Match>
               <Match when={route().name === "diagnostics"}>
                 <Diagnostics />
+              </Match>
+              <Match when={route().name === "developer" && core.state.snap?.settings.developer_mode}>
+                <Developer />
               </Match>
               <Match when={route().name === "adapter"}>
                 <Adapter />

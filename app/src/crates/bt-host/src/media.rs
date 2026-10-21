@@ -33,11 +33,13 @@ pub struct MediaPacket {
     pub len: u16,
     pub timestamp: u32,
     pub rtp: bool,
+    /// RTP marker bit
+    pub marker: bool,
 }
 
 impl Default for MediaPacket {
     fn default() -> Self {
-        MediaPacket { data: [0; MAX_MEDIA_PACKET_SIZE], len: 0, timestamp: 0, rtp: true }
+        MediaPacket { data: [0; MAX_MEDIA_PACKET_SIZE], len: 0, timestamp: 0, rtp: true, marker: false }
     }
 }
 

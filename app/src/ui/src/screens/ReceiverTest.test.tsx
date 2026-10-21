@@ -8,13 +8,14 @@ import { createCore } from "../ipc/store";
 let mock: MockCore | null = null;
 
 async function open(opts: MockOptions = {}) {
-  location.hash = "#/diagnostics";
+  location.hash = "#/developer";
   const calls: { method: string; params: unknown }[] = [];
   mock = new MockCore({ speed: 0, ...opts, onCall: (method, params) => calls.push({ method, params }) });
   const core = createCore(mock);
   render(() => <App core={core} />);
-  await screen.findByRole("heading", { level: 1, name: "Diagnostics" });
+  await screen.findByRole("navigation");
   await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+  await screen.findByRole("heading", { level: 1, name: "Developer" });
   fireEvent.click(await screen.findByRole("tab", { name: "Peer Receiver Test" }));
   return { core, calls };
 }

@@ -18,6 +18,7 @@ lc3 = ["dep:lc3-sys"]
 
 [dependencies]
 thiserror.workspace = true
+serde.workspace = true
 tracing.workspace = true
 ldac-sys = { path = "../ldac-sys", optional = true }
 openaptx-sys = { path = "../openaptx-sys", optional = true }
