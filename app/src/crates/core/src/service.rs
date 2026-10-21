@@ -323,7 +323,7 @@ impl Inner {
         };
         let mut c = HostConfig::new(transport);
         c.link_key_dir = Some(self.opts.config_dir.clone());
-        c.firmware_dir = Some(self.opts.config_dir.clone());
+        c.firmware_dir = Some(crate::paths::firmware_dir(&self.opts.config_dir));
         c.capture = self.opts.capture.clone();
         crate::adapter::configure(&mut c, &s, &self.opts.config_dir);
         let cli = self.le_cli.lock().unwrap_or_else(|e| e.into_inner()).clone();

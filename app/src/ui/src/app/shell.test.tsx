@@ -105,7 +105,7 @@ describe("Home", () => {
     const bar = title.closest(".banner") as HTMLElement;
     expect(bar).toHaveTextContent("rtl8761bu_fw.bin, rtl8761bu_config.bin");
     fireEvent.click(within(bar).getByRole("button", { name: t("ui.home.firmware_fix") }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Adapter" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Adapters" })).toBeInTheDocument();
   });
 
   it("copies the error text", async () => {

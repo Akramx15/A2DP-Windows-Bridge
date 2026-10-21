@@ -30,6 +30,7 @@ export function newProfile(): Profile {
     le_audio: false,
     le_low_latency: true,
     sbc_bitpool: 0,
+    sbcxq_bitpool: 0,
   };
 }
 
@@ -89,9 +90,10 @@ export function listedDevices(devices: readonly Device[], leAudio: boolean): Dev
 }
 
 /** A profile's name until the user types one: the device, "<device> LE Audio" for LE Audio (v1) */
-export function defaultProfileName(deviceName: string, address: string, leAudio: boolean): string {
+export function defaultProfileName(deviceName: string, address: string, leAudio: boolean, codec = ""): string {
   const base = deviceName || address;
-  return leAudio && base ? `${base} LE Audio` : base;
+  if (leAudio) return base ? `${base} LE Audio` : base;
+  return base && codec ? `${base} | ${codec}` : base;
 }
 
 /**

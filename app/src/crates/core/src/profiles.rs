@@ -75,6 +75,9 @@ pub struct Profile {
     /// allows (0 = by quality)
     #[serde(skip_serializing_if = "is_zero")]
     pub sbc_bitpool: u8,
+    /// The same for SBC XQ (kept apart: XQ is dual channel and goes lower)
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbcxq_bitpool: u8,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub le_audio: bool,
     /// LE Audio: GMAP low-latency presets with a gaming headset. On by
@@ -109,6 +112,7 @@ impl Default for Profile {
             volume_device_name: String::new(),
             max_media_payload: None,
             sbc_bitpool: 0,
+            sbcxq_bitpool: 0,
             le_audio: false,
             le_low_latency: true,
             other: BTreeMap::new(),
@@ -154,6 +158,7 @@ impl Profile {
             quality: Quality::from_key(&self.quality),
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,
+            sbcxq_bitpool: self.sbcxq_bitpool,
             sample_rate: (self.sample_rate != 0).then_some(self.sample_rate),
             bit_depth: match self.bit_depth {
                 16 => Some(16),

@@ -28,6 +28,8 @@ pub struct StreamRequest {
     pub abr: bool,
     /// SBC / SBC XQ: the bitpool wanted (0 = by quality)
     pub sbc_bitpool: u8,
+    /// The same for SBC XQ
+    pub sbcxq_bitpool: u8,
     /// None = the device's rate
     pub sample_rate: Option<u32>,
     /// None = auto (24-bit where the codec carries it)
@@ -542,13 +544,17 @@ fn connect_error(f: Option<ConnectFailure>) -> Msg {
     })
 }
 
-fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, sbc_bitpool: u8) -> PeerParams {
+fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &StreamRequest) -> PeerParams {
     let (opus_frame_ms, opus_channels, opus_max_bitrate) = remote.opus_params(kind, channels);
     PeerParams {
         lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
         sbc_min_bitpool: remote.sbc_min_bitpool(),
         sbc_max_bitpool: remote.sbc_max_bitpool(),
-        sbc_bitpool: if matches!(kind, CodecKind::Sbc | CodecKind::SbcXq) { sbc_bitpool } else { 0 },
+        sbc_bitpool: match kind {
+            CodecKind::Sbc => req.sbc_bitpool,
+            CodecKind::SbcXq => req.sbcxq_bitpool,
+            _ => 0,
+        },
         opus_frame_ms,
         opus_channels,
         opus_max_bitrate,
@@ -863,7 +869,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         bits_per_sample: bits,
         // For AAC: variable bit rate, where the sink lists it
         abr: req.abr && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5) || (kind == CodecKind::Aac && vbr)),
-        peer: peer_params(&remote, kind, channels, req.sbc_bitpool),
+        peer: peer_params(&remote, kind, channels, &req),
     };
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,
@@ -877,7 +883,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let bitrate_capped = encoder.bitrate_capped();
     // ABR as the encoder runs it (LDAC keeps a fixed quality when its ABR
     // module fails to start)
-    let abr = encoder.abr_active();
+    let abr = encoder.abr_active() || vbr;
     tracing::info!("encoder ready: {} {bitrate} kbps, mtu {mtu}, {bits}-bit, ABR {abr}", kind.name());
 
     if !host.start_stream() {
@@ -1128,11 +1134,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         // The encoder follows the new stream: its MTU and the device's
         // settings (e.g. its SBC bitpool range) may have changed
-        let new_config = EncoderConfig {
-            mtu: r.mtu,
-            peer: peer_params(&r.remote, kind, channels, req.sbc_bitpool),
-            ..encoder_config
-        };
+        let new_config =
+            EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels, &req), ..encoder_config };
         if r.mtu != encoder_config.mtu {
             tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }
@@ -1176,7 +1179,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             info.bitrate_kbps = encoder.bitrate_kbps();
             info.bitrate_capped = encoder.bitrate_capped();
-            info.abr = encoder.abr_active();
+            info.abr = encoder.abr_active() || vbr;
             info.details =
                 Some(Box::new(codec_details(kind, &config, &r.remote, &*encoder, r.mtu, format.sample_rate)));
             let (p, new_input) = start_pipeline(encoder, format, channels, r.mtu, sink, &host);

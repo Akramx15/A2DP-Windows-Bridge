@@ -6,9 +6,10 @@ import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch } f
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import type { IconName } from "../components/icons";
-import { codecDetails, codecName, currentProfile, stateLabel } from "../components/stream";
+import { BatteryLevel, codecDetails, codecName, currentProfile, stateLabel } from "../components/stream";
 import { lang, setLanguage, t } from "../i18n";
 import type { Core } from "../ipc/store";
+import { About } from "../screens/About";
 import { Adapter } from "../screens/Adapter";
 import { Devices } from "../screens/Devices";
 import { Developer } from "../screens/Developer";
@@ -93,6 +94,7 @@ const NAV: { name: RouteName; icon: IconName; label: string }[] = [
   { name: "developer", icon: "wrench", label: "ui.nav.developer" },
   { name: "adapter", icon: "usb_stick", label: "ui.nav.adapter" },
   { name: "settings", icon: "settings", label: "ui.nav.settings" },
+  { name: "about", icon: "info", label: "ui.nav.about" },
 ];
 
 function MainWindow() {
@@ -211,6 +213,9 @@ function MainWindow() {
               <Match when={route().name === "adapter"}>
                 <Adapter />
               </Match>
+              <Match when={route().name === "about"}>
+                <About />
+              </Match>
               <Match when={route().name === "settings" || route().name === "setup"}>
                 <Settings />
               </Match>
@@ -280,7 +285,7 @@ function StatusPill() {
         </Show>
         <span class="status-pill-state">{stateLabel(stream().state)}</span>
         <Show when={stream().battery !== null}>
-          <span class="status-pill-sub">{t("ui.home.battery", stream().battery!)}</span>
+          <BatteryLevel class="status-pill-sub" percent={stream().battery!} />
         </Show>
         <Show when={stream().info}>
           {(i) => (

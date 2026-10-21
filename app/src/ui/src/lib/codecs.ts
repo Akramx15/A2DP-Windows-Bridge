@@ -47,6 +47,8 @@ export interface CodecSpec {
 
 /** SBC's largest bitpool (the local SEP's) */
 export const BITPOOL_MAX = 53;
+/** SBC XQ is dual channel: its largest bitpool per channel (44.1 kHz; 43 at 48 kHz) */
+export const BITPOOL_MAX_XQ = 47;
 export const BITPOOL_MIN = 2;
 
 const HQ = "quality.high";
@@ -273,6 +275,7 @@ interface CodecFields {
   sample_rate: number;
   bit_depth: number;
   sbc_bitpool?: number;
+  sbcxq_bitpool?: number;
 }
 
 /** Values the codec cannot use go back to the defaults (v1 did the same when the codec changed) */
@@ -285,7 +288,8 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
     abr: spec.abr || spec.vbr ? p.abr : false,
     sample_rate: sampleRates(p.codec).includes(p.sample_rate) ? p.sample_rate : 0,
     bit_depth: bitDepths(p.codec).includes(p.bit_depth) ? p.bit_depth : 0,
-    ...(p.sbc_bitpool === undefined ? {} : { sbc_bitpool: spec.bitpool ? p.sbc_bitpool : 0 }),
+    ...(p.sbc_bitpool === undefined ? {} : { sbc_bitpool: p.codec === "sbc" ? p.sbc_bitpool : 0 }),
+    ...(p.sbcxq_bitpool === undefined ? {} : { sbcxq_bitpool: p.codec === "sbcxq" ? p.sbcxq_bitpool : 0 }),
   };
 }
 

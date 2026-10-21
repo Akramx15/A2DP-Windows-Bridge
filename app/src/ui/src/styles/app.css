@@ -2477,3 +2477,22 @@ html.win-flyout body {
     outline: 2px solid Highlight;
   }
 }
+
+/* Battery level: the icon takes its colour from the level */
+.battery {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.battery-icon {
+  flex: none;
+}
+.battery-icon.st-good {
+  color: var(--good);
+}
+.battery-icon.st-warn {
+  color: var(--warn);
+}
+.battery-icon.st-bad {
+  color: var(--bad);
+}

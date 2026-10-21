@@ -103,6 +103,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     le_audio: false,
     le_low_latency: true,
     sbc_bitpool: 0,
+    sbcxq_bitpool: 0,
     ...over,
   };
 }

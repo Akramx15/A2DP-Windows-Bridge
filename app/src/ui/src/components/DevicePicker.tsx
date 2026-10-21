@@ -11,7 +11,7 @@ import { useApp } from "../app/context";
 import { t } from "../i18n";
 import type { Device } from "../ipc/types";
 import { parseAddress } from "../lib/format";
-import { deviceKey, listedDevices, validDeviceName } from "../lib/profile";
+import { defaultProfileName, deviceKey, listedDevices, newProfile, normalizeProfile, validDeviceName } from "../lib/profile";
 import { Button, Dialog, Field, IconButton } from "./controls";
 import { Icon } from "./Icon";
 
@@ -110,13 +110,20 @@ export function DevicePicker(props: {
   const add = async (address: string, name: string, leAudio: boolean) => {
     if (busy()) return;
     setBusy(true);
-    await app.run(() =>
-      app.core.request("device.rename", {
-        address,
-        name: name.trim() || address,
-        ...(leAudio ? { le_audio: true } : {}),
-      }),
+    const saved = name.trim() || address;
+    const ok = await app.run(() =>
+      app.core.request("device.rename", { address, name: saved, ...(leAudio ? { le_audio: true } : {}) }),
     );
+    // A device without a profile gets one that picks the best codec, ready
+    // to connect (like pairing does on other systems); the user makes more
+    if (ok && !leAudio && !snap().profiles.some((p) => p.device_address.toUpperCase() === address.toUpperCase())) {
+      const taken = snap().profiles.map((p) => p.name);
+      const base = defaultProfileName(saved, address, false, t("codec.auto"));
+      let profileName = base;
+      for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
+      const profile = normalizeProfile({ ...newProfile(), name: profileName, device_address: address, device_name: saved });
+      await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
+    }
     setBusy(false);
   };
   const forget = async () => {

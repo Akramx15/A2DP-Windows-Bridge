@@ -403,6 +403,9 @@ pub struct Profile {
     /// allows (0 = by quality)
     #[serde(default)]
     pub sbc_bitpool: u8,
+    /// The same for SBC XQ
+    #[serde(default)]
+    pub sbcxq_bitpool: u8,
 }
 
 fn yes() -> bool {

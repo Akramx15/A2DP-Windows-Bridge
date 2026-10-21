@@ -14,6 +14,8 @@
 ; Uninstall: the core is closed; unless updating, the user is asked whether
 ; the adapters A2DPWB put on WinUSB go back to Windows (one UAC prompt), and
 ; the Run value is removed when it points at this installation.
+; "Delete the application data" also removes %APPDATA%\A2DPWB (settings,
+; profiles, pairings, firmware).
 ;
 ; Command line: /KEEPV1 leaves an installed v1, a running v1 and the Run
 ; value alone (testing v2 beside an installed v1; both use the same settings
@@ -343,6 +345,12 @@ ${UnStrCase}
 !macro NSIS_HOOK_POSTUNINSTALL
   ; Kept on updates (the next version's installer runs this uninstaller)
   ${If} $UpdateMode <> 1
+    ; "Delete the application data" ticked: Tauri's own step removes the
+    ; folder of the app identifier; the settings are in %APPDATA%\A2DPWB
+    ${If} $DeleteAppDataCheckboxState = 1
+      SetShellVarContext current
+      RMDir /r "$APPDATA\A2DPWB"
+    ${EndIf}
     ReadRegStr $0 HKCU "${A2DPWB_RUN_KEY}" "${A2DPWB_RUN_VALUE}"
     ${UnStrCase} $0 $0 "L"
     ${UnStrCase} $1 "$INSTDIR\${A2DPWB_CORE}" "L"

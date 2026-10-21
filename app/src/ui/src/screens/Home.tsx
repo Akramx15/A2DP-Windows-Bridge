@@ -8,6 +8,7 @@ import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
 import {
+  BatteryLevel,
   CodecBadge,
   ConnectButton,
   currentProfile,
@@ -131,10 +132,22 @@ export function Home() {
         fallback={
           <section class="card empty">
             <Icon name="headphones" class="empty-icon" />
-            <p>{t("profile.empty")}</p>
-            <Button kind="strong" icon="add" onClick={() => navigate({ name: "profiles", arg: "new" })}>
-              {t("profile.new")}
-            </Button>
+            <Show
+              when={snap().devices.some((d) => d.saved)}
+              fallback={
+                <>
+                  <p>{t("ui.home.no_device")}</p>
+                  <Button kind="strong" icon="add" onClick={() => navigate({ name: "devices" })}>
+                    {t("ui.home.add_device")}
+                  </Button>
+                </>
+              }
+            >
+              <p>{t("profile.empty")}</p>
+              <Button kind="strong" icon="add" onClick={() => navigate({ name: "profiles", arg: "new" })}>
+                {t("profile.new")}
+              </Button>
+            </Show>
           </section>
         }
       >
@@ -161,7 +174,7 @@ export function Home() {
                 </div>
                 <CodecBadge />
                 <Show when={stream().battery !== null}>
-                  <div class="muted device-sub">{t("ui.home.battery", stream().battery!)}</div>
+                  <BatteryLevel percent={stream().battery!} />
                 </Show>
               </div>
             </section>

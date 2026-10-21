@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use a2dpwb_core::diag::AudioRates;
+use a2dpwb_core::paths;
 use a2dpwb_core::profiles::{self, Profile as CoreProfile};
 use a2dpwb_core::receiver::{self, ReceiverClient};
 use a2dpwb_core::settings::Settings as CoreSettings;
@@ -118,6 +119,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         le_audio: p.le_audio,
         le_low_latency: p.le_low_latency,
         sbc_bitpool: p.sbc_bitpool,
+        sbcxq_bitpool: p.sbcxq_bitpool,
     }
 }
 
@@ -146,6 +148,7 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.le_audio = p.le_audio;
     c.le_low_latency = p.le_low_latency;
     c.sbc_bitpool = p.sbc_bitpool;
+    c.sbcxq_bitpool = p.sbcxq_bitpool;
     c
 }
 
@@ -246,7 +249,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
             };
             let chip_pid = chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, [a.realtek_pid]);
             let files = chips::firmware_files(chip_pid, &settings.bt_chip_fw_stem);
-            let check = chips::firmware_check(config_dir, chip_pid, &settings.bt_chip_fw_stem);
+            let check = chips::firmware_check(&paths::firmware_dir(config_dir), chip_pid, &settings.bt_chip_fw_stem);
             AdapterInfo {
                 instance_id: a.device.instance_id.clone(),
                 vid: a.device.vid,
@@ -929,7 +932,7 @@ impl CoreState {
         let (_, s) = self.snapshot();
         let list = adapter_infos(&self.config_dir(), &self.service.settings());
         let change = firmware_change(&s.adapter.adapters, &list);
-        warn_invalid_firmware(&self.config_dir(), &change.invalid);
+        warn_invalid_firmware(&paths::firmware_dir(&self.config_dir()), &change.invalid);
         let le_audio = le_audio_now(self.service.le_audio_supported(), &list);
         self.publish(Event::Adapter(AdapterState { adapters: list.clone(), le_audio, ..s.adapter }));
         (list, change.fixed)
@@ -1369,7 +1372,7 @@ impl CoreState {
             }
             Method::AdapterFirmwareFiles => {
                 blocking(Box::new(|me| {
-                    let list: Vec<FirmwareFile> = chips::scan_firmware_files(&me.config_dir())
+                    let list: Vec<FirmwareFile> = chips::scan_firmware_files(&paths::firmware_dir(&me.config_dir()))
                         .into_iter()
                         .map(|f| FirmwareFile {
                             stem: f.stem,
@@ -1391,7 +1394,7 @@ impl CoreState {
                             format!("no download for {file}"),
                         ));
                     }
-                    if let Err(e) = a2dpwb_core::firmware::download(&me.config_dir(), &file) {
+                    if let Err(e) = a2dpwb_core::firmware::download(&paths::firmware_dir(&me.config_dir()), &file) {
                         tracing::warn!("firmware download failed: {e}");
                         return Err(err("firmware.download_failed", "firmware.download_failed"));
                     }
