@@ -38,12 +38,13 @@
 //! pipe sat idle in between. The controller's ACL / ISO buffer count, which
 //! BTstack keeps to, bounds how many packets are queued.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{JoinHandle, Thread};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use btstack_sys::consts::{HCI_ACL_DATA_PACKET, HCI_COMMAND_DATA_PACKET, HCI_EVENT_PACKET, HCI_ISO_DATA_PACKET};
 use btstack_sys::{HciBackend, Upstream};
@@ -84,6 +85,20 @@ fn out_slot(packet_type: u8) -> Option<usize> {
 
 /// VID and PID of the adapter opened last (what a stack runs on)
 static LAST_OPENED: Mutex<Option<(u16, u16)>> = Mutex::new(None);
+
+/// ACL / ISO OUT writes since [`take_acl_out_timing`] last ran: the
+/// longest from submit to completion (µs) and the most in flight at once
+static ACL_OUT_LATENCY_US: AtomicU64 = AtomicU64::new(0);
+static ACL_OUT_PENDING_MAX: AtomicU64 = AtomicU64::new(0);
+
+/// The longest ACL / ISO OUT write (submit to completion) and the most
+/// writes in flight since the last call (core's stream health log): how
+/// long the controller held data back over USB
+pub fn take_acl_out_timing() -> (Duration, usize) {
+    let latency = ACL_OUT_LATENCY_US.swap(0, Ordering::Relaxed);
+    let pending = ACL_OUT_PENDING_MAX.swap(0, Ordering::Relaxed);
+    (Duration::from_micros(latency), pending as usize)
+}
 
 /// VID and PID of the adapter a [`UsbTransport`] opened last; None before
 /// the first open
@@ -670,10 +685,16 @@ fn acl_writer_loop(
     let waker = Waker::from(Arc::new(ThreadWaker(std::thread::current())));
     let mut cx = Context::from_waker(&waker);
     let mut open = true;
+    // Submit times of the transfers in flight (they complete in order)
+    let mut submitted: VecDeque<Instant> = VecDeque::with_capacity(ACL_OUT_TRANSFERS);
     while !stop.load(Ordering::Acquire) {
         while open && ep.pending() < ACL_OUT_TRANSFERS {
             match rx.try_recv() {
-                Ok(buf) => ep.submit(buf),
+                Ok(buf) => {
+                    ep.submit(buf);
+                    submitted.push_back(Instant::now());
+                    ACL_OUT_PENDING_MAX.fetch_max(ep.pending() as u64, Ordering::Relaxed);
+                }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => open = false,
             }
@@ -690,6 +711,9 @@ fn acl_writer_loop(
             continue;
         };
         let _ = recycle.send(c.buffer);
+        if let Some(at) = submitted.pop_front() {
+            ACL_OUT_LATENCY_US.fetch_max(at.elapsed().as_micros() as u64, Ordering::Relaxed);
+        }
         let Err(e) = c.status else { continue };
         if stop.load(Ordering::Acquire) {
             break;
@@ -702,6 +726,7 @@ fn acl_writer_loop(
             // The writes behind it fail as well, and every later one until
             // the pipe is cleared
             let behind = cancel_out(ep, &recycle);
+            submitted.clear();
             tracing::warn!(target: "hci", "USB: ACL write failed ({e}), {} packet(s) dropped", 1 + behind);
             if let Err(e) = ep.clear_halt().wait() {
                 tracing::warn!(target: "hci", "USB: clearing the ACL out pipe failed: {e}");

@@ -12,6 +12,7 @@ use codec::caps::{self, ConfigError, Configuration, RemoteCaps, Unavailable};
 use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
 use pipeline::{BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType};
 
+use crate::health::{CaptureReading, StreamHealth};
 use crate::messages::Msg;
 use crate::service::Inner;
 
@@ -375,6 +376,22 @@ impl ActiveSource {
     /// An application capture whose app is not running
     fn waiting(&self) -> bool {
         matches!(self, ActiveSource::App(a) if a.running.is_none())
+    }
+
+    fn running(&self) -> Option<&Running> {
+        match self {
+            ActiveSource::Capture(r) => Some(r),
+            ActiveSource::App(a) => a.running.as_ref(),
+        }
+    }
+
+    /// For the stream health log (takes the capture's packet gap)
+    fn health(&self) -> CaptureReading {
+        self.running().map_or_else(CaptureReading::default, |r| CaptureReading {
+            filled_frames: r.filled_frames(),
+            discontinuities: r.discontinuities(),
+            packet_gap: r.take_packet_gap(),
+        })
     }
 
     fn stop(self) {
@@ -946,6 +963,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let mut app_ticks = 0u32;
     let mut lost_for_good = false;
     let mut discontinuities = DiscontinuityLog::default();
+    let mut health = StreamHealth::start(host.stats().clone(), format.sample_rate, active.health());
     while !stopped() {
         inner.wait_tick(Duration::from_millis(200));
         if stopped() {
@@ -971,10 +989,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             info.source.waiting = active.waiting();
             inner.stream_info(info.clone());
         }
-        discontinuities.tick(match &active {
-            ActiveSource::Capture(r) => r.discontinuities(),
-            ActiveSource::App(a) => a.running.as_ref().map_or(0, Running::discontinuities),
-        });
+        discontinuities.tick(active.running().map_or(0, Running::discontinuities));
+        health.tick(|| active.health());
 
         // Sleep, or an adapter that stopped working, leaves a stack that
         // reports no disconnect: it is started anew and the device connected
@@ -1175,6 +1191,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- cleanup: producer first, then the encode thread, then the stream ----
     tracing::info!("streaming stopped, cleaning up");
+    health.finish(active.health());
     active.stop();
     if let Some(p) = pipeline.take()
         && let Some(s) = p.stop()

@@ -35,6 +35,23 @@ const LE_SCAN: Duration = Duration::from_secs(5);
 /// ... once the LE core is ready (HCI works, so at once or a moment later)
 const LE_SCAN_READY_WAIT: Duration = Duration::from_secs(1);
 
+/// MMCSS "Pro Audio" for the calling thread (the priority hooks). Said in
+/// the log either way: a thread that runs without it is one place a
+/// stutter can come from (issue #84).
+fn pro_audio(thread: &str) -> Box<dyn std::any::Any> {
+    let guard = match win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio) {
+        Ok(g) => {
+            tracing::info!("{thread}: MMCSS Pro Audio (task {})", g.task_index());
+            Some(g)
+        }
+        Err(e) => {
+            tracing::warn!("{thread}: MMCSS registration failed, normal priority: {e}");
+            None
+        }
+    };
+    Box::new(guard)
+}
+
 /// LE Audio (experimental) from the command line (`--le-audio` and the
 /// test options): LE is on whatever the setting says
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -641,12 +658,9 @@ impl Service {
                 None
             }
         };
-        pipeline::set_thread_priority_hook(|| {
-            Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
-        });
-        hci_transport::set_acl_out_priority_hook(|| {
-            Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
-        });
+        pipeline::set_thread_priority_hook(|| pro_audio("encode thread"));
+        hci_transport::set_acl_out_priority_hook(|| pro_audio("USB ACL writer"));
+        bt_host::set_runloop_priority_hook(|| pro_audio("BTstack thread"));
         Service { inner, worker: Mutex::new(None), _power: power }
     }
 

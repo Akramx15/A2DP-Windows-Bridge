@@ -367,6 +367,9 @@ fn capture_loop(
     // Wake at least once a period, to fill silence and to see `stop`
     let wait_ms = (stream.period.as_millis() as u32).clamp(1, 100);
     let mut last_process_check = start;
+    // When the previous packet came (the gap between packets, for core's
+    // stream health log)
+    let mut last_packet: Option<Duration> = None;
 
     loop {
         if shared.stop.load(Ordering::Acquire) {
@@ -405,6 +408,9 @@ fn capture_loop(
             }
             let bytes = frames * frame_bytes;
             let now = start.elapsed();
+            if let Some(last) = last_packet.replace(now) {
+                shared.packet_gap_us.fetch_max(now.saturating_sub(last).as_micros() as u64, Ordering::Relaxed);
+            }
             if info.flags.data_discontinuity && now >= DISCONTINUITY_GRACE {
                 // A gap in the captured audio (CPU load, other audio apps)
                 shared.discontinuities.fetch_add(1, Ordering::Relaxed);
@@ -442,6 +448,10 @@ fn capture_loop(
             if n > 0 {
                 sink.silence(n, fmt);
                 shared.silence_frames.fetch_add(n as u64, Ordering::Relaxed);
+                shared.filled_frames.fetch_add(n as u64, Ordering::Relaxed);
+                // A silent device sends no packets: not a gap of the
+                // capture (the filled frames tell this one)
+                last_packet = None;
             }
         }
         if let Some(process) = &stream.process

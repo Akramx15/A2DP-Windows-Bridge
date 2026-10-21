@@ -294,9 +294,13 @@ fn encode_thread(
     let mut abr_last = Instant::now();
     let mut encode_errors = 0u64;
     let mut overflow_report = Instant::now();
+    // The last round that had audio, for the gap between rounds (core's
+    // stream health log)
+    let mut last_round: Option<Instant> = None;
 
     while !control.stop.load(Ordering::Acquire) {
         if control.reset.swap(false, Ordering::AcqRel) {
+            last_round = None;
             let n = ring.slots();
             if let Ok(chunk) = ring.read_chunk(n) {
                 chunk.commit_all();
@@ -315,6 +319,14 @@ fn encode_thread(
         if available == 0 {
             std::thread::park_timeout(Duration::from_millis(10));
             continue;
+        }
+        if sink.is_streaming() {
+            let now = Instant::now();
+            if let Some(last) = last_round.replace(now) {
+                sink.stats().timing.encode_gap_us.record_duration(now - last);
+            }
+        } else {
+            last_round = None;
         }
         let frames = available.min(round_frames);
         let bytes = frames * frame_bytes;
@@ -360,6 +372,7 @@ fn encode_thread(
         sent += packetizer.end_round(&mut |p| {
             sink.send(p);
         });
+        sink.stats().timing.queue_depth_max.record(sink.depth().into());
         // Keep the rest (less than one encoder block) for the next round
         match fmt {
             PcmFormat::I16 => {

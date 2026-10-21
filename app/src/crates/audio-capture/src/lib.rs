@@ -156,6 +156,12 @@ pub(crate) struct Shared {
     frames: AtomicU64,
     silence_frames: AtomicU64,
     discontinuities: AtomicU64,
+    /// Of `silence_frames`: what the silence fill added because no packet
+    /// came (not the packets the engine flagged as silent)
+    filled_frames: AtomicU64,
+    /// Longest wait between two captured packets since the owner last
+    /// took it (µs)
+    packet_gap_us: AtomicU64,
 }
 
 impl Shared {
@@ -181,7 +187,10 @@ impl Drop for PanicGuard {
 /// thread keeps normal priority, as in v1
 pub(crate) fn register_mmcss() -> Option<win_sys::mmcss::MmcssGuard> {
     match win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::Audio) {
-        Ok(g) => Some(g),
+        Ok(g) => {
+            tracing::info!("audio capture: MMCSS Audio (task {})", g.task_index());
+            Some(g)
+        }
         Err(e) => {
             tracing::warn!("audio capture: MMCSS registration failed: {e}");
             None
@@ -313,6 +322,19 @@ impl Running {
     /// these from the capture thread; here the owner reads and logs them.
     pub fn discontinuities(&self) -> u64 {
         self.shared.discontinuities.load(Ordering::Relaxed)
+    }
+
+    /// Of [`Running::silence_frames`]: the silence the fill added because
+    /// no packet came for two periods (a loopback capture whose device
+    /// plays nothing, or a capture thread held back)
+    pub fn filled_frames(&self) -> u64 {
+        self.shared.filled_frames.load(Ordering::Relaxed)
+    }
+
+    /// The longest wait between two captured packets since the last call
+    /// (zero for the test tone, which has no packets)
+    pub fn take_packet_gap(&self) -> std::time::Duration {
+        std::time::Duration::from_micros(self.shared.packet_gap_us.swap(0, Ordering::Relaxed))
     }
 }
 

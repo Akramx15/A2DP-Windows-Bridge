@@ -7,6 +7,7 @@
 
 pub mod adapter;
 pub mod devices;
+mod health;
 mod le_media;
 mod le_stream;
 pub mod link;
