@@ -676,6 +676,7 @@ impl CoreState {
             // Set by the resident core's watch (resident.rs)
             v1_running: false,
             verbose: crate::logging::verbose(),
+            crashes: crate::crashes::unseen(&dir, &settings),
         };
         let (events, _) = broadcast::channel(256);
         let state = Arc::new(CoreState {
@@ -733,6 +734,7 @@ impl CoreState {
                 Event::Capture(c) => s.capture = c.clone(),
                 Event::V1Running(b) => s.v1_running = *b,
                 Event::Verbose(v) => s.verbose = *v,
+                Event::Crashes(c) => s.crashes = c.clone(),
                 // Not state: no revision
                 Event::Link(_) | Event::Log(_) | Event::Receiver(_) | Event::Bye => {
                     let _ = self.events.send((g.0, Arc::new(event)));
@@ -1064,6 +1066,28 @@ impl CoreState {
         a2dpwb_core::messages::translate(&self.service.settings().language, key, default)
     }
 
+    // ---- Crash reports -------------------------------------------------------
+
+    /// Lists the crash reports not dismissed yet, if they changed
+    fn refresh_crashes(&self) {
+        let now = crate::crashes::unseen(&self.config_dir(), &self.service.settings());
+        if self.with_snapshot(|s| s.crashes != now) {
+            self.publish(Event::Crashes(now));
+        }
+    }
+
+    /// The reports shown were seen: only newer ones are shown from now on
+    fn crashes_seen(&self) {
+        let Some(newest) = self.with_snapshot(|s| s.crashes.first().map(|c| c.name.clone())) else { return };
+        let mut s = self.service.settings();
+        crate::crashes::mark_seen(&mut s, &newest);
+        if let Err(e) = s.save(&self.config_dir()) {
+            tracing::warn!("cannot save the settings: {e}");
+        }
+        self.service.set_settings(s);
+        self.publish(Event::Crashes(Vec::new()));
+    }
+
     /// The UI hid its window to the tray (app.hidden_to_tray): v1's "still
     /// running in the tray" balloon, once
     pub fn hidden_to_tray(&self) {
@@ -1213,7 +1237,12 @@ impl CoreState {
                 .unwrap_or_else(|_| Err(err("internal", "error.btstack_crash_stream")))
         };
         match method {
-            Method::StateSnapshot => Ok(json(&self.snapshot().1)),
+            Method::StateSnapshot => {
+                // A window that opens after a crash (of itself, or of the
+                // core while it was closed) finds the report
+                self.refresh_crashes();
+                Ok(json(&self.snapshot().1))
+            }
             Method::StreamStart { profile } => self.start_profile(&profile).map(|()| Value::Null),
             Method::StreamStartCustom {
                 device,
@@ -1478,6 +1507,10 @@ impl CoreState {
                 let mut lines = crate::logging::hub().recent();
                 lines.retain(|l| l.level <= level);
                 Ok(json(&lines))
+            }
+            Method::DiagCrashesSeen => {
+                self.crashes_seen();
+                Ok(Value::Null)
             }
             Method::DiagSetVerbose { level } => {
                 let v = crate::logging::set_verbose(level);

@@ -50,6 +50,7 @@ export type Wire<T> = T extends bigint
 
 export type { AclPacket } from "./bindings/AclPacket";
 export type { AdapterStatus } from "./bindings/AdapterStatus";
+export type { CrashReport } from "./bindings/CrashReport";
 export type { DriverKind } from "./bindings/DriverKind";
 export type { LogLevel } from "./bindings/LogLevel";
 export type { Msg } from "./bindings/Msg";
@@ -116,6 +117,7 @@ interface Results {
   "diag.flow": FlowView;
   "diag.recent_logs": LogLine[];
   "diag.set_verbose": VerboseState | null;
+  "diag.crashes_seen": null;
   "diag.bundle": DiagBundle;
   "receiver.discover": ReceiverInfo[];
   "receiver.connect": ReceiverState;

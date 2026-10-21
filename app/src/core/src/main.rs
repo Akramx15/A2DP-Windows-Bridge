@@ -9,6 +9,7 @@
 
 mod bundle;
 mod cli;
+mod crashes;
 mod driver;
 mod logging;
 mod quit;

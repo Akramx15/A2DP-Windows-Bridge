@@ -479,42 +479,53 @@ export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugRep
   });
 }
 
-/** The error followed by the diagnostic info with its warnings and recent
- *  log (addresses masked: it goes into a public issue); the error alone
- *  when the core cannot give the info */
-export async function errorLogText(app: AppContext, message: Msg, code?: string | null): Promise<{ text: string; info: string }> {
-  const head = errorCopyText(message, code);
+/** What a report holds: `head` (the error, the crash), `details` (a crash
+ *  report's text) and the diagnostic info with its warnings and recent log
+ *  (addresses masked: it goes into a public issue). `log` is the details
+ *  and the info for the issue's log field; `text` all of it, for the
+ *  clipboard. Without the core's info: what the UI has. */
+export async function reportText(app: AppContext, head: string, details = ""): Promise<{ text: string; log: string }> {
   const info = await app.core
     .request("diag.info", { mask: true })
-    .then((d) => d.text)
+    .then((d) => d.text.replace(/^```text\n/, "").replace(/\n?```\s*$/, "\n"))
     .catch(() => "");
-  return { text: info ? `${head}\n\n${info}` : head, info };
+  const log = [details.trimEnd(), info].filter(Boolean).join("\n\n");
+  return { text: log ? `${head}\n\n\`\`\`text\n${log.trimEnd()}\n\`\`\`\n` : head, log };
 }
 
-/** Copies an error with the log around it, ready to paste into a report */
-export async function copyError(app: AppContext, message: Msg, code?: string | null) {
-  const { text } = await errorLogText(app, message, code);
+/** Copies a report, ready to paste */
+export async function copyReport(app: AppContext, head: string, details = "") {
+  const { text } = await reportText(app, head, details);
   const ok = await copyText(text);
   app.notify(ok ? t("ui.error.copied") : t("dbgc.copy_failed"), ok ? "info" : "error");
 }
 
-/** Opens a GitHub issue prefilled with the error and the diagnostic info;
- *  the whole text also goes to the clipboard (the URL holds only part of
- *  a long log) */
-export async function reportError(app: AppContext, message: Msg, code?: string | null) {
+/** Opens a GitHub issue prefilled with a report; the whole text also goes
+ *  to the clipboard (the URL holds only part of a long log) */
+export async function openReport(app: AppContext, head: string, details = "") {
   try {
-    const { text, info } = await errorLogText(app, message, code);
-    const what = `${errorCopyText(message, code)}\n\n`;
+    const { text, log } = await reportText(app, head, details);
+    const what = `${head}\n\n`;
     const snap = app.core.state.snap;
     const url = snap
-      ? bugReportFor(snap, info, { whatHappened: what })
-      : bugReportUrl({ version: "", info, whatHappened: what });
+      ? bugReportFor(snap, log, { whatHappened: what })
+      : bugReportUrl({ version: "", info: log, whatHappened: what });
     await app.core.transport.openUrl(url);
     await copyText(text).catch(() => false);
     app.notify(t("ui.error.report_opened"));
   } catch (e) {
     app.notify(errorText(e), "error");
   }
+}
+
+/** Copies an error with the log around it */
+export function copyError(app: AppContext, message: Msg, code?: string | null) {
+  return copyReport(app, errorCopyText(message, code));
+}
+
+/** A GitHub issue about an error */
+export function reportError(app: AppContext, message: Msg, code?: string | null) {
+  return openReport(app, errorCopyText(message, code));
 }
 
 /** An error with its cause and the button that fixes it */

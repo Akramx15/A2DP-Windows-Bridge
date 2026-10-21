@@ -48,7 +48,9 @@ export type MockScenario =
   | "le"
   | "le_unsupported"
   | "le_unchecked"
-  | "long";
+  | "long"
+  /** The core crashed earlier (a crash report not dismissed yet) */
+  | "crash";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -253,6 +255,18 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     clock_ms: null,
     v1_running: false,
     verbose: null,
+    crashes:
+      scenario === "crash"
+        ? [
+            {
+              name: "a2dpwb-core-20261022-012338-512",
+              process: "a2dpwb-core",
+              time: "2026-10-22 01:23:38",
+              reason: "panic in thread encode: index out of bounds: the len is 1024 but the index is 1024",
+              text: "a2dpwb-core 2.0.2-beta.4\nprocess 4242 thread 77\npanic in thread encode: index out of bounds: the len is 1024 but the index is 1024\nno dump\n   0: std::backtrace::Backtrace::force_capture\n   1: a2dpwb_core::encode::run\n",
+            },
+          ]
+        : [],
   };
 }
 
@@ -651,6 +665,10 @@ export class MockCore implements Transport {
         return this.stopCapture();
       case "diag.info":
         return { text: this.diagText(p.mask !== false) };
+      case "diag.crashes_seen":
+        this.snap.crashes = [];
+        this.emit({ kind: "crashes", value: [] });
+        return null;
       case "diag.set_verbose": {
         const level = p.level === "debug" || p.level === "trace" ? (p.level as LogLevel) : null;
         const v = level ? { level, until_ms: Date.now() + (level === "trace" ? 1 : 24) * 3600 * 1000 } : null;

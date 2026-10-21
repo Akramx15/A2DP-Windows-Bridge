@@ -21,7 +21,7 @@ import { Settings } from "../screens/Settings";
 import { Setup, needsSetup } from "../screens/Setup";
 import { applyTheme } from "../theme";
 import { AppProvider, useApp, type RouteName } from "./context";
-import { CaptureSign, UpdateNotice } from "./indicators";
+import { CaptureSign, CrashNotice, UpdateNotice } from "./indicators";
 import "./shell.css";
 
 export function App(props: { core: Core }) {
@@ -192,6 +192,7 @@ function MainWindow() {
           </nav>
           <main class="content" id="main" tabindex="-1" lang={lang()}>
             <div class="app-notices">
+              <CrashNotice />
               <UpdateNotice />
             </div>
             <Switch>

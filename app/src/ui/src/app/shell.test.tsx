@@ -73,6 +73,31 @@ describe("update check", () => {
     fireEvent.click(within(banner).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByText(/is available \(current/)).toBeNull());
   });
+
+  it("a crash of A2DPWB shows on every screen, ready to report, until closed", async () => {
+    const { mock } = start("#/profiles", { scenario: "crash" });
+    const open = vi.spyOn(mock, "openUrl").mockResolvedValue();
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    const banner = (await screen.findByText(t("ui.crash.title"))).closest(".banner") as HTMLElement;
+    expect(banner).toHaveTextContent("a2dpwb-core, 2026-10-22 01:23:38");
+    expect(banner).toHaveTextContent("panic in thread encode");
+
+    fireEvent.click(within(banner).getByRole("button", { name: t("ui.diag.report_github") }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    const url = new URL(open.mock.calls[0][0]);
+    expect(url.searchParams.get("what_happened")).toContain("panic in thread encode");
+    // The backtrace first, then the diagnostic info
+    const logs = url.searchParams.get("logs")!;
+    expect(logs).toContain("a2dpwb_core::encode::run");
+    expect(logs.indexOf("a2dpwb_core::encode::run")).toBeLessThan(logs.indexOf("A2DP Windows Bridge"));
+    expect(write.mock.calls[0][0]).toContain("```text\n");
+
+    const seen = vi.spyOn(mock, "call");
+    fireEvent.click(within(banner).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByText(t("ui.crash.title"))).toBeNull());
+    expect(seen.mock.calls.some(([m]) => m === "diag.crashes_seen")).toBe(true);
+  });
 });
 
 describe("tray", () => {
