@@ -107,6 +107,7 @@
   "firmware.invalid": "%s 不是 Realtek 韌體檔案，可能儲存的是網頁而非檔案。請透過「plain」連結重新下載並取代。",
   "firmware.rom_running": "無法連線：介面卡在沒有 Realtek 韌體的情況下運作（檔案遺失或未載入），因此無法串流。請將介面卡頁面上顯示的韌體檔案放入設定資料夾，按「重新啟動藍牙」，然後再次連線。",
   "firmware.rom_status": "介面卡正以 ROM 程式碼運作：Realtek 韌體未載入，因此雖然能開啟，卻無法連線或串流。請將介面卡頁面上顯示的韌體檔案放入設定資料夾，藍牙隨後會使用這些檔案重新啟動。",
+  "firmware.rom_short": "介面卡正以 ROM 程式碼運作：雖然能開啟，但在這些檔案就位之前無法連線或串流。",
   "firmware.required_files": "必要檔案:",
   "firmware.detected_adapters": "偵測到的介面卡",
   "firmware.no_adapters": "未偵測到 USB 藍牙介面卡。",

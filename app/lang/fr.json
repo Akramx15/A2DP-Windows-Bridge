@@ -107,6 +107,7 @@
   "firmware.invalid": "%s n'est pas un fichier de firmware Realtek : une page web a sans doute été enregistrée à la place du fichier. Téléchargez-le à nouveau avec le lien « plain » et remplacez-le.",
   "firmware.rom_running": "Connexion impossible : l'adaptateur fonctionne sans son firmware Realtek (fichiers manquants ou non chargés) et ne peut donc pas diffuser. Placez les fichiers de firmware indiqués sur l'écran Adaptateur dans le dossier de configuration, cliquez sur « Redémarrer le Bluetooth » et reconnectez-vous.",
   "firmware.rom_status": "L'adaptateur fonctionne avec son code en ROM : le firmware Realtek n'a pas été chargé, il s'ouvre donc mais ne peut ni se connecter ni diffuser. Placez les fichiers de firmware indiqués sur l'écran Adaptateur dans le dossier de configuration ; le Bluetooth redémarre alors avec eux.",
+  "firmware.rom_short": "L'adaptateur fonctionne avec son code en ROM : il s'ouvre, mais ne peut ni se connecter ni diffuser tant que ces fichiers manquent.",
   "firmware.required_files": "Fichiers requis :",
   "firmware.detected_adapters": "Adaptateur détecté",
   "firmware.no_adapters": "Aucun adaptateur Bluetooth USB détecté.",

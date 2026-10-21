@@ -107,6 +107,7 @@
   "firmware.invalid": "%s is not a Realtek firmware file: probably a web page was saved instead of the file. Download it again with the 'plain' link and replace it.",
   "firmware.rom_running": "Could not connect: the adapter is running without its Realtek firmware (the files are missing or were not loaded), so it cannot stream. Put the firmware files shown on the Adapter screen into the config folder, press Restart Bluetooth and connect again.",
   "firmware.rom_status": "The adapter is running its ROM code: the Realtek firmware was not loaded, so it opens but cannot connect or stream. Put the firmware files shown on the Adapter screen into the config folder; Bluetooth then starts again with them.",
+  "firmware.rom_short": "The adapter is running its ROM code: it opens but cannot connect or stream until these files are there.",
   "firmware.required_files": "Required files:",
   "firmware.detected_adapters": "Detected Adapter",
   "firmware.no_adapters": "No USB Bluetooth adapters detected.",
