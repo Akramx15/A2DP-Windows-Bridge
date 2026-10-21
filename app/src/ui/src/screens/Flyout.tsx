@@ -16,6 +16,7 @@ import {
   CodecBadge,
   ConnectButton,
   copyError,
+  reportError,
   currentProfile,
   QualityIndicator,
   Ring,
@@ -97,8 +98,13 @@ export function Flyout() {
               <span class="fly-error-text">{tm(e().message)}</span>
               <IconButton
                 icon="copy"
-                label={t("error.click_to_copy_hint")}
+                label={t("ui.error.copy_hint")}
                 onClick={() => void copyError(app, e().message, e().code)}
+              />
+              <IconButton
+                icon="open"
+                label={t("ui.error.report_hint")}
+                onClick={() => void reportError(app, e().message, e().code)}
               />
               <Show when={fix()}>
                 {(f) => (

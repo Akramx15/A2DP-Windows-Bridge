@@ -108,14 +108,35 @@ describe("Home", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Adapters" })).toBeInTheDocument();
   });
 
-  it("copies the error text", async () => {
+  it("copies the error with the diagnostic log", async () => {
     start("#/home", { scenario: "error" });
     const write = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
     const alert = await screen.findByRole("alert");
     fireEvent.click(within(alert).getByRole("button", { name: t("ui.error.copy") }));
-    await waitFor(() => expect(write).toHaveBeenCalledWith(t("error.connect_no_answer")));
+    await waitFor(() => expect(write).toHaveBeenCalled());
+    const text = write.mock.calls[0][0] as string;
+    expect(text.startsWith(`${t("error.connect_no_answer")}\n\n`)).toBe(true);
+    expect(text).toContain("A2DP Windows Bridge");
     expect(await screen.findByText(t("ui.error.copied"))).toBeInTheDocument();
+  });
+
+  it("reports the error on GitHub with the form filled in", async () => {
+    const { mock } = start("#/home", { scenario: "error" });
+    const open = vi.spyOn(mock, "openUrl").mockResolvedValue();
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    const alert = await screen.findByRole("alert");
+    fireEvent.click(within(alert).getByRole("button", { name: t("ui.diag.report_github") }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    const url = new URL(open.mock.calls[0][0]);
+    expect(url.searchParams.get("template")).toBe("bug_report.yml");
+    expect(url.searchParams.get("what_happened")).toContain(t("error.connect_no_answer"));
+    expect(url.searchParams.get("logs")).toContain("A2DP Windows Bridge");
+    // No bundle was saved: its field stays empty
+    expect(url.searchParams.has("bundle")).toBe(false);
+    expect(write).toHaveBeenCalled();
+    expect(await screen.findByText(t("ui.error.report_opened"))).toBeInTheDocument();
   });
 
   it("shows the capture source, waiting for the application", async () => {

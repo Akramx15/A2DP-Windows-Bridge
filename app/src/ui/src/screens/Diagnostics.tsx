@@ -11,14 +11,13 @@ import { Gauge, LineChart } from "../components/charts";
 import { CodecDetailsCard } from "../components/CodecDetails";
 import { Banner, Button, Check, Dialog, IconButton, Section, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
-import { currentProfile } from "../components/stream";
+import { bugReportFor } from "../components/stream";
 import type { IconName } from "../components/icons";
 import { t } from "../i18n";
 import type { CaptureState, DiagBundle, FlowStepView, LogLevel, LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { STEPS, type Step, type StepStatus, stepDetail } from "../lib/flow";
 import { clock, copyText, kbps, maskAddresses } from "../lib/format";
-import { bugReportUrl } from "../lib/links";
 import {
   dropsPerSample,
   EDR3_MAX_KBPS,
@@ -222,20 +221,8 @@ export function Diagnostics() {
   const report = async (b: DiagBundle) => {
     setReporting(true);
     try {
-      const snap = core.state.snap!;
       const info = (await core.request("diag.info", { mask: true })).text;
-      const profile = currentProfile(snap);
-      const adapter = snap.adapter.adapters.find((a) => a.driver === "winusb") ?? snap.adapter.adapters[0];
-      const hex = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
-      const url = bugReportUrl({
-        version: snap.update.current_version,
-        info,
-        adapter: adapter && `${adapter.display_name} (${hex(adapter.vid)}:${hex(adapter.pid)})`,
-        headphones: profile?.device_name || undefined,
-        codec: profile?.codec,
-        captureMode: profile?.capture_mode,
-        bundle: baseName(b.path),
-      });
+      const url = bugReportFor(core.state.snap!, info, { bundle: baseName(b.path) });
       await core.transport.revealPath(b.path);
       await core.transport.openUrl(url);
       // Only a convenience: the issue has the text already (when it fit)

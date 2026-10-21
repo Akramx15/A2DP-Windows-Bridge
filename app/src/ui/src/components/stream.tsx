@@ -3,11 +3,11 @@
 // and the error panel with its fix.
 
 import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
-import { errorText, useApp } from "../app/context";
+import { errorText, useApp, type AppContext } from "../app/context";
 import { t, tm } from "../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { copyText, khz, kbps, percentToVolume, volumePercent } from "../lib/format";
-import { firmwareUrl } from "../lib/links";
+import { bugReportUrl, firmwareUrl, type BugReport } from "../lib/links";
 import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState } from "../ipc/types";
 import { Sparkline } from "./charts";
 import { Banner, Button, Dialog } from "./controls";
@@ -411,10 +411,59 @@ export function errorCopyText(message: Msg, code?: string | null): string {
   return code ? `${text}\n[${code}]` : text;
 }
 
-/** Copies an error's text (v1 copied the status text on click) */
-export async function copyError(app: { notify: (text: string, kind?: "info" | "error") => void }, message: Msg, code?: string | null) {
-  const ok = await copyText(errorCopyText(message, code));
+/** A bug report's URL with what the state tells (the issue form's fields)
+ *  around the diagnostic info */
+export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugReport> = {}): string {
+  const profile = currentProfile(snap);
+  const adapter = snap.adapter.adapters.find((a) => a.driver === "winusb") ?? snap.adapter.adapters[0];
+  const hex = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
+  return bugReportUrl({
+    version: snap.update.current_version,
+    info,
+    adapter: adapter && `${adapter.display_name} (${hex(adapter.vid)}:${hex(adapter.pid)})`,
+    headphones: profile?.device_name || undefined,
+    codec: profile?.codec,
+    captureMode: profile?.capture_mode,
+    ...extra,
+  });
+}
+
+/** The error followed by the diagnostic info with its warnings and recent
+ *  log (addresses masked: it goes into a public issue); the error alone
+ *  when the core cannot give the info */
+export async function errorLogText(app: AppContext, message: Msg, code?: string | null): Promise<{ text: string; info: string }> {
+  const head = errorCopyText(message, code);
+  const info = await app.core
+    .request("diag.info", { mask: true })
+    .then((d) => d.text)
+    .catch(() => "");
+  return { text: info ? `${head}\n\n${info}` : head, info };
+}
+
+/** Copies an error with the log around it, ready to paste into a report */
+export async function copyError(app: AppContext, message: Msg, code?: string | null) {
+  const { text } = await errorLogText(app, message, code);
+  const ok = await copyText(text);
   app.notify(ok ? t("ui.error.copied") : t("dbgc.copy_failed"), ok ? "info" : "error");
+}
+
+/** Opens a GitHub issue prefilled with the error and the diagnostic info;
+ *  the whole text also goes to the clipboard (the URL holds only part of
+ *  a long log) */
+export async function reportError(app: AppContext, message: Msg, code?: string | null) {
+  try {
+    const { text, info } = await errorLogText(app, message, code);
+    const what = `${errorCopyText(message, code)}\n\n`;
+    const snap = app.core.state.snap;
+    const url = snap
+      ? bugReportFor(snap, info, { whatHappened: what })
+      : bugReportUrl({ version: "", info, whatHappened: what });
+    await app.core.transport.openUrl(url);
+    await copyText(text).catch(() => false);
+    app.notify(t("ui.error.report_opened"));
+  } catch (e) {
+    app.notify(errorText(e), "error");
+  }
 }
 
 /** An error with its cause and the button that fixes it */
@@ -447,10 +496,18 @@ export function ErrorPanel(props: { code?: string | null; message: Msg; title?: 
             <Button
               kind="subtle"
               icon="copy"
-              title={t("error.click_to_copy_hint")}
+              title={t("ui.error.copy_hint")}
               onClick={() => void copyError(app, props.message, props.code)}
             >
               {t("ui.error.copy")}
+            </Button>
+            <Button
+              kind="subtle"
+              icon="open"
+              title={t("ui.error.report_hint")}
+              onClick={() => void reportError(app, props.message, props.code)}
+            >
+              {t("ui.diag.report_github")}
             </Button>
           </>
         }
