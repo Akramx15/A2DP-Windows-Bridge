@@ -163,7 +163,14 @@ impl State {
                         if let Some(chans) = self.avdtp.get_mut(&handle)
                             && let Some(i) = chans.iter().position(|ch| ch.local_cid == local)
                         {
-                            chans.remove(i);
+                            if i == 0 {
+                                // Signaling closed: a media channel left
+                                // would be taken for it, and every media
+                                // packet recorded as setup
+                                chans.clear();
+                            } else {
+                                chans.remove(i);
+                            }
                         }
                     }
                     _ => {}
@@ -319,5 +326,33 @@ mod tests {
         }
         assert_eq!(types, vec![0xFC, 0x01, 0xFC, 0x00, 0xFC]);
         assert_eq!(off, data.len());
+    }
+
+    /// An L2CAP packet on handle 1
+    fn acl(cid: u16, payload: &[u8]) -> Vec<u8> {
+        let l2 = payload.len() as u16;
+        let mut p = vec![0x01, 0x20];
+        p.extend_from_slice(&(l2 + 4).to_le_bytes());
+        p.extend_from_slice(&l2.to_le_bytes());
+        p.extend_from_slice(&cid.to_le_bytes());
+        p.extend_from_slice(payload);
+        p
+    }
+
+    #[test]
+    fn media_is_not_taken_for_signaling_once_signaling_closed() {
+        let cap = HciCapture::new();
+        cap.log_packet(HCI_EVENT_PACKET, true, &[0x03, 11, 0, 0x01, 0x00, 1, 2, 3, 4, 5, 6, 1, 0]);
+        // AVDTP signaling (local 0x40, remote 0x50), then media (0x41, 0x51)
+        for (id, local, remote) in [(1u8, 0x40u8, 0x50u8), (2, 0x41, 0x51)] {
+            cap.log_packet(HCI_ACL_DATA_PACKET, false, &acl(1, &[0x02, id, 4, 0, 0x19, 0, local, 0]));
+            cap.log_packet(HCI_ACL_DATA_PACKET, true, &acl(1, &[0x03, id, 8, 0, remote, 0, local, 0, 0, 0, 0, 0]));
+        }
+        // Signaling closed first (Disconnection Request: DCID, SCID)
+        cap.log_packet(HCI_ACL_DATA_PACKET, false, &acl(1, &[0x06, 3, 4, 0, 0x50, 0, 0x40, 0]));
+        let before = cap.lock().setup.len();
+        // A media packet is no setup packet
+        cap.log_packet(HCI_ACL_DATA_PACKET, false, &acl(0x51, &[0x80, 0x60, 0, 1]));
+        assert_eq!(cap.lock().setup.len(), before);
     }
 }

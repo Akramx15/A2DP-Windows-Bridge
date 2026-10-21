@@ -61,6 +61,8 @@ Development / testing:
   --hci-capture <path>  HCI capture (.pklg) of the whole run
   --test-tone           1 kHz left / 1.5 kHz right at 48 kHz instead of capture
   --duration <seconds>  stop after this time (default: Ctrl+C)
+  --sessions <n>        stream n times in a row with --duration each, as
+                        Disconnect / Connect in the app (A2DP)
   --le-sim-volume <level>[,<s>:<level>...]
                         LE Audio: VolumeSync with a simulated Windows volume
                         0-127 (changed at <s> seconds); the real volume is not
@@ -95,6 +97,9 @@ struct Args {
     hci_capture: Option<PathBuf>,
     test_tone: bool,
     duration: Option<u64>,
+    /// --sessions: streams one after the other in this process (Connect,
+    /// --duration, Disconnect), as the UI's Disconnect / Connect (issue #84)
+    sessions: u32,
     le: LeArgs,
 }
 
@@ -155,6 +160,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         hci_capture: None,
         test_tone: false,
         duration: None,
+        sessions: 1,
         le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
@@ -208,6 +214,12 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--hci-capture" => a.hci_capture = Some(value(&mut it, "--hci-capture")?.into()),
             "--test-tone" => a.test_tone = true,
             "--duration" => a.duration = Some(value(&mut it, "--duration")?.parse().map_err(|_| "bad --duration")?),
+            "--sessions" => {
+                a.sessions = value(&mut it, "--sessions")?.parse().map_err(|_| "bad --sessions")?;
+                if a.sessions == 0 {
+                    return Err("--sessions needs at least 1".into());
+                }
+            }
             "--le-audio" => a.le.on = true,
             "--le-device" => {
                 a.le.on = true;
@@ -419,7 +431,7 @@ pub fn run(args: &[String]) -> i32 {
         }
     };
     println!("Target device: {}", bt_host::addr_str(&device));
-    service.start_streaming(StreamRequest {
+    let request = StreamRequest {
         device,
         device_name,
         codec: a.codec,
@@ -433,47 +445,29 @@ pub fn run(args: &[String]) -> i32 {
         volume_sync: VolumeSync::Off,
         max_media_payload: a.max_packet,
         le: None,
-    });
+    };
 
-    let mut streaming_since: Option<Instant> = None;
-    let mut last_summary = Instant::now();
     let mut code = 0;
-    loop {
-        if a.remote_sink.is_some() && streaming_since.is_some() && last_summary.elapsed() >= Duration::from_secs(5) {
-            last_summary = Instant::now();
-            println!("{}", receiver.summary());
-        }
-        if !running.load(Ordering::Acquire) {
-            println!("\nStopping...");
-            break;
-        }
-        if let (Some(since), Some(d)) = (streaming_since, a.duration)
-            && since.elapsed() >= Duration::from_secs(d)
-        {
-            println!("\n--duration {d} s reached");
-            break;
-        }
-        match rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(ServiceEvent::State(state, msg)) => {
-                println!("[{state:?}] {msg}");
-                match state {
-                    StreamState::Streaming if streaming_since.is_none() => streaming_since = Some(Instant::now()),
-                    StreamState::Error => {
-                        code = 1;
-                        break;
-                    }
-                    StreamState::Idle if streaming_since.is_some() || !service.is_running() => break,
-                    _ => {}
+    for session in 1..=a.sessions {
+        if session > 1 {
+            // Disconnect, as the app's button does, and connect again
+            println!("\nDisconnecting (session {} of {})...", session - 1, a.sessions);
+            service.stop_streaming();
+            while let Ok(e) = rx.try_recv() {
+                if let ServiceEvent::State(state, msg) = e {
+                    println!("[{state:?}] {msg}");
                 }
             }
-            Ok(ServiceEvent::StreamInfo(i)) => println!(
-                "Codec: {} | Bitrate: {} kbps | Sample rate: {} Hz | Channels: {}",
-                i.codec, i.bitrate_kbps, i.sample_rate, i.channels
-            ),
-            Ok(ServiceEvent::Volume(v)) => println!("Headphone volume: {v} ({}%)", v as u32 * 100 / 127),
-            Ok(ServiceEvent::Battery(v)) => println!("Headphone battery: {v}%"),
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            std::thread::sleep(SESSION_PAUSE);
+            if !running.load(Ordering::Acquire) {
+                break;
+            }
+            println!("Connecting again (session {session} of {})", a.sessions);
+        }
+        service.start_streaming(request.clone());
+        let duration_reached = stream_session(&a, &service, &rx, &running, &receiver, &mut code);
+        if !duration_reached || code != 0 {
+            break;
         }
     }
     service.shutdown();
@@ -494,6 +488,61 @@ pub fn run(args: &[String]) -> i32 {
         receiver.stop();
     }
     code
+}
+
+/// --sessions: the pause between Disconnect and the next Connect
+const SESSION_PAUSE: Duration = Duration::from_secs(3);
+
+/// One stream until --duration, Ctrl+C, an error or the end of the
+/// session; true when --duration ended it
+fn stream_session(
+    a: &Args,
+    service: &Service,
+    rx: &mpsc::Receiver<ServiceEvent>,
+    running: &AtomicBool,
+    receiver: &a2dpwb_core::receiver::ReceiverClient,
+    code: &mut i32,
+) -> bool {
+    let mut streaming_since: Option<Instant> = None;
+    let mut last_summary = Instant::now();
+    loop {
+        if a.remote_sink.is_some() && streaming_since.is_some() && last_summary.elapsed() >= Duration::from_secs(5) {
+            last_summary = Instant::now();
+            println!("{}", receiver.summary());
+        }
+        if !running.load(Ordering::Acquire) {
+            println!("\nStopping...");
+            return false;
+        }
+        if let (Some(since), Some(d)) = (streaming_since, a.duration)
+            && since.elapsed() >= Duration::from_secs(d)
+        {
+            println!("\n--duration {d} s reached");
+            return true;
+        }
+        match rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(ServiceEvent::State(state, msg)) => {
+                println!("[{state:?}] {msg}");
+                match state {
+                    StreamState::Streaming if streaming_since.is_none() => streaming_since = Some(Instant::now()),
+                    StreamState::Error => {
+                        *code = 1;
+                        return false;
+                    }
+                    StreamState::Idle if streaming_since.is_some() || !service.is_running() => return false,
+                    _ => {}
+                }
+            }
+            Ok(ServiceEvent::StreamInfo(i)) => println!(
+                "Codec: {} | Bitrate: {} kbps | Sample rate: {} Hz | Channels: {}",
+                i.codec, i.bitrate_kbps, i.sample_rate, i.channels
+            ),
+            Ok(ServiceEvent::Volume(v)) => println!("Headphone volume: {v} ({}%)", v as u32 * 100 / 127),
+            Ok(ServiceEvent::Battery(v)) => println!("Headphone battery: {v}%"),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return false,
+        }
+    }
 }
 
 // ---- LE Audio (experimental): v1 le_audio_cli.cpp ----

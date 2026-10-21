@@ -35,6 +35,49 @@ pub struct LinkStats {
     pub stream_starts: AtomicU32,
     /// Radio readings of the link (BTstack thread, every few seconds)
     pub radio: Mutex<LinkRadio>,
+    /// Longest waits along the stream path (core's stream health log)
+    pub timing: StreamTiming,
+}
+
+/// The largest value recorded since the last [`MaxGauge::take`]
+#[derive(Debug, Default)]
+pub struct MaxGauge(AtomicU64);
+
+impl MaxGauge {
+    pub fn record(&self, value: u64) {
+        self.0.fetch_max(value, Ordering::Relaxed);
+    }
+
+    pub fn record_duration(&self, d: std::time::Duration) {
+        self.record(d.as_micros() as u64);
+    }
+
+    /// The maximum since the last take; starts over at 0
+    pub fn take(&self) -> u64 {
+        self.0.swap(0, Ordering::Relaxed)
+    }
+}
+
+/// Longest waits along the stream path, in microseconds (queue depth in
+/// packets), each since core last took it (issue #84: streams after the
+/// first stuttered and the log said nothing). Written by the encode and
+/// BTstack threads while a stream runs.
+#[derive(Debug, Default)]
+pub struct StreamTiming {
+    /// Encode thread: between two rounds that had audio to encode
+    pub encode_gap_us: MaxGauge,
+    /// Send queue fill the encode thread left
+    pub queue_depth_max: MaxGauge,
+    /// BTstack thread: between two media packets handed to L2CAP
+    pub send_gap_us: MaxGauge,
+    /// From asking BTstack to send a media packet until it may (the
+    /// controller's ACL buffers are full meanwhile)
+    pub can_send_wait_us: MaxGauge,
+    /// Between two Number Of Completed Packets events while streaming: the
+    /// controller got nothing through the air meanwhile
+    pub completed_gap_us: MaxGauge,
+    /// Number Of Completed Packets events while streaming
+    pub completed_events: AtomicU64,
 }
 
 impl LinkStats {
