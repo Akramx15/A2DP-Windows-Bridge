@@ -692,5 +692,6 @@
   "ui.profile.sbc_not_offered": "%s(非対応)",
   "ui.profile.sbc_bitrate": "約%d kbps(%s kHz)",
   "status.device_off": "ヘッドホンの電源が切れたか、切断されました",
-  "status.device_unreachable": "ヘッドホンの電源が切れているか、範囲外です"
+  "status.device_unreachable": "ヘッドホンの電源が切れているか、範囲外です",
+  "status.device_back": "ヘッドホンの電源が入りました。接続しています..."
 }
