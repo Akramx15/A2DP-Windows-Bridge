@@ -441,11 +441,6 @@ pub struct Settings {
     /// LE Audio stream is set up); only with le_audio_experimental
     #[serde(default)]
     pub le_audio_low_latency: bool,
-    /// Headphone battery level (experimental; off by default): HFP's service
-    /// level connection to the headphones. Read when Bluetooth starts
-    /// (Restart Bluetooth).
-    #[serde(default)]
-    pub battery_experimental: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]

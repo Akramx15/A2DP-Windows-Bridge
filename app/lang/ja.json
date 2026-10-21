@@ -638,7 +638,5 @@
   "ui.devices.add": "追加",
   "ui.devices.manage": "デバイスの管理",
   "ui.devices.saved_empty": "保存されたデバイスがありません。「オーディオデバイス」で追加してください。",
-  "settings.battery": "ヘッドホンのバッテリー残量を表示(試験的)",
-  "settings.battery_hint": "ヘッドホンのハンズフリープロファイル(通話音声は使いません)に接続して、バッテリー残量を読み取ります。Bluetoothの起動時に反映されるので、アダプター画面の「Bluetooth を再起動」を使ってください。残量を報告しないヘッドホンもあります。",
   "ui.home.battery": "バッテリー %d%%"
 }

@@ -125,7 +125,6 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     remote_sink: "",
     le_audio_experimental: false,
     le_audio_low_latency: false,
-    battery_experimental: false,
     ...over,
   };
 }
@@ -572,7 +571,6 @@ export class MockCore implements Transport {
           ...(p.settings as Settings),
           le_audio_experimental: next.le_audio_experimental ?? before.le_audio_experimental,
           le_audio_low_latency: next.le_audio_low_latency ?? before.le_audio_low_latency,
-          battery_experimental: next.battery_experimental ?? before.battery_experimental,
         };
         this.emit({ kind: "settings", value: this.snap.settings });
         let le_audio_deferred = false;

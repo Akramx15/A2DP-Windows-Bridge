@@ -117,10 +117,6 @@ pub struct Settings {
     /// Before 2.0.1: GMAP low latency for every LE Audio profile. Now a
     /// profile option (`le_low_latency`); kept only so the file round-trips.
     pub le_audio_low_latency: bool,
-    /// Headphone battery level (experimental): an HFP service level
-    /// connection to the headphones, where they report it. Read when the
-    /// Bluetooth stack starts.
-    pub battery_experimental: bool,
 
     /// Before v1.1 the max media packet size was a setting; it now seeds
     /// profiles saved without one. Read, not written.
@@ -164,7 +160,6 @@ impl Default for Settings {
             last_profile: String::new(),
             le_audio_experimental: true,
             le_audio_low_latency: false,
-            battery_experimental: false,
             max_media_payload: None,
             other: BTreeMap::new(),
         }

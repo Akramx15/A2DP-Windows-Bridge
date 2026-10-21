@@ -97,14 +97,6 @@ export function Settings() {
       <Section title={t("ui.settings.headphones")}>
         <Toggle label={t("settings.media_keys")} checked={s().media_keys} onChange={(v) => set({ media_keys: v })} />
         <Toggle label={t("settings.remember_volume")} checked={s().remember_volume} onChange={(v) => set({ remember_volume: v })} />
-        <Toggle
-          label={t("settings.battery")}
-          checked={s().battery_experimental}
-          onChange={(v) => set({ battery_experimental: v })}
-        />
-        <Show when={s().battery_experimental}>
-          <p class="hint">{t("settings.battery_hint")}</p>
-        </Show>
       </Section>
 
       <Section

@@ -311,7 +311,7 @@ impl Inner {
         crate::adapter::configure(&mut c, &s, &self.opts.config_dir);
         let cli = self.le_cli.lock().unwrap_or_else(|e| e.into_inner()).clone();
         c.le_audio = le_config(le_on, cli.as_ref(), &self.opts);
-        c.battery = s.battery_experimental;
+        c.battery = true;
         c
     }
 
@@ -673,19 +673,6 @@ impl Service {
         }
         let old = std::mem::replace(&mut *self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()), settings);
         let new_le = self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()).le_audio_experimental;
-        // The battery reader (HFP) is set up when BTstack starts: an idle
-        // stack stops, the next scan or connection starts it anew
-        if old.battery_experimental
-            != self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()).battery_experimental
-            && host.is_some()
-            && !self.is_running()
-            && !self.is_scanning()
-        {
-            tracing::info!(
-                "battery level (experimental) changed: stopping BTstack, the next scan or connection starts it anew"
-            );
-            self.inner.shutdown_host();
-        }
         if old.le_audio_experimental != new_le && host.is_some() && self.inner.le_active() != self.inner.le_wanted() {
             if self.is_running() || self.is_scanning() {
                 tracing::info!(

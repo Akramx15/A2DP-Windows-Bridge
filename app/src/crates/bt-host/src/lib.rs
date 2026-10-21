@@ -110,9 +110,9 @@ pub struct HostConfig {
     pub afh: Option<Box<dyn AfhSource>>,
     /// LE Audio (experimental); None: LE stays off and hidden
     pub le_audio: Option<LeConfig>,
-    /// Headphone battery level (experimental): an HFP audio gateway that
-    /// only makes the service level connection, where the headphones report
-    /// it. Off: no HFP at all.
+    /// Headphone battery level: an HFP audio gateway that only makes the
+    /// service level connection, where the headphones report it (and the LE
+    /// Battery Service). Off: no HFP at all.
     pub battery: bool,
 }
 

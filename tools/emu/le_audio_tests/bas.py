@@ -1,7 +1,7 @@
 """BAS cases and checks of run_test.py --le-audio (standard library only).
 
 The sinks run a Battery Service (emu option --bas, le_audio/bas.py) and
-A2DPWB reads the level with --battery (experimental).
+A2DPWB reads the level (the headphones' battery, shown in the UI).
 """
 
 import re
@@ -14,12 +14,10 @@ TWO_CIS = r'LC3 48000 Hz 10 ms 155 octets, 2 channel\(s\) over 2 CIS'
 CASES = [
     # The level is read, then followed by a notification
     Case('bas-level', 'stereo', STEREO, sink_args=['--bas', '80', '--bas-change', '4:55'],
-         a2dpwb_args=['--battery'], tags=('bas',), duration=8),
+         tags=('bas',), duration=8),
     # Two earbuds: the lower level is the one reported
     Case('bas-earbuds', 'earbuds', TWO_CIS, sink_args=['--bas', '90,40'],
-         a2dpwb_args=['--battery'], tags=('bas',), duration=8),
-    # Off by default: nothing is read
-    Case('bas-off', 'stereo', STEREO, sink_args=['--bas', '80'], tags=('bas',), duration=6),
+         tags=('bas',), duration=8),
 ]
 
 
@@ -41,7 +39,4 @@ def check(case, ctx):
     elif case.name == 'bas-earbuds':
         if not reported or reported[-1] != 40:
             failures.append(f'reported levels {reported}, the lowest (40) should be the last')
-    elif case.name == 'bas-off':
-        if 'Battery Level read' in sink_log or reported:
-            failures.append('A2DPWB read the battery level although the setting is off')
     return failures

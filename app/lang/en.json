@@ -638,7 +638,5 @@
   "ui.devices.add": "Add",
   "ui.devices.manage": "Manage devices",
   "ui.devices.saved_empty": "No saved devices yet. Add one under Audio Devices.",
-  "settings.battery": "Show headphone battery level (experimental)",
-  "settings.battery_hint": "A2DPWB connects to the headphones' hands-free profile (no call audio) to read their battery level. It applies when Bluetooth starts: use Restart Bluetooth on the Adapter screen. Not every headphone reports a level.",
   "ui.home.battery": "Battery %d%%"
 }

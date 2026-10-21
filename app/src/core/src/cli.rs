@@ -61,7 +61,6 @@ Development / testing:
   --hci-capture <path>  HCI capture (.pklg) of the whole run
   --test-tone           1 kHz left / 1.5 kHz right at 48 kHz instead of capture
   --duration <seconds>  stop after this time (default: Ctrl+C)
-  --battery             read and print the headphones' battery level (experimental)
   --le-sim-volume <level>[,<s>:<level>...]
                         LE Audio: VolumeSync with a simulated Windows volume
                         0-127 (changed at <s> seconds); the real volume is not
@@ -96,8 +95,6 @@ struct Args {
     hci_capture: Option<PathBuf>,
     test_tone: bool,
     duration: Option<u64>,
-    /// --battery: read the headphones' battery level (experimental)
-    battery: bool,
     le: LeArgs,
 }
 
@@ -158,7 +155,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
         hci_capture: None,
         test_tone: false,
         duration: None,
-        battery: false,
         le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
@@ -212,7 +208,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--hci-capture" => a.hci_capture = Some(value(&mut it, "--hci-capture")?.into()),
             "--test-tone" => a.test_tone = true,
             "--duration" => a.duration = Some(value(&mut it, "--duration")?.parse().map_err(|_| "bad --duration")?),
-            "--battery" => a.battery = true,
             "--le-audio" => a.le.on = true,
             "--le-device" => {
                 a.le.on = true;
@@ -298,12 +293,6 @@ pub fn run(args: &[String]) -> i32 {
         },
         tx,
     );
-
-    if a.battery {
-        let mut s = service.settings();
-        s.battery_experimental = true;
-        service.set_settings(s);
-    }
 
     if a.le.on {
         // LE Audio (experimental): its own flow (v1 le_audio_cli.cpp)
