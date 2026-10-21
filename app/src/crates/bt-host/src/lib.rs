@@ -40,7 +40,7 @@ pub use le::{
 };
 pub use media::{MediaPacket, MediaSink};
 use shared::{Shared, Wait};
-pub use stats::{LinkRadio, LinkStats};
+pub use stats::{LinkRadio, LinkStats, MaxGauge, StreamTiming};
 
 const INIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// No HCI event at all this long after power on: the controller does not
@@ -311,6 +311,18 @@ pub fn realtek_usb_firmware() -> &'static [(u16, u16, &'static str)] {
     btstack_sys::realtek_usb_firmware()
 }
 
+/// The BTstack thread raises its priority (MMCSS "Pro Audio" on Windows, as
+/// the encode thread and the USB ACL writer: every media packet passes
+/// through it) through a hook core installs, so this crate stays free of
+/// Win32. What the hook returns is dropped when the thread ends.
+pub type ThreadPriorityHook = fn() -> Box<dyn std::any::Any>;
+
+static RUNLOOP_PRIORITY_HOOK: std::sync::OnceLock<ThreadPriorityHook> = std::sync::OnceLock::new();
+
+pub fn set_runloop_priority_hook(hook: ThreadPriorityHook) {
+    let _ = RUNLOOP_PRIORITY_HOOK.set(hook);
+}
+
 fn exe_dir() -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())).unwrap_or_else(|| ".".into())
 }
@@ -344,6 +356,7 @@ impl BtHost {
             std::thread::Builder::new()
                 .name("bt-runloop".into())
                 .spawn(move || {
+                    let _priority = RUNLOOP_PRIORITY_HOOK.get().map(|h| h());
                     let HostConfig {
                         transport,
                         link_key_dir,

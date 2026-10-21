@@ -7,7 +7,7 @@ import type { Core } from "../ipc/store";
 import { IpcError } from "../ipc/types";
 import { t, tm } from "../i18n";
 
-export type RouteName = "home" | "profiles" | "devices" | "diagnostics" | "developer" | "adapter" | "settings" | "setup";
+export type RouteName = "home" | "profiles" | "devices" | "diagnostics" | "developer" | "adapter" | "settings" | "about" | "setup";
 
 export interface Route {
   name: RouteName;
@@ -18,7 +18,7 @@ export interface Route {
 
 export function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/");
-  const names: RouteName[] = ["home", "profiles", "devices", "diagnostics", "developer", "adapter", "settings", "setup"];
+  const names: RouteName[] = ["home", "profiles", "devices", "diagnostics", "developer", "adapter", "settings", "about", "setup"];
   const name = names.find((n) => n === parts[0]) ?? "home";
   if (name === "profiles" && parts[1] === "new") return { name, arg: "new" };
   if (name === "profiles" && parts[1] === "edit" && parts[2] !== undefined) {

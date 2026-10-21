@@ -13,10 +13,10 @@ import { CodecBadge, ConnectButton, currentProfile, FirmwareDownload, Ring, Winu
 import { t, tm } from "../i18n";
 import type { AdapterInfo, Snapshot, StreamState } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
-import { newProfile, normalizeProfile, toneParams, validateProfile } from "../lib/profile";
+import { defaultProfileName, newProfile, normalizeProfile, toneParams, validateProfile } from "../lib/profile";
 
 export { toneParams };
-import { driverText } from "./Adapter";
+import { driverText, usableFirst } from "./Adapter";
 import { V1Running } from "./Home";
 
 export function needsSetup(snap: Snapshot): boolean {
@@ -149,7 +149,7 @@ function StepAdapter(props: { chosen: AdapterInfo | null; onChoose: (id: string)
         }
       >
         <div class="choice-list" role="radiogroup" aria-label={t("firmware.detected_adapters")}>
-          <For each={adapters()}>
+          <For each={usableFirst(adapters())}>
             {(a) => (
               <label class="choice" classList={{ on: props.chosen?.instance_id === a.instance_id }}>
                 <input
@@ -187,6 +187,15 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
     <Show when={props.adapter} fallback={<p class="muted">{t("firmware.no_adapters")}</p>}>
       {(a) => (
         <div class="stack">
+          <div class="selected-device">
+            <Icon name="usb_stick" />
+            <span>
+              <strong>{a().display_name}</strong>{" "}
+              <span class="muted">
+                {a().device_name} · {a().vendor}
+              </span>
+            </span>
+          </div>
           <h3 class="sub">{t("ui.adapter.driver")}</h3>
           <Show
             when={a().driver === "winusb"}
@@ -303,7 +312,7 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
         onPick={(a, n) => {
           setAddress(a);
           setDeviceName(n);
-          setName(n || a);
+          setName(defaultProfileName(n, a, false, t("codec.auto")));
         }}
       />
       <Field label={t("profile.name")} hint={t("profile.name_hint")} error={problem()}>

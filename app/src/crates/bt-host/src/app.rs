@@ -16,7 +16,7 @@ use btstack_sys::consts::*;
 use btstack_sys::{AclState, App, AvdtpState, HciBackend, HciState, Source, Stack};
 use codec::CodecKind;
 use codec::caps::{AacCapabilities, AacObjectType, ConfigRequest, Configuration, SbcCapabilities, VendorCapability};
-use codec::sbc::ChannelMode;
+use codec::sbc::{Allocation, ChannelMode};
 
 use crate::events::{addr_at, addr_str, event_type, hci_error_string, le16, le24, subevent, u8_at};
 use crate::le::core::LeCore;
@@ -98,6 +98,12 @@ pub(crate) struct HostApp {
     pub stream_codec: Option<CodecKind>,
     pub endpoints: HashMap<CodecKind, u8>,
     pub can_send_requested: bool,
+    /// Stream timing (stats.timing): when the pending can-send request was
+    /// made, the last media packet sent, the last Number Of Completed
+    /// Packets event
+    can_send_asked: Option<Instant>,
+    last_media_sent: Option<Instant>,
+    last_completed: Option<Instant>,
     /// SEP discovery in progress
     sep_sinks: u8,
     sep_sinks_in_use: u8,
@@ -164,6 +170,9 @@ impl HostApp {
             stream_codec: None,
             endpoints: HashMap::new(),
             can_send_requested: false,
+            can_send_asked: None,
+            last_media_sent: None,
+            last_completed: None,
             sep_sinks: 0,
             sep_sinks_in_use: 0,
             caps: Default::default(),
@@ -429,24 +438,39 @@ impl HostApp {
         self.stream_codec = Some(config.kind);
         let cid = self.a2dp_cid;
         match &config.request {
-            ConfigRequest::Sbc { sampling_frequency, channel_mode, min_bitpool, max_bitpool } => stack
-                .a2dp_set_config_sbc(
-                    cid,
-                    local,
-                    config.remote_seid,
-                    *sampling_frequency,
-                    match channel_mode {
-                        ChannelMode::Mono => AVDTP_CHANNEL_MODE_MONO,
-                        ChannelMode::DualChannel => AVDTP_CHANNEL_MODE_DUAL_CHANNEL,
-                        ChannelMode::Stereo => AVDTP_CHANNEL_MODE_STEREO,
-                        ChannelMode::JointStereo => AVDTP_CHANNEL_MODE_JOINT_STEREO,
-                    },
-                    AVDTP_SBC_BLOCK_LENGTH_16,
-                    AVDTP_SBC_SUBBANDS_8,
-                    AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
-                    *min_bitpool,
-                    *max_bitpool,
-                ),
+            ConfigRequest::Sbc {
+                sampling_frequency,
+                channel_mode,
+                blocks,
+                subbands,
+                allocation,
+                min_bitpool,
+                max_bitpool,
+            } => stack.a2dp_set_config_sbc(
+                cid,
+                local,
+                config.remote_seid,
+                *sampling_frequency,
+                match channel_mode {
+                    ChannelMode::Mono => AVDTP_CHANNEL_MODE_MONO,
+                    ChannelMode::DualChannel => AVDTP_CHANNEL_MODE_DUAL_CHANNEL,
+                    ChannelMode::Stereo => AVDTP_CHANNEL_MODE_STEREO,
+                    ChannelMode::JointStereo => AVDTP_CHANNEL_MODE_JOINT_STEREO,
+                },
+                match blocks {
+                    4 => AVDTP_SBC_BLOCK_LENGTH_4,
+                    8 => AVDTP_SBC_BLOCK_LENGTH_8,
+                    12 => AVDTP_SBC_BLOCK_LENGTH_12,
+                    _ => AVDTP_SBC_BLOCK_LENGTH_16,
+                },
+                if *subbands == 4 { AVDTP_SBC_SUBBANDS_4 } else { AVDTP_SBC_SUBBANDS_8 },
+                match allocation {
+                    Allocation::Loudness => AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
+                    Allocation::Snr => AVDTP_SBC_ALLOCATION_METHOD_SNR,
+                },
+                *min_bitpool,
+                *max_bitpool,
+            ),
             ConfigRequest::Aac { object_type, sampling_frequency, channels, bit_rate, vbr } => stack
                 .a2dp_set_config_aac(
                     cid,
@@ -535,17 +559,26 @@ impl HostApp {
         }
         self.streaming = on;
         self.media_streaming.store(on, Ordering::Release);
+        // Gaps are measured within one started stream
+        self.can_send_asked = None;
+        self.last_media_sent = None;
+        self.last_completed = None;
     }
 
     fn kick_media(&mut self, stack: &Stack) {
         if self.streaming && !self.can_send_requested && self.a2dp_cid != 0 && !self.media.is_empty() {
             self.can_send_requested = true;
+            self.can_send_asked = Some(Instant::now());
             stack.a2dp_request_can_send_now(self.a2dp_cid, self.local_seid);
         }
     }
 
     fn can_send_now(&mut self, stack: &Stack) {
         self.can_send_requested = false;
+        let now = Instant::now();
+        if let Some(asked) = self.can_send_asked.take() {
+            self.stats.timing.can_send_wait_us.record_duration(now - asked);
+        }
         if let Ok(packet) = self.media.pop() {
             let depth = self.media.slots() as u32;
             self.stats.queue_depth.store(depth, Ordering::Relaxed);
@@ -580,6 +613,9 @@ impl HostApp {
                     stack.a2dp_send_media_packet(self.a2dp_cid, self.local_seid, payload)
                 };
                 if status == ERROR_CODE_SUCCESS {
+                    if let Some(last) = self.last_media_sent.replace(now) {
+                        self.stats.timing.send_gap_us.record_duration(now - last);
+                    }
                     self.stats.packets_sent.fetch_add(1, Ordering::Relaxed);
                     let bytes = payload.len() + if packet.rtp { RTP_HEADER_SIZE } else { 0 };
                     self.stats.bytes_sent.fetch_add(bytes as u64, Ordering::Relaxed);
@@ -603,6 +639,13 @@ impl HostApp {
         // Events from the controller (not BTstack's own 0x60..0xFE)
         if ev < 0x60 || ev == HCI_EVENT_VENDOR_SPECIFIC {
             self.shared.update(|s| s.controller_events += 1);
+        }
+        if ev == HCI_EVENT_NUMBER_OF_COMPLETED_PACKETS && self.streaming {
+            let now = Instant::now();
+            if let Some(last) = self.last_completed.replace(now) {
+                self.stats.timing.completed_gap_us.record_duration(now - last);
+            }
+            self.stats.timing.completed_events.fetch_add(1, Ordering::Relaxed);
         }
         match ev {
             BTSTACK_EVENT_STATE => match u8_at(p, 2) {

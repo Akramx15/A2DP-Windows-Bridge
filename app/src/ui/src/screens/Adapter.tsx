@@ -19,6 +19,12 @@ import {
 } from "../lib/chips";
 import { LINKS, vendorFirmwareUrl } from "../lib/links";
 
+/** The adapters A2DPWB can use first (WinUSB), the ones without a driver last */
+export function usableFirst(list: readonly AdapterInfo[]): AdapterInfo[] {
+  const rank = (a: AdapterInfo) => (a.driver === "winusb" ? 0 : a.driver === "none" ? 2 : 1);
+  return [...list].sort((a, b) => rank(a) - rank(b));
+}
+
 const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 
 export function driverText(d: DriverKind): { text: string; status: "good" | "warn" | "bad" } {
@@ -36,7 +42,7 @@ export function driverText(d: DriverKind): { text: string; status: "good" | "war
 
 /** Opens the settings folder (the shell creates it if it is not there yet) */
 function openConfigFolder(app: AppContext) {
-  return app.run(() => app.core.transport.openFolder(app.core.state.snap!.config_dir));
+  return app.run(() => app.core.transport.openFolder(`${app.core.state.snap!.config_dir}\\firmware`));
 }
 
 export function Adapter() {
@@ -107,7 +113,7 @@ export function Adapter() {
           </Banner>
         }
       >
-        <For each={adapter().adapters}>
+        <For each={usableFirst(adapter().adapters)}>
           {(a, i) => {
             const drv = () => driverText(a.driver);
             const fw = () => adapterFirmwareTag(a, snap().settings);

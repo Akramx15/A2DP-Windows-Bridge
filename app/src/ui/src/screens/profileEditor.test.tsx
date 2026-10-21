@@ -95,6 +95,18 @@ describe("saved devices on the Audio Devices screen", () => {
     await waitFor(() => expect(within(row).queryByRole("button", { name: t("ui.devices.add") })).toBeNull());
   });
 
+  it("makes a profile that picks the best codec for a device added without one", async () => {
+    const { calls } = start("#/devices");
+    fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
+    const row = (await screen.findByText(/Galaxy Buds2 Pro/)).closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: t("ui.devices.add") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    expect(calls.find((c) => c.method === "profile.save")!.params).toMatchObject({
+      profile: { name: "Galaxy Buds2 Pro | Auto", codec: "auto", device_name: "Galaxy Buds2 Pro" },
+      original_name: null,
+    });
+  });
+
   it("is only a list to choose from in the profile editor", async () => {
     start("#/profiles/new");
     await screen.findByRole("radio", { name: /WH-1000XM5/ });
@@ -186,6 +198,58 @@ describe("codec settings", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
     const saved = calls.find((c) => c.method === "profile.save")!.params as { profile: { codec: string; quality: string } };
     expect(saved.profile).toMatchObject({ codec: "aac", quality: "sq" });
+  });
+});
+
+describe("SBC settings", () => {
+  it("offer what the device listed and show the bit rate as it changes", async () => {
+    const { calls } = start(edit("WH-1000XM5 (LDAC)"));
+    const dialog = await codecSettings("codec.sbc");
+    // Auto: 16 blocks, 8 subbands, joint stereo, bitpool 53, at both rates
+    const rate = within(dialog).getByRole("status");
+    expect(rate).toHaveTextContent(`${t("ui.profile.sbc_bitrate", 327, "44.1")} / ${t("ui.profile.sbc_bitrate", 357, "48")}`);
+
+    // The WH-1000XM5 lists 8 subbands and loudness only (the mock's XM5_SBC)
+    const subbands = within(dialog).getByLabelText(t("ui.diag.cd_subbands"));
+    expect(within(subbands).getAllByRole("option").map((o) => o.textContent)).toEqual([t("codec.auto"), "8"]);
+    const alloc = within(dialog).getByLabelText(t("ui.diag.cd_allocation"));
+    expect(within(alloc).queryByRole("option", { name: t("ui.diag.cd_alloc.snr") })).toBeNull();
+    const blocks = within(dialog).getByLabelText(t("ui.diag.cd_blocks"));
+    expect(within(blocks).getAllByRole("option")).toHaveLength(5);
+
+    // 8 blocks: shorter frames, a higher rate
+    fireEvent.change(blocks, { target: { value: "8" } });
+    await waitFor(() => expect(rate).toHaveTextContent(t("ui.profile.sbc_bitrate", 363, "44.1")));
+    // Stereo at 44.1 kHz with bitpool 40
+    fireEvent.change(within(dialog).getByLabelText(t("ui.diag.cd_channel_mode")), { target: { value: "stereo" } });
+    fireEvent.change(within(dialog).getByLabelText(t("connection.sample_rate")), { target: { value: "44100" } });
+    fireEvent.input(within(dialog).getByLabelText(t("connection.sbc_bitpool")), { target: { value: "40" } });
+    // 4 + 8 + 8 * 40 / 8 = 52 bytes per 64 samples
+    await waitFor(() => expect(rate).toHaveTextContent(new RegExp(`^${t("ui.profile.sbc_bitrate", 286, "44.1")}$`)));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    const saved = calls.find((c) => c.method === "profile.save")!.params as { profile: Record<string, unknown> };
+    expect(saved.profile).toMatchObject({
+      codec: "sbc",
+      sbc_blocks: 8,
+      sbc_subbands: 0,
+      sbc_allocation: "",
+      sbc_channel_mode: "stereo",
+      sbc_bitpool: 40,
+      sample_rate: 44100,
+    });
+  });
+
+  it("SBC XQ has no channel mode of its own", async () => {
+    start(edit("WH-1000XM5 (LDAC)"));
+    // Not among what the mock's WH-1000XM5 offered: shown when forced
+    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_force", 8) }));
+    const dialog = await codecSettings("codec.sbc_xq");
+    expect(within(dialog).queryByLabelText(t("ui.diag.cd_channel_mode"))).toBeNull();
+    expect(within(dialog).getByRole("status")).toHaveTextContent(t("ui.profile.sbc_bitrate", 551, "44.1"));
   });
 });
 

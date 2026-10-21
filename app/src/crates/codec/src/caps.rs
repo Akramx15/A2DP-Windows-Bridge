@@ -377,12 +377,14 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &[APTX_CONFIG_DEFAULT],
         ));
     }
-    // SBC: 44.1+48k, all channel modes, 16 blocks, 8 subbands, loudness,
-    // bitpool 2..53 (SBC XQ streams from this SEP too, in dual channel)
+    // SBC: 44.1+48k, all channel modes, block lengths, subbands and
+    // allocations (a profile may ask for any), bitpool 2..53; configured 16
+    // blocks, 8 subbands, loudness (SBC XQ streams from this SEP too, in
+    // dual channel)
     eps.push(LocalEndpoint {
         kind: CodecKind::Sbc,
         codec_type: CODEC_TYPE_SBC,
-        caps: vec![0x3F, 0x15, 2, 53],
+        caps: vec![0x3F, 0xFF, 2, 53],
         config: vec![0x11, 0x15, 2, 53],
     });
     if CodecKind::Aac.available() {
@@ -560,6 +562,56 @@ impl RemoteCaps {
         let (min, max) = self.sbc_caps.map_or((2, cap), |c| (c.min_bitpool, c.max_bitpool));
         let max = cap.min(max).max(2);
         (min.max(2).min(max), max)
+    }
+
+    /// The SBC setup of a `kind` stream (SBC or SBC XQ) from what the
+    /// profile asks for: a value the sink does not list falls back to the
+    /// default (the SET_CONFIGURATION would be refused), said in the notes
+    /// returned (English, for the log). Unknown capabilities take every
+    /// value. SBC XQ has no channel mode of its own choice (dual channel).
+    pub fn sbc_params(&self, kind: CodecKind, wanted: sbc::SbcParams) -> (sbc::SbcParams, Vec<String>) {
+        let mut p = wanted;
+        let mut notes = Vec::new();
+        if kind == CodecKind::SbcXq {
+            p.channel_mode = None;
+        }
+        if !matches!(p.blocks, 0 | 4 | 8 | 12 | 16) {
+            p.blocks = 0;
+        }
+        if !matches!(p.subbands, 0 | 4 | 8) {
+            p.subbands = 0;
+        }
+        let Some(c) = self.sbc_caps else { return (p, notes) };
+        let name = kind.name();
+        if p.blocks != 0 && !c.block_lengths().contains(&p.blocks) {
+            notes.push(format!(
+                "{name}: the device does not list {} blocks, using {}",
+                p.blocks,
+                sbc::SbcParams::default().blocks()
+            ));
+            p.blocks = 0;
+        }
+        if p.subbands != 0 && !c.subband_counts().contains(&p.subbands) {
+            notes.push(format!(
+                "{name}: the device does not list {} subbands, using {}",
+                p.subbands,
+                sbc::SbcParams::default().subbands()
+            ));
+            p.subbands = 0;
+        }
+        if let Some(a) = p.allocation
+            && !c.allocations().contains(&a)
+        {
+            notes.push(format!("{name}: the device does not list {a:?} allocation, using Loudness"));
+            p.allocation = None;
+        }
+        if let Some(m) = p.channel_mode
+            && !c.channel_modes().contains(&m)
+        {
+            notes.push(format!("{name}: the device does not list {m:?}, using JointStereo"));
+            p.channel_mode = None;
+        }
+        (p, notes)
     }
 
     /// An AAC SEP whose capabilities are not known
@@ -852,38 +904,46 @@ impl RemoteCaps {
         bits_per_sample: u8,
         vbr: bool,
     ) -> Result<Configuration, ConfigError> {
+        self.configuration_with(kind, sample_rate, channels, bits_per_sample, vbr, sbc::SbcParams::default())
+    }
+
+    /// [`Self::configuration_vbr`] with the SBC setup a profile asks for
+    /// (SBC, SBC XQ): what the sink does not list falls back to the default,
+    /// as [`Self::sbc_params`] (the encoder takes the same)
+    pub fn configuration_with(
+        &self,
+        kind: CodecKind,
+        sample_rate: u32,
+        channels: u32,
+        bits_per_sample: u8,
+        vbr: bool,
+        sbc: sbc::SbcParams,
+    ) -> Result<Configuration, ConfigError> {
         let Some(sep) = self.sep(kind) else {
             return Err(ConfigError::NotOffered(kind));
         };
         let remote_seid = sep.seid;
         let mono = channels == 1;
         let request = match kind {
-            CodecKind::Sbc => {
+            CodecKind::Sbc | CodecKind::SbcXq => {
                 if sample_rate != 44100 && sample_rate != 48000 {
                     return Err(ConfigError::SampleRate(kind, sample_rate));
                 }
-                // Up to 53 (the local SEP's maximum) within the sink's range;
-                // the encoder's bitpool is capped the same way
-                let (min_bitpool, max_bitpool) = self.sbc_bitpool_range(SBC_MAX_BITPOOL);
+                // SBC: up to 53 (the local SEP's maximum) within the sink's
+                // range; the encoder's bitpool is capped the same way.
+                // SBC XQ: dual channel (mono for one channel), the bitpool
+                // range as PipeWire's select_config: up to the largest XQ
+                // bitpool of the rate, within the sink's range; the encoder's
+                // bitpool (by quality) is never above it.
+                let cap = if kind == CodecKind::SbcXq { sbc::xq_max_bitpool(sample_rate) } else { SBC_MAX_BITPOOL };
+                let (min_bitpool, max_bitpool) = self.sbc_bitpool_range(cap);
+                let (p, _) = self.sbc_params(kind, sbc);
                 ConfigRequest::Sbc {
                     sampling_frequency: sample_rate as u16,
-                    channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::JointStereo },
-                    min_bitpool,
-                    max_bitpool,
-                }
-            }
-            CodecKind::SbcXq => {
-                if sample_rate != 44100 && sample_rate != 48000 {
-                    return Err(ConfigError::SampleRate(kind, sample_rate));
-                }
-                // Dual channel (mono for one channel). The bitpool range as
-                // PipeWire's select_config: up to the largest XQ bitpool of
-                // the rate, within the sink's range; the encoder's bitpool
-                // (by quality) is never above it.
-                let (min_bitpool, max_bitpool) = self.sbc_bitpool_range(sbc::xq_max_bitpool(sample_rate));
-                ConfigRequest::Sbc {
-                    sampling_frequency: sample_rate as u16,
-                    channel_mode: if mono { ChannelMode::Mono } else { ChannelMode::DualChannel },
+                    channel_mode: p.channel_mode(kind, channels),
+                    blocks: p.blocks(),
+                    subbands: p.subbands(),
+                    allocation: p.allocation(),
                     min_bitpool,
                     max_bitpool,
                 }
@@ -1057,9 +1117,17 @@ pub struct Configuration {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigRequest {
-    /// 16 blocks, 8 subbands, loudness; SBC joint stereo, SBC XQ dual
-    /// channel (both mono for one channel)
-    Sbc { sampling_frequency: u16, channel_mode: ChannelMode, min_bitpool: u8, max_bitpool: u8 },
+    /// By default 16 blocks, 8 subbands, loudness; SBC joint stereo, SBC XQ
+    /// dual channel (both mono for one channel)
+    Sbc {
+        sampling_frequency: u16,
+        channel_mode: ChannelMode,
+        blocks: u8,
+        subbands: u8,
+        allocation: Allocation,
+        min_bitpool: u8,
+        max_bitpool: u8,
+    },
     /// AAC-LC, constant bit rate up to `bit_rate` (variable when `vbr`)
     Aac { object_type: AacObjectType, sampling_frequency: u32, channels: u8, bit_rate: u32, vbr: bool },
     /// Vendor codec information
@@ -1338,6 +1406,9 @@ mod tests {
             ConfigRequest::Sbc {
                 sampling_frequency: 44100,
                 channel_mode: ChannelMode::DualChannel,
+                blocks: 16,
+                subbands: 8,
+                allocation: Allocation::Loudness,
                 min_bitpool: 2,
                 max_bitpool: 47
             }
@@ -1348,6 +1419,9 @@ mod tests {
             ConfigRequest::Sbc {
                 sampling_frequency: 48000,
                 channel_mode: ChannelMode::Mono,
+                blocks: 16,
+                subbands: 8,
+                allocation: Allocation::Loudness,
                 min_bitpool: 2,
                 max_bitpool: 43
             }
@@ -1360,6 +1434,9 @@ mod tests {
             ConfigRequest::Sbc {
                 sampling_frequency: 48000,
                 channel_mode: ChannelMode::JointStereo,
+                blocks: 16,
+                subbands: 8,
+                allocation: Allocation::Loudness,
                 min_bitpool: 2,
                 max_bitpool: 53
             }
@@ -1370,6 +1447,109 @@ mod tests {
         caps.add_sbc_caps(1, SbcCapabilities { max_bitpool: 45, ..sbc_all() });
         let c = caps.configuration(CodecKind::SbcXq, 44100, 2, 16).unwrap();
         assert!(matches!(c.request, ConfigRequest::Sbc { max_bitpool: 45, .. }));
+    }
+
+    #[test]
+    fn sbc_configuration_takes_the_profiles_setup() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        let wanted = sbc::SbcParams {
+            blocks: 8,
+            subbands: 4,
+            allocation: Some(Allocation::Snr),
+            channel_mode: Some(ChannelMode::Stereo),
+        };
+        let c = caps.configuration_with(CodecKind::Sbc, 44100, 2, 16, false, wanted).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 44100,
+                channel_mode: ChannelMode::Stereo,
+                blocks: 8,
+                subbands: 4,
+                allocation: Allocation::Snr,
+                min_bitpool: 2,
+                max_bitpool: 53
+            }
+        );
+        assert_eq!(caps.sbc_params(CodecKind::Sbc, wanted), (wanted, vec![]));
+        // Mono input stays mono; mono asked for stereo input is mono too
+        let c = caps.configuration_with(CodecKind::Sbc, 48000, 1, 16, false, wanted).unwrap();
+        assert!(matches!(c.request, ConfigRequest::Sbc { channel_mode: ChannelMode::Mono, blocks: 8, .. }));
+        let mono = sbc::SbcParams { channel_mode: Some(ChannelMode::Mono), ..Default::default() };
+        let c = caps.configuration_with(CodecKind::Sbc, 48000, 2, 16, false, mono).unwrap();
+        assert!(matches!(c.request, ConfigRequest::Sbc { channel_mode: ChannelMode::Mono, blocks: 16, .. }));
+        // SBC XQ: the frame setup, but always dual channel and its bitpool cap
+        let c = caps.configuration_with(CodecKind::SbcXq, 44100, 2, 16, false, wanted).unwrap();
+        assert_eq!(
+            c.request,
+            ConfigRequest::Sbc {
+                sampling_frequency: 44100,
+                channel_mode: ChannelMode::DualChannel,
+                blocks: 8,
+                subbands: 4,
+                allocation: Allocation::Snr,
+                min_bitpool: 2,
+                max_bitpool: 47
+            }
+        );
+        // Unknown capabilities: taken as asked
+        let mut unknown = RemoteCaps::default();
+        unknown.add_sbc(1);
+        let c = unknown.configuration_with(CodecKind::Sbc, 44100, 2, 16, false, wanted).unwrap();
+        assert!(matches!(c.request, ConfigRequest::Sbc { blocks: 8, subbands: 4, allocation: Allocation::Snr, .. }));
+    }
+
+    #[test]
+    fn sbc_setup_the_device_does_not_list_falls_back() {
+        // 16 blocks, 8 subbands, loudness, joint stereo and mono only
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(
+            1,
+            SbcCapabilities {
+                channel_mode: 0x09,
+                block_length: 0x01,
+                subbands: 0x01,
+                allocation_method: 0x01,
+                ..sbc_all()
+            },
+        );
+        let wanted = sbc::SbcParams {
+            blocks: 4,
+            subbands: 4,
+            allocation: Some(Allocation::Snr),
+            channel_mode: Some(ChannelMode::Stereo),
+        };
+        let (p, notes) = caps.sbc_params(CodecKind::Sbc, wanted);
+        assert!(p.is_default(), "{p:?}");
+        assert_eq!(notes.len(), 4, "{notes:?}");
+        assert!(notes[0].contains("4 blocks"), "{notes:?}");
+        let c = caps.configuration_with(CodecKind::Sbc, 44100, 2, 16, false, wanted).unwrap();
+        assert_eq!(c.request, caps.configuration(CodecKind::Sbc, 44100, 2, 16).unwrap().request);
+        // What it lists is kept
+        let (p, notes) = caps
+            .sbc_params(CodecKind::Sbc, sbc::SbcParams { blocks: 16, channel_mode: Some(ChannelMode::Mono), ..wanted });
+        assert_eq!((p.blocks, p.subbands, p.allocation, p.channel_mode), (16, 0, None, Some(ChannelMode::Mono)));
+        assert_eq!(notes.len(), 2);
+        // Values SBC does not have are the default, without a note
+        let (p, notes) =
+            caps.sbc_params(CodecKind::Sbc, sbc::SbcParams { blocks: 6, subbands: 2, ..Default::default() });
+        assert!(p.is_default() && notes.is_empty());
+        // SBC XQ never takes a channel mode of its own
+        let (p, notes) = caps.sbc_params(
+            CodecKind::SbcXq,
+            sbc::SbcParams { channel_mode: Some(ChannelMode::Stereo), ..Default::default() },
+        );
+        assert!(p.is_default() && notes.is_empty());
+    }
+
+    #[test]
+    fn local_sbc_endpoint_offers_every_setup() {
+        let sbc = local_endpoints().into_iter().find(|e| e.kind == CodecKind::Sbc).unwrap();
+        // All block lengths, both subbands and allocations
+        assert_eq!(sbc.caps[1], 0xFF);
+        // Configured by default: 16 blocks, 8 subbands, loudness
+        assert_eq!(sbc.config[1], 0x15);
     }
 
     #[test]

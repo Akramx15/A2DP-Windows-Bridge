@@ -35,6 +35,23 @@ const LE_SCAN: Duration = Duration::from_secs(5);
 /// ... once the LE core is ready (HCI works, so at once or a moment later)
 const LE_SCAN_READY_WAIT: Duration = Duration::from_secs(1);
 
+/// MMCSS "Pro Audio" for the calling thread (the priority hooks). Said in
+/// the log either way: a thread that runs without it is one place a
+/// stutter can come from (issue #84).
+fn pro_audio(thread: &str) -> Box<dyn std::any::Any> {
+    let guard = match win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio) {
+        Ok(g) => {
+            tracing::info!("{thread}: MMCSS Pro Audio (task {})", g.task_index());
+            Some(g)
+        }
+        Err(e) => {
+            tracing::warn!("{thread}: MMCSS registration failed, normal priority: {e}");
+            None
+        }
+    };
+    Box::new(guard)
+}
+
 /// LE Audio (experimental) from the command line (`--le-audio` and the
 /// test options): LE is on whatever the setting says
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -230,8 +247,8 @@ pub(crate) struct Inner {
     pub power: PowerState,
     tick: (Mutex<()>, Condvar),
     state: Mutex<StreamState>,
-    /// Codec keys each device (address) offered at its last connection
-    codecs: Mutex<BTreeMap<String, Vec<String>>>,
+    /// What each device (address) offered at its last connection
+    codecs: Mutex<BTreeMap<String, stream::KnownCodecs>>,
     /// The chip or firmware setting changed while the stack was in use:
     /// the next use starts a new stack (which loads the firmware again)
     reload: AtomicBool,
@@ -306,7 +323,7 @@ impl Inner {
         };
         let mut c = HostConfig::new(transport);
         c.link_key_dir = Some(self.opts.config_dir.clone());
-        c.firmware_dir = Some(self.opts.config_dir.clone());
+        c.firmware_dir = Some(crate::paths::firmware_dir(&self.opts.config_dir));
         c.capture = self.opts.capture.clone();
         crate::adapter::configure(&mut c, &s, &self.opts.config_dir);
         let cli = self.le_cli.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -553,7 +570,7 @@ impl Inner {
     }
 
     /// What a device offered (after capability discovery)
-    pub fn record_codecs(&self, addr: &str, codecs: Vec<String>) {
+    pub fn record_codecs(&self, addr: &str, codecs: stream::KnownCodecs) {
         self.codecs.lock().unwrap_or_else(|e| e.into_inner()).insert(addr.to_uppercase(), codecs);
     }
 
@@ -641,12 +658,9 @@ impl Service {
                 None
             }
         };
-        pipeline::set_thread_priority_hook(|| {
-            Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
-        });
-        hci_transport::set_acl_out_priority_hook(|| {
-            Box::new(win_sys::mmcss::MmcssGuard::register(win_sys::mmcss::MmcssTask::ProAudio).ok())
-        });
+        pipeline::set_thread_priority_hook(|| pro_audio("encode thread"));
+        hci_transport::set_acl_out_priority_hook(|| pro_audio("USB ACL writer"));
+        bt_host::set_runloop_priority_hook(|| pro_audio("BTstack thread"));
         Service { inner, worker: Mutex::new(None), _power: power }
     }
 
@@ -759,9 +773,9 @@ impl Service {
         *self.inner.le_support.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Codec keys each device (upper-case address) offered when it last
+    /// What each device (upper-case address) offered when it last
     /// connected
-    pub fn device_codecs(&self) -> BTreeMap<String, Vec<String>> {
+    pub fn device_codecs(&self) -> BTreeMap<String, stream::KnownCodecs> {
         self.inner.codecs.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 

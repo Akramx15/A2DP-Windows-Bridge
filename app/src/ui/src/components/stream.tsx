@@ -140,11 +140,30 @@ export function codecName(info: StreamInfo): string {
   return key ? t(key) : info.codec;
 }
 
+/** The battery level: a small battery that fills and changes colour with it, and the number */
+export function BatteryLevel(props: { percent: number; class?: string }) {
+  const level = () => Math.max(0, Math.min(100, props.percent));
+  const tone = () => (level() <= 15 ? "bad" : level() <= 40 ? "warn" : "good");
+  return (
+    <span class={`battery ${props.class ?? ""}`} role="img" aria-label={t("ui.home.battery", level())}>
+      <svg class={`battery-icon st-${tone()}`} width="22" height="12" viewBox="0 0 22 12" aria-hidden="true">
+        <rect x="0.5" y="0.5" width="18" height="11" rx="2.5" fill="none" stroke="currentColor" opacity="0.7" />
+        <rect x="19.5" y="3.5" width="2" height="5" rx="1" fill="currentColor" opacity="0.7" />
+        <rect x="2" y="2" width={(15 * level()) / 100} height="8" rx="1.5" fill="currentColor" />
+      </svg>
+      <span class="num">{t("ui.home.battery", level())}</span>
+    </span>
+  );
+}
+
+/** AAC runs a variable bit rate, the others an adaptive one */
+export const abrLabel = (info: StreamInfo) => (info.codec === "aac" ? "VBR" : "ABR");
+
 /** What the codec runs with, in short: "990 kbps", "48 kHz", "24-bit", "ABR" */
 export function codecDetails(info: StreamInfo): string[] {
   const out = [`${info.bitrate_kbps} kbps`, `${khz(info.sample_rate)} kHz`];
   if (info.bits > 0) out.push(t(`bitdepth.${info.bits}`));
-  if (info.abr) out.push("ABR");
+  if (info.abr) out.push(abrLabel(info));
   return out;
 }
 
@@ -178,8 +197,8 @@ export function CodecBadge(props: { compact?: boolean }) {
             {i().bitrate_kbps} kbps
           </span>
           <Show when={i().abr}>
-            <span class="muted" title={t("tooltip.abr")}>
-              ABR
+            <span class="muted" title={t(i().codec === "aac" ? "tooltip.vbr" : "tooltip.abr")}>
+              {abrLabel(i())}
             </span>
           </Show>
           <Show when={!props.compact}>

@@ -12,6 +12,7 @@ use codec::caps::{self, ConfigError, Configuration, RemoteCaps, Unavailable};
 use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
 use pipeline::{BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType};
 
+use crate::health::{CaptureReading, StreamHealth};
 use crate::messages::Msg;
 use crate::service::Inner;
 
@@ -27,6 +28,11 @@ pub struct StreamRequest {
     pub abr: bool,
     /// SBC / SBC XQ: the bitpool wanted (0 = by quality)
     pub sbc_bitpool: u8,
+    /// The same for SBC XQ
+    pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: blocks, subbands, allocation, channel mode wanted (the
+    /// defaults when not set; what the device does not list falls back)
+    pub sbc: codec::sbc::SbcParams,
     /// None = the device's rate
     pub sample_rate: Option<u32>,
     /// None = auto (24-bit where the codec carries it)
@@ -199,6 +205,20 @@ fn allocation_key(a: codec::sbc::Allocation) -> String {
     .into()
 }
 
+/// What a device's SBC endpoint offers, as Diagnostics and the profile
+/// editor show it
+pub fn sbc_device_caps(d: &caps::SbcCapabilities) -> SbcDeviceCaps {
+    SbcDeviceCaps {
+        sample_rates: d.sample_rates(),
+        channel_modes: d.channel_modes().into_iter().map(channel_mode_key).collect(),
+        blocks: d.block_lengths().into_iter().map(u32::from).collect(),
+        subbands: d.subband_counts().into_iter().map(u32::from).collect(),
+        allocations: d.allocations().into_iter().map(allocation_key).collect(),
+        min_bitpool: d.min_bitpool.into(),
+        max_bitpool: d.max_bitpool.into(),
+    }
+}
+
 /// What the stream's codec runs with: the configuration sent, what the
 /// device offered and the encoder's setup
 pub fn codec_details(
@@ -226,15 +246,7 @@ pub fn codec_details(
             caps::ConfigRequest::Sbc { min_bitpool, max_bitpool, .. } => Some((min_bitpool.into(), max_bitpool.into())),
             _ => None,
         },
-        device: remote.sbc_caps.filter(|_| kind != CodecKind::FastStream).map(|d| SbcDeviceCaps {
-            sample_rates: d.sample_rates(),
-            channel_modes: d.channel_modes().into_iter().map(channel_mode_key).collect(),
-            blocks: d.block_lengths().into_iter().map(u32::from).collect(),
-            subbands: d.subband_counts().into_iter().map(u32::from).collect(),
-            allocations: d.allocations().into_iter().map(allocation_key).collect(),
-            min_bitpool: d.min_bitpool.into(),
-            max_bitpool: d.max_bitpool.into(),
-        }),
+        device: remote.sbc_caps.filter(|_| kind != CodecKind::FastStream).as_ref().map(sbc_device_caps),
     });
     let aac = match config.request {
         caps::ConfigRequest::Aac { object_type, bit_rate, .. } => Some(AacDetails {
@@ -271,6 +283,15 @@ pub struct SourceInfo {
     pub name: String,
     /// Application capture: the application is not running
     pub waiting: bool,
+}
+
+/// What a device offered at its last connection
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KnownCodecs {
+    /// Codec keys ([`codec_keys`])
+    pub keys: Vec<String>,
+    /// Its SBC endpoint's capabilities, when it said
+    pub sbc: Option<SbcDeviceCaps>,
 }
 
 /// Codec keys ("ldac", "sbc", ...) of what a device offered
@@ -375,6 +396,22 @@ impl ActiveSource {
     /// An application capture whose app is not running
     fn waiting(&self) -> bool {
         matches!(self, ActiveSource::App(a) if a.running.is_none())
+    }
+
+    fn running(&self) -> Option<&Running> {
+        match self {
+            ActiveSource::Capture(r) => Some(r),
+            ActiveSource::App(a) => a.running.as_ref(),
+        }
+    }
+
+    /// For the stream health log (takes the capture's packet gap)
+    fn health(&self) -> CaptureReading {
+        self.running().map_or_else(CaptureReading::default, |r| CaptureReading {
+            filled_frames: r.filled_frames(),
+            discontinuities: r.discontinuities(),
+            packet_gap: r.take_packet_gap(),
+        })
     }
 
     fn stop(self) {
@@ -525,13 +562,29 @@ fn connect_error(f: Option<ConnectFailure>) -> Msg {
     })
 }
 
-fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, sbc_bitpool: u8) -> PeerParams {
+fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &StreamRequest) -> PeerParams {
     let (opus_frame_ms, opus_channels, opus_max_bitrate) = remote.opus_params(kind, channels);
+    // The SET_CONFIGURATION took the same (configuration_with)
+    let sbc = match kind {
+        CodecKind::Sbc | CodecKind::SbcXq => {
+            let (sbc, notes) = remote.sbc_params(kind, req.sbc);
+            for n in notes {
+                tracing::warn!("{n}");
+            }
+            sbc
+        }
+        _ => Default::default(),
+    };
     PeerParams {
         lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
         sbc_min_bitpool: remote.sbc_min_bitpool(),
         sbc_max_bitpool: remote.sbc_max_bitpool(),
-        sbc_bitpool: if matches!(kind, CodecKind::Sbc | CodecKind::SbcXq) { sbc_bitpool } else { 0 },
+        sbc_bitpool: match kind {
+            CodecKind::Sbc => req.sbc_bitpool,
+            CodecKind::SbcXq => req.sbcxq_bitpool,
+            _ => 0,
+        },
+        sbc,
         opus_frame_ms,
         opus_channels,
         opus_max_bitrate,
@@ -548,6 +601,7 @@ enum ConfigFailure {
 }
 
 /// SET_CONFIGURATION of a `kind` stream; the media payload size
+#[allow(clippy::too_many_arguments)]
 fn configure_stream(
     host: &BtHost,
     remote: &RemoteCaps,
@@ -556,8 +610,10 @@ fn configure_stream(
     channels: u32,
     bits: u8,
     vbr: bool,
+    sbc: codec::sbc::SbcParams,
 ) -> Result<(Configuration, u16), ConfigFailure> {
-    let config = remote.configuration_vbr(kind, sample_rate, channels, bits, vbr).map_err(ConfigFailure::Build)?;
+    let config =
+        remote.configuration_with(kind, sample_rate, channels, bits, vbr, sbc).map_err(ConfigFailure::Build)?;
     let mtu = host.configure(&config).map_err(ConfigFailure::Host)?;
     Ok((config, mtu))
 }
@@ -653,7 +709,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     };
     // However the session ends, the next one starts on a new stack
     let _streamed = StreamedMark(inner);
-    inner.record_codecs(&addr, codec_keys(&remote));
+    inner.record_codecs(
+        &addr,
+        KnownCodecs { keys: codec_keys(&remote), sbc: remote.sbc_caps.as_ref().map(sbc_device_caps) },
+    );
     tracing::info!("device connected, choosing the codec");
     if stopped() {
         host.disconnect();
@@ -792,7 +851,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let vbr = req.abr && req.codec == Some(CodecKind::Aac) && kind == CodecKind::Aac && remote.aac_vbr();
 
     // ---- stream configuration ----
-    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr);
+    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
     if let Err(failure) = &configured
         && !stopped()
         && sbc_xq_fallback(kind, failure, req.codec, req.codec_fallback)
@@ -813,7 +872,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if req.codec.is_some() && replaced.is_none() {
             replaced = Some((CodecKind::SbcXq, Unavailable::NotSupported));
         }
-        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr);
+        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
     }
     let (mut config, mtu) = match configured {
         Ok(c) => c,
@@ -846,7 +905,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         bits_per_sample: bits,
         // For AAC: variable bit rate, where the sink lists it
         abr: req.abr && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5) || (kind == CodecKind::Aac && vbr)),
-        peer: peer_params(&remote, kind, channels, req.sbc_bitpool),
+        peer: peer_params(&remote, kind, channels, &req),
     };
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,
@@ -860,7 +919,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let bitrate_capped = encoder.bitrate_capped();
     // ABR as the encoder runs it (LDAC keeps a fixed quality when its ABR
     // module fails to start)
-    let abr = encoder.abr_active();
+    let abr = encoder.abr_active() || vbr;
     tracing::info!("encoder ready: {} {bitrate} kbps, mtu {mtu}, {bits}-bit, ABR {abr}", kind.name());
 
     if !host.start_stream() {
@@ -933,7 +992,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // A reconnect builds the configuration anew from what the device lists
     // then (v1 read its capabilities again)
-    let rebuild = |r: &RemoteCaps| match r.configuration_vbr(kind, format.sample_rate, channels, bits, vbr) {
+    let rebuild = |r: &RemoteCaps| match r.configuration_with(kind, format.sample_rate, channels, bits, vbr, req.sbc) {
         Ok(c) => Some(c),
         Err(e) => {
             tracing::warn!("reconnect: {e}");
@@ -946,6 +1005,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let mut app_ticks = 0u32;
     let mut lost_for_good = false;
     let mut discontinuities = DiscontinuityLog::default();
+    let mut health = StreamHealth::start(host.stats().clone(), format.sample_rate, active.health());
     while !stopped() {
         inner.wait_tick(Duration::from_millis(200));
         if stopped() {
@@ -971,10 +1031,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             info.source.waiting = active.waiting();
             inner.stream_info(info.clone());
         }
-        discontinuities.tick(match &active {
-            ActiveSource::Capture(r) => r.discontinuities(),
-            ActiveSource::App(a) => a.running.as_ref().map_or(0, Running::discontinuities),
-        });
+        discontinuities.tick(active.running().map_or(0, Running::discontinuities));
+        health.tick(|| active.health());
 
         // Sleep, or an adapter that stopped working, leaves a stack that
         // reports no disconnect: it is started anew and the device connected
@@ -1123,11 +1181,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         // The encoder follows the new stream: its MTU and the device's
         // settings (e.g. its SBC bitpool range) may have changed
-        let new_config = EncoderConfig {
-            mtu: r.mtu,
-            peer: peer_params(&r.remote, kind, channels, req.sbc_bitpool),
-            ..encoder_config
-        };
+        let new_config =
+            EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels, &req), ..encoder_config };
         if r.mtu != encoder_config.mtu {
             tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }
@@ -1171,7 +1226,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             info.bitrate_kbps = encoder.bitrate_kbps();
             info.bitrate_capped = encoder.bitrate_capped();
-            info.abr = encoder.abr_active();
+            info.abr = encoder.abr_active() || vbr;
             info.details =
                 Some(Box::new(codec_details(kind, &config, &r.remote, &*encoder, r.mtu, format.sample_rate)));
             let (p, new_input) = start_pipeline(encoder, format, channels, r.mtu, sink, &host);
@@ -1186,6 +1241,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- cleanup: producer first, then the encode thread, then the stream ----
     tracing::info!("streaming stopped, cleaning up");
+    health.finish(active.health());
     active.stop();
     if let Some(p) = pipeline.take()
         && let Some(s) = p.stop()

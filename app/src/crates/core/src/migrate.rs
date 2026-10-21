@@ -123,6 +123,13 @@ fn backup(dir: &Path) -> std::io::Result<u64> {
 /// Never fails: problems are logged, and a failed backup leaves v1's files
 /// unchanged so that the next start tries again.
 pub fn prepare(dir: &Path) -> Report {
+    let report = prepare_settings(dir);
+    // After v1's files were backed up as they were
+    crate::paths::move_loose_firmware(dir);
+    report
+}
+
+fn prepare_settings(dir: &Path) -> Report {
     let schema_before = schema_of(dir);
     let v1_files = V1_FILES.iter().any(|f| dir.join(f).is_file());
     let from_v1 = match schema_before {

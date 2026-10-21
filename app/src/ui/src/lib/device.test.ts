@@ -25,6 +25,7 @@ const dev = (address: string, codecs: string[]): Device => ({
   audio: true,
   rssi: null,
   codecs,
+  sbc: null,
   le_audio: false,
   le_audio_set: false,
 });
@@ -100,6 +101,8 @@ describe("LE Audio entries", () => {
     expect(defaultProfileName("Galaxy Buds2 Pro", "F4:4E:FD:00:11:22", true)).toBe("Galaxy Buds2 Pro LE Audio");
     expect(defaultProfileName("", "F4:4E:FD:00:11:22", true)).toBe("F4:4E:FD:00:11:22 LE Audio");
     expect(defaultProfileName("Galaxy Buds2 Pro", "F4:4E:FD:00:11:22", false)).toBe("Galaxy Buds2 Pro");
+    expect(defaultProfileName("EarFun Air Pro 4+", "F4:4E:FD:00:11:22", false, "Auto")).toBe("EarFun Air Pro 4+ | Auto");
+    expect(defaultProfileName("", "", false, "Auto")).toBe("");
     expect(defaultProfileName("", "", true)).toBe("");
   });
 

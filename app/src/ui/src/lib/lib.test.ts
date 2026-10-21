@@ -155,6 +155,18 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "aac" })).toMatchObject({ abr: true, sample_rate: 0, bit_depth: 0 });
     expect(fitToCodec({ ...p, codec: "sbc", sbc_bitpool: 40 })).toMatchObject({ abr: false, sbc_bitpool: 40 });
     expect(fitToCodec({ ...p, codec: "ldac", sbc_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0 });
+    // SBC and SBC XQ keep their own bitpool
+    expect(fitToCodec({ ...p, codec: "sbcxq", sbc_bitpool: 53, sbcxq_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0, sbcxq_bitpool: 40 });
+    // The frame setup is both's; the channel mode SBC's only
+    const frame = { sbc_blocks: 8, sbc_subbands: 4, sbc_allocation: "snr", sbc_channel_mode: "stereo" };
+    expect(fitToCodec({ ...p, ...frame, codec: "sbc" })).toMatchObject(frame);
+    expect(fitToCodec({ ...p, ...frame, codec: "sbcxq" })).toMatchObject({ ...frame, sbc_channel_mode: "" });
+    expect(fitToCodec({ ...p, ...frame, codec: "aac" })).toMatchObject({
+      sbc_blocks: 0,
+      sbc_subbands: 0,
+      sbc_allocation: "",
+      sbc_channel_mode: "",
+    });
     expect(fitToCodec({ ...p, codec: "auto" })).toMatchObject({ abr: true, sample_rate: 0, bit_depth: 24 });
     expect(fitToCodec({ ...p, codec: "aptx" })).toMatchObject({ quality: "mhq", abr: false });
     expect(fitToCodec({ ...p, codec: "opus" })).toMatchObject({ quality: "hq", abr: false, sample_rate: 0, bit_depth: 0 });
