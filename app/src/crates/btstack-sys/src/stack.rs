@@ -47,6 +47,8 @@ const INIT_AVRCP: u32 = 16;
 pub(crate) const INIT_LE: u32 = 32;
 /// LE: the ATT server (Stack::att_server_init)
 pub(crate) const INIT_ATT: u32 = 64;
+/// HFP audio gateway and RFCOMM (Stack::hfp_ag_init)
+const INIT_HFP: u32 = 128;
 
 thread_local! {
     static INITIALIZED: Cell<u32> = const { Cell::new(0) };
@@ -162,6 +164,7 @@ impl Stack {
     pub fn hfp_ag_init(&self) {
         // SAFETY: on the BTstack thread, after l2cap / sdp init.
         unsafe { ffi::a2dpwb_hfp_ag_init() };
+        mark(INIT_HFP);
     }
 
     /// Opens the service level connection to the headphones' HFP
@@ -599,6 +602,9 @@ impl Stack {
             }
             if init & INIT_A2DP != 0 {
                 ffi::a2dp_source_deinit();
+            }
+            if init & INIT_HFP != 0 {
+                ffi::a2dpwb_hfp_ag_deinit();
             }
             if init & INIT_SDP != 0 {
                 ffi::sdp_client_deinit();
