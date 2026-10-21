@@ -12,8 +12,8 @@
 
 #![forbid(unsafe_code)]
 
-pub mod aac_test;
 pub mod caps;
+pub mod dev;
 pub mod sbc;
 
 #[cfg(feature = "aac")]

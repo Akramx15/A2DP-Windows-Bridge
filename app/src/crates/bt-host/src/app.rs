@@ -525,7 +525,7 @@ impl HostApp {
                 .a2dp_max_media_payload_size(self.a2dp_cid, self.local_seid)
                 .map(|m| if packet.rtp { m as usize } else { m as usize + RTP_HEADER_SIZE });
             let payload = packet.payload();
-            if codec::aac_test::aac_test().dump && packet.rtp {
+            if codec::dev::overrides().packet_dump && packet.rtp {
                 static DUMPED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
                 if DUMPED.fetch_add(1, Ordering::Relaxed) < 6 {
                     let head: Vec<String> = payload.iter().take(24).map(|b| format!("{b:02X}")).collect();

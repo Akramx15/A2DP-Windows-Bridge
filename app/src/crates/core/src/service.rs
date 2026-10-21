@@ -582,11 +582,17 @@ pub struct Service {
     _power: Option<win_sys::power::PowerNotifier>,
 }
 
+/// The developer overrides count only while developer mode is on
+fn apply_dev_overrides(settings: &Settings) {
+    codec::dev::set_overrides(if settings.debug_mode { settings.dev_overrides } else { Default::default() });
+}
+
 impl Service {
     pub fn new(opts: ServiceOptions, events: Sender<ServiceEvent>) -> Service {
         // A folder v1 used is backed up and brought to v2's schema first
         crate::migrate::prepare(&opts.config_dir);
         let settings = Settings::load(&opts.config_dir);
+        apply_dev_overrides(&settings);
         let inner = Arc::new(Inner {
             opts,
             settings: Mutex::new(settings),
@@ -666,6 +672,7 @@ impl Service {
     /// before the next scan or connection ([`Service::le_audio_deferred`]
     /// says so). The low-latency setting applies to the next LE stream.
     pub fn set_settings(&self, settings: Settings) {
+        apply_dev_overrides(&settings);
         let host = self.host();
         if let Some(h) = &host {
             h.set_media_keys(settings.media_keys);
