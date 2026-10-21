@@ -36,8 +36,10 @@ export interface BugReport {
   codec?: string;
   /** Profile.capture_mode */
   captureMode?: string;
-  /** The bundle's file name */
-  bundle: string;
+  /** The error the app showed, as the start of "What happened?" */
+  whatHappened?: string;
+  /** The bundle's file name; none when the report comes from an error */
+  bundle?: string;
 }
 
 /** The issue form's dropdown options for a profile's codec */
@@ -76,7 +78,8 @@ export function bugReportUrl(r: BugReport): string {
   if (codec) q.set("codec", codec);
   const capture = r.captureMode && CAPTURE_OPTIONS[r.captureMode];
   if (capture) q.set("capture_mode", capture);
-  q.set("bundle", `${r.bundle}\n(drag the file here from the Explorer window A2DPWB opened)`);
+  if (r.whatHappened) q.set("what_happened", r.whatHappened);
+  if (r.bundle) q.set("bundle", `${r.bundle}\n(drag the file here from the Explorer window A2DPWB opened)`);
   // The field renders as a code block already: without the text's own fence
   let info = r.info.replace(/^```text\n/, "").replace(/\n?```\s*$/, "\n");
   if (encodeURIComponent(info).length > MAX_INFO_CHARS) {

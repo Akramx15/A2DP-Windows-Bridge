@@ -573,6 +573,28 @@ pub struct Snapshot {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub verbose: Option<VerboseState>,
+    /// Crash reports of A2DPWB's own processes the user has not dismissed
+    /// yet (diag.crashes_seen), newest first
+    #[serde(default)]
+    pub crashes: Vec<CrashReport>,
+}
+
+/// A crash report (logs\crash\<process>-<stamp>.txt): a panic or a crash
+/// of a2dpwb-core.exe or a2dpwb.exe
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct CrashReport {
+    /// "a2dpwb-core-20261022-012338-512": the file without .txt
+    pub name: String,
+    /// "a2dpwb-core" or "a2dpwb-ui"
+    pub process: String,
+    /// Local time, "2026-10-22 01:23:38"
+    pub time: String,
+    /// "panic in thread encode: ...", "unhandled exception 0xC0000005 at ..."
+    pub reason: String,
+    /// The whole report (the version, the reason, the backtrace), cut to
+    /// a size that fits a bug report
+    pub text: String,
 }
 
 /// Verbose logging (diag.set_verbose): A2DPWB's own modules log at `level`
@@ -824,6 +846,8 @@ pub enum Event {
     V1Running(bool),
     /// Verbose logging turned on, off, or ran out (state, verbose)
     Verbose(Option<VerboseState>),
+    /// Crash reports appeared or were dismissed (state, crashes)
+    Crashes(Vec<CrashReport>),
     /// Subscription (diag.subscribe receiver): the receiver test, once a
     /// second and on every change
     Receiver(Box<ReceiverState>),
@@ -978,6 +1002,10 @@ pub enum Method {
     /// also across restarts of the core; None: back to info -> VerboseState | null
     #[serde(rename = "diag.set_verbose")]
     DiagSetVerbose { level: Option<LogLevel> },
+    /// The crash reports shown (state, crashes) were seen: they are not
+    /// shown again, newer ones are -> null
+    #[serde(rename = "diag.crashes_seen")]
+    DiagCrashesSeen,
     /// A marker line in the log ("===== MARK n: note =====", info), to find
     /// a moment again (the stutter starts now) -> number (n)
     #[serde(rename = "diag.mark")]
@@ -1464,6 +1492,7 @@ mod tests {
             clock_ms: None,
             v1_running: false,
             verbose: None,
+            crashes: Vec::new(),
         })
         .unwrap();
         snap.as_object_mut().unwrap().remove("le_scanning");

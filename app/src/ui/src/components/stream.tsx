@@ -3,11 +3,11 @@
 // and the error panel with its fix.
 
 import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
-import { errorText, useApp } from "../app/context";
+import { errorText, useApp, type AppContext } from "../app/context";
 import { t, tm } from "../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { copyText, khz, kbps, percentToVolume, volumePercent } from "../lib/format";
-import { firmwareUrl } from "../lib/links";
+import { bugReportUrl, firmwareUrl, type BugReport } from "../lib/links";
 import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState } from "../ipc/types";
 import { Sparkline } from "./charts";
 import { Banner, Button, Dialog } from "./controls";
@@ -411,10 +411,121 @@ export function errorCopyText(message: Msg, code?: string | null): string {
   return code ? `${text}\n[${code}]` : text;
 }
 
-/** Copies an error's text (v1 copied the status text on click) */
-export async function copyError(app: { notify: (text: string, kind?: "info" | "error") => void }, message: Msg, code?: string | null) {
-  const ok = await copyText(errorCopyText(message, code));
+/** Errors with a cause on the user's side (the device off or out of range,
+ *  pairing, the adapter's setup, a choice the profile lacks): their fix is
+ *  the answer, a bug report would only say "it does not connect" */
+const USER_SIDE_ERRORS = new Set([
+  "error.connect_no_answer",
+  "error.connect_link_lost",
+  "error.connect_refused",
+  "error.connect_auth_failed",
+  "error.pairing_hint",
+  "error.reconnect_failed",
+  "error.btstack_init",
+  "error.btstack_no_answer",
+  "error.codec_not_supported",
+  "error.codec_adaptive_only",
+  "error.codec_sep_in_use",
+  "error.no_compatible_codec",
+  "error.le_audio_disabled",
+  "error.le_audio_unavailable",
+  "error.le_audio_connect",
+  "error.le_audio_capture",
+  "error.no_virtual_device_selected",
+  "error.no_app_selected",
+  "error.app_capture_unsupported",
+  "error.uac_cancelled",
+  "error.driver_assign_failed",
+  "error.invalid_address",
+  "error.invalid_address_format",
+  "error.sbc_bitpool_range",
+  "error.profile_not_found",
+]);
+/** Request errors with such a cause: an input or choice to correct, a
+ *  prompt declined */
+const USER_SIDE_CODES = new Set([
+  "adapter.driver_missing",
+  "adapter.uac_cancelled",
+  "app.streaming",
+  "device.invalid_address",
+  "device.invalid_name",
+  "profile.invalid",
+  "profile.invalid_address",
+  "profile.not_found",
+  "stream.bad_codec",
+  "stream.bad_source",
+]);
+
+/** Whether an error points at A2DPWB itself (worth a bug report); anything
+ *  not known to be on the user's side is */
+export function isAppFault(key: string, code?: string | null): boolean {
+  return !USER_SIDE_ERRORS.has(key) && !(code && USER_SIDE_CODES.has(code));
+}
+
+/** A bug report's URL with what the state tells (the issue form's fields)
+ *  around the diagnostic info */
+export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugReport> = {}): string {
+  const profile = currentProfile(snap);
+  const adapter = snap.adapter.adapters.find((a) => a.driver === "winusb") ?? snap.adapter.adapters[0];
+  const hex = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
+  return bugReportUrl({
+    version: snap.update.current_version,
+    info,
+    adapter: adapter && `${adapter.display_name} (${hex(adapter.vid)}:${hex(adapter.pid)})`,
+    headphones: profile?.device_name || undefined,
+    codec: profile?.codec,
+    captureMode: profile?.capture_mode,
+    ...extra,
+  });
+}
+
+/** What a report holds: `head` (the error, the crash), `details` (a crash
+ *  report's text) and the diagnostic info with its warnings and recent log
+ *  (addresses masked: it goes into a public issue). `log` is the details
+ *  and the info for the issue's log field; `text` all of it, for the
+ *  clipboard. Without the core's info: what the UI has. */
+export async function reportText(app: AppContext, head: string, details = ""): Promise<{ text: string; log: string }> {
+  const info = await app.core
+    .request("diag.info", { mask: true })
+    .then((d) => d.text.replace(/^```text\n/, "").replace(/\n?```\s*$/, "\n"))
+    .catch(() => "");
+  const log = [details.trimEnd(), info].filter(Boolean).join("\n\n");
+  return { text: log ? `${head}\n\n\`\`\`text\n${log.trimEnd()}\n\`\`\`\n` : head, log };
+}
+
+/** Copies a report, ready to paste */
+export async function copyReport(app: AppContext, head: string, details = "") {
+  const { text } = await reportText(app, head, details);
+  const ok = await copyText(text);
   app.notify(ok ? t("ui.error.copied") : t("dbgc.copy_failed"), ok ? "info" : "error");
+}
+
+/** Opens a GitHub issue prefilled with a report; the whole text also goes
+ *  to the clipboard (the URL holds only part of a long log) */
+export async function openReport(app: AppContext, head: string, details = "") {
+  try {
+    const { text, log } = await reportText(app, head, details);
+    const what = `${head}\n\n`;
+    const snap = app.core.state.snap;
+    const url = snap
+      ? bugReportFor(snap, log, { whatHappened: what })
+      : bugReportUrl({ version: "", info: log, whatHappened: what });
+    await app.core.transport.openUrl(url);
+    await copyText(text).catch(() => false);
+    app.notify(t("ui.error.report_opened"));
+  } catch (e) {
+    app.notify(errorText(e), "error");
+  }
+}
+
+/** Copies an error with the log around it */
+export function copyError(app: AppContext, message: Msg, code?: string | null) {
+  return copyReport(app, errorCopyText(message, code));
+}
+
+/** A GitHub issue about an error */
+export function reportError(app: AppContext, message: Msg, code?: string | null) {
+  return openReport(app, errorCopyText(message, code));
 }
 
 /** An error with its cause and the button that fixes it */
@@ -447,11 +558,21 @@ export function ErrorPanel(props: { code?: string | null; message: Msg; title?: 
             <Button
               kind="subtle"
               icon="copy"
-              title={t("error.click_to_copy_hint")}
+              title={t("ui.error.copy_hint")}
               onClick={() => void copyError(app, props.message, props.code)}
             >
               {t("ui.error.copy")}
             </Button>
+            <Show when={isAppFault(props.message.key, props.code)}>
+              <Button
+                kind="subtle"
+                icon="open"
+                title={t("ui.error.report_hint")}
+                onClick={() => void reportError(app, props.message, props.code)}
+              >
+                {t("ui.diag.report_github")}
+              </Button>
+            </Show>
           </>
         }
       >

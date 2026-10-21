@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, hideToTray, isDiagnosticsShortcut } from "./App";
 import { captureRunningText } from "./indicators";
-import { errorCopyText, sourceText } from "../components/stream";
+import { errorCopyText, isAppFault, sourceText } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, sampleProfile, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
@@ -73,6 +73,31 @@ describe("update check", () => {
     fireEvent.click(within(banner).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByText(/is available \(current/)).toBeNull());
   });
+
+  it("a crash of A2DPWB shows on every screen, ready to report, until closed", async () => {
+    const { mock } = start("#/profiles", { scenario: "crash" });
+    const open = vi.spyOn(mock, "openUrl").mockResolvedValue();
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    const banner = (await screen.findByText(t("ui.crash.title"))).closest(".banner") as HTMLElement;
+    expect(banner).toHaveTextContent("a2dpwb-core, 2026-10-22 01:23:38");
+    expect(banner).toHaveTextContent("panic in thread encode");
+
+    fireEvent.click(within(banner).getByRole("button", { name: t("ui.diag.report_github") }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    const url = new URL(open.mock.calls[0][0]);
+    expect(url.searchParams.get("what_happened")).toContain("panic in thread encode");
+    // The backtrace first, then the diagnostic info
+    const logs = url.searchParams.get("logs")!;
+    expect(logs).toContain("a2dpwb_core::encode::run");
+    expect(logs.indexOf("a2dpwb_core::encode::run")).toBeLessThan(logs.indexOf("A2DP Windows Bridge"));
+    expect(write.mock.calls[0][0]).toContain("```text\n");
+
+    const seen = vi.spyOn(mock, "call");
+    fireEvent.click(within(banner).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByText(t("ui.crash.title"))).toBeNull());
+    expect(seen.mock.calls.some(([m]) => m === "diag.crashes_seen")).toBe(true);
+  });
 });
 
 describe("tray", () => {
@@ -108,14 +133,51 @@ describe("Home", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Adapters" })).toBeInTheDocument();
   });
 
-  it("copies the error text", async () => {
+  it("copies the error with the diagnostic log", async () => {
     start("#/home", { scenario: "error" });
     const write = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
     const alert = await screen.findByRole("alert");
     fireEvent.click(within(alert).getByRole("button", { name: t("ui.error.copy") }));
-    await waitFor(() => expect(write).toHaveBeenCalledWith(t("error.connect_no_answer")));
+    await waitFor(() => expect(write).toHaveBeenCalled());
+    const text = write.mock.calls[0][0] as string;
+    expect(text.startsWith(`${t("error.connect_no_answer")}\n\n`)).toBe(true);
+    expect(text).toContain("A2DP Windows Bridge");
     expect(await screen.findByText(t("ui.error.copied"))).toBeInTheDocument();
+  });
+
+  it("offers no bug report for a cause on the user's side", async () => {
+    start("#/home", { scenario: "error" });
+    const alert = await screen.findByRole("alert");
+    // The device did not answer: off or out of range, the fix is the answer
+    expect(within(alert).getByRole("button", { name: t("ui.error.copy") })).toBeInTheDocument();
+    expect(within(alert).queryByRole("button", { name: t("ui.diag.report_github") })).toBeNull();
+    expect(isAppFault("error.connect_no_answer")).toBe(false);
+    expect(isAppFault("error.encoder_init", "stream.bad_codec")).toBe(false);
+    expect(isAppFault("error.encoder_init")).toBe(true);
+    // Not known to be the user's: A2DPWB's own
+    expect(isAppFault("error.something_new")).toBe(true);
+  });
+
+  it("reports an error of A2DPWB itself on GitHub with the form filled in", async () => {
+    const { mock } = start("#/home", { scenario: "error" });
+    const open = vi.spyOn(mock, "openUrl").mockResolvedValue();
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
+    await screen.findByRole("alert");
+    const m = mock as unknown as { snap: { stream: object }; emit: (e: unknown) => void };
+    m.emit({ kind: "stream", value: { ...m.snap.stream, message: { key: "error.encoder_init", args: [] } } });
+    const report = await screen.findByRole("button", { name: t("ui.diag.report_github") });
+    fireEvent.click(report);
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    const url = new URL(open.mock.calls[0][0]);
+    expect(url.searchParams.get("template")).toBe("bug_report.yml");
+    expect(url.searchParams.get("what_happened")).toContain(t("error.encoder_init"));
+    expect(url.searchParams.get("logs")).toContain("A2DP Windows Bridge");
+    // No bundle was saved: its field stays empty
+    expect(url.searchParams.has("bundle")).toBe(false);
+    expect(write).toHaveBeenCalled();
+    expect(await screen.findByText(t("ui.error.report_opened"))).toBeInTheDocument();
   });
 
   it("shows the capture source, waiting for the application", async () => {
