@@ -840,6 +840,13 @@ impl HostApp {
             HCI_EVENT_AUTHENTICATION_COMPLETE => {
                 if let (Some(status), Some(handle)) = (u8_at(p, 2), le16(p, 3)) {
                     let handle = handle & 0x0FFF;
+                    // What connect_retrying decides on: a key the device
+                    // refused vs. a collision with its own authentication
+                    self.shared.update(|s| {
+                        if s.target_acl_handle == Some(handle) {
+                            s.target_auth_status = Some(status);
+                        }
+                    });
                     if status == 0 {
                         tracing::info!("authentication complete (handle 0x{handle:04x})");
                     } else {

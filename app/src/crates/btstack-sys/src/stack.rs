@@ -403,6 +403,22 @@ impl Stack {
         unsafe { ffi::gap_drop_link_key_for_bd_addr(a.as_mut_ptr()) };
     }
 
+    /// The stored link key of `addr` and its type (None also without a
+    /// [`LinkKeyStore`])
+    pub fn link_key(&self, addr: &[u8; 6]) -> Option<([u8; 16], i32)> {
+        LINK_KEYS.with(|s| s.borrow_mut().as_mut().and_then(|s| s.get(addr)))
+    }
+
+    /// Stores a link key again, e.g. one dropped by [`Stack::drop_link_key`]
+    pub fn store_link_key(&self, addr: &[u8; 6], key: &[u8; 16], key_type: i32) {
+        tracing::debug!(target: "btstack", "storing the link key of {} again", addr_str(addr));
+        LINK_KEYS.with(|s| {
+            if let Some(s) = s.borrow_mut().as_mut() {
+                s.put(addr, key, key_type);
+            }
+        });
+    }
+
     // ---- A2DP source ----
 
     /// Returns the A2DP connection id, or BTstack's status

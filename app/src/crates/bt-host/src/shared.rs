@@ -61,6 +61,8 @@ pub struct State {
     /// still up / none): a device that ends the link itself vs. a link lost
     pub target_acl_handle: Option<u16>,
     pub target_acl_down_reason: u8,
+    /// HCI status of the last Authentication Complete on that link
+    pub target_auth_status: Option<u8>,
     /// ACL handle of the A2DP signaling channel
     pub a2dp_con_handle: Option<u16>,
     pub remote_caps: RemoteCaps,
