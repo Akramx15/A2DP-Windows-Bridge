@@ -107,6 +107,7 @@
   "firmware.invalid": "%s ist keine Realtek-Firmware-Datei: vermutlich wurde statt der Datei eine Webseite gespeichert. Über den Link „plain“ erneut herunterladen und ersetzen.",
   "firmware.rom_running": "Verbindung fehlgeschlagen: Der Adapter läuft ohne seine Realtek-Firmware (die Dateien fehlen oder wurden nicht geladen) und kann daher nicht streamen. Lege die auf dem Bildschirm „Adapter“ angezeigten Firmware-Dateien in den Konfigurationsordner, klicke auf „Bluetooth neu starten“ und verbinde erneut.",
   "firmware.rom_status": "Der Adapter läuft mit seinem ROM-Code: Die Realtek-Firmware wurde nicht geladen, daher öffnet er sich, kann aber weder verbinden noch streamen. Lege die auf dem Bildschirm „Adapter“ angezeigten Firmware-Dateien in den Konfigurationsordner; Bluetooth startet dann mit ihnen neu.",
+  "firmware.rom_short": "Der Adapter läuft mit seinem ROM-Code: Er öffnet sich, kann aber erst mit diesen Dateien verbinden oder streamen.",
   "firmware.required_files": "Erforderliche Dateien:",
   "firmware.detected_adapters": "Erkannter Adapter",
   "firmware.no_adapters": "Keine USB-Bluetooth-Adapter erkannt.",

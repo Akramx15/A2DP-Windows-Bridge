@@ -107,6 +107,7 @@
   "firmware.invalid": "%s은(는) Realtek 펌웨어 파일이 아닙니다. 파일 대신 웹 페이지가 저장된 것 같습니다. 'plain' 링크로 다시 다운로드하여 교체하십시오.",
   "firmware.rom_running": "연결하지 못했습니다. 어댑터가 Realtek 펌웨어 없이 동작하고 있어(파일이 없거나 로드되지 않음) 스트리밍할 수 없습니다. 어댑터 화면에 표시된 펌웨어 파일을 설정 폴더에 넣고 [Bluetooth 다시 시작]을 누른 뒤 다시 연결하세요.",
   "firmware.rom_status": "어댑터가 ROM 코드로 동작하고 있습니다. Realtek 펌웨어가 로드되지 않아 열리기는 하지만 연결하거나 스트리밍할 수 없습니다. 어댑터 화면에 표시된 펌웨어 파일을 설정 폴더에 넣으면 Bluetooth가 그 파일로 다시 시작합니다.",
+  "firmware.rom_short": "어댑터가 ROM 코드로 동작하고 있습니다. 열리기는 하지만 이 파일들이 있어야 연결하거나 스트리밍할 수 있습니다.",
   "firmware.required_files": "필요한 파일:",
   "firmware.detected_adapters": "감지된 어댑터",
   "firmware.no_adapters": "USB Bluetooth 어댑터가 감지되지 않았습니다.",

@@ -31,6 +31,10 @@ pub(crate) type Job = Box<dyn FnOnce(&mut HostApp, &Stack) + Send>;
 
 pub(crate) const TIMER_AFH: u32 = 1;
 pub(crate) const TIMER_PLAYBACK: u32 = 2;
+/// Read the version again after a Realtek download (HCI was busy)
+const TIMER_RTK_VERIFY: u32 = 5;
+const RTK_VERIFY_RETRY_MS: u32 = 100;
+const RTK_VERIFY_TRIES: u8 = 20;
 
 /// One radio reading per tick (RSSI and the AFH map in turn)
 const AFH_TICK_MS: u32 = 2500;
@@ -105,6 +109,8 @@ pub(crate) struct HostApp {
     rtk_version_seen: bool,
     rtk_lmp_first: u16,
     rtk_verify_pending: bool,
+    /// Version reads left before the download stays "not verified"
+    rtk_verify_tries: u8,
     bcm_checked: bool,
 
     // ---- AVRCP ----
@@ -165,6 +171,7 @@ impl HostApp {
             rtk_version_seen: false,
             rtk_lmp_first: 0,
             rtk_verify_pending: false,
+            rtk_verify_tries: 0,
             bcm_checked: false,
             volume_in_flight: None,
             playback_status: AVRCP_PLAYBACK_STATUS_STOPPED,
@@ -259,6 +266,7 @@ impl HostApp {
         self.rtk_version_seen = false;
         self.rtk_lmp_first = 0;
         self.rtk_verify_pending = false;
+        self.rtk_verify_tries = 0;
         self.init_started = Instant::now();
         self.shared.update(|s| {
             s.power_on_at = Some(Instant::now());
@@ -270,18 +278,7 @@ impl HostApp {
             // Issue #81: an RTL8852BU whose firmware was missing failed here
             // with "failed to initialize WinUSB (error 50)", which reads as
             // a driver problem; the firmware was all it lacked
-            let missing: Vec<String> = match (pid, &self.setup.realtek_files) {
-                (0, _) | (_, None) => Vec::new(),
-                (_, Some((fw, cfg))) => [fw, cfg]
-                    .into_iter()
-                    // The driver also takes the extension-less file alone
-                    .filter(|s| {
-                        let dir = &self.setup.firmware_dir;
-                        !dir.join(format!("{s}.bin")).is_file() && !dir.join(s.as_str()).is_file()
-                    })
-                    .map(|s| format!("{s}.bin"))
-                    .collect(),
-            };
+            let missing = self.missing_realtek_files(true);
             if !missing.is_empty() {
                 tracing::warn!(
                     "the Realtek firmware is missing too ({} in {}): add it, then start again",
@@ -290,6 +287,39 @@ impl HostApp {
                 );
             }
             self.init_failed(InitFailure::Failed);
+        }
+    }
+
+    /// The chip's Realtek files not in the firmware folder ("rtl8852bu_fw.bin"),
+    /// the config file too if `with_config`
+    fn missing_realtek_files(&self, with_config: bool) -> Vec<String> {
+        let Some((fw, cfg)) = self.setup.realtek_files.as_ref().filter(|_| self.setup.realtek_pid != 0) else {
+            return Vec::new();
+        };
+        let dir = &self.setup.firmware_dir;
+        [Some(fw), with_config.then_some(cfg)]
+            .into_iter()
+            .flatten()
+            // The driver also takes the extension-less file alone
+            .filter(|s| !dir.join(format!("{s}.bin")).is_file() && !dir.join(s.as_str()).is_file())
+            .map(|s| format!("{s}.bin"))
+            .collect()
+    }
+
+    /// Read the version after the Realtek download; the result decides
+    /// between "loaded" and the ROM code (on_local_version)
+    fn verify_realtek_download(&mut self, stack: &Stack) {
+        if stack.cmd_read_local_version() == ERROR_CODE_SUCCESS {
+            self.rtk_verify_pending = true;
+        } else if self.rtk_verify_tries > 0 {
+            // HCI is busy right after start-up: again a moment later
+            self.rtk_verify_tries -= 1;
+            stack.timer_start(TIMER_RTK_VERIFY, RTK_VERIFY_RETRY_MS);
+        } else {
+            tracing::info!(
+                "Realtek firmware download ran (ROM LMP subversion 0x{:04X}); not verified",
+                self.rtk_lmp_first
+            );
         }
     }
 
@@ -581,6 +611,7 @@ impl HostApp {
                     tracing::info!("HCI state OFF");
                     stack.timer_stop(TIMER_AFH);
                     stack.timer_stop(TIMER_PLAYBACK);
+                    stack.timer_stop(TIMER_RTK_VERIFY);
                     self.stats.with_radio(|r| *r = Default::default());
                     self.shared.update(|s| {
                         s.hci_ready = false;
@@ -739,14 +770,19 @@ impl HostApp {
                         "Realtek firmware already running from an earlier session (LMP subversion 0x{:04X}), download skipped",
                         self.rtk_lmp_first
                     );
-                } else if stack.cmd_read_local_version() == ERROR_CODE_SUCCESS {
-                    // HCI init read the version only before the download
-                    self.rtk_verify_pending = true;
-                } else {
-                    tracing::info!(
-                        "Realtek firmware download ran (ROM LMP subversion 0x{:04X}); not verified",
-                        self.rtk_lmp_first
+                } else if let [fw, ..] = self.missing_realtek_files(false).as_slice() {
+                    // Issue #81: without the firmware file there was nothing
+                    // to download, the controller stays on its ROM code
+                    tracing::warn!(
+                        "Realtek firmware NOT loaded (LMP subversion 0x{:04X} is the ROM code; {fw} missing in {})",
+                        self.rtk_lmp_first,
+                        self.setup.firmware_dir.display()
                     );
+                    self.shared.update(|s| s.realtek_rom = true);
+                } else {
+                    // HCI init read the version only before the download
+                    self.rtk_verify_tries = RTK_VERIFY_TRIES;
+                    self.verify_realtek_download(stack);
                 }
             } else if elapsed < 500 {
                 tracing::warn!("HCI init took < 500 ms: Realtek firmware likely NOT loaded");
@@ -1534,6 +1570,7 @@ impl App for HostApp {
                 self.playback_tick(stack);
                 stack.timer_start(TIMER_PLAYBACK, PLAYBACK_TICK_MS);
             }
+            TIMER_RTK_VERIFY => self.verify_realtek_download(stack),
             TIMER_LE => {
                 if let Some(le) = self.le.as_mut() {
                     le.on_timer(stack);

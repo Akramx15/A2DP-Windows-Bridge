@@ -107,6 +107,7 @@
   "firmware.invalid": "%s 不是 Realtek 固件文件，可能保存的是网页而不是文件。请通过“plain”链接重新下载并替换。",
   "firmware.rom_running": "无法连接：适配器在没有 Realtek 固件的情况下运行（文件缺失或未加载），因此无法串流。请将适配器页面上显示的固件文件放入配置文件夹，按“重新启动 Bluetooth”，然后重新连接。",
   "firmware.rom_status": "适配器正在以 ROM 代码运行：Realtek 固件未加载，因此虽然能打开，却无法连接或串流。请将适配器页面上显示的固件文件放入配置文件夹，Bluetooth 随后会使用这些文件重新启动。",
+  "firmware.rom_short": "适配器正在以 ROM 代码运行：虽然能打开，但在这些文件就位之前无法连接或串流。",
   "firmware.required_files": "所需文件：",
   "firmware.detected_adapters": "检测到的适配器",
   "firmware.no_adapters": "未检测到 USB Bluetooth 适配器。",
