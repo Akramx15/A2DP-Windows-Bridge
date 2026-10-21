@@ -86,8 +86,8 @@ function ConnectionScreen(props: { compact?: boolean }) {
 
 const NAV: { name: RouteName; icon: IconName; label: string }[] = [
   { name: "home", icon: "home", label: "ui.nav.home" },
-  { name: "profiles", icon: "headphones", label: "ui.nav.profiles" },
   { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
+  { name: "profiles", icon: "headphones", label: "ui.nav.profiles" },
   { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
   { name: "adapter", icon: "usb_stick", label: "ui.nav.adapter" },
   { name: "settings", icon: "settings", label: "ui.nav.settings" },
