@@ -623,8 +623,8 @@ pub struct DiagBundle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 
 pub struct DiagBundleParams {
-    /// Bluetooth addresses masked in the text files (default true; HCI
-    /// captures keep them)
+    /// Bluetooth addresses and USB serial numbers masked in the text files
+    /// (default true; HCI captures keep the addresses)
     #[ts(optional = nullable)]
     #[serde(default)]
     pub mask: Option<bool>,

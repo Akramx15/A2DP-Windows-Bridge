@@ -246,7 +246,7 @@
   "dbgc.copy_log": "Copiar registro visible",
   "dbgc.copy_selected": "Copiar líneas seleccionadas",
   "dbgc.mask": "Ocultar direcciones Bluetooth",
-  "dbgc.mask_tip": "Las copias muestran las direcciones como AA:BB:CC:xx:xx:xx (se conserva la parte del fabricante).",
+  "dbgc.mask_tip": "Las copias muestran las direcciones como AA:BB:CC:xx:xx:xx (se conserva la parte del fabricante). Los números de serie USB también se ocultan.",
   "dbgc.copied": "Copiado al portapapeles (%u líneas)",
   "dbgc.copy_failed": "No se pudo abrir el portapapeles",
   "receiver.title": "Prueba con receptor par",

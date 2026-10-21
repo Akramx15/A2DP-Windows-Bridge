@@ -17,7 +17,7 @@ import { t } from "../i18n";
 import type { CaptureState, DiagBundle, FlowStepView, LogLevel, LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { STEPS, type Step, type StepStatus, stepDetail } from "../lib/flow";
-import { clock, copyText, kbps, maskAddresses } from "../lib/format";
+import { clock, copyText, kbps, maskIdentifiers } from "../lib/format";
 import {
   dropsPerSample,
   EDR3_MAX_KBPS,
@@ -687,7 +687,7 @@ function FlowPanel(props: { onJump: (seq: number) => void }) {
   const detail = (st: Step) => {
     const x = stepOf(st);
     const d = x ? stepDetail(x) : "";
-    return mask() ? maskAddresses(d) : d;
+    return mask() ? maskIdentifiers(d) : d;
   };
   const header = () => {
     const s = session();
@@ -704,7 +704,7 @@ function FlowPanel(props: { onJump: (seq: number) => void }) {
       return [t(`dbgc.step.${st}`), status, stepTime(x), elapsed(x?.elapsed_ms), detail(st)].join("\t");
     });
     const text = [header(), ...lines].join("\n");
-    const ok = await copyText(mask() ? maskAddresses(text) : text);
+    const ok = await copyText(mask() ? maskIdentifiers(text) : text);
     app.notify(ok ? t("dbgc.copied", lines.length + 1) : t("dbgc.copy_failed"), ok ? "info" : "error");
   };
   const jump = (st: Step) => {
@@ -821,7 +821,7 @@ function LogPanel(props: { view: LogView }) {
     const [a, b] = drawnRange(filtered().length, LOG_SHOWN, focusIndex());
     return filtered().slice(a, b);
   });
-  const text = (l: LogLine) => (mask() ? maskAddresses(l.message) : l.message);
+  const text = (l: LogLine) => (mask() ? maskIdentifiers(l.message) : l.message);
   const lineText = (l: LogLine) => formatLogLine(l, timeText(l.time_ms), mask());
 
   let box: HTMLDivElement | undefined;

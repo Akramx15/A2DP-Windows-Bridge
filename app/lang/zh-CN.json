@@ -246,7 +246,7 @@
   "dbgc.copy_log": "复制显示的日志",
   "dbgc.copy_selected": "复制所选行",
   "dbgc.mask": "隐藏 Bluetooth 地址",
-  "dbgc.mask_tip": "复制时地址显示为 AA:BB:CC:xx:xx:xx（保留厂商部分）。",
+  "dbgc.mask_tip": "复制时地址显示为 AA:BB:CC:xx:xx:xx（保留厂商部分）。USB 序列号也会隐藏。",
   "dbgc.copied": "已复制到剪贴板（%u 行）",
   "dbgc.copy_failed": "无法打开剪贴板",
   "receiver.title": "对端接收器测试",

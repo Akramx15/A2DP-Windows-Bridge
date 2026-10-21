@@ -246,7 +246,7 @@
   "dbgc.copy_log": "Angezeigtes Protokoll kopieren",
   "dbgc.copy_selected": "Ausgewählte Zeilen kopieren",
   "dbgc.mask": "Bluetooth-Adressen maskieren",
-  "dbgc.mask_tip": "Kopien zeigen Adressen als AA:BB:CC:xx:xx:xx (der Herstellerteil bleibt erhalten).",
+  "dbgc.mask_tip": "Kopien zeigen Adressen als AA:BB:CC:xx:xx:xx (der Herstellerteil bleibt erhalten). USB-Seriennummern werden ebenfalls ausgeblendet.",
   "dbgc.copied": "In die Zwischenablage kopiert (%u Zeilen)",
   "dbgc.copy_failed": "Zwischenablage konnte nicht geöffnet werden",
   "receiver.title": "Peer-Empfängertest",

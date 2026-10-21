@@ -16,14 +16,14 @@
 //!   they hold Bluetooth addresses; the recorder zeroes pairing keys).
 //!   Captures started by hand keep the keys and stay out.
 //!
-//! With `mask`, Bluetooth addresses in the text files are masked as in the
-//! diagnostics view. Bundles go to `logs\bundles\`, the newest
-//! [`KEEP_BUNDLES`] kept.
+//! With `mask`, Bluetooth addresses and USB serial numbers in the text files
+//! (and the driver records' names) are masked as in the diagnostics view.
+//! Bundles go to `logs\bundles\`, the newest [`KEEP_BUNDLES`] kept.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use a2dpwb_core::diag::mask_addresses;
+use a2dpwb_core::diag::mask_identifiers;
 use a2dpwb_core::paths;
 use ipc::DiagBundle;
 
@@ -51,7 +51,7 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
     let stamp = paths::local_stamp();
     let t = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     let mut zip = ZipWriter::new((t.year() as u16, u8::from(t.month()), t.day(), t.hour(), t.minute(), t.second()));
-    let text = |s: String| if mask { mask_addresses(&s) } else { s };
+    let text = |s: String| if mask { mask_identifiers(&s) } else { s };
     let mut skipped: Vec<String> = Vec::new();
 
     zip.add("diagnostics.txt", crate::diag_text(state, mask).as_bytes());
@@ -84,7 +84,8 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
     }
     for (name, path) in files_in(&config.join("driver"), |n| n.ends_with(".json")) {
         if let Ok(s) = std::fs::read_to_string(path) {
-            zip.add(&format!("config/driver/{name}"), text(s).as_bytes());
+            // Named after the adapter's instance ID
+            zip.add(&text(format!("config/driver/{name}")), text(s).as_bytes());
         }
     }
     let mut dumps = 0;
@@ -174,7 +175,7 @@ fn readme(stamp: &str, mask: bool, hci: bool, skipped: &[String]) -> String {
     let _ = writeln!(
         s,
         "Bluetooth addresses: {}",
-        if mask { "masked in the text files (AA:BB:CC:xx:xx:xx)" } else { "not masked" }
+        if mask { "masked in the text files (AA:BB:CC:xx:xx:xx), and so are USB serial numbers" } else { "not masked" }
     );
     if !hci {
         s.push_str("HCI captures: left out\n");
