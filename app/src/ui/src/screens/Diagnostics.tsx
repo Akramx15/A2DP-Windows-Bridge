@@ -1,7 +1,9 @@
 // Diagnostics: live link graphs and v1's link quality figures (an LE
 // Audio stream's ISO counters), the eleven-step connection flow, the log
 // with level, text and attempt filters, HCI capture, "copy diagnostic
-// info", and in developer mode the receiver test.
+// info", verbose logging, the diagnostic bundle (one .zip of logs,
+// captures and crash reports for a report), and in developer mode the
+// receiver test.
 
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -11,7 +13,7 @@ import { Button, Check, IconButton, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
 import type { IconName } from "../components/icons";
 import { t } from "../i18n";
-import type { CaptureState, FlowStepView, LogLine } from "../ipc/types";
+import type { CaptureState, DiagBundle, FlowStepView, LogLevel, LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { STEPS, type Step, type StepStatus, stepDetail } from "../lib/flow";
 import { clock, copyText, kbps, maskAddresses } from "../lib/format";
@@ -47,6 +49,15 @@ const [mask, setMask] = createSignal(true);
 const [resetBase, setResetBase] = createSignal<LinkBaseline | null>(null);
 /** The capture stopped last (file size, "show in Explorer") */
 const [savedCapture, setSavedCapture] = createSignal<CaptureState | null>(null);
+/** The diagnostic bundle saved last */
+const [savedBundle, setSavedBundle] = createSignal<DiagBundle | null>(null);
+
+type VerboseChoice = "off" | "debug" | "trace";
+
+/** When verbose logging ends, as the local date and time */
+function untilText(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 /** The core's local time of day at its time 0 (Snapshot.clock_ms) */
 const [coreClock, setCoreClock] = createSignal<number | null>(null);
 /** Without it: the wall clock (ms since 1970) at the core's time 0, estimated from live samples */
@@ -111,6 +122,8 @@ export function Diagnostics() {
   const [tab, setTab] = createSignal<Tab>("link");
   const capture = () => core.state.snap!.capture;
   const [capBusy, setCapBusy] = createSignal(false);
+  const [bundleBusy, setBundleBusy] = createSignal(false);
+  const verbose = () => core.state.snap!.verbose ?? null;
   const logView = createLogView();
   // A new core process sends a new snapshot, with its own clock
   createEffect(() => setCoreClock(core.state.snap?.clock_ms ?? null));
@@ -167,6 +180,27 @@ export function Diagnostics() {
     }
   };
 
+  const changeVerbose = async (v: VerboseChoice) => {
+    try {
+      await core.request("diag.set_verbose", { level: v === "off" ? null : (v as LogLevel) });
+    } catch (e) {
+      app.notify(errorText(e), "error");
+    }
+  };
+
+  const saveBundle = async () => {
+    setBundleBusy(true);
+    try {
+      const b = await core.request("diag.bundle", { mask: mask(), hci: true });
+      setSavedBundle(b);
+      app.notify(t("ui.diag.bundle_saved", `${b.path} (${formatBytes(b.bytes)})`));
+    } catch (e) {
+      app.notify(t("ui.diag.bundle_failed", errorText(e)), "error");
+    } finally {
+      setBundleBusy(false);
+    }
+  };
+
   const jumpTo = (seq: number) => {
     const j = { seq };
     logView.setJump(j);
@@ -211,8 +245,44 @@ export function Diagnostics() {
           <Button icon="copy" onClick={copyInfo}>
             {t("dbgc.copy_diag")}
           </Button>
+          <Button icon="arrow_download" kind="strong" busy={bundleBusy()} title={t("ui.diag.bundle_tip")} onClick={saveBundle}>
+            {t("ui.diag.bundle")}
+          </Button>
         </div>
       </header>
+      <div class="verbose-row">
+        <span id="verbose-label">{t("ui.diag.verbose")}</span>
+        <Select<VerboseChoice>
+          value={verbose()?.level === "trace" ? "trace" : verbose() ? "debug" : "off"}
+          label={t("ui.diag.verbose")}
+          describedBy="verbose-help"
+          options={[
+            { value: "off", label: t("ui.diag.verbose_off") },
+            { value: "debug", label: t("ui.diag.verbose_debug") },
+            { value: "trace", label: t("ui.diag.verbose_trace") },
+          ]}
+          onChange={(v) => void changeVerbose(v)}
+        />
+        <span id="verbose-help" class="hint">
+          {verbose() ? t("ui.diag.verbose_until", untilText(verbose()!.until_ms)) : t("ui.diag.verbose_help")}
+        </span>
+      </div>
+      <Show when={savedBundle()}>
+        {(b) => (
+          <div class="capture-line capture-saved bundle-saved" role="status">
+            <Icon name="checkmark_circle" />
+            <span class="capture-saved-text">
+              {t("ui.diag.bundle_saved", "")}
+              <span class="mono capture-path">{b().path}</span> <span class="num capture-size">({formatBytes(b().bytes)})</span>
+            </span>
+            <Button icon="folder_open" kind="subtle" onClick={() => void core.transport.revealPath(b().path)}>
+              {t("ui.diag.show_in_explorer")}
+            </Button>
+            <IconButton icon="dismiss" label={t("modal.close")} onClick={() => setSavedBundle(null)} />
+            <span class="hint bundle-attach">{t("ui.diag.bundle_attach")}</span>
+          </div>
+        )}
+      </Show>
       <Show when={capture()}>
         {(c) => (
           <p class="capture-line" role="status">

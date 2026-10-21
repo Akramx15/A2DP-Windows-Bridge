@@ -56,6 +56,10 @@ impl SilenceFill {
         let max = frames(MAX_BURST, self.sample_rate);
         if n > max {
             // Resynchronise: count everything up to `now` as delivered
+            tracing::debug!(
+                "silence fill: {} frames due at once, delivering {max} and dropping the rest (thread stalled?)",
+                n
+            );
             self.emitted = due;
             return max as usize;
         }

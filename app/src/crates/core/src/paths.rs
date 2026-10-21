@@ -16,6 +16,27 @@ pub fn config_dir() -> PathBuf {
     dir
 }
 
+/// The daily log files: `logs\` in the settings folder
+pub fn log_dir(config: &Path) -> PathBuf {
+    config.join("logs")
+}
+
+/// The HCI flight recorder's files (bt_host::HciCapture::save_recent)
+pub fn recorder_dir(config: &Path) -> PathBuf {
+    log_dir(config).join("hci")
+}
+
+/// Crash reports (win_sys::crash)
+pub fn crash_dir(config: &Path) -> PathBuf {
+    log_dir(config).join("crash")
+}
+
+/// "YYYYMMDD_HHMMSS", local time: file names that sort by time
+pub fn local_stamp() -> String {
+    let t = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    format!("{:04}{:02}{:02}_{:02}{:02}{:02}", t.year(), u8::from(t.month()), t.day(), t.hour(), t.minute(), t.second())
+}
+
 /// Where the adapters' firmware files live: `firmware\` in the settings
 /// folder (they were loose in the folder itself before 2.0.3)
 pub fn firmware_dir(config: &Path) -> PathBuf {

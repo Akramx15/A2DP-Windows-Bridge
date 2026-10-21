@@ -354,7 +354,11 @@ struct AppSource {
 
 impl AppSource {
     fn attach(&mut self, input: &SharedInput) -> bool {
-        let Some(pid) = audio_capture::find_process(&self.exe) else { return false };
+        let Some(pid) = audio_capture::find_process(&self.exe) else {
+            tracing::trace!("app capture: {} not found", self.exe);
+            return false;
+        };
+        tracing::debug!("app capture: attaching to {} (PID {pid}) at {} Hz", self.exe, self.sample_rate);
         let options = CaptureOptions { preferred_rate: Some(self.sample_rate), fill_silence: true };
         let started = Capture::open(&Source::Application { process_id: pid }, &options)
             .and_then(|c| c.start(Box::new(input.clone())));
@@ -432,6 +436,7 @@ impl DefaultDeviceGuard {
     /// one role (Console, Multimedia) before the other failed.
     pub(crate) fn switch_to(id: &str, name: &str) -> DefaultDeviceGuard {
         let before = audio_capture::default_render_device();
+        tracing::debug!("default output: switching to '{name}' ({id}), was {before:?}");
         if let Err(e) = audio_capture::set_default_render_device(id) {
             tracing::warn!("failed to make '{name}' the default output device: {e}");
         }
@@ -482,10 +487,11 @@ impl DiscontinuityLog {
 
 impl Drop for DefaultDeviceGuard {
     fn drop(&mut self) {
-        if let Some(id) = self.0.take()
-            && let Err(e) = audio_capture::set_default_render_device(&id)
-        {
-            tracing::warn!("could not restore the default output device: {e}");
+        if let Some(id) = self.0.take() {
+            tracing::debug!("default output: restoring {id}");
+            if let Err(e) = audio_capture::set_default_render_device(&id) {
+                tracing::warn!("could not restore the default output device: {e}");
+            }
         }
     }
 }
@@ -534,9 +540,12 @@ fn sleep_through(inner: &Inner, pipeline: &mut Option<Pipeline>) -> Option<&'sta
         let _ = p.stop();
     }
     inner.shutdown_host_for_sleep();
+    let t = Instant::now();
     if !inner.wait_for_resume() {
+        tracing::debug!("sleep: stopped while waiting for the resume");
         return None;
     }
+    tracing::debug!("sleep: resumed after {} s, stack stale {}", t.elapsed().as_secs(), inner.power.stale());
     Some(if inner.power.stale() { RESUMED } else { ADAPTER_STOPPED })
 }
 
@@ -575,6 +584,16 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &Stream
         }
         _ => Default::default(),
     };
+    tracing::debug!(
+        "peer: {} sbc bitpool {}..{} (wanted {}/{} xq), aac max {} bps, opus {opus_frame_ms} ms {opus_channels} ch max {opus_max_bitrate}, lhdc v5 limits {:?}",
+        kind.name(),
+        remote.sbc_min_bitpool(),
+        remote.sbc_max_bitpool(),
+        req.sbc_bitpool,
+        req.sbcxq_bitpool,
+        remote.aac_max_bitrate(),
+        remote.lhdcv5_bitrate_limits()
+    );
     PeerParams {
         lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
         sbc_min_bitpool: remote.sbc_min_bitpool(),
@@ -665,13 +684,23 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         req.sample_rate.map_or("device's".into(), |r| format!("{r} Hz")),
         req.source
     );
+    tracing::debug!("stream: request {req:?}");
     let stopped = || inner.stop_requested();
+    let session_start = Instant::now();
 
     inner.notify(StreamState::Connecting, Msg::new("status.initializing_btstack"));
     let mut host = match inner.host_for_stream() {
         Ok(h) => h,
-        Err(m) => return inner.notify(StreamState::Error, m),
+        Err(m) => {
+            tracing::debug!("stream: no stack after {} ms: {}", session_start.elapsed().as_millis(), m.english());
+            return inner.notify(StreamState::Error, m);
+        }
     };
+    tracing::debug!(
+        "stream: stack ready in {} ms, media payload limit {}",
+        session_start.elapsed().as_millis(),
+        req.max_media_payload
+    );
     host.set_media_payload_limit(req.max_media_payload);
     if stopped() {
         return inner.notify(StreamState::Idle, Msg::new("status.ready"));
@@ -679,17 +708,30 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // Remembered headphone volume, set as soon as AVRCP connects
     let restore = inner.saved_volume(&addr);
+    tracing::debug!("stream: volume to restore {restore:?}");
     host.set_restore_volume(restore);
 
     // ---- connect ----
     inner.notify(StreamState::Connecting, Msg::new("status.connecting_device"));
     let connect = |h: &BtHost| {
-        h.connect_retrying(req.device, &stopped, &mut |attempt, attempts| {
+        let t = Instant::now();
+        let r = h.connect_retrying(req.device, &stopped, &mut |attempt, attempts| {
+            tracing::debug!("connect: retry {attempt}/{attempts} after {} ms", t.elapsed().as_millis());
             inner.notify(StreamState::Connecting, Msg::with("status.connecting_retry", &[&attempt, &attempts]));
-        })
+        });
+        match &r {
+            Ok(_) => tracing::debug!("connect: {addr} connected in {} ms", t.elapsed().as_millis()),
+            Err(f) => tracing::debug!(
+                "connect: {addr} failed after {} ms: {f:?} (last failure {:?})",
+                t.elapsed().as_millis(),
+                h.last_connect_failure()
+            ),
+        }
+        r
     };
     let mut result = connect(&host);
     if result.is_err() && !stopped() && host.last_connect_failure() == Some(ConnectFailure::Stalled) {
+        tracing::debug!("connect: the stack stalled, restarting it and connecting again");
         // Not the device: the stack it went through stopped working
         inner.notify(StreamState::Connecting, Msg::new("status.initializing_btstack"));
         host = match inner.restart_host("the Bluetooth adapter stopped working", req.max_media_payload) {
@@ -714,6 +756,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         KnownCodecs { keys: codec_keys(&remote), sbc: remote.sbc_caps.as_ref().map(sbc_device_caps) },
     );
     tracing::info!("device connected, choosing the codec");
+    tracing::debug!(
+        "codec: device offers [{}], best {:?}, audio sinks {} ({} in use), aptX Adaptive {}",
+        codec_keys(&remote).join(", "),
+        remote.best().map(CodecKind::name),
+        remote.audio_sinks,
+        remote.audio_sinks_in_use,
+        remote.aptx_adaptive
+    );
+    tracing::trace!("codec: device capabilities {remote:?}");
     if stopped() {
         host.disconnect();
         return inner.notify(StreamState::Idle, Msg::new("status.ready"));
@@ -723,6 +774,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let choice = match caps::choose(&remote, req.codec, req.codec_fallback) {
         Ok(c) => c,
         Err(why) => {
+            tracing::debug!(
+                "codec: no codec for request {:?} (fallback {}): {why:?}",
+                req.codec.map(CodecKind::name),
+                req.codec_fallback
+            );
             host.disconnect();
             let msg = match why {
                 None => Msg::new("error.no_compatible_codec"),
@@ -741,6 +797,19 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         tracing::warn!("codec fallback: {} not available ({why:?}), using {}", wanted.name(), kind.name());
     }
     tracing::info!("codec selected: {}", kind.name());
+    tracing::debug!(
+        "codec: requested {:?} (fallback {}), chose {} ({})",
+        req.codec.map(CodecKind::name),
+        req.codec_fallback,
+        kind.name(),
+        if req.codec.is_none() {
+            "auto: best the device offers"
+        } else if replaced.is_some() {
+            "fallback"
+        } else {
+            "as requested"
+        }
+    );
 
     // ---- audio source ----
     inner.notify(StreamState::Connecting, Msg::new("status.initializing_audio"));
@@ -751,6 +820,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         (SourceRequest::VirtualDevice { id, .. }, None) => audio_capture::mix_rate(Some(id)).unwrap_or(48000),
         (_, None) => audio_capture::mix_rate(None).unwrap_or(48000),
     };
+    tracing::debug!(
+        "capture rate: {preferred} Hz preferred ({})",
+        if req.sample_rate.is_some() { "profile" } else { "source mix rate" }
+    );
     if preferred > kind.max_sample_rate() {
         tracing::info!(
             "limiting the capture rate from {preferred} to {} Hz for {}",
@@ -849,9 +922,19 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // AAC with variable bit rate: asked for by name, and the sink lists it
     let vbr = req.abr && req.codec == Some(CodecKind::Aac) && kind == CodecKind::Aac && remote.aac_vbr();
+    tracing::debug!(
+        "codec: {bits}-bit (profile {:?}), aac vbr {vbr} (abr {}, device vbr {})",
+        req.bit_depth,
+        req.abr,
+        remote.aac_vbr()
+    );
 
     // ---- stream configuration ----
+    let t = Instant::now();
     let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+    if let Err(failure) = &configured {
+        tracing::debug!("configure: {} failed after {} ms: {failure:?}", kind.name(), t.elapsed().as_millis());
+    }
     if let Err(failure) = &configured
         && !stopped()
         && sbc_xq_fallback(kind, failure, req.codec, req.codec_fallback)
@@ -873,9 +956,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             replaced = Some((CodecKind::SbcXq, Unavailable::NotSupported));
         }
         configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+        if let Err(failure) = &configured {
+            tracing::debug!("configure: SBC after SBC XQ failed: {failure:?}");
+        }
     }
     let (mut config, mtu) = match configured {
-        Ok(c) => c,
+        Ok(c) => {
+            tracing::debug!("configure: {:?} in {} ms, media payload {}", c.0, t.elapsed().as_millis(), c.1);
+            c
+        }
         Err(e) => {
             if let ConfigFailure::Build(e) = &e {
                 tracing::error!("{e}");
@@ -907,6 +996,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         abr: req.abr && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5) || (kind == CodecKind::Aac && vbr)),
         peer: peer_params(&remote, kind, channels, &req),
     };
+    tracing::debug!("encoder config: {encoder_config:?}");
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,
         Err(e) => {
@@ -923,6 +1013,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     tracing::info!("encoder ready: {} {bitrate} kbps, mtu {mtu}, {bits}-bit, ABR {abr}", kind.name());
 
     if !host.start_stream() {
+        tracing::debug!("stream: start failed (stop requested {})", stopped());
         host.disconnect();
         return if stopped() {
             inner.notify(StreamState::Idle, Msg::new("status.ready"))
@@ -931,6 +1022,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
     }
 
+    tracing::debug!("stream: started {} ms after the request", session_start.elapsed().as_millis());
     inner.notify(StreamState::Streaming, fallback_text.clone().unwrap_or_else(|| Msg::new("status.connected")));
     let mut info = StreamInfo {
         codec: kind.name().into(),
@@ -1068,7 +1160,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 Some(why)
             }
         };
+        tracing::debug!("reconnect: link check {check:?}, restart reason {restart_why:?}");
         inner.notify(StreamState::Reconnecting, Msg::new("status.connection_lost"));
+        let reconnect_start = Instant::now();
 
         let mut reconnected = None;
         let mut codec_gone = false;
@@ -1089,6 +1183,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 StreamState::Reconnecting,
                 Msg::with("status.reconnect_attempt", &[&attempt, &RECONNECT_ATTEMPTS]),
             );
+            tracing::debug!("reconnect: attempt {attempt}/{RECONNECT_ATTEMPTS} in 3000 ms");
             // React to a stop within the wait
             let until = Instant::now() + Duration::from_secs(3);
             while Instant::now() < until && !stopped() {
@@ -1098,6 +1193,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 break;
             }
             if inner.power.suspending() {
+                tracing::debug!("reconnect: going to sleep during the wait, attempt {attempt} not counted");
                 // Went to sleep in the wait: the next round sleeps through
                 attempt -= 1;
                 continue;
@@ -1110,21 +1206,32 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 }
             }
             if let Some(why) = restart_why.take() {
+                tracing::debug!("reconnect: attempt {attempt} restarts the stack: {why}");
                 // The pipeline's media sink belongs to the old stack
                 if let Some(p) = pipeline.take() {
                     let _ = p.stop();
                 }
+                let t = Instant::now();
                 match inner.restart_host(why, req.max_media_payload) {
                     Ok(h) => {
+                        tracing::debug!("reconnect: new stack in {} ms", t.elapsed().as_millis());
                         host = h;
                         fresh_stack = true;
                     }
                     Err(_) if inner.power.suspending() => {
+                        tracing::debug!(
+                            "reconnect: stack restart failed going to sleep, attempt {attempt} not counted"
+                        );
                         // The adapter went away for sleep meanwhile
                         attempt -= 1;
                         continue;
                     }
-                    Err(_) => {
+                    Err(m) => {
+                        tracing::debug!(
+                            "reconnect: stack restart failed after {} ms: {}",
+                            t.elapsed().as_millis(),
+                            m.english()
+                        );
                         tracing::warn!("reconnect attempt {attempt} failed (no Bluetooth adapter)");
                         restart_why = Some("the last restart failed");
                         continue;
@@ -1137,21 +1244,37 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             // A new stack knows neither the device nor the stream: connect
             // and configure in full
+            let t = Instant::now();
             let result = if fresh_stack {
                 match host.connect(req.device) {
                     Ok(caps) => host.configure_and_start(caps, &config, &rebuild),
-                    Err(_) => Err(ReconnectError::Failed),
+                    Err(f) => {
+                        tracing::debug!("reconnect: connect on the new stack failed: {f:?}");
+                        Err(ReconnectError::Failed)
+                    }
                 }
             } else {
                 host.reconnect(&rebuild)
             };
+            tracing::debug!(
+                "reconnect: attempt {attempt} ({}) took {} ms: {:?}",
+                if fresh_stack { "new stack" } else { "same stack" },
+                t.elapsed().as_millis(),
+                result.as_ref().map(|r| r.mtu)
+            );
             match result {
                 Ok(r) => {
                     tracing::info!("reconnected on attempt {attempt}");
+                    tracing::debug!(
+                        "reconnect: back after {} ms, config {:?}",
+                        reconnect_start.elapsed().as_millis(),
+                        r.config
+                    );
                     reconnected = Some(r);
                     break;
                 }
                 Err(ReconnectError::CodecGone) => {
+                    tracing::debug!("reconnect: the device no longer offers {}", kind.name());
                     codec_gone = true;
                     break;
                 }
@@ -1165,6 +1288,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             tracing::warn!("reconnect attempt {attempt} failed");
         }
         let Some(r) = reconnected else {
+            tracing::debug!(
+                "reconnect: gave up after {attempt} attempt(s), {} ms (stopped {}, codec gone {codec_gone}, restart pending {restart_why:?})",
+                reconnect_start.elapsed().as_millis(),
+                stopped()
+            );
             if !stopped() {
                 if codec_gone {
                     inner.notify(StreamState::Error, Msg::with("error.codec_not_supported", &[&kind.name()]));
@@ -1187,6 +1315,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }
         let changed = new_config != encoder_config;
+        tracing::debug!(
+            "reconnect: encoder config changed {changed}, pipeline {}",
+            if pipeline.is_some() && !changed { "reset" } else { "started anew" }
+        );
         encoder_config = new_config;
         config = r.config;
         // Resume with the same encoder when nothing changed; otherwise, and
@@ -1241,6 +1373,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- cleanup: producer first, then the encode thread, then the stream ----
     tracing::info!("streaming stopped, cleaning up");
+    tracing::debug!(
+        "stream: ended after {} s (stop requested {}, lost for good {lost_for_good})",
+        session_start.elapsed().as_secs(),
+        stopped()
+    );
     health.finish(active.health());
     active.stop();
     if let Some(p) = pipeline.take()

@@ -161,7 +161,12 @@ pub fn resolve_realtek_pid(vid: u16, pid: u16, btstack_table: &[(u16, u16, &str)
         let family = REALTEK_CHIPS.iter().find(|c| {
             c.fw_name == fw_name && btstack_table.iter().any(|&(v, p, f)| v == vid && p == c.pid && f == fw_name)
         });
-        return Some(family.map_or(pid, |c| c.pid));
+        let resolved = family.map_or(pid, |c| c.pid);
+        tracing::debug!("realtek: 0x{vid:04X}:0x{pid:04X} in BTstack's table ({fw_name}), chip PID 0x{resolved:04X}");
+        return Some(resolved);
+    }
+    if let Some(r) = oem {
+        tracing::debug!("realtek: 0x{vid:04X}:0x{pid:04X} is an OEM adapter, chip PID 0x{r:04X}");
     }
     oem
 }
@@ -323,6 +328,10 @@ pub fn firmware_check(dir: &Path, chip_pid: u16, fw_stem: &str) -> Option<Firmwa
     let (fw, cfg) = firmware_files(chip_pid, fw_stem)?;
     let fw_state = firmware_file_state(&dir.join(&fw));
     let cfg_state = config_file_state(&dir.join(&cfg));
+    tracing::debug!(
+        "firmware check: chip 0x{chip_pid:04X} in {}: {fw} {fw_state:?}, {cfg} {cfg_state:?}",
+        dir.display()
+    );
     let invalid_file = if fw_state == FileState::Invalid {
         Some(fw)
     } else if cfg_state == FileState::Invalid {

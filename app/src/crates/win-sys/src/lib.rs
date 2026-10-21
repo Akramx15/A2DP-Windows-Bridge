@@ -6,6 +6,7 @@ pub mod audio_policy;
 pub mod autostart;
 pub mod bt_paired;
 pub mod console;
+pub mod crash;
 pub mod driver;
 pub mod elevation;
 pub mod locale;

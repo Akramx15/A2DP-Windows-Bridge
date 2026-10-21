@@ -186,6 +186,12 @@ impl LhdcV5Encoder {
         // for 1000 kbps lasts 5.44 ms there: 682 bytes), so cap the bit rate
         // at what fits (900 kbps then). v1 sent those packets anyway.
         let fitting = fitting_bitrate_index(config.sample_rate, block_size, enc_mtu);
+        tracing::debug!(
+            "LHDC V5: quality {:?}, abr {} -> bitrate index {bitrate_inx}; sink limits byte 0x{p7:02x} -> index \
+             {min_inx}..{max_inx}, fits the {enc_mtu}-byte mtu up to index {fitting}, frame {block_size} samples",
+            config.quality,
+            config.abr
+        );
         if fitting < max_inx {
             tracing::info!(
                 "LHDC V5: {} kbps frames do not fit the {enc_mtu}-byte MTU at {} Hz, capping the bit rate",

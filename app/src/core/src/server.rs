@@ -95,11 +95,22 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
                             }
                         }
                         let (state, tx) = (state.clone(), resp_tx.clone());
+                        let client = client.clone();
                         tokio::spawn(async move {
+                            let method = method_name(&call);
+                            tracing::trace!("IPC: {client} #{id} {call:?}");
+                            let started = std::time::Instant::now();
                             let r = state.handle(call).await;
+                            let ms = started.elapsed().as_millis();
                             let msg = match r {
-                                Ok(v) => ServerMessage::Response { id, result: Some(v), error: None },
-                                Err(e) => ServerMessage::Response { id, result: None, error: Some(e) },
+                                Ok(v) => {
+                                    tracing::debug!("IPC: {client} #{id} {method} ok in {ms} ms");
+                                    ServerMessage::Response { id, result: Some(v), error: None }
+                                }
+                                Err(e) => {
+                                    tracing::info!("IPC: {client} #{id} {method} failed in {ms} ms: {} ({})", e.code, e.message.key);
+                                    ServerMessage::Response { id, result: None, error: Some(e) }
+                                }
                             };
                             let _ = tx.send(msg).await;
                         });
@@ -147,6 +158,14 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
     set_subscribed(&state.receiver_subscribers, &mut receiver, false);
     tracing::info!("IPC: {client} disconnected");
     result
+}
+
+/// "stream.start": the method's name on the wire
+fn method_name(call: &Method) -> String {
+    serde_json::to_value(call)
+        .ok()
+        .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(str::to_owned))
+        .unwrap_or_default()
 }
 
 /// Counts this connection in or out of a subscription; true if it changed

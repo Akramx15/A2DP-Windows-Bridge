@@ -275,6 +275,12 @@ impl Inner {
     pub fn notify(&self, state: StreamState, msg: Msg) {
         tracing::info!("state {state:?}: {}", msg.english());
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = state;
+        // What went over the air before a failure or a lost connection
+        if matches!(state, StreamState::Error | StreamState::Reconnecting) {
+            let dir = crate::paths::recorder_dir(&self.opts.config_dir);
+            let what = format!("{state:?}-{}", msg.key.trim_start_matches("error."));
+            self.opts.capture.save_recent(&dir, &crate::paths::local_stamp(), &what, false);
+        }
         let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::State(state, msg));
     }
 
@@ -300,6 +306,11 @@ impl Inner {
         while at.elapsed() < RESUME_SETTLE && !self.stop_requested() {
             std::thread::sleep(Duration::from_millis(100));
         }
+        tracing::debug!(
+            "resume settle: done {} ms after the resume (stop requested {})",
+            at.elapsed().as_millis(),
+            self.stop_requested()
+        );
     }
 
     /// LE Audio (experimental) for the next stack: the setting, or the
@@ -329,6 +340,17 @@ impl Inner {
         let cli = self.le_cli.lock().unwrap_or_else(|e| e.into_inner()).clone();
         c.le_audio = le_config(le_on, cli.as_ref(), &self.opts);
         c.battery = true;
+        tracing::debug!(
+            "host config: transport {:?}, firmware dir {:?}, realtek pid {:04x} files {:?}, intel loader {}, broadcom ids {}, LE {} (cli {:?})",
+            c.transport,
+            c.firmware_dir,
+            c.realtek_pid,
+            c.realtek_files,
+            c.intel_loader,
+            c.broadcom_ids.len(),
+            c.le_audio.is_some(),
+            cli
+        );
         c
     }
 
@@ -345,7 +367,14 @@ impl Inner {
             if attempt > 1 {
                 tracing::warn!("the Bluetooth adapter did not answer, opening it again ({attempt}/{attempts})");
             }
-            match BtHost::start(self.host_config(le_on), self.stats.clone()) {
+            let t = Instant::now();
+            let started = BtHost::start(self.host_config(le_on), self.stats.clone());
+            tracing::debug!(
+                "host start: attempt {attempt}/{attempts} {} after {} ms",
+                if started.is_ok() { "ok" } else { "failed" },
+                t.elapsed().as_millis()
+            );
+            match started {
                 Ok(h) => {
                     let h = Arc::new(h);
                     let s = self.settings.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -358,6 +387,7 @@ impl Inner {
                     return Ok(h);
                 }
                 Err(f) => {
+                    tracing::debug!("host start: {f:?}");
                     last = f;
                     if f != InitFailure::NoAnswer {
                         break;
@@ -372,6 +402,7 @@ impl Inner {
     /// isochronous channels, also for the next start (adapter_caps.json)
     fn note_le_capable(&self, host: &Arc<BtHost>) {
         let capable = host.le_audio_capable();
+        tracing::debug!("adapter: LE Audio capable {capable}, opened {:?}", hci_transport::usb::last_opened());
         *self.le_support.lock().unwrap_or_else(|e| e.into_inner()) = Some(capable);
         if self.opts.hci_tcp.is_none()
             && let Some((vid, pid)) = hci_transport::usb::last_opened()
@@ -388,6 +419,7 @@ impl Inner {
                     }
                     std::thread::sleep(std::time::Duration::from_millis(250));
                 }
+                tracing::debug!("adapter: no local address after 5 s, not saved");
             });
         }
     }
@@ -401,6 +433,7 @@ impl Inner {
             while let Ok(e) = rx.recv() {
                 match e {
                     HostEvent::MediaKey(k) => {
+                        tracing::debug!("host event: media key {k:?}");
                         let key = match k {
                             bt_host::MediaKey::PlayPause => win_sys::media_keys::MediaKey::PlayPause,
                             bt_host::MediaKey::Stop => win_sys::media_keys::MediaKey::Stop,
@@ -412,20 +445,25 @@ impl Inner {
                         }
                     }
                     HostEvent::Volume(v) => {
+                        tracing::debug!("host event: device volume {v}");
                         if let Some(inner) = weak.upgrade() {
                             let _ =
                                 inner.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::Volume(v));
                         }
                     }
                     HostEvent::Battery(v) => {
+                        tracing::debug!("host event: battery {v}%");
                         if let Some(inner) = weak.upgrade() {
                             let _ =
                                 inner.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::Battery(v));
                         }
                     }
-                    HostEvent::ConnectionLost | HostEvent::TransportFailed => {}
+                    HostEvent::ConnectionLost | HostEvent::TransportFailed => {
+                        tracing::debug!("host event: {e:?}");
+                    }
                 }
             }
+            tracing::debug!("host events: channel closed");
         });
     }
 
@@ -454,7 +492,10 @@ impl Inner {
                 None
             };
             match why {
-                None => return Ok(h.clone()),
+                None => {
+                    tracing::trace!("ensure host: the running stack is fine");
+                    return Ok(h.clone());
+                }
                 Some(why) => {
                     tracing::warn!("restarting BTstack: {why}");
                     h.shutdown();
@@ -462,10 +503,13 @@ impl Inner {
                 }
             }
         }
+        tracing::debug!("ensure host: starting a new stack");
         self.power.clear_stale();
         self.reload.store(false, Ordering::Release);
         self.wait_after_resume();
+        let t = Instant::now();
         let h = self.start_host()?;
+        tracing::debug!("ensure host: stack up in {} ms", t.elapsed().as_millis());
         *slot = Some(h.clone());
         Ok(h)
     }
@@ -501,6 +545,7 @@ impl Inner {
         }
         self.shutdown_host();
         let h = self.ensure_host()?;
+        tracing::debug!("restart host: media payload limit {max_media_payload}");
         h.set_media_payload_limit(max_media_payload);
         Ok(h)
     }
@@ -520,6 +565,7 @@ impl Inner {
     /// up after about a minute awake without one (the stack is then
     /// restarted as after a failure). False when the session was stopped.
     pub fn wait_for_resume(&self) -> bool {
+        tracing::debug!("waiting for the resume (up to {RESUME_WAIT_TICKS} ticks awake)");
         let mut ticks = 0;
         while self.power.suspending() && !self.stop_requested() {
             if ticks == RESUME_WAIT_TICKS {
@@ -531,15 +577,18 @@ impl Inner {
             self.wait_tick(RESUME_TICK);
             ticks += 1;
         }
+        tracing::debug!("resume wait over after {ticks} tick(s), stop requested {}", self.stop_requested());
         !self.stop_requested()
     }
 
     fn shutdown_host(&self) {
         let old = self.host.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(h) = old {
+            let t = Instant::now();
             // Also when the session still holds the Arc: the adapter must be
             // free for the next stack
             h.shutdown();
+            tracing::debug!("host shutdown: took {} ms", t.elapsed().as_millis());
         }
     }
 
@@ -563,6 +612,7 @@ impl Inner {
         if s.saved_volumes.get(&key) == Some(&(v as i32)) {
             return;
         }
+        tracing::debug!("volume: remembering {v} for {key} (was {:?})", s.saved_volumes.get(&key));
         s.saved_volumes.insert(key, v as i32);
         if let Err(e) = s.save(&self.opts.config_dir) {
             tracing::warn!("cannot save the settings: {e}");
@@ -571,6 +621,7 @@ impl Inner {
 
     /// What a device offered (after capability discovery)
     pub fn record_codecs(&self, addr: &str, codecs: stream::KnownCodecs) {
+        tracing::debug!("codecs of {addr}: {:?}, sbc {:?}", codecs.keys, codecs.sbc);
         self.codecs.lock().unwrap_or_else(|e| e.into_inner()).insert(addr.to_uppercase(), codecs);
     }
 
@@ -607,8 +658,18 @@ fn apply_dev_overrides(settings: &Settings) {
 impl Service {
     pub fn new(opts: ServiceOptions, events: Sender<ServiceEvent>) -> Service {
         // A folder v1 used is backed up and brought to v2's schema first
+        tracing::debug!(
+            "service: config dir {}, hci tcp {:?}, usb {:?}, afh override {:?}",
+            opts.config_dir.display(),
+            opts.hci_tcp,
+            opts.usb,
+            opts.afh
+        );
         crate::migrate::prepare(&opts.config_dir);
         let settings = Settings::load(&opts.config_dir);
+        if settings.debug_mode {
+            tracing::debug!("service: developer overrides {:?}", settings.dev_overrides);
+        }
         apply_dev_overrides(&settings);
         let inner = Arc::new(Inner {
             opts,
@@ -640,12 +701,16 @@ impl Service {
                         tracing::info!("the PC is going to sleep");
                         // The USB transfers get cancelled now: not an error
                         bt_host::expect_transport_loss(true);
+                    } else {
+                        tracing::debug!("power: repeated suspend notification ignored");
                     }
                 }
                 win_sys::power::PowerEvent::Resume => {
                     // Both resume kinds may come for one resume
                     if inner.power.resume() {
                         tracing::info!("the PC resumed from sleep, Bluetooth will be restarted");
+                    } else {
+                        tracing::debug!("power: second resume notification ignored");
                     }
                     bt_host::expect_transport_loss(false);
                 }
@@ -686,6 +751,13 @@ impl Service {
     /// before the next scan or connection ([`Service::le_audio_deferred`]
     /// says so). The low-latency setting applies to the next LE stream.
     pub fn set_settings(&self, settings: Settings) {
+        tracing::debug!(
+            "settings applied: media keys {}, afh {:?}, LE {}, debug mode {}",
+            settings.media_keys,
+            settings.afh,
+            settings.le_audio_experimental,
+            settings.debug_mode
+        );
         apply_dev_overrides(&settings);
         let host = self.host();
         if let Some(h) = &host {
@@ -757,6 +829,11 @@ impl Service {
     pub fn reload_adapter(&self, idle: bool) -> bool {
         // Maybe another adapter: its LE Audio support is not known yet
         *self.inner.le_support.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        tracing::debug!(
+            "reload adapter: idle {idle}, streaming {}, stack running {}",
+            self.is_running(),
+            self.host().is_some()
+        );
         if idle && !self.is_running() {
             self.inner.reload.store(false, Ordering::Release);
             self.inner.shutdown_host();
@@ -798,6 +875,11 @@ impl Service {
 
     /// Starts a session; a running one is stopped first
     pub fn start_streaming(&self, req: StreamRequest) {
+        tracing::debug!(
+            "start streaming: {} ({}), stopping any session first",
+            bt_host::addr_str(&req.device),
+            if req.le.is_some() { "LE Audio" } else { "A2DP" }
+        );
         self.stop_streaming();
         self.inner.stop.store(false, Ordering::Release);
         self.inner.running.store(true, Ordering::Release);
@@ -826,12 +908,15 @@ impl Service {
     /// timeouts: blocking waits are cancelled)
     pub fn stop_streaming(&self) {
         let Some(t) = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        tracing::debug!("stop streaming: requested (state {:?})", self.state());
+        let started = Instant::now();
         self.inner.stop.store(true, Ordering::Release);
         self.inner.tick.1.notify_all();
         if let Some(h) = self.host() {
             h.cancel_pending_waits();
         }
         let _ = t.join();
+        tracing::debug!("stop streaming: session ended in {} ms", started.elapsed().as_millis());
     }
 
     /// Inquiry for nearby (classic) devices
@@ -844,6 +929,15 @@ impl Service {
         let host = self.inner.ensure_host()?;
         self.inner.notify(StreamState::Idle, Msg::new("status.scanning_devices"));
         let found = host.scan(seconds);
+        for d in &found {
+            tracing::debug!(
+                "scan: {} \"{}\" rssi {} class {:06x}",
+                bt_host::addr_str(&d.addr),
+                d.name,
+                d.rssi,
+                d.class_of_device
+            );
+        }
         self.inner.notify(StreamState::Idle, Msg::with("status.scan_complete", &[&found.len()]));
         Ok(found)
     }
@@ -861,6 +955,16 @@ impl Service {
         self.inner.notify(StreamState::Idle, Msg::new("status.scanning_devices"));
         let classic = host.scan(seconds);
         let mut list: Vec<ScannedDevice> = classic.iter().map(ScannedDevice::classic).collect();
+        for d in &list {
+            tracing::debug!(
+                "scan: {} \"{}\" rssi {} class {:06x} audio {}",
+                d.address,
+                d.name,
+                d.rssi,
+                d.class_of_device,
+                d.audio
+            );
+        }
         let mut le_found = 0;
         if self.inner.le_active() {
             let until = Instant::now() + LE_SCAN_READY_WAIT;
@@ -872,6 +976,15 @@ impl Service {
                 let results = host.le_scan(LE_SCAN);
                 let saved = crate::devices::load_le(&self.inner.opts.config_dir);
                 let (entries, found) = le_scan_entries(&results, &saved);
+                tracing::debug!(
+                    "le scan: {} result(s), {found} LE Audio advertiser(s), {} listed, {} saved",
+                    results.len(),
+                    entries.len(),
+                    saved.len()
+                );
+                for e in &entries {
+                    tracing::debug!("le scan: {} \"{}\" rssi {} set {}", e.address, e.name, e.rssi, e.le_audio_set);
+                }
                 le_found = found;
                 list.extend(entries);
             } else {

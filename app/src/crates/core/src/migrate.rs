@@ -106,6 +106,7 @@ fn copy_tree(from: &Path, to: &Path, top: bool) -> std::io::Result<u64> {
 fn backup(dir: &Path) -> std::io::Result<u64> {
     let tmp = dir.join(BACKUP_TMP);
     if tmp.exists() {
+        tracing::debug!("migrate: removing an interrupted backup {}", tmp.display());
         std::fs::remove_dir_all(&tmp)?;
     }
     let result = copy_tree(dir, &tmp, true).and_then(|bytes| {
@@ -139,13 +140,19 @@ fn prepare_settings(dir: &Path) -> Report {
         None => v1_files || Settings::path(dir).is_file(),
     };
     let mut report = Report { schema_before, from_v1, ..Report::default() };
+    tracing::debug!(
+        "migrate: {}: schema {schema_before:?} (current {SCHEMA_VERSION}), v1 files {v1_files}, from v1 {from_v1}",
+        dir.display()
+    );
     if !from_v1 {
         if schema_before.is_some_and(|n| n < SCHEMA_VERSION) {
+            tracing::debug!("migrate: upgrading the v2 schema");
             upgrade_v2(dir, &mut report);
         }
         return report;
     }
 
+    tracing::debug!("migrate: backup {} exists {}", BACKUP_DIR, dir.join(BACKUP_DIR).exists());
     if !dir.join(BACKUP_DIR).exists() {
         match backup(dir) {
             Ok(bytes) => {
@@ -200,6 +207,7 @@ fn prepare_settings(dir: &Path) -> Report {
             Err(e) => tracing::error!("settings from v1: cannot save {}: {e}", Settings::path(dir).display()),
         }
     }
+    tracing::debug!("migrate: {report:?}");
     report
 }
 
@@ -215,6 +223,11 @@ fn upgrade_v2(dir: &Path, report: &mut Report) {
         Ok(()) => report.schema_written = true,
         Err(e) => tracing::error!("settings: cannot save {}: {e}", Settings::path(dir).display()),
     }
+    tracing::debug!(
+        "migrate: schema {:?} -> {SCHEMA_VERSION}, written {}",
+        report.schema_before,
+        report.schema_written
+    );
 }
 
 #[cfg(test)]

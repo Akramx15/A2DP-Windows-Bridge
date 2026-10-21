@@ -6,6 +6,11 @@
 //! "white window").
 //!
 //! Filter: `A2DPWB_LOG` (EnvFilter syntax, default "info"), as the core.
+//! Verbose logging the core keeps in `logs\verbose.json` also turns this
+//! process' own modules up, from its next start.
+//!
+//! Panics and crashes in native code (WebView2's host side) leave crash
+//! reports in `logs\crash\` (win_sys::crash).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -79,16 +84,48 @@ pub fn init() -> Option<WorkerGuard> {
             .ok()
     })?;
     let (writer, guard) = tracing_appender::non_blocking(appender);
-    let filter = tracing_subscriber::EnvFilter::try_from_env("A2DPWB_LOG")
+    let verbose = verbose_level(&dir);
+    let base = std::env::var("A2DPWB_LOG").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| "info".into());
+    let directives = match verbose {
+        Some(l) => format!("{base},a2dpwb={l},frontend={l},win_sys={l}"),
+        None => base,
+    };
+    let filter = tracing_subscriber::EnvFilter::try_new(directives)
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     let layer = tracing_subscriber::fmt::layer().with_writer(writer).with_ansi(false).with_timer(LocalTimer { offset });
     let _ = tracing_subscriber::registry().with(filter).with(layer).try_init();
+    if let Some(l) = verbose {
+        tracing::info!("verbose logging ({l}) as the core's");
+    }
+    let about = format!("a2dpwb-ui {}", env!("CARGO_PKG_VERSION"));
+    win_sys::crash::install(&dir.join("crash"), "a2dpwb-ui", &about);
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        tracing::error!("panic: {info}");
+        let reason = format!("panic in thread {}: {info}", std::thread::current().name().unwrap_or("unnamed"));
+        tracing::error!("{reason}");
+        let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+        if let Some(p) = win_sys::crash::write(&reason, &backtrace) {
+            tracing::error!("crash report written: {}", p.display());
+        }
         default_hook(info);
     }));
     Some(guard)
+}
+
+/// The level of the core's verbose logging while it is on ("debug",
+/// "trace"): its `verbose.json` in the logs folder
+fn verbose_level(dir: &std::path::Path) -> Option<&'static str> {
+    let text = std::fs::read_to_string(dir.join("verbose.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as u64;
+    if v.get("until_ms")?.as_u64()? <= now {
+        return None;
+    }
+    match v.get("level")?.as_str()? {
+        "debug" => Some("debug"),
+        "trace" => Some("trace"),
+        _ => None,
+    }
 }
 
 /// A line from the frontend (uncaught errors, a failed start)

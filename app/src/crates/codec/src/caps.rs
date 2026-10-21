@@ -539,8 +539,10 @@ impl RemoteCaps {
     /// allows SBC XQ wins, else the last.
     pub fn add_sbc_caps(&mut self, seid: u8, caps: SbcCapabilities) {
         if self.sbc_caps.is_some_and(|c| c.allows_xq()) && !caps.allows_xq() {
+            tracing::debug!("caps: SBC SEID {seid} skipped, keeping SEID {:?} that allows SBC XQ", self.sbc);
             return;
         }
+        tracing::debug!("caps: SBC from SEID {seid}, allows SBC XQ {}", caps.allows_xq());
         self.sbc = Some(RemoteSep { seid });
         self.sbc_caps = Some(caps);
     }
@@ -624,8 +626,10 @@ impl RemoteCaps {
     /// wins, else the last.
     pub fn add_aac_caps(&mut self, seid: u8, caps: AacCapabilities) {
         if self.aac_caps.is_some_and(|c| c.usable()) {
+            tracing::debug!("caps: AAC SEID {seid} skipped, keeping usable {:?}", self.aac);
             return;
         }
+        tracing::debug!("caps: AAC from SEID {seid}: {caps:?}, usable {}", caps.usable());
         self.aac = Some(RemoteSep { seid });
         self.aac_caps = Some(caps);
     }
@@ -650,7 +654,12 @@ impl RemoteCaps {
         let freqs = self.aac_caps.map_or(AAC_FREQ_44100 | AAC_FREQ_48000, |c| c.sampling_frequency);
         let has441 = freqs & AAC_FREQ_44100 != 0;
         let has48 = freqs & AAC_FREQ_48000 != 0;
-        if (wanted == 44100 && has441) || !has48 { 44100 } else { 48000 }
+        let rate = if (wanted == 44100 && has441) || !has48 { 44100 } else { 48000 };
+        tracing::debug!(
+            "caps: AAC rate {wanted} -> {rate} (frequencies 0x{freqs:x}, caps known {})",
+            self.aac_caps.is_some()
+        );
+        rate
     }
 
     /// A vendor codec capability (media codec information) of SEP `seid`
@@ -732,6 +741,10 @@ impl RemoteCaps {
             // PipeWire offers stereo on its opus_05 SEP and a return channel
             // on its opus_05_duplex SEP: prefer the one without
             let bidi = byte(OPUS05_BIDI) != 0;
+            tracing::debug!(
+                "caps: Opus 05 SEID {seid}: {channels} ch, frames 0x{frames:02x}, return channel {bidi}, taken {}",
+                self.opus05.is_none() || (self.opus05_bidi && !bidi)
+            );
             if self.opus05.is_none() || (self.opus05_bidi && !bidi) {
                 self.opus05 = Some(RemoteSep { seid });
                 self.opus05_channels = channels;
@@ -839,7 +852,7 @@ impl RemoteCaps {
         let freqs = caps & APTX_FREQ_MASK;
         let has441 = freqs == 0 || freqs & APTX_FREQ_44100 != 0;
         let has48 = freqs == 0 || freqs & APTX_FREQ_48000 != 0;
-        if wanted == 48000 && has48 {
+        let rate = if wanted == 48000 && has48 {
             48000
         } else if wanted == 44100 && has441 {
             44100
@@ -849,7 +862,9 @@ impl RemoteCaps {
             44100
         } else {
             wanted
-        }
+        };
+        tracing::debug!("caps: {kind} rate {wanted} -> {rate} (caps 0x{caps:02x})");
+        rate
     }
 
     /// Capture rate for FastStream: 44.1 or 48 kHz as the sink lists them,
@@ -857,13 +872,16 @@ impl RemoteCaps {
     pub fn pick_faststream_sample_rate(&self, wanted: u32) -> u32 {
         let has441 = self.faststream_rates & FASTSTREAM_SINK_44100 != 0;
         let has48 = self.faststream_rates & FASTSTREAM_SINK_48000 != 0;
-        if (wanted == 44100 && has441) || !has48 { 44100 } else { 48000 }
+        let rate = if (wanted == 44100 && has441) || !has48 { 44100 } else { 48000 };
+        tracing::debug!("caps: FastStream rate {wanted} -> {rate} (rates 0x{:02x})", self.faststream_rates);
+        rate
     }
 
     /// Capture rate for LHDC V5: 44.1 / 48 / 96 / 192 kHz as the remote
     /// lists them, preferring `wanted` (88.2k maps to 96k)
     pub fn pick_lhdcv5_sample_rate(&self, wanted: u32) -> u32 {
         let rates = self.lhdcv5_rates();
+        tracing::debug!("caps: LHDC V5 rate for {wanted} Hz from rates 0x{rates:02x}");
         let has = |bit: u8| rates & bit != 0;
         let wanted = if wanted == 88200 { 96000 } else { wanted };
         match wanted {
@@ -919,6 +937,9 @@ impl RemoteCaps {
         vbr: bool,
         sbc: sbc::SbcParams,
     ) -> Result<Configuration, ConfigError> {
+        tracing::debug!(
+            "caps: {kind} configuration for {sample_rate} Hz, {channels} ch, {bits_per_sample} bit, vbr {vbr}, {sbc:?}"
+        );
         let Some(sep) = self.sep(kind) else {
             return Err(ConfigError::NotOffered(kind));
         };
@@ -1090,6 +1111,12 @@ impl RemoteCaps {
                 ConfigRequest::Vendor(info)
             }
         };
+        match &request {
+            ConfigRequest::Vendor(info) => {
+                tracing::debug!("caps: {kind} SET_CONFIGURATION to SEID {remote_seid}: {info:02X?}")
+            }
+            other => tracing::debug!("caps: {kind} SET_CONFIGURATION to SEID {remote_seid}: {other:?}"),
+        }
         Ok(Configuration { kind, remote_seid, request })
     }
 }
@@ -1102,6 +1129,7 @@ fn aptx_freq_bits(kind: CodecKind, remote_caps: u8, sample_rate: u32) -> Result<
     };
     let remote = remote_caps & APTX_FREQ_MASK;
     if remote != 0 && remote & freq == 0 {
+        tracing::debug!("caps: {kind} {sample_rate} Hz not in the device's rates (caps 0x{remote_caps:02x})");
         return Err(ConfigError::SampleRate(kind, sample_rate));
     }
     Ok(freq)

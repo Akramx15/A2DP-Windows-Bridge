@@ -53,10 +53,21 @@ pub fn max_raw(kind: CodecKind, mtu: u16, sample_rate: u32) -> usize {
 impl Packetizer {
     pub fn new(kind: CodecKind, mtu: u16, sample_rate: u32) -> Packetizer {
         let header = kind.media_header_len();
+        let max_raw = max_raw(kind, mtu, sample_rate).min(MAX_MEDIA_PACKET_SIZE - header);
+        tracing::debug!(
+            "packetizer: {kind}, mtu {mtu}, {sample_rate} Hz, media header {header} bytes, up to {max_raw} codec \
+             bytes per packet, rtp {}, {}",
+            kind.uses_rtp(),
+            if matches!(kind, CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05 | CodecKind::Aac) {
+                "one encoder output per packet"
+            } else {
+                "frames merged up to the limit"
+            }
+        );
         Packetizer {
             kind,
             header,
-            max_raw: max_raw(kind, mtu, sample_rate).min(MAX_MEDIA_PACKET_SIZE - header),
+            max_raw,
             packet: MediaPacket { len: header as u16, rtp: kind.uses_rtp(), ..Default::default() },
             frames: 0,
             first_ts: 0,
@@ -91,6 +102,12 @@ impl Packetizer {
             self.packet.data[at..at + data.len()].copy_from_slice(data);
             self.packet.len += data.len() as u16;
             self.frames += frames;
+        } else {
+            tracing::debug!(
+                "packetizer: {} byte encoder output dropped, larger than a packet ({} free)",
+                data.len(),
+                MAX_MEDIA_PACKET_SIZE - at
+            );
         }
         // libldac sizes each output for one packet (frames per 2-DH5 / 3-DH5):
         // send it as is, as Android does, rather than merging outputs. Opus:
@@ -134,6 +151,13 @@ impl Packetizer {
         }
         self.packet.timestamp = self.first_ts;
         self.packet.marker = self.packet.rtp && codec::dev::overrides().rtp_marker;
+        tracing::trace!(
+            "packetizer: packet timestamp {}, {} frames, {} bytes, header {:02x?}",
+            self.packet.timestamp,
+            self.frames,
+            self.packet.len,
+            &self.packet.data[..self.header]
+        );
         send(&self.packet);
         self.packet.len = self.header as u16;
         self.frames = 0;

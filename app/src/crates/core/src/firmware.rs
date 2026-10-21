@@ -144,8 +144,24 @@ pub fn cache_dir() -> PathBuf {
 
 /// The file from the cache when its SHA-256 is the one expected
 fn cached(cache: &Path, source: &Source) -> Option<Vec<u8>> {
-    let data = std::fs::read(cache.join(source.name)).ok()?;
-    (sha256_hex(&data) == source.sha256).then_some(data)
+    let path = cache.join(source.name);
+    let data = match std::fs::read(&path) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::debug!("firmware cache: {} not used: {e}", path.display());
+            return None;
+        }
+    };
+    let hash = sha256_hex(&data);
+    if hash != source.sha256 {
+        tracing::debug!(
+            "firmware cache: {} ({} bytes) has SHA-256 {hash}, expected {}, not used",
+            path.display(),
+            data.len(),
+            source.sha256
+        );
+    }
+    (hash == source.sha256).then_some(data)
 }
 
 /// A checked download into the cache (a failure only costs the next
@@ -168,17 +184,32 @@ fn fetch_cached(agent: &ureq::Agent, cache: &Path, source: &Source) -> Result<Ve
 }
 
 fn fetch(agent: &ureq::Agent, source: &Source) -> Result<Vec<u8>, DownloadError> {
-    let mut response = agent.get(url(source.name)).call().map_err(|e| match e {
-        ureq::Error::StatusCode(code) => DownloadError::Status(code),
-        e => DownloadError::Http(e.to_string()),
+    let started = std::time::Instant::now();
+    tracing::debug!("firmware: GET {}", url(source.name));
+    let mut response = agent.get(url(source.name)).call().map_err(|e| {
+        tracing::debug!("firmware: {} request failed: {e}", source.name);
+        match e {
+            ureq::Error::StatusCode(code) => DownloadError::Status(code),
+            e => DownloadError::Http(e.to_string()),
+        }
     })?;
+    tracing::debug!("firmware: {} status {}", source.name, response.status());
     let data = response
         .body_mut()
         .with_config()
         .limit(MAX_FILE)
         .read_to_vec()
         .map_err(|e| DownloadError::Http(e.to_string()))?;
-    if sha256_hex(&data) != source.sha256 {
+    let hash = sha256_hex(&data);
+    tracing::debug!(
+        "firmware: {} {} bytes in {} ms, SHA-256 {hash} (expected {}, match {})",
+        source.name,
+        data.len(),
+        started.elapsed().as_millis(),
+        source.sha256,
+        hash == source.sha256
+    );
+    if hash != source.sha256 {
         return Err(DownloadError::Hash(source.name));
     }
     Ok(data)
@@ -205,6 +236,13 @@ pub fn download(dir: &Path, firmware_file: &str) -> Result<Vec<String>, Download
     let cfg_name = format!("{}.bin", chip.cfg_name);
     let need_fw = chips::firmware_file_state(&dir.join(&fw_name)) != chips::FileState::Ok;
     let need_cfg = chips::config_file_state(&dir.join(&cfg_name)) != chips::FileState::Ok;
+    tracing::debug!(
+        "firmware download: {} into {}: {fw_name} needed {need_fw} (from {}), {cfg_name} needed {need_cfg} (from {:?})",
+        chip.chip_name,
+        dir.display(),
+        source.firmware.name,
+        source.config.map(|c| c.name)
+    );
 
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
@@ -223,6 +261,7 @@ pub fn download(dir: &Path, firmware_file: &str) -> Result<Vec<String>, Download
     for (name, data) in [(fw_name, fw), (cfg_name, cfg)] {
         if let Some(data) = data {
             save(dir, &name, &data)?;
+            tracing::debug!("firmware download: saved {} ({} bytes)", dir.join(&name).display(), data.len());
             saved.push(name);
         }
     }

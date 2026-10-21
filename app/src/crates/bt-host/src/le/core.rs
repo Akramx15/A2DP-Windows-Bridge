@@ -466,6 +466,7 @@ impl<'a> LeCtx<'a> {
             // SM checks it against the IRKs of all bonds (software AES); the
             // answer is SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED / _FAILED
             let status = self.stack.sm_address_resolution_lookup(BD_ADDR_TYPE_LE_RANDOM, &addr.addr);
+            tracing::trace!("LE Audio: RPA {addr} resolution lookup ({status})");
             if status != 0 && status != BTSTACK_BUSY as i32 {
                 e.done = true;
             }
@@ -498,6 +499,10 @@ impl<'a> LeCtx<'a> {
                     .then_some((now.wrapping_sub(seen), *rpa))
             })
             .min_by_key(|(age, _)| *age);
+        tracing::debug!(
+            "LE Audio: connect address for device {dev:?}: given {given}, freshest resolved RPA {:?}",
+            best.map(|(age, rpa)| (crate::addr_str(&rpa), age))
+        );
         match best {
             Some((_, rpa)) => LeAddr { addr: rpa, addr_type: LeAddr::RANDOM },
             None => given,
@@ -520,6 +525,7 @@ impl<'a> LeCtx<'a> {
             return None;
         }
         let id = LeDeviceId(self.core.devices.len() as u32);
+        tracing::debug!("LE Audio: new device {} for {addr} (identity {:?})", id.0, resolved.map(|r| r.to_string()));
         let mut d = LeDevice::new(id, key);
         d.identity_known = resolved.is_some();
         d.peer_addr = addr;
@@ -612,11 +618,18 @@ impl<'a> LeCtx<'a> {
             }
             HCI_EVENT_COMMAND_COMPLETE => {
                 if let Some(b) = events::le_read_buffer_size_v2(p) {
+                    tracing::debug!(
+                        "LE Audio: LE Read Buffer Size v2 status 0x{:02X}: ISO {} x {} bytes",
+                        b.status,
+                        b.iso_packets,
+                        b.iso_packet_length
+                    );
                     if b.status == 0 {
                         self.core.shared.iso_len.store(b.iso_packet_length as u32, Ordering::Release);
                         self.core.shared.iso_count.store(b.iso_packets as u32, Ordering::Release);
                     }
                 } else if events::command_complete_opcode(p) == Some(HCI_OPCODE_LE_REMOVE_CIG) {
+                    tracing::debug!("LE Audio: LE Remove CIG complete: {:02X?}", p.get(5..));
                     self.with_unicast(|u, env| u.on_cig_removed(env));
                 }
             }
@@ -634,6 +647,7 @@ impl<'a> LeCtx<'a> {
                 } else if events::cis_created(p).is_some() {
                     self.with_unicast(|u, env| u.on_cis_created(env, p));
                 } else if let Some(b) = events::bonding_deleted(p) {
+                    tracing::debug!("LE Audio: bonding deleted (le_device_db index {})", b.index);
                     self.core.server.on_bonding_deleted(self.stack, b.index as usize);
                 }
             }
@@ -651,6 +665,10 @@ impl<'a> LeCtx<'a> {
             }
             HCI_EVENT_DISCONNECTION_COMPLETE => {
                 if let Some((_, handle, reason)) = events::disconnection_complete(p) {
+                    tracing::debug!(
+                        "LE Audio: disconnection complete 0x{handle:04X} (reason 0x{reason:02X}), LE device {:?}",
+                        self.device_by_handle(handle).map(|d| d.id)
+                    );
                     self.on_disconnected(handle, reason);
                 }
             }
@@ -663,6 +681,7 @@ impl<'a> LeCtx<'a> {
     // ======================================================================
 
     pub(crate) fn start_scan(&mut self) {
+        tracing::debug!("LE Audio: scan start (active, interval / window 0x0030)");
         self.core.scan_results.clear();
         self.core.scanning = true;
         self.stack.le_set_scan_params(true, 0x0030, 0x0030, 0);
@@ -671,6 +690,11 @@ impl<'a> LeCtx<'a> {
 
     pub(crate) fn stop_scan(&mut self) -> Vec<LeScanResult> {
         self.stack.le_stop_scan();
+        tracing::debug!(
+            "LE Audio: scan stop, {} advertiser(s), {} LE Audio",
+            self.core.scan_results.len(),
+            self.core.scan_results.iter().filter(|r| r.le_audio).count()
+        );
         self.core.scanning = false;
         self.core.scan_results.clone()
     }
@@ -773,7 +797,9 @@ impl<'a> LeCtx<'a> {
         result: Arc<Mutex<ConnectResult>>,
         done: LeDone,
     ) {
+        tracing::debug!("LE Audio: connect request {addr} (type {}) name {name:?}", addr.addr_type);
         if self.core.connect.is_some() {
+            tracing::debug!("LE Audio: connect refused, another attempt is in progress");
             result.lock().unwrap_or_else(|e| e.into_inner()).error = "another LE connection is being set up".into();
             done(false);
             return;
@@ -791,10 +817,19 @@ impl<'a> LeCtx<'a> {
         let target = self.connect_address(id, addr);
         let Some(d) = self.device_mut(id) else { return };
         if d.connected() && d.ready {
+            tracing::debug!("LE Audio: device {} already connected and ready (0x{:04X})", id.0, d.acl);
             done(true);
             return;
         }
         let in_progress = d.connected();
+        tracing::debug!(
+            "LE Audio: device {} connect: target {target}, link {} (acl 0x{:04X}, encrypted {}, secured {})",
+            id.0,
+            if in_progress { "in setup" } else { "down" },
+            d.acl,
+            d.encrypted,
+            d.secured
+        );
         if !in_progress {
             d.pair_attempts = 0;
             d.last_error = 0;
@@ -813,6 +848,7 @@ impl<'a> LeCtx<'a> {
             return;
         }
         let status = self.stack.le_connect(&target.addr, target.addr_type);
+        tracing::debug!("LE Audio: gap_connect {target} -> 0x{status:02X}");
         if status != ERROR_CODE_SUCCESS
             && let Some(c) = self.core.connect.take()
         {
@@ -826,6 +862,10 @@ impl<'a> LeCtx<'a> {
     /// the connect or drop the link. A link that comes up after this is
     /// dropped by on_le_connected.
     pub(crate) fn abandon_connect(&mut self, id: Option<u32>) {
+        tracing::debug!(
+            "LE Audio: connect abandoned (device {id:?}, link {:?})",
+            id.and_then(|i| self.device(LeDeviceId(i))).map(|d| d.acl)
+        );
         let Some(id) = id.map(LeDeviceId) else {
             self.stack.le_connect_cancel();
             return;
@@ -845,6 +885,11 @@ impl<'a> LeCtx<'a> {
 
     fn on_le_connected(&mut self, status: u8, handle: u16, addr: LeAddr, role: u8) {
         let attempt = self.core.connect.as_ref().map(|c| (c.device, c.target));
+        tracing::debug!(
+            "LE Audio: LE connection complete 0x{status:02X}: handle 0x{handle:04X}, {addr} (type {}), role {role}, attempt {:?}",
+            addr.addr_type,
+            attempt.map(|(d, t)| (d.0, t.to_string()))
+        );
         let stray = match attempt {
             None => true,
             Some((dev, target)) => {
@@ -889,6 +934,7 @@ impl<'a> LeCtx<'a> {
             tracing::warn!("LE Audio: cannot listen for notifications on 0x{handle:04x} (all slots in use)");
         }
         self.each_module(|m, ctx| m.on_connected(ctx, dev));
+        tracing::debug!("LE Audio: requesting security on 0x{handle:04X}");
         self.stack.sm_request_pairing(handle);
     }
 
@@ -910,6 +956,7 @@ impl<'a> LeCtx<'a> {
             return;
         }
         let Some(c) = self.core.connect.take() else { return };
+        tracing::debug!("LE Audio: connect of device {} finished: ok {ok} {:?}", dev.0, c.error);
         {
             let mut r = c.result.lock().unwrap_or_else(|e| e.into_inner());
             r.id = Some(dev.0);
@@ -936,10 +983,19 @@ impl<'a> LeCtx<'a> {
     fn maybe_secured(&mut self, id: LeDeviceId) {
         let Some(d) = self.device_mut(id) else { return };
         if !d.encrypted || d.pairing || d.secured || !d.connected() {
+            tracing::debug!(
+                "LE Audio: device {} not secured yet (encrypted {}, pairing {}, secured {}, acl 0x{:04X})",
+                id.0,
+                d.encrypted,
+                d.pairing,
+                d.secured,
+                d.acl
+            );
             return;
         }
         d.secured = true;
         let con = d.acl;
+        tracing::debug!("LE Audio: device {} secured, GATT discovery on 0x{con:04X}", id.0);
         self.each_module(|m, ctx| m.on_encrypted(ctx, id));
         self.core.gatt.discover_all(
             con,
@@ -951,6 +1007,21 @@ impl<'a> LeCtx<'a> {
                     ctx.fail_connect(id, format!("GATT discovery failed (0x{status:02x})"));
                     return;
                 }
+                for s in &services {
+                    tracing::debug!(
+                        "LE Audio: service 0x{:04X} {} 0x{:04X}-0x{:04X}{}: {}",
+                        s.uuid16,
+                        if s.primary { "primary" } else { "secondary" },
+                        s.start_handle,
+                        s.end_handle,
+                        if s.included_by != 0 { format!(" (included by 0x{:04X})", s.included_by) } else { String::new() },
+                        s.chars
+                            .iter()
+                            .map(|c| format!("0x{:04X}@0x{:04X}", c.uuid16, c.value_handle))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    );
+                }
                 let Some(d) = ctx.device_on_mut(id, con) else { return };
                 d.services = services;
                 let chars: usize = d.services.iter().map(|s| s.chars.len()).sum();
@@ -960,6 +1031,15 @@ impl<'a> LeCtx<'a> {
                     id,
                     Box::new(move |ctx, _| {
                         let Some(d) = ctx.device_on_mut(id, con) else { return };
+                        tracing::debug!(
+                            "LE Audio: device {} GATT ready: pacs {}, ascs {}, {} sink PAC(s), {} ASE(s), locations 0x{:08X}",
+                            id.0,
+                            d.has_pacs,
+                            d.has_ascs,
+                            d.sink_pacs.len(),
+                            d.ases.len(),
+                            d.sink_locations
+                        );
                         d.gatt_ready = true;
                         ctx.each_module(|m, ctx| m.on_gatt_ready(ctx, id));
                         let Some(d) = ctx.device_on_mut(id, con) else { return };
@@ -1006,10 +1086,13 @@ impl<'a> LeCtx<'a> {
     /// link is down
     pub(crate) fn disconnect_device(&mut self, id: LeDeviceId, done: LeDone) {
         let Some(d) = self.device(id).filter(|d| d.connected()) else {
+            tracing::debug!("LE Audio: disconnect device {}: not connected", id.0);
             done(true);
             return;
         };
-        if self.stack.disconnect(d.acl) != ERROR_CODE_SUCCESS {
+        let status = self.stack.disconnect(d.acl);
+        tracing::debug!("LE Audio: disconnect device {} (0x{:04X}) -> 0x{status:02X}", id.0, d.acl);
+        if status != ERROR_CODE_SUCCESS {
             done(false);
             return;
         }
@@ -1024,6 +1107,7 @@ impl<'a> LeCtx<'a> {
     pub(crate) fn on_sm(&mut self, p: &[u8]) {
         let Some(&ty) = p.first() else { return };
         let Some(handle) = events::sm_handle(p) else { return };
+        tracing::debug!("LE Audio: SM event 0x{ty:02X} on 0x{handle:04X}");
         match ty {
             SM_EVENT_IDENTITY_RESOLVING_SUCCEEDED | SM_EVENT_IDENTITY_CREATED => {
                 // An address resolved with a bond's IRK (an RPA seen while
@@ -1091,6 +1175,12 @@ impl<'a> LeCtx<'a> {
             SM_EVENT_PAIRING_COMPLETE => {
                 let Some(c) = events::sm_pairing_complete(p) else { return };
                 let Some(d) = self.device_mut(id) else { return };
+                tracing::debug!(
+                    "LE Audio: {addr}: pairing complete status 0x{:02X} reason 0x{:02X} (attempts {})",
+                    c.status,
+                    c.reason,
+                    d.pair_attempts
+                );
                 d.pairing = false;
                 if c.status == ERROR_CODE_SUCCESS {
                     tracing::info!("LE Audio: {addr} paired and bonded");
@@ -1111,6 +1201,7 @@ impl<'a> LeCtx<'a> {
             }
             SM_EVENT_REENCRYPTION_COMPLETE => {
                 let Some((_, _, _, status)) = events::sm_reencryption_complete(p) else { return };
+                tracing::debug!("LE Audio: {addr}: re-encryption complete 0x{status:02X}");
                 if status != ERROR_CODE_SUCCESS {
                     // The device lost its bond (reset or paired elsewhere):
                     // pair anew
@@ -1153,7 +1244,12 @@ impl<'a> LeCtx<'a> {
             });
         }
         let (packet_length, packet_count) = self.iso_buffers();
-        plan_stream(&devs, request, self.presets(), IsoLimits { packet_length, packet_count })
+        let plan = plan_stream(&devs, request, self.presets(), IsoLimits { packet_length, packet_count });
+        tracing::debug!(
+            "LE Audio: plan for devices {:?} ({request:?}, ISO {packet_count} x {packet_length}): {plan:?}",
+            ids.iter().map(|i| i.0).collect::<Vec<_>>()
+        );
+        plan
     }
 
     /// le_start_stream's BAP part: `done(true)` once audio may flow
@@ -1173,10 +1269,12 @@ impl<'a> LeCtx<'a> {
             return;
         };
         if u.busy() {
+            tracing::debug!("LE Audio: stream start refused, unicast busy");
             set_why(&why, "a stream is still being stopped");
             done(false);
             return;
         }
+        tracing::debug!("LE Audio: unicast start: {}", plan.describe());
         self.core.queue = Some(queue);
         self.core.status = Some(status);
         self.with_unicast(|u, env| {
@@ -1197,6 +1295,7 @@ impl<'a> LeCtx<'a> {
     /// le_stop_stream's work: stop sending, Disable / Release, remove the
     /// CIG
     pub(crate) fn stop_unicast(&mut self, done: LeDone) {
+        tracing::debug!("LE Audio: unicast stop (state machine present {})", self.core.unicast.is_some());
         self.core.iso.stop(self.stack);
         if self.core.unicast.is_none() {
             done(true);
@@ -1251,11 +1350,25 @@ impl<'a> LeCtx<'a> {
             return Ok(v);
         }
         let Some(owner) = self.core.server.owner(handle) else { return Ok(Vec::new()) };
-        self.with_module(owner, |m, ctx| m.on_att_read(ctx, &AttRead { con, handle, offset }))
-            .unwrap_or(Err(ATT_ERROR_UNLIKELY_ERROR))
+        let r = self
+            .with_module(owner, |m, ctx| m.on_att_read(ctx, &AttRead { con, handle, offset }))
+            .unwrap_or(Err(ATT_ERROR_UNLIKELY_ERROR));
+        tracing::debug!(
+            "LE Audio: ATT read 0x{handle:04X} offset {offset} on 0x{con:04X} (module {owner}): {:?}",
+            r.as_ref().map(|v| v.len())
+        );
+        r
     }
 
     fn att_write(&mut self, w: &AttWriteRequest<'_>) -> u8 {
+        tracing::debug!(
+            "LE Audio: ATT write 0x{:04X} on 0x{:04X} (mode {}, offset {}): {:02X?}",
+            w.handle,
+            w.con,
+            w.mode,
+            w.offset,
+            w.value
+        );
         match self.core.server.write(w.con, w.handle, w.mode, w.offset, w.value) {
             WriteAction::Done(status) => status,
             WriteAction::Modules(list) => {
@@ -1274,6 +1387,9 @@ impl<'a> LeCtx<'a> {
                     {
                         status = e;
                     }
+                }
+                if status != 0 {
+                    tracing::debug!("LE Audio: ATT write 0x{:04X} refused (0x{status:02X})", w.handle);
                 }
                 status
             }
@@ -1371,6 +1487,7 @@ impl UnicastEnv for LeCtx<'_> {
             return;
         }
         let (addr, acl, cp) = (d.addr, d.acl, d.ase_cp_handle);
+        tracing::debug!("LE Audio: {addr}: ASE control point ({what}) 0x{cp:04X} <- {value:02X?}");
         self.core.gatt.write(
             acl,
             cp,
@@ -1392,15 +1509,23 @@ impl UnicastEnv for LeCtx<'_> {
     }
 
     fn cig_create(&mut self, params: &CigParams) -> u8 {
-        self.stack.cig_create(params)
+        let status = self.stack.cig_create(params);
+        tracing::debug!("LE Audio: LE Set CIG Parameters {params:?} -> 0x{status:02X}");
+        status
     }
 
     fn cig_remove(&mut self, cig_id: u8) -> u8 {
-        self.stack.cig_remove(cig_id)
+        let status = self.stack.cig_remove(cig_id);
+        tracing::debug!("LE Audio: LE Remove CIG {cig_id} -> 0x{status:02X}");
+        status
     }
 
     fn cis_create(&mut self, cig_id: u8, cis_handles: &[u16], acl_handles: &[u16]) -> u8 {
-        self.stack.cis_create(cig_id, cis_handles, acl_handles)
+        let status = self.stack.cis_create(cig_id, cis_handles, acl_handles);
+        tracing::debug!(
+            "LE Audio: LE Create CIS (CIG {cig_id}, CIS {cis_handles:04X?}, ACL {acl_handles:04X?}) -> 0x{status:02X}"
+        );
+        status
     }
 
     fn can_send_command(&self) -> bool {
@@ -1408,7 +1533,9 @@ impl UnicastEnv for LeCtx<'_> {
     }
 
     fn disconnect_cis(&mut self, handle: u16) -> u8 {
-        self.stack.cmd_disconnect(handle, ERROR_CODE_REMOTE_USER_TERMINATED_CONNECTION)
+        let status = self.stack.cmd_disconnect(handle, ERROR_CODE_REMOTE_USER_TERMINATED_CONNECTION);
+        tracing::debug!("LE Audio: disconnect CIS 0x{handle:04X} -> 0x{status:02X}");
+        status
     }
 
     fn iso_packet_count(&self) -> u8 {
@@ -1417,14 +1544,19 @@ impl UnicastEnv for LeCtx<'_> {
 
     fn start_sending(&mut self, cis_handles: &[u16], queue_depth: u8, frame_us: u32) {
         let queue = self.core.queue.get_or_insert_with(|| Arc::new(Mutex::new(SduQueue::new()))).clone();
+        tracing::debug!(
+            "LE Audio: start sending on CIS {cis_handles:04X?}, queue depth {queue_depth}, frame {frame_us} us"
+        );
         self.core.iso.start(self.stack, cis_handles, queue, frame_us, queue_depth);
     }
 
     fn stop_sending(&mut self) {
+        tracing::debug!("LE Audio: stop sending");
         self.core.iso.stop(self.stack);
     }
 
     fn cis_down(&mut self, handle: u16) {
+        tracing::debug!("LE Audio: CIS 0x{handle:04X} down");
         self.core.iso.on_cis_down(self.stack, handle);
     }
 
@@ -1436,6 +1568,7 @@ impl UnicastEnv for LeCtx<'_> {
     }
 
     fn stream_state(&mut self, plan: &StreamPlan, streaming: bool) {
+        tracing::debug!("LE Audio: stream state: streaming {streaming} ({})", plan.describe());
         let status = match self.core.status.as_mut() {
             Some(s) => {
                 s.active = streaming;
@@ -1455,6 +1588,7 @@ impl UnicastEnv for LeCtx<'_> {
 
     fn arm(&mut self, timer: UnicastTimer, ms: u32) {
         self.disarm(timer);
+        tracing::trace!("LE Audio: unicast timer {timer:?} in {ms} ms");
         let slot = timer as usize;
         let id = self.run_after(
             ms,
@@ -1480,12 +1614,15 @@ impl UnicastEnv for LeCtx<'_> {
         let Some(d) = self.core.devices.get(device as usize) else { return };
         let Some(h) = d.ase(ase_id).map(|a| a.value_handle) else { return };
         let (dev, con) = (d.id, d.acl);
+        tracing::debug!("LE Audio: device {device}: reading ASE {ase_id} (0x{h:04X})");
         self.core.gatt.read(
             con,
             h,
             Box::new(move |ctx, status, v| {
                 if status == 0 {
                     bap::on_ase_value(ctx, dev, con, h, v);
+                } else {
+                    tracing::debug!("LE Audio: ASE 0x{h:04X} read failed (ATT 0x{status:02X})");
                 }
             }),
         );
@@ -1619,6 +1756,12 @@ impl LeCore {
         }
         self.shared.initialized.store(false, Ordering::Release);
         self.shared.hci_working.store(false, Ordering::Release);
+        tracing::debug!(
+            "LE Audio: deinit ({} device(s), connect pending {}, {} timer(s))",
+            self.devices.len(),
+            self.connect.is_some(),
+            self.timers.len()
+        );
         for m in self.modules.iter_mut().flatten() {
             m.on_stack_deinit();
         }
@@ -1659,6 +1802,11 @@ impl LeCore {
         if packet.first() == Some(&GATT_EVENT_MTU)
             && let Some(&[_, _, c0, c1, m0, m1]) = packet.get(..6)
         {
+            tracing::debug!(
+                "LE Audio: GATT MTU {} on 0x{:04X}",
+                u16::from_le_bytes([m0, m1]),
+                u16::from_le_bytes([c0, c1])
+            );
             self.server.on_mtu(u16::from_le_bytes([c0, c1]), u16::from_le_bytes([m0, m1]));
         }
         if self.initialized {
@@ -1668,6 +1816,7 @@ impl LeCore {
 
     pub(crate) fn on_att_event(&mut self, packet: &[u8]) {
         if let Some((con, mtu)) = events::att_mtu_exchange_complete(packet) {
+            tracing::debug!("LE Audio: ATT server MTU {mtu} on 0x{con:04X}");
             self.server.on_mtu(con, mtu);
         }
     }
@@ -1696,6 +1845,7 @@ impl LeCore {
                 .filter(|t| now.wrapping_sub(t.due) as i32 >= 0)
                 .map(|t| (t.due.wrapping_sub(now), t.id))
                 .collect();
+            tracing::trace!("LE Audio: timer tick, {} due of {}", due.len(), ctx.core.timers.len());
             // Earliest first
             due.sort_by_key(|(d, _)| *d as i32);
             for (_, id) in due {

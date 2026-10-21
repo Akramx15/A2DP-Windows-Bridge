@@ -235,6 +235,13 @@ impl HostApp {
             tracing::info!("no Realtek PID configured, skipping the Realtek chipset init");
         }
 
+        tracing::debug!(
+            "hci setup: link key folder {:?}, battery (HFP) {}, LE Audio {}, tcp {}",
+            self.setup.link_key_dir,
+            self.setup.battery,
+            self.le.is_some(),
+            self.setup.tcp
+        );
         match &self.setup.link_key_dir {
             Some(dir) => stack.set_link_key_store(Some(Box::new(FileLinkKeyStore::open(dir)))),
             None => stack.set_link_key_store(None),
@@ -322,6 +329,7 @@ impl HostApp {
             self.rtk_verify_pending = true;
         } else if self.rtk_verify_tries > 0 {
             // HCI is busy right after start-up: again a moment later
+            tracing::debug!("realtek verify: HCI busy, retrying ({} tries left)", self.rtk_verify_tries);
             self.rtk_verify_tries -= 1;
             stack.timer_start(TIMER_RTK_VERIFY, RTK_VERIFY_RETRY_MS);
         } else {
@@ -358,12 +366,17 @@ impl HostApp {
         // Packets of a previous stream must not go out on this one
         while self.media.pop().is_ok() {}
         self.can_send_requested = false;
+        tracing::debug!("establish: {} (acl {:?})", addr_str(&addr), stack.acl_state(&addr));
         match stack.a2dp_establish_stream(&addr) {
             Ok(cid) => {
+                tracing::debug!("establish: a2dp cid 0x{cid:04X}");
                 self.a2dp_cid = cid;
                 Ok(())
             }
-            Err(status) => Err(status),
+            Err(status) => {
+                tracing::debug!("establish: refused 0x{status:02X} ({})", hci_error_string(status));
+                Err(status)
+            }
         }
     }
 
@@ -373,6 +386,7 @@ impl HostApp {
     /// whether a release event follows.
     pub fn release_leftover(&mut self, stack: &Stack, addr: [u8; 6]) -> Option<bool> {
         let (state, cid) = stack.avdtp_state_for_addr(&addr);
+        tracing::debug!("leftover AVDTP for {}: {state:?} (cid 0x{cid:04X})", addr_str(&addr));
         if state == AvdtpState::None {
             return None;
         }
@@ -386,8 +400,10 @@ impl HostApp {
     /// event follows.
     pub fn abort(&mut self, stack: &Stack) -> bool {
         if self.a2dp_cid == 0 {
+            tracing::debug!("abort: no a2dp cid");
             return false;
         }
+        tracing::debug!("abort: cid 0x{:04X} {:?}", self.a2dp_cid, stack.avdtp_state_for_cid(self.a2dp_cid));
         match stack.avdtp_state_for_cid(self.a2dp_cid) {
             // Already finalized by BTstack (e.g. signaling connect failed)
             AvdtpState::None => false,
@@ -406,6 +422,7 @@ impl HostApp {
                 if let Some(addr) = self.remote_addr
                     && let AclState::Open(handle) = stack.acl_state(&addr)
                 {
+                    tracing::debug!("abort: dropping ACL handle 0x{handle:04X} of the pending connection");
                     stack.disconnect(handle);
                 }
                 false
@@ -415,6 +432,7 @@ impl HostApp {
 
     /// After an abort: this was never a live stream
     pub fn forget_connection(&mut self) {
+        tracing::debug!("forget connection (cid 0x{:04X}, streaming {})", self.a2dp_cid, self.streaming);
         self.a2dp_cid = 0;
         self.set_streaming(false);
         self.can_send_requested = false;
@@ -423,7 +441,9 @@ impl HostApp {
     /// HCI Disconnect of the ACL link to the remote. True if one is going down.
     pub fn drop_acl(&mut self, stack: &Stack) -> bool {
         let Some(addr) = self.remote_addr else { return false };
-        match stack.acl_state(&addr) {
+        let state = stack.acl_state(&addr);
+        tracing::debug!("drop ACL: {} {state:?}", addr_str(&addr));
+        match state {
             AclState::Open(handle) => stack.disconnect(handle) == ERROR_CODE_SUCCESS,
             _ => false,
         }
@@ -431,13 +451,20 @@ impl HostApp {
 
     pub fn set_config(&mut self, stack: &Stack, config: &Configuration) -> u8 {
         let Some(&local) = self.endpoints.get(&codec::caps::endpoint_kind(config.kind)) else {
+            tracing::debug!("set configuration: no local endpoint for {}", config.kind);
             return ERROR_CODE_COMMAND_DISALLOWED;
         };
         self.local_seid = local;
         self.remote_seid = config.remote_seid;
         self.stream_codec = Some(config.kind);
         let cid = self.a2dp_cid;
-        match &config.request {
+        tracing::debug!(
+            "set configuration: cid 0x{cid:04X}, local SEID {local}, remote SEID {}, {} {:?}",
+            config.remote_seid,
+            config.kind,
+            config.request
+        );
+        let status = match &config.request {
             ConfigRequest::Sbc {
                 sampling_frequency,
                 channel_mode,
@@ -486,19 +513,33 @@ impl HostApp {
                     *vbr,
                 ),
             ConfigRequest::Vendor(info) => stack.a2dp_set_config_other(cid, local, config.remote_seid, info),
-        }
+        };
+        tracing::debug!("set configuration: request status 0x{status:02X}");
+        status
     }
 
     pub fn start_stream(&mut self, stack: &Stack) -> u8 {
         if self.a2dp_cid == 0 || self.local_seid == 0 {
+            tracing::debug!("start: no stream (cid 0x{:04X}, local SEID {})", self.a2dp_cid, self.local_seid);
             return ERROR_CODE_COMMAND_DISALLOWED;
         }
-        stack.a2dp_start_stream(self.a2dp_cid, self.local_seid)
+        let status = stack.a2dp_start_stream(self.a2dp_cid, self.local_seid);
+        tracing::debug!(
+            "start: AVDTP start (cid 0x{:04X}, local SEID {}) status 0x{status:02X}",
+            self.a2dp_cid,
+            self.local_seid
+        );
+        status
     }
 
     pub fn pause_stream(&mut self, stack: &Stack) {
         if self.a2dp_cid != 0 && self.local_seid != 0 {
-            stack.a2dp_pause_stream(self.a2dp_cid, self.local_seid);
+            let status = stack.a2dp_pause_stream(self.a2dp_cid, self.local_seid);
+            tracing::debug!(
+                "suspend: AVDTP suspend (cid 0x{:04X}, local SEID {}) status 0x{status:02X}",
+                self.a2dp_cid,
+                self.local_seid
+            );
         }
         self.set_streaming(false);
     }
@@ -513,9 +554,12 @@ impl HostApp {
     /// a command now (one still waits for its answer).
     pub fn probe(&mut self, stack: &Stack) -> bool {
         if !stack.can_send_command_now() {
+            tracing::trace!("probe: HCI busy");
             return false;
         }
-        stack.cmd_read_bd_addr() == ERROR_CODE_SUCCESS
+        let status = stack.cmd_read_bd_addr();
+        tracing::debug!("probe: Read BD_ADDR sent (0x{status:02X})");
+        status == ERROR_CODE_SUCCESS
     }
 
     /// Sends the queued volume request, if AVRCP is free
@@ -524,17 +568,24 @@ impl HostApp {
             return;
         }
         if self.volume_in_flight.is_some_and(|t| t.elapsed() < VOLUME_RESPONSE_TIMEOUT) {
+            tracing::debug!("volume: a request is in flight, queued");
             return;
+        }
+        if let Some(t) = self.volume_in_flight {
+            tracing::debug!("volume: no response for {} ms, sending the next", t.elapsed().as_millis());
         }
         let v = self.controls.volume_request.swap(-1, Ordering::AcqRel);
         if v < 0 {
             return;
         }
-        if stack.avrcp_set_absolute_volume(self.avrcp_cid, v as u8) != ERROR_CODE_SUCCESS {
+        let status = stack.avrcp_set_absolute_volume(self.avrcp_cid, v as u8);
+        if status != ERROR_CODE_SUCCESS {
+            tracing::debug!("volume: set absolute volume {v} busy (0x{status:02X}), kept queued");
             // Busy with another AVRCP command: keep it unless a newer one came
             let _ = self.controls.volume_request.compare_exchange(-1, v, Ordering::AcqRel, Ordering::Acquire);
             return;
         }
+        tracing::debug!("volume: set absolute volume {v} sent (avrcp cid 0x{:04X})", self.avrcp_cid);
         self.volume_in_flight = Some(Instant::now());
         self.controls.volume.store(v, Ordering::Release);
     }
@@ -557,6 +608,14 @@ impl HostApp {
             }
             self.stats.queue_depth.store(0, Ordering::Relaxed);
         }
+        if on != self.streaming {
+            tracing::debug!(
+                "media: streaming {on} (codec {:?}, cid 0x{:04X}, local SEID {})",
+                self.stream_codec,
+                self.a2dp_cid,
+                self.local_seid
+            );
+        }
         self.streaming = on;
         self.media_streaming.store(on, Ordering::Release);
         // Gaps are measured within one started stream
@@ -569,6 +628,7 @@ impl HostApp {
         if self.streaming && !self.can_send_requested && self.a2dp_cid != 0 && !self.media.is_empty() {
             self.can_send_requested = true;
             self.can_send_asked = Some(Instant::now());
+            tracing::trace!("media: request can send now (queued {})", self.media.slots());
             stack.a2dp_request_can_send_now(self.a2dp_cid, self.local_seid);
         }
     }
@@ -619,12 +679,34 @@ impl HostApp {
                     self.stats.packets_sent.fetch_add(1, Ordering::Relaxed);
                     let bytes = payload.len() + if packet.rtp { RTP_HEADER_SIZE } else { 0 };
                     self.stats.bytes_sent.fetch_add(bytes as u64, Ordering::Relaxed);
+                    tracing::trace!(
+                        "media: sent {} bytes, ts {}, marker {}, rtp {}, queued {depth}",
+                        payload.len(),
+                        packet.timestamp,
+                        packet.marker,
+                        packet.rtp
+                    );
                 } else {
-                    self.stats.send_errors.fetch_add(1, Ordering::Relaxed);
+                    let n = self.stats.send_errors.fetch_add(1, Ordering::Relaxed) + 1;
+                    if n <= 10 || n.is_power_of_two() {
+                        tracing::debug!(
+                            "media: send failed 0x{status:02X} ({} bytes, ts {}), {n} send error(s) so far",
+                            payload.len(),
+                            packet.timestamp
+                        );
+                    }
                 }
             } else {
-                self.stats.send_errors.fetch_add(1, Ordering::Relaxed);
+                let n = self.stats.send_errors.fetch_add(1, Ordering::Relaxed) + 1;
+                if n <= 10 || n.is_power_of_two() {
+                    tracing::debug!(
+                        "media: packet of {} bytes over the max payload {max:?}, dropped, {n} send error(s) so far",
+                        payload.len()
+                    );
+                }
             }
+        } else {
+            tracing::trace!("media: can send now, queue empty");
         }
         // Chain the next one; when empty, the next queued packet wakes us
         self.kick_media(stack);
@@ -647,8 +729,12 @@ impl HostApp {
             }
             self.stats.timing.completed_events.fetch_add(1, Ordering::Relaxed);
         }
+        if ev == HCI_EVENT_NUMBER_OF_COMPLETED_PACKETS {
+            tracing::trace!("HCI completed packets: {:02X?}", p.get(2..));
+        }
         match ev {
             BTSTACK_EVENT_STATE => match u8_at(p, 2) {
+                Some(state @ (1 | 3..)) => tracing::debug!("HCI state {state} ({:?})", stack.hci_state()),
                 Some(2) => self.on_working(stack),
                 Some(0) => {
                     tracing::info!("HCI state OFF");
@@ -663,8 +749,24 @@ impl HostApp {
                 }
                 _ => {}
             },
+            HCI_EVENT_COMMAND_STATUS => {
+                if let (Some(status), Some(opcode)) = (u8_at(p, 2), le16(p, 4))
+                    && status != ERROR_CODE_SUCCESS
+                {
+                    tracing::debug!("HCI command 0x{opcode:04X} status 0x{status:02X} ({})", hci_error_string(status));
+                }
+            }
             HCI_EVENT_COMMAND_COMPLETE => {
                 let opcode = le16(p, 3).unwrap_or(0);
+                tracing::trace!("HCI command complete 0x{opcode:04X} status {:?}", u8_at(p, 5));
+                if let Some(status) = u8_at(p, 5)
+                    && status != ERROR_CODE_SUCCESS
+                {
+                    tracing::debug!(
+                        "HCI command 0x{opcode:04X} complete with 0x{status:02X} ({})",
+                        hci_error_string(status)
+                    );
+                }
                 if opcode == HCI_OPCODE_READ_LOCAL_VERSION_INFORMATION && p.len() >= 14 {
                     self.on_local_version(stack, p);
                 }
@@ -673,6 +775,7 @@ impl HostApp {
                     if p.len() >= 12 && p[5] == 0 {
                         let a: Vec<String> = p[6..12].iter().rev().map(|b| format!("{b:02X}")).collect();
                         let addr = a.join(":");
+                        tracing::debug!("controller address {addr}");
                         self.shared.update(|s| s.local_address = Some(addr));
                     }
                     self.shared.update(|s| {
@@ -767,6 +870,14 @@ impl HostApp {
                 let (Some(status), Some(handle), Some(addr)) = (u8_at(p, 2), le16(p, 3), addr_at(p, 5)) else {
                     return;
                 };
+                tracing::debug!(
+                    "HCI connection complete: {} status 0x{status:02X}, handle 0x{:04X}, link type {:?}, encryption {:?}, target {}",
+                    addr_str(&addr),
+                    handle & 0x0FFF,
+                    u8_at(p, 11),
+                    u8_at(p, 12),
+                    self.remote_addr == Some(addr)
+                );
                 if status != 0 {
                     tracing::warn!(
                         "HCI connection to {} failed: 0x{status:02X} ({})",
@@ -820,6 +931,7 @@ impl HostApp {
                 });
             }
             GAP_EVENT_INQUIRY_COMPLETE => {
+                tracing::debug!("inquiry complete (status {:?})", u8_at(p, 2));
                 self.shared.update(|s| s.inquiry_done = true);
             }
             HCI_EVENT_DISCONNECTION_COMPLETE => {
@@ -853,6 +965,11 @@ impl HostApp {
                     }
                     false
                 });
+                tracing::debug!(
+                    "disconnection of handle 0x{handle:04X}: a2dp link lost {lost}, hfp acl {:?}, streaming {}",
+                    self.hfp_acl,
+                    self.streaming
+                );
                 if lost {
                     self.set_streaming(false);
                     self.can_send_requested = false;
@@ -870,6 +987,13 @@ impl HostApp {
     fn on_working(&mut self, stack: &Stack) {
         let elapsed = self.init_started.elapsed().as_millis();
         tracing::info!("HCI ready (took {elapsed} ms)");
+        tracing::debug!(
+            "realtek check: pid 0x{:04X}, version seen {}, first LMP subversion 0x{:04X} (ROM {})",
+            self.setup.realtek_pid,
+            self.rtk_version_seen,
+            self.rtk_lmp_first,
+            is_realtek_rom_lmp(self.rtk_lmp_first)
+        );
         if self.setup.realtek_pid != 0 {
             if self.rtk_version_seen {
                 // Judged by the LMP subversion, as BTstack's Realtek driver
@@ -920,11 +1044,19 @@ impl HostApp {
         // Command Complete: [5] status [6] HCI version [9] LMP version
         // [10..11] manufacturer [12..13] LMP subversion
         if u8_at(p, 5) != Some(0) {
+            tracing::debug!("Read Local Version failed (status {:?})", u8_at(p, 5));
             return;
         }
         let hci_ver = u8_at(p, 6).unwrap_or(0);
         let manufacturer = le16(p, 10).unwrap_or(0);
         let lmp_subver = le16(p, 12).unwrap_or(0);
+        tracing::debug!(
+            "local version: HCI revision 0x{:04X}, LMP version {}, state {:?}, verify pending {}",
+            le16(p, 7).unwrap_or(0),
+            u8_at(p, 9).unwrap_or(0),
+            stack.hci_state(),
+            self.rtk_verify_pending
+        );
         tracing::info!(
             "controller: company 0x{manufacturer:04X} ({}), HCI version {hci_ver}, LMP subversion 0x{lmp_subver:04X}",
             crate::chips::company_name(manufacturer).unwrap_or("unknown")
@@ -965,6 +1097,11 @@ impl HostApp {
             return;
         }
         self.bcm_checked = true;
+        tracing::debug!(
+            "broadcom: looking for PatchRAM in {} for adapters {:04X?}",
+            self.setup.firmware_dir.display(),
+            self.setup.broadcom_ids
+        );
         match find_bcm_hcd(&self.setup.firmware_dir, &self.setup.broadcom_ids) {
             Some(path) => {
                 tracing::info!("Broadcom PatchRAM {} (experimental)", path.display());
@@ -1008,6 +1145,11 @@ impl HostApp {
             }
             Some(AVDTP_SUBEVENT_SIGNALING_SEP_DICOVERY_DONE) => {
                 // Counted per discovery: a later one replaces the result
+                tracing::debug!(
+                    "SEP discovery done: {} audio sink(s), {} in use",
+                    self.sep_sinks,
+                    self.sep_sinks_in_use
+                );
                 self.caps.audio_sinks = self.sep_sinks;
                 self.caps.audio_sinks_in_use = self.sep_sinks_in_use;
                 self.sep_sinks = 0;
@@ -1056,6 +1198,10 @@ impl HostApp {
                         | ERROR_CODE_UNSPECIFIED_ERROR => ConnectFailure::LinkLost,
                         _ => ConnectFailure::Other,
                     };
+                    tracing::debug!(
+                        "signaling connection failed: cid 0x{cid:04X}, status 0x{status:02X} ({}) -> {failure:?}",
+                        hci_error_string(status)
+                    );
                     self.shared.update(|s| {
                         s.last_connect_failure = Some(failure);
                         s.connect_done = Some(false);
@@ -1070,6 +1216,7 @@ impl HostApp {
                 let seid = u8_at(p, 5).unwrap_or(0);
                 let len = le16(p, 9).unwrap_or(0) as usize;
                 let Some(info) = p.get(11..11 + len) else { return };
+                tracing::debug!("SEID {seid} codec capability (header {:02X?}): {info:02X?}", p.get(3..11));
                 match self.caps.add_vendor(seid, info) {
                     VendorCapability::Taken(kind) => {
                         tracing::info!("remote supports {kind} (SEID {seid}, {info:02X?})")
@@ -1092,6 +1239,7 @@ impl HostApp {
                 // 12111111111: subevent, cid, SEID, media type, then the
                 // bitmaps and the bitpool range
                 let at = |i: usize| u8_at(p, i).unwrap_or(0);
+                tracing::debug!("SEID {seid} SBC capability event: {:02X?}", p.get(3..));
                 let sbc = SbcCapabilities {
                     sampling_frequency: at(7),
                     channel_mode: at(8),
@@ -1120,6 +1268,7 @@ impl HostApp {
                 // 1211121311: subevent, cid, SEID, media type, object types,
                 // frequencies, channels, bit rate, VBR, DRC
                 let at = |i: usize| u8_at(p, i).unwrap_or(0);
+                tracing::debug!("SEID {seid} AAC capability event: {:02X?}", p.get(3..));
                 let aac = AacCapabilities {
                     object_types: at(7),
                     sampling_frequency: le16(p, 8).unwrap_or(0),
@@ -1163,6 +1312,7 @@ impl HostApp {
                     }
                 );
                 let caps = self.caps.clone();
+                tracing::debug!("remote caps: {caps:?}");
                 self.shared.update(|s| {
                     s.remote_caps = caps;
                     s.connected = true;
@@ -1173,11 +1323,29 @@ impl HostApp {
                     && let Err(status) = stack.avrcp_connect(&addr)
                 {
                     tracing::warn!("AVRCP connect request failed (0x{status:02x})");
+                } else {
+                    tracing::debug!("AVRCP connect requested");
                 }
+            }
+            Some(A2DP_SUBEVENT_SIGNALING_CAPABILITIES_DONE) => {
+                tracing::debug!("capabilities of SEID {:?} done", u8_at(p, 5));
+            }
+            Some(A2DP_SUBEVENT_COMMAND_ACCEPTED) => {
+                tracing::debug!(
+                    "A2DP command accepted (cid 0x{:04X}, local SEID {:?}, initiator {:?}, signal {:02X?})",
+                    le16(p, 3).unwrap_or(0),
+                    u8_at(p, 5),
+                    u8_at(p, 6),
+                    u8_at(p, 7)
+                );
+            }
+            Some(A2DP_SUBEVENT_STREAM_STOPPED) => {
+                tracing::debug!("stream stopped (local SEID {:?})", u8_at(p, 5));
             }
             Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CONFIGURATION)
             | Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CONFIGURATION)
             | Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_OTHER_CONFIGURATION) => {
+                tracing::debug!("codec configuration event: {:02X?}", p.get(2..));
                 tracing::info!(
                     "codec configured (local {}, remote {})",
                     u8_at(p, 5).unwrap_or(0),
@@ -1186,6 +1354,12 @@ impl HostApp {
             }
             Some(A2DP_SUBEVENT_STREAM_ESTABLISHED) => {
                 let status = u8_at(p, 13).unwrap_or(0xFF);
+                tracing::debug!(
+                    "stream established event: cid 0x{:04X}, local SEID {:?}, remote SEID {:?}, status 0x{status:02X}",
+                    le16(p, 3).unwrap_or(0),
+                    u8_at(p, 11),
+                    u8_at(p, 12)
+                );
                 if status != ERROR_CODE_SUCCESS {
                     tracing::warn!("stream establishment failed (0x{status:02x})");
                     self.shared.update(|s| s.stream_done = Some(false));
@@ -1277,6 +1451,15 @@ impl HostApp {
                 // a failed STREAM_ESTABLISHED / STREAM_STARTED).
                 let initiator = u8_at(p, 6).unwrap_or(0) != 0;
                 let signal = u8_at(p, 7).unwrap_or(0);
+                tracing::debug!(
+                    "A2DP command rejected: cid 0x{:04X}, local SEID {:?}, waits (stream, start): {:?}",
+                    le16(p, 3).unwrap_or(0),
+                    u8_at(p, 5),
+                    {
+                        let s = self.shared.lock();
+                        (s.stream_done, s.start_done)
+                    }
+                );
                 tracing::warn!(
                     "A2DP command rejected (signal 0x{signal:02x}{})",
                     if initiator { "" } else { ", remote's" }
@@ -1305,6 +1488,7 @@ impl HostApp {
     /// report their battery (the headphones may also open it themselves)
     fn connect_hfp(&mut self, stack: &Stack) {
         if !self.setup.battery || self.hfp_acl.is_some() {
+            tracing::debug!("HFP: not connecting (battery {}, acl {:?})", self.setup.battery, self.hfp_acl);
             return;
         }
         let Some(addr) = self.remote_addr else { return };
@@ -1318,6 +1502,7 @@ impl HostApp {
                 let status = u8_at(p, 5).unwrap_or(0xFF);
                 if status == 0 {
                     self.hfp_acl = le16(p, 3);
+                    tracing::debug!("HFP: service level connection on ACL {:04X?}", self.hfp_acl);
                     tracing::info!("HFP: service level connection established");
                 } else {
                     tracing::info!("HFP: service level connection failed (0x{status:02x})");
@@ -1329,6 +1514,7 @@ impl HostApp {
             }
             // AT+BIEV: HF indicator 2, 0..100 percent
             Some(HFP_SUBEVENT_HF_INDICATOR) => {
+                tracing::debug!("HFP: HF indicator {:04X?} = {:?}", le16(p, 5), u8_at(p, 7));
                 if le16(p, 5) == Some(HFP_HF_INDICATOR_UUID_BATTERY_LEVEL)
                     && let Some(v) = u8_at(p, 7)
                 {
@@ -1345,7 +1531,8 @@ impl HostApp {
                     self.report_battery(pct);
                 }
             }
-            _ => {}
+            Some(sub) => tracing::debug!("HFP: subevent 0x{sub:02X}"),
+            None => {}
         }
     }
 
@@ -1358,6 +1545,11 @@ impl HostApp {
         match subevent(p) {
             Some(AVRCP_SUBEVENT_CONNECTION_ESTABLISHED) => {
                 let (Some(status), Some(cid)) = (u8_at(p, 3), le16(p, 4)) else { return };
+                tracing::debug!(
+                    "AVRCP connection event: cid 0x{cid:04X}, status 0x{status:02X} ({}), a2dp cid 0x{:04X}",
+                    hci_error_string(status),
+                    self.a2dp_cid
+                );
                 if status != ERROR_CODE_SUCCESS {
                     tracing::warn!("AVRCP connection failed (0x{status:02x})");
                     return;
@@ -1381,10 +1573,13 @@ impl HostApp {
                     self.controls.volume_request.store(restore, Ordering::Release);
                     self.send_pending_volume(stack);
                 }
-                stack.avrcp_enable_notification(cid, AVRCP_NOTIFICATION_EVENT_VOLUME_CHANGED);
+                let notify = stack.avrcp_enable_notification(cid, AVRCP_NOTIFICATION_EVENT_VOLUME_CHANGED);
                 // Target side: buttons arrive as pass-through commands; the
                 // playback status lets the headphones pick play or pause
-                stack.avrcp_target_support_event(cid, AVRCP_NOTIFICATION_EVENT_PLAYBACK_STATUS_CHANGED);
+                let support = stack.avrcp_target_support_event(cid, AVRCP_NOTIFICATION_EVENT_PLAYBACK_STATUS_CHANGED);
+                tracing::debug!(
+                    "AVRCP: volume notification 0x{notify:02X}, playback status event 0x{support:02X}, restore {restore}"
+                );
                 self.playback_status = AVRCP_PLAYBACK_STATUS_STOPPED;
                 self.playback_prev_frames = self.stats.capture_frames.load(Ordering::Relaxed);
                 self.playback_idle_ticks = 0;
@@ -1399,6 +1594,7 @@ impl HostApp {
                 let c = &self.controls;
                 let v = c.volume.load(Ordering::Acquire);
                 if c.restore_volume.load(Ordering::Acquire) >= 0 && v >= 0 {
+                    tracing::debug!("AVRCP: restore volume follows the last one, {v}");
                     c.restore_volume.store(v, Ordering::Release);
                 }
                 c.volume.store(-1, Ordering::Release);
@@ -1424,14 +1620,21 @@ impl HostApp {
             }
             Some(AVRCP_SUBEVENT_OPERATION) => {
                 if le16(p, 3) != Some(self.avrcp_cid) {
+                    tracing::debug!(
+                        "AVRCP operation on cid {:04X?} ignored (current 0x{:04X})",
+                        le16(p, 3),
+                        self.avrcp_cid
+                    );
                     return;
                 }
                 let (Some(op), Some(pressed)) = (u8_at(p, 5), u8_at(p, 6)) else { return };
+                tracing::debug!("AVRCP operation 0x{op:02X} {}", if pressed != 0 { "pressed" } else { "released" });
                 self.on_button(stack, op, pressed != 0);
             }
             Some(AVRCP_SUBEVENT_PLAY_STATUS_QUERY) => {
                 // GetPlayStatus: no track length or position to report
                 if let Some(cid) = le16(p, 3) {
+                    tracing::debug!("AVRCP play status query (cid 0x{cid:04X}), status {}", self.playback_status);
                     stack.avrcp_target_play_status(cid, 0xFFFF_FFFF, 0xFFFF_FFFF, self.playback_status);
                 }
             }
@@ -1541,6 +1744,13 @@ impl HostApp {
                 (Some(_), None) => true,
                 (None, sent) => sent.is_some(),
             };
+            tracing::debug!(
+                "AFH classify: policy {policy:?} (version {version}), result {:?}, changed {changed}",
+                c.as_ref().map(|c| (&c.avoided, c.usable, c.map))
+            );
+            if changed && !stack.can_send_command_now() {
+                tracing::debug!("AFH: HCI busy, classification sent on a later tick");
+            }
             if changed && stack.can_send_command_now() {
                 // All channels "unknown" clears the host classification
                 let map =
@@ -1592,6 +1802,7 @@ impl HostApp {
             }
             HCI_OPCODE_READ_RSSI if rp.len() >= 4 => {
                 let ok = rp[0] == ERROR_CODE_SUCCESS;
+                tracing::trace!("radio: RSSI {} (status 0x{:02X})", rp[3] as i8, rp[0]);
                 self.stats.with_radio(|r| r.rssi = ok.then_some(rp[3] as i8));
             }
             HCI_OPCODE_READ_AFH_CHANNEL_MAP if rp.len() >= 14 => {
@@ -1603,6 +1814,12 @@ impl HostApp {
                 } else {
                     Some(79)
                 };
+                tracing::debug!(
+                    "radio: AFH mode {}, {in_use:?} channels in use, map {:02X?} (status 0x{:02X})",
+                    rp[3],
+                    &rp[4..14],
+                    rp[0]
+                );
                 self.stats.with_radio(|r| r.afh_in_use = in_use);
             }
             _ => {}
@@ -1665,6 +1882,7 @@ impl App for HostApp {
         if stack.transport_failed() {
             let first = self.shared.update(|s| !std::mem::replace(&mut s.stalled, true));
             if first {
+                tracing::debug!("transport failed: stack marked stalled (hci {:?})", stack.hci_state());
                 let _ = self.events.send(HostEvent::TransportFailed);
             }
         }
@@ -1697,6 +1915,7 @@ impl App for HostApp {
     }
 
     fn on_intel_firmware(&mut self, stack: &Stack, result: i32) {
+        tracing::debug!("intel firmware loader finished: {result}");
         if result != 0 {
             tracing::error!(
                 "Intel firmware download failed ({result}). Place the matching ibt-*.sfi and ibt-*.ddc \
@@ -1711,6 +1930,7 @@ impl App for HostApp {
     }
 
     fn on_exit(&mut self, stack: &Stack) {
+        tracing::debug!("run loop exit (a2dp cid 0x{:04X}, avrcp cid 0x{:04X})", self.a2dp_cid, self.avrcp_cid);
         self.set_streaming(false);
         if let Some(le) = self.le.as_mut() {
             le.stack_deinit(stack);
@@ -1769,6 +1989,7 @@ fn find_bcm_hcd(dir: &Path, adapters: &[(u16, u16)]) -> Option<PathBuf> {
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("hcd")))
         .collect();
+    tracing::debug!("broadcom: .hcd files {files:?}");
     for (vid, pid) in adapters {
         let tag = format!("-{vid:04x}-{pid:04x}.");
         if let Some(f) =

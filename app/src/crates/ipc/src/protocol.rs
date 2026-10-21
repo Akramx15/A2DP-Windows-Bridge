@@ -539,6 +539,47 @@ pub struct Snapshot {
     /// Bluetooth adapter, so the UI asks to exit it
     #[serde(default)]
     pub v1_running: bool,
+    /// Verbose logging is on (diag.set_verbose): until when, at what level
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub verbose: Option<VerboseState>,
+}
+
+/// Verbose logging (diag.set_verbose): A2DPWB's own modules log at `level`
+/// until `until_ms`, then back to info by themselves
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct VerboseState {
+    pub level: LogLevel,
+    /// Milliseconds since 1970 (UTC)
+    #[ts(type = "number")]
+    pub until_ms: u64,
+}
+
+/// A diagnostic bundle (diag.bundle)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct DiagBundle {
+    /// The .zip file
+    pub path: String,
+    #[ts(type = "number")]
+    pub bytes: u64,
+    /// Files in it
+    pub files: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+
+pub struct DiagBundleParams {
+    /// Bluetooth addresses masked in the text files (default true; HCI
+    /// captures keep them)
+    #[ts(optional = nullable)]
+    #[serde(default)]
+    pub mask: Option<bool>,
+    /// Include the HCI captures (default true)
+    #[ts(optional = nullable)]
+    #[serde(default)]
+    pub hci: Option<bool>,
 }
 
 /// A running HCI capture
@@ -751,6 +792,8 @@ pub enum Event {
     Capture(Option<CaptureState>),
     /// A2DPWB v1 started or exited (state, v1_running)
     V1Running(bool),
+    /// Verbose logging turned on, off, or ran out (state, verbose)
+    Verbose(Option<VerboseState>),
     /// Subscription (diag.subscribe receiver): the receiver test, once a
     /// second and on every change
     Receiver(Box<ReceiverState>),
@@ -901,6 +944,14 @@ pub enum Method {
     /// a log view that opens after they were logged
     #[serde(rename = "diag.recent_logs")]
     DiagRecentLogs { level: LogLevel },
+    /// Verbose logging at `level` for 24 hours (debug) or 1 hour (trace),
+    /// also across restarts of the core; None: back to info -> VerboseState | null
+    #[serde(rename = "diag.set_verbose")]
+    DiagSetVerbose { level: Option<LogLevel> },
+    /// Collects the logs, HCI captures, crash reports and the diagnostic
+    /// info into one .zip in the logs folder -> DiagBundle
+    #[serde(rename = "diag.bundle")]
+    DiagBundle(Option<DiagBundleParams>),
     /// -> ReceiverInfo[]: measuring receivers on the local network (UDP
     /// broadcast, about 1.5 s)
     #[serde(rename = "receiver.discover")]
@@ -1378,6 +1429,7 @@ mod tests {
             capture: None,
             clock_ms: None,
             v1_running: false,
+            verbose: None,
         })
         .unwrap();
         snap.as_object_mut().unwrap().remove("le_scanning");

@@ -252,6 +252,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     capture: null,
     clock_ms: null,
     v1_running: false,
+    verbose: null,
   };
 }
 
@@ -650,6 +651,22 @@ export class MockCore implements Transport {
         return this.stopCapture();
       case "diag.info":
         return { text: this.diagText(p.mask !== false) };
+      case "diag.set_verbose": {
+        const level = p.level === "debug" || p.level === "trace" ? (p.level as LogLevel) : null;
+        const v = level ? { level, until_ms: Date.now() + (level === "trace" ? 1 : 24) * 3600 * 1000 } : null;
+        this.snap.verbose = v;
+        this.log("info", "a2dpwb_core", v ? `verbose logging on (${level}) for 24 hours` : "verbose logging off");
+        this.emit({ kind: "verbose", value: v });
+        return v;
+      }
+      case "diag.bundle": {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+        const path = `${this.snap.log_dir}\\bundles\\a2dpwb-diag-${stamp}.zip`;
+        this.log("info", "a2dpwb_core::bundle", `diagnostic bundle: 14 files, 812345 bytes -> ${path}`);
+        return { path, bytes: 812345, files: 14 };
+      }
       case "diag.flow":
         return this.flow();
       case "diag.recent_logs": {

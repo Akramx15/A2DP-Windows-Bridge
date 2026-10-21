@@ -106,21 +106,43 @@ pub fn paired_devices() -> windows::core::Result<Vec<PairedDevice>> {
     // returned is closed below.
     let find = match unsafe { BluetoothFindFirstDevice(&params, &mut info) } {
         Ok(h) => h,
-        Err(e) if e.code() == ERROR_NO_MORE_ITEMS.to_hresult() => return Ok(Vec::new()),
-        Err(e) => return Err(e),
+        Err(e) if e.code() == ERROR_NO_MORE_ITEMS.to_hresult() => {
+            tracing::debug!("bt_paired: Windows knows no Bluetooth devices");
+            return Ok(Vec::new());
+        }
+        Err(e) => {
+            tracing::debug!("bt_paired: BluetoothFindFirstDevice failed: {e}");
+            return Err(e);
+        }
     };
     let mut devices = vec![device_from_info(&info)];
     loop {
         info = BLUETOOTH_DEVICE_INFO { dwSize: size_of::<BLUETOOTH_DEVICE_INFO>() as u32, ..Default::default() };
         // SAFETY: `find` is the open search handle; `info` is initialised
         // with its dwSize.
-        if unsafe { BluetoothFindNextDevice(find, &mut info) }.is_err() {
+        if let Err(e) = unsafe { BluetoothFindNextDevice(find, &mut info) } {
+            if e.code() != ERROR_NO_MORE_ITEMS.to_hresult() {
+                tracing::debug!("bt_paired: BluetoothFindNextDevice stopped: {e}");
+            }
             break;
         }
         devices.push(device_from_info(&info));
     }
     // SAFETY: the handle was opened above and is closed once.
     let _ = unsafe { BluetoothFindDeviceClose(find) };
+    tracing::debug!("bt_paired: {} device(s)", devices.len());
+    for d in &devices {
+        tracing::debug!(
+            "bt_paired: {} {:?} CoD 0x{:06X} (A2DP sink {}), connected {}, remembered {}, authenticated {}",
+            d.address_string(),
+            d.name,
+            d.class_of_device,
+            d.is_a2dp_sink(),
+            d.connected,
+            d.remembered,
+            d.authenticated
+        );
+    }
     Ok(devices)
 }
 

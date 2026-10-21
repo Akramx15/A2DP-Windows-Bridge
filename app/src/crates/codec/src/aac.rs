@@ -122,6 +122,14 @@ impl AacEncoder {
         if !dev.aac_no_afterburner {
             params.push((ffi::AACENC_AFTERBURNER, "AACENC_AFTERBURNER", 1));
         }
+        tracing::debug!(
+            "AAC: bit rate {bitrate} bps (quality {:?}, dev override {} kbps), mtu cap {mtu_bitrate}, sink cap {}, \
+             parameters {:?}",
+            config.quality,
+            dev.aac_bitrate_kbps,
+            config.peer.aac_max_bitrate,
+            params.iter().map(|&(_, name, value)| (name, value)).collect::<Vec<_>>()
+        );
         for (param, name, value) in params {
             enc.set_param(param, value).map_err(|e| init_err(&format!("{name} = {value}"), e))?;
         }
@@ -131,6 +139,11 @@ impl AacEncoder {
         // fdk-aac raises a bit rate below what the configuration needs; then
         // the frames would no longer fit the media payload
         let effective = enc.param(ffi::AACENC_BITRATE);
+        tracing::debug!(
+            "AAC: fdk-aac effective bit rate {effective} bps, frame length {}, max output {} bytes",
+            info.frameLength,
+            info.maxOutBufBytes
+        );
         if !vbr && effective > mtu_bitrate {
             return unsupported(format!(
                 "media MTU {} allows {mtu_bitrate} bps, below the {effective} bps AAC needs",

@@ -241,6 +241,9 @@ pub(crate) fn loss_expected() -> bool {
 /// Clears what a previous run left
 pub(crate) fn reset() {
     let mut q = RX.lock().unwrap_or_else(|e| e.into_inner());
+    if !q.packets.is_empty() {
+        tracing::debug!(target: "hci", "transport reset: {} queued packet(s) dropped", q.packets.len());
+    }
     q.packets.clear();
     SENT.store(0, Ordering::Release);
     FAILED.store(false, Ordering::Release);
@@ -254,6 +257,7 @@ pub(crate) fn failed() -> bool {
 
 pub(crate) fn install(backend: Box<dyn HciBackend>) -> bool {
     let is_async = backend.is_async();
+    tracing::debug!(target: "hci", "transport installed (async {is_async})");
     BACKEND.with(|b| *b.borrow_mut() = Some(backend));
     is_async
 }
@@ -270,6 +274,7 @@ pub(crate) fn open() -> bool {
     });
     match result {
         Ok(()) => {
+            tracing::debug!(target: "hci", "HCI transport opened");
             OPEN.with(|o| o.set(true));
             true
         }
@@ -281,6 +286,7 @@ pub(crate) fn open() -> bool {
 }
 
 pub(crate) fn close() {
+    tracing::debug!(target: "hci", "HCI transport closing (open {})", OPEN.with(|o| o.get()));
     OPEN.with(|o| o.set(false));
     BACKEND.with(|b| {
         if let Some(backend) = b.borrow_mut().as_mut() {
@@ -306,7 +312,9 @@ pub(crate) fn send(packet_type: u8, packet: &[u8]) -> bool {
         answer_locally(opcode);
         return true;
     }
-    BACKEND.with(|b| b.borrow_mut().as_mut().is_some_and(|b| b.send(packet_type, packet)))
+    let ok = BACKEND.with(|b| b.borrow_mut().as_mut().is_some_and(|b| b.send(packet_type, packet)));
+    tracing::trace!(target: "hci", "send type 0x{packet_type:02X}, {} bytes: {ok}", packet.len());
+    ok
 }
 
 /// LE hidden: the command is not sent; from the run loop, as after any
@@ -330,6 +338,9 @@ fn answer_locally(opcode: u16) {
 /// On the run loop: hands queued completions and packets to BTstack
 pub(crate) fn pump() {
     let sent = SENT.swap(0, Ordering::AcqRel);
+    if sent > 0 {
+        tracing::trace!(target: "hci", "{sent} packet(s) sent");
+    }
     for _ in 0..sent {
         // SAFETY: on the run loop thread; the shim checks for a handler.
         unsafe { crate::ffi::a2dpwb_transport_packet_sent() };
@@ -341,12 +352,14 @@ pub(crate) fn pump() {
         if packet_type == HCI_EVENT_PACKET {
             // As the controller sent it, before LE hidden clears its LE bits
             if let Some(iso) = iso_commands_in(&buf) {
+                tracing::debug!(target: "hci", "supported commands: ISO {}", if iso { "yes" } else { "no" });
                 CONTROLLER_ISO.store(if iso { 2 } else { 1 }, Ordering::Release);
             }
             if hidden {
                 le_hidden_patch_event(&mut buf);
             }
         }
+        tracing::trace!(target: "hci", "deliver type 0x{packet_type:02X}, {} bytes", buf.len());
         if buf.len() <= u16::MAX as usize {
             // SAFETY: on the run loop thread; buf is valid for its length;
             // the shim copies it and checks the size.

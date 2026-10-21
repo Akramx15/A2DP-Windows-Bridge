@@ -178,11 +178,31 @@ impl Settings {
     /// Missing or unreadable: defaults (a broken file is kept as .bad)
     pub fn load(dir: &Path) -> Settings {
         let path = Settings::path(dir);
-        let Ok(text) = std::fs::read_to_string(&path) else { return Settings::default() };
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::debug!("settings: {} not read ({e}), using defaults", path.display());
+                return Settings::default();
+            }
+        };
         match serde_json::from_str::<Settings>(&text) {
             Ok(mut s) => {
+                let volumes = s.saved_volumes.len();
                 s.saved_volumes.retain(|_, v| (0..=127).contains(v));
+                if s.saved_volumes.len() != volumes {
+                    tracing::debug!(
+                        "settings: dropped {} saved volume(s) out of range",
+                        volumes - s.saved_volumes.len()
+                    );
+                }
                 s.theme = normalize_theme(&s.theme).into();
+                tracing::debug!(
+                    "settings: loaded {} (schema {}, {} unknown key(s))",
+                    path.display(),
+                    s.schema_version,
+                    s.other.len()
+                );
+                tracing::trace!("settings: {s:?}");
                 s
             }
             Err(e) => {
@@ -200,7 +220,9 @@ impl Settings {
         let path = Settings::path(dir);
         let tmp = path.with_extension("json.tmp");
         std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, &path)
+        let r = std::fs::rename(&tmp, &path);
+        tracing::debug!("settings: saved {}: {r:?}", path.display());
+        r
     }
 
     /// The media packet size limit of a settings file from before v1.1, for

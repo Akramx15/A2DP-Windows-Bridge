@@ -35,8 +35,13 @@ fn parse_line(line: &str) -> Option<(String, &str)> {
 }
 
 fn read_lines(dir: &Path, file: &str) -> Vec<(String, String)> {
-    let Ok(text) = std::fs::read_to_string(dir.join(file)) else { return Vec::new() };
-    text.lines().filter_map(parse_line).map(|(a, n)| (a, n.to_string())).collect()
+    let Ok(text) = std::fs::read_to_string(dir.join(file)) else {
+        tracing::trace!("devices: no {file}");
+        return Vec::new();
+    };
+    let lines: Vec<(String, String)> = text.lines().filter_map(parse_line).map(|(a, n)| (a, n.to_string())).collect();
+    tracing::trace!("devices: {file}: {} device(s) of {} line(s)", lines.len(), text.lines().count());
+    lines
 }
 
 /// Both files: the classic devices, then the LE Audio ones (le_audio set;
@@ -99,15 +104,23 @@ fn save_kind(dir: &Path, address: &str, name: &str, le_audio: bool) -> std::io::
                 d.name = name.to_string();
             }
         }
-        None => devices.push(SavedDevice { address, name: name.to_string(), le_audio }),
+        None => {
+            tracing::debug!("devices: adding {address} \"{name}\" (LE Audio {le_audio})");
+            devices.push(SavedDevice { address, name: name.to_string(), le_audio });
+        }
     }
-    write_all(dir, &devices)
+    let r = write_all(dir, &devices);
+    tracing::debug!("devices: saved {} device(s) to {}: {r:?}", devices.len(), dir.display());
+    r
 }
 
 fn remove_kind(dir: &Path, address: &str, le_audio: bool) -> std::io::Result<()> {
     let mut devices = load_all(dir);
+    let before = devices.len();
     devices.retain(|d| !(d.le_audio == le_audio && d.address.eq_ignore_ascii_case(address)));
-    write_all(dir, &devices)
+    let r = write_all(dir, &devices);
+    tracing::debug!("devices: removing {address} (LE Audio {le_audio}): {} removed, {r:?}", before - devices.len());
+    r
 }
 
 /// Adds or renames a classic device (an empty name keeps the known one)

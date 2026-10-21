@@ -83,11 +83,13 @@ impl MediaSink {
             Ok(()) => {
                 let depth = MEDIA_QUEUE_PACKETS - self.producer.slots();
                 self.stats.queue_depth.store(depth as u32, Ordering::Relaxed);
+                tracing::trace!("media queue: {} bytes, ts {}, depth {depth}", packet.len, packet.timestamp);
                 self.remote.wake();
                 true
             }
             Err(_) => {
-                self.stats.queue_drops.fetch_add(1, Ordering::Relaxed);
+                let drops = self.stats.queue_drops.fetch_add(1, Ordering::Relaxed) + 1;
+                tracing::trace!("media queue full: packet ts {} dropped ({drops} drops)", packet.timestamp);
                 false
             }
         }

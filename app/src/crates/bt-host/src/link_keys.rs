@@ -87,7 +87,16 @@ impl FileLinkKeyStore {
 
 impl LinkKeyStore for FileLinkKeyStore {
     fn get(&mut self, addr: &[u8; 6]) -> Option<([u8; 16], i32)> {
-        self.entries.iter().find(|e| &e.addr == addr).map(|e| (e.key, e.key_type))
+        let found = self.entries.iter().find(|e| &e.addr == addr).map(|e| (e.key, e.key_type));
+        tracing::debug!(
+            "link keys: lookup for {}: {}",
+            crate::events::addr_str(addr),
+            match &found {
+                Some((_, t)) => format!("found (type {t})"),
+                None => "none".into(),
+            }
+        );
+        found
     }
 
     fn put(&mut self, addr: &[u8; 6], key: &[u8; 16], key_type: i32) {
@@ -105,6 +114,7 @@ impl LinkKeyStore for FileLinkKeyStore {
         }
         self.save();
         tracing::info!("link keys: stored the key of {}", crate::events::addr_str(addr));
+        tracing::debug!("link keys: key type {key_type}, {} stored in all", self.entries.len());
     }
 
     fn delete(&mut self, addr: &[u8; 6]) {

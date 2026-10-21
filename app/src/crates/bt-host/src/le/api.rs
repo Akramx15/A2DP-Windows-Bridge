@@ -105,10 +105,15 @@ impl BtHost {
         self.le_run(RUN_TIMEOUT, move |ctx| ctx.start_find(want));
         let end = Instant::now() + timeout;
         let mut found = None;
+        tracing::debug!("LE Audio: find {want} for {} ms", timeout.as_millis());
         while found.is_none() && Instant::now() < end && !self.le_cancelled() {
             std::thread::sleep(FIND_POLL);
             found = self.le_run(RUN_TIMEOUT, move |ctx| ctx.find_match(want)).flatten();
         }
+        tracing::debug!(
+            "LE Audio: find {want}: {}",
+            found.as_ref().map_or("not found".to_string(), |r| format!("{} (type {})", r.addr, r.addr.addr_type))
+        );
         self.le_run(RUN_TIMEOUT, |ctx| {
             ctx.stop_scan();
         });
@@ -163,7 +168,12 @@ impl BtHost {
         if !self.le_on {
             return;
         }
-        self.le_wait(DISCONNECT_TIMEOUT, false, move |ctx, done| ctx.disconnect_device(device, done));
+        let ok = self.le_wait(DISCONNECT_TIMEOUT, false, move |ctx, done| ctx.disconnect_device(device, done));
+        tracing::debug!(
+            "LE Audio: disconnect device {}: {}",
+            device.0,
+            if ok { "done" } else { "failed or timed out" }
+        );
     }
 
     /// Disconnects every LE device (waits up to 3 s)
@@ -206,9 +216,17 @@ impl BtHost {
             tracing::debug!("LE Audio: {}: preparing the group", h.name());
             h.prepare_group(self, &mut devices, &cancelled);
         }
+        tracing::debug!(
+            "LE Audio: stream request {request:?} for devices {:?} (ISO {iso_count} x {iso_len})",
+            devices.iter().map(|d| d.0).collect::<Vec<_>>()
+        );
         for h in &hooks {
             h.adjust_stream_request(self, &devices, &mut request);
         }
+        tracing::debug!(
+            "LE Audio: stream request after the modules {request:?} for devices {:?}",
+            devices.iter().map(|d| d.0).collect::<Vec<_>>()
+        );
 
         let (ids, req) = (devices.clone(), request.clone());
         let plan = match self.le_run(RUN_TIMEOUT, move |ctx| ctx.plan_for(&ids, &req)) {
@@ -226,6 +244,11 @@ impl BtHost {
 
         // The jitter buffer, with the silence for underruns
         let queue = Arc::new(Mutex::new(SduQueue::new()));
+        tracing::debug!(
+            "LE Audio: jitter buffer for {} CIS, controller queue depth {}",
+            plan.cis.len(),
+            queue_depth(iso_count, plan.cis.len()).max(1)
+        );
         queue
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -259,7 +282,13 @@ impl BtHost {
         if !self.le_on || !self.le.initialized.load(Ordering::Acquire) {
             return;
         }
-        self.le_wait(STOP_TIMEOUT, false, |ctx, done| ctx.stop_unicast(done));
+        let started = Instant::now();
+        let ok = self.le_wait(STOP_TIMEOUT, false, |ctx, done| ctx.stop_unicast(done));
+        tracing::debug!(
+            "LE Audio: stream stop {} after {} ms",
+            if ok { "done" } else { "timed out" },
+            started.elapsed().as_millis()
+        );
     }
 
     /// True once after a device or CIS of the running stream was lost (the
@@ -287,12 +316,15 @@ impl BtHost {
     /// Sets the headset volume (0-127) through the modules (VCP); false if
     /// no module handles it. Any thread.
     pub fn le_request_volume(&self, level: u8) -> bool {
-        self.le.hooks().iter().any(|h| h.request_volume(level))
+        let handled = self.le.hooks().iter().any(|h| h.request_volume(level));
+        tracing::debug!("LE Audio: volume request {level}: handled {handled}");
+        handled
     }
 
     /// "Low latency (GMAP)": read when a stream is set up. Off by default;
     /// per BtHost (set it after each start).
     pub fn le_set_low_latency(&self, on: bool) {
+        tracing::debug!("LE Audio: low latency (GMAP) {on}");
         self.le.low_latency.store(on, Ordering::Release);
     }
 
@@ -349,9 +381,11 @@ impl BtHost {
                 return ok;
             }
             if cancellable && self.le_cancelled() {
+                tracing::debug!("LE Audio: wait cancelled");
                 return false;
             }
             if Instant::now() >= deadline {
+                tracing::debug!("LE Audio: no completion within {} ms", timeout.as_millis());
                 return false;
             }
         }

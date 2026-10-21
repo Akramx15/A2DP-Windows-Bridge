@@ -14,6 +14,7 @@ Writes to target/dist (or -OutDir):
     A2DPWB-<version>-win64-setup.exe        (arm64: -arm64-setup.exe)
     A2DPWB-<version>-win64-setup.exe.sig    updater signature
     A2DPWB-<version>-win64-portable.zip
+    A2DPWB-<version>-win64-symbols.zip      .pdb files, to read crash dumps
     latest.json                             updater manifest of this release
 
 Updater signing (see installer/README.md): TAURI_SIGNING_PRIVATE_KEY (the
@@ -236,6 +237,13 @@ Copy-Item -Recurse (Join-Path $docDir '*') $pkgDir
 $zip = Join-Path $OutDir "$pkgName-$archName-portable.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path $pkgDir -DestinationPath $zip
+
+# --- Symbols: the crash reports' minidumps (logs\crash) open with them ---
+$pdbs = 'a2dpwb', 'a2dpwb_core', 'a2dpwb_driver' | ForEach-Object { Join-Path $release "$_.pdb" } |
+    Where-Object { Test-Path $_ }
+$symbols = Join-Path $OutDir "$pkgName-$archName-symbols.zip"
+if (Test-Path $symbols) { Remove-Item -Force $symbols }
+if ($pdbs) { Compress-Archive -Path $pdbs -DestinationPath $symbols }
 
 # --- Updater manifest (one per release; arm64 is added to x64's) ---
 if ($signing) {

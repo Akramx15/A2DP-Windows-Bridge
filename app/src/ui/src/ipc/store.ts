@@ -159,6 +159,9 @@ export function createCore(transport: Transport) {
       case "v1_running":
         setState("snap", "v1_running", ev.value);
         break;
+      case "verbose":
+        setState("snap", "verbose", ev.value === null ? null : reconcile(ev.value));
+        break;
       default:
         // An event kind of a newer core: the next snapshot has it
         break;

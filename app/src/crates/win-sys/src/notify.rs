@@ -183,6 +183,7 @@ impl TrayNotifier {
             nid.uFlags |= NIF_GUID;
             nid.guidItem = guid;
             if !modify(&nid) {
+                tracing::debug!("notify: no tray icon with GUID {guid:?} on window 0x{:X}", self.hwnd);
                 return Err(NotifyError::NoTrayIcon);
             }
         } else {
@@ -199,9 +200,17 @@ impl TrayNotifier {
                 ok
             });
             if !shown {
+                tracing::debug!("notify: no tray icon on window 0x{:X} (uIDs 0..={UID_PROBE_LIMIT})", self.hwnd);
                 return Err(NotifyError::NoTrayIcon);
             }
         }
+        tracing::debug!(
+            "notify: balloon {:?} shown (uID {:?}, GUID {}, click action {})",
+            balloon.title,
+            self.uid.get(),
+            self.guid.is_some(),
+            balloon.on_click.is_some()
+        );
         self.arm(balloon.on_click)
     }
 
@@ -212,6 +221,7 @@ impl TrayNotifier {
             // Send); the procedure is a plain function, removed again when
             // the window is destroyed.
             if !unsafe { SetWindowSubclass(self.hwnd(), Some(subclass_proc), SUBCLASS_ID, 0) }.as_bool() {
+                tracing::debug!("notify: SetWindowSubclass on window 0x{:X} failed", self.hwnd);
                 return Err(NotifyError::Subclass);
             }
             self.subclassed.set(true);
@@ -267,6 +277,10 @@ unsafe extern "system" fn subclass_proc(
     if msg == TRAY_ICON_CALLBACK_MESSAGE && is_balloon_click(lparam.0) {
         // Taken out before running: the action may show another balloon
         let action = PENDING.with(|p| p.borrow_mut().remove(&(hwnd.0 as isize)));
+        tracing::debug!(
+            "notify: balloon clicked ({})",
+            if action.is_some() { "running its action" } else { "no action" }
+        );
         if let Some(action) = action {
             action.run();
         }

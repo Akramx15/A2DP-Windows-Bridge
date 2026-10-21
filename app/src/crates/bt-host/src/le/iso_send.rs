@@ -152,6 +152,12 @@ impl IsoSender {
         self.timer_resolution = Some(HighTimerResolution::new());
         self.sending = true;
         tracing::info!("LE Audio: sending ISO SDUs on {} CIS (queue {queue_depth})", cis_handles.len());
+        tracing::debug!(
+            "LE Audio: ISO sender: CIS {cis_handles:04X?}, frame {} us, prefill {} set(s), guard lead {} set(s)",
+            self.frame_us,
+            self.prefill,
+            u64::from(queue_depth) + 2
+        );
         self.request_next(out);
     }
 
@@ -204,12 +210,32 @@ impl IsoSender {
         }
         if self.current.len() == self.cis_handles.len() {
             let status = out.send(ev.cis_handle, self.seq[index], &self.current[index]);
+            tracing::trace!(
+                "LE Audio: ISO SDU on 0x{:04X}: seq {}, {} bytes, status 0x{status:02X}",
+                ev.cis_handle,
+                self.seq[index],
+                self.current[index].len()
+            );
             self.seq[index] = self.seq[index].wrapping_add(1);
             if status == ERROR_CODE_SUCCESS {
                 self.counters.sdus_sent += 1;
             } else {
                 self.counters.send_errors += 1;
+                let n = self.counters.send_errors;
+                if n <= 10 || n.is_power_of_two() {
+                    tracing::debug!(
+                        "LE Audio: ISO send on 0x{:04X} failed (0x{status:02X}), {n} send error(s) so far",
+                        ev.cis_handle
+                    );
+                }
             }
+        } else {
+            tracing::trace!(
+                "LE Audio: SDU set has {} SDUs for {} CIS, nothing sent on 0x{:04X}",
+                self.current.len(),
+                self.cis_handles.len(),
+                ev.cis_handle
+            );
         }
         self.served[index] = true;
         // BTstack's group_complete is never set while the CIG's last CIS is
@@ -225,6 +251,7 @@ impl IsoSender {
         let mut underrun = None;
         if let Some(q) = &self.queue {
             let mut q = q.lock().unwrap_or_else(|e| e.into_inner());
+            tracing::trace!("LE Audio: SDU round {}, {} set(s) buffered", self.counters.sets_sent + 1, q.len());
             let next = match q.pop() {
                 Some(set) => set,
                 None => {
@@ -254,6 +281,14 @@ impl IsoSender {
             tracing::warn!("{u}");
         }
         self.counters.sets_sent += 1;
+        if self.counters.sets_sent.is_multiple_of(1000) {
+            tracing::debug!(
+                "{} (guard waits {}, timer late up to {} ms)",
+                self.send_counters().stats_message(),
+                self.guard_waits,
+                self.guard_late_ms
+            );
+        }
         self.guard.round_started();
         self.round_open = true;
         self.served.fill(false);
@@ -269,6 +304,11 @@ impl IsoSender {
                 self.alive[i] = false;
             }
         }
+        tracing::debug!(
+            "LE Audio: ISO sender: CIS 0x{handle:04X} down, {} of {} still up",
+            self.alive.iter().filter(|&&a| a).count(),
+            self.alive.len()
+        );
         // The round may have waited for this CIS only
         if self.alive.iter().any(|&a| a) && self.round_open && self.round_done() {
             self.round_open = false;
@@ -280,6 +320,7 @@ impl IsoSender {
     pub(crate) fn on_timer(&mut self, out: &dyn IsoOut) {
         if let Some(due) = self.guard_due_ms.take() {
             let late = out.time_ms().wrapping_sub(due) as i32;
+            tracing::trace!("LE Audio: send guard timer, {late} ms late");
             self.guard_late_ms = self.guard_late_ms.max(late.max(0) as u32);
         }
         if self.sending {
@@ -343,6 +384,7 @@ impl IsoSender {
         let wait = if due_ms > elapsed_ms { due_ms - elapsed_ms } else { u64::from(self.frame_us / 1000) };
         let wait = wait.clamp(1, 1000) as u32;
         self.guard_waits += 1;
+        tracing::trace!("LE Audio: send guard: {elapsed_ms} ms in, ahead of real time, waiting {wait} ms");
         self.guard_due_ms = Some(now.wrapping_add(wait));
         out.timer_start(wait);
     }

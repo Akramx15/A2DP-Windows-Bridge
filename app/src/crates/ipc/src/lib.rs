@@ -122,5 +122,7 @@ mod tests {
         ReceiverState::export_all(&cfg).unwrap();
         DiagInfoParams::export_all(&cfg).unwrap();
         SettingsApplied::export_all(&cfg).unwrap();
+        DiagBundle::export_all(&cfg).unwrap();
+        DiagBundleParams::export_all(&cfg).unwrap();
     }
 }

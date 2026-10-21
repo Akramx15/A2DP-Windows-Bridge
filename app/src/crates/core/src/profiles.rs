@@ -167,6 +167,18 @@ impl Profile {
             "device" => VolumeSync::Device(self.volume_device_id.clone()),
             _ => VolumeSync::Auto,
         };
+        tracing::debug!(
+            "profile \"{}\": codec {:?} quality {:?} rate {} depth {} capture {:?} volume sync {:?} payload {:?} (legacy {legacy_max_media_payload}) LE {}",
+            self.name,
+            self.codec,
+            self.quality,
+            self.sample_rate,
+            self.bit_depth,
+            self.capture_mode,
+            self.volume_sync,
+            self.max_media_payload,
+            self.le_audio
+        );
         Ok(StreamRequest {
             device,
             device_name: self.device_name.clone(),
@@ -245,10 +257,21 @@ pub fn load(dir: &Path) -> Vec<Profile> {
 
 /// [`load`], and how many profiles it renamed
 pub fn load_counted(dir: &Path) -> (Vec<Profile>, usize) {
-    let Ok(text) = std::fs::read_to_string(path(dir)) else { return (Vec::new(), 0) };
+    let text = match std::fs::read_to_string(path(dir)) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::debug!("profiles: {} not read ({e}), no profiles", path(dir).display());
+            return (Vec::new(), 0);
+        }
+    };
     match serde_json::from_str::<ProfilesFile>(&text) {
         Ok(mut f) => {
             let renamed = make_names_unique(&mut f.profiles);
+            tracing::debug!(
+                "profiles: loaded {} profile(s) from {}, {renamed} renamed",
+                f.profiles.len(),
+                path(dir).display()
+            );
             (f.profiles, renamed)
         }
         Err(e) => {
@@ -263,7 +286,9 @@ pub fn save(dir: &Path, profiles: &[Profile]) -> std::io::Result<()> {
     let text = serde_json::to_string_pretty(&file).map_err(std::io::Error::other)?;
     let tmp = path(dir).with_extension("json.tmp");
     std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, path(dir))
+    let r = std::fs::rename(&tmp, path(dir));
+    tracing::debug!("profiles: saved {} profile(s) to {}: {r:?}", profiles.len(), path(dir).display());
+    r
 }
 
 #[cfg(test)]

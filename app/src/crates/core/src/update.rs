@@ -142,16 +142,29 @@ fn get(url: &str) -> Result<String, UpdateError> {
         .user_agent(concat!("A2DPWB/", env!("CARGO_PKG_VERSION")))
         .build()
         .into();
+    let started = std::time::Instant::now();
+    tracing::debug!("update check: GET {url}");
     let mut response = agent
         .get(url)
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .call()
-        .map_err(|e| match e {
-            ureq::Error::StatusCode(code) => UpdateError::Status(code),
-            e => UpdateError::Http(e.to_string()),
+        .map_err(|e| {
+            tracing::debug!("update check: request failed after {} ms: {e}", started.elapsed().as_millis());
+            match e {
+                ureq::Error::StatusCode(code) => UpdateError::Status(code),
+                e => UpdateError::Http(e.to_string()),
+            }
         })?;
-    response.body_mut().with_config().limit(MAX_RESPONSE).read_to_string().map_err(|e| UpdateError::Http(e.to_string()))
+    tracing::debug!("update check: status {} in {} ms", response.status(), started.elapsed().as_millis());
+    let body = response
+        .body_mut()
+        .with_config()
+        .limit(MAX_RESPONSE)
+        .read_to_string()
+        .map_err(|e| UpdateError::Http(e.to_string()));
+    tracing::debug!("update check: body {:?}", body.as_ref().map(String::len));
+    body
 }
 
 /// The newest release of the channel (blocking)
@@ -165,11 +178,19 @@ pub fn latest_release(include_prereleases: bool) -> Result<Release, UpdateError>
 
 /// A release newer than `current_version`, if there is one (blocking)
 pub fn check(current_version: &str, include_prereleases: bool) -> Result<Option<Release>, UpdateError> {
+    tracing::debug!("update check: running {current_version}, pre-releases {include_prereleases}");
     let latest = latest_release(include_prereleases)?;
     tracing::info!(
         "update check: latest {}{} (running {current_version})",
         latest.version,
         if latest.prerelease { " (pre-release)" } else { "" }
+    );
+    tracing::debug!(
+        "update check: {} ({}) vs {current_version}: {:?}, newer {}",
+        latest.tag,
+        latest.url,
+        compare_versions(&latest.version, current_version),
+        is_newer(&latest.version, current_version)
     );
     Ok(is_newer(&latest.version, current_version).then_some(latest))
 }

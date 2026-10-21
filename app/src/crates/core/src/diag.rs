@@ -894,6 +894,8 @@ pub struct DiagInput<'a> {
     pub mask: bool,
     /// LE Audio (experimental) of the running stack
     pub le_audio: Option<&'a LeAudioDiag>,
+    /// Verbose logging, crash reports, flight recorder files (one line)
+    pub logging: Option<&'a str>,
 }
 
 /// What the diagnostics tell about LE Audio (experimental) of the running
@@ -968,6 +970,9 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         on_off(s.check_updates_on_startup),
         if s.include_prereleases { " (pre-releases too)" } else { "" }
     );
+    if let Some(l) = d.logging {
+        let _ = writeln!(out, "Logging      : {l}");
+    }
     let _ = write!(out, "State        : {}", state_name(d.state));
     if let Some((_, text)) = d.flow.last_state()
         && !text.is_empty()
@@ -1531,6 +1536,7 @@ mod tests {
             clock: None,
             mask: true,
             le_audio: None,
+            logging: None,
         };
         let text = diag_text(&input);
         assert!(text.starts_with("```text\nA2DPWB diagnostics - 2026-10-17 10:00:00\n"), "{text}");

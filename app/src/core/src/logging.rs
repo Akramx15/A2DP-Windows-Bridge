@@ -7,7 +7,12 @@
 //!   (tracing-appender's non-blocking writer, lossy when it falls behind), so
 //!   logging never waits for the disk.
 //! - Filter: `A2DPWB_LOG` (EnvFilter syntax, default "info"), for every
-//!   output.
+//!   output. Verbose logging ([`set_verbose`], the diagnostics' switch)
+//!   adds A2DPWB's own modules at debug (24 hours) or trace (1 hour), kept in
+//!   `logs\verbose.json` so that it also covers a restart (a problem at
+//!   start-up); the filter is swapped while running.
+//! - Panics are logged and written as crash reports (win_sys::crash, which
+//!   also catches crashes in native code) to `logs\crash\`.
 //! - Broadcast: events become [`ipc::LogLine`]s for subscribers
 //!   ([`LogHub::subscribe`], [`LogHub::subscribe_with`]), each with its level
 //!   and a bounded queue; a slow UI loses lines instead of blocking logging.
@@ -23,14 +28,14 @@
 // Until main.rs calls init() and the server subscribes; remove then
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, TrySendError};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use a2dpwb_core::diag::{ConnectionFlow, LogEntry};
-use ipc::{LogLevel, LogLine};
+use ipc::{LogLevel, LogLine, VerboseState};
 use tracing::field::{Field, Visit};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -39,6 +44,7 @@ use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Registry, reload};
 
 /// Lines kept in memory for the diagnostics
 pub const RING_LINES: usize = 2000;
@@ -53,6 +59,31 @@ pub const SUBSCRIBER_QUEUE: usize = 1024;
 /// lines) alone is 4 MB of the resident core's memory.
 const FILE_QUEUE_LINES: usize = 8192;
 const FILE_PREFIX: &str = "a2dpwb-core";
+/// How long verbose logging stays on at debug
+pub const VERBOSE_FOR: Duration = Duration::from_secs(24 * 3600);
+/// ...and at trace: every HCI and media packet, hundreds of MB an hour
+pub const TRACE_FOR: Duration = Duration::from_secs(3600);
+const VERBOSE_FILE: &str = "verbose.json";
+/// A2DPWB's own modules (tracing targets): what verbose logging turns up,
+/// leaving the libraries (tokio, reqwest, ...) at the base level
+pub const OWN_TARGETS: &[&str] = &[
+    "a2dpwb_core",
+    "bt_host",
+    "btstack_sys",
+    "hci_transport",
+    "codec",
+    "audio_capture",
+    "le_audio",
+    "pipeline",
+    "win_sys",
+    "ipc",
+    // Explicit targets: the USB transport, BTstack's own log, LE Audio
+    "hci",
+    "btstack",
+    "le",
+    // The USB library (through the log crate): transfer and device errors
+    "nusb",
+];
 
 /// Where the logs go
 #[derive(Debug, Clone, Default)]
@@ -61,6 +92,8 @@ pub struct LogOptions {
     pub dir: Option<std::path::PathBuf>,
     /// Also to stderr (the command line)
     pub console: bool,
+    /// Crash reports (minidumps) of panics and native crashes; None: none
+    pub crash_dir: Option<PathBuf>,
 }
 
 /// Keeps the file writer's worker running; drop it last (at exit) so the
@@ -112,8 +145,9 @@ pub fn file_appender(dir: &Path) -> Result<RollingFileAppender, String> {
 pub fn init(opts: &LogOptions) -> LogGuard {
     let offset = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
     let timer = LocalTimer { offset };
-    let filter = tracing_subscriber::EnvFilter::try_from_env("A2DPWB_LOG")
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    // Verbose logging still on from an earlier run
+    let verbose = opts.dir.as_deref().and_then(load_verbose);
+    let (filter, filter_handle) = reload::Layer::new(make_filter(verbose.map(|v| v.level)));
 
     let mut file_error = None;
     let (file_layer, file_guard) = match opts.dir.as_deref().map(file_appender) {
@@ -145,10 +179,156 @@ pub fn init(opts: &LogOptions) -> LogGuard {
     if installed.is_err() {
         eprintln!("a2dpwb-core: logging was set up already");
     }
+    let _ = FILTER.set(filter_handle);
+    if let Some(dir) = &opts.dir {
+        let _ = LOG_DIR.set(dir.clone());
+    }
+    *lock(&VERBOSE) = verbose;
     if let Some(e) = file_error {
         tracing::warn!("logging to files is off: {e}");
     }
+    if let Some(dir) = &opts.crash_dir {
+        install_crash_reports(dir);
+    }
+    log_header(verbose);
     LogGuard { _file: file_guard }
+}
+
+/// The first lines of a run: what runs where, for a log read without the
+/// diagnostic info
+fn log_header(verbose: Option<VerboseState>) {
+    tracing::info!(
+        "a2dpwb-core {} ({}) starting: pid {}, Windows build {}, {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::ARCH,
+        std::process::id(),
+        audio_capture::windows_build(),
+        std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default()
+    );
+    if let Ok(env) = std::env::var("A2DPWB_LOG") {
+        tracing::info!("log filter A2DPWB_LOG={env}");
+    }
+    if let Some(v) = verbose {
+        let minutes = v.until_ms.saturating_sub(unix_ms()) / 60_000;
+        tracing::info!("verbose logging ({:?}) on for {minutes} more minutes", v.level);
+    }
+}
+
+/// Panics: logged, and a crash report with the backtrace. Native crashes:
+/// a crash report (win_sys::crash).
+fn install_crash_reports(dir: &Path) {
+    win_sys::crash::install(dir, "a2dpwb-core", &format!("a2dpwb-core {}", env!("CARGO_PKG_VERSION")));
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let reason = format!("panic in thread {}: {info}", thread.name().unwrap_or("unnamed"));
+        tracing::error!(target: "a2dpwb_core::crash", "{reason}");
+        let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+        if let Some(p) = win_sys::crash::write(&reason, &backtrace) {
+            tracing::error!(target: "a2dpwb_core::crash", "crash report written: {}", p.display());
+        }
+        default_hook(info);
+    }));
+}
+
+static FILTER: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::new();
+static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
+static VERBOSE: Mutex<Option<VerboseState>> = Mutex::new(None);
+
+/// Milliseconds since 1970 (UTC)
+pub fn unix_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+}
+
+fn level_name(l: LogLevel) -> &'static str {
+    match l {
+        LogLevel::Error => "error",
+        LogLevel::Warn => "warn",
+        LogLevel::Info => "info",
+        LogLevel::Debug => "debug",
+        LogLevel::Trace => "trace",
+    }
+}
+
+/// The filter's directives: `base`, then A2DPWB's own modules at `verbose`
+pub fn filter_directives(base: &str, verbose: Option<LogLevel>) -> String {
+    let mut s = base.to_owned();
+    if let Some(l) = verbose {
+        for t in OWN_TARGETS {
+            let _ = write!(s, ",{t}={}", level_name(l));
+        }
+    }
+    s
+}
+
+fn make_filter(verbose: Option<LogLevel>) -> EnvFilter {
+    let base = std::env::var("A2DPWB_LOG").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| "info".into());
+    EnvFilter::try_new(filter_directives(&base, verbose)).unwrap_or_else(|_| EnvFilter::new("info"))
+}
+
+/// Verbose logging only at debug and trace
+fn verbose_level(level: Option<LogLevel>) -> Option<LogLevel> {
+    level.filter(|l| matches!(l, LogLevel::Debug | LogLevel::Trace))
+}
+
+fn load_verbose(dir: &Path) -> Option<VerboseState> {
+    let text = std::fs::read_to_string(dir.join(VERBOSE_FILE)).ok()?;
+    let v: VerboseState = serde_json::from_str(&text).ok()?;
+    (verbose_level(Some(v.level)).is_some() && v.until_ms > unix_ms()).then_some(v)
+}
+
+/// Verbose logging now (None: off)
+pub fn verbose() -> Option<VerboseState> {
+    *lock(&VERBOSE)
+}
+
+/// How long verbose logging at `level` stays on
+pub fn verbose_for(level: LogLevel) -> Duration {
+    if level == LogLevel::Trace { TRACE_FOR } else { VERBOSE_FOR }
+}
+
+/// Turns verbose logging on at `level` (debug or trace) for
+/// [`verbose_for`], or off (None, or another level). Kept in the logs
+/// folder for the next start.
+pub fn set_verbose(level: Option<LogLevel>) -> Option<VerboseState> {
+    let level = verbose_level(level);
+    let state = level.map(|level| VerboseState { level, until_ms: unix_ms() + verbose_for(level).as_millis() as u64 });
+    apply_verbose(state);
+    match state {
+        Some(v) => {
+            tracing::info!("verbose logging on ({:?}) for {} minutes", v.level, verbose_for(v.level).as_secs() / 60)
+        }
+        None => tracing::info!("verbose logging off"),
+    }
+    state
+}
+
+fn apply_verbose(state: Option<VerboseState>) {
+    *lock(&VERBOSE) = state;
+    if let Some(h) = FILTER.get()
+        && let Err(e) = h.reload(make_filter(state.map(|v| v.level)))
+    {
+        tracing::warn!("cannot change the log filter: {e}");
+    }
+    if let Some(dir) = LOG_DIR.get() {
+        let path = dir.join(VERBOSE_FILE);
+        let _ = match state {
+            Some(v) => std::fs::write(&path, serde_json::to_vec(&v).unwrap_or_default()),
+            None => std::fs::remove_file(&path),
+        };
+    }
+}
+
+/// Ends verbose logging that ran out; true if it did now (the caller
+/// publishes the change)
+pub fn expire_verbose() -> bool {
+    let Some(v) = verbose() else { return false };
+    if v.until_ms > unix_ms() {
+        return false;
+    }
+    apply_verbose(None);
+    tracing::info!("verbose logging off (its time is over)");
+    true
 }
 
 /// The process' log hub (the one [`init`] installs)
@@ -598,6 +778,31 @@ mod tests {
         let names: Vec<String> =
             std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         assert!(names.iter().any(|n| n.starts_with("a2dpwb-core.") && n.ends_with(".log")), "{names:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verbose_turns_up_our_modules_only() {
+        assert_eq!(filter_directives("info", None), "info");
+        let d = filter_directives("info", Some(LogLevel::Debug));
+        assert!(d.starts_with("info,a2dpwb_core=debug,bt_host=debug,"), "{d}");
+        assert!(!d.contains("tokio"));
+        // Every directive parses
+        assert!(EnvFilter::try_new(filter_directives("warn", Some(LogLevel::Trace))).is_ok());
+        assert_eq!(verbose_level(Some(LogLevel::Info)), None);
+        assert_eq!(verbose_level(Some(LogLevel::Trace)), Some(LogLevel::Trace));
+    }
+
+    #[test]
+    fn verbose_survives_a_restart_until_it_runs_out() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-verbose-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let on = VerboseState { level: LogLevel::Debug, until_ms: unix_ms() + 60_000 };
+        std::fs::write(dir.join(VERBOSE_FILE), serde_json::to_vec(&on).unwrap()).unwrap();
+        assert_eq!(load_verbose(&dir), Some(on));
+        let over = VerboseState { until_ms: unix_ms() - 1, ..on };
+        std::fs::write(dir.join(VERBOSE_FILE), serde_json::to_vec(&over).unwrap()).unwrap();
+        assert_eq!(load_verbose(&dir), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

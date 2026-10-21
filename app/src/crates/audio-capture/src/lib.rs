@@ -230,6 +230,7 @@ impl Capture {
             }
             Source::TestTone => {
                 let rate = options.preferred_rate.filter(|&r| r >= 100).unwrap_or(DEFAULT_RATE);
+                tracing::debug!("audio source: test tone, requested {:?}, using {rate} Hz", options.preferred_rate);
                 (tone::format(rate), Backend::Tone)
             }
         };
@@ -342,8 +343,14 @@ impl Drop for Running {
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::Release);
         if let Some(t) = self.thread.take() {
+            let started = std::time::Instant::now();
             // The thread notices within one period (≤ 100 ms)
             let _ = t.join();
+            tracing::debug!(
+                "audio capture: thread joined in {} ms, ended {:?}",
+                started.elapsed().as_millis(),
+                self.shared.end_reason.get()
+            );
         }
     }
 }

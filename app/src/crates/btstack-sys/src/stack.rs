@@ -88,6 +88,7 @@ impl Stack {
     pub fn hci_init(&self, backend: Box<dyn crate::HciBackend>) {
         let is_async = transport::install(backend);
         log_le_hidden();
+        tracing::debug!(target: "btstack", "hci_init (async transport {is_async})");
         // SAFETY: on the BTstack thread; the backend is installed, so the
         // transport table's callbacks have something to call.
         unsafe { ffi::a2dpwb_hci_init(is_async as c_int) };
@@ -104,6 +105,7 @@ impl Stack {
     /// Initializes HCI on the transport installed with
     /// [`Stack::install_transport`]
     pub fn hci_init_installed(&self) {
+        tracing::debug!(target: "btstack", "hci_init on the installed transport (async {})", transport::is_async());
         // SAFETY: on the BTstack thread.
         unsafe { ffi::a2dpwb_hci_init(transport::is_async() as c_int) };
         mark(INIT_HCI);
@@ -112,6 +114,7 @@ impl Stack {
     /// Link keys in `store` (None: in memory only)
     pub fn set_link_key_store(&self, store: Option<Box<dyn LinkKeyStore>>) {
         let rust = store.is_some();
+        tracing::debug!(target: "btstack", "link key store: {}", if rust { "file" } else { "memory" });
         LINK_KEYS.with(|s| *s.borrow_mut() = store);
         // SAFETY: on the BTstack thread, after hci_init.
         unsafe { ffi::a2dpwb_set_link_key_db(rust as c_int) };
@@ -124,6 +127,7 @@ impl Stack {
     /// SSP Just Works, General Bonding, name "A2DPWB", role switch and
     /// sniff allowed
     pub fn gap_setup(&self, class_of_device: u32, page_timeout: u16) {
+        tracing::debug!(target: "btstack", "gap setup: CoD 0x{class_of_device:06X}, page timeout 0x{page_timeout:04X}");
         // SAFETY: on the BTstack thread, after hci_init.
         unsafe { ffi::a2dpwb_gap_setup(class_of_device, page_timeout) };
     }
@@ -170,17 +174,22 @@ impl Stack {
     /// Opens the service level connection to the headphones' HFP
     pub fn hfp_ag_connect(&self, addr: &[u8; 6]) -> u8 {
         // SAFETY: on the BTstack thread after hfp_ag_init; 6 bytes.
-        unsafe { ffi::a2dpwb_hfp_ag_connect(addr.as_ptr()) }
+        let status = unsafe { ffi::a2dpwb_hfp_ag_connect(addr.as_ptr()) };
+        tracing::debug!(target: "btstack", "hfp_ag_connect {}: 0x{status:02X}", addr_str(addr));
+        status
     }
 
     pub fn hfp_ag_release(&self, acl_handle: u16) -> u8 {
         // SAFETY: on the BTstack thread after hfp_ag_init.
-        unsafe { ffi::a2dpwb_hfp_ag_release(acl_handle) }
+        let status = unsafe { ffi::a2dpwb_hfp_ag_release(acl_handle) };
+        tracing::debug!(target: "btstack", "hfp_ag_release acl 0x{acl_handle:04X}: 0x{status:02X}");
+        status
     }
 
     /// SDP records: A2DP source (player), AVRCP controller and target with
     /// these supported features
     pub fn sdp_register_records(&self, controller_features: u16, target_features: u16) {
+        tracing::debug!(target: "btstack", "sdp records: AVRCP controller features 0x{controller_features:04X}, target 0x{target_features:04X}");
         // SAFETY: on the BTstack thread after sdp_init; buffers are static in C.
         unsafe { ffi::a2dpwb_sdp_register_records(controller_features, target_features) };
     }
@@ -188,6 +197,7 @@ impl Stack {
     /// A2DP source stream endpoint in slot 0..7. Returns the local SEID.
     pub fn create_stream_endpoint(&self, slot: usize, codec_type: u8, caps: &[u8], config: &[u8]) -> Option<u8> {
         if caps.len() > 32 || config.len() > 32 {
+            tracing::debug!(target: "btstack", "stream endpoint slot {slot}: caps {} / config {} bytes over 32", caps.len(), config.len());
             return None;
         }
         // SAFETY: on the BTstack thread after a2dp_source_init; the shim
@@ -202,6 +212,7 @@ impl Stack {
                 config.len() as u16,
             )
         };
+        tracing::debug!(target: "btstack", "stream endpoint slot {slot}: codec type 0x{codec_type:02X}, caps {caps:02X?}, SEID {seid}");
         (seid != 0).then_some(seid)
     }
 
@@ -212,6 +223,7 @@ impl Stack {
     }
 
     pub fn realtek_setup(&self, product_id: u16, folder: &str) {
+        tracing::debug!(target: "btstack", "realtek setup: product ID 0x{product_id:04X}, folder {folder}");
         let p = keep_path(folder);
         // SAFETY: on the BTstack thread; the path outlives BTstack (PATHS,
         // cleared only after deinit); BTstack copies nothing and keeps p.
@@ -225,12 +237,14 @@ impl Stack {
     /// Registers the Realtek chipset driver (runs its init at once); it
     /// opens "<name>.bin", else "<name>" (csrc/realtek.c)
     pub fn set_chipset_realtek(&self) {
+        tracing::debug!(target: "btstack", "chipset: Realtek driver registered");
         // SAFETY: on the BTstack thread after hci_init; the instance is static.
         unsafe { ffi::hci_set_chipset(ffi::a2dpwb_realtek_instance()) };
     }
 
     /// Registers the Broadcom chipset driver with a PatchRAM (.hcd) file
     pub fn set_chipset_bcm(&self, hcd_path: &str) {
+        tracing::debug!(target: "btstack", "chipset: Broadcom driver registered, PatchRAM {hcd_path}");
         let p = keep_path(hcd_path);
         // SAFETY: on the BTstack thread after hci_init; p outlives BTstack.
         unsafe {
@@ -242,6 +256,7 @@ impl Stack {
     /// Intel bootloader firmware download on the installed transport, before
     /// hci_init; ends with [`crate::App::on_intel_firmware`]
     pub fn intel_download_firmware(&self, firmware_folder: &str) {
+        tracing::debug!(target: "btstack", "intel firmware download: folder {firmware_folder}, async {}", transport::is_async());
         let p = keep_path(firmware_folder);
         // SAFETY: on the BTstack thread; transport installed; p outlives it.
         unsafe { ffi::a2dpwb_intel_download_firmware(transport::is_async() as c_int, p) };
@@ -253,12 +268,14 @@ impl Stack {
     pub fn power_on(&self) -> Result<(), i32> {
         // SAFETY: on the BTstack thread, after hci_init.
         let r = unsafe { ffi::hci_power_control(1) };
+        tracing::debug!(target: "btstack", "hci power on: {r}");
         if r == 0 { Ok(()) } else { Err(r) }
     }
 
     pub fn power_off(&self) {
         // SAFETY: on the BTstack thread, after hci_init.
-        unsafe { ffi::hci_power_control(0) };
+        let r = unsafe { ffi::hci_power_control(0) };
+        tracing::debug!(target: "btstack", "hci power off: {r}");
     }
 
     pub fn hci_initialized(&self) -> bool {
@@ -292,17 +309,23 @@ impl Stack {
 
     pub fn cmd_set_afh_classification(&self, map: &[u8; 10]) -> u8 {
         // SAFETY: on the BTstack thread; map has the 10 bytes the shim reads.
-        unsafe { ffi::a2dpwb_cmd_set_afh_classification(map.as_ptr()) }
+        let status = unsafe { ffi::a2dpwb_cmd_set_afh_classification(map.as_ptr()) };
+        tracing::debug!(target: "btstack", "set AFH host classification {map:02X?}: 0x{status:02X}");
+        status
     }
 
     pub fn cmd_read_afh_channel_map(&self, con_handle: u16) -> u8 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::a2dpwb_cmd_read_afh_channel_map(con_handle) }
+        let status = unsafe { ffi::a2dpwb_cmd_read_afh_channel_map(con_handle) };
+        tracing::trace!(target: "btstack", "read AFH channel map 0x{con_handle:04X}: 0x{status:02X}");
+        status
     }
 
     pub fn cmd_read_rssi(&self, con_handle: u16) -> u8 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::a2dpwb_cmd_read_rssi(con_handle) }
+        let status = unsafe { ffi::a2dpwb_cmd_read_rssi(con_handle) };
+        tracing::trace!(target: "btstack", "read RSSI 0x{con_handle:04X}: 0x{status:02X}");
+        status
     }
 
     pub fn cmd_read_bd_addr(&self) -> u8 {
@@ -312,7 +335,9 @@ impl Stack {
 
     pub fn cmd_read_local_version(&self) -> u8 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::a2dpwb_cmd_read_local_version() }
+        let status = unsafe { ffi::a2dpwb_cmd_read_local_version() };
+        tracing::debug!(target: "btstack", "read local version: 0x{status:02X}");
+        status
     }
 
     pub fn acl_state(&self, addr: &[u8; 6]) -> AclState {
@@ -330,22 +355,29 @@ impl Stack {
 
     pub fn inquiry_start(&self, duration_1280ms_units: u8) -> i32 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::gap_inquiry_start(duration_1280ms_units) }
+        let r = unsafe { ffi::gap_inquiry_start(duration_1280ms_units) };
+        tracing::debug!(target: "btstack", "inquiry start ({duration_1280ms_units} x 1.28 s): {r}");
+        r
     }
 
     pub fn inquiry_stop(&self) -> i32 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::gap_inquiry_stop() }
+        let r = unsafe { ffi::gap_inquiry_stop() };
+        tracing::debug!(target: "btstack", "inquiry stop: {r}");
+        r
     }
 
     /// Asks a device found by an inquiry for its name (`clock_offset` with
     /// bit 15 set when known)
     pub fn remote_name_request(&self, addr: &[u8; 6], page_scan_repetition_mode: u8, clock_offset: u16) -> i32 {
         // SAFETY: on the BTstack thread; addr is 6 bytes.
-        unsafe { ffi::gap_remote_name_request(addr.as_ptr(), page_scan_repetition_mode, clock_offset) }
+        let r = unsafe { ffi::gap_remote_name_request(addr.as_ptr(), page_scan_repetition_mode, clock_offset) };
+        tracing::debug!(target: "btstack", "remote name request {}: {r}", addr_str(addr));
+        r
     }
 
     pub fn ssp_confirmation_response(&self, addr: &[u8; 6]) {
+        tracing::debug!(target: "btstack", "SSP confirmation response to {}", addr_str(addr));
         // SAFETY: on the BTstack thread; addr is 6 bytes.
         unsafe { ffi::gap_ssp_confirmation_response(addr.as_ptr()) };
     }
@@ -359,10 +391,13 @@ impl Stack {
 
     pub fn disconnect(&self, con_handle: u16) -> u8 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::gap_disconnect(con_handle) }
+        let status = unsafe { ffi::gap_disconnect(con_handle) };
+        tracing::debug!(target: "btstack", "gap disconnect 0x{con_handle:04X}: 0x{status:02X}");
+        status
     }
 
     pub fn drop_link_key(&self, addr: &[u8; 6]) {
+        tracing::debug!(target: "btstack", "dropping the link key of {}", addr_str(addr));
         let mut a = *addr;
         // SAFETY: on the BTstack thread; a is a writable copy of 6 bytes.
         unsafe { ffi::gap_drop_link_key_for_bd_addr(a.as_mut_ptr()) };
@@ -381,7 +416,9 @@ impl Stack {
 
     pub fn a2dp_disconnect(&self, a2dp_cid: u16) -> u8 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::a2dp_source_disconnect(a2dp_cid) }
+        let status = unsafe { ffi::a2dp_source_disconnect(a2dp_cid) };
+        tracing::debug!(target: "btstack", "a2dp disconnect cid 0x{a2dp_cid:04X}: 0x{status:02X}");
+        status
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -444,6 +481,7 @@ impl Stack {
 
     pub fn a2dp_set_config_other(&self, a2dp_cid: u16, local_seid: u8, remote_seid: u8, info: &[u8]) -> u8 {
         if info.len() > 32 {
+            tracing::debug!(target: "btstack", "set config other: {} bytes of codec info, over 32", info.len());
             return crate::consts::ERROR_CODE_INVALID_HCI_COMMAND_PARAMETERS;
         }
         // SAFETY: on the BTstack thread; the shim copies info (<= 32 bytes)
@@ -526,12 +564,15 @@ impl Stack {
         let mut cid = 0u16;
         // SAFETY: on the BTstack thread; pointers valid during the call.
         let status = unsafe { ffi::avrcp_connect(a.as_mut_ptr(), &mut cid) };
+        tracing::debug!(target: "btstack", "avrcp connect {}: 0x{status:02X}, cid 0x{cid:04X}", addr_str(addr));
         if status == 0 { Ok(cid) } else { Err(status) }
     }
 
     pub fn avrcp_disconnect(&self, avrcp_cid: u16) -> u8 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::avrcp_disconnect(avrcp_cid) }
+        let status = unsafe { ffi::avrcp_disconnect(avrcp_cid) };
+        tracing::debug!(target: "btstack", "avrcp disconnect cid 0x{avrcp_cid:04X}: 0x{status:02X}");
+        status
     }
 
     pub fn avrcp_set_absolute_volume(&self, avrcp_cid: u16, volume: u8) -> u8 {
@@ -551,7 +592,9 @@ impl Stack {
 
     pub fn avrcp_target_set_playback_status(&self, avrcp_cid: u16, status: u8) -> u8 {
         // SAFETY: on the BTstack thread.
-        unsafe { ffi::avrcp_target_set_playback_status(avrcp_cid, status as c_int) }
+        let r = unsafe { ffi::avrcp_target_set_playback_status(avrcp_cid, status as c_int) };
+        tracing::debug!(target: "btstack", "avrcp playback status {status} on cid 0x{avrcp_cid:04X}: 0x{r:02X}");
+        r
     }
 
     pub fn avrcp_target_play_status(&self, avrcp_cid: u16, length_ms: u32, position_ms: u32, status: u8) -> u8 {
@@ -578,6 +621,7 @@ impl Stack {
     /// Closes what HCI left open and deinitializes every profile and HCI
     pub(crate) fn deinit(&self) {
         let init = INITIALIZED.with(|i| i.replace(0));
+        tracing::debug!(target: "btstack", "deinit (initialized 0x{init:02X})");
         // SAFETY: on the BTstack thread after the run loop has stopped; each
         // deinit only for what was initialized.
         unsafe {
@@ -626,6 +670,10 @@ fn log_le_hidden() {
     if transport::le_hidden() {
         tracing::info!(target: "hci", "LE hidden: not using the controller's LE support (LE Audio off)");
     }
+}
+
+pub(crate) fn addr_str(a: &[u8; 6]) -> String {
+    a.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(":")
 }
 
 fn avdtp_state(raw: c_int) -> AvdtpState {

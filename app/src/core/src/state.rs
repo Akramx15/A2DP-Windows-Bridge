@@ -675,6 +675,7 @@ impl CoreState {
             clock_ms: crate::logging::hub().clock(),
             // Set by the resident core's watch (resident.rs)
             v1_running: false,
+            verbose: crate::logging::verbose(),
         };
         let (events, _) = broadcast::channel(256);
         let state = Arc::new(CoreState {
@@ -731,6 +732,7 @@ impl CoreState {
                 Event::Update(u) => s.update = u.clone(),
                 Event::Capture(c) => s.capture = c.clone(),
                 Event::V1Running(b) => s.v1_running = *b,
+                Event::Verbose(v) => s.verbose = *v,
                 // Not state: no revision
                 Event::Link(_) | Event::Log(_) | Event::Receiver(_) | Event::Bye => {
                     let _ = self.events.send((g.0, Arc::new(event)));
@@ -1143,6 +1145,13 @@ impl CoreState {
         done
     }
 
+    /// Verbose logging ran out (the sampler)
+    pub fn expire_verbose(&self) {
+        if crate::logging::expire_verbose() {
+            self.publish(Event::Verbose(None));
+        }
+    }
+
     /// The running capture's size (the sampler, every few seconds)
     pub fn refresh_capture(&self) {
         let Some(known) = self.with_snapshot(|s| s.capture.clone()) else { return };
@@ -1469,6 +1478,25 @@ impl CoreState {
                 let mut lines = crate::logging::hub().recent();
                 lines.retain(|l| l.level <= level);
                 Ok(json(&lines))
+            }
+            Method::DiagSetVerbose { level } => {
+                let v = crate::logging::set_verbose(level);
+                self.publish(Event::Verbose(v));
+                Ok(json(&v))
+            }
+            Method::DiagBundle(params) => {
+                let p = params.unwrap_or_default();
+                let (mask, hci) = (p.mask.unwrap_or(true), p.hci.unwrap_or(true));
+                blocking(Box::new(move |me| {
+                    crate::bundle::create(me, mask, hci).map(|b| json(&b)).map_err(|e| {
+                        tracing::error!("diagnostic bundle: {e}");
+                        ErrorInfo {
+                            code: "diag.bundle_failed".into(),
+                            message: Msg { key: "error.bundle_failed".into(), args: vec![e] },
+                        }
+                    })
+                }))
+                .await
             }
             Method::ReceiverDiscover => {
                 blocking(Box::new(|_| {

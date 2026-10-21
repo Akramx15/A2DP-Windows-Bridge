@@ -349,6 +349,17 @@ impl BtHost {
         let capture = config.capture.clone();
         let le_on = config.le_audio.is_some();
         let le_shared = Arc::new(le::core::LeShared::default());
+        tracing::debug!(
+            "host start: transport {:?}, realtek pid 0x{:04X} files {:?}, intel loader {}, broadcom {:04X?}, payload limit {}, le audio {}, battery {}",
+            config.transport,
+            config.realtek_pid,
+            config.realtek_files,
+            config.intel_loader,
+            config.broadcom_ids,
+            config.media_payload_limit,
+            le_on,
+            config.battery
+        );
         let thread = {
             let (shared, controls, stats) = (shared.clone(), controls.clone(), stats.clone());
             let (le_shared, le_jobs) = (le_shared.clone(), jobs_tx.clone());
@@ -475,6 +486,13 @@ impl BtHost {
             s.power_on_at.is_some_and(|t| t.elapsed() >= INIT_NO_ANSWER) && s.controller_events == 0
         });
         let s = self.shared.lock();
+        tracing::debug!(
+            "init wait: {r:?} after {} ms, init_done {:?}, controller events {}, realtek rom {}",
+            started.elapsed().as_millis(),
+            s.init_done,
+            s.controller_events,
+            s.realtek_rom
+        );
         match (r, s.init_done) {
             (_, Some(Ok(()))) => {
                 tracing::info!("HCI ready after {} ms", started.elapsed().as_millis());
@@ -638,8 +656,13 @@ impl BtHost {
                 .collect()
         };
         ask.sort_by_key(|x| !x.0);
+        tracing::debug!("name requests: {} device(s) without a name", ask.len());
         let until = Instant::now() + NAME_REQUESTS_BUDGET;
-        for (_, addr, psrm, clock) in ask {
+        for (audio, addr, psrm, clock) in ask {
+            tracing::debug!(
+                "name request: {} (audio {audio}, psrm {psrm}, clock offset 0x{clock:04X})",
+                addr_str(&addr)
+            );
             let left = until.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 tracing::info!("no time left to ask the other devices for their names");
@@ -653,7 +676,10 @@ impl BtHost {
             // A device that does not answer: the page timeout (~5 s)
             match self.shared.wait(left.min(NAME_REQUEST_TIMEOUT), true, |s| s.name_done) {
                 Wait::Done => {}
-                Wait::Cancelled => break,
+                Wait::Cancelled => {
+                    tracing::debug!("name requests cancelled");
+                    break;
+                }
                 Wait::TimedOut => {
                     tracing::warn!("remote name request to {} timed out", addr_str(&addr));
                     // The next request waits until this one completes
@@ -670,9 +696,11 @@ impl BtHost {
     /// Connects A2DP signaling to `addr` and discovers its codecs
     pub fn connect(&self, addr: [u8; 6]) -> Result<RemoteCaps, ConnectFailure> {
         if !self.hci_ready() {
+            tracing::debug!("connect {}: HCI not ready", addr_str(&addr));
             return Err(ConnectFailure::Other);
         }
         if self.stalled() {
+            tracing::debug!("connect {}: stack stalled", addr_str(&addr));
             self.set_failure(ConnectFailure::Stalled);
             return Err(ConnectFailure::Stalled);
         }
@@ -703,6 +731,7 @@ impl BtHost {
     }
 
     fn establish_and_wait(&self, addr: [u8; 6]) -> Result<RemoteCaps, ConnectFailure> {
+        let started = Instant::now();
         match self.call(JOB_TIMEOUT, move |app, s| app.establish(s, addr)) {
             Some(Ok(())) => {}
             r => {
@@ -729,6 +758,11 @@ impl BtHost {
                 } else {
                     self.last_connect_failure().unwrap_or(ConnectFailure::LinkLost)
                 };
+                tracing::debug!(
+                    "connect {}: wait ended {w:?} after {} ms, stuck {stuck}, failure {f:?}",
+                    addr_str(&addr),
+                    started.elapsed().as_millis()
+                );
                 self.abort_pending_connection();
                 // Set after the abort, whose failed CONNECTION_ESTABLISHED is
                 // classified as a lost link
@@ -739,11 +773,18 @@ impl BtHost {
         if self.shared.lock().connect_done != Some(true) {
             self.classify_link_lost();
             let f = self.last_connect_failure().unwrap_or(ConnectFailure::Other);
+            tracing::debug!("connect {}: failed after {} ms ({f:?})", addr_str(&addr), started.elapsed().as_millis());
             self.abort_pending_connection();
             self.set_failure(f);
             return Err(f);
         }
-        Ok(self.shared.lock().remote_caps.clone())
+        let caps = self.shared.lock().remote_caps.clone();
+        tracing::debug!(
+            "connect {}: signaling up after {} ms, remote caps {caps:?}",
+            addr_str(&addr),
+            started.elapsed().as_millis()
+        );
+        Ok(caps)
     }
 
     /// LinkLost -> Refused when the device ended the link itself
@@ -757,6 +798,7 @@ impl BtHost {
             s.target_acl_down_reason != 0 || s.target_acl_handle.is_none()
         });
         let reason = self.shared.lock().target_acl_down_reason;
+        tracing::debug!("link lost: ACL down reason 0x{reason:02X} ({})", events::hci_error_string(reason));
         use btstack_sys::consts::*;
         if matches!(
             reason,
@@ -791,7 +833,10 @@ impl BtHost {
             }
             _ => None,
         };
-        let Some(why) = why else { return false };
+        let Some(why) = why else {
+            tracing::debug!("stall check: the stack answers, the remote was silent");
+            return false;
+        };
         tracing::error!("Bluetooth stack stalled: {why}");
         self.shared.update(|s| s.stalled = true);
         true
@@ -827,6 +872,11 @@ impl BtHost {
         self.shared.update(|s| s.probe_pending = false);
         if !answered {
             tracing::warn!("the controller did not answer HCI Read BD_ADDR within {} ms", timeout.as_millis());
+        } else {
+            tracing::debug!(
+                "controller probe: answered within {} ms",
+                timeout.saturating_sub(deadline.saturating_duration_since(Instant::now())).as_millis()
+            );
         }
         answered
     }
@@ -849,6 +899,10 @@ impl BtHost {
                 Ok(caps) => return Ok(caps),
                 Err(e) => e,
             };
+            tracing::debug!(
+                "connect attempt {attempt}/{CONNECT_ATTEMPTS} to {}: {err:?} (re-paired {repaired})",
+                addr_str(&addr)
+            );
             if cancelled() {
                 return Err(ConnectFailure::Cancelled);
             }
@@ -888,6 +942,7 @@ impl BtHost {
         }
         self.shared.update(|s| s.acl_down = false);
         if self.call(Duration::from_secs(2), |app, s| app.drop_acl(s)) != Some(true) {
+            tracing::debug!("drop ACL: no link to drop");
             return;
         }
         tracing::info!("dropping the ACL link before trying again");
@@ -903,6 +958,7 @@ impl BtHost {
         else {
             return;
         };
+        tracing::debug!("leftover AVDTP connection to {} released (wait {wait})", addr_str(&addr));
         // An open signaling channel is released asynchronously; one that
         // never opened is freed at once
         if wait && self.shared.wait(DISCONNECT_TIMEOUT, false, |s| s.released) != Wait::Done {
@@ -924,6 +980,7 @@ impl BtHost {
     fn abort_pending_connection(&self) {
         self.shared.update(|s| s.released = false);
         let wait = self.call(JOB_TIMEOUT, |app, s| app.abort(s)).unwrap_or(false);
+        tracing::debug!("abort pending connection: release wait {wait}");
         // A plain wait, not a cancellable one: cleanup must finish even when
         // a user stop latched the cancel
         if wait && self.shared.wait(DISCONNECT_TIMEOUT, false, |s| s.released) != Wait::Done {
@@ -945,8 +1002,10 @@ impl BtHost {
     /// size to encode for.
     pub fn configure(&self, config: &Configuration) -> Result<u16, ConfigureError> {
         if !self.shared.lock().connected {
+            tracing::debug!("configure: not connected");
             return Err(ConfigureError::NotConnected);
         }
+        tracing::debug!("configure: {config:?}");
         self.shared.update(|s| s.stream_done = None);
         let c = config.clone();
         match self.call(JOB_TIMEOUT, move |app, s| app.set_config(s, &c)) {
@@ -962,10 +1021,12 @@ impl BtHost {
         }
         let s = self.shared.lock();
         if s.stream_done != Some(true) {
+            tracing::debug!("configure: stream not established ({:?})", s.stream_done);
             return Err(ConfigureError::Refused);
         }
         let mtu = s.media_mtu;
         drop(s);
+        tracing::debug!("configure: stream established, media payload {mtu}");
         if let Some(addr) = *self.remote_addr.lock().unwrap_or_else(|e| e.into_inner()) {
             *self.last.lock().unwrap_or_else(|e| e.into_inner()) = Some(LastStream { addr, config: config.clone() });
         }
@@ -975,6 +1036,7 @@ impl BtHost {
     /// AVDTP Start; waits until it is acknowledged
     pub fn start_stream(&self) -> bool {
         if !self.shared.lock().connected {
+            tracing::debug!("start stream: not connected");
             return false;
         }
         self.shared.update(|s| s.start_done = None);
@@ -989,7 +1051,9 @@ impl BtHost {
             tracing::warn!("stream start timed out or cancelled");
             return false;
         }
-        self.shared.lock().start_done == Some(true)
+        let done = self.shared.lock().start_done;
+        tracing::debug!("start stream: {done:?}");
+        done == Some(true)
     }
 
     /// AVDTP Suspend
@@ -997,6 +1061,7 @@ impl BtHost {
         if !self.shared.lock().streaming {
             return;
         }
+        tracing::debug!("stop stream: suspending");
         self.call(JOB_TIMEOUT, |app, s| app.pause_stream(s));
         self.shared.update(|s| s.streaming = false);
     }
@@ -1080,6 +1145,7 @@ impl BtHost {
             s.last_connect_failure = None;
         });
         tracing::info!("reconnecting to {}", addr_str(&addr));
+        tracing::debug!("reconnect: previous configuration {config:?}");
         self.release_leftover_avdtp(addr);
         let Ok(remote) = self.establish_and_wait(addr) else {
             tracing::warn!("reconnection failed");
@@ -1134,6 +1200,7 @@ impl BtHost {
     /// Sets the headphones' volume; while one request is in flight, newer
     /// values replace the queued one
     pub fn request_volume(&self, volume: u8) {
+        tracing::debug!("volume request: {volume}");
         self.controls.volume_request.store(volume.min(127) as i32, Ordering::Release);
         self.post(|app, s| app.send_pending_volume(s));
     }
@@ -1142,6 +1209,7 @@ impl BtHost {
     /// the headphones' own). Follows the headphones' volume when the link
     /// drops, so a reconnect restores the last one.
     pub fn set_restore_volume(&self, volume: Option<u8>) {
+        tracing::debug!("restore volume: {volume:?}");
         self.controls.restore_volume.store(volume.map_or(-1, |v| v.min(127) as i32), Ordering::Release);
     }
 
@@ -1151,6 +1219,7 @@ impl BtHost {
 
     /// Headphone buttons as media keys ([`HostEvent::MediaKey`]), default on
     pub fn set_media_keys(&self, enabled: bool) {
+        tracing::debug!("media keys: {enabled}");
         self.controls.media_keys.store(enabled, Ordering::Release);
     }
 
@@ -1159,6 +1228,7 @@ impl BtHost {
     pub fn set_afh_policy(&self, policy: &str) {
         let mut p = self.controls.afh_policy.lock().unwrap_or_else(|e| e.into_inner());
         if *p != policy {
+            tracing::debug!("AFH policy: {:?} -> {policy:?}", *p);
             *p = policy.to_string();
             self.controls.afh_version.fetch_add(1, Ordering::AcqRel);
         }
@@ -1167,6 +1237,7 @@ impl BtHost {
     /// Upper limit of the media payload (clamped to the valid range); applies
     /// to streams established afterwards
     pub fn set_media_payload_limit(&self, limit: u16) {
+        tracing::debug!("media payload limit: {limit} (clamped {})", media::clamp_media_payload_limit(limit as u32));
         self.controls
             .media_payload_limit
             .store(media::clamp_media_payload_limit(limit as u32) as u32, Ordering::Release);
@@ -1241,7 +1312,7 @@ impl BtHost {
                     tracing::warn!("HCI power off timed out");
                 }
             }
-            Some(false) => {}
+            Some(false) => tracing::debug!("power off: HCI not on, nothing to do"),
             None => tracing::warn!("the run loop did not take the power off request"),
         }
     }

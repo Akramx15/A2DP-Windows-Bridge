@@ -1908,6 +1908,16 @@ option {
 .capture-saved {
   flex-wrap: wrap;
 }
+.bundle-attach {
+  flex-basis: 100%;
+}
+.verbose-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  font-size: var(--fs-12);
+}
 .capture-saved > .icon {
   color: var(--good-text);
 }

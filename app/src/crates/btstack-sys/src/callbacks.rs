@@ -57,6 +57,7 @@ fn dispatch(stack: &Stack, event: Pending) -> bool {
         None => true,
         Some(event) => {
             PENDING.with(|p| p.borrow_mut().push_back(event));
+            tracing::trace!(target: "btstack", "event queued (app busy), {} pending", PENDING.with(|p| p.borrow().len()));
             false
         }
     }
@@ -142,6 +143,7 @@ extern "C" fn a2dpwb_rs_on_wake() {
 extern "C" fn a2dpwb_rs_on_timer(id: u32) {
     guard((), || {
         let stack = Stack::new();
+        tracing::trace!(target: "btstack", "timer {id} fired");
         if dispatch(&stack, Pending::Timer(id)) {
             drain_pending(&stack);
         }
@@ -175,6 +177,7 @@ extern "C" fn a2dpwb_rs_on_packet(source: u8, packet_type: u8, channel: u16, pac
             drain_pending(&stack);
         } else {
             PENDING.with(|p| p.borrow_mut().push_back(Pending::Packet(source, packet_type, channel, data.to_vec())));
+            tracing::trace!(target: "btstack", "{source:?} packet of {} bytes queued (app busy)", data.len());
         }
     })
 }
@@ -183,6 +186,7 @@ extern "C" fn a2dpwb_rs_on_packet(source: u8, packet_type: u8, channel: u16, pac
 extern "C" fn a2dpwb_rs_intel_done(result: c_int) {
     guard((), || {
         let stack = Stack::new();
+        tracing::debug!(target: "btstack", "intel firmware loader done: {result}");
         if dispatch(&stack, Pending::Intel(result)) {
             drain_pending(&stack);
         }

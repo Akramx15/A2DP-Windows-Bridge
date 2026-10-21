@@ -150,9 +150,15 @@ pub fn xq_max_bitpool(sample_rate: u32) -> u8 {
 fn sink_bitpool(wanted: u8, config: &EncoderConfig) -> u8 {
     let (min, max) = (config.peer.sbc_min_bitpool, config.peer.sbc_max_bitpool);
     if max < 2 {
+        tracing::debug!("SBC: bitpool {wanted} (profile {}, sink range not known)", config.peer.sbc_bitpool);
         return wanted;
     }
-    wanted.min(max).max(min.min(max)).max(2)
+    let bitpool = wanted.min(max).max(min.min(max)).max(2);
+    tracing::debug!(
+        "SBC: bitpool {bitpool} (wanted {wanted}, profile {}, sink range {min}..{max})",
+        config.peer.sbc_bitpool
+    );
+    bitpool
 }
 
 /// The bitpool a profile's Auto takes for a channel mode: the quality's

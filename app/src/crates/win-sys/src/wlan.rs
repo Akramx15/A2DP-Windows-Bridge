@@ -108,6 +108,7 @@ pub fn survey() -> windows::core::Result<WifiSurvey> {
     // SAFETY: open client handle, valid out pointer.
     let err = unsafe { WlanEnumInterfaces(client.0, None, &mut list) };
     if err != ERROR_SUCCESS.0 {
+        tracing::debug!("wlan: WlanEnumInterfaces failed ({err})");
         return Err(windows::Win32::Foundation::WIN32_ERROR(err).into());
     }
     let list = WlanMemory(list.cast());
@@ -129,6 +130,14 @@ pub fn survey() -> windows::core::Result<WifiSurvey> {
             let number = if bss_mhz.is_none() { channel_number(&client, &intf.InterfaceGuid) } else { None };
             connected_channel_24ghz(bss_mhz, number, phy)
         });
+        tracing::debug!(
+            "wlan: {:?} state {}, associated {:?} (PHY {:?}), {} BSS heard, 2.4 GHz channel {channel_24ghz:?}",
+            crate::autostart::utf16_string(&intf.strInterfaceDescription),
+            intf.isState.0,
+            association.map(|(b, _)| crate::bt_paired::format_address(&b)),
+            association.map(|(_, phy)| phy.0),
+            bss.len()
+        );
         result.interfaces.push(WifiInterface {
             description: crate::autostart::utf16_string(&intf.strInterfaceDescription),
             connected,
@@ -137,6 +146,12 @@ pub fn survey() -> windows::core::Result<WifiSurvey> {
         });
         result.bss.extend(bss);
     }
+    tracing::debug!(
+        "wlan: {} interface(s) (client version {negotiated}), {} BSS, connected 2.4 GHz channels {:?}",
+        result.interfaces.len(),
+        result.bss.len(),
+        result.connected_channels_24ghz()
+    );
     Ok(result)
 }
 
@@ -161,6 +176,12 @@ fn bss_list(client: &Client, interface: &windows::core::GUID, connected_bssid: O
         .map(|e| {
             let frequency_mhz = e.ulChCenterFrequency / 1000; // reported in kHz
             let ssid_len = (e.dot11Ssid.uSSIDLength as usize).min(e.dot11Ssid.ucSSID.len());
+            tracing::trace!(
+                "wlan: BSS {} {} MHz {} dBm",
+                crate::bt_paired::format_address(&e.dot11Bssid),
+                frequency_mhz,
+                e.lRssi
+            );
             WifiBss {
                 ssid: String::from_utf8_lossy(&e.dot11Ssid.ucSSID[..ssid_len]).into_owned(),
                 bssid: e.dot11Bssid,
@@ -183,6 +204,7 @@ fn association(client: &Client, interface: &windows::core::GUID) -> Option<([u8;
         WlanQueryInterface(client.0, interface, wlan_intf_opcode_current_connection, None, &mut size, &mut data, None)
     };
     if err != ERROR_SUCCESS.0 || data.is_null() {
+        tracing::debug!("wlan: querying the current connection failed ({err})");
         return None;
     }
     let data = WlanMemory(data);
@@ -205,6 +227,7 @@ fn channel_number(client: &Client, interface: &windows::core::GUID) -> Option<u3
         WlanQueryInterface(client.0, interface, wlan_intf_opcode_channel_number, None, &mut size, &mut data, None)
     };
     if err != ERROR_SUCCESS.0 || data.is_null() {
+        tracing::debug!("wlan: querying the channel number failed ({err})");
         return None;
     }
     let data = WlanMemory(data);

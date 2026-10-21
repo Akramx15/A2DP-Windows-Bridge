@@ -52,6 +52,13 @@ The defaults give the best sound; most profiles need nothing under **Advanced**.
 - **Log**: live, filtered by level (all, info and above, warnings and errors, errors only) and by text. **Copy Shown Log** copies what is shown
 - **Start HCI Capture** / **Stop HCI Capture** (see [Verifying the Media Stream](#verify-stream))
 - **Copy Diagnostics**: version, OS, adapter, profile, the flow, warnings / errors and the recent log on the clipboard, ready to paste into a bug report. **Mask Bluetooth addresses** (on by default) keeps only the vendor part (`AA:BB:CC:xx:xx:xx`)
+- **Save Diagnostic Bundle**: one `.zip` (in `logs\bundles\` of the settings folder) to attach to a bug report: the diagnostic info, the log files of the core, the window and the driver helper, crash reports, system information (USB Bluetooth adapters and their drivers, Windows' paired devices, audio devices), settings and profiles (never the link keys), and the HCI flight recorder. With **Mask Bluetooth addresses** on, the text files are masked; the HCI captures keep the addresses
+- **Verbose logging**: **Detailed (debug)** or **Everything (trace)** logs far more about Bluetooth, USB, audio capture and encoding. It stays on for 24 hours (trace, which logs every packet: 1 hour), also across restarts (for problems at start-up), then turns itself off. Turn it on, reproduce the problem, then save a diagnostic bundle
+
+A2DPWB also records some things all the time, so that a problem that happened once can still be looked at:
+
+- **HCI flight recorder**: the last few minutes of Bluetooth traffic are kept in memory (media payloads cut short, pairing keys removed) and saved to `logs\hci\` whenever a stream fails or a connection is lost (the newest 10 files are kept)
+- **Crash reports**: if A2DPWB crashes, a `.dmp` minidump and a `.txt` file go to `logs\crash\` (the newest 5 per program)
 
 With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test** tab (see [Peer Receiver Test](#receiver)).
 

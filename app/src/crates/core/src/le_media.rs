@@ -136,6 +136,7 @@ pub(crate) struct WindowsMedia {
 
 impl MediaBackend for WindowsMedia {
     fn start(&mut self, changed: ChangedFn) {
+        tracing::debug!("MCP media: starting the Windows backend");
         self.stop();
         self.shared = Arc::new(Shared::default());
         let shared = self.shared.clone();
@@ -150,6 +151,7 @@ impl MediaBackend for WindowsMedia {
         let Some(t) = self.thread.take() else { return };
         {
             let mut s = self.shared.lock();
+            tracing::debug!("MCP media: stopping, {} task(s) dropped", s.tasks.len());
             s.stopping = true;
             s.tasks.clear();
         }
@@ -166,6 +168,11 @@ impl MediaBackend for WindowsMedia {
     }
 
     fn command(&mut self, opcode: u8, param: i32, done: DoneFn) {
+        tracing::debug!(
+            "MCP media: command {} (param {param}), backend running {}",
+            mcp_model::opcode_name(opcode),
+            self.thread.is_some()
+        );
         if self.thread.is_none() {
             return done(RESULT_MEDIA_PLAYER_INACTIVE);
         }
@@ -173,6 +180,7 @@ impl MediaBackend for WindowsMedia {
     }
 
     fn seek(&mut self, position: i32) {
+        tracing::debug!("MCP media: seek to {position} cs, backend running {}", self.thread.is_some());
         if self.thread.is_some() {
             self.post(Task::Seek(position));
         }
@@ -224,6 +232,16 @@ impl Worker {
         if !prev.differs_from(&next, now_ms()) {
             return;
         }
+        tracing::debug!(
+            "MCP media: changed: state {}, track {:08x} -> {:08x}, duration {} cs, position {} cs, rate {}, seek {}",
+            mcp_model::state_name(next.state),
+            prev.track,
+            next.track,
+            next.duration,
+            next.position,
+            next.rate,
+            next.can_seek
+        );
         if prev.state != next.state || prev.player != next.player {
             tracing::info!(
                 "MCP: media player \"{}\": {}",
@@ -242,6 +260,7 @@ impl Worker {
         }
         self.manager_tried = Some(Instant::now());
         self.manager = wait_result!(Manager::RequestAsync());
+        tracing::debug!("MCP media: session manager request: available {}", self.manager.is_some());
         match &self.manager {
             Some(_) => tracing::info!("MCP: reading the Windows media session (System Media Transport Controls)"),
             None if !self.manager_logged => {
@@ -268,6 +287,7 @@ impl Worker {
             .ok()
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| name_from_aumid(aumid));
+        tracing::debug!("MCP media: player {aumid} is \"{name}\"");
         self.names.insert(aumid.to_string(), name.clone());
         name
     }
@@ -377,6 +397,10 @@ impl Worker {
             OP_MOVE_RELATIVE => {
                 let now = cur.position_now(now_ms());
                 if !cur.can_seek || now < 0 {
+                    tracing::debug!(
+                        "MCP media: move relative {param} not possible (seek {}, position {now})",
+                        cur.can_seek
+                    );
                     return RESULT_COMMAND_CANNOT_BE_COMPLETED;
                 }
                 let mut target = (i64::from(now) + i64::from(param)).max(0);
@@ -385,7 +409,10 @@ impl Worker {
                 }
                 Some(Worker::seek_session(&s, target as i32))
             }
-            _ => return RESULT_OPCODE_NOT_SUPPORTED,
+            _ => {
+                tracing::debug!("MCP media: opcode 0x{op:02x} not supported");
+                return RESULT_OPCODE_NOT_SUPPORTED;
+            }
         };
         tracing::info!(
             "MCP: {} -> \"{}\": {}",
@@ -402,8 +429,12 @@ impl Worker {
 
     fn seek(&mut self, mut position: i32) {
         let cur = self.current();
-        let Some(s) = self.session() else { return };
+        let Some(s) = self.session() else {
+            tracing::debug!("MCP media: seek ignored, no media session");
+            return;
+        };
         if !cur.can_seek {
+            tracing::debug!("MCP media: seek ignored, \"{}\" cannot seek", cur.player);
             return;
         }
         if cur.duration > 0 {

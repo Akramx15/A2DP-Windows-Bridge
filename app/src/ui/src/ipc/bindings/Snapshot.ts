@@ -6,6 +6,7 @@ import type { Profile } from "./Profile";
 import type { Settings } from "./Settings";
 import type { StreamStatus } from "./StreamStatus";
 import type { UpdateState } from "./UpdateState";
+import type { VerboseState } from "./VerboseState";
 
 /**
  * The whole state
@@ -38,4 +39,8 @@ clock_ms?: number | null,
  * A2DPWB v1 runs (its single-instance mutex is held): it may hold the
  * Bluetooth adapter, so the UI asks to exit it
  */
-v1_running: boolean, };
+v1_running: boolean, 
+/**
+ * Verbose logging is on (diag.set_verbose): until when, at what level
+ */
+verbose?: VerboseState | null, };
