@@ -392,6 +392,17 @@ pub struct Profile {
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
+    /// Spatial engine (the xm6 360 chain): the captured audio runs through
+    /// this program before it is encoded
+    #[serde(default)]
+    pub spatial_engine: bool,
+    /// Path to the spatial engine executable (its assets sit next to it)
+    #[serde(default)]
+    pub spatial_engine_path: String,
+    /// Folder with the spatial engine programs (the registry the user picks
+    /// from)
+    #[serde(default)]
+    pub spatial_engine_registry: String,
     pub max_media_payload: u16,
     /// An LE Audio device (experimental, LC3): codec, quality, abr,
     /// sample_rate and bit_depth do not apply, capture_mode is "loopback"
@@ -467,6 +478,19 @@ impl Default for DevLog {
     fn default() -> Self {
         DevLog { keep_days: 7, day_cap_mb: 100, always_verbose: None, health_every_interval: false }
     }
+}
+
+/// A spatial engine program (the xm6 360 chain) the user can choose
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SpatialEngine {
+    /// The stage's id (its folder name)
+    pub id: String,
+    /// The stage's label (from its manifest)
+    pub label: String,
+    /// The engine program
+    pub path: String,
+    /// The stage's family ("sony", "upmixer")
+    pub family: String,
 }
 
 /// Application settings the UI edits
@@ -970,6 +994,9 @@ pub enum Method {
     /// -> AudioApp[]
     #[serde(rename = "audio.apps")]
     AudioApps,
+    /// -> SpatialEngine[]: the engine programs in a folder
+    #[serde(rename = "spatial.engines")]
+    SpatialEngines { path: String },
     /// Log lines at `logs` level and above (None: off), link samples, the
     /// receiver test's state (absent: off)
     #[serde(rename = "diag.subscribe")]

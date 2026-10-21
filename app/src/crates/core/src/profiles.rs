@@ -67,6 +67,17 @@ pub struct Profile {
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
+    /// Spatial engine (the xm6 360 chain): the captured audio runs through
+    /// this program before it is encoded
+    #[serde(default)]
+    pub spatial_engine: bool,
+    /// Path to the spatial engine executable (its assets sit next to it)
+    #[serde(default)]
+    pub spatial_engine_path: String,
+    /// Folder with the spatial engine programs (the registry the user picks
+    /// from)
+    #[serde(default)]
+    pub spatial_engine_registry: String,
     /// Max media packet size (None in files from before v1.1: the legacy
     /// setting applies)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -123,6 +134,9 @@ impl Default for Profile {
             volume_sync: auto(),
             volume_device_id: String::new(),
             volume_device_name: String::new(),
+            spatial_engine: false,
+            spatial_engine_path: String::new(),
+            spatial_engine_registry: String::new(),
             max_media_payload: None,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
@@ -208,6 +222,13 @@ impl Profile {
             le: self
                 .le_audio
                 .then(|| bt_host::LeRequest { low_latency: self.le_low_latency, ..bt_host::LeRequest::default() }),
+            spatial: self
+                .spatial_engine
+                .then(|| PathBuf::from(self.spatial_engine_path.trim()))
+                .filter(|p| !p.as_os_str().is_empty()),
+            // A profile asking for the high LDAC rate keeps it and the
+            // pipeline resamples around the engine
+            spatial_keep_rate: self.sample_rate == 96_000,
         })
     }
 }

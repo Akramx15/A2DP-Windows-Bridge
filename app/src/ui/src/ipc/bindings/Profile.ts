@@ -27,7 +27,21 @@ capture_mode: string, audio_device_id: string, audio_device_name: string, auto_s
 /**
  * auto, off, device
  */
-volume_sync: string, volume_device_id: string, volume_device_name: string, max_media_payload: number, 
+volume_sync: string, volume_device_id: string, volume_device_name: string, 
+/**
+ * Spatial engine (the xm6 360 chain): the captured audio runs through
+ * this program before it is encoded
+ */
+spatial_engine: boolean, 
+/**
+ * Path to the spatial engine executable (its assets sit next to it)
+ */
+spatial_engine_path: string, 
+/**
+ * Folder with the spatial engine programs (the registry the user picks
+ * from)
+ */
+spatial_engine_registry: string, max_media_payload: number, 
 /**
  * An LE Audio device (experimental, LC3): codec, quality, abr,
  * sample_rate and bit_depth do not apply, capture_mode is "loopback"

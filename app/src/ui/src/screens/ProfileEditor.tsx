@@ -14,6 +14,7 @@ import { createEffect, createMemo, createResource, createSignal, For, on, Show }
 import { createStore, unwrap } from "solid-js/store";
 import { errorText, useApp } from "../app/context";
 import { Banner, Button, Check, Dialog, Field, IconButton, Section, Segmented, Select, Toggle } from "../components/controls";
+import { SpatialPicker } from "../components/SpatialPicker";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
@@ -423,6 +424,37 @@ export function ProfileEditor(props: { original: string | null }) {
                 />
               )}
             </Field>
+            <Toggle
+              label={t("profile.spatial_engine")}
+              hint={t("profile.spatial_engine_hint")}
+              checked={p.spatial_engine}
+              onChange={(v) => setP("spatial_engine", v)}
+            />
+            <Show when={p.spatial_engine}>
+              <Field label={t("profile.spatial_engine_path")}>
+                {(id, described) => (
+                  <input
+                    id={id}
+                    class="input"
+                    value={p.spatial_engine_path}
+                    aria-describedby={described}
+                    onInput={(e) => setP("spatial_engine_path", e.currentTarget.value)}
+                  />
+                )}
+              </Field>
+              <Field label={t("profile.spatial_engine_registry")} hint={t("profile.spatial_engine_registry_hint")}>
+                {(id, described) => (
+                  <input
+                    id={id}
+                    class="input"
+                    value={p.spatial_engine_registry}
+                    aria-describedby={described}
+                    onInput={(e) => setP("spatial_engine_registry", e.currentTarget.value)}
+                  />
+                )}
+              </Field>
+              <SpatialPicker profile={p} onPick={(e) => setP({ spatial_engine: true, spatial_engine_path: e.path })} />
+            </Show>
           </Section>
 
           {/* The one setting left of "Advanced": shown as it is (issue #86) */}

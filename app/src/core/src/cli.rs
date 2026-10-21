@@ -54,6 +54,10 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
                         statistics of a measuring receiver (tools/linux_sink);
                         without -d, stream to that receiver
   --scan [seconds]      list nearby devices and exit
+  --spatial <exe>       run the captured audio through a spatial engine
+                        (the xm6 360 chain) before it is encoded; the
+                        engine reads 48 kHz stereo float32 on stdin and
+                        writes the processed audio on stdout
 
 LE Audio (experimental, LC3 over LE isochronous channels):
   --le-audio            stream to the LE Audio device -d (BAP unicast, LC3)
@@ -109,6 +113,8 @@ struct Args {
     /// --sessions: streams one after the other in this process (Connect,
     /// --duration, Disconnect), as the UI's Disconnect / Connect (issue #84)
     sessions: u32,
+    /// --spatial: the spatial engine executable (the xm6 360 chain)
+    spatial: Option<PathBuf>,
     le: LeArgs,
 }
 
@@ -172,6 +178,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         test_tone: false,
         duration: None,
         sessions: 1,
+        spatial: None,
         le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
@@ -254,6 +261,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--hci-tcp" => a.hci_tcp = Some(value(&mut it, "--hci-tcp")?),
             "--hci-capture" => a.hci_capture = Some(value(&mut it, "--hci-capture")?.into()),
             "--test-tone" => a.test_tone = true,
+            "--spatial" => a.spatial = Some(PathBuf::from(value(&mut it, "--spatial")?)),
             "--duration" => a.duration = Some(value(&mut it, "--duration")?.parse().map_err(|_| "bad --duration")?),
             "--sessions" => {
                 a.sessions = value(&mut it, "--sessions")?.parse().map_err(|_| "bad --sessions")?;
@@ -488,6 +496,8 @@ pub fn run(args: &[String]) -> i32 {
         volume_sync: VolumeSync::Off,
         max_media_payload: a.max_packet,
         le: None,
+        spatial: a.spatial.clone(),
+        spatial_keep_rate: a.rate == Some(96_000),
     };
 
     let mut code = 0;

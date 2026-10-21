@@ -116,6 +116,9 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         volume_sync: p.volume_sync.clone(),
         volume_device_id: p.volume_device_id.clone(),
         volume_device_name: p.volume_device_name.clone(),
+        spatial_engine: p.spatial_engine,
+        spatial_engine_path: p.spatial_engine_path.clone(),
+        spatial_engine_registry: p.spatial_engine_registry.clone(),
         max_media_payload: p.max_media_payload.unwrap_or(legacy),
         le_audio: p.le_audio,
         le_low_latency: p.le_low_latency,
@@ -149,6 +152,9 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.volume_sync = p.volume_sync.clone();
     c.volume_device_id = p.volume_device_id.clone();
     c.volume_device_name = p.volume_device_name.clone();
+    c.spatial_engine = p.spatial_engine;
+    c.spatial_engine_path = p.spatial_engine_path.clone();
+    c.spatial_engine_registry = p.spatial_engine_registry.clone();
     c.max_media_payload = Some(bt_host::media::clamp_media_payload_limit(p.max_media_payload as u32));
     c.le_audio = p.le_audio;
     c.le_low_latency = p.le_low_latency;
@@ -1265,6 +1271,10 @@ impl CoreState {
                 // core while it was closed) finds the report
                 self.refresh_crashes();
                 Ok(json(&self.snapshot().1))
+            }
+            Method::SpatialEngines { path } => {
+                let engines = a2dpwb_core::spatial::list(std::path::Path::new(&path));
+                Ok(json(&engines))
             }
             Method::StreamStart { profile } => self.start_profile(&profile).map(|()| Value::Null),
             Method::StreamStartCustom {

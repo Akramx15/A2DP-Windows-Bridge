@@ -36,6 +36,7 @@ import type { Settings as BSettings } from "./bindings/Settings";
 import type { SettingsApplied as BSettingsApplied } from "./bindings/SettingsApplied";
 import type { Snapshot as BSnapshot } from "./bindings/Snapshot";
 import type { SourceInfo as BSourceInfo } from "./bindings/SourceInfo";
+import type { SpatialEngine as BSpatialEngine } from "./bindings/SpatialEngine";
 import type { StreamInfo as BStreamInfo } from "./bindings/StreamInfo";
 import type { StreamStatus as BStreamStatus } from "./bindings/StreamStatus";
 import type { UpdateState as BUpdateState } from "./bindings/UpdateState";
@@ -60,6 +61,7 @@ export type { StreamState } from "./bindings/StreamState";
 
 export type Snapshot = Wire<BSnapshot>;
 export type SourceInfo = Wire<BSourceInfo>;
+export type SpatialEngine = Wire<BSpatialEngine>;
 export type AdapterInfo = Wire<BAdapterInfo>;
 export type AdapterState = Wire<BAdapterState>;
 export type AudioApp = Wire<BAudioApp>;
@@ -113,6 +115,7 @@ interface Results {
   "adapter.download_firmware": AdapterInfo[];
   "audio.devices": AudioDevice[];
   "audio.apps": AudioApp[];
+  "spatial.engines": SpatialEngine[];
   "diag.capture_start": string;
   "diag.capture_stop": CaptureState | null;
   "diag.info": DiagInfo;
