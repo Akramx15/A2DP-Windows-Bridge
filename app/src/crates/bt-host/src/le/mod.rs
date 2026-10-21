@@ -216,7 +216,9 @@ impl LeSduSink {
 
     /// One SDU per CIS for the next frame interval, in plan order
     pub fn push(&self, set: SduSet) {
-        self.queue.lock().unwrap_or_else(|e| e.into_inner()).push(set);
+        let mut q = self.queue.lock().unwrap_or_else(|e| e.into_inner());
+        q.push(set);
+        tracing::trace!("LE Audio: SDU set queued, {} buffered", q.len());
     }
 
     /// A set to encode the next frame into (one the sender has sent and

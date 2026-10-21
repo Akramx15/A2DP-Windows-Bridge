@@ -167,6 +167,7 @@ impl StreamHealth {
         let capture = capture();
         let peaks = take_peaks(&self.stats, capture);
         let c = counters(&self.stats, capture);
+        tracing::trace!("health: counters {c:?}, peaks {peaks:?}, capture {capture:?}");
         let process = Process {
             cpu_percent: cpu_percent(self.prev.cpu, c.cpu, elapsed),
             threads: win_sys::perf::process_threads(),
@@ -185,6 +186,13 @@ impl StreamHealth {
             } else {
                 tracing::info!("stream health {}: {line}", self.stream);
             }
+        } else {
+            tracing::debug!(
+                "health interval {} of stream {}: {}",
+                self.intervals,
+                self.stream,
+                self.line(elapsed, &d, &peaks, Some(&process))
+            );
         }
         self.prev = c;
         self.interval_start = now;

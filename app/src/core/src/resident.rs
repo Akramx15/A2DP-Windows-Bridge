@@ -160,6 +160,7 @@ async fn sampler(state: Arc<CoreState>) {
         }
         if n.is_multiple_of(CAPTURE_TICKS) {
             state.refresh_capture();
+            state.expire_verbose();
         }
         if !state.link_subscribed() {
             last_link = None;

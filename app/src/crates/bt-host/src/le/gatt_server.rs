@@ -369,6 +369,7 @@ impl GattServer {
             return;
         }
         let stored = stack.tlv_get(TAG_DB_HASH);
+        tracing::debug!("LE Audio: GATT database hash {:02X?}, stored {:02X?}", self.db_hash, stored.as_deref());
         if stored.as_deref() == Some(&self.db_hash[..]) {
             return;
         }
@@ -424,10 +425,12 @@ impl GattServer {
 
     /// A bond was deleted: no Service Changed due for it any more
     pub(crate) fn on_bonding_deleted(&mut self, stack: &Stack, index: usize) {
+        tracing::debug!("LE Audio: GATT server: bond {index} deleted, no Service Changed due for it");
         stack.tlv_delete(tag_service_changed(index));
     }
 
     pub(crate) fn on_mtu(&mut self, con: u16, mtu: u16) {
+        tracing::trace!("LE Audio: GATT server: MTU {mtu} on 0x{con:04X}");
         self.mtus.insert(con, mtu);
     }
 
@@ -513,7 +516,9 @@ impl GattServer {
                 if value.len() < 2 {
                     return WriteAction::Done(ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH);
                 }
-                self.ccc.insert((con, *value_handle), u16::from_le_bytes([value[0], value[1]]));
+                let cfg = u16::from_le_bytes([value[0], value[1]]);
+                tracing::debug!("LE Audio: GATT server: client 0x{con:04X} CCC of 0x{value_handle:04X} = 0x{cfg:04X}");
+                self.ccc.insert((con, *value_handle), cfg);
                 WriteAction::Done(0)
             }
             Some(Attr::Value { owner: None }) => WriteAction::Done(btstack_sys::consts::ATT_ERROR_WRITE_NOT_PERMITTED),
@@ -531,8 +536,13 @@ impl GattServer {
             GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION
         };
         if self.client_config(con, handle) & bit == 0 {
+            tracing::trace!("LE Audio: GATT server: 0x{handle:04X} not enabled by 0x{con:04X}, not sent");
             return false;
         }
+        tracing::trace!(
+            "LE Audio: GATT server: {} 0x{handle:04X} to 0x{con:04X}: {value:02X?}",
+            if indication { "indication" } else { "notification" }
+        );
         self.outbox.push((con, handle, value.to_vec(), indication));
         true
     }
@@ -548,6 +558,11 @@ impl GattServer {
     }
 
     pub(crate) fn on_disconnected(&mut self, con: u16) {
+        tracing::debug!(
+            "LE Audio: GATT server: client 0x{con:04X} gone ({} CCC value(s), {} queued value(s) dropped)",
+            self.ccc.keys().filter(|(c, _)| *c == con).count(),
+            self.outbox.iter().filter(|(c, ..)| *c == con).count()
+        );
         // The live values of this link go; a bonded client gets its CCC
         // values back from BTstack's persistent store when it encrypts
         // again (they are replayed through the write callback), an unbonded

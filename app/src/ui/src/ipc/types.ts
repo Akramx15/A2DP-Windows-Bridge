@@ -10,6 +10,7 @@ import type { AudioDevice as BAudioDevice } from "./bindings/AudioDevice";
 import type { CaptureState as BCaptureState } from "./bindings/CaptureState";
 import type { CodecDetails as BCodecDetails } from "./bindings/CodecDetails";
 import type { Device as BDevice } from "./bindings/Device";
+import type { DiagBundle as BDiagBundle } from "./bindings/DiagBundle";
 import type { DiagInfo as BDiagInfo } from "./bindings/DiagInfo";
 import type { ErrorInfo as BErrorInfo } from "./bindings/ErrorInfo";
 import type { Event as BEvent } from "./bindings/Event";
@@ -37,6 +38,7 @@ import type { SourceInfo as BSourceInfo } from "./bindings/SourceInfo";
 import type { StreamInfo as BStreamInfo } from "./bindings/StreamInfo";
 import type { StreamStatus as BStreamStatus } from "./bindings/StreamStatus";
 import type { UpdateState as BUpdateState } from "./bindings/UpdateState";
+import type { VerboseState as BVerboseState } from "./bindings/VerboseState";
 
 export type Wire<T> = T extends bigint
   ? number
@@ -63,6 +65,7 @@ export type AudioDevice = Wire<BAudioDevice>;
 export type CaptureState = Wire<BCaptureState>;
 export type CodecDetails = Wire<BCodecDetails>;
 export type Device = Wire<BDevice>;
+export type DiagBundle = Wire<BDiagBundle>;
 export type DiagInfo = Wire<BDiagInfo>;
 export type ErrorInfo = Wire<BErrorInfo>;
 export type Event = Wire<BEvent>;
@@ -88,6 +91,7 @@ export type SettingsApplied = Wire<BSettingsApplied>;
 export type StreamInfo = Wire<BStreamInfo>;
 export type StreamStatus = Wire<BStreamStatus>;
 export type UpdateState = Wire<BUpdateState>;
+export type VerboseState = Wire<BVerboseState>;
 
 export type MethodName = Method["method"];
 
@@ -111,6 +115,8 @@ interface Results {
   "diag.info": DiagInfo;
   "diag.flow": FlowView;
   "diag.recent_logs": LogLine[];
+  "diag.set_verbose": VerboseState | null;
+  "diag.bundle": DiagBundle;
   "receiver.discover": ReceiverInfo[];
   "receiver.connect": ReceiverState;
   "receiver.status": ReceiverState;

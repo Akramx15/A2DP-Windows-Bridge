@@ -177,6 +177,16 @@ impl Pipeline {
         let kind = config.encoder.kind();
         let bitrate_kbps = config.encoder.bitrate_kbps();
         let frame_bytes = config.input.frame_bytes();
+        tracing::debug!(
+            "pipeline: start {kind} at {bitrate_kbps} kbps, input {:?}, sending {} ch, mtu {}, abr {}, buffer {:?}: \
+             capture ring {ring} bytes ({} ms)",
+            config.input,
+            config.channels,
+            config.mtu,
+            config.abr,
+            config.buffer,
+            (ring / frame_bytes.max(1)) as u64 * 1000 / u64::from(config.input.sample_rate.max(1))
+        );
         let thread = {
             let control = control.clone();
             std::thread::Builder::new()
@@ -205,6 +215,7 @@ impl Pipeline {
     /// Drops audio buffered for the old stream, restarts the timestamps and
     /// puts ABR back to where a new stream starts
     pub fn reset(&self) {
+        tracing::debug!("pipeline: reset requested");
         self.control.reset.store(true, Ordering::Release);
         if let Some(t) = &self.thread {
             t.thread().unpark();
@@ -220,7 +231,11 @@ impl Pipeline {
         let t = self.thread.take()?;
         self.control.stop.store(true, Ordering::Release);
         t.thread().unpark();
-        t.join().ok()
+        let sink = t.join().ok();
+        if sink.is_none() {
+            tracing::debug!("pipeline: the encode thread panicked");
+        }
+        sink
     }
 }
 
@@ -297,9 +312,24 @@ fn encode_thread(
     // The last round that had audio, for the gap between rounds (core's
     // stream health log)
     let mut last_round: Option<Instant> = None;
+    let mut window = RoundStats::new();
+    tracing::debug!(
+        "encode thread: {kind}, {:?} {} ch -> {fmt:?} {out_ch} ch at {} Hz, {per_encode} frames per encode, \
+         {per_codec_frame} per codec frame (rtp timestamp step), rounds of {round_frames} frames, output buffer {} \
+         bytes, priority hook {}",
+        input.sample,
+        in_ch,
+        input.sample_rate,
+        encoded.len(),
+        _priority.is_some()
+    );
 
     while !control.stop.load(Ordering::Acquire) {
         if control.reset.swap(false, Ordering::AcqRel) {
+            tracing::debug!(
+                "encode thread: reset, dropping {} buffered bytes, timestamp {timestamp} -> 0",
+                ring.slots()
+            );
             last_round = None;
             let n = ring.slots();
             if let Ok(chunk) = ring.read_chunk(n) {
@@ -315,8 +345,14 @@ fn encode_thread(
             abr_last = Instant::now();
         }
         control.report_overflows("encode thread", &mut overflow_report);
+        if window.since.elapsed() >= SUMMARY_INTERVAL {
+            window.report(encoder.as_ref(), &sink, encode_errors, timestamp);
+        }
         let available = ring.slots() / frame_bytes;
         if available == 0 {
+            if sink.is_streaming() {
+                window.empty_waits += 1;
+            }
             std::thread::park_timeout(Duration::from_millis(10));
             continue;
         }
@@ -343,6 +379,8 @@ fn encode_thread(
         }
 
         let queue_before = sink.depth();
+        let timed = tracing::enabled!(tracing::Level::DEBUG);
+        let encode_start = timed.then(Instant::now);
         let mut sent = 0u32;
         let block = per_encode * out_ch;
         let total = if fmt == PcmFormat::I16 { pcm16.len() } else { pcm32.len() };
@@ -365,6 +403,7 @@ fn encode_thread(
                     if encode_errors == 1 || encode_errors.is_multiple_of(1000) {
                         tracing::error!("encode thread: {e} ({encode_errors} errors)");
                     }
+                    tracing::trace!("encode thread: error at timestamp {timestamp}, block {offset}/{total}: {e}");
                 }
             }
             offset += block;
@@ -373,6 +412,9 @@ fn encode_thread(
             sink.send(p);
         });
         sink.stats().timing.queue_depth_max.record(sink.depth().into());
+        if let Some(t) = encode_start {
+            window.round(frames, available, sent, sink.depth(), t.elapsed());
+        }
         // Keep the rest (less than one encoder block) for the next round
         match fmt {
             PcmFormat::I16 => {
@@ -389,7 +431,90 @@ fn encode_thread(
             abr_round(encoder.as_mut(), &sink, abr_per_packet(kind), queue_before, sent, &mut abr_last);
         }
     }
+    tracing::debug!("encode thread: stopped at timestamp {timestamp}, {encode_errors} encode errors");
     sink
+}
+
+/// How often the encode thread logs its debug summary
+const SUMMARY_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Encode thread counters for the periodic debug summary (collected only
+/// while debug logging is on), reset each window
+struct RoundStats {
+    since: Instant,
+    rounds: u64,
+    frames: u64,
+    packets: u64,
+    /// Rounds that found more than one round of audio waiting (the thread
+    /// fell behind)
+    backlog_rounds: u64,
+    max_backlog: usize,
+    /// Wakeups that found no audio while the stream was started
+    empty_waits: u64,
+    queue_min: u32,
+    queue_max: u32,
+    encode_total: Duration,
+    encode_max: Duration,
+}
+
+impl RoundStats {
+    fn new() -> RoundStats {
+        RoundStats {
+            since: Instant::now(),
+            rounds: 0,
+            frames: 0,
+            packets: 0,
+            backlog_rounds: 0,
+            max_backlog: 0,
+            empty_waits: 0,
+            queue_min: u32::MAX,
+            queue_max: 0,
+            encode_total: Duration::ZERO,
+            encode_max: Duration::ZERO,
+        }
+    }
+
+    fn round(&mut self, frames: usize, available: usize, packets: u32, queue: u32, took: Duration) {
+        self.rounds += 1;
+        self.frames += frames as u64;
+        self.packets += u64::from(packets);
+        if available > frames {
+            self.backlog_rounds += 1;
+        }
+        self.max_backlog = self.max_backlog.max(available);
+        self.queue_min = self.queue_min.min(queue);
+        self.queue_max = self.queue_max.max(queue);
+        self.encode_total += took;
+        self.encode_max = self.encode_max.max(took);
+    }
+
+    fn report(&mut self, encoder: &dyn Encoder, sink: &MediaSink, encode_errors: u64, timestamp: u32) {
+        let stats = sink.stats();
+        tracing::debug!(
+            "encode thread: last {:.1} s: {} rounds, {} frames, {} packets, encode avg {} us max {} us, \
+             queue {}..{} (now {}), {} behind rounds (max {} frames waiting), {} empty waits while streaming, \
+             streaming {}, {} kbps; totals \
+             {} queue drops, {} capture frames dropped, {} encode errors, timestamp {timestamp}",
+            self.since.elapsed().as_secs_f64(),
+            self.rounds,
+            self.frames,
+            self.packets,
+            self.encode_total.as_micros().checked_div(u128::from(self.rounds)).unwrap_or(0),
+            self.encode_max.as_micros(),
+            if self.rounds > 0 { self.queue_min } else { 0 },
+            self.queue_max,
+            sink.depth(),
+            self.backlog_rounds,
+            self.max_backlog,
+            self.empty_waits,
+            sink.is_streaming(),
+            encoder.bitrate_kbps(),
+            stats.queue_drops.load(Ordering::Relaxed),
+            stats.capture_dropped_frames.load(Ordering::Relaxed),
+            encode_errors
+        );
+        *self = RoundStats::new();
+    }
 }
 
 /// The encode thread raises its priority (MMCSS "Pro Audio" on Windows, as

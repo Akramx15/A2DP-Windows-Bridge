@@ -43,6 +43,36 @@ describe("Diagnostics", () => {
     expect(reveal).toHaveBeenCalledWith(path);
   });
 
+  it("turns verbose logging on and off and saves a diagnostic bundle", async () => {
+    const { calls, core, mock, view } = start();
+    await screen.findByRole("heading", { level: 1, name: "Diagnostics" });
+    const select = screen.getByRole("combobox", { name: "Verbose logging" }) as HTMLSelectElement;
+    expect(select.value).toBe("off");
+    select.selectedIndex = 1;
+    fireEvent.change(select);
+    await waitFor(() => expect(core.state.snap!.verbose?.level).toBe("debug"));
+    expect(calls.find((c) => c.method === "diag.set_verbose")!.params).toEqual({ level: "debug" });
+    expect(view.container.querySelector("#verbose-help")).toHaveTextContent(/^On until /);
+    select.selectedIndex = 0;
+    fireEvent.change(select);
+    await waitFor(() => expect(core.state.snap!.verbose).toBeNull());
+
+    const reveal = vi.spyOn(mock, "revealPath");
+    fireEvent.click(screen.getByRole("button", { name: "Save Diagnostic Bundle" }));
+    const saved = await waitFor(() => {
+      const el = view.container.querySelector(".bundle-saved");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(calls.find((c) => c.method === "diag.bundle")!.params).toEqual({ mask: true, hci: true });
+    expect(saved).toHaveTextContent(/a2dpwb-diag-\d{8}_\d{6}\.zip/);
+    expect(saved).toHaveTextContent("Attach this file to your GitHub issue");
+    fireEvent.click(saved.querySelector(".btn-subtle")!);
+    expect(reveal).toHaveBeenCalledWith(expect.stringMatching(/\\bundles\\a2dpwb-diag-/));
+    fireEvent.click(saved.querySelector(".btn-icon")!);
+    await waitFor(() => expect(view.container.querySelector(".bundle-saved")).toBeNull());
+  });
+
   it("masks addresses in the copied diagnostic info only while asked to", async () => {
     const { calls } = start();
     const copy = await screen.findByRole("button", { name: "Copy Diagnostics" });

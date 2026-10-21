@@ -46,7 +46,10 @@ pub struct BasModule {
 
 impl BasModule {
     fn on_level(ctx: &mut LeCtx<'_>, id: LeDeviceId, value: &[u8]) {
-        let Some(&percent) = value.first() else { return };
+        let Some(&percent) = value.first() else {
+            tracing::debug!("BAS: device {}: empty Battery Level", id.0);
+            return;
+        };
         let Some(m) = ctx.module_mut::<BasModule>() else { return };
         let lowest = m.levels.set(id.0, percent);
         info!("BAS: device {}: battery {percent}% (reported {lowest}%)", id.0);
@@ -64,7 +67,10 @@ impl LeModule for BasModule {
             return;
         }
         let Some(d) = ctx.device(dev) else { return };
-        let Some(chr) = d.find_char(UUID_SERVICE_BAS, UUID_BATTERY_LEVEL).cloned() else { return };
+        let Some(chr) = d.find_char(UUID_SERVICE_BAS, UUID_BATTERY_LEVEL).cloned() else {
+            tracing::debug!("BAS: {}: no Battery Level", d.addr);
+            return;
+        };
         let con = d.acl;
         let addr = d.addr.to_string();
         info!("BAS: {addr}: Battery Level (0x{:04x})", chr.value_handle);

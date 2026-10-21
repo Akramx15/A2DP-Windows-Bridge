@@ -158,10 +158,23 @@ pub fn set_default_endpoint(device_id: &str) -> windows::core::Result<()> {
     if device_id.is_empty() {
         return Err(windows::Win32::Foundation::E_INVALIDARG.into());
     }
-    let policy = PolicyConfig::new()?;
+    let policy =
+        PolicyConfig::new().inspect_err(|e| tracing::debug!("audio_policy: IPolicyConfig unavailable: {e}"))?;
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        let previous = enumerator()
+            .and_then(|en| render_device(&en, None))
+            .and_then(|d| endpoint_id(&d))
+            .unwrap_or_else(|e| format!("(none: {e})"));
+        tracing::debug!("audio_policy: default output {previous} -> {device_id}");
+    }
     let wid: Vec<u16> = device_id.encode_utf16().chain(Some(0)).collect();
     let hr_console = policy.set_default_endpoint(&wid, eConsole);
     let hr_multimedia = policy.set_default_endpoint(&wid, eMultimedia);
+    tracing::debug!(
+        "audio_policy: SetDefaultEndpoint eConsole 0x{:08x}, eMultimedia 0x{:08x}",
+        hr_console.0 as u32,
+        hr_multimedia.0 as u32
+    );
     if hr_console.is_err() || hr_multimedia.is_err() {
         tracing::warn!(
             "SetDefaultEndpoint failed: eConsole=0x{:08x}, eMultimedia=0x{:08x}",
@@ -230,6 +243,7 @@ impl EndpointVolume {
         let id = endpoint_id(&device)?;
         // SAFETY: activating a documented endpoint service on a live device.
         let volume: IAudioEndpointVolume = unsafe { device.Activate(CLSCTX_ALL, None)? };
+        tracing::trace!("audio_policy: endpoint volume opened on {id} (asked for {device_id:?})");
         Ok(EndpointVolume { volume, id })
     }
 
@@ -248,6 +262,7 @@ impl EndpointVolume {
     /// context, as in v1: listeners see an ordinary volume change.
     pub fn set_volume(&self, level: f32) -> windows::core::Result<()> {
         let level = if level.is_nan() { 0.0 } else { level.clamp(0.0, 1.0) };
+        tracing::trace!("audio_policy: volume of {} set to {level:.3}", self.id);
         // SAFETY: plain call; a null event context GUID is allowed.
         unsafe { self.volume.SetMasterVolumeLevelScalar(level, core::ptr::null()) }
     }
@@ -258,6 +273,7 @@ impl EndpointVolume {
     }
 
     pub fn set_muted(&self, muted: bool) -> windows::core::Result<()> {
+        tracing::trace!("audio_policy: mute of {} set to {muted}", self.id);
         // SAFETY: plain call; a null event context GUID is allowed.
         unsafe { self.volume.SetMute(muted, core::ptr::null()) }
     }
@@ -302,6 +318,7 @@ pub fn endpoint_hints(device_id: &str) -> windows::core::Result<EndpointHints> {
         // SAFETY: clears the value GetValue gave us, once.
         let _ = unsafe { PropVariantClear(&mut v) };
     }
+    tracing::trace!("audio_policy: hints of {device_id}: {hints:?}");
     Ok(hints)
 }
 
@@ -357,6 +374,7 @@ pub fn session_process_ids() -> windows::core::Result<Vec<u32>> {
             }
         }
     }
+    tracing::trace!("audio_policy: {count} output device(s), app sessions of {pids:?}");
     Ok(pids)
 }
 

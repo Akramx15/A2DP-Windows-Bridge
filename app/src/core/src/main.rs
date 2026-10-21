@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 #![windows_subsystem = "windows"]
 
+mod bundle;
 mod cli;
 mod driver;
 mod logging;
@@ -14,6 +15,7 @@ mod quit;
 mod resident;
 mod server;
 mod state;
+mod zip;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -28,9 +30,11 @@ fn main() {
     }
     // The command line logs to the console only; the resident process to
     // daily files in the settings folder
+    let config = a2dpwb_core::paths::config_dir();
     let log = logging::init(&logging::LogOptions {
-        dir: (!cli_mode).then(|| a2dpwb_core::paths::config_dir().join("logs")),
+        dir: (!cli_mode).then(|| a2dpwb_core::paths::log_dir(&config)),
         console: cli_mode,
+        crash_dir: Some(a2dpwb_core::paths::crash_dir(&config)),
     });
     let code = if cli_mode { cli::run(&args) } else { resident::run(&args) };
     // process::exit skips destructors: flush the log first
@@ -199,7 +203,29 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
         clock: hub.clock(),
         mask,
         le_audio: le_audio.as_ref(),
+        logging: Some(&logging_line(&state.config_dir())),
     })
+}
+
+/// "Logging" of the diagnostic info: verbose logging, and the crash
+/// reports and flight recorder files a diagnostic bundle would include
+fn logging_line(config: &std::path::Path) -> String {
+    use a2dpwb_core::paths;
+    let count = |dir: std::path::PathBuf, ext: &str| {
+        std::fs::read_dir(dir)
+            .map_or(0, |d| d.flatten().filter(|e| e.path().extension().is_some_and(|x| x == ext)).count())
+    };
+    let verbose = match logging::verbose() {
+        Some(v) => {
+            format!("verbose ({:?}, {} min left)", v.level, v.until_ms.saturating_sub(logging::unix_ms()) / 60_000)
+        }
+        None => "normal".into(),
+    };
+    format!(
+        "{verbose}; {} crash report(s); {} HCI flight recording(s)",
+        count(paths::crash_dir(config), "txt"),
+        count(paths::recorder_dir(config), "pklg")
+    )
 }
 
 /// The protocol's source back to the core's (for diag_text)

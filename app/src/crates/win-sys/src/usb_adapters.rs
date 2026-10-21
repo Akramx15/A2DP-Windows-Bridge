@@ -195,6 +195,11 @@ pub fn enumerate(probe_winusb: bool) -> windows::core::Result<Vec<UsbDevice>> {
         Ok(extra) => result.extend(extra),
         Err(e) => tracing::debug!("usb_adapters: listing USB device nodes failed: {e}"),
     }
+    tracing::debug!(
+        "usb_adapters: {} USB device(s), {} look like Bluetooth (probe {probe_winusb})",
+        result.len(),
+        result.iter().filter(|d| d.looks_like_bluetooth()).count()
+    );
     Ok(result)
 }
 
@@ -278,6 +283,7 @@ pub(crate) fn problem_code(devinst: u32) -> Option<u32> {
 /// Interface 0 of a WinUSB device: its class and whether it has the HCI
 /// endpoints (v1 is_bluetooth_class / has_hci_endpoints)
 fn probe_interface(path: &str) -> Result<InterfaceProbe, String> {
+    tracing::debug!("usb_adapters: probing {path}");
     // SAFETY: NUL-terminated path; the handle is closed below.
     let file = unsafe {
         CreateFileW(
@@ -306,9 +312,17 @@ fn probe_interface(path: &str) -> Result<InterfaceProbe, String> {
             for i in 0..desc.bNumEndpoints {
                 let mut pipe = WINUSB_PIPE_INFORMATION::default();
                 // SAFETY: initialised WinUSB handle; index below the count.
-                if unsafe { WinUsb_QueryPipe(usb, 0, i, &mut pipe) }.is_err() {
+                if let Err(e) = unsafe { WinUsb_QueryPipe(usb, 0, i, &mut pipe) } {
+                    tracing::debug!("usb_adapters: probe: WinUsb_QueryPipe({i}) failed (error {})", win32_code(&e));
                     continue;
                 }
+                tracing::debug!(
+                    "usb_adapters: probe: pipe 0x{:02x} type {}, max packet {}, interval {}",
+                    pipe.PipeId,
+                    pipe.PipeType.0,
+                    pipe.MaximumPacketSize,
+                    pipe.Interval
+                );
                 let input = pipe.PipeId & 0x80 != 0;
                 match pipe.PipeType {
                     t if t == UsbdPipeTypeInterrupt && input => intr_in = true,
@@ -335,6 +349,11 @@ fn probe_interface(path: &str) -> Result<InterfaceProbe, String> {
     };
     // SAFETY: initialised above and freed only here (before the file).
     let _ = unsafe { WinUsb_Free(usb) };
+    tracing::debug!(
+        "usb_adapters: probe: interface 0 alt {}, {} endpoint(s): {result:?}",
+        desc.bAlternateSetting,
+        desc.bNumEndpoints
+    );
     result
 }
 
@@ -438,6 +457,7 @@ impl DevInfoSet {
     ) -> Option<UsbDevice> {
         let (vid, pid) = parse_vid_pid(&instance_id).or_else(|| parse_vid_pid(&path))?;
         if vid == 0x0E0F {
+            tracing::debug!("usb_adapters: {instance_id}: VMware virtual device, skipped");
             return None;
         }
         let driver = self.driver_info(data);
@@ -446,7 +466,7 @@ impl DevInfoSet {
         let usb_class = compatible_ids.iter().find_map(|id| parse_usb_class_id(id));
         let probe =
             (probe_winusb && driver_kind == DriverKind::WinUsb && !path.is_empty()).then(|| probe_interface(&path));
-        Some(UsbDevice {
+        let device = UsbDevice {
             name: self
                 .registry_string(data, SPDRP_FRIENDLYNAME)
                 .or_else(|| self.registry_string(data, SPDRP_DEVICEDESC))
@@ -464,7 +484,25 @@ impl DevInfoSet {
             driver,
             driver_kind,
             probe,
-        })
+        };
+        tracing::debug!(
+            "usb_adapters: {} {:04X}:{:04X} {:?}: service {:?} ({:?}, {} {}), class {:?}, problem {:?}, \
+             compatible Bluetooth ID {}, probe {:?} -> {}",
+            device.instance_id,
+            device.vid,
+            device.pid,
+            device.display_name(),
+            device.driver.service,
+            device.driver_kind,
+            device.driver.inf_name,
+            device.driver.version,
+            device.usb_class.map(|c| c.to_string()),
+            device.problem_code,
+            device.has_bluetooth_compat_id(),
+            device.probe,
+            if device.looks_like_bluetooth() { "looks like Bluetooth" } else { "not Bluetooth by itself" }
+        );
+        Some(device)
     }
 
     pub(crate) fn instance_id(&self, data: &SP_DEVINFO_DATA) -> Option<String> {

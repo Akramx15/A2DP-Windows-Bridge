@@ -84,7 +84,11 @@ impl Policy {
 pub fn classify(policy: &str, connected: impl FnOnce() -> Vec<u8>) -> Classification {
     match Policy::parse(policy) {
         Policy::Off => Classification::all_usable(),
-        Policy::Auto => avoid_wifi(&auto_channels(&connected())),
+        Policy::Auto => {
+            let connected = connected();
+            tracing::debug!("AFH auto: PC Wi-Fi connected on 2.4 GHz channels {connected:?}");
+            avoid_wifi(&auto_channels(&connected))
+        }
         Policy::Manual(channels) => avoid_wifi(&channels),
     }
 }
@@ -102,13 +106,18 @@ pub fn auto_channels(connected: &[u8]) -> Vec<i64> {
 pub fn avoid_wifi(wifi_channels: &[i64]) -> Classification {
     let mut c = Classification::all_usable();
     for &ch in wifi_channels {
-        let Ok(ch) = u8::try_from(ch) else { continue };
+        let Ok(ch) = u8::try_from(ch) else {
+            tracing::debug!("AFH: Wi-Fi channel {ch} out of range, skipped");
+            continue;
+        };
         if !(1..=14).contains(&ch) || c.avoided_wifi.contains(&ch) {
+            tracing::debug!("AFH: Wi-Fi channel {ch} out of range or repeated, skipped");
             continue;
         }
         let mut trial = c.map;
         mark_bad(&mut trial, ch);
         if count(&trial) < MIN_CHANNELS {
+            tracing::debug!("AFH: avoiding Wi-Fi channel {ch} would leave {} channels, skipped", count(&trial));
             continue; // would leave too few
         }
         c.map = trial;

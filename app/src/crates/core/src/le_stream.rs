@@ -242,10 +242,13 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let le = req.le.clone().unwrap_or_default();
     let addr = bt_host::addr_str(&req.device);
     tracing::info!("LE Audio (experimental) stream to {addr} ({})", req.device_name);
+    tracing::debug!("le stream: request {req:?}");
     let stopped = || inner.stop_requested();
     let ready = || inner.notify(StreamState::Idle, Msg::new("status.ready"));
+    let session_start = Instant::now();
 
     if let Some(key) = refusal(inner.le_wanted(), &req.source) {
+        tracing::debug!("le stream: refused ({key}), LE wanted {}, source {}", inner.le_wanted(), req.source);
         return inner.notify(StreamState::Error, Msg::new(key));
     }
 
@@ -254,10 +257,17 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         Ok(h) => h,
         Err(m) => return inner.notify(StreamState::Error, m),
     };
-    let until = Instant::now() + READY_WAIT;
+    let wait = Instant::now();
+    let until = wait + READY_WAIT;
     while !host.le_ready() && Instant::now() < until && !stopped() {
         inner.wait_tick(Duration::from_millis(100));
     }
+    tracing::debug!(
+        "le stream: LE core ready {} after {} ms (stack up {} ms after the request)",
+        host.le_ready(),
+        wait.elapsed().as_millis(),
+        wait.duration_since(session_start).as_millis()
+    );
     if stopped() {
         return ready();
     }
@@ -266,18 +276,34 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     let (request, low_latency) = stream_request(&le);
+    tracing::debug!("le stream: stream request {request:?}, low latency {low_latency}");
     host.le_set_low_latency(low_latency);
     let mut devices = vec![req.device];
     devices.extend(le.extra_devices.iter().copied());
+    tracing::debug!("le stream: devices {:?}", devices.iter().map(bt_host::addr_str).collect::<Vec<_>>());
 
     // Connect (the address type comes from the advertisement) and stream
     let connect_and_stream = || -> Result<LeStreamStarted, Msg> {
         inner.notify(StreamState::Connecting, Msg::new("status.connecting_device"));
+        let t = Instant::now();
         let ids = connect_devices(&host, &devices, &req.device_name, &stopped)?;
-        host.le_start_stream(ids, request.clone(), &le_silence_set).map_err(|e| {
+        tracing::debug!("le stream: connected {ids:?} in {} ms, starting the stream", t.elapsed().as_millis());
+        let t = Instant::now();
+        let r = host.le_start_stream(ids, request.clone(), &le_silence_set).map_err(|e| {
+            tracing::debug!("le stream: start failed after {} ms: {e}", t.elapsed().as_millis());
             host.le_stop_stream();
             Msg::with("error.le_audio_stream", &[&e])
-        })
+        });
+        if let Ok(s) = &r {
+            tracing::debug!(
+                "le stream: started in {} ms: preset {}, {} CIS, {} device(s)",
+                t.elapsed().as_millis(),
+                s.status.plan.preset.name,
+                s.status.plan.cis.len(),
+                s.status.devices.len()
+            );
+        }
+        r
     };
     let mut started = match connect_and_stream() {
         Ok(s) => s,
@@ -356,6 +382,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
         // A device or CIS went away: tear down and set it up again
         tracing::warn!("LE Audio stream lost, reconnecting");
+        tracing::debug!("le stream: lost after {} s of the session", session_start.elapsed().as_secs());
         inner.notify(StreamState::Reconnecting, Msg::new("status.connection_lost"));
         if let Some(a) = audio.take() {
             a.stop();
@@ -369,6 +396,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             inner.notify(
                 StreamState::Reconnecting,
                 Msg::with("status.reconnect_attempt", &[&attempt, &RECONNECT_ATTEMPTS]),
+            );
+            tracing::debug!(
+                "le stream: reconnect attempt {attempt}/{RECONNECT_ATTEMPTS} in {} ms",
+                RECONNECT_WAIT.as_millis()
             );
             let until = Instant::now() + RECONNECT_WAIT;
             while Instant::now() < until && !stopped() {
@@ -386,6 +417,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
         }
         let Some(s) = restored else {
+            tracing::debug!("le stream: not restored (stop requested {})", stopped());
             if !stopped() {
                 inner.notify(StreamState::Error, Msg::new("error.reconnect_failed"));
                 lost_for_good = true;
@@ -407,6 +439,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     tracing::info!("LE Audio streaming stopped, cleaning up");
+    tracing::debug!(
+        "le stream: ended after {} s (stop requested {}, lost for good {lost_for_good}), {}",
+        session_start.elapsed().as_secs(),
+        stopped(),
+        le_stats_line(&host.le_stream_stats())
+    );
     if let Some(a) = audio.take() {
         a.stop();
     }
@@ -434,19 +472,41 @@ fn connect_devices(
     for (i, &addr) in devices.iter().enumerate() {
         let mut target = LeAddr { addr, addr_type: LeAddr::PUBLIC };
         let mut name = if i == 0 { first_name.to_string() } else { String::new() };
+        let t = Instant::now();
         if let Some(found) = host.le_find(addr, FIND_TIMEOUT) {
+            tracing::debug!(
+                "le connect: {} found in {} ms as {} \"{}\" rssi {}",
+                bt_host::addr_str(&addr),
+                t.elapsed().as_millis(),
+                found.addr,
+                found.name,
+                found.rssi
+            );
             // The address it advertises now (an RPA of a bonded device)
             target = found.addr;
             if name.is_empty() {
                 name = found.name;
             }
+        } else {
+            tracing::debug!(
+                "le connect: {} not found in {} ms, trying its public address",
+                bt_host::addr_str(&addr),
+                t.elapsed().as_millis()
+            );
         }
         if stopped() {
             return Err(Msg::new("status.ready"));
         }
+        let t = Instant::now();
         match host.le_connect(target, &name, CONNECT_TIMEOUT) {
-            Ok(id) => ids.push(id),
-            Err(e) => return Err(Msg::with("error.le_audio_connect", &[&e])),
+            Ok(id) => {
+                tracing::debug!("le connect: {target} connected as {id:?} in {} ms", t.elapsed().as_millis());
+                ids.push(id);
+            }
+            Err(e) => {
+                tracing::debug!("le connect: {target} failed after {} ms: {e}", t.elapsed().as_millis());
+                return Err(Msg::with("error.le_audio_connect", &[&e]));
+            }
         }
     }
     Ok(ids)

@@ -391,6 +391,27 @@ pub fn create(kind: CodecKind, config: &EncoderConfig) -> Result<Box<dyn Encoder
     if !kind.available() {
         return Err(EncoderError::NotAvailable(kind));
     }
+    tracing::debug!("codec: creating {kind} encoder: {config:?}");
+    let encoder = create_inner(kind, config);
+    match &encoder {
+        Ok(e) => tracing::debug!(
+            "codec: {kind} encoder ready: {:?} input, {} frames per encode, {} per codec frame, up to {} bytes per \
+             encode, {} kbps, abr {}, bit rate capped {}, {:?}",
+            e.pcm_format(),
+            e.pcm_frames_per_encode(),
+            e.pcm_frames_per_codec_frame(),
+            e.max_output_bytes(),
+            e.bitrate_kbps(),
+            e.abr_active(),
+            e.bitrate_capped(),
+            e.details()
+        ),
+        Err(e) => tracing::debug!("codec: creating the {kind} encoder failed: {e}"),
+    }
+    encoder
+}
+
+fn create_inner(kind: CodecKind, config: &EncoderConfig) -> Result<Box<dyn Encoder>, EncoderError> {
     match kind {
         CodecKind::Sbc => Ok(Box::new(sbc::SbcEncoder::new(config)?)),
         CodecKind::SbcXq => Ok(Box::new(sbc::SbcEncoder::new_xq(config)?)),

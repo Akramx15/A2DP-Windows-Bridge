@@ -42,6 +42,21 @@ pub fn adapters(probe_winusb: bool) -> Vec<Adapter> {
             let vendor = chips::vendor_for_usb(d.vid, d.pid, realtek_pid);
             let bluetooth =
                 d.looks_like_bluetooth() || realtek_pid.is_some() || chips::is_bluetooth_vendor_vid(d.vid, d.pid);
+            if bluetooth {
+                tracing::debug!(
+                    "adapter: {:04X}:{:04X} {:?} driver {:?}, realtek pid {realtek_pid:04X?}, vendor {}, class {:?}, problem {:?}, probe {:?}",
+                    d.vid,
+                    d.pid,
+                    d.name,
+                    d.driver_kind,
+                    vendor.name(),
+                    d.usb_class,
+                    d.problem_code,
+                    d.probe
+                );
+            } else {
+                tracing::trace!("adapter: {:04X}:{:04X} {:?} skipped, not Bluetooth", d.vid, d.pid, d.name);
+            }
             bluetooth.then(|| Adapter {
                 display_name: chips::display_name(d.vid, d.pid, realtek_pid, vendor),
                 device: d,
@@ -91,6 +106,13 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
     let present = adapters(true);
     let winusb: Vec<&Adapter> =
         present.iter().filter(|a| a.device.driver_kind == win_sys::driver::DriverKind::WinUsb).collect();
+    tracing::debug!(
+        "adapter: {} present, {} on WinUSB, chip setting pid {:04X} stem {:?} (auto {auto})",
+        present.len(),
+        winusb.len(),
+        settings.bt_chip_pid,
+        settings.bt_chip_fw_stem
+    );
     if let TransportConfig::Usb(sel) = &mut config.transport {
         let vendor_class: Vec<(u16, u16)> = winusb
             .iter()
@@ -105,6 +127,7 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
                 sel.known.push(id);
             }
         }
+        tracing::debug!("adapter: usb selector {sel:?}");
     }
     let pid =
         chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, winusb.iter().map(|a| a.realtek_pid));
@@ -138,6 +161,7 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
         let stem = |s: String| s.strip_suffix(".bin").map(str::to_owned).unwrap_or(s);
         (stem(fw), stem(cfg))
     });
+    tracing::debug!("adapter: realtek pid {pid:04X}, firmware files {:?}", config.realtek_files);
     if pid == 0 {
         // Other vendors (experimental): Intel needs its bootloader
         // firmware, Broadcom may take a PatchRAM
@@ -153,6 +177,11 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
         }
         config.broadcom_ids =
             winusb.iter().filter(|a| a.vendor == ChipVendor::Broadcom).map(|a| (a.device.vid, a.device.pid)).collect();
+        tracing::debug!(
+            "adapter: intel bootloader download {}, broadcom patchram ids {:04X?}",
+            config.intel_loader,
+            config.broadcom_ids
+        );
         for a in &winusb {
             if matches!(a.vendor, ChipVendor::MediaTek | ChipVendor::Qualcomm) {
                 tracing::warn!(
@@ -179,6 +208,12 @@ impl AfhSource for WifiAfh {
                 Vec::new()
             }
         });
+        tracing::debug!(
+            "afh: policy {policy:?}: passed {}, usable {}, avoided Wi-Fi {:?}",
+            c.passed,
+            c.usable,
+            c.avoided_wifi
+        );
         c.passed.then(|| AfhClassification {
             map: c.map,
             usable: c.usable as u32,
@@ -224,6 +259,7 @@ pub fn save_le_audio(dir: &Path, vid: u16, pid: u16, capable: bool) {
         return;
     }
     entry.le_audio = Some(capable);
+    tracing::debug!("adapter caps: {} LE Audio {capable}, saving {CAPS_FILE}", caps_key(vid, pid));
     let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
     if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
         tracing::warn!("cannot write {CAPS_FILE}: {e}");
@@ -243,6 +279,7 @@ pub fn save_address(dir: &Path, vid: u16, pid: u16, address: &str) {
         return;
     }
     entry.address = Some(address.to_owned());
+    tracing::debug!("adapter caps: {} address {address}, saving {CAPS_FILE}", caps_key(vid, pid));
     let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
     if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
         tracing::warn!("cannot write {CAPS_FILE}: {e}");

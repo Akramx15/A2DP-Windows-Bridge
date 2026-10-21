@@ -116,6 +116,13 @@ impl OpusEncoder {
         let max_bitrate = u32::try_from(max_packet as u64 * 8 * 1000 / u64::from(frame_ms)).unwrap_or(u32::MAX);
         let mut bitrate = quality_bitrate(config.quality, channels);
         let configured = config.peer.opus_max_bitrate;
+        tracing::debug!(
+            "{kind}: {frame_ms} ms frames (configured {}), {channels} ch on the wire (configured {}), bit rate {bitrate} \
+             bps by quality {:?}, limits: configuration {configured}, payload {max_bitrate} ({max_packet} bytes)",
+            config.peer.opus_frame_ms,
+            config.peer.opus_channels,
+            config.quality
+        );
         if kind == CodecKind::Opus05 && configured > 0 && bitrate > configured {
             tracing::info!("{kind}: bit rate limited to {configured} bps by the configuration");
             bitrate = configured;
