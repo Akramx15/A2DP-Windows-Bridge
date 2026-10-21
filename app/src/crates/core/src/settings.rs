@@ -97,6 +97,9 @@ pub struct Settings {
     /// Developer mode: overrides of the codec and media path (in force only
     /// while debug_mode is on)
     pub dev_overrides: codec::dev::DevOverrides,
+    /// Developer mode: how the core logs (in force only while debug_mode is
+    /// on; otherwise [`DevLog::default`])
+    pub dev_log: DevLog,
 
     /// Realtek chip for the firmware download: 0 = auto; a Realtek PID for
     /// OEM adapters whose VID is not Realtek's
@@ -131,6 +134,56 @@ pub struct Settings {
     pub other: BTreeMap<String, serde_json::Value>,
 }
 
+/// Daily log files kept by default
+pub const LOG_KEEP_DAYS: u32 = 7;
+/// What a day's log file takes by default before its debug and trace lines
+/// stop
+pub const LOG_DAY_CAP_MB: u32 = 100;
+
+/// Developer mode's logging: retention, the daily size cap, verbose logging
+/// that does not run out, and the stream health line every interval
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DevLog {
+    /// Daily log files kept (1..=365)
+    pub keep_days: u32,
+    /// MB a day's file takes before its debug and trace lines stop
+    /// (10..=10240)
+    pub day_cap_mb: u32,
+    /// Verbose logging that stays on (no 24 h / 1 h limit) and covers the
+    /// start-up: "debug", "trace", or "" (off)
+    pub always_verbose: String,
+    /// The stream health line every 10 s for the whole stream, not only in
+    /// its first minute (issue #84: comparing sessions)
+    pub health_every_interval: bool,
+}
+
+impl Default for DevLog {
+    fn default() -> Self {
+        DevLog {
+            keep_days: LOG_KEEP_DAYS,
+            day_cap_mb: LOG_DAY_CAP_MB,
+            always_verbose: String::new(),
+            health_every_interval: false,
+        }
+    }
+}
+
+impl DevLog {
+    /// Values in range; an unknown level is off
+    pub fn clamped(&self) -> DevLog {
+        DevLog {
+            keep_days: self.keep_days.clamp(1, 365),
+            day_cap_mb: self.day_cap_mb.clamp(10, 10240),
+            always_verbose: match self.always_verbose.as_str() {
+                "debug" | "trace" => self.always_verbose.clone(),
+                _ => String::new(),
+            },
+            health_every_interval: self.health_every_interval,
+        }
+    }
+}
+
 /// "dark", "light" or "system"; anything else is dark, as v1 read it
 pub fn normalize_theme(theme: &str) -> &'static str {
     match theme {
@@ -157,6 +210,7 @@ impl Default for Settings {
             saved_volumes: BTreeMap::new(),
             debug_mode: false,
             dev_overrides: codec::dev::DevOverrides::default(),
+            dev_log: DevLog::default(),
             bt_chip_pid: 0,
             bt_chip_fw_stem: String::new(),
             afh: default_afh(),
@@ -171,6 +225,11 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// The logging in force: developer mode's, else the defaults
+    pub fn log(&self) -> DevLog {
+        if self.debug_mode { self.dev_log.clamped() } else { DevLog::default() }
+    }
+
     pub fn path(dir: &Path) -> PathBuf {
         dir.join("settings.json")
     }
@@ -261,6 +320,19 @@ mod tests {
         // A file without the key gets one of them
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert!(LANGUAGES.contains(&s.language.as_str()));
+    }
+
+    #[test]
+    fn dev_log_counts_only_in_developer_mode() {
+        let mut s: Settings = serde_json::from_str(r#"{"dev_log":{"keep_days":0,"always_verbose":"loud"}}"#).unwrap();
+        assert_eq!(s.dev_log.day_cap_mb, LOG_DAY_CAP_MB);
+        assert_eq!(s.log(), DevLog::default());
+        s.debug_mode = true;
+        let l = s.log();
+        assert_eq!((l.keep_days, l.always_verbose.as_str()), (1, ""));
+        s.dev_log.always_verbose = "trace".into();
+        s.dev_log.day_cap_mb = 1 << 20;
+        assert_eq!((s.log().always_verbose.as_str(), s.log().day_cap_mb), ("trace", 10240));
     }
 
     #[test]

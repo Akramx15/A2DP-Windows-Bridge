@@ -42,7 +42,7 @@ fn run(args: &[&str]) -> Result<(u32, Value), ErrorInfo> {
     let log = a2dpwb_core::paths::log_dir(&a2dpwb_core::paths::config_dir()).join("a2dpwb-driver.log");
     let log_s = log.to_string_lossy().into_owned();
     all.extend(["--log", &log_s]);
-    if crate::logging::verbose().is_some() {
+    if crate::logging::verbose_now().is_some() {
         all.push("--verbose");
     }
     let code = elevation::run_elevated(&helper(), &all).map_err(|e| match e {
