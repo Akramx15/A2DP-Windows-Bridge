@@ -12,9 +12,7 @@ export function Devices() {
         <h1>{t("ui.nav.devices")}</h1>
       </header>
       <p class="muted">{t("ui.devices.page_hint")}</p>
-      <section class="card">
-        <DevicePicker manage address="" onPick={() => {}} />
-      </section>
+      <DevicePicker manage address="" onPick={() => {}} />
     </div>
   );
 }
