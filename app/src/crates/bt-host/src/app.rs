@@ -746,8 +746,6 @@ impl HostApp {
             s.le_audio_capable = le_audio_capable;
             s.init_done = Some(Ok(()));
         });
-        // The adapter's own address, for the Adapter screen
-        let _ = stack.cmd_read_bd_addr();
         self.afh_ticks = 0;
         self.afh_policy_version_seen = None;
         self.afh_sent_map = None;
@@ -1176,8 +1174,9 @@ impl HostApp {
             // AT+IPHONEACCEV (Apple accessories): 0..9
             Some(HFP_SUBEVENT_APPLE_BATTERY_LEVEL) => {
                 if let Some(v) = u8_at(p, 3) {
-                    let pct = ((u32::from(v.min(9)) * 100 + 4) / 9) as u8;
-                    tracing::info!("HFP: battery level {v}/9 = {pct}% (Apple accessory)");
+                    // 0 is 0-10%, 9 is 90-100% (as Android shows it)
+                    let pct = (v.min(9) + 1) * 10;
+                    tracing::info!("HFP: battery level {v} of 0-9 = {pct}% (Apple accessory)");
                     self.report_battery(pct);
                 }
             }

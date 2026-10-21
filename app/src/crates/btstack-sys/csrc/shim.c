@@ -364,8 +364,10 @@ void a2dpwb_hfp_ag_init(void) {
     hfp_ag_init_hf_indicators(sizeof(hfp_hf_indicators) / sizeof(hfp_hf_indicators[0]), hfp_hf_indicators);
     hfp_ag_init_call_hold_services(2, hfp_call_hold_services);
     /* Apple accessories (Sony, Bose...) report their battery with
-     * AT+IPHONEACCEV once the AG answers AT+XAPL */
-    hfp_ag_init_apple_identification("A2DPWB", 0);
+     * AT+IPHONEACCEV once the AG answers AT+XAPL: as an iPhone does, with
+     * the battery (2) and docking (4) features. Sony's WH-1000XM4 sends
+     * nothing when the AG gives another name or no features. */
+    hfp_ag_init_apple_identification("iPhone", 0x06);
     memset(sdp_hfp_ag_service, 0, sizeof(sdp_hfp_ag_service));
     hfp_ag_create_sdp_record_with_codecs(sdp_hfp_ag_service, sdp_create_service_record_handle(),
                                          A2DPWB_HFP_RFCOMM_CHANNEL, "A2DPWB", 0, features, sizeof(hfp_codecs),
