@@ -658,5 +658,7 @@
   "ui.devices.add": "Add",
   "ui.devices.manage": "Manage devices",
   "ui.devices.saved_empty": "No saved devices yet. Add one under Audio Devices.",
-  "ui.home.battery": "Battery %d%%"
+  "ui.home.battery": "Battery %d%%",
+  "status.device_off": "The headphones were turned off or disconnected",
+  "status.device_unreachable": "The headphones are off or out of range"
 }

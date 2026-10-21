@@ -658,5 +658,7 @@
   "ui.devices.add": "追加",
   "ui.devices.manage": "デバイスの管理",
   "ui.devices.saved_empty": "保存されたデバイスがありません。「オーディオデバイス」で追加してください。",
-  "ui.home.battery": "バッテリー %d%%"
+  "ui.home.battery": "バッテリー %d%%",
+  "status.device_off": "ヘッドホンの電源が切れたか、切断されました",
+  "status.device_unreachable": "ヘッドホンの電源が切れているか、範囲外です"
 }

@@ -53,6 +53,9 @@ pub struct State {
     pub connected: bool,
     pub streaming: bool,
     pub disconnect_occurred: bool,
+    /// HCI reason of the last lost connection (0: the device released A2DP
+    /// but kept the link)
+    pub link_lost_reason: u8,
     pub last_connect_failure: Option<ConnectFailure>,
     /// ACL link to the device being connected, and why it went down (0 =
     /// still up / none): a device that ends the link itself vs. a link lost

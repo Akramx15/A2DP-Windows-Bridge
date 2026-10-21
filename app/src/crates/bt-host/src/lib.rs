@@ -1002,6 +1002,13 @@ impl BtHost {
         self.shared.lock().streaming
     }
 
+    /// The headphones ended the last lost connection themselves: turned off
+    /// (Remote Device Terminated due to Power Off) or switched away by their
+    /// user (Remote User Terminated). Not a link that faded (out of range).
+    pub fn lost_to_the_device(&self) -> bool {
+        matches!(self.shared.lock().link_lost_reason, 0x13 | 0x15)
+    }
+
     /// Once per lost connection (resets)
     pub fn check_disconnected(&self) -> bool {
         self.shared.update(|s| std::mem::take(&mut s.disconnect_occurred))

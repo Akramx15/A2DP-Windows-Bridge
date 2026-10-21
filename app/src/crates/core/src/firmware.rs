@@ -15,7 +15,7 @@
 //! Blocking (ureq with rustls; the system proxy, as update.rs): call from a
 //! worker thread.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use bt_host::chips;
@@ -134,6 +134,39 @@ fn sha256_hex(data: &[u8]) -> String {
     Sha256::digest(data).iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Downloaded files are kept here and used again (checked by their SHA-256)
+/// for a later download, also after a reinstall: kernel.org is asked once
+/// per file and machine. Never removed by A2DPWB; Windows' temp clean-up
+/// may.
+pub fn cache_dir() -> PathBuf {
+    std::env::temp_dir().join("A2DPWB_cache")
+}
+
+/// The file from the cache when its SHA-256 is the one expected
+fn cached(cache: &Path, source: &Source) -> Option<Vec<u8>> {
+    let data = std::fs::read(cache.join(source.name)).ok()?;
+    (sha256_hex(&data) == source.sha256).then_some(data)
+}
+
+/// A checked download into the cache (a failure only costs the next
+/// download)
+fn store(cache: &Path, source: &Source, data: &[u8]) {
+    if let Err(e) = save(cache, source.name, data) {
+        tracing::warn!("firmware cache: {e}");
+    }
+}
+
+/// From the cache, else downloaded (and then cached)
+fn fetch_cached(agent: &ureq::Agent, cache: &Path, source: &Source) -> Result<Vec<u8>, DownloadError> {
+    if let Some(data) = cached(cache, source) {
+        tracing::info!("firmware: {} from the cache {}", source.name, cache.display());
+        return Ok(data);
+    }
+    let data = fetch(agent, source)?;
+    store(cache, source, &data);
+    Ok(data)
+}
+
 fn fetch(agent: &ureq::Agent, source: &Source) -> Result<Vec<u8>, DownloadError> {
     let mut response = agent.get(url(source.name)).call().map_err(|e| match e {
         ureq::Error::StatusCode(code) => DownloadError::Status(code),
@@ -178,10 +211,11 @@ pub fn download(dir: &Path, firmware_file: &str) -> Result<Vec<String>, Download
         .user_agent(concat!("A2DPWB/", env!("CARGO_PKG_VERSION")))
         .build()
         .into();
-    let fw = if need_fw { Some(fetch(&agent, &source.firmware)?) } else { None };
+    let cache = cache_dir();
+    let fw = if need_fw { Some(fetch_cached(&agent, &cache, &source.firmware)?) } else { None };
     let cfg = match (need_cfg, &source.config) {
         (false, _) => None,
-        (true, Some(c)) => Some(fetch(&agent, c)?),
+        (true, Some(c)) => Some(fetch_cached(&agent, &cache, c)?),
         (true, None) => Some(Vec::new()),
     };
 
@@ -202,6 +236,21 @@ pub fn download(dir: &Path, firmware_file: &str) -> Result<Vec<String>, Download
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cache_gives_back_only_files_with_the_expected_hash() {
+        let cache = std::env::temp_dir().join(format!("a2dpwb-fwcache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&cache);
+        // SHA-256 of "abc"
+        let abc = src("abc.bin", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(cached(&cache, &abc), None);
+        store(&cache, &abc, b"abc");
+        assert_eq!(cached(&cache, &abc).as_deref(), Some(&b"abc"[..]));
+        // A changed or damaged file is not used
+        std::fs::write(cache.join("abc.bin"), b"abd").unwrap();
+        assert_eq!(cached(&cache, &abc), None);
+        let _ = std::fs::remove_dir_all(&cache);
+    }
 
     #[test]
     fn every_table_chip_but_custom_has_a_source() {
