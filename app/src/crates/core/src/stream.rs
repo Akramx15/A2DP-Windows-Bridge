@@ -531,6 +531,22 @@ fn check_link(lost: bool, stalled: bool, stale: bool, suspending: bool) -> LinkC
     }
 }
 
+/// The headphones ended the link themselves (turned off). Headphones that
+/// switch off release A2DP first and drop the link a moment later, so a
+/// release is given that moment before reconnecting.
+fn device_turned_off(inner: &Inner, host: &BtHost) -> bool {
+    let until = Instant::now() + Duration::from_millis(1500);
+    loop {
+        if host.lost_to_the_device() {
+            return true;
+        }
+        if Instant::now() >= until {
+            return false;
+        }
+        inner.wait_tick(Duration::from_millis(100));
+    }
+}
+
 /// The PC is going to sleep: the stack is shut down quietly (the pipeline's
 /// media sink belongs to it) and the session waits for the resume. Returns
 /// why the stack is then started anew, None when the session was stopped.
@@ -1133,7 +1149,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         let check = check_link(lost, host.stalled(), inner.power.stale(), inner.power.suspending());
         let mut restart_why = match check {
             LinkCheck::Fine => continue,
-            LinkCheck::Reconnect if host.lost_to_the_device() => {
+            LinkCheck::Reconnect if device_turned_off(inner, &host) => {
                 // As Windows and Android: the headphones went off, nothing
                 // to retry; the user connects again when they are back
                 tracing::info!("the headphones were turned off or disconnected themselves");
