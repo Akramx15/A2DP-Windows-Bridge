@@ -127,6 +127,56 @@ impl FormatTime for LocalTimer {
     }
 }
 
+/// Bytes a day's log file takes before its debug and trace lines stop
+/// (verbose logging at trace writes hundreds of MB an hour); info and
+/// above always go on. A normal day is well under 1 MB.
+pub const FILE_DAY_CAP: u64 = 100 * 1024 * 1024;
+
+/// The UTC day (days since 1970) whose file reached [`FILE_DAY_CAP`]
+static FULL_DAY: AtomicU64 = AtomicU64::new(u64::MAX);
+
+/// Days since 1970, UTC: the log files' day
+fn utc_day() -> u64 {
+    unix_ms() / 86_400_000
+}
+
+/// The day's log file is full: debug and trace lines are not written
+pub fn file_capped() -> bool {
+    FULL_DAY.load(Ordering::Relaxed) == utc_day()
+}
+
+/// The daily file, counting what each day gets (on the writer thread)
+struct CappedFile<W> {
+    inner: W,
+    day: u64,
+    bytes: u64,
+    cap: u64,
+}
+
+impl<W: std::io::Write> std::io::Write for CappedFile<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let today = utc_day();
+        if today != self.day {
+            self.day = today;
+            self.bytes = 0;
+        }
+        let n = self.inner.write(buf)?;
+        self.bytes += n as u64;
+        if self.bytes >= self.cap && FULL_DAY.swap(today, Ordering::Relaxed) != today {
+            let note = format!(
+                "--- this file reached {} MB: debug and trace lines stop until the next day (UTC) ---\n",
+                self.cap / (1024 * 1024)
+            );
+            let _ = self.inner.write_all(note.as_bytes());
+        }
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// `<dir>\a2dpwb-core.YYYY-MM-DD.log`, rotated daily, the last 7 kept
 pub fn file_appender(dir: &Path) -> Result<RollingFileAppender, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
@@ -154,8 +204,16 @@ pub fn init(opts: &LogOptions) -> LogGuard {
         Some(Ok(appender)) => {
             let (writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
                 .buffered_lines_limit(FILE_QUEUE_LINES)
-                .finish(appender);
-            let layer = tracing_subscriber::fmt::layer().with_writer(writer).with_ansi(false).with_timer(timer);
+                .finish(CappedFile { inner: appender, day: 0, bytes: 0, cap: FILE_DAY_CAP });
+            // Debug and trace lines stop for the day once the file is full
+            let capped = tracing_subscriber::filter::filter_fn(|meta| {
+                *meta.level() <= tracing::Level::INFO || FULL_DAY.load(Ordering::Relaxed) != utc_day()
+            });
+            let layer = tracing_subscriber::fmt::layer()
+                .with_writer(writer)
+                .with_ansi(false)
+                .with_timer(timer)
+                .with_filter(capped);
             (Some(layer), Some(guard))
         }
         Some(Err(e)) => {
@@ -804,6 +862,23 @@ mod tests {
         std::fs::write(dir.join(VERBOSE_FILE), serde_json::to_vec(&over).unwrap()).unwrap();
         assert_eq!(load_verbose(&dir), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_full_day_stops_the_verbose_lines() {
+        use std::io::Write;
+        let mut f = CappedFile { inner: Vec::new(), day: 0, bytes: 0, cap: 100 };
+        f.write_all(&[b'x'; 60]).unwrap();
+        assert!(!file_capped());
+        f.write_all(&[b'x'; 60]).unwrap();
+        assert!(file_capped());
+        let text = String::from_utf8_lossy(&f.inner).into_owned();
+        assert!(text.ends_with("debug and trace lines stop until the next day (UTC) ---\n"), "{text}");
+        // The note once a day
+        f.write_all(b"more").unwrap();
+        assert_eq!(String::from_utf8_lossy(&f.inner).matches("---").count(), 2);
+        FULL_DAY.store(u64::MAX, Ordering::Relaxed);
+        assert!(!file_capped());
     }
 
     #[test]

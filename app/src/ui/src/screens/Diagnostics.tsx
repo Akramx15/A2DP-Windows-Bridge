@@ -9,14 +9,16 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untra
 import { errorText, useApp } from "../app/context";
 import { Gauge, LineChart } from "../components/charts";
 import { CodecDetailsCard } from "../components/CodecDetails";
-import { Button, Check, IconButton, Select } from "../components/controls";
+import { Banner, Button, Check, Dialog, IconButton, Section, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
+import { currentProfile } from "../components/stream";
 import type { IconName } from "../components/icons";
 import { t } from "../i18n";
 import type { CaptureState, DiagBundle, FlowStepView, LogLevel, LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { STEPS, type Step, type StepStatus, stepDetail } from "../lib/flow";
 import { clock, copyText, kbps, maskAddresses } from "../lib/format";
+import { bugReportUrl } from "../lib/links";
 import {
   dropsPerSample,
   EDR3_MAX_KBPS,
@@ -52,7 +54,17 @@ const [savedCapture, setSavedCapture] = createSignal<CaptureState | null>(null);
 /** The diagnostic bundle saved last */
 const [savedBundle, setSavedBundle] = createSignal<DiagBundle | null>(null);
 
+/** The bundle's HCI captures (they hold Bluetooth addresses) */
+const [withHci, setWithHci] = createSignal(true);
+/** GitHub takes issue attachments up to this size */
+const GITHUB_ATTACHMENT_LIMIT = 25 * 1024 * 1024;
+
 type VerboseChoice = "off" | "debug" | "trace";
+
+/** "a.zip" of "C:\x\a.zip" */
+function baseName(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/")) + 1);
+}
 
 /** When verbose logging ends, as the local date and time */
 function untilText(ms: number): string {
@@ -123,6 +135,9 @@ export function Diagnostics() {
   const capture = () => core.state.snap!.capture;
   const [capBusy, setCapBusy] = createSignal(false);
   const [bundleBusy, setBundleBusy] = createSignal(false);
+  /** The bundle's options are open */
+  const [asking, setAsking] = createSignal(false);
+  const [reporting, setReporting] = createSignal(false);
   const verbose = () => core.state.snap!.verbose ?? null;
   const logView = createLogView();
   // A new core process sends a new snapshot, with its own clock
@@ -191,13 +206,45 @@ export function Diagnostics() {
   const saveBundle = async () => {
     setBundleBusy(true);
     try {
-      const b = await core.request("diag.bundle", { mask: mask(), hci: true });
+      const b = await core.request("diag.bundle", { mask: mask(), hci: withHci() });
       setSavedBundle(b);
-      app.notify(t("ui.diag.bundle_saved", `${b.path} (${formatBytes(b.bytes)})`));
+      setAsking(false);
     } catch (e) {
       app.notify(t("ui.diag.bundle_failed", errorText(e)), "error");
     } finally {
       setBundleBusy(false);
+    }
+  };
+
+  /** A prefilled GitHub issue in the browser, the bundle shown in Explorer
+   *  to drag into it, the diagnostic info on the clipboard (a report is
+   *  public: addresses masked) */
+  const report = async (b: DiagBundle) => {
+    setReporting(true);
+    try {
+      const snap = core.state.snap!;
+      const info = (await core.request("diag.info", { mask: true })).text;
+      const profile = currentProfile(snap);
+      const adapter = snap.adapter.adapters.find((a) => a.driver === "winusb") ?? snap.adapter.adapters[0];
+      const hex = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
+      const url = bugReportUrl({
+        version: snap.update.current_version,
+        info,
+        adapter: adapter && `${adapter.display_name} (${hex(adapter.vid)}:${hex(adapter.pid)})`,
+        headphones: profile?.device_name || undefined,
+        codec: profile?.codec,
+        captureMode: profile?.capture_mode,
+        bundle: baseName(b.path),
+      });
+      await core.transport.revealPath(b.path);
+      await core.transport.openUrl(url);
+      // Only a convenience: the issue has the text already (when it fit)
+      await copyText(info).catch(() => false);
+      app.notify(t("ui.diag.report_opened"));
+    } catch (e) {
+      app.notify(errorText(e), "error");
+    } finally {
+      setReporting(false);
     }
   };
 
@@ -245,44 +292,86 @@ export function Diagnostics() {
           <Button icon="copy" onClick={copyInfo}>
             {t("dbgc.copy_diag")}
           </Button>
-          <Button icon="arrow_download" kind="strong" busy={bundleBusy()} title={t("ui.diag.bundle_tip")} onClick={saveBundle}>
-            {t("ui.diag.bundle")}
-          </Button>
         </div>
       </header>
-      <div class="verbose-row">
-        <span id="verbose-label">{t("ui.diag.verbose")}</span>
-        <Select<VerboseChoice>
-          value={verbose()?.level === "trace" ? "trace" : verbose() ? "debug" : "off"}
-          label={t("ui.diag.verbose")}
-          describedBy="verbose-help"
-          options={[
-            { value: "off", label: t("ui.diag.verbose_off") },
-            { value: "debug", label: t("ui.diag.verbose_debug") },
-            { value: "trace", label: t("ui.diag.verbose_trace") },
-          ]}
-          onChange={(v) => void changeVerbose(v)}
-        />
-        <span id="verbose-help" class="hint">
-          {verbose() ? t("ui.diag.verbose_until", untilText(verbose()!.until_ms)) : t("ui.diag.verbose_help")}
-        </span>
-      </div>
-      <Show when={savedBundle()}>
-        {(b) => (
-          <div class="capture-line capture-saved bundle-saved" role="status">
-            <Icon name="checkmark_circle" />
-            <span class="capture-saved-text">
-              {t("ui.diag.bundle_saved", "")}
-              <span class="mono capture-path">{b().path}</span> <span class="num capture-size">({formatBytes(b().bytes)})</span>
+      <Section title={t("ui.diag.report")} class="report-card">
+        <div class="row">
+          <span class="row-text">
+            <span class="row-label">{t("ui.diag.verbose")}</span>
+            <span id="verbose-help" class="hint">
+              {verbose() ? t("ui.diag.verbose_until", untilText(verbose()!.until_ms)) : t("ui.diag.verbose_help")}
             </span>
-            <Button icon="folder_open" kind="subtle" onClick={() => void core.transport.revealPath(b().path)}>
-              {t("ui.diag.show_in_explorer")}
-            </Button>
-            <IconButton icon="dismiss" label={t("modal.close")} onClick={() => setSavedBundle(null)} />
-            <span class="hint bundle-attach">{t("ui.diag.bundle_attach")}</span>
-          </div>
-        )}
-      </Show>
+          </span>
+          <Select<VerboseChoice>
+            value={verbose()?.level === "trace" ? "trace" : verbose() ? "debug" : "off"}
+            label={t("ui.diag.verbose")}
+            describedBy="verbose-help"
+            options={[
+              { value: "off", label: t("ui.diag.verbose_off") },
+              { value: "debug", label: t("ui.diag.verbose_debug") },
+              { value: "trace", label: t("ui.diag.verbose_trace") },
+            ]}
+            onChange={(v) => void changeVerbose(v)}
+          />
+        </div>
+        <div class="row">
+          <span class="row-text">
+            <span class="row-label">{t("ui.diag.bundle_title")}</span>
+            <span class="hint">{t("ui.diag.bundle_tip")}</span>
+          </span>
+          <Button icon="arrow_download" onClick={() => setAsking(true)}>
+            {t("ui.diag.bundle_button")}
+          </Button>
+        </div>
+        <Show when={savedBundle()}>
+          {(b) => (
+            <div class="bundle-saved">
+              <Banner
+                kind={b().bytes > GITHUB_ATTACHMENT_LIMIT ? "warn" : "good"}
+                title={t("ui.diag.bundle_saved_title")}
+                actions={
+                  <>
+                    <Button icon="open" kind="strong" busy={reporting()} onClick={() => void report(b())}>
+                      {t("ui.diag.report_github")}
+                    </Button>
+                    <Button icon="folder_open" kind="subtle" onClick={() => void core.transport.revealPath(b().path)}>
+                      {t("ui.diag.show_in_explorer")}
+                    </Button>
+                    <Button icon="dismiss" kind="subtle" onClick={() => setSavedBundle(null)}>
+                      {t("modal.close")}
+                    </Button>
+                  </>
+                }
+              >
+                <span>
+                  <span class="mono bundle-name">{baseName(b().path)}</span>
+                  <span class="num bundle-size"> · {formatBytes(b().bytes)}</span>
+                </span>
+                <span>
+                  {b().bytes > GITHUB_ATTACHMENT_LIMIT ? t("ui.diag.bundle_too_big") : t("ui.diag.bundle_attach")}
+                </span>
+              </Banner>
+            </div>
+          )}
+        </Show>
+      </Section>
+      <Dialog
+        open={asking()}
+        title={t("ui.diag.bundle")}
+        confirm={t("ui.diag.bundle_save")}
+        cancel={t("modal.cancel")}
+        busy={bundleBusy()}
+        onConfirm={() => void saveBundle()}
+        onCancel={() => setAsking(false)}
+      >
+        <p>{t("ui.diag.bundle_dialog_text")}</p>
+        <div class="bundle-options">
+          <Check label={t("ui.diag.bundle_hci")} checked={withHci()} onChange={setWithHci} />
+          <span class="hint">{t("ui.diag.bundle_hci_hint")}</span>
+          <Check label={t("dbgc.mask")} checked={mask()} onChange={setMask} />
+          <span class="hint">{t("ui.diag.bundle_mask_hint")}</span>
+        </div>
+      </Dialog>
       <Show when={capture()}>
         {(c) => (
           <p class="capture-line" role="status">

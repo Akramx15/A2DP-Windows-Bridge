@@ -1908,15 +1908,26 @@ option {
 .capture-saved {
   flex-wrap: wrap;
 }
-.bundle-attach {
-  flex-basis: 100%;
+/* Report a problem: verbose logging and the diagnostic bundle */
+.report-card .row .select {
+  min-width: 200px;
 }
-.verbose-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--s2);
-  font-size: var(--fs-12);
+.bundle-saved {
+  margin-top: var(--s2);
+}
+.bundle-name {
+  overflow-wrap: anywhere;
+}
+.bundle-size {
+  color: var(--text-2);
+}
+.bundle-options {
+  display: grid;
+  gap: var(--s1);
+  margin-top: var(--s3);
+}
+.bundle-options .hint {
+  margin: 0 0 var(--s2) 28px;
 }
 .capture-saved > .icon {
   color: var(--good-text);

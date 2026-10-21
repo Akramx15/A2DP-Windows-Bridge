@@ -108,11 +108,11 @@ body:
       description: |
         A2DPWB depends a lot on the exact adapter, firmware and headphones, so this is the most useful part of a report.
 
-        1. Open **Diagnostics** and set **Verbose logging** to **Detailed (debug)** (it turns itself off after 24 hours).
+        1. Open **Diagnostics → Report a problem** and set **Verbose logging** to **Detailed (debug)** (it turns itself off after 24 hours).
         2. Reproduce the problem.
-        3. Click **Save Diagnostic Bundle**, then drag the `.zip` file into this field (**Show in Explorer** finds it).
+        3. Click **Diagnostic bundle → Save…**, choose what goes in, then **Report on GitHub**: it opens this form with the version, Windows, adapter, headphones, codec and the diagnostic info filled in, and shows the `.zip` in Explorer. Drag the file into this field.
 
-        The bundle holds the logs, crash reports, system information (adapters, drivers, audio devices) and the HCI flight recorder (the last minutes of Bluetooth traffic, saved automatically when a connection fails). Bluetooth addresses are masked in the text files; the HCI captures keep them, but not the pairing keys. If you'd rather not post it publicly, email it instead (address on the maintainer's GitHub profile).
+        The bundle holds the logs, crash reports, system information (adapters, drivers, audio devices) and, if you include them, HCI captures (the last minutes of Bluetooth traffic, saved automatically when a connection fails). Bluetooth addresses are masked in the text files; the HCI captures keep them, but not the pairing keys. GitHub takes files up to 25 MB. If you'd rather not post it publicly, email it instead (address on the maintainer's GitHub profile).
 
   - type: textarea
     id: extra
