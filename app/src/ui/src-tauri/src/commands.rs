@@ -23,7 +23,14 @@ pub async fn ipc_request(
     method: String,
     params: Option<Value>,
 ) -> Result<Value, ErrorInfo> {
-    ipc.request(window.label(), &method, params).await
+    let result = ipc.request(window.label(), &method, params).await;
+    // Only the connection's failures: the core's own errors are in its log
+    if let Err(e) = &result
+        && e.code.starts_with("ipc.")
+    {
+        tracing::warn!("[{}] {method} failed: {}", window.label(), e.code);
+    }
+    result
 }
 
 #[tauri::command]

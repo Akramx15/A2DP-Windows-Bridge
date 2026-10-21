@@ -146,6 +146,11 @@ impl Ipc {
     fn set_status(&self, app: &AppHandle, status: Status) {
         let mut s = lock(&self.status);
         if *s != status {
+            match &status {
+                Status::Connected { server } => tracing::info!("core connected ({server})"),
+                Status::Connecting => tracing::info!("connecting to the core"),
+                other => tracing::warn!("core: {other:?}"),
+            }
             *s = status.clone();
             drop(s);
             let _ = app.emit(STATUS_EVENT, status);

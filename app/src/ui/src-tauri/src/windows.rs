@@ -81,6 +81,8 @@ pub fn show_main(app: &AppHandle, route: Option<String>) -> tauri::Result<()> {
     }
     w.show()?;
     w.set_focus()?;
+    tracing::info!("[{MAIN}] shown{}", route.as_deref().map(|r| format!(" at {r}")).unwrap_or_default());
+    crate::logging::probe(app, &w);
     if let Some(route) = route {
         let _ = w.emit_to(MAIN, "ui://navigate", route);
     }
@@ -105,6 +107,8 @@ pub fn show_flyout(app: &AppHandle) -> tauri::Result<()> {
     }
     w.show()?;
     w.set_focus()?;
+    tracing::info!("[{FLYOUT}] shown");
+    crate::logging::probe(app, &w);
     Ok(())
 }
 
@@ -131,6 +135,7 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
         }
         // Gone for good (the system closed it): its subscriptions end
         WindowEvent::Destroyed => {
+            tracing::warn!("[{}] window destroyed", window.label());
             if let Some(ipc) = window.try_state::<std::sync::Arc<crate::connection::Ipc>>() {
                 ipc.drop_window(window.label());
             }
