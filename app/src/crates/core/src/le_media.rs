@@ -261,6 +261,9 @@ impl Worker {
         self.manager_tried = Some(Instant::now());
         self.manager = wait_result!(Manager::RequestAsync());
         tracing::debug!("MCP media: session manager request: available {}", self.manager.is_some());
+        if let Some(m) = &self.manager {
+            pin_dll_of("session manager", m);
+        }
         match &self.manager {
             Some(_) => tracing::info!("MCP: reading the Windows media session (System Media Transport Controls)"),
             None if !self.manager_logged => {
@@ -281,6 +284,7 @@ impl Worker {
             return n.clone();
         }
         let name = AppInfo::GetFromAppUserModelId(&HSTRING::from(aumid))
+            .inspect(|a| pin_dll_of("app info", a))
             .and_then(|a| a.DisplayInfo())
             .and_then(|d| d.DisplayName())
             .map(|n| n.to_string_lossy())
@@ -483,6 +487,22 @@ impl Worker {
     }
 }
 
+/// Keeps the DLL of a WinRT class loaded for good, once per class:
+/// windows-rs caches its factory for the process, and a media thread that
+/// started after COM unloaded the DLL crashed in it (win_sys::com)
+fn pin_dll_of<I: windows::core::Interface>(what: &'static str, object: &I) {
+    static PINNED: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+    let mut pinned = PINNED.lock().unwrap_or_else(|e| e.into_inner());
+    if pinned.contains(&what) {
+        return;
+    }
+    pinned.push(what);
+    match win_sys::com::pin_module_of(object) {
+        Some(dll) => tracing::debug!("MCP media: {what}: {dll} kept loaded"),
+        None => tracing::warn!("MCP media: {what}: cannot keep its DLL loaded"),
+    }
+}
+
 /// Now as a WinRT DateTime (100 ns since 1601-01-01 UTC)
 fn filetime_now() -> i64 {
     const UNIX_TO_1601: i64 = 11_644_473_600 * 10_000_000;
@@ -519,5 +539,16 @@ mod tests {
     fn filetime_is_after_2020() {
         // 2020-01-01 in 100 ns since 1601
         assert!(filetime_now() > 132_223_104_000_000_000);
+    }
+
+    /// The session manager's DLL stays loaded for the cached factory
+    /// (two crashes on 2026-10-22 in RequestAsync after COM unloaded it)
+    #[test]
+    fn the_session_manager_dll_is_kept_loaded() {
+        let _com = win_sys::audio_policy::ComApartment::init_mta().unwrap();
+        // No media sessions on a build machine: nothing to check there
+        let Some(m) = wait_result!(Manager::RequestAsync()) else { return };
+        let dll = win_sys::com::pin_module_of(&m).unwrap();
+        assert!(dll.to_ascii_lowercase().ends_with(".dll"), "{dll}");
     }
 }
