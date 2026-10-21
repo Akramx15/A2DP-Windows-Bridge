@@ -962,12 +962,15 @@ impl HostApp {
                         tracing::info!("not the A2DP link (handle 0x{a2dp:04x}), stream unaffected");
                         return false;
                     }
-                    s.a2dp_con_handle = None;
+                    // Also when A2DP was released just before (headphones
+                    // switched off release it first, then the link)
+                    if s.a2dp_con_handle.take().is_some() || s.connected || s.streaming {
+                        s.link_lost_reason = reason;
+                    }
                     if s.connected || s.streaming {
                         s.connected = false;
                         s.streaming = false;
                         s.disconnect_occurred = true;
-                        s.link_lost_reason = reason;
                         return true;
                     }
                     false
