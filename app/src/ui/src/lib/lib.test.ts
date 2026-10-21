@@ -5,7 +5,7 @@ import type { LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { maskAddresses, parseAddress } from "./format";
-import { thirdPartyUrl } from "./links";
+import { bugReportUrl, thirdPartyUrl } from "./links";
 import { validateProfile } from "./profile";
 
 const line = (time_ms: number, message: string, level: LogLine["level"] = "info"): LogLine => ({
@@ -216,6 +216,42 @@ describe("about", () => {
     expect(thirdPartyUrl("2.0.0-alpha.1")).toBe(
       "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/blob/v2.0.0-alpha.1/THIRD_PARTY_LICENSES.md",
     );
+  });
+});
+
+describe("bug report", () => {
+  const info = "```text\nA2DPWB diagnostics - 2026-10-22\nVersion      : 2.0.3\nOS           : Windows build 26100 (x86_64)\n```\n";
+  const base = { version: "2.0.3", info, bundle: "a2dpwb-diag-20261022_120000.zip" };
+
+  it("fills the issue form's fields the app knows", () => {
+    const url = new URL(
+      bugReportUrl({ ...base, adapter: "RTL8761BU (2357:0604)", headphones: "WH-1000XM5", codec: "ldac", captureMode: "app" }),
+    );
+    const q = url.searchParams;
+    expect(url.origin + url.pathname).toBe("https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/new");
+    expect(q.get("template")).toBe("bug_report.yml");
+    expect(q.get("version")).toBe("2.0.3");
+    expect(q.get("windows")).toBe("Windows build 26100 (x86_64)");
+    expect(q.get("adapter")).toBe("RTL8761BU (2357:0604)");
+    expect(q.get("headphones")).toBe("WH-1000XM5");
+    // The dropdowns take their option's text
+    expect(q.get("codec")).toBe("LDAC");
+    expect(q.get("capture_mode")).toBe("Application");
+    expect(q.get("interface")).toBe("Window / tray");
+    expect(q.get("bundle")).toMatch(/^a2dpwb-diag-20261022_120000\.zip\n/);
+    // The log field is a code block already: no fence of its own
+    expect(q.get("logs")).toBe("A2DPWB diagnostics - 2026-10-22\nVersion      : 2.0.3\nOS           : Windows build 26100 (x86_64)\n");
+  });
+
+  it("leaves out what it does not know and cuts a long log", () => {
+    const long = info + "  T+1.000 INFO bt_host: connecting to AA:BB:CC:xx:xx:xx\n".repeat(400);
+    const url = bugReportUrl({ ...base, info: long, codec: "opus05" });
+    const q = new URL(url).searchParams;
+    expect(q.has("codec")).toBe(false);
+    expect(q.has("adapter")).toBe(false);
+    expect(url.length).toBeLessThan(8000);
+    expect(q.get("logs")).toMatch(/\n\.\.\. \(cut here: the full text is diagnostics\.txt in the bundle\)$/);
+    expect(q.get("logs")).toMatch(/^A2DPWB diagnostics/);
   });
 });
 

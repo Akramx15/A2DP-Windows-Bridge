@@ -30,9 +30,16 @@ use ipc::DiagBundle;
 use crate::state::CoreState;
 use crate::zip::ZipWriter;
 
-/// The end of each log file that goes in (a verbose day can be large)
+// Size: GitHub takes attachments up to 25 MB. Text compresses about 10:1,
+// HCI captures and dumps much less, hence these limits (newest first).
+/// The end of each log file that goes in (a verbose day can be large)...
 const MAX_LOG_BYTES: usize = 16 * 1024 * 1024;
-const KEEP_BUNDLES: usize = 5;
+/// ...and of all log files together
+const LOG_BUDGET: usize = 48 * 1024 * 1024;
+/// HCI flight recordings and crash minidumps that go in
+const MAX_RECORDINGS: usize = 5;
+const MAX_DUMPS: usize = 2;
+const KEEP_BUNDLES: usize = 3;
 /// Settings folder files that go in (text, with addresses)
 const CONFIG_FILES: &[&str] =
     &["settings.json", "profiles.json", "adapter_caps.json", "devices.txt", "le_audio_devices.txt"];
@@ -50,11 +57,21 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
     zip.add("diagnostics.txt", crate::diag_text(state, mask).as_bytes());
     zip.add("system.txt", text(system_text(&config)).as_bytes());
 
-    // Logs: core, UI, driver helper
-    for (name, path) in files_in(&logs, |n| n.starts_with("a2dpwb-") && n.contains(".log")) {
+    // Logs: core, UI, driver helper; the newest first while the budget lasts
+    let mut budget = LOG_BUDGET;
+    for (name, path) in newest_first(files_in(&logs, |n| n.starts_with("a2dpwb-") && n.contains(".log"))) {
+        if budget == 0 {
+            skipped.push(format!("{name}: over the size limit"));
+            continue;
+        }
         match std::fs::read(&path) {
             Ok(data) => {
-                let tail = &data[data.len().saturating_sub(MAX_LOG_BYTES)..];
+                let keep = data.len().min(MAX_LOG_BYTES).min(budget);
+                budget -= keep;
+                if keep < data.len() {
+                    skipped.push(format!("{name}: only its last {} MB", keep / (1024 * 1024)));
+                }
+                let tail = &data[data.len() - keep..];
                 zip.add(&format!("logs/{name}"), text(String::from_utf8_lossy(tail).into_owned()).as_bytes());
             }
             Err(e) => skipped.push(format!("{name}: {e}")),
@@ -70,7 +87,15 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
             zip.add(&format!("config/driver/{name}"), text(s).as_bytes());
         }
     }
-    for (name, path) in files_in(&paths::crash_dir(&config), |_| true) {
+    let mut dumps = 0;
+    for (name, path) in newest_first(files_in(&paths::crash_dir(&config), |_| true)) {
+        if name.ends_with(".dmp") {
+            if dumps == MAX_DUMPS {
+                skipped.push(format!("crash/{name}: older minidump"));
+                continue;
+            }
+            dumps += 1;
+        }
         if let Ok(data) = std::fs::read(path) {
             zip.add(&format!("crash/{name}"), &data);
         }
@@ -84,7 +109,11 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
             zip.add(&format!("hci/recorder-{stamp}.pklg"), &data);
         }
         let _ = std::fs::remove_file(&now);
-        for (name, path) in files_in(&paths::recorder_dir(&config), |n| n.ends_with(".pklg")) {
+        let recordings = newest_first(files_in(&paths::recorder_dir(&config), |n| n.ends_with(".pklg")));
+        for (name, _) in recordings.iter().skip(MAX_RECORDINGS) {
+            skipped.push(format!("hci/{name}: older recording"));
+        }
+        for (name, path) in recordings.into_iter().take(MAX_RECORDINGS) {
             if let Ok(data) = std::fs::read(path) {
                 zip.add(&format!("hci/{name}"), &data);
             }
@@ -114,6 +143,12 @@ fn files_in(dir: &Path, keep: impl Fn(&str) -> bool) -> Vec<(String, PathBuf)> {
         .collect();
     v.sort();
     v
+}
+
+/// By modification time, the newest first
+fn newest_first(mut files: Vec<(String, PathBuf)>) -> Vec<(String, PathBuf)> {
+    files.sort_by_key(|(_, p)| std::cmp::Reverse(std::fs::metadata(p).and_then(|m| m.modified()).ok()));
+    files
 }
 
 fn prune(dir: &Path) {

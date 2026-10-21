@@ -221,8 +221,9 @@ fn logging_line(config: &std::path::Path) -> String {
         }
         None => "normal".into(),
     };
+    let capped = if logging::file_capped() { " (today's file is full: debug lines stopped)" } else { "" };
     format!(
-        "{verbose}; {} crash report(s); {} HCI flight recording(s)",
+        "{verbose}{capped}; {} crash report(s); {} HCI flight recording(s)",
         count(paths::crash_dir(config), "txt"),
         count(paths::recorder_dir(config), "pklg")
     )

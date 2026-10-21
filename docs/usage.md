@@ -52,13 +52,17 @@ The defaults give the best sound; most profiles need nothing under **Advanced**.
 - **Log**: live, filtered by level (all, info and above, warnings and errors, errors only) and by text. **Copy Shown Log** copies what is shown
 - **Start HCI Capture** / **Stop HCI Capture** (see [Verifying the Media Stream](#verify-stream))
 - **Copy Diagnostics**: version, OS, adapter, profile, the flow, warnings / errors and the recent log on the clipboard, ready to paste into a bug report. **Mask Bluetooth addresses** (on by default) keeps only the vendor part (`AA:BB:CC:xx:xx:xx`)
-- **Save Diagnostic Bundle**: one `.zip` (in `logs\bundles\` of the settings folder) to attach to a bug report: the diagnostic info, the log files of the core, the window and the driver helper, crash reports, system information (USB Bluetooth adapters and their drivers, Windows' paired devices, audio devices), settings and profiles (never the link keys), and the HCI flight recorder. With **Mask Bluetooth addresses** on, the text files are masked; the HCI captures keep the addresses
-- **Verbose logging**: **Detailed (debug)** or **Everything (trace)** logs far more about Bluetooth, USB, audio capture and encoding. It stays on for 24 hours (trace, which logs every packet: 1 hour), also across restarts (for problems at start-up), then turns itself off. Turn it on, reproduce the problem, then save a diagnostic bundle
+- **Report a problem**:
+  - **Verbose logging**: **Detailed (debug)** or **Everything (trace, 1 hour)** logs far more about Bluetooth, USB, audio capture and encoding. Debug stays on for 24 hours, also across restarts (for problems at start-up), then turns itself off. Turn it on, reproduce the problem, then save a diagnostic bundle
+  - **Diagnostic bundle > Save…**: choose whether HCI captures go in and whether Bluetooth addresses are masked in the text files, then save one `.zip` (in `logs\bundles\` of the settings folder, the newest 3 kept): the diagnostic info, the log files of the core, the window and the driver helper, crash reports, system information (USB Bluetooth adapters and their drivers, Windows' paired devices, audio devices), settings and profiles (never the link keys), and the HCI flight recorder. The HCI captures keep the addresses (not the pairing keys). It is kept under GitHub's 25 MB attachment limit where possible (the newest logs first, up to 48 MB of text, the newest 5 recordings and 2 minidumps)
+  - **Report on GitHub** (after saving): opens a new bug report with the version, Windows build, adapter, headphones, codec, capture mode and the diagnostic info (addresses masked) filled in, and shows the bundle in Explorer to drag into it
 
 A2DPWB also records some things all the time, so that a problem that happened once can still be looked at:
 
 - **HCI flight recorder**: the last few minutes of Bluetooth traffic are kept in memory (media payloads cut short, pairing keys removed) and saved to `logs\hci\` whenever a stream fails or a connection is lost (the newest 10 files are kept)
 - **Crash reports**: if A2DPWB crashes, a `.dmp` minidump and a `.txt` file go to `logs\crash\` (the newest 5 per program)
+
+Disk use stays bounded: a normal day's log is well under 1 MB and 7 days are kept; with verbose logging a day's file takes at most 100 MB of debug and trace lines (then only info and above go on until the next day); the flight recorder files are a few MB at most, 10 kept.
 
 With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test** tab (see [Peer Receiver Test](#receiver)).
 

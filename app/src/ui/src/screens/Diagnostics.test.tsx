@@ -58,19 +58,39 @@ describe("Diagnostics", () => {
     await waitFor(() => expect(core.state.snap!.verbose).toBeNull());
 
     const reveal = vi.spyOn(mock, "revealPath");
-    fireEvent.click(screen.getByRole("button", { name: "Save Diagnostic Bundle" }));
+    const open = vi.spyOn(mock, "openUrl").mockResolvedValue();
+    // The contents are chosen first: no bundle until Save in the dialog
+    fireEvent.click(screen.getByRole("button", { name: "Save…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Save Diagnostic Bundle" });
+    expect(calls.some((c) => c.method === "diag.bundle")).toBe(false);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include HCI captures" }));
+    fireEvent.click(dialog.querySelector(".dialog-actions .btn-strong")!);
     const saved = await waitFor(() => {
       const el = view.container.querySelector(".bundle-saved");
       expect(el).not.toBeNull();
       return el!;
     });
-    expect(calls.find((c) => c.method === "diag.bundle")!.params).toEqual({ mask: true, hci: true });
-    expect(saved).toHaveTextContent(/a2dpwb-diag-\d{8}_\d{6}\.zip/);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls.find((c) => c.method === "diag.bundle")!.params).toEqual({ mask: true, hci: false });
+    expect(saved).toHaveTextContent(/a2dpwb-diag-\d{8}_\d{6}\.zip · \d+ KB/);
     expect(saved).toHaveTextContent("Attach this file to your GitHub issue");
-    fireEvent.click(saved.querySelector(".btn-subtle")!);
+
+    // A prefilled issue, with the bundle shown in Explorer to drag in
+    fireEvent.click(screen.getByRole("button", { name: "Report on GitHub" }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    const url = new URL(open.mock.calls[0][0]);
+    expect(url.pathname).toBe("/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/new");
+    expect(url.searchParams.get("template")).toBe("bug_report.yml");
+    expect(url.searchParams.get("version")).toBe(core.state.snap!.update.current_version);
+    expect(url.searchParams.get("bundle")).toMatch(/^a2dpwb-diag-/);
+    expect(calls.filter((c) => c.method === "diag.info").at(-1)!.params).toEqual({ mask: true });
     expect(reveal).toHaveBeenCalledWith(expect.stringMatching(/\\bundles\\a2dpwb-diag-/));
-    fireEvent.click(saved.querySelector(".btn-icon")!);
+    fireEvent.click([...saved.querySelectorAll("button")].find((b) => b.textContent === "Close")!);
     await waitFor(() => expect(view.container.querySelector(".bundle-saved")).toBeNull());
+    // Back to the default for the other tests (the choice lives with the window)
+    fireEvent.click(screen.getByRole("button", { name: "Save…" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Include HCI captures" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   });
 
   it("masks addresses in the copied diagnostic info only while asked to", async () => {
