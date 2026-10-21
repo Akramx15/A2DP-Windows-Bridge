@@ -1,12 +1,15 @@
 //! The window process' own log: `<config dir>\logs\a2dpwb-ui.YYYY-MM-DD.log`
-//! next to the core's (the last 7 kept, local timestamps as the core's).
+//! next to the core's (local timestamps as the core's). The core removes
+//! the old ones with its own (7 days, developer mode: 1 to 365), daily and
+//! when the setting changes; this process only stops at 365 files.
 //! It holds what the core cannot see: the pages loading, errors in the
 //! frontend, the connection to the core, and whether a window that was
 //! shown actually has its page drawn (a blank or hung webview is the
 //! "white window").
 //!
 //! Filter: `A2DPWB_LOG` (EnvFilter syntax, default "info"), as the core.
-//! Verbose logging the core keeps in `logs\verbose.json` also turns this
+//! Verbose logging the core keeps in `logs\verbose.json`, and developer
+//! mode's verbose logging that stays on (settings.json), also turn this
 //! process' own modules up, from its next start.
 //!
 //! Panics and crashes in native code (WebView2's host side) leave crash
@@ -26,7 +29,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 const FILE_PREFIX: &str = "a2dpwb-ui";
-const KEEP_FILES: usize = 7;
+/// The core prunes by the retention setting; this is only a ceiling (the
+/// setting's maximum), so a longer retention set while this process runs
+/// is not cut short by it
+const KEEP_FILES: usize = 365;
 /// A frontend message is cut to this many characters
 const MAX_MESSAGE: usize = 2000;
 /// A shown window's page is probed this long after the show...
@@ -84,7 +90,7 @@ pub fn init() -> Option<WorkerGuard> {
             .ok()
     })?;
     let (writer, guard) = tracing_appender::non_blocking(appender);
-    let verbose = verbose_level(&dir);
+    let verbose = verbose_level(&dir).max(always_verbose(&config_dir()));
     let base = std::env::var("A2DPWB_LOG").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| "info".into());
     let directives = match verbose {
         Some(l) => format!("{base},a2dpwb={l},frontend={l},win_sys={l}"),
@@ -122,6 +128,24 @@ fn verbose_level(dir: &std::path::Path) -> Option<&'static str> {
         return None;
     }
     match v.get("level")?.as_str()? {
+        "debug" => Some("debug"),
+        "trace" => Some("trace"),
+        _ => None,
+    }
+}
+
+/// Developer mode's verbose logging that stays on (settings.json
+/// `dev_log.always_verbose`, only while `debug_mode` is on)
+fn always_verbose(config: &std::path::Path) -> Option<&'static str> {
+    let text = std::fs::read_to_string(config.join("settings.json")).ok()?;
+    always_verbose_of(&serde_json::from_str(&text).ok()?)
+}
+
+fn always_verbose_of(settings: &serde_json::Value) -> Option<&'static str> {
+    if settings.get("debug_mode")?.as_bool() != Some(true) {
+        return None;
+    }
+    match settings.get("dev_log")?.get("always_verbose")?.as_str()? {
         "debug" => Some("debug"),
         "trace" => Some("trace"),
         _ => None,
@@ -202,5 +226,23 @@ pub fn ui_probe(
         );
     } else {
         tracing::info!("[{label}] page shown: {text} chars of text, route {hash:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn always_verbose_only_in_developer_mode() {
+        let on = serde_json::json!({ "debug_mode": true, "dev_log": { "always_verbose": "trace" } });
+        assert_eq!(always_verbose_of(&on), Some("trace"));
+        let off = serde_json::json!({ "debug_mode": false, "dev_log": { "always_verbose": "debug" } });
+        assert_eq!(always_verbose_of(&off), None);
+        let unset = serde_json::json!({ "debug_mode": true, "dev_log": { "always_verbose": "" } });
+        assert_eq!(always_verbose_of(&unset), None);
+        // "trace" sorts after "debug": the higher of the two switches wins
+        assert_eq!(Some("debug").max(Some("trace")), Some("trace"));
+        assert_eq!(None.max(Some("debug")), Some("debug"));
     }
 }

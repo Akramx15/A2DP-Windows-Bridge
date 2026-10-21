@@ -10,6 +10,8 @@ publish.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 tokio = { version = "1", features = ["net"] }
+# webview.rs: WebView2's ProcessFailed (the version tauri's wry uses)
+webview2-com = "0.39"
 
 [dependencies.windows]
 version = "0.62"

@@ -12,6 +12,7 @@
 mod commands;
 mod connection;
 mod logging;
+mod recovery;
 mod update;
 mod windows;
 
@@ -90,7 +91,10 @@ fn main() {
             tracing::info!("the last window is gone; staying (tray)");
             api.prevent_exit();
         }
-        tauri::RunEvent::Exit => tracing::info!("a2dpwb exiting"),
+        tauri::RunEvent::Exit => {
+            tracing::info!("a2dpwb exiting");
+            recovery::relaunch_if_due();
+        }
         _ => {}
     });
 }

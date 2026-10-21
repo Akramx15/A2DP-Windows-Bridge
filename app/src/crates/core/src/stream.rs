@@ -547,6 +547,33 @@ fn device_turned_off(inner: &Inner, host: &BtHost) -> bool {
     }
 }
 
+/// The headphones were turned off: nothing is sent until they connect to
+/// the PC again (true). False when the session ends instead: stopped, or
+/// the stack has to start anew (sleep, a stopped adapter), which the next
+/// connection does.
+fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6], pipeline: &mut Option<Pipeline>) -> bool {
+    inner.waiting_for_device(true);
+    host.device_came_back(device);
+    if let Some(p) = pipeline.take()
+        && let Some(s) = p.stop()
+    {
+        host.return_media_sink(s);
+    }
+    let t = Instant::now();
+    let back = loop {
+        inner.wait_tick(Duration::from_millis(200));
+        if inner.stop_requested() || inner.power.suspending() || inner.power.stale() || host.stalled() {
+            break false;
+        }
+        if host.device_came_back(device) {
+            break true;
+        }
+    };
+    tracing::debug!("device off: waited {} s, back {back}", t.elapsed().as_secs());
+    inner.waiting_for_device(false);
+    back
+}
+
 /// The PC is going to sleep: the stack is shut down quietly (the pipeline's
 /// media sink belongs to it) and the session waits for the resume. Returns
 /// why the stack is then started anew, None when the session was stopped.
@@ -1147,15 +1174,23 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         // again on it
         let lost = host.check_disconnected();
         let check = check_link(lost, host.stalled(), inner.power.stale(), inner.power.suspending());
+        // Headphones turned back on: connecting to them is no failure
+        let mut back_on = false;
         let mut restart_why = match check {
             LinkCheck::Fine => continue,
             LinkCheck::Reconnect if device_turned_off(inner, &host) => {
                 // As Windows and Android: the headphones went off, nothing
-                // to retry; the user connects again when they are back
+                // to retry; when they are back on they connect to the PC
+                // and the stream resumes
                 tracing::info!("the headphones were turned off or disconnected themselves");
                 inner.notify(StreamState::Idle, Msg::new("status.device_off"));
-                lost_for_good = true;
-                break;
+                if !wait_for_device(inner, &host, req.device, &mut pipeline) {
+                    lost_for_good = true;
+                    break;
+                }
+                tracing::info!("the headphones connected again, resuming");
+                back_on = true;
+                None
             }
             LinkCheck::Reconnect => {
                 tracing::warn!("connection lost, reconnecting");
@@ -1177,7 +1212,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
         };
         tracing::debug!("reconnect: link check {check:?}, restart reason {restart_why:?}");
-        inner.notify(StreamState::Reconnecting, Msg::new("status.connection_lost"));
+        let (lost_state, lost_msg) = if back_on {
+            (StreamState::Connecting, "status.device_back")
+        } else {
+            (StreamState::Reconnecting, "status.connection_lost")
+        };
+        inner.notify(lost_state, Msg::new(lost_msg));
         let reconnect_start = Instant::now();
 
         let mut reconnected = None;
@@ -1195,10 +1235,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 restart_why = Some(why);
             }
             attempt += 1;
-            inner.notify(
-                StreamState::Reconnecting,
-                Msg::with("status.reconnect_attempt", &[&attempt, &RECONNECT_ATTEMPTS]),
-            );
+            inner.notify(lost_state, Msg::with("status.reconnect_attempt", &[&attempt, &RECONNECT_ATTEMPTS]));
             tracing::debug!("reconnect: attempt {attempt}/{RECONNECT_ATTEMPTS} in 3000 ms");
             // React to a stop within the wait
             let until = Instant::now() + Duration::from_secs(3);

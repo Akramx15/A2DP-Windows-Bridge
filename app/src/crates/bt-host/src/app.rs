@@ -893,12 +893,14 @@ impl HostApp {
                     );
                 } else {
                     tracing::info!("HCI ACL connection established to {}", addr_str(&addr));
-                    if self.remote_addr == Some(addr) {
-                        self.shared.update(|s| {
+                    let target = self.remote_addr == Some(addr);
+                    self.shared.update(|s| {
+                        s.acl_up_from = Some(addr);
+                        if target {
                             s.target_acl_down_reason = 0;
                             s.target_acl_handle = Some(handle & 0x0FFF);
-                        });
-                    }
+                        }
+                    });
                 }
             }
             GAP_EVENT_INQUIRY_RESULT => {

@@ -135,6 +135,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
       aac_no_afterburner: false,
       aac_latm_v0: false,
     },
+    dev_log: { keep_days: 7, day_cap_mb: 100, always_verbose: null, health_every_interval: false },
     bt_chip_pid: 0,
     bt_chip_fw_stem: "",
     afh: "auto",
@@ -472,6 +473,7 @@ export class MockCore implements Transport {
   private snap: Snapshot;
   private scenario: MockScenario;
   private rev = 0;
+  private marks = 0;
   private onMessage: (m: ServerMessage) => void = () => {};
   private speed: number;
   private onCall?: (method: string, params: unknown) => void;
@@ -676,6 +678,12 @@ export class MockCore implements Transport {
         this.log("info", "a2dpwb_core", v ? `verbose logging on (${level}) for 24 hours` : "verbose logging off");
         this.emit({ kind: "verbose", value: v });
         return v;
+      }
+      case "diag.mark": {
+        this.marks += 1;
+        const note = String(p.note ?? "").trim();
+        this.log("info", "a2dpwb_core::mark", note ? `===== MARK ${this.marks}: ${note} =====` : `===== MARK ${this.marks} =====`);
+        return this.marks;
       }
       case "diag.bundle": {
         const d = new Date();

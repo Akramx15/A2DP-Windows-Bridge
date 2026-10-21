@@ -19,9 +19,10 @@ use a2dpwb_core::{
 use bt_host::LinkStats;
 use bt_host::chips::{self, ChipVendor};
 use ipc::{
-    AdapterInfo, AdapterState, AdapterStatus, AudioApp, AudioDevice, CaptureState, DevOverrides, Device, DiagInfo,
-    DriverKind, ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, Method, Msg, Profile, ReceiverConnection,
-    ReceiverState, Settings, SettingsApplied, Snapshot, SourceInfo, StreamState, StreamStatus, UpdateState,
+    AdapterInfo, AdapterState, AdapterStatus, AudioApp, AudioDevice, CaptureState, DevLog, DevOverrides, Device,
+    DiagInfo, DriverKind, ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, Method, Msg, Profile,
+    ReceiverConnection, ReceiverState, Settings, SettingsApplied, Snapshot, SourceInfo, StreamState, StreamStatus,
+    UpdateState,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -181,6 +182,16 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
             aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
             aac_latm_v0: s.dev_overrides.aac_latm_v0,
         },
+        dev_log: DevLog {
+            keep_days: s.dev_log.keep_days,
+            day_cap_mb: s.dev_log.day_cap_mb,
+            always_verbose: match s.dev_log.always_verbose.as_str() {
+                "debug" => Some(ipc::LogLevel::Debug),
+                "trace" => Some(ipc::LogLevel::Trace),
+                _ => None,
+            },
+            health_every_interval: s.dev_log.health_every_interval,
+        },
         bt_chip_pid: s.bt_chip_pid,
         bt_chip_fw_stem: s.bt_chip_fw_stem.clone(),
         afh: s.afh.clone(),
@@ -215,6 +226,17 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
         aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
         aac_latm_v0: s.dev_overrides.aac_latm_v0,
     };
+    c.dev_log = a2dpwb_core::settings::DevLog {
+        keep_days: s.dev_log.keep_days,
+        day_cap_mb: s.dev_log.day_cap_mb,
+        always_verbose: match s.dev_log.always_verbose {
+            Some(ipc::LogLevel::Debug) => "debug".into(),
+            Some(ipc::LogLevel::Trace) => "trace".into(),
+            _ => String::new(),
+        },
+        health_every_interval: s.dev_log.health_every_interval,
+    }
+    .clamped();
     c.bt_chip_pid = s.bt_chip_pid;
     c.bt_chip_fw_stem = s.bt_chip_fw_stem.clone();
     c.afh = s.afh.clone();
@@ -919,6 +941,7 @@ impl CoreState {
 
     fn save_settings(&self, s: CoreSettings) -> Result<(), ErrorInfo> {
         s.save(&self.config_dir()).map_err(|_| err("settings.save_failed", "error.settings_save"))?;
+        crate::logging::set_dev(&s.log());
         let ui = to_ipc_settings(&s);
         self.service.set_settings(s);
         self.publish(Event::Settings(ui));
@@ -1512,6 +1535,7 @@ impl CoreState {
                 self.crashes_seen();
                 Ok(Value::Null)
             }
+            Method::DiagMark { note } => Ok(json(&crate::logging::mark(&note))),
             Method::DiagSetVerbose { level } => {
                 let v = crate::logging::set_verbose(level);
                 self.publish(Event::Verbose(v));
