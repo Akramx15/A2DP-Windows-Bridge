@@ -1,0 +1,62 @@
+//! Developer-mode overrides for finding out why a sink stays silent (issue
+//! #87): the UI's Developer screen sets them, the encoders and the media
+//! path read them when a stream is set up. All off (the default) changes
+//! nothing; the core clears them while developer mode is off.
+
+use std::sync::RwLock;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DevOverrides {
+    /// RTP marker bit set on every packet (RTP codecs)
+    pub rtp_marker: bool,
+    /// Log the first bytes of the first media packets
+    pub packet_dump: bool,
+    /// AAC: the bit rate field of the configuration is 0 (unknown)
+    pub aac_config_bitrate0: bool,
+    /// AAC: encoder bit rate in kbit/s; 0 = the quality's
+    pub aac_bitrate_kbps: u32,
+    /// AAC: no AACENC_PEAK_BITRATE
+    pub aac_no_peak: bool,
+    /// AAC: no afterburner
+    pub aac_no_afterburner: bool,
+    /// AAC: the StreamMuxConfig of 2.0.2 and before (AudioMuxVersion 0,
+    /// implicit signaling) instead of Android's and PipeWire's
+    pub aac_latm_v0: bool,
+}
+
+impl DevOverrides {
+    pub fn is_default(&self) -> bool {
+        *self == DevOverrides::default()
+    }
+}
+
+static CURRENT: RwLock<DevOverrides> = RwLock::new(DevOverrides {
+    rtp_marker: false,
+    packet_dump: false,
+    aac_config_bitrate0: false,
+    aac_bitrate_kbps: 0,
+    aac_no_peak: false,
+    aac_no_afterburner: false,
+    aac_latm_v0: false,
+});
+
+/// The overrides in force
+pub fn overrides() -> DevOverrides {
+    *CURRENT.read().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Sets the overrides; logs when they change
+pub fn set_overrides(o: DevOverrides) {
+    let mut cur = CURRENT.write().unwrap_or_else(|e| e.into_inner());
+    if *cur != o {
+        if o.is_default() {
+            tracing::info!("developer overrides: off");
+        } else {
+            tracing::warn!("developer overrides: {o:?}");
+        }
+        *cur = o;
+    }
+}

@@ -35,9 +35,8 @@ import {
   timeOfDay,
   type LevelFilter,
 } from "../lib/logview";
-import { ReceiverTest } from "./ReceiverTest";
 
-type Tab = "link" | "flow" | "log" | "receiver";
+type Tab = "link" | "flow" | "log";
 
 // ---- Window-wide view state (kept while the window lives, so it is still
 // there when the user comes back to the screen) ----------------------------
@@ -110,7 +109,6 @@ export function Diagnostics() {
   const app = useApp();
   const { core } = app;
   const [tab, setTab] = createSignal<Tab>("link");
-  const dev = () => core.state.snap!.settings.developer_mode;
   const capture = () => core.state.snap!.capture;
   const [capBusy, setCapBusy] = createSignal(false);
   const logView = createLogView();
@@ -184,7 +182,6 @@ export function Diagnostics() {
     { id: "link", label: t("quality.title"), icon: "pulse" },
     { id: "flow", label: t("dbgc.section_flow"), icon: "checkmark_circle" },
     { id: "log", label: t("dbgc.section_log"), icon: "people_list" },
-    ...(dev() ? [{ id: "receiver" as Tab, label: t("receiver.title"), icon: "beaker" as IconName }] : []),
   ];
 
   const onTabKey = (e: KeyboardEvent) => {
@@ -268,9 +265,6 @@ export function Diagnostics() {
         </Show>
         <Show when={tab() === "log"}>
           <LogPanel view={logView} />
-        </Show>
-        <Show when={tab() === "receiver" && dev()}>
-          <ReceiverTest />
         </Show>
       </div>
     </div>

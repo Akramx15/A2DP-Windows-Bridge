@@ -409,6 +409,20 @@ fn yes() -> bool {
     true
 }
 
+/// Developer mode's overrides (codec::dev::DevOverrides)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(default)]
+pub struct DevOverrides {
+    pub rtp_marker: bool,
+    pub packet_dump: bool,
+    pub aac_config_bitrate0: bool,
+    #[ts(type = "number")]
+    pub aac_bitrate_kbps: u32,
+    pub aac_no_peak: bool,
+    pub aac_no_afterburner: bool,
+    pub aac_latm_v0: bool,
+}
+
 /// Application settings the UI edits
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
@@ -425,6 +439,10 @@ pub struct Settings {
     pub remember_volume: bool,
     /// Developer mode: receiver test, HCI capture, debug details
     pub developer_mode: bool,
+    /// Developer mode: overrides of the codec and media path, in force
+    /// while developer_mode is on (read when the next stream is set up)
+    #[serde(default)]
+    pub dev_overrides: DevOverrides,
     /// 0 = auto, a Realtek PID, 0xFFFE = not Realtek
     pub bt_chip_pid: u16,
     pub bt_chip_fw_stem: String,

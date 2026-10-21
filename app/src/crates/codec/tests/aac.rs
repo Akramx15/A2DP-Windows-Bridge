@@ -46,20 +46,32 @@ struct Latm {
     payload_len: usize,
 }
 
+/// LatmGetValue(): bytesForValue, then that many bytes plus one
+fn latm_value(b: &mut Bits) -> u32 {
+    let bytes = b.read(2) + 1;
+    b.read(8 * bytes as usize)
+}
+
 /// Parses one AudioMuxElement(muxConfigPresent = 1) of ISO/IEC 14496-3
 /// 1.7.3 as fdk-aac writes it for AAC-LC, checking every StreamMuxConfig
-/// field, that the payload length covers the rest of the packet and that the
-/// padding is zero
-fn parse_latm(packet: &[u8], sample_rate: u32, channels: u32) -> Latm {
+/// field (AudioMuxVersion `version`), that the payload length covers the
+/// rest of the packet and that the padding is zero
+fn parse_latm(packet: &[u8], sample_rate: u32, channels: u32, version: u32) -> Latm {
     let mut b = Bits { data: packet, pos: 0 };
     let smc = b.read(1) == 0; // useSameStreamMux
     if smc {
-        assert_eq!(b.read(1), 0, "audioMuxVersion");
+        assert_eq!(b.read(1), version, "audioMuxVersion");
+        if version == 1 {
+            assert_eq!(b.read(1), 0, "audioMuxVersionA");
+            latm_value(&mut b); // taraBufferFullness
+        }
         assert_eq!(b.read(1), 1, "allStreamsSameTimeFraming");
         assert_eq!(b.read(6), 0, "numSubFrames");
         assert_eq!(b.read(4), 0, "numProgram");
         assert_eq!(b.read(3), 0, "numLayer");
-        // AudioSpecificConfig (inline with AudioMuxVersion 0)
+        // AudioSpecificConfig: inline with AudioMuxVersion 0, after its
+        // length in bits with 1 (which may hold more than the fields here)
+        let asc_end = if version == 1 { Some(latm_value(&mut b) as usize + b.pos) } else { None };
         assert_eq!(b.read(5), 2, "audioObjectType AAC-LC");
         let sf_index = if sample_rate == 48000 { 3 } else { 4 };
         assert_eq!(b.read(4), sf_index, "samplingFrequencyIndex");
@@ -67,6 +79,10 @@ fn parse_latm(packet: &[u8], sample_rate: u32, channels: u32) -> Latm {
         assert_eq!(b.read(1), 0, "frameLengthFlag (1024)");
         assert_eq!(b.read(1), 0, "dependsOnCoreCoder");
         assert_eq!(b.read(1), 0, "extensionFlag");
+        if let Some(end) = asc_end {
+            assert!(end >= b.pos, "ASC length");
+            b.pos = end;
+        }
         assert_eq!(b.read(3), 0, "frameLengthType");
         b.read(8); // latmBufferFullness
         assert_eq!(b.read(1), 0, "otherDataPresent");
@@ -113,7 +129,8 @@ fn encode_tone(cfg: &EncoderConfig) -> (AacEncoder, Vec<Vec<u8>>) {
         // One access unit per call: the input is exactly one frame
         assert_eq!(e.frames, 1, "call {call}");
         assert!(e.bytes > 0 && e.bytes <= usize::from(cfg.mtu), "call {call}: {} bytes, MTU {}", e.bytes, cfg.mtu);
-        let latm = parse_latm(&out[..e.bytes], cfg.sample_rate, cfg.channels);
+        // AudioMuxVersion 1, as Android and PipeWire (issue #87)
+        let latm = parse_latm(&out[..e.bytes], cfg.sample_rate, cfg.channels, 1);
         // StreamMuxConfig in every frame (issue #87)
         assert!(latm.smc, "no StreamMuxConfig in frame {}", packets.len());
         assert!(latm.payload_len > 0);

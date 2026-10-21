@@ -94,6 +94,9 @@ pub struct Settings {
     pub saved_volumes: BTreeMap<String, i32>,
 
     pub debug_mode: bool,
+    /// Developer mode: overrides of the codec and media path (in force only
+    /// while debug_mode is on)
+    pub dev_overrides: codec::dev::DevOverrides,
 
     /// Realtek chip for the firmware download: 0 = auto; a Realtek PID for
     /// OEM adapters whose VID is not Realtek's
@@ -153,6 +156,7 @@ impl Default for Settings {
             remember_volume: false,
             saved_volumes: BTreeMap::new(),
             debug_mode: false,
+            dev_overrides: codec::dev::DevOverrides::default(),
             bt_chip_pid: 0,
             bt_chip_fw_stem: String::new(),
             afh: default_afh(),

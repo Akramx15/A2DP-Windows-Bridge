@@ -133,6 +133,7 @@ impl Packetizer {
             _ => {}
         }
         self.packet.timestamp = self.first_ts;
+        self.packet.marker = self.packet.rtp && codec::dev::overrides().rtp_marker;
         send(&self.packet);
         self.packet.len = self.header as u16;
         self.frames = 0;
