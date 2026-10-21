@@ -88,13 +88,14 @@ function ConnectionScreen(props: { compact?: boolean }) {
 
 const NAV: { name: RouteName; icon: IconName; label: string }[] = [
   { name: "home", icon: "home", label: "ui.nav.home" },
-  { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
   { name: "profiles", icon: "headphones", label: "ui.nav.profiles" },
-  { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
-  { name: "developer", icon: "wrench", label: "ui.nav.developer" },
+  { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
   { name: "adapter", icon: "usb_stick", label: "ui.nav.adapter" },
+  { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
   { name: "settings", icon: "settings", label: "ui.nav.settings" },
   { name: "about", icon: "info", label: "ui.nav.about" },
+  // Shown in developer mode only: last, out of the way
+  { name: "developer", icon: "wrench", label: "ui.nav.developer" },
 ];
 
 function MainWindow() {
