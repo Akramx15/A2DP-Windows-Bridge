@@ -12,20 +12,12 @@
 //! so a crash on every start ends the UI instead of looping; the next click
 //! on the tray icon starts it afresh.
 
-// The WebView2 COM calls; nothing else in this crate is unsafe
-#![allow(unsafe_code)]
-
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
-use webview2_com::Microsoft::Web::WebView2::Win32::{
-    COREWEBVIEW2_PROCESS_FAILED_KIND, COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED,
-    COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
-    COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE,
-};
-use webview2_com::ProcessFailedEventHandler;
+use win_sys::webview::ProcessFailed;
 
 use crate::windows::{FLYOUT, MAIN};
 
@@ -45,21 +37,8 @@ pub fn watch(window: &WebviewWindow) {
     let label = window.label().to_string();
     let app = window.app_handle().clone();
     let result = window.with_webview(move |webview| {
-        let handler = ProcessFailedEventHandler::create(Box::new(move |_, args| {
-            let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
-            if let Some(args) = args {
-                // SAFETY: a COM getter writing into a local
-                unsafe { args.ProcessFailedKind(&mut kind)? };
-            }
-            on_failed(&app, &label, kind);
-            Ok(())
-        }));
-        let mut token = 0;
-        // SAFETY: COM calls on the webview's own controller, on the thread
-        // that owns it (with_webview runs there); the handler lives as long
-        // as the webview, the token is not needed (it is never removed)
         let added =
-            unsafe { webview.controller().CoreWebView2().and_then(|w| w.add_ProcessFailed(&handler, &mut token)) };
+            win_sys::webview::on_process_failed(&webview.controller(), move |kind| on_failed(&app, &label, kind));
         if let Err(e) = added {
             tracing::warn!("cannot watch the webview's processes: {e}");
         }
@@ -69,12 +48,11 @@ pub fn watch(window: &WebviewWindow) {
     }
 }
 
-fn on_failed(app: &AppHandle, label: &str, kind: COREWEBVIEW2_PROCESS_FAILED_KIND) {
+fn on_failed(app: &AppHandle, label: &str, kind: ProcessFailed) {
     match kind {
-        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED => browser_exited(app),
-        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED
-        | COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => {
-            let what = if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED { "exited" } else { "hangs" };
+        ProcessFailed::BrowserExited => browser_exited(app),
+        ProcessFailed::RendererExited | ProcessFailed::RendererUnresponsive => {
+            let what = if kind == ProcessFailed::RendererExited { "exited" } else { "hangs" };
             tracing::warn!("[{label}] the page's renderer process {what}; reloading the page");
             if let Some(w) = app.get_webview_window(label)
                 && let Err(e) = w.reload()
@@ -83,7 +61,9 @@ fn on_failed(app: &AppHandle, label: &str, kind: COREWEBVIEW2_PROCESS_FAILED_KIN
             }
         }
         // GPU, utility and the others: WebView2 starts them again itself
-        other => tracing::info!("[{label}] a WebView2 process exited (kind {}); WebView2 restarts it", other.0),
+        ProcessFailed::Other(kind) => {
+            tracing::info!("[{label}] a WebView2 process exited (kind {kind}); WebView2 restarts it")
+        }
     }
 }
 

@@ -5,8 +5,7 @@
 //! Arguments: `--flyout` opens the tray flyout instead of the main window
 //! (the core starts the UI this way when the tray icon is clicked).
 
-// Denied, not forbidden: recovery.rs makes the WebView2 COM calls
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 // No console window in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 

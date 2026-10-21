@@ -19,4 +19,5 @@ pub mod power;
 pub mod process;
 pub mod single_instance;
 pub mod usb_adapters;
+pub mod webview;
 pub mod wlan;
