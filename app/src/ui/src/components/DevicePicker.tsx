@@ -114,15 +114,21 @@ export function DevicePicker(props: {
     const ok = await app.run(() =>
       app.core.request("device.rename", { address, name: saved, ...(leAudio ? { le_audio: true } : {}) }),
     );
-    // A device without a profile gets one that picks the best codec, ready
-    // to connect (like pairing does on other systems); the user makes more
+    // A device without a profile gets one that picks the best codec and is
+    // connected with it right away (pairing it, as other systems do); the
+    // user makes more. A running stream and the first-run setup (it tests
+    // the device itself) are left alone.
     if (ok && !leAudio && !snap().profiles.some((p) => p.device_address.toUpperCase() === address.toUpperCase())) {
       const taken = snap().profiles.map((p) => p.name);
       const base = defaultProfileName(saved, address, false, t("codec.auto"));
       let profileName = base;
       for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
       const profile = normalizeProfile({ ...newProfile(), name: profileName, device_address: address, device_name: saved });
-      await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
+      const made = await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
+      const state = snap().stream.state;
+      if (made && !app.setupActive() && (state === "idle" || state === "error")) {
+        await app.run(() => app.core.request("stream.start", { profile: profileName }));
+      }
     }
     setBusy(false);
   };

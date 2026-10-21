@@ -105,6 +105,22 @@ describe("saved devices on the Audio Devices screen", () => {
       profile: { name: "Galaxy Buds2 Pro | Auto", codec: "auto", device_name: "Galaxy Buds2 Pro" },
       original_name: null,
     });
+    // ... and connects with it, as pairing does on other systems
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "stream.start")?.params).toEqual({ profile: "Galaxy Buds2 Pro | Auto" }),
+    );
+  });
+
+  it("leaves a running stream alone when a device is added", async () => {
+    const { calls } = start("#/devices");
+    fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
+    const row = (await screen.findByText(/Galaxy Buds2 Pro/)).closest(".device-row") as HTMLElement;
+    await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(screen.getAllByText(/Streaming/).length).toBeGreaterThan(0));
+    calls.length = 0;
+    fireEvent.click(within(row).getByRole("button", { name: t("ui.devices.add") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    expect(calls.some((c) => c.method === "stream.start")).toBe(false);
   });
 
   it("is only a list to choose from in the profile editor", async () => {
