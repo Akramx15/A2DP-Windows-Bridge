@@ -42,6 +42,8 @@
 #include "classic/avrcp_controller.h"
 #include "classic/avrcp_target.h"
 #include "classic/btstack_link_key_db.h"
+#include "classic/hfp_ag.h"
+#include "classic/rfcomm.h"
 #include "classic/btstack_link_key_db_memory.h"
 #include "classic/sdp_server.h"
 #include "btstack_chipset_intel_firmware.h"
@@ -289,6 +291,7 @@ enum {
     SOURCE_GATT_CLIENT = 7,
     SOURCE_ATT_SERVER = 8,
     SOURCE_ISO = 9,
+    SOURCE_HFP = 10,
 };
 
 static void handler_hci(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_HCI, t, c, p, s); }
@@ -300,6 +303,7 @@ static void handler_avrcp_tg(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2
 static void handler_sm(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_SM, t, c, p, s); }
 static void handler_gatt_client(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_GATT_CLIENT, t, c, p, s); }
 static void handler_att_server(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_ATT_SERVER, t, c, p, s); }
+static void handler_hfp(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_HFP, t, c, p, s); }
 static void handler_iso(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_ISO, t, c, p, s); }
 
 static btstack_packet_callback_registration_t hci_event_registration;
@@ -325,6 +329,61 @@ void a2dpwb_avrcp_init(void) {
     avrcp_controller_register_packet_handler(&handler_avrcp_ct);
     avrcp_target_init();
     avrcp_target_register_packet_handler(&handler_avrcp_tg);
+}
+
+/* ======================================================================== */
+/* HFP audio gateway: service level connection only (headphone battery)     */
+/* ======================================================================== */
+
+#define A2DPWB_HFP_RFCOMM_CHANNEL 4
+
+static uint8_t sdp_hfp_ag_service[200];
+static uint8_t hfp_codecs[] = { HFP_CODEC_CVSD };
+static hfp_ag_indicator_t hfp_ag_indicators[] = {
+    /* index, name, min, max, status, mandatory, enabled, status changed */
+    {1, "service",   0, 1, 1, 0, 0, 0},
+    {2, "call",      0, 1, 0, 1, 1, 0},
+    {3, "callsetup", 0, 3, 0, 1, 1, 0},
+    {4, "battchg",   0, 5, 5, 0, 0, 0},
+    {5, "signal",    0, 5, 5, 0, 1, 0},
+    {6, "roam",      0, 1, 0, 0, 1, 0},
+    {7, "callheld",  0, 2, 0, 1, 1, 0}
+};
+/* HF indicators: enhanced safety, battery level (the headphones report it
+ * with AT+BIEV) */
+static hfp_generic_status_indicator_t hfp_hf_indicators[] = { {1, 1}, {2, 1} };
+static const char *hfp_call_hold_services[] = {"1", "2"};
+
+void a2dpwb_hfp_ag_init(void) {
+    uint16_t features = (1 << HFP_AGSF_HF_INDICATORS) | (1 << HFP_AGSF_EXTENDED_ERROR_RESULT_CODES);
+    rfcomm_init();
+    hfp_ag_init(A2DPWB_HFP_RFCOMM_CHANNEL);
+    hfp_ag_init_supported_features(features);
+    hfp_ag_init_codecs(sizeof(hfp_codecs), hfp_codecs);
+    hfp_ag_init_ag_indicators(sizeof(hfp_ag_indicators) / sizeof(hfp_ag_indicators[0]), hfp_ag_indicators);
+    hfp_ag_init_hf_indicators(sizeof(hfp_hf_indicators) / sizeof(hfp_hf_indicators[0]), hfp_hf_indicators);
+    hfp_ag_init_call_hold_services(2, hfp_call_hold_services);
+    /* Apple accessories (Sony, Bose...) report their battery with
+     * AT+IPHONEACCEV once the AG answers AT+XAPL: as an iPhone does, with
+     * the battery (2) and docking (4) features. Sony's WH-1000XM4 sends
+     * nothing when the AG gives another name or no features. */
+    hfp_ag_init_apple_identification("iPhone", 0x06);
+    memset(sdp_hfp_ag_service, 0, sizeof(sdp_hfp_ag_service));
+    hfp_ag_create_sdp_record_with_codecs(sdp_hfp_ag_service, sdp_create_service_record_handle(),
+                                         A2DPWB_HFP_RFCOMM_CHANNEL, "A2DPWB", 0, features, sizeof(hfp_codecs),
+                                         hfp_codecs);
+    sdp_register_service(sdp_hfp_ag_service);
+    hfp_ag_register_packet_handler(&handler_hfp);
+}
+
+uint8_t a2dpwb_hfp_ag_connect(const uint8_t *addr) {
+    bd_addr_t a;
+    memcpy(a, addr, 6);
+    return hfp_ag_establish_service_level_connection(a);
+}
+
+uint8_t a2dpwb_hfp_ag_release(uint16_t acl_handle) {
+    return hfp_ag_release_service_level_connection(acl_handle);
 }
 
 /* ======================================================================== */

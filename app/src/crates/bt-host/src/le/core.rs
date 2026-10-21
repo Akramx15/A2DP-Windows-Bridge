@@ -247,6 +247,8 @@ pub struct LeCore {
     pub(crate) shared: Arc<LeShared>,
     controls: Arc<Controls>,
     poster: LePoster,
+    events: std::sync::mpsc::Sender<crate::HostEvent>,
+    battery: bool,
     /// Taken at stack init (the modules get it)
     config: Option<LeConfig>,
     initialized: bool,
@@ -1495,8 +1497,17 @@ impl UnicastEnv for LeCtx<'_> {
 // ============================================================================
 
 impl LeCore {
-    pub(crate) fn new(config: LeConfig, shared: Arc<LeShared>, controls: Arc<Controls>, poster: LePoster) -> LeCore {
+    pub(crate) fn new(
+        config: LeConfig,
+        shared: Arc<LeShared>,
+        controls: Arc<Controls>,
+        poster: LePoster,
+        events: std::sync::mpsc::Sender<crate::HostEvent>,
+        battery: bool,
+    ) -> LeCore {
         LeCore {
+            events,
+            battery,
             iso: IsoSender::new(shared.stats.clone()),
             shared,
             controls,
@@ -1558,6 +1569,8 @@ impl LeCore {
                 ccp_sim: cfg.ccp_sim,
                 ccp_console: cfg.ccp_console,
                 poster: self.poster.clone(),
+                events: self.events.clone(),
+                battery: self.battery,
             };
             let mut hooks = Vec::new();
             let mut names = Vec::new();

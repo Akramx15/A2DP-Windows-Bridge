@@ -156,6 +156,25 @@ impl Stack {
         mark(INIT_AVRCP);
     }
 
+    /// HFP audio gateway (after sdp_init): only the service level
+    /// connection is made, for the headphones' battery level; events come as
+    /// [`crate::Source::Hfp`]
+    pub fn hfp_ag_init(&self) {
+        // SAFETY: on the BTstack thread, after l2cap / sdp init.
+        unsafe { ffi::a2dpwb_hfp_ag_init() };
+    }
+
+    /// Opens the service level connection to the headphones' HFP
+    pub fn hfp_ag_connect(&self, addr: &[u8; 6]) -> u8 {
+        // SAFETY: on the BTstack thread after hfp_ag_init; 6 bytes.
+        unsafe { ffi::a2dpwb_hfp_ag_connect(addr.as_ptr()) }
+    }
+
+    pub fn hfp_ag_release(&self, acl_handle: u16) -> u8 {
+        // SAFETY: on the BTstack thread after hfp_ag_init.
+        unsafe { ffi::a2dpwb_hfp_ag_release(acl_handle) }
+    }
+
     /// SDP records: A2DP source (player), AVRCP controller and target with
     /// these supported features
     pub fn sdp_register_records(&self, controller_features: u16, target_features: u16) {

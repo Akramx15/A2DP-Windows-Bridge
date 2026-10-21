@@ -354,6 +354,10 @@ pub struct StreamStatus {
     pub info: Option<StreamInfo>,
     /// Headphone volume (AVRCP, 0..127), None while unknown
     pub volume: Option<u8>,
+    /// Headphone battery level in percent, None while unknown (needs
+    /// Settings.battery_experimental and headphones that report it)
+    #[serde(default)]
+    pub battery: Option<u8>,
 }
 
 /// A connection profile, as in profiles.json

@@ -31,6 +31,8 @@ pub struct State {
     /// The controller's own Bluetooth address ("AA:BB:CC:DD:EE:FF"), once it
     /// has answered Read BD_ADDR
     pub local_address: Option<String>,
+    /// The headphones' battery level in percent (HFP), once they said
+    pub battery: Option<u8>,
 
     // ---- one-shot completions, cleared by the caller before each request ----
     pub connect_done: Option<bool>,

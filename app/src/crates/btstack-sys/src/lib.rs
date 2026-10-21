@@ -73,6 +73,9 @@ pub enum Source {
     /// The ISO handler: HCI_EVENT_CIS_CAN_SEND_NOW (event packets, channel =
     /// CIS handle) and incoming ISO data (HCI_ISO_DATA_PACKET)
     Iso,
+    /// HFP audio gateway events (HCI_EVENT_HFP_META), after
+    /// [`Stack::hfp_ag_init`]
+    Hfp,
 }
 
 impl Source {
@@ -87,6 +90,7 @@ impl Source {
             7 => Source::GattClient,
             8 => Source::AttServer,
             9 => Source::Iso,
+            10 => Source::Hfp,
             _ => Source::Hci,
         }
     }

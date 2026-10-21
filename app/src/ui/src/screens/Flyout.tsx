@@ -74,9 +74,12 @@ export function Flyout() {
       </Show>
 
       <div class="fly-row">
-        <CodecBadge compact />
+        <CodecBadge />
         <QualityIndicator />
       </div>
+      <Show when={stream().battery !== null}>
+        <div class="muted fly-battery">{t("ui.home.battery", stream().battery!)}</div>
+      </Show>
       <Show when={profile() || snap().capture}>
         <div class="fly-meta">
           <Show when={profile()}>{(p) => <CapturePicker profile={p()} />}</Show>

@@ -110,6 +110,10 @@ pub struct HostConfig {
     pub afh: Option<Box<dyn AfhSource>>,
     /// LE Audio (experimental); None: LE stays off and hidden
     pub le_audio: Option<LeConfig>,
+    /// Headphone battery level: an HFP audio gateway that only makes the
+    /// service level connection, where the headphones report it (and the LE
+    /// Battery Service). Off: no HFP at all.
+    pub battery: bool,
 }
 
 impl HostConfig {
@@ -126,6 +130,7 @@ impl HostConfig {
             capture: HciCapture::new(),
             afh: None,
             le_audio: None,
+            battery: false,
         }
     }
 }
@@ -194,6 +199,8 @@ pub enum HostEvent {
     ConnectionLost,
     /// The headphones reported their volume (0..127)
     Volume(u8),
+    /// The headphones reported their battery level (percent)
+    Battery(u8),
     /// A headphone button to pass to Windows as a media key
     MediaKey(MediaKey),
     /// The HCI transport stopped working for good
@@ -333,6 +340,7 @@ impl BtHost {
         let thread = {
             let (shared, controls, stats) = (shared.clone(), controls.clone(), stats.clone());
             let (le_shared, le_jobs) = (le_shared.clone(), jobs_tx.clone());
+            let le_events = events_tx.clone();
             std::thread::Builder::new()
                 .name("bt-runloop".into())
                 .spawn(move || {
@@ -348,6 +356,7 @@ impl BtHost {
                         capture,
                         afh,
                         le_audio,
+                        battery,
                     } = config;
                     let failed_shared = shared.clone();
                     let result = btstack_sys::run(move |stack, remote| {
@@ -358,7 +367,7 @@ impl BtHost {
                         }
                         let le = le_audio.map(|cfg| {
                             let poster = le::core::LePoster::new(le_jobs, remote);
-                            le::core::LeCore::new(cfg, le_shared, controls.clone(), poster)
+                            le::core::LeCore::new(cfg, le_shared, controls.clone(), poster, le_events, battery)
                         });
                         capture.reset_tracking();
                         let logger = capture.clone();
@@ -373,6 +382,7 @@ impl BtHost {
                             realtek_pid: if tcp { 0 } else { realtek_pid },
                             realtek_files,
                             broadcom_ids,
+                            battery,
                         };
                         let mut app = HostApp::new(
                             shared,
@@ -539,6 +549,11 @@ impl BtHost {
     }
 
     /// The controller's own address, once it has answered
+    /// The headphones' battery level in percent, once they reported it
+    pub fn battery(&self) -> Option<u8> {
+        self.shared.lock().battery
+    }
+
     pub fn local_address(&self) -> Option<String> {
         self.shared.lock().local_address.clone()
     }

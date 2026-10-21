@@ -637,5 +637,6 @@
   "ui.devices.page_hint": "The headphones and speakers A2DPWB can stream to. Scan for new ones, add one by its address, rename or remove one. A profile then picks its device from this list.",
   "ui.devices.add": "Add",
   "ui.devices.manage": "Manage devices",
-  "ui.devices.saved_empty": "No saved devices yet. Add one under Audio Devices."
+  "ui.devices.saved_empty": "No saved devices yet. Add one under Audio Devices.",
+  "ui.home.battery": "Battery %d%%"
 }

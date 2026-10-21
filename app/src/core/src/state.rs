@@ -556,15 +556,28 @@ fn chip_changed(before: &CoreSettings, after: &CoreSettings) -> bool {
     before.bt_chip_pid != after.bt_chip_pid || before.bt_chip_fw_stem != after.bt_chip_fw_stem
 }
 
+/// The codec and what it runs with: "LDAC 990 kbps | 96 kHz | 24-bit | ABR"
+fn tray_codec_line(codec: &str, kbps: u32, sample_rate: u32, bits: u32, abr: bool) -> String {
+    let mut line = format!("{codec} {kbps} kbps | {} kHz", sample_rate as f64 / 1000.0);
+    if bits > 0 {
+        line.push_str(&format!(" | {bits}-bit"));
+    }
+    if abr {
+        line.push_str(" | ABR");
+    }
+    line
+}
+
 /// The tray icon's tooltip while streaming: "A2DPWB - Streaming (WH-1000XM4)"
-/// and the codec on a second line
-fn tray_tooltip(base: &str, device: Option<&str>, codec: Option<(&str, u32)>) -> String {
+/// and one line each for the codec and the battery
+fn tray_tooltip(base: &str, device: Option<&str>, lines: &[String]) -> String {
     let mut t = match device.filter(|d| !d.is_empty()) {
         Some(d) => format!("{base} ({d})"),
         None => base.to_string(),
     };
-    if let Some((c, kbps)) = codec {
-        t.push_str(&format!("\n{c} {kbps} kbps"));
+    for l in lines {
+        t.push('\n');
+        t.push_str(l);
     }
     t
 }
@@ -717,7 +730,15 @@ impl CoreState {
             .and_then(|n| s.profiles.iter().find(|p| &p.name == n))
             .map(|p| if p.device_name.is_empty() { p.device_address.as_str() } else { p.device_name.as_str() });
         let tooltip = if streaming {
-            tray_tooltip(&base, device, s.stream.info.as_ref().map(|i| (i.codec.as_str(), i.bitrate_kbps)))
+            let mut lines = Vec::new();
+            if let Some(i) = &s.stream.info {
+                lines.push(tray_codec_line(&i.codec, i.bitrate_kbps, i.sample_rate, i.bits, i.abr));
+            }
+            if let Some(b) = s.stream.battery {
+                let template = a2dpwb_core::messages::translate(&lang, "ui.home.battery", "Battery %d%%");
+                lines.push(a2dpwb_core::messages::format_printf(&template, &[b.to_string()]));
+            }
+            tray_tooltip(&base, device, &lines)
         } else {
             base
         };
@@ -754,6 +775,7 @@ impl CoreState {
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error) {
                     stream.info = None;
                     stream.volume = None;
+                    stream.battery = None;
                     if state == CoreStreamState::Idle {
                         stream.profile = None;
                     }
@@ -805,6 +827,7 @@ impl CoreState {
                 devices_changed = true;
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
+            ServiceEvent::Battery(v) => stream.battery = Some(v),
         }
         self.publish(Event::Stream(stream));
         if devices_changed {
@@ -947,6 +970,7 @@ impl CoreState {
             profile,
             info: None,
             volume: None,
+            battery: None,
         }));
         let service = self.service.clone();
         // start_streaming joins a running session first: not on a runtime thread
@@ -1599,15 +1623,22 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_tooltip_names_the_device() {
+    fn the_tray_tooltip_names_the_device_and_the_codec() {
+        let ldac = tray_codec_line("LDAC", 990, 96000, 24, true);
+        assert_eq!(ldac, "LDAC 990 kbps | 96 kHz | 24-bit | ABR");
+        assert_eq!(tray_codec_line("SBC", 328, 44100, 16, false), "SBC 328 kbps | 44.1 kHz | 16-bit");
+        assert_eq!(tray_codec_line("LC3", 320, 48000, 0, false), "LC3 320 kbps | 48 kHz");
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", Some("WH-1000XM4"), Some(("LDAC", 990))),
-            "A2DPWB - Streaming (WH-1000XM4)\nLDAC 990 kbps"
+            tray_tooltip("A2DPWB - Streaming", Some("WH-1000XM4"), &[ldac.clone(), "Battery 80%".into()]),
+            "A2DPWB - Streaming (WH-1000XM4)\nLDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%"
         );
-        assert_eq!(tray_tooltip("A2DPWB - Streaming", None, Some(("SBC", 328))), "A2DPWB - Streaming\nSBC 328 kbps");
-        assert_eq!(tray_tooltip("A2DPWB - Streaming", Some(""), None), "A2DPWB - Streaming");
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", Some("AA:BB:CC:DD:EE:FF"), None),
+            tray_tooltip("A2DPWB - Streaming", None, &[ldac]),
+            "A2DPWB - Streaming\nLDAC 990 kbps | 96 kHz | 24-bit | ABR"
+        );
+        assert_eq!(tray_tooltip("A2DPWB - Streaming", Some(""), &[]), "A2DPWB - Streaming");
+        assert_eq!(
+            tray_tooltip("A2DPWB - Streaming", Some("AA:BB:CC:DD:EE:FF"), &[]),
             "A2DPWB - Streaming (AA:BB:CC:DD:EE:FF)"
         );
     }

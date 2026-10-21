@@ -274,6 +274,9 @@ function StatusPill() {
           )}
         </Show>
         <span class="status-pill-state">{stateLabel(stream().state)}</span>
+        <Show when={stream().battery !== null}>
+          <span class="status-pill-sub">{t("ui.home.battery", stream().battery!)}</span>
+        </Show>
         <Show when={stream().info}>
           {(i) => (
             <>

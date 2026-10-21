@@ -156,6 +156,9 @@ export function Home() {
                   </span>
                 </div>
                 <CodecBadge />
+                <Show when={stream().battery !== null}>
+                  <div class="muted device-sub">{t("ui.home.battery", stream().battery!)}</div>
+                </Show>
               </div>
             </section>
 

@@ -2339,6 +2339,7 @@ html.win-flyout body {
 }
 .fly-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: var(--s2);

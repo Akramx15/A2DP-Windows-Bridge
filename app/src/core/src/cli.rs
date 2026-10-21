@@ -471,6 +471,7 @@ pub fn run(args: &[String]) -> i32 {
                 i.codec, i.bitrate_kbps, i.sample_rate, i.channels
             ),
             Ok(ServiceEvent::Volume(v)) => println!("Headphone volume: {v} ({}%)", v as u32 * 100 / 127),
+            Ok(ServiceEvent::Battery(v)) => println!("Headphone battery: {v}%"),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }

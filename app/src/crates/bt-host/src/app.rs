@@ -53,6 +53,8 @@ pub(crate) struct Setup {
     /// Realtek firmware / config file stems (no extension) of the chip
     pub realtek_files: Option<(String, String)>,
     pub broadcom_ids: Vec<(u16, u16)>,
+    /// HFP audio gateway for the headphones' battery level
+    pub battery: bool,
 }
 
 /// LMP subversions Realtek chips report while running their ROM code,
@@ -85,6 +87,8 @@ pub(crate) struct HostApp {
     pub local_seid: u8,
     pub remote_seid: u8,
     pub remote_addr: Option<[u8; 6]>,
+    /// ACL handle of the HFP service level connection, once up
+    pub hfp_acl: Option<u16>,
     pub streaming: bool,
     /// Codec of the configured stream (RTP or not)
     pub stream_codec: Option<CodecKind>,
@@ -149,6 +153,7 @@ impl HostApp {
             local_seid: 0,
             remote_seid: 0,
             remote_addr: None,
+            hfp_acl: None,
             streaming: false,
             stream_codec: None,
             endpoints: HashMap::new(),
@@ -235,6 +240,11 @@ impl HostApp {
             AVRCP_FEATURE_MASK_CATEGORY_PLAYER_OR_RECORDER,
         );
         self.register_endpoints(stack);
+        // Battery level (experimental, off by default): HFP's service level
+        // connection only, no audio
+        if self.setup.battery {
+            stack.hfp_ag_init();
+        }
         // LE Audio (experimental, off by default): SM, GATT client / server,
         // ISO. Nothing of it runs while the setting is off.
         if let Some(le) = self.le.as_mut() {
@@ -736,8 +746,6 @@ impl HostApp {
             s.le_audio_capable = le_audio_capable;
             s.init_done = Some(Ok(()));
         });
-        // The adapter's own address, for the Adapter screen
-        let _ = stack.cmd_read_bd_addr();
         self.afh_ticks = 0;
         self.afh_policy_version_seen = None;
         self.afh_sent_map = None;
@@ -1035,6 +1043,7 @@ impl HostApp {
                     s.media_mtu = mtu;
                     s.stream_done = Some(true);
                 });
+                self.connect_hfp(stack);
             }
             Some(A2DP_SUBEVENT_STREAM_STARTED) => {
                 tracing::info!("streaming started");
@@ -1072,6 +1081,10 @@ impl HostApp {
                     stack.avrcp_disconnect(self.avrcp_cid);
                     self.avrcp_cid = 0;
                 }
+                if let Some(acl) = self.hfp_acl.take() {
+                    stack.hfp_ag_release(acl);
+                }
+                self.shared.update(|s| s.battery = None);
                 if self.a2dp_cid == 0 {
                     // No current connection: wake a pending disconnect wait,
                     // but report no loss
@@ -1122,6 +1135,59 @@ impl HostApp {
     // ======================================================================
     // AVRCP
     // ======================================================================
+
+    /// Opens the HFP service level connection to the headphones, where they
+    /// report their battery (the headphones may also open it themselves)
+    fn connect_hfp(&mut self, stack: &Stack) {
+        if !self.setup.battery || self.hfp_acl.is_some() {
+            return;
+        }
+        let Some(addr) = self.remote_addr else { return };
+        let status = stack.hfp_ag_connect(&addr);
+        tracing::info!("HFP: opening the service level connection to {} (0x{status:02x})", addr_str(&addr));
+    }
+
+    fn handle_hfp(&mut self, p: &[u8]) {
+        match subevent(p) {
+            Some(HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_ESTABLISHED) => {
+                let status = u8_at(p, 5).unwrap_or(0xFF);
+                if status == 0 {
+                    self.hfp_acl = le16(p, 3);
+                    tracing::info!("HFP: service level connection established");
+                } else {
+                    tracing::info!("HFP: service level connection failed (0x{status:02x})");
+                }
+            }
+            Some(HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_RELEASED) => {
+                tracing::info!("HFP: service level connection released");
+                self.hfp_acl = None;
+            }
+            // AT+BIEV: HF indicator 2, 0..100 percent
+            Some(HFP_SUBEVENT_HF_INDICATOR) => {
+                if le16(p, 5) == Some(HFP_HF_INDICATOR_UUID_BATTERY_LEVEL)
+                    && let Some(v) = u8_at(p, 7)
+                {
+                    tracing::info!("HFP: battery level {v}% (HF indicator)");
+                    self.report_battery(v.min(100));
+                }
+            }
+            // AT+IPHONEACCEV (Apple accessories): 0..9
+            Some(HFP_SUBEVENT_APPLE_BATTERY_LEVEL) => {
+                if let Some(v) = u8_at(p, 3) {
+                    // 0 is 0-10%, 9 is 90-100% (as Android shows it)
+                    let pct = (v.min(9) + 1) * 10;
+                    tracing::info!("HFP: battery level {v} of 0-9 = {pct}% (Apple accessory)");
+                    self.report_battery(pct);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn report_battery(&mut self, percent: u8) {
+        self.shared.update(|s| s.battery = Some(percent));
+        let _ = self.events.send(HostEvent::Battery(percent));
+    }
 
     fn handle_avrcp(&mut self, stack: &Stack, p: &[u8]) {
         match subevent(p) {
@@ -1393,6 +1459,11 @@ impl App for HostApp {
             }
             Source::A2dp => self.handle_a2dp(stack, packet),
             Source::AvdtpSink => self.handle_sep(packet),
+            Source::Hfp => {
+                if event_type(packet) == Some(HCI_EVENT_HFP_META) {
+                    self.handle_hfp(packet)
+                }
+            }
             Source::Avrcp | Source::AvrcpController | Source::AvrcpTarget => {
                 if event_type(packet) == Some(HCI_EVENT_AVRCP_META) {
                     self.handle_avrcp(stack, packet)
