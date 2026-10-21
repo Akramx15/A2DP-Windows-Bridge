@@ -5,13 +5,15 @@
 //! Arguments: `--flyout` opens the tray flyout instead of the main window
 //! (the core starts the UI this way when the tray icon is clicked).
 
-#![forbid(unsafe_code)]
+// Denied, not forbidden: recovery.rs makes the WebView2 COM calls
+#![deny(unsafe_code)]
 // No console window in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
 mod connection;
 mod logging;
+mod recovery;
 mod update;
 mod windows;
 
@@ -90,7 +92,10 @@ fn main() {
             tracing::info!("the last window is gone; staying (tray)");
             api.prevent_exit();
         }
-        tauri::RunEvent::Exit => tracing::info!("a2dpwb exiting"),
+        tauri::RunEvent::Exit => {
+            tracing::info!("a2dpwb exiting");
+            recovery::relaunch_if_due();
+        }
         _ => {}
     });
 }

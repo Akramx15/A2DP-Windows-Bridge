@@ -80,7 +80,9 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "webview2-com",
  "win-sys",
+ "windows-core",
  "windows-version",
 ]
 
