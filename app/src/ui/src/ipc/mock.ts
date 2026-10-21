@@ -104,6 +104,10 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     le_low_latency: true,
     sbc_bitpool: 0,
     sbcxq_bitpool: 0,
+    sbc_blocks: 0,
+    sbc_subbands: 0,
+    sbc_allocation: "",
+    sbc_channel_mode: "",
     ...over,
   };
 }
@@ -141,8 +145,19 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
 
 /** A device entry: classic unless `over` says otherwise */
 export function sampleDevice(over: Partial<Device> & { address: string }): Device {
-  return { name: "", saved: false, audio: true, rssi: null, codecs: [], le_audio: false, le_audio_set: false, ...over };
+  return { name: "", saved: false, audio: true, rssi: null, codecs: [], sbc: null, le_audio: false, le_audio_set: false, ...over };
 }
+
+/** What the WH-1000XM5's SBC endpoint lists (no 4 subbands, no SNR, as many headphones) */
+export const XM5_SBC = {
+  sample_rates: [44100, 48000],
+  channel_modes: ["mono", "dual_channel", "stereo", "joint_stereo"],
+  blocks: [4, 8, 12, 16],
+  subbands: [8],
+  allocations: ["loudness"],
+  min_bitpool: 2,
+  max_bitpool: 53,
+};
 
 /** The earbuds' LE Audio entry (the same address as their classic one) */
 const LE_BUDS = sampleDevice({ address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2 Pro", le_audio: true, le_audio_set: true });
@@ -193,7 +208,13 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     devices: fresh
       ? []
       : [
-          sampleDevice({ address: "AC:80:0A:12:34:56", name: long ? LONG_DEVICE : "WH-1000XM5", saved: true, codecs: ["sbc", "aac", "ldac"] }),
+          sampleDevice({
+            address: "AC:80:0A:12:34:56",
+            name: long ? LONG_DEVICE : "WH-1000XM5",
+            saved: true,
+            codecs: ["sbc", "aac", "ldac"],
+            sbc: XM5_SBC,
+          }),
           sampleDevice({ address: "00:1A:7D:DA:71:13", name: "SRS-XB13", saved: true }),
           ...(le ? [{ ...LE_BUDS, saved: true }] : []),
         ],

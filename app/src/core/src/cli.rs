@@ -43,6 +43,12 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   --rate <hz>           capture sample rate (default: the device's)
   --bits <16|24>        bit depth (default: 24 where the codec carries it)
   --max-packet <bytes>  max media packet size (679-1679, default 1023)
+  --sbc-blocks <n>      SBC / SBC XQ block length: 4, 8, 12, 16 (default)
+  --sbc-subbands <n>    SBC / SBC XQ subbands: 4, 8 (default)
+  --sbc-alloc <method>  SBC / SBC XQ allocation: loudness (default), snr
+  --sbc-mode <mode>     SBC channel mode: joint_stereo (default), stereo,
+                        dual_channel, mono
+  --sbc-bitpool <n>     SBC / SBC XQ bitpool (default: by quality)
   --afh <policy>        auto, off or Wi-Fi channels to avoid such as 6,11
   --remote-sink <host[:port]|auto>
                         statistics of a measuring receiver (tools/linux_sink);
@@ -90,6 +96,9 @@ struct Args {
     rate: Option<u32>,
     bits: Option<u8>,
     max_packet: u16,
+    /// --sbc-*: the SBC setup and bitpool (defaults: 0 / None)
+    sbc: codec::sbc::SbcParams,
+    sbc_bitpool: u8,
     afh: Option<String>,
     remote_sink: Option<String>,
     scan: Option<u32>,
@@ -153,6 +162,8 @@ fn parse(args: &[String]) -> Result<Args, String> {
         rate: None,
         bits: None,
         max_packet: bt_host::media::MEDIA_PAYLOAD_LIMIT_DEFAULT,
+        sbc: codec::sbc::SbcParams::default(),
+        sbc_bitpool: 0,
         afh: None,
         remote_sink: None,
         scan: None,
@@ -199,6 +210,36 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 a.max_packet = clamp_media_payload_limit(v);
                 if a.max_packet as u32 != v {
                     println!("--max-packet {v} is outside 679-1679, using {}", a.max_packet);
+                }
+            }
+            "--sbc-blocks" => {
+                a.sbc.blocks = value(&mut it, "--sbc-blocks")?.parse().map_err(|_| "bad --sbc-blocks")?;
+                if !matches!(a.sbc.blocks, 4 | 8 | 12 | 16) {
+                    return Err("--sbc-blocks takes 4, 8, 12 or 16".into());
+                }
+            }
+            "--sbc-subbands" => {
+                a.sbc.subbands = value(&mut it, "--sbc-subbands")?.parse().map_err(|_| "bad --sbc-subbands")?;
+                if !matches!(a.sbc.subbands, 4 | 8) {
+                    return Err("--sbc-subbands takes 4 or 8".into());
+                }
+            }
+            "--sbc-alloc" => {
+                let v = value(&mut it, "--sbc-alloc")?.to_lowercase();
+                a.sbc.allocation =
+                    Some(codec::sbc::Allocation::from_key(&v).ok_or("--sbc-alloc takes loudness or snr")?);
+            }
+            "--sbc-mode" => {
+                let v = value(&mut it, "--sbc-mode")?.to_lowercase();
+                a.sbc.channel_mode = Some(
+                    codec::sbc::ChannelMode::from_key(&v)
+                        .ok_or("--sbc-mode takes joint_stereo, stereo, dual_channel or mono")?,
+                );
+            }
+            "--sbc-bitpool" => {
+                a.sbc_bitpool = value(&mut it, "--sbc-bitpool")?.parse().map_err(|_| "bad --sbc-bitpool")?;
+                if !(2..=53).contains(&a.sbc_bitpool) {
+                    return Err("--sbc-bitpool takes 2 to 53".into());
                 }
             }
             "--afh" => a.afh = Some(value(&mut it, "--afh")?),
@@ -438,8 +479,9 @@ pub fn run(args: &[String]) -> i32 {
         codec_fallback: false,
         quality: a.quality,
         abr: a.abr,
-        sbc_bitpool: 0,
-        sbcxq_bitpool: 0,
+        sbc_bitpool: a.sbc_bitpool,
+        sbcxq_bitpool: a.sbc_bitpool,
+        sbc: a.sbc,
         sample_rate: a.rate,
         bit_depth: a.bits,
         source,
@@ -922,6 +964,30 @@ mod tests {
 
         assert!(parse(&args("--cli -u nonsense")).err().unwrap_or_default().contains("not a USB device"));
         assert_eq!(parse(&args("--cli -u")).err().as_deref(), Some("-u needs a value"));
+    }
+
+    #[test]
+    fn sbc_options() {
+        use codec::sbc::{Allocation, ChannelMode, SbcParams};
+        let a = parse(&args("--cli -c sbc")).unwrap();
+        assert_eq!((a.sbc, a.sbc_bitpool), (SbcParams::default(), 0));
+        let a = parse(&args(
+            "--cli -c sbc --sbc-blocks 8 --sbc-subbands 4 --sbc-alloc SNR --sbc-mode stereo --sbc-bitpool 40",
+        ))
+        .unwrap();
+        assert_eq!(
+            a.sbc,
+            SbcParams {
+                blocks: 8,
+                subbands: 4,
+                allocation: Some(Allocation::Snr),
+                channel_mode: Some(ChannelMode::Stereo)
+            }
+        );
+        assert_eq!(a.sbc_bitpool, 40);
+        for bad in ["--sbc-blocks 6", "--sbc-subbands 2", "--sbc-alloc max", "--sbc-mode auto", "--sbc-bitpool 60"] {
+            assert!(parse(&args(&format!("--cli {bad}"))).is_err(), "{bad}");
+        }
     }
 
     #[test]

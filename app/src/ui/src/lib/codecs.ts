@@ -41,7 +41,7 @@ export interface CodecSpec {
   rates?: number[];
   /** Variable bit rate (where the headphones list it), on the "abr" setting */
   vbr?: boolean;
-  /** The SBC bitpool can be chosen */
+  /** The SBC bitpool and frame setup (blocks, subbands, allocation) can be chosen */
   bitpool?: boolean;
 }
 
@@ -276,12 +276,19 @@ interface CodecFields {
   bit_depth: number;
   sbc_bitpool?: number;
   sbcxq_bitpool?: number;
+  sbc_blocks?: number;
+  sbc_subbands?: number;
+  sbc_allocation?: string;
+  sbc_channel_mode?: string;
 }
 
 /** Values the codec cannot use go back to the defaults (v1 did the same when the codec changed) */
 export function fitToCodec<T extends CodecFields>(p: T): T {
   const spec = codecSpec(p.codec);
   const quality = spec.qualities.length === 0 || spec.qualities.some((m) => m.id === p.quality) ? p.quality : "hq";
+  // The frame setup is SBC's and SBC XQ's; the channel mode SBC's only (XQ
+  // is dual channel)
+  const sbc = p.codec === "sbc" || p.codec === "sbcxq";
   return {
     ...p,
     quality,
@@ -290,6 +297,10 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
     bit_depth: bitDepths(p.codec).includes(p.bit_depth) ? p.bit_depth : 0,
     ...(p.sbc_bitpool === undefined ? {} : { sbc_bitpool: p.codec === "sbc" ? p.sbc_bitpool : 0 }),
     ...(p.sbcxq_bitpool === undefined ? {} : { sbcxq_bitpool: p.codec === "sbcxq" ? p.sbcxq_bitpool : 0 }),
+    ...(p.sbc_blocks === undefined ? {} : { sbc_blocks: sbc ? p.sbc_blocks : 0 }),
+    ...(p.sbc_subbands === undefined ? {} : { sbc_subbands: sbc ? p.sbc_subbands : 0 }),
+    ...(p.sbc_allocation === undefined ? {} : { sbc_allocation: sbc ? p.sbc_allocation : "" }),
+    ...(p.sbc_channel_mode === undefined ? {} : { sbc_channel_mode: p.codec === "sbc" ? p.sbc_channel_mode : "" }),
   };
 }
 

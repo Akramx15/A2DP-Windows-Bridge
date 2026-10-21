@@ -16,7 +16,7 @@ use btstack_sys::consts::*;
 use btstack_sys::{AclState, App, AvdtpState, HciBackend, HciState, Source, Stack};
 use codec::CodecKind;
 use codec::caps::{AacCapabilities, AacObjectType, ConfigRequest, Configuration, SbcCapabilities, VendorCapability};
-use codec::sbc::ChannelMode;
+use codec::sbc::{Allocation, ChannelMode};
 
 use crate::events::{addr_at, addr_str, event_type, hci_error_string, le16, le24, subevent, u8_at};
 use crate::le::core::LeCore;
@@ -438,24 +438,39 @@ impl HostApp {
         self.stream_codec = Some(config.kind);
         let cid = self.a2dp_cid;
         match &config.request {
-            ConfigRequest::Sbc { sampling_frequency, channel_mode, min_bitpool, max_bitpool } => stack
-                .a2dp_set_config_sbc(
-                    cid,
-                    local,
-                    config.remote_seid,
-                    *sampling_frequency,
-                    match channel_mode {
-                        ChannelMode::Mono => AVDTP_CHANNEL_MODE_MONO,
-                        ChannelMode::DualChannel => AVDTP_CHANNEL_MODE_DUAL_CHANNEL,
-                        ChannelMode::Stereo => AVDTP_CHANNEL_MODE_STEREO,
-                        ChannelMode::JointStereo => AVDTP_CHANNEL_MODE_JOINT_STEREO,
-                    },
-                    AVDTP_SBC_BLOCK_LENGTH_16,
-                    AVDTP_SBC_SUBBANDS_8,
-                    AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
-                    *min_bitpool,
-                    *max_bitpool,
-                ),
+            ConfigRequest::Sbc {
+                sampling_frequency,
+                channel_mode,
+                blocks,
+                subbands,
+                allocation,
+                min_bitpool,
+                max_bitpool,
+            } => stack.a2dp_set_config_sbc(
+                cid,
+                local,
+                config.remote_seid,
+                *sampling_frequency,
+                match channel_mode {
+                    ChannelMode::Mono => AVDTP_CHANNEL_MODE_MONO,
+                    ChannelMode::DualChannel => AVDTP_CHANNEL_MODE_DUAL_CHANNEL,
+                    ChannelMode::Stereo => AVDTP_CHANNEL_MODE_STEREO,
+                    ChannelMode::JointStereo => AVDTP_CHANNEL_MODE_JOINT_STEREO,
+                },
+                match blocks {
+                    4 => AVDTP_SBC_BLOCK_LENGTH_4,
+                    8 => AVDTP_SBC_BLOCK_LENGTH_8,
+                    12 => AVDTP_SBC_BLOCK_LENGTH_12,
+                    _ => AVDTP_SBC_BLOCK_LENGTH_16,
+                },
+                if *subbands == 4 { AVDTP_SBC_SUBBANDS_4 } else { AVDTP_SBC_SUBBANDS_8 },
+                match allocation {
+                    Allocation::Loudness => AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
+                    Allocation::Snr => AVDTP_SBC_ALLOCATION_METHOD_SNR,
+                },
+                *min_bitpool,
+                *max_bitpool,
+            ),
             ConfigRequest::Aac { object_type, sampling_frequency, channels, bit_rate, vbr } => stack
                 .a2dp_set_config_aac(
                     cid,

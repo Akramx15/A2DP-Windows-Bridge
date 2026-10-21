@@ -120,6 +120,10 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         le_low_latency: p.le_low_latency,
         sbc_bitpool: p.sbc_bitpool,
         sbcxq_bitpool: p.sbcxq_bitpool,
+        sbc_blocks: p.sbc_blocks,
+        sbc_subbands: p.sbc_subbands,
+        sbc_allocation: p.sbc_allocation.clone(),
+        sbc_channel_mode: p.sbc_channel_mode.clone(),
     }
 }
 
@@ -149,6 +153,10 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.le_low_latency = p.le_low_latency;
     c.sbc_bitpool = p.sbc_bitpool;
     c.sbcxq_bitpool = p.sbcxq_bitpool;
+    c.sbc_blocks = p.sbc_blocks;
+    c.sbc_subbands = p.sbc_subbands;
+    c.sbc_allocation = p.sbc_allocation.clone();
+    c.sbc_channel_mode = p.sbc_channel_mode.clone();
     c
 }
 
@@ -311,7 +319,11 @@ fn warn_invalid_firmware(config_dir: &Path, invalid: &[(String, String)]) {
 /// The saved devices (classic, then LE Audio), then the scanned ones; with
 /// the codecs each classic device offered. An entry is its address AND its
 /// kind: a dual-mode device can be listed twice, classic and LE Audio.
-fn saved_devices(config_dir: &Path, scanned: &[Device], codecs: &BTreeMap<String, Vec<String>>) -> Vec<Device> {
+fn saved_devices(
+    config_dir: &Path,
+    scanned: &[Device],
+    codecs: &BTreeMap<String, a2dpwb_core::KnownCodecs>,
+) -> Vec<Device> {
     let saved = devices::load(config_dir).into_iter().chain(devices::load_le(config_dir));
     let mut list: Vec<Device> = saved
         .map(|d| Device {
@@ -321,6 +333,7 @@ fn saved_devices(config_dir: &Path, scanned: &[Device], codecs: &BTreeMap<String
             audio: true,
             rssi: None,
             codecs: Vec::new(),
+            sbc: None,
             le_audio: d.le_audio,
             le_audio_set: false,
         })
@@ -339,7 +352,8 @@ fn saved_devices(config_dir: &Path, scanned: &[Device], codecs: &BTreeMap<String
     }
     for d in list.iter_mut().filter(|d| !d.le_audio) {
         if let Some(c) = codecs.get(&d.address.to_uppercase()) {
-            d.codecs = c.clone();
+            d.codecs = c.keys.clone();
+            d.sbc = c.sbc.clone().map(to_ipc_sbc_caps);
         }
     }
     list
@@ -354,6 +368,7 @@ fn scanned_device(d: &ScannedDevice) -> Device {
         audio: d.audio,
         rssi: Some(d.rssi),
         codecs: Vec::new(),
+        sbc: None,
         le_audio: d.le_audio,
         le_audio_set: d.le_audio_set,
     }
@@ -366,6 +381,18 @@ const LE_CODEC: &str = "LC3";
 const LE_SCANNING_KEY: &str = "status.le_scanning";
 
 /// StreamInfo.le of an LE Audio (experimental) stream
+fn to_ipc_sbc_caps(c: a2dpwb_core::SbcDeviceCaps) -> ipc::SbcDeviceCaps {
+    ipc::SbcDeviceCaps {
+        sample_rates: c.sample_rates,
+        channel_modes: c.channel_modes,
+        blocks: c.blocks,
+        subbands: c.subbands,
+        allocations: c.allocations,
+        min_bitpool: c.min_bitpool,
+        max_bitpool: c.max_bitpool,
+    }
+}
+
 /// The codec details as the IPC sends them (the same fields)
 fn to_ipc_codec_details(d: a2dpwb_core::CodecDetails) -> ipc::CodecDetails {
     ipc::CodecDetails {
@@ -382,15 +409,7 @@ fn to_ipc_codec_details(d: a2dpwb_core::CodecDetails) -> ipc::CodecDetails {
             allocation: s.allocation,
             bitpool: s.bitpool,
             config_bitpool: s.config_bitpool,
-            device: s.device.map(|c| ipc::SbcDeviceCaps {
-                sample_rates: c.sample_rates,
-                channel_modes: c.channel_modes,
-                blocks: c.blocks,
-                subbands: c.subbands,
-                allocations: c.allocations,
-                min_bitpool: c.min_bitpool,
-                max_bitpool: c.max_bitpool,
-            }),
+            device: s.device.map(to_ipc_sbc_caps),
         }),
         aac: d.aac.map(|a| ipc::AacDetails {
             object_type: a.object_type,
@@ -1877,14 +1896,30 @@ mod tests {
             audio: true,
             rssi: Some(-60),
             codecs: Vec::new(),
+            sbc: None,
             le_audio: false,
             le_audio_set: false,
         }];
         let mut codecs = BTreeMap::new();
-        codecs.insert("AA:BB:CC:DD:EE:FF".to_string(), vec!["sbc".to_string(), "ldac".to_string()]);
+        let sbc = a2dpwb_core::SbcDeviceCaps {
+            sample_rates: vec![44100, 48000],
+            channel_modes: vec!["joint_stereo".into()],
+            blocks: vec![8, 16],
+            subbands: vec![8],
+            allocations: vec!["loudness".into()],
+            min_bitpool: 2,
+            max_bitpool: 53,
+        };
+        codecs.insert(
+            "AA:BB:CC:DD:EE:FF".to_string(),
+            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string(), "ldac".to_string()], sbc: Some(sbc) },
+        );
         let list = saved_devices(&dir, &scanned, &codecs);
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].codecs, ["sbc", "ldac"]);
+        // What its SBC endpoint offered, for the profile editor
+        assert_eq!(list[0].sbc.as_ref().map(|s| s.blocks.clone()), Some(vec![8, 16]));
+        assert!(list[1].sbc.is_none());
         assert!(list[0].saved && !list[1].saved && list[1].codecs.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1955,7 +1990,10 @@ mod tests {
         assert!(scanned[2].le_audio && scanned[2].le_audio_set && !scanned[2].saved);
         assert_eq!(scanned[2].rssi, Some(-60));
         let mut codecs = BTreeMap::new();
-        codecs.insert("AA:BB:CC:DD:EE:FF".to_string(), vec!["sbc".to_string()]);
+        codecs.insert(
+            "AA:BB:CC:DD:EE:FF".to_string(),
+            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string()], sbc: None },
+        );
         let list = saved_devices(&dir, &scanned, &codecs);
         let kinds: Vec<(&str, bool, bool)> = list.iter().map(|d| (d.name.as_str(), d.le_audio, d.saved)).collect();
         // Merged by address AND kind: each saved entry got its own scan result

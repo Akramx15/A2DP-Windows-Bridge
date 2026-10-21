@@ -89,10 +89,15 @@ pub const AVDTP_CHANNEL_MODE_STEREO: i32 = 3;
 pub const AVDTP_CHANNEL_MODE_JOINT_STEREO: i32 = 4;
 /// avdtp_sbc_block_length_t (16 / 12 / 8 / 4)
 pub const AVDTP_SBC_BLOCK_LENGTH_16: i32 = 1;
+pub const AVDTP_SBC_BLOCK_LENGTH_12: i32 = 2;
+pub const AVDTP_SBC_BLOCK_LENGTH_8: i32 = 4;
+pub const AVDTP_SBC_BLOCK_LENGTH_4: i32 = 8;
 /// avdtp_sbc_subbands_t (8 / 4)
 pub const AVDTP_SBC_SUBBANDS_8: i32 = 1;
+pub const AVDTP_SBC_SUBBANDS_4: i32 = 2;
 /// avdtp_sbc_allocation_method_t
 pub const AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS: i32 = 1;
+pub const AVDTP_SBC_ALLOCATION_METHOD_SNR: i32 = 2;
 /// avdtp_aac_object_type_t
 pub const AVDTP_AAC_MPEG2_LC: i32 = 1;
 pub const AVDTP_AAC_MPEG4_LC: i32 = 2;
