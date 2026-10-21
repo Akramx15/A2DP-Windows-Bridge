@@ -54,14 +54,16 @@ fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(MAIN) {
         return Ok(w);
     }
-    builder(app, MAIN).inner_size(960.0, 640.0).min_inner_size(720.0, 520.0).center().build()
+    let w = builder(app, MAIN).inner_size(960.0, 640.0).min_inner_size(720.0, 520.0).center().build()?;
+    crate::recovery::watch(&w);
+    Ok(w)
 }
 
 fn flyout_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(FLYOUT) {
         return Ok(w);
     }
-    builder(app, FLYOUT)
+    let w = builder(app, FLYOUT)
         .inner_size(360.0, 440.0)
         .decorations(false)
         .resizable(false)
@@ -70,7 +72,9 @@ fn flyout_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .skip_taskbar(true)
         .always_on_top(true)
         .shadow(true)
-        .build()
+        .build()?;
+    crate::recovery::watch(&w);
+    Ok(w)
 }
 
 /// Shows the main window; `route` ("adapter", "settings", ...) opens that screen
