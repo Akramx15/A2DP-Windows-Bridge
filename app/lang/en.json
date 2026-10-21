@@ -661,5 +661,9 @@
   "ui.home.battery": "Battery %d%%",
   "ui.nav.about": "About",
   "ui.home.no_device": "No audio device yet. Add your headphones to get started.",
-  "ui.home.add_device": "Add a device"
+  "ui.home.add_device": "Add a device",
+  "ui.profile.sbc_frame": "Frame setup",
+  "ui.profile.sbc_frame_hint": "Blocks, subbands, bit allocation and channel mode of each SBC frame. Auto keeps 16 blocks, 8 subbands, Loudness and Joint stereo (SBC XQ: dual channel). Only what the headphones offered is listed; a value they do not take falls back to Auto when connecting.",
+  "ui.profile.sbc_not_offered": "%s (not offered)",
+  "ui.profile.sbc_bitrate": "≈ %d kbps at %s kHz"
 }

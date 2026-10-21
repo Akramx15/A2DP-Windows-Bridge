@@ -36,6 +36,7 @@ import {
   type CodecSupport,
 } from "../lib/codecs";
 import { LINKS } from "../lib/links";
+import { knownSbcCaps, SBC_ALLOCATIONS, SBC_BLOCKS, SBC_CHANNEL_MODES, SBC_SUBBANDS, sbcOffered, sbcRates, sbcSetup, type SbcCaps } from "../lib/sbc";
 import {
   appCaptureSupport,
   captureDevice,
@@ -260,6 +261,7 @@ export function ProfileEditor(props: { original: string | null }) {
                 <CodecSettings
                   spec={settingsOf()}
                   profile={p}
+                  sbcCaps={knownSbcCaps(snap().devices, p.device_address)}
                   onApply={(values) => {
                     setP(fitToCodec({ ...unwrap(p), ...values }));
                     setSettingsOf(null);
@@ -554,16 +556,33 @@ function CodecCard(props: {
   );
 }
 
-type CodecValues = Pick<Profile, "codec" | "quality" | "sample_rate" | "bit_depth" | "abr" | "sbc_bitpool" | "sbcxq_bitpool">;
+type CodecValues = Pick<
+  Profile,
+  | "codec"
+  | "quality"
+  | "sample_rate"
+  | "bit_depth"
+  | "abr"
+  | "sbc_bitpool"
+  | "sbcxq_bitpool"
+  | "sbc_blocks"
+  | "sbc_subbands"
+  | "sbc_allocation"
+  | "sbc_channel_mode"
+>;
 
 /**
  * One codec's quality, sample rate, bit depth and ABR (what "Advanced" had
- * for the chosen codec). It starts from the profile's values fitted to the
- * codec; OK chooses the codec with them, Cancel leaves the profile alone.
+ * for the chosen codec); SBC and SBC XQ also their bitpool and frame setup,
+ * offering only what the device listed when it last connected (`sbcCaps`),
+ * with the bit rate that gives. It starts from the profile's values fitted
+ * to the codec; OK chooses the codec with them, Cancel leaves the profile
+ * alone.
  */
 function CodecSettings(props: {
   spec: CodecSpec | null;
   profile: Profile;
+  sbcCaps: SbcCaps | null;
   onApply: (values: CodecValues) => void;
   onCancel: () => void;
 }) {
@@ -575,6 +594,10 @@ function CodecSettings(props: {
     abr: false,
     sbc_bitpool: 0,
     sbcxq_bitpool: 0,
+    sbc_blocks: 0,
+    sbc_subbands: 0,
+    sbc_allocation: "",
+    sbc_channel_mode: "",
   });
   createEffect(
     on(
@@ -591,6 +614,10 @@ function CodecSettings(props: {
             abr: (s.id === "aac") !== (p.codec === "aac") ? false : p.abr,
             sbc_bitpool: p.sbc_bitpool,
             sbcxq_bitpool: p.sbcxq_bitpool,
+            sbc_blocks: p.sbc_blocks,
+            sbc_subbands: p.sbc_subbands,
+            sbc_allocation: p.sbc_allocation,
+            sbc_channel_mode: p.sbc_channel_mode,
           }),
         );
       },
@@ -606,6 +633,30 @@ function CodecSettings(props: {
     bp() !== 0 && !(Number.isInteger(bp()) && bp() >= BITPOOL_MIN && bp() <= bpMax())
       ? t("error.sbc_bitpool_range", BITPOOL_MIN, bpMax())
       : undefined;
+  // The frame setup: Auto, then what the device listed (the value chosen
+  // stays, marked, when it did not list it: it falls back when connecting)
+  const sbcChoice = <T extends string | number>(
+    field: "blocks" | "subbands" | "allocations" | "channel_modes",
+    values: T[],
+    current: T,
+    label: (v: T) => string,
+  ) => [
+    { value: (typeof current === "number" ? 0 : "") as T, label: t("codec.auto") },
+    ...values
+      .filter((x) => x === current || sbcOffered(props.sbcCaps, field, x))
+      .map((x) => ({
+        value: x,
+        label: sbcOffered(props.sbcCaps, field, x) ? label(x) : t("ui.profile.sbc_not_offered", label(x)),
+      })),
+  ];
+  // The bit rate it gives, as the core works it out, at the profile's rate
+  // (both when Auto)
+  const sbcBitrate = () =>
+    bitpoolError()
+      ? ""
+      : sbcRates(v, props.sbcCaps)
+          .map((r) => t("ui.profile.sbc_bitrate", sbcSetup(v, r, props.sbcCaps).kbps, r === 44100 ? "44.1" : "48"))
+          .join(" / ");
   return (
     <Dialog
       open={props.spec !== null}
@@ -693,6 +744,56 @@ function CodecSettings(props: {
               </div>
             )}
           </Field>
+          <fieldset class="sbc-frame">
+            <legend class="field-label">{t("ui.profile.sbc_frame")}</legend>
+            <Field label={t("ui.diag.cd_blocks")}>
+              {(id) => (
+                <Select
+                  id={id}
+                  value={v.sbc_blocks}
+                  options={sbcChoice("blocks", SBC_BLOCKS, v.sbc_blocks, String)}
+                  onChange={(x) => setV("sbc_blocks", x)}
+                />
+              )}
+            </Field>
+            <Field label={t("ui.diag.cd_subbands")}>
+              {(id) => (
+                <Select
+                  id={id}
+                  value={v.sbc_subbands}
+                  options={sbcChoice("subbands", SBC_SUBBANDS, v.sbc_subbands, String)}
+                  onChange={(x) => setV("sbc_subbands", x)}
+                />
+              )}
+            </Field>
+            <Field label={t("ui.diag.cd_allocation")}>
+              {(id) => (
+                <Select
+                  id={id}
+                  value={v.sbc_allocation}
+                  options={sbcChoice("allocations", SBC_ALLOCATIONS, v.sbc_allocation, (a) => t(`ui.diag.cd_alloc.${a}`))}
+                  onChange={(x) => setV("sbc_allocation", x)}
+                />
+              )}
+            </Field>
+            {/* SBC XQ is dual channel by definition */}
+            <Show when={v.codec === "sbc"}>
+              <Field label={t("ui.diag.cd_channel_mode")}>
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={v.sbc_channel_mode}
+                    options={sbcChoice("channel_modes", SBC_CHANNEL_MODES, v.sbc_channel_mode, (m) => t(`ui.diag.cd_mode.${m}`))}
+                    onChange={(x) => setV("sbc_channel_mode", x)}
+                  />
+                )}
+              </Field>
+            </Show>
+            <p class="hint">{t("ui.profile.sbc_frame_hint")}</p>
+          </fieldset>
+          <p class="sbc-bitrate" role="status" aria-live="polite">
+            {sbcBitrate()}
+          </p>
         </Show>
         <Show when={v.codec !== props.profile.codec}>
           <p class="hint">{t("ui.profile.codec_settings_apply", name())}</p>

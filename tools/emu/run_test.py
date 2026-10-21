@@ -16,7 +16,7 @@ The cases of NEGOTIATION run the same way with another sink or command line
 (Auto choosing SBC XQ, or SBC on a sink without dual channel or one that
 refuses it; Opus and Opus 05 at 48 kHz
 from a 44.1 kHz request, Auto choosing Opus over AAC and LHDC V5 over Opus,
-but never Opus 05).
+but never Opus 05; SBC with another frame setup from --sbc-* options).
 
 Outputs (captures, logs, reports, WAV) go to tools/emu/out/<codec>/.
 Exit code 0 when every codec passed. Uses only the Python standard library;
@@ -75,6 +75,9 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     # a2dpwb_decode checks) stays within it
     'sbc-bp35': r'SBC \d+ Hz, joint stereo, 16 blocks, 8 subbands, loudness, bitpool 2-35$',
     'sbcxq-bp45': r'SBC 44100 Hz, dual channel, 16 blocks, 8 subbands, loudness, bitpool 2-45$',
+    # A profile's SBC frame setup (--sbc-*), in the configuration and every frame
+    'sbc-8b-4sb-snr': r'SBC \d+ Hz, joint stereo, 8 blocks, 4 subbands, SNR, bitpool 2-53$',
+    'sbc-stereo-12b': r'SBC 44100 Hz, stereo, 12 blocks, 8 subbands, loudness, bitpool 2-53$',
     'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
     'faststream': r'FastStream \d+ Hz, direction 0x01 \(music\)',   # no voice backchannel
@@ -94,6 +97,10 @@ NEGOTIATION = {
     # Max bitpool 35: SBC capped there; Auto does not take SBC XQ (needs 43)
     'auto-sbc-bp35': ('auto', ['--codecs', 'sbc', '--sbc-max-bitpool', '35'], 'sbc-bp35', []),
     'sbcxq-bp45': ('sbcxq', ['--sbc-max-bitpool', '45'], 'sbcxq-bp45', ['--rate', '44100']),
+    # SBC frame setups other than the default (a profile's SBC settings)
+    'sbc-8b-4sb-snr': ('sbc', [], 'sbc-8b-4sb-snr', ['--sbc-blocks', '8', '--sbc-subbands', '4', '--sbc-alloc', 'snr']),
+    'sbc-stereo-12b': ('sbc', [], 'sbc-stereo-12b',
+                       ['--rate', '44100', '--sbc-mode', 'stereo', '--sbc-blocks', '12', '--sbc-bitpool', '40']),
     'faststream-44k': ('faststream', [], 'faststream', ['--rate', '44100']),
     # Auto never takes FastStream, even over SBC
     'auto-not-faststream': ('auto', ['--codecs', 'sbc', 'faststream', '--sbc-no-dual'], 'sbc', []),

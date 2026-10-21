@@ -31,6 +31,10 @@ export function newProfile(): Profile {
     le_low_latency: true,
     sbc_bitpool: 0,
     sbcxq_bitpool: 0,
+    sbc_blocks: 0,
+    sbc_subbands: 0,
+    sbc_allocation: "",
+    sbc_channel_mode: "",
   };
 }
 

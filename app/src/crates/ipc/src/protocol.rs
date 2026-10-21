@@ -166,6 +166,10 @@ pub struct Device {
     /// started ("ldac", "aac", ...); empty while not known
     #[serde(default)]
     pub codecs: Vec<String>,
+    /// What its SBC endpoint offered then (the profile editor offers only
+    /// those SBC settings); None while not known
+    #[serde(default)]
+    pub sbc: Option<SbcDeviceCaps>,
     /// An LE Audio entry (experimental; le_audio_devices.txt and the LE
     /// scan). A dual-mode device has two entries with the same address, a
     /// classic one and an LE Audio one: address and this flag identify an
@@ -406,6 +410,19 @@ pub struct Profile {
     /// The same for SBC XQ
     #[serde(default)]
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: block length 4, 8, 12, 16 (0 = auto: 16)
+    #[serde(default)]
+    pub sbc_blocks: u8,
+    /// SBC / SBC XQ: subbands 4, 8 (0 = auto: 8)
+    #[serde(default)]
+    pub sbc_subbands: u8,
+    /// SBC / SBC XQ: "loudness", "snr" ("" = auto: loudness)
+    #[serde(default)]
+    pub sbc_allocation: String,
+    /// SBC: "joint_stereo", "stereo", "dual_channel", "mono" ("" = auto:
+    /// joint stereo; SBC XQ is always dual channel)
+    #[serde(default)]
+    pub sbc_channel_mode: String,
 }
 
 fn yes() -> bool {

@@ -12,7 +12,9 @@
 //! - [`SbcEncoder`]: the A2DP stream encoder (as v1's wrapper): 44.1 / 48
 //!   kHz, joint stereo (or mono), 16 blocks, 8 subbands, loudness, the
 //!   bitpool by [`Quality`]; [`SbcEncoder::new_xq`] is SBC XQ: dual channel
-//!   with a high bitpool per channel ([`xq_bitpool`]).
+//!   with a high bitpool per channel ([`xq_bitpool`]). A profile may ask
+//!   for other blocks, subbands, allocation and channel mode
+//!   ([`SbcParams`]).
 //! - [`FastStreamEncoder`]: CSR FastStream, SBC frames of a fixed setup.
 
 mod analysis;
@@ -32,6 +34,83 @@ const BLOCKS: u8 = 16;
 const SUBBANDS: u8 = 8;
 /// The local SEP's largest bitpool
 const SBC_MAX_BITPOOL: u8 = 53;
+
+/// The SBC frame setup a profile asks for: 0 / None is the default (16
+/// blocks, 8 subbands, loudness; joint stereo for SBC, while SBC XQ is
+/// always dual channel). The SET_CONFIGURATION and the encoder take the
+/// same values (`caps::RemoteCaps::sbc_params` drops the ones the sink does
+/// not list).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct SbcParams {
+    /// 4, 8, 12 or 16
+    pub blocks: u8,
+    /// 4 or 8
+    pub subbands: u8,
+    pub allocation: Option<Allocation>,
+    /// The channel mode of stereo input (SBC only; mono input is mono).
+    /// Mono here mixes stereo input down.
+    pub channel_mode: Option<ChannelMode>,
+}
+
+impl SbcParams {
+    pub fn blocks(&self) -> u8 {
+        if matches!(self.blocks, 4 | 8 | 12) { self.blocks } else { BLOCKS }
+    }
+
+    pub fn subbands(&self) -> u8 {
+        if self.subbands == 4 { 4 } else { SUBBANDS }
+    }
+
+    pub fn allocation(&self) -> Allocation {
+        self.allocation.unwrap_or(Allocation::Loudness)
+    }
+
+    /// The channel mode of a `kind` stream of `channels` input channels
+    pub fn channel_mode(&self, kind: CodecKind, channels: u32) -> ChannelMode {
+        if channels == 1 {
+            ChannelMode::Mono
+        } else if kind == CodecKind::SbcXq {
+            ChannelMode::DualChannel
+        } else {
+            self.channel_mode.unwrap_or(ChannelMode::JointStereo)
+        }
+    }
+
+    /// Nothing asked for: today's setup
+    pub fn is_default(&self) -> bool {
+        *self == SbcParams::default()
+    }
+}
+
+impl ChannelMode {
+    /// "mono", "dual_channel", "stereo", "joint_stereo" (profiles, IPC)
+    pub fn key(self) -> &'static str {
+        match self {
+            ChannelMode::Mono => "mono",
+            ChannelMode::DualChannel => "dual_channel",
+            ChannelMode::Stereo => "stereo",
+            ChannelMode::JointStereo => "joint_stereo",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<ChannelMode> {
+        ChannelMode::ALL.into_iter().find(|m| m.key() == key)
+    }
+}
+
+impl Allocation {
+    /// "loudness", "snr" (profiles, IPC)
+    pub fn key(self) -> &'static str {
+        match self {
+            Allocation::Loudness => "loudness",
+            Allocation::Snr => "snr",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Allocation> {
+        [Allocation::Loudness, Allocation::Snr].into_iter().find(|a| a.key() == key)
+    }
+}
 
 /// SBC bitpool for a quality mode (joint stereo; mono takes the same)
 pub fn quality_bitpool(quality: Quality) -> u8 {
@@ -76,24 +155,43 @@ fn sink_bitpool(wanted: u8, config: &EncoderConfig) -> u8 {
     wanted.min(max).max(min.min(max)).max(2)
 }
 
-/// The A2DP SBC encoder: one SBC frame (128 PCM frames) per `encode`
+/// The bitpool a profile's Auto takes for a channel mode: the quality's
+/// joint stereo bitpool (mono and stereo the same); dual channel halves it
+/// per channel, for about the same bit rate
+pub fn auto_bitpool(quality: Quality, channel_mode: ChannelMode) -> u8 {
+    let bitpool = quality_bitpool(quality);
+    if channel_mode == ChannelMode::DualChannel { bitpool.div_ceil(2) } else { bitpool }
+}
+
+/// Bit rate of SBC frames of `frame_len` bytes ([`SbcConfig::frame_len`],
+/// the A2DP specification's formula), each `pcm_frames` PCM frames at
+/// `sample_rate`: kbps, rounded down (as v1)
+pub fn bitrate_kbps(frame_len: usize, sample_rate: u32, pcm_frames: usize) -> u32 {
+    (8 * frame_len as u64 * sample_rate as u64 / pcm_frames.max(1) as u64 / 1000) as u32
+}
+
+/// The A2DP SBC encoder: one SBC frame (blocks x subbands PCM frames, 128
+/// by default) per `encode`
 pub struct SbcEncoder {
     kind: CodecKind,
     frame: SbcFrameEncoder,
     frame_len: usize,
     sample_rate: u32,
+    /// Mono frames from stereo input: the input mixed down into this
+    downmix: Option<Vec<i16>>,
 }
 
 impl SbcEncoder {
-    /// SBC: joint stereo (mono for one channel), the bitpool by quality
-    /// within the sink's range
+    /// SBC: joint stereo (mono for one channel) unless the profile asks for
+    /// another setup, the bitpool by quality within the sink's range
     pub fn new(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
+        let mode = config.peer.sbc.channel_mode(CodecKind::Sbc, config.channels);
         let wanted = match config.peer.sbc_bitpool {
-            0 => quality_bitpool(config.quality),
+            0 => auto_bitpool(config.quality, mode),
             n => n.min(SBC_MAX_BITPOOL),
         };
         let bitpool = sink_bitpool(wanted, config);
-        Self::with_mode(CodecKind::Sbc, config, ChannelMode::JointStereo, bitpool)
+        Self::with_mode(CodecKind::Sbc, config, bitpool)
     }
 
     /// SBC XQ: dual channel (mono for one channel), [`xq_bitpool`] within
@@ -105,35 +203,35 @@ impl SbcEncoder {
             n => n.min(xq_max_bitpool(config.sample_rate)),
         };
         let bitpool = sink_bitpool(wanted, config);
-        Self::with_mode(CodecKind::SbcXq, config, ChannelMode::DualChannel, bitpool)
+        Self::with_mode(CodecKind::SbcXq, config, bitpool)
     }
 
-    fn with_mode(
-        kind: CodecKind,
-        config: &EncoderConfig,
-        stereo_mode: ChannelMode,
-        bitpool: u8,
-    ) -> Result<SbcEncoder, EncoderError> {
+    fn with_mode(kind: CodecKind, config: &EncoderConfig, bitpool: u8) -> Result<SbcEncoder, EncoderError> {
         let unsupported = |what: String| EncoderError::Unsupported { codec: kind, what };
         if config.sample_rate != 44100 && config.sample_rate != 48000 {
             return Err(unsupported(format!("sample rate {} Hz (44100 or 48000)", config.sample_rate)));
         }
-        let channel_mode = match config.channels {
-            1 => ChannelMode::Mono,
-            2 => stereo_mode,
-            n => return Err(unsupported(format!("{n} channels"))),
-        };
+        if !matches!(config.channels, 1 | 2) {
+            return Err(unsupported(format!("{} channels", config.channels)));
+        }
+        let params = config.peer.sbc;
+        let channel_mode = params.channel_mode(kind, config.channels);
         let frame = SbcFrameEncoder::new(SbcConfig {
             sample_rate: config.sample_rate,
             channel_mode,
-            blocks: BLOCKS,
-            subbands: SUBBANDS,
-            allocation: Allocation::Loudness,
+            blocks: params.blocks(),
+            subbands: params.subbands(),
+            allocation: params.allocation(),
             bitpool,
         })?;
         // Bitpool is never 0 here, so every frame has exactly this length
         let frame_len = frame.max_frame_len();
-        Ok(SbcEncoder { kind, frame, frame_len, sample_rate: config.sample_rate })
+        let downmix = (config.channels == 2 && channel_mode == ChannelMode::Mono).then(|| vec![0; frame.pcm_samples()]);
+        Ok(SbcEncoder { kind, frame, frame_len, sample_rate: config.sample_rate, downmix })
+    }
+
+    fn pcm_frames(&self) -> usize {
+        self.frame.config().pcm_frames_per_frame()
     }
 
     /// Length of every SBC frame of this stream
@@ -156,7 +254,7 @@ impl Encoder for SbcEncoder {
     }
 
     fn pcm_frames_per_encode(&self) -> usize {
-        BLOCKS as usize * SUBBANDS as usize
+        self.pcm_frames()
     }
 
     fn max_output_bytes(&self) -> usize {
@@ -167,14 +265,25 @@ impl Encoder for SbcEncoder {
         let Pcm::I16(pcm) = pcm else {
             return Err(EncoderError::Encode { codec: self.kind, what: "SBC takes 16-bit PCM".into() });
         };
-        let bytes = self.frame.encode(pcm, out)?;
+        let bytes = match self.downmix.as_mut() {
+            Some(mono) => {
+                if pcm.len() != 2 * mono.len() {
+                    return Err(EncoderError::InputLength { expected: 2 * mono.len(), got: pcm.len() });
+                }
+                for (m, [l, r]) in mono.iter_mut().zip(pcm.as_chunks::<2>().0) {
+                    *m = ((*l as i32 + *r as i32) >> 1) as i16;
+                }
+                self.frame.encode(mono, out)?
+            }
+            None => self.frame.encode(pcm, out)?,
+        };
         Ok(Encoded { bytes, frames: 1 })
     }
 
     /// As v1: 8 * frame length * sample rate / (subbands * blocks), in kbps,
     /// rounded down
     fn bitrate_kbps(&self) -> u32 {
-        (8 * self.frame_len as u32 * self.sample_rate) / (SUBBANDS as u32 * BLOCKS as u32) / 1000
+        bitrate_kbps(self.frame_len, self.sample_rate, self.pcm_frames())
     }
 
     fn details(&self) -> EncoderDetails {
@@ -410,6 +519,154 @@ mod tests {
             SbcEncoder::new_xq(&config(32000, 2, Quality::High)),
             Err(EncoderError::Unsupported { codec: CodecKind::SbcXq, .. })
         ));
+    }
+
+    fn with_params(rate: u32, ch: u32, quality: Quality, sbc: SbcParams, bitpool: u8) -> EncoderConfig {
+        EncoderConfig {
+            peer: PeerParams { sbc, sbc_bitpool: bitpool, ..Default::default() },
+            ..config(rate, ch, quality)
+        }
+    }
+
+    #[test]
+    fn frame_length_and_bitrate_of_other_setups() {
+        // (rate, blocks, subbands, mode, bitpool, frame length, kbps): the
+        // A2DP specification's formula (12.9)
+        use ChannelMode::*;
+        let cases = [
+            (44100, 16, 8, JointStereo, 53, 119, 327),
+            (44100, 16, 8, Stereo, 53, 118, 325),
+            (44100, 16, 8, DualChannel, 32, 140, 385),
+            (44100, 16, 8, Mono, 31, 70, 192),
+            (44100, 8, 4, JointStereo, 35, 44, 485),
+            (48000, 8, 4, Stereo, 35, 43, 516),
+            (44100, 4, 8, JointStereo, 53, 40, 441),
+            (48000, 12, 8, JointStereo, 53, 93, 372),
+            (48000, 12, 4, DualChannel, 20, 68, 544),
+            (44100, 4, 4, Mono, 30, 21, 463),
+        ];
+        for (rate, blocks, subbands, mode, bitpool, len, kbps) in cases {
+            let c = SbcConfig {
+                sample_rate: rate,
+                channel_mode: mode,
+                blocks,
+                subbands,
+                allocation: Allocation::Snr,
+                bitpool,
+            };
+            assert_eq!(c.frame_len(), len, "{rate} {blocks}x{subbands} {mode:?} {bitpool}");
+            assert_eq!(bitrate_kbps(len, rate, c.pcm_frames_per_frame()), kbps, "{rate} {blocks}x{subbands} {mode:?}");
+            // The encoder agrees
+            let p = SbcParams { blocks, subbands, allocation: None, channel_mode: Some(mode) };
+            let e = SbcEncoder::new(&with_params(rate, 2, Quality::High, p, bitpool)).unwrap();
+            assert_eq!((e.frame_len(), e.bitrate_kbps()), (len, kbps), "{rate} {blocks}x{subbands} {mode:?}");
+        }
+    }
+
+    #[test]
+    fn every_block_and_subband_count_and_allocation_encodes() {
+        let mut seed = 7u32;
+        for blocks in [4u8, 8, 12, 16] {
+            for subbands in [4u8, 8] {
+                for allocation in [Allocation::Loudness, Allocation::Snr] {
+                    for (ch, mode) in [
+                        (2, ChannelMode::JointStereo),
+                        (2, ChannelMode::Stereo),
+                        (2, ChannelMode::Mono),
+                        (1, ChannelMode::Mono),
+                    ] {
+                        let p = SbcParams { blocks, subbands, allocation: Some(allocation), channel_mode: Some(mode) };
+                        let mut e = SbcEncoder::new(&with_params(48000, ch, Quality::Standard, p, 0)).unwrap();
+                        let what = format!("{blocks}x{subbands} {allocation:?} {ch} ch {mode:?}");
+                        let frames = blocks as usize * subbands as usize;
+                        assert_eq!(e.pcm_frames_per_encode(), frames, "{what}");
+                        let len = e.frame_len();
+                        let want = SbcConfig {
+                            sample_rate: 48000,
+                            channel_mode: mode,
+                            blocks,
+                            subbands,
+                            allocation,
+                            bitpool: 35,
+                        }
+                        .frame_len();
+                        assert_eq!(len, want, "{what}");
+                        let mut out = vec![0u8; len];
+                        for _ in 0..8 {
+                            let pcm: Vec<i16> = (0..frames * ch as usize)
+                                .map(|_| {
+                                    seed ^= seed << 13;
+                                    seed ^= seed >> 17;
+                                    seed ^= seed << 5;
+                                    (seed >> 3) as i16
+                                })
+                                .collect();
+                            let r = e.encode(Pcm::I16(&pcm), &mut out).unwrap();
+                            assert_eq!(r, Encoded { bytes: len, frames: 1 }, "{what}");
+                            // Header: 48 kHz, blocks, mode, allocation, subbands
+                            let b =
+                                (blocks / 4 - 1) << 4 | (mode as u8) << 2 | (allocation as u8) << 1 | (subbands / 8);
+                            assert_eq!((out[0], out[1], out[2]), (0x9C, 0xC0 | b, 35), "{what}");
+                        }
+                        // The wrong input length is refused
+                        assert!(matches!(
+                            e.encode(Pcm::I16(&vec![0; frames * ch as usize + 2]), &mut out),
+                            Err(EncoderError::InputLength { .. })
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mono_from_stereo_mixes_down() {
+        let p = SbcParams { channel_mode: Some(ChannelMode::Mono), ..Default::default() };
+        let mut mixed = SbcEncoder::new(&with_params(44100, 2, Quality::High, p, 0)).unwrap();
+        let mut mono = SbcEncoder::new(&config(44100, 1, Quality::High)).unwrap();
+        assert_eq!((mixed.frame_len(), mixed.pcm_frames_per_encode()), (mono.frame_len(), 128));
+        let (mut a, mut b) = (vec![0u8; mono.frame_len()], vec![0u8; mono.frame_len()]);
+        for n in 0..4 {
+            let m: Vec<i16> = (0..128).map(|i| ((i * 977 + n * 31) % 16000) as i16 - 8000).collect();
+            let lr: Vec<i16> = m.iter().flat_map(|&s| [s, s]).collect();
+            mixed.encode(Pcm::I16(&lr), &mut a).unwrap();
+            mono.encode(Pcm::I16(&m), &mut b).unwrap();
+            assert_eq!(a, b);
+        }
+    }
+
+    #[test]
+    fn auto_bitpool_by_channel_mode() {
+        // Dual channel halves the joint stereo bitpool per channel: about
+        // the same bit rate
+        let dual = SbcParams { channel_mode: Some(ChannelMode::DualChannel), ..Default::default() };
+        let e = SbcEncoder::new(&with_params(44100, 2, Quality::High, dual, 0)).unwrap();
+        assert_eq!((e.bitpool(), e.frame_len(), e.bitrate_kbps()), (27, 120, 330));
+        assert_eq!(auto_bitpool(Quality::Mobile, ChannelMode::DualChannel), 10);
+        assert_eq!(auto_bitpool(Quality::Standard, ChannelMode::Stereo), 35);
+        // SBC XQ keeps its dual channel and bitpools whatever the mode asked
+        let stereo = SbcParams { channel_mode: Some(ChannelMode::Stereo), ..Default::default() };
+        let e = SbcEncoder::new_xq(&with_params(44100, 2, Quality::High, stereo, 0)).unwrap();
+        assert_eq!((e.bitpool(), e.frame_len()), (47, 200));
+        // ... but its frame setup
+        let small = SbcParams { blocks: 8, ..Default::default() };
+        let e = SbcEncoder::new_xq(&with_params(44100, 2, Quality::High, small, 0)).unwrap();
+        assert_eq!((e.frame_len(), e.pcm_frames_per_encode()), (4 + 8 + 94, 64));
+    }
+
+    #[test]
+    fn keys() {
+        for m in ChannelMode::ALL {
+            assert_eq!(ChannelMode::from_key(m.key()), Some(m));
+        }
+        assert_eq!(Allocation::from_key("snr"), Some(Allocation::Snr));
+        assert_eq!(Allocation::from_key(""), None);
+        assert_eq!(ChannelMode::from_key("auto"), None);
+        let d = SbcParams::default();
+        assert_eq!((d.blocks(), d.subbands(), d.allocation()), (16, 8, Allocation::Loudness));
+        assert_eq!(d.channel_mode(CodecKind::Sbc, 2), ChannelMode::JointStereo);
+        assert_eq!(d.channel_mode(CodecKind::SbcXq, 2), ChannelMode::DualChannel);
+        assert_eq!(d.channel_mode(CodecKind::Sbc, 1), ChannelMode::Mono);
     }
 
     #[test]

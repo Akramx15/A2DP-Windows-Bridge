@@ -230,8 +230,8 @@ pub(crate) struct Inner {
     pub power: PowerState,
     tick: (Mutex<()>, Condvar),
     state: Mutex<StreamState>,
-    /// Codec keys each device (address) offered at its last connection
-    codecs: Mutex<BTreeMap<String, Vec<String>>>,
+    /// What each device (address) offered at its last connection
+    codecs: Mutex<BTreeMap<String, stream::KnownCodecs>>,
     /// The chip or firmware setting changed while the stack was in use:
     /// the next use starts a new stack (which loads the firmware again)
     reload: AtomicBool,
@@ -553,7 +553,7 @@ impl Inner {
     }
 
     /// What a device offered (after capability discovery)
-    pub fn record_codecs(&self, addr: &str, codecs: Vec<String>) {
+    pub fn record_codecs(&self, addr: &str, codecs: stream::KnownCodecs) {
         self.codecs.lock().unwrap_or_else(|e| e.into_inner()).insert(addr.to_uppercase(), codecs);
     }
 
@@ -759,9 +759,9 @@ impl Service {
         *self.inner.le_support.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Codec keys each device (upper-case address) offered when it last
+    /// What each device (upper-case address) offered when it last
     /// connected
-    pub fn device_codecs(&self) -> BTreeMap<String, Vec<String>> {
+    pub fn device_codecs(&self) -> BTreeMap<String, stream::KnownCodecs> {
         self.inner.codecs.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
