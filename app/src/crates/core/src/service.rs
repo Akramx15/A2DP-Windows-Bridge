@@ -265,11 +265,18 @@ pub(crate) struct Inner {
     /// The running adapter has LE Audio's isochronous channels: known once
     /// a stack started on it (issue #86)
     le_support: Mutex<Option<bool>>,
+    /// The session waits for headphones that were turned off: a scan may
+    /// end it
+    waiting: AtomicBool,
 }
 
 impl Inner {
     pub fn stop_requested(&self) -> bool {
         self.stop.load(Ordering::Acquire)
+    }
+
+    pub fn waiting_for_device(&self, on: bool) {
+        self.waiting.store(on, Ordering::Release);
     }
 
     pub fn notify(&self, state: StreamState, msg: Msg) {
@@ -690,6 +697,7 @@ impl Service {
             le_stream: Mutex::new(None),
             le_support: Mutex::new(None),
             streamed: AtomicBool::new(false),
+            waiting: AtomicBool::new(false),
         });
         // Without a window, also while only the tray runs
         let weak = Arc::downgrade(&inner);
@@ -919,8 +927,18 @@ impl Service {
         tracing::debug!("stop streaming: session ended in {} ms", started.elapsed().as_millis());
     }
 
+    /// A session that waits for turned-off headphones holds nothing worth
+    /// keeping: a scan ends it
+    fn end_wait_for_device(&self) {
+        if self.inner.waiting.load(Ordering::Acquire) {
+            tracing::info!("scan: no longer waiting for the headphones");
+            self.stop_streaming();
+        }
+    }
+
     /// Inquiry for nearby (classic) devices
     pub fn scan(&self, seconds: u32) -> Result<Vec<DiscoveredDevice>, Msg> {
+        self.end_wait_for_device();
         if self.is_running() {
             return Err(Msg::new("status.streaming"));
         }
@@ -946,6 +964,7 @@ impl Service {
     /// (experimental), a 5 s LE scan for LE Audio devices (v1's scan): the
     /// classic devices, then the LE Audio ones ([`ScannedDevice`])
     pub fn scan_devices(&self, seconds: u32) -> Result<Vec<ScannedDevice>, Msg> {
+        self.end_wait_for_device();
         if self.is_running() {
             return Err(Msg::new("status.streaming"));
         }
