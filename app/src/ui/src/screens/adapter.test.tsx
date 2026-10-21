@@ -48,11 +48,11 @@ describe("Adapter firmware", () => {
     await waitFor(() => expect(calls.filter((c) => c.method === "adapter.firmware_files").length).toBeGreaterThan(1));
   });
 
-  it("opens the settings folder", async () => {
+  it("opens the firmware folder", async () => {
     const { mock } = start();
     const open = vi.spyOn(mock, "openFolder");
-    fireEvent.click(await screen.findByRole("button", { name: "Open Config Folder" }));
-    await waitFor(() => expect(open).toHaveBeenCalledWith("C:\\Users\\you\\AppData\\Roaming\\A2DPWB"));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Firmware Folder" }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith("C:\\Users\\you\\AppData\\Roaming\\A2DPWB\\firmware"));
   });
 
   it("downloads the missing firmware after the user has read the terms", async () => {

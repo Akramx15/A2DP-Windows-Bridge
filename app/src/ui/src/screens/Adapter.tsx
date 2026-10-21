@@ -42,7 +42,7 @@ export function driverText(d: DriverKind): { text: string; status: "good" | "war
 
 /** Opens the settings folder (the shell creates it if it is not there yet) */
 function openConfigFolder(app: AppContext) {
-  return app.run(() => app.core.transport.openFolder(app.core.state.snap!.config_dir));
+  return app.run(() => app.core.transport.openFolder(`${app.core.state.snap!.config_dir}\\firmware`));
 }
 
 export function Adapter() {
