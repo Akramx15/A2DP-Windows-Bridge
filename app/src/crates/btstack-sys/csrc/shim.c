@@ -736,6 +736,14 @@ void a2dpwb_le_deinit(int att_server_started) {
     btstack_tlv_set_instance(NULL, NULL);
     if (le_tlv_open) {
         btstack_tlv_windows_deinit(&le_tlv_context);
+        /* btstack_tlv_windows_deinit frees the entries but leaves the file
+         * open, without sharing: the next a2dpwb_le_init (BTstack restarted
+         * in this process) could then neither open nor re-create it, and the
+         * LE bonds would be neither loaded nor saved */
+        if (le_tlv_context.file != INVALID_HANDLE_VALUE) {
+            CloseHandle(le_tlv_context.file);
+            le_tlv_context.file = INVALID_HANDLE_VALUE;
+        }
         le_tlv_open = 0;
     }
     cig_slots_reset();
