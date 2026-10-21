@@ -289,6 +289,8 @@ const RULES: &[Rule] = &[
     rule(BT, Prefix, "signaling connection established", Step::Connect, A::Done, D::Whole),
     rule(BT, Prefix, "connection attempt ", Step::Connect, A::Retry, D::Whole),
     rule(BT, Prefix, "authentication failed, dropping the stored link key", Step::Connect, A::Detail, D::Whole),
+    rule(BT, Prefix, "authentication collided with the device's own", Step::Connect, A::Detail, D::Whole),
+    rule(BT, Prefix, "pairing again failed: the dropped link key", Step::Connect, A::Detail, D::Whole),
     rule(BT, Prefix, "signaling connection failed", Step::Connect, A::Detail, D::Whole),
     rule(BT, Prefix, "connection timed out", Step::Connect, A::Detail, D::Whole),
     rule(BT, Prefix, "a2dp_source_establish_stream failed", Step::Connect, A::Detail, D::Whole),

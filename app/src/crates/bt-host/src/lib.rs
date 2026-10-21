@@ -711,6 +711,7 @@ impl BtHost {
             s.last_connect_failure = None;
             s.target_acl_handle = None;
             s.target_acl_down_reason = 0;
+            s.target_auth_status = None;
             // A fresh user-initiated operation: clear a cancel left by an
             // earlier stop, or the wait below aborts at once
             s.cancel = false;
@@ -885,14 +886,60 @@ impl BtHost {
     /// link lost) up to [`CONNECT_ATTEMPTS`] times: a link can fail right
     /// after it came up and work on the next attempt. After an
     /// authentication failure (stale link key: the device was reset or paired
-    /// elsewhere) the key is dropped and pairing tried once more.
+    /// elsewhere) the key is dropped and pairing tried once more; when that
+    /// pairing fails too (the device is not in pairing mode), the key is
+    /// stored again. An authentication that collided with the device's own
+    /// (Command Disallowed, LMP transaction collision: the key is fine) is
+    /// tried once more with the key kept.
     pub fn connect_retrying(
         &self,
         addr: [u8; 6],
         cancelled: &dyn Fn() -> bool,
         on_retry: &mut dyn FnMut(u32, u32),
     ) -> Result<RemoteCaps, ConnectFailure> {
+        let mut dropped = None;
+        let result = self.connect_retrying_keys(addr, cancelled, on_retry, &mut dropped);
+        if result.is_err()
+            && let Some((key, key_type)) = dropped
+        {
+            let restored = self
+                .call(Duration::from_secs(2), move |_, s| {
+                    // A key from a pairing that did succeed stays
+                    let absent = s.link_key(&addr).is_none();
+                    if absent {
+                        s.store_link_key(&addr, &key, key_type);
+                    }
+                    absent
+                })
+                .unwrap_or(false);
+            if restored {
+                tracing::info!("pairing again failed: the dropped link key of {} is stored again", addr_str(&addr));
+            }
+        }
+        result
+    }
+
+    /// The HCI status of the failed authentication on the link just tried.
+    /// BTstack reports the failed L2CAP channel before the Authentication
+    /// Complete reaches our handler, so it may take a moment.
+    fn target_auth_status(&self) -> Option<u8> {
+        let _ = self.shared.wait(Duration::from_millis(300), false, |s| s.target_auth_status.is_some());
+        self.shared.lock().target_auth_status
+    }
+
+    fn connect_retrying_keys(
+        &self,
+        addr: [u8; 6],
+        cancelled: &dyn Fn() -> bool,
+        on_retry: &mut dyn FnMut(u32, u32),
+        dropped: &mut Option<([u8; 16], i32)>,
+    ) -> Result<RemoteCaps, ConnectFailure> {
+        use btstack_sys::consts::{
+            ERROR_CODE_COMMAND_DISALLOWED, ERROR_CODE_DIFFERENT_TRANSACTION_COLLISION,
+            ERROR_CODE_LMP_ERROR_TRANSACTION_COLLISION,
+        };
         let mut repaired = false;
+        let mut collided = false;
         let mut attempt = 1;
         loop {
             let err = match self.connect(addr) {
@@ -907,9 +954,41 @@ impl BtHost {
                 return Err(ConnectFailure::Cancelled);
             }
             if err == ConnectFailure::AuthFailed && !repaired {
+                let status = self.target_auth_status();
+                let collision = matches!(
+                    status,
+                    Some(
+                        ERROR_CODE_COMMAND_DISALLOWED
+                            | ERROR_CODE_LMP_ERROR_TRANSACTION_COLLISION
+                            | ERROR_CODE_DIFFERENT_TRANSACTION_COLLISION
+                    )
+                );
+                if collision && !collided {
+                    collided = true;
+                    tracing::warn!(
+                        "authentication collided with the device's own (0x{:02X}): trying again with the stored link key",
+                        status.unwrap_or(0)
+                    );
+                    on_retry(attempt + 1, CONNECT_ATTEMPTS);
+                    self.drop_acl_link(Duration::from_secs(5));
+                    for _ in 0..10 {
+                        if cancelled() {
+                            return Err(ConnectFailure::Cancelled);
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    continue;
+                }
                 repaired = true;
                 tracing::warn!("authentication failed, dropping the stored link key and pairing again");
-                self.call(Duration::from_secs(2), move |_, s| s.drop_link_key(&addr));
+                tracing::debug!("authentication status {status:02X?}");
+                *dropped = self
+                    .call(Duration::from_secs(2), move |_, s| {
+                        let key = s.link_key(&addr);
+                        s.drop_link_key(&addr);
+                        key
+                    })
+                    .flatten();
                 on_retry(attempt + 1, CONNECT_ATTEMPTS);
                 self.drop_acl_link(Duration::from_secs(5));
                 continue;
