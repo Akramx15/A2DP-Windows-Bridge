@@ -98,12 +98,22 @@ export function ProfileEditor(props: { original: string | null }) {
     followName();
   };
 
+  // What each codec was set to while the editor is open: switching to
+  // another codec and back brings its settings back (issue #86, AAC's VBR
+  // was lost)
+  const kept = new Map<string, CodecValues>();
   const pickCodec = (c: CodecSpec) => {
     const cur = unwrap(p);
-    // The flag is VBR under AAC, the adaptive bitpool under SBC and ABR
-    // elsewhere: not carried across
-    const abr = abrCarries(cur.codec, c.id) ? cur.abr : false;
-    setP(fitToCodec({ ...cur, abr, codec: c.id }));
+    kept.set(cur.codec, codecValues(cur));
+    const before = kept.get(c.id);
+    if (before) {
+      setP(fitToCodec({ ...cur, ...before }));
+    } else {
+      // The flag is VBR under AAC, the adaptive bitpool under SBC and ABR
+      // elsewhere: not carried across
+      const abr = abrCarries(cur.codec, c.id) ? cur.abr : false;
+      setP(fitToCodec({ ...cur, abr, codec: c.id }));
+    }
     followName();
   };
   // The codec whose settings dialog is open
@@ -239,9 +249,12 @@ export function ProfileEditor(props: { original: string | null }) {
                 <CodecSettings
                   spec={settingsOf()}
                   profile={p}
+                  kept={(codec) => kept.get(codec)}
                   sbcCaps={knownSbcCaps(snap().devices, p.device_address)}
                   onApply={(values) => {
-                    setP(fitToCodec({ ...unwrap(p), ...values }));
+                    const cur = unwrap(p);
+                    if (values.codec !== cur.codec) kept.set(cur.codec, codecValues(cur));
+                    setP(fitToCodec({ ...cur, ...values }));
                     setSettingsOf(null);
                   }}
                   onCancel={() => setSettingsOf(null)}
@@ -417,17 +430,34 @@ type CodecValues = Pick<
   | "sbc_channel_mode"
 >;
 
+function codecValues(p: CodecValues): CodecValues {
+  return {
+    codec: p.codec,
+    quality: p.quality,
+    sample_rate: p.sample_rate,
+    bit_depth: p.bit_depth,
+    abr: p.abr,
+    sbc_bitpool: p.sbc_bitpool,
+    sbcxq_bitpool: p.sbcxq_bitpool,
+    sbc_blocks: p.sbc_blocks,
+    sbc_subbands: p.sbc_subbands,
+    sbc_allocation: p.sbc_allocation,
+    sbc_channel_mode: p.sbc_channel_mode,
+  };
+}
+
 /**
  * One codec's quality, sample rate, bit depth and ABR (what "Advanced" had
  * for the chosen codec); SBC and SBC XQ also their bitpool and frame setup,
  * offering only what the device listed when it last connected (`sbcCaps`),
  * with the bit rate that gives. It starts from the profile's values fitted
- * to the codec; OK chooses the codec with them, Cancel leaves the profile
- * alone.
+ * to the codec, or from what that codec was set to earlier in the editor
+ * (`kept`); OK chooses the codec with them, Cancel leaves the profile alone.
  */
 function CodecSettings(props: {
   spec: CodecSpec | null;
   profile: Profile;
+  kept: (codec: string) => CodecValues | undefined;
   sbcCaps: SbcCaps | null;
   onApply: (values: CodecValues) => void;
   onCancel: () => void;
@@ -450,7 +480,7 @@ function CodecSettings(props: {
       () => props.spec,
       (s) => {
         if (!s) return;
-        const p = props.profile;
+        const p = s.id === props.profile.codec ? props.profile : (props.kept(s.id) ?? props.profile);
         setV(
           fitToCodec({
             codec: s.id,
