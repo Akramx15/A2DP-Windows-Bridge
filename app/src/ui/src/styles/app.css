@@ -699,16 +699,31 @@ option {
 }
 .dialog {
   width: min(30rem, 100%);
+  /* A tall dialog (SBC XQ settings) fits the window: the title and the
+     buttons stay put and the body scrolls */
+  max-height: calc(100vh - 2 * var(--s4));
+  min-height: 0;
   padding: var(--s5);
   display: flex;
   flex-direction: column;
   gap: var(--s3);
   animation: rise var(--t-mid) var(--ease);
 }
+.dialog > h2,
+.dialog-actions {
+  flex: none;
+}
 .dialog-body {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room so focus rings at the edges are not clipped by the scroller */
+  margin: 0 calc(-1 * var(--s1));
+  padding: 0 var(--s1);
 }
 .dialog-actions {
   display: flex;
