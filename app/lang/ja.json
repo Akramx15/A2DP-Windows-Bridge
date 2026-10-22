@@ -246,7 +246,7 @@
   "dbgc.copy_log": "表示中のログをコピー",
   "dbgc.copy_selected": "選択行をコピー",
   "dbgc.mask": "BT アドレスを伏せる",
-  "dbgc.mask_tip": "コピー時にアドレスを AA:BB:CC:xx:xx:xx の形にします（メーカー部分は残します）。USB のシリアル番号も隠します。",
+  "dbgc.mask_tip": "コピー時に Bluetooth アドレスを <addr-1>, <addr-2>...（アダプター自身は <adapter>）、デバイス名を <device-1>, <device-2>... に置き換えます。USB のシリアル番号と Windows のユーザー名も隠します。",
   "dbgc.copied": "クリップボードにコピーしました（%u 行）",
   "dbgc.copy_failed": "クリップボードを開けませんでした",
   "receiver.title": "対向受信テスト",

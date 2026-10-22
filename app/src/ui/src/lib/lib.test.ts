@@ -4,7 +4,7 @@ import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
 import { abrCarries, bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
-import { maskIdentifiers, parseAddress } from "./format";
+import { knowAdapters, maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
 import { validateProfile } from "./profile";
 
@@ -216,37 +216,54 @@ describe("profiles", () => {
     expect(codecLabelKey("Ldac")).toBe("codec.ldac");
   });
 
-  it("masks the device part of addresses", () => {
-    expect(maskIdentifiers("connecting to AC:80:0A:12:34:56 now")).toBe("connecting to AC:80:0A:xx:xx:xx now");
+  /** The number an address got (the map lives as long as the module) */
+  const addrOf = (addr: string) => /<addr-(\d+)>/.exec(maskIdentifiers(addr))?.[1];
+
+  it("masks addresses as <addr-N>, the same address the same N in every form", () => {
+    const m = maskIdentifiers;
+    const n = addrOf("AC:80:0A:12:34:56");
+    expect(n).toBeDefined();
+    expect(m("connecting to AC:80:0A:12:34:56 now")).toBe(`connecting to <addr-${n}> now`);
+    expect(m("ac-80-0a-12-34-56 and AC800A123456")).toBe(`<addr-${n}> and <addr-${n}>`);
+    expect(addrOf("00:1A:7D:DA:71:13")).not.toBe(n);
   });
 
   // The same cases as the core's mask_identifiers tests
   it("masks addresses in other forms", () => {
     const m = maskIdentifiers;
-    expect(m("00-1A-7D-DA-71-13")).toBe("00-1A-7D-xx-xx-xx");
+    const a = addrOf("00-1A-7D-DA-71-13");
+    const b = addrOf("46:62:99:4A:5B:6C");
+    const c = addrOf("58:18:62:3a:1b:2c");
+    expect(m("00-1A-7D-DA-71-13")).toBe(`<addr-${a}>`);
     // A colon after it ends the address (the LE Audio pairing lines of #81)
-    expect(m("LE Audio: 46:62:99:4A:5B:6C: pairing (Just Works)")).toBe("LE Audio: 46:62:99:xx:xx:xx: pairing (Just Works)");
-    expect(m("to 46:62:99:4A:5B:6C:")).toBe("to 46:62:99:xx:xx:xx:");
-    expect(m("46-62-99-4A-5B-6C-x")).toBe("46-62-99-xx-xx-xx-x");
-    expect(m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c")).toBe(
-      "BluetoothLE#BluetoothLE00:1a:7d:xx:xx:xx-58:18:62:xx:xx:xx",
-    );
+    expect(m("LE Audio: 46:62:99:4A:5B:6C: pairing (Just Works)")).toBe(`LE Audio: <addr-${b}>: pairing (Just Works)`);
+    expect(m("to 46:62:99:4A:5B:6C:")).toBe(`to <addr-${b}>:`);
+    expect(m("46-62-99-4A-5B-6C-x")).toBe(`<addr-${b}>-x`);
+    expect(m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c")).toBe(`BluetoothLE#BluetoothLE<addr-${a}>-<addr-${c}>`);
     expect(m("fe80::00:11:22:33:44:55")).toBe("fe80::00:11:22:33:44:55");
     expect(m("00:11:22:33:44:55:66")).toBe("00:11:22:33:44:55:66");
     expect(m("00:11:22:33:44:556")).toBe("00:11:22:33:44:556");
-    expect(m("ヘッドホン5818623A1B2C接続")).toBe("ヘッドホン581862xxxxxx接続");
+    expect(m("ヘッドホン5818623A1B2C接続")).toBe(`ヘッドホン<addr-${c}>接続`);
     expect(m(String.raw`BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&5818623A1B2C_C00000000`)).toBe(
-      String.raw`BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&581862xxxxxx_C00000000`,
+      String.raw`BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&<addr-${c}>_C00000000`,
     );
     expect(m("5818623A1B2C5818623A1B2C, 0x5818623A1B2C, 5818623A1B2G")).toBe(
       "5818623A1B2C5818623A1B2C, 0x5818623A1B2C, 5818623A1B2G",
     );
   });
 
+  it("shows the adapters' own addresses as <adapter>", () => {
+    knowAdapters(["00:e0:4c:00:00:01", null, "nope"]);
+    expect(maskIdentifiers(String.raw`local 00:E0:4C:00:00:01, USB\VID_0BDA&PID_4853\00E04C000001`)).toBe(
+      String.raw`local <adapter>, USB\VID_0BDA&PID_4853\<adapter>`,
+    );
+  });
+
   it("masks USB serial numbers", () => {
     const m = maskIdentifiers;
-    expect(m(String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04C000001 (event 0x81)`)).toBe(
-      String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04Cxxxxxx (event 0x81)`,
+    const n = addrOf("00E04C000002");
+    expect(m(String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04C000002 (event 0x81)`)).toBe(
+      String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\<addr-${n}> (event 0x81)`,
     );
     expect(m(String.raw`USB\VID_18D1&PID_4EE7\HT7A1B234567`)).toBe(String.raw`USB\VID_18D1&PID_4EE7\xxxxxxxxxxxx`);
     expect(m(String.raw`\\?\usb#vid_0a12&pid_0001#serial42#{a5dcbf10-6530-11d2-901f-00c04fb951ed}`)).toBe(
@@ -277,8 +294,9 @@ describe("profiles", () => {
     const first = m("stream: device AA:BB:CC:DD:EE:FF source virtual device “Taro's AirPods”");
     const n = /<device-(\d+)>$/.exec(first)?.[1];
     expect(n).toBeDefined();
-    expect(first).toBe(`stream: device AA:BB:CC:xx:xx:xx source virtual device <device-${n}>`);
-    expect(m("remote name of AA:BB:CC:DD:EE:FF: name=“Taro's AirPods”")).toBe(`remote name of AA:BB:CC:xx:xx:xx: name=<device-${n}>`);
+    const a = addrOf("AA:BB:CC:DD:EE:FF");
+    expect(first).toBe(`stream: device <addr-${a}> source virtual device <device-${n}>`);
+    expect(m("remote name of AA:BB:CC:DD:EE:FF: name=“Taro's AirPods”")).toBe(`remote name of <addr-${a}>: name=<device-${n}>`);
     expect(m("name=“Hanako's iPhone”")).not.toBe(`name=<device-${n}>`);
     expect(m("name=“Hanako's iPhone”")).toMatch(/^name=<device-\d+>$/);
     // Empty, unclosed and multi-line quotes stay

@@ -52,7 +52,7 @@ Die Standardwerte liefern den besten Klang; die meisten Profile brauchen unter *
 - **Verbindungsablauf**: die elf Phasen des letzten Verbindungsversuchs (Start, Bluetooth-Adapter, ACL- / AVDTP-Verbindung, Fähigkeitenabfrage, Codec-Auswahl, Audioaufnahme, Stream-Konfiguration, Encoder, Stream-Start, Audio senden, Verbindungserhalt mit Trennungen / erneuten Verbindungen) als OK, Warnung oder Fehler, mit ihrer Dauer. **Ablauf kopieren** kopiert ihn
 - **Protokoll**: live, gefiltert nach Stufe (alle, Info und höher, Warnungen und Fehler, nur Fehler) und nach Text. **Angezeigtes Protokoll kopieren** kopiert das Angezeigte
 - **HCI-Aufzeichnung starten** / **HCI-Aufzeichnung beenden** (siehe [Den Medienstream prüfen](#verify-stream))
-- **Diagnose kopieren**: Version, Betriebssystem, Adapter, Profil, den Ablauf, Warnungen / Fehler und das aktuelle Protokoll in die Zwischenablage, bereit zum Einfügen in einen Fehlerbericht. **Bluetooth-Adressen maskieren** (standardmäßig aktiviert) behält nur den Herstellerteil (`AA:BB:CC:xx:xx:xx`)
+- **Diagnose kopieren**: Version, Betriebssystem, Adapter, Profil, den Ablauf, Warnungen / Fehler und das aktuelle Protokoll in die Zwischenablage, bereit zum Einfügen in einen Fehlerbericht. **Bluetooth-Adressen maskieren** (standardmäßig aktiviert) ersetzt Adressen durch `<addr-1>`, `<addr-2>`... (die des Adapters durch `<adapter>`) und Gerätenamen durch `<device-1>`, `<device-2>`... und blendet USB-Seriennummern und Ihren Windows-Benutzernamen aus
 
 Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Registerkarte **Peer-Empfängertest** (siehe [Peer-Empfängertest](#receiver)).
 

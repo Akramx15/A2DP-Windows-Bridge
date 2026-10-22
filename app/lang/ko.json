@@ -246,7 +246,7 @@
   "dbgc.copy_log": "표시된 로그 복사",
   "dbgc.copy_selected": "선택한 줄 복사",
   "dbgc.mask": "Bluetooth 주소 가리기",
-  "dbgc.mask_tip": "복사 시 주소를 AA:BB:CC:xx:xx:xx 형식으로 표시합니다(제조사 부분은 유지). USB 일련번호도 가립니다.",
+  "dbgc.mask_tip": "복사 시 Bluetooth 주소를 <addr-1>, <addr-2>...(어댑터 자체는 <adapter>)로, 장치 이름을 <device-1>, <device-2>...로 표시합니다. USB 일련번호와 Windows 사용자 이름도 가립니다.",
   "dbgc.copied": "클립보드에 복사했습니다(%u줄)",
   "dbgc.copy_failed": "클립보드를 열 수 없습니다",
   "receiver.title": "피어 수신기 테스트",

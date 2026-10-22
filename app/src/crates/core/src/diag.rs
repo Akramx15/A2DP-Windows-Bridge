@@ -727,24 +727,34 @@ pub fn quoted(name: &str) -> String {
 /// - The Windows user name in paths: `C:\Users\<name>\...` ('/' too,
 ///   JSON's doubled '\' too) -> as many 'x' as characters; `Public`,
 ///   `Default` and `All Users` are nobody's.
-/// - Bluetooth addresses, "AA:BB:CC:DD:EE:FF" or with '-' ->
-///   "AA:BB:CC:xx:xx:xx": the vendor part (OUI) stays. Not when part of a
-///   longer run (an IPv6 address); a letter before is fine (Windows'
-///   "BluetoothLE#BluetoothLE<adapter>-<device>" IDs).
-/// - The same without separators, a word of 12 hex digits ->
-///   "AABBCCxxxxxx": Windows' BTHENUM / BTHLE IDs, and USB serial numbers
-///   that are the adapter's address. Not after '-' (a GUID's last part).
+/// - Bluetooth addresses, "AA:BB:CC:DD:EE:FF" or with '-', and the same
+///   without separators (a word of 12 hex digits: Windows' BTHENUM / BTHLE
+///   IDs, USB serial numbers that are the adapter's address) ->
+///   `<addr-1>`, `<addr-2>`..., the same address the same number whatever
+///   its form; the adapters' own addresses ([`Masker::know_adapter`]) ->
+///   `<adapter>`. Nothing of the address stays: its first three octets
+///   name the maker (the OUI), and so the model. Not when part of a longer
+///   run (an IPv6 address); a letter before is fine (Windows'
+///   "BluetoothLE#BluetoothLE<adapter>-<device>" IDs); not after '-' (a
+///   GUID's last part).
 /// - Other USB serial numbers, in instance IDs and device paths
 ///   (`USB\VID_0BDA&PID_8771\<serial>`) and driver record names
-///   (`USB_VID_0BDA_PID_8771_<serial>`) -> x's. IDs Windows generates
-///   (`5&2C7B4E3&0&2`) say nothing about the device and stay.
-///
-/// Besides the names, only ASCII is replaced, by as many 'x', so the text
-/// keeps its length.
+///   (`USB_VID_0BDA_PID_8771_<serial>`) -> as many 'x'. IDs Windows
+///   generates (`5&2C7B4E3&0&2`) say nothing about the device and stay.
 #[derive(Debug, Default)]
 pub struct Masker {
     /// Names seen or told, numbered from 1 in this order
     names: Vec<String>,
+    /// Addresses seen (12 upper-case hex digits), numbered from 1
+    addrs: Vec<String>,
+    /// The adapters' own addresses (12 upper-case hex digits)
+    adapters: Vec<String>,
+}
+
+/// The 12 hex digits of an address in any form, upper case
+fn address_key(addr: &str) -> Option<String> {
+    let key: String = addr.chars().filter(|c| !matches!(c, ':' | '-')).map(|c| c.to_ascii_uppercase()).collect();
+    (key.len() == 12 && key.bytes().all(|c| c.is_ascii_hexdigit())).then_some(key)
 }
 
 impl Masker {
@@ -761,6 +771,15 @@ impl Masker {
         }
     }
 
+    /// An adapter's own address, shown as `<adapter>` (any form)
+    pub fn know_adapter(&mut self, addr: &str) {
+        if let Some(key) = address_key(addr)
+            && !self.adapters.contains(&key)
+        {
+            self.adapters.push(key);
+        }
+    }
+
     /// The pseudonym of a name
     fn pseudonym(&mut self, name: &str) -> String {
         let n = match self.names.iter().position(|n| n == name) {
@@ -773,15 +792,64 @@ impl Masker {
         format!("<device-{n}>")
     }
 
+    /// The pseudonym of an address (any form)
+    fn address_pseudonym(&mut self, addr: &str) -> String {
+        let key = address_key(addr).unwrap_or_default();
+        if self.adapters.contains(&key) {
+            return "<adapter>".into();
+        }
+        let n = match self.addrs.iter().position(|a| *a == key) {
+            Some(i) => i + 1,
+            None => {
+                self.addrs.push(key);
+                self.addrs.len()
+            }
+        };
+        format!("<addr-{n}>")
+    }
+
     pub fn mask(&mut self, text: &str) -> String {
         let text = self.mask_quoted_names(text);
         let text = self.mask_known_names(&text);
         let text = mask_user_paths(&text);
         let mut b = text.into_bytes();
+        // Before the addresses: a serial that is an address is left to them
         mask_usb_serials(&mut b);
-        mask_separated_addresses(&mut b);
-        mask_bare_addresses(&mut b);
-        String::from_utf8(b).expect("only ASCII bytes were replaced")
+        let text = String::from_utf8(b).expect("only ASCII bytes were replaced");
+        self.mask_addresses(&text)
+    }
+
+    /// "AA:BB:CC:DD:EE:FF", "AA-BB-CC-DD-EE-FF" and "AABBCCDDEEFF" ->
+    /// `<addr-N>` / `<adapter>`
+    fn mask_addresses(&mut self, text: &str) -> String {
+        let b = text.as_bytes();
+        let mut out = String::with_capacity(text.len());
+        let mut i = 0;
+        while i < b.len() {
+            if let Some(len) = separated_address_at(b, i) {
+                out.push_str(&self.address_pseudonym(&text[i..i + len]));
+                i += len;
+                continue;
+            }
+            if b[i].is_ascii_alphanumeric() && (i == 0 || !b[i - 1].is_ascii_alphanumeric()) {
+                // A word of 12 hex digits, not after '-' (a GUID's last
+                // part); any other word goes on by the character, as a
+                // separated address can start inside it ("BluetoothLE00:1a:...")
+                let mut j = i;
+                while j < b.len() && b[j].is_ascii_alphanumeric() {
+                    j += 1;
+                }
+                if j - i == 12 && b[i..j].iter().all(u8::is_ascii_hexdigit) && (i == 0 || b[i - 1] != b'-') {
+                    out.push_str(&self.address_pseudonym(&text[i..j]));
+                    i = j;
+                    continue;
+                }
+            }
+            let c = text[i..].chars().next().expect("at a char boundary");
+            out.push(c);
+            i += c.len_utf8();
+        }
+        out
     }
 
     /// `“name”` -> `<device-N>`, on one line, up to 256 characters
@@ -861,46 +929,24 @@ fn mask_user_paths(text: &str) -> String {
     out
 }
 
-fn mask_separated_addresses(b: &mut [u8]) {
+/// The length of a separated address ("AA:BB:CC:DD:EE:FF" or with '-') at
+/// `i`, if one is there
+fn separated_address_at(b: &[u8], i: usize) -> Option<usize> {
     const LEN: usize = 17;
-    let mut i = 0;
-    while i + LEN <= b.len() {
-        let sep = b[i + 2];
-        let is_addr = (sep == b':' || sep == b'-')
-            && (0..LEN).all(|k| if k % 3 == 2 { b[i + k] == sep } else { b[i + k].is_ascii_hexdigit() })
-            && (i == 0 || b[i - 1] != sep)
-            // Not continued by hex, or by the separator and two more hex
-            // digits ("00:11:22:33:44:55:66"); a colon that ends it is
-            // punctuation ("LE Audio: 46:62:99:4A:5B:6C: pairing")
-            && !b.get(i + LEN).is_some_and(u8::is_ascii_hexdigit)
-            && !(b.get(i + LEN) == Some(&sep)
-                && b.get(i + LEN + 1..i + LEN + 3).is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit)));
-        if is_addr {
-            for k in (9..LEN).filter(|k| k % 3 != 2) {
-                b[i + k] = b'x';
-            }
-            i += LEN;
-        } else {
-            i += 1;
-        }
+    if i + LEN > b.len() {
+        return None;
     }
-}
-
-fn mask_bare_addresses(b: &mut [u8]) {
-    let mut i = 0;
-    while i < b.len() {
-        if !b[i].is_ascii_alphanumeric() {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < b.len() && b[i].is_ascii_alphanumeric() {
-            i += 1;
-        }
-        if i - start == 12 && b[start..i].iter().all(u8::is_ascii_hexdigit) && (start == 0 || b[start - 1] != b'-') {
-            b[start + 6..i].fill(b'x');
-        }
-    }
+    let sep = b[i + 2];
+    let is_addr = (sep == b':' || sep == b'-')
+        && (0..LEN).all(|k| if k % 3 == 2 { b[i + k] == sep } else { b[i + k].is_ascii_hexdigit() })
+        && (i == 0 || b[i - 1] != sep)
+        // Not continued by hex, or by the separator and two more hex
+        // digits ("00:11:22:33:44:55:66"); a colon that ends it is
+        // punctuation ("LE Audio: 46:62:99:4A:5B:6C: pairing")
+        && !b.get(i + LEN).is_some_and(u8::is_ascii_hexdigit)
+        && !(b.get(i + LEN) == Some(&sep)
+            && b.get(i + LEN + 1..i + LEN + 3).is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit)));
+    is_addr.then_some(LEN)
 }
 
 /// `VID_xxxx<joint>PID_xxxx` at `i` (any case) -> the joint
@@ -1117,8 +1163,11 @@ pub struct DiagInput<'a> {
     pub log: &'a [LogEntry<'a>],
     /// Local time of day (ms) at time_ms 0 ([`format_time`])
     pub clock: Option<u64>,
-    /// Bluetooth addresses as AA:BB:CC:xx:xx:xx
+    /// Addresses, device names, USB serials and the user name masked
+    /// ([`Masker`])
     pub mask: bool,
+    /// The adapters' own addresses (`<adapter>` when masked)
+    pub adapter_addresses: &'a [String],
     /// LE Audio (experimental) of the running stack
     pub le_audio: Option<&'a LeAudioDiag>,
     /// Verbose logging, crash reports, flight recorder files (one line)
@@ -1393,6 +1442,9 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
             m.know(n);
         }
     }
+    for a in d.adapter_addresses {
+        m.know_adapter(a);
+    }
     m.mask(&out)
 }
 
@@ -1665,48 +1717,62 @@ mod tests {
 
     #[test]
     fn masks_addresses() {
-        let m = mask_identifiers;
-        assert_eq!(m("to 00:1A:7D:DA:71:13."), "to 00:1A:7D:xx:xx:xx.");
-        assert_eq!(m("aa:bb:cc:dd:ee:ff"), "aa:bb:cc:xx:xx:xx");
-        assert_eq!(m("[00:11:22:33:44:55|66:77:88:99:AA:BB]"), "[00:11:22:xx:xx:xx|66:77:88:xx:xx:xx]");
-        assert_eq!(m("00-1A-7D-DA-71-13"), "00-1A-7D-xx-xx-xx");
+        // Every form of the same address -> the same <addr-N>; nothing of
+        // it stays (the OUI names the maker)
+        let mut m = Masker::new();
+        assert_eq!(m.mask("to 00:1A:7D:DA:71:13."), "to <addr-1>.");
+        assert_eq!(m.mask("aa:bb:cc:dd:ee:ff"), "<addr-2>");
+        assert_eq!(m.mask("[00:11:22:33:44:55|66:77:88:99:AA:BB]"), "[<addr-3>|<addr-4>]");
+        assert_eq!(
+            m.mask("00-1A-7D-DA-71-13 and 001a7dda7113 and 00:1A:7D:DA:71:13"),
+            "<addr-1> and <addr-1> and <addr-1>"
+        );
         // A colon after it ends the address (the LE Audio pairing lines of #81)
         assert_eq!(
-            m("LE Audio: 46:62:99:4A:5B:6C: pairing (Just Works)"),
-            "LE Audio: 46:62:99:xx:xx:xx: pairing (Just Works)"
+            m.mask("LE Audio: 46:62:99:4A:5B:6C: pairing (Just Works)"),
+            "LE Audio: <addr-5>: pairing (Just Works)"
         );
-        assert_eq!(m("to 46:62:99:4A:5B:6C:"), "to 46:62:99:xx:xx:xx:");
-        assert_eq!(m("46-62-99-4A-5B-6C-x"), "46-62-99-xx-xx-xx-x");
+        assert_eq!(m.mask("to 46:62:99:4A:5B:6C:"), "to <addr-5>:");
+        assert_eq!(m.mask("46-62-99-4A-5B-6C-x"), "<addr-5>-x");
         // After a letter: Windows' LE device IDs
         assert_eq!(
-            m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c"),
-            "BluetoothLE#BluetoothLE00:1a:7d:xx:xx:xx-58:18:62:xx:xx:xx"
+            m.mask("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c"),
+            "BluetoothLE#BluetoothLE<addr-1>-<addr-6>"
         );
         // Part of a longer run (an IPv6 address): left alone
-        assert_eq!(m("fe80::00:11:22:33:44:55"), "fe80::00:11:22:33:44:55");
-        assert_eq!(m("00:11:22:33:44:55:66"), "00:11:22:33:44:55:66");
-        assert_eq!(m("0011:22:33:44:55"), "0011:22:33:44:55");
-        assert_eq!(m("00:11:22:33:44:556"), "00:11:22:33:44:556");
+        assert_eq!(m.mask("fe80::00:11:22:33:44:55"), "fe80::00:11:22:33:44:55");
+        assert_eq!(m.mask("00:11:22:33:44:55:66"), "00:11:22:33:44:55:66");
+        assert_eq!(m.mask("0011:22:33:44:55"), "0011:22:33:44:55");
+        assert_eq!(m.mask("00:11:22:33:44:556"), "00:11:22:33:44:556");
         // Not hex
-        assert_eq!(m("00:11:22:33:44:5G"), "00:11:22:33:44:5G");
+        assert_eq!(m.mask("00:11:22:33:44:5G"), "00:11:22:33:44:5G");
         // Multi-byte text around it
-        assert_eq!(m("ヘッドホン 00:11:22:33:44:55 接続"), "ヘッドホン 00:11:22:xx:xx:xx 接続");
-        assert_eq!(m("ヘッドホン5818623A1B2C接続"), "ヘッドホン581862xxxxxx接続");
-        assert_eq!(m(""), "");
+        assert_eq!(m.mask("ヘッドホン 00:11:22:33:44:55 接続"), "ヘッドホン <addr-3> 接続");
+        assert_eq!(m.mask("ヘッドホン5818623A1B2C接続"), "ヘッドホン<addr-6>接続");
+        assert_eq!(m.mask(""), "");
+        // The adapter's own address, in any form
+        let mut m = Masker::new();
+        m.know_adapter("00:e0:4c:00:00:01");
+        m.know_adapter("not an address");
+        assert_eq!(
+            m.mask(r"local 00:E0:4C:00:00:01, USB\VID_0BDA&PID_4853\00E04C000001, to 00:1A:7D:DA:71:13"),
+            r"local <adapter>, USB\VID_0BDA&PID_4853\<adapter>, to <addr-1>"
+        );
+        assert_eq!(mask_identifiers("00:E0:4C:00:00:01"), "<addr-1>");
     }
 
     #[test]
     fn masks_bare_addresses() {
-        let m = mask_identifiers;
+        let mut m = Masker::new();
         assert_eq!(
-            m(r"BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&5818623A1B2C_C00000000"),
-            r"BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&581862xxxxxx_C00000000"
+            m.mask(r"BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&5818623A1B2C_C00000000"),
+            r"BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&<addr-1>_C00000000"
         );
-        assert_eq!(m(r"BTHLE\DEV_5818623a1b2c\8&1&0"), r"BTHLE\DEV_581862xxxxxx\8&1&0");
+        assert_eq!(m.mask(r"BTHLE\DEV_5818623a1b2c\8&1&0"), r"BTHLE\DEV_<addr-1>\8&1&0");
         // A GUID's last part; longer hex, after 0x; not all hex or shorter
-        assert_eq!(m("{0000110b-0000-1000-8000-00805f9b34fb}"), "{0000110b-0000-1000-8000-00805f9b34fb}");
-        assert_eq!(m("5818623A1B2C5818623A1B2C, 0x5818623A1B2C"), "5818623A1B2C5818623A1B2C, 0x5818623A1B2C");
-        assert_eq!(m("5818623A1B2G 818623A1B2C"), "5818623A1B2G 818623A1B2C");
+        assert_eq!(m.mask("{0000110b-0000-1000-8000-00805f9b34fb}"), "{0000110b-0000-1000-8000-00805f9b34fb}");
+        assert_eq!(m.mask("5818623A1B2C5818623A1B2C, 0x5818623A1B2C"), "5818623A1B2C5818623A1B2C, 0x5818623A1B2C");
+        assert_eq!(m.mask("5818623A1B2G 818623A1B2C"), "5818623A1B2G 818623A1B2C");
     }
 
     #[test]
@@ -1740,15 +1806,15 @@ mod tests {
         // Quoted names, the same name the same number
         assert_eq!(
             m.mask("stream: device AA:BB:CC:DD:EE:FF source virtual device “Taro's AirPods”"),
-            "stream: device AA:BB:CC:xx:xx:xx source virtual device <device-1>"
+            "stream: device <addr-1> source virtual device <device-1>"
         );
         assert_eq!(
             m.mask("inquiry result: 11:22:33:44:55:66 name=“Hanako's iPhone”"),
-            "inquiry result: 11:22:33:xx:xx:xx name=<device-2>"
+            "inquiry result: <addr-2> name=<device-2>"
         );
         assert_eq!(
             m.mask("remote name of AA:BB:CC:DD:EE:FF: name=“Taro's AirPods”"),
-            "remote name of AA:BB:CC:xx:xx:xx: name=<device-1>"
+            "remote name of <addr-1>: name=<device-1>"
         );
         // Empty, unclosed, nested and multi-line quotes stay
         assert_eq!(m.mask("name=“” and “open"), "name=“” and “open");
@@ -1764,10 +1830,10 @@ mod tests {
             m.mask(
                 "Device: Taro's AirPods [AA:BB:CC:DD:EE:FF], loopback of “Headphones (Taro's AirPods Stereo)”, LE on"
             ),
-            "Device: <device-1> [AA:BB:CC:xx:xx:xx], loopback of <device-2>, LE on"
+            "Device: <device-1> [<addr-1>], loopback of <device-2>, LE on"
         );
         assert_eq!(m.mask(r#""device_name": "Taro's AirPods""#), r#""device_name": "<device-1>""#);
-        assert_eq!(m.mask("AA:BB:CC:DD:EE:FF|Taro's AirPods"), "AA:BB:CC:xx:xx:xx|<device-1>");
+        assert_eq!(m.mask("AA:BB:CC:DD:EE:FF|Taro's AirPods"), "<addr-1>|<device-1>");
         // Known again: the same number
         m.know("Taro's AirPods");
         assert_eq!(m.mask("“Taro's AirPods”"), "<device-1>");
@@ -1778,10 +1844,10 @@ mod tests {
     #[test]
     fn masks_usb_serials() {
         let m = mask_identifiers;
-        // A serial that is the adapter's address keeps the vendor part
+        // A serial that is an address is one (the adapter's, see masks_addresses)
         assert_eq!(
             m(r"USB: opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04C000001 (event 0x81)"),
-            r"USB: opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04Cxxxxxx (event 0x81)"
+            r"USB: opened 0BDA:4853 USB\VID_0BDA&PID_4853\<addr-1> (event 0x81)"
         );
         assert_eq!(m(r"USB\VID_18D1&PID_4EE7\HT7A1B234567"), r"USB\VID_18D1&PID_4EE7\xxxxxxxxxxxx");
         // A device path, any case; JSON's doubled '\'
@@ -1798,7 +1864,7 @@ mod tests {
         assert_eq!(m(r"USB\VID_8087&PID_0026\5&2C7B4E3&0&14."), r"USB\VID_8087&PID_0026\5&2C7B4E3&0&14.");
         // A driver record's name
         assert_eq!(m("USB_VID_0BDA_PID_8771_SN123.json"), "USB_VID_0BDA_PID_8771_xxxxx.json");
-        assert_eq!(m("USB_VID_0BDA_PID_8771_00E04C000001.json"), "USB_VID_0BDA_PID_8771_00E04Cxxxxxx.json");
+        assert_eq!(m("USB_VID_0BDA_PID_8771_00E04C000001.json"), "USB_VID_0BDA_PID_8771_<addr-1>.json");
         // VID and PID alone
         assert_eq!(
             m("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853."),
@@ -1906,6 +1972,7 @@ mod tests {
             log: &log,
             clock: None,
             mask: true,
+            adapter_addresses: &[],
             le_audio: None,
             logging: None,
         };
@@ -1918,7 +1985,8 @@ mod tests {
         assert!(text.contains("  Realtek RTL8761B [0BDA:8771], driver WinUsb\n"));
         assert!(text.contains("  chip: RTL8761B (0x8771) (auto)\n"));
         // The device's name goes with the addresses (the profile's names are known)
-        assert!(text.contains("  Device: <device-1> [00:1A:7D:xx:xx:xx]\n"), "{text}");
+        assert!(text.contains("  Device: <device-1> [<addr-1>]\n"), "{text}");
+        assert!(!text.contains("00:1A:7D"), "{text}");
         assert!(!text.contains("WH-1000XM4"), "{text}");
         assert!(text.contains("  Codec: ldac, quality hq, ABR off, fallback on, sample rate auto, bit depth auto\n"));
         assert!(text.contains("  LDAC 48000 Hz 2 ch, 990 kbps; source 48000 Hz 2 ch 32 bit\n"));
@@ -1937,7 +2005,7 @@ mod tests {
         assert!(!text.contains("before the attempt"));
         assert!(text.contains(
             "[Warnings and errors]\n  T+4.000      WARN  bt_host::app: AVRCP connect request failed (0x04) for \
-             00:1A:7D:xx:xx:xx\n"
+             <addr-1>\n"
         ));
         assert!(text.contains("T+3.000      INFO  bt_host::app: streaming started\n"));
         assert!(!text.contains("DA:71:13"));
@@ -1996,7 +2064,7 @@ mod tests {
         // The device's name is masked with the rest
         assert!(
             text.contains(": ready, 2 sink ASE(s), TMAP: UMR, GMAP: UGT (UGT features 0x3C: sink)\n")
-                && text.contains("  Device C0:11:22:xx:xx:xx <device-")
+                && text.contains("  Device <addr-")
                 && !text.contains("Earbuds"),
             "{text}"
         );

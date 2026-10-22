@@ -29,7 +29,7 @@ const SEPARATED = [":", "\\-"].map(
   (s) => new RegExp(`(?<!${s})(${H}{2}${s}${H}{2}${s}${H}{2}${s})${H}{2}${s}${H}{2}${s}${H}{2}(?!${H}|${s}${H}{2})`, "g"),
 );
 /** A word of 12 hex digits, not a GUID's last part */
-const BARE = /(?<![A-Za-z0-9-])([0-9A-Fa-f]{6})[0-9A-Fa-f]{6}(?![A-Za-z0-9])/g;
+const BARE = /(?<![A-Za-z0-9-])[0-9A-Fa-f]{12}(?![A-Za-z0-9])/g;
 const SERIAL_END = `\\\\#\\s"',;:.()[\\]{}\\u0080-\\uffff`;
 /** USB\VID_0BDA&PID_8771\<serial>, a device path's #<serial># */
 const USB_INSTANCE = new RegExp(`(VID_${H}{4}&PID_${H}{4}[A-Z0-9_&]*[\\\\#]+)([^${SERIAL_END}]*)`, "gi");
@@ -41,19 +41,42 @@ const QUOTED_NAME = /\u201C([^\u201C\u201D\n]{1,256})\u201D/g;
 const USER_PATH = /([\\/]Users[\\/]+)([^\\/:*?"<>|\x00-\x1f]+)/gi;
 const NOBODY = ["public", "default", "default user", "all users"];
 
-/** Names seen so far -> their number: the same name the same <device-N>
- *  while the window is open */
+/** Names and addresses seen so far -> their number: the same one the same
+ *  <device-N> / <addr-N> while the window is open */
 const deviceNumbers = new Map<string, number>();
+const addressNumbers = new Map<string, number>();
+/** The adapters' own addresses (12 upper-case hex digits): <adapter> */
+const adapterKeys = new Set<string>();
+
+/** The 12 hex digits of an address in any form, upper case */
+const addressKey = (addr: string) => addr.replace(/[:-]/g, "").toUpperCase();
+
+/** The adapters' own addresses, shown as <adapter> by maskIdentifiers
+ *  (Snapshot.adapter.adapters[].address) */
+export function knowAdapters(addresses: readonly (string | null | undefined)[]) {
+  for (const a of addresses) {
+    if (a && /^[0-9A-Fa-f]{12}$/.test(addressKey(a))) adapterKeys.add(addressKey(a));
+  }
+}
+
+const addressPseudonym = (addr: string) => {
+  const key = addressKey(addr);
+  if (adapterKeys.has(key)) return "<adapter>";
+  let n = addressNumbers.get(key);
+  if (n === undefined) addressNumbers.set(key, (n = addressNumbers.size + 1));
+  return `<addr-${n}>`;
+};
 
 /**
  * Masks what identifies the user, the PC and their devices, as the core's
  * mask_identifiers: device names in typographic quotes (“...”, how the core
  * logs them) -> "<device-N>", the Windows user name in paths
  * ("C:\Users\<name>\...") -> x's, Bluetooth addresses "AC:80:0A:12:34:56"
- * (or with '-') -> "AC:80:0A:xx:xx:xx" (the vendor part stays, as v1's debug
- * console), the same without separators "AC800A123456" -> "AC800Axxxxxx"
- * (Windows' Bluetooth device IDs, USB serials that are the adapter's
- * address), other USB serial numbers -> x's. IDs Windows generates
+ * (or with '-', or the 12 hex digits alone: Windows' Bluetooth device IDs,
+ * USB serials that are the adapter's address) -> "<addr-N>", the same
+ * address the same N whatever its form, the adapters' own (knowAdapters)
+ * -> "<adapter>"; nothing of an address stays, as its first half names the
+ * maker. Other USB serial numbers -> x's. IDs Windows generates
  * ("5&2C7B4E3&0&2") stay.
  */
 export function maskIdentifiers(text: string): string {
@@ -67,9 +90,10 @@ export function maskIdentifiers(text: string): string {
   out = out.replace(USER_PATH, (whole, head: string, name: string) =>
     NOBODY.includes(name.toLowerCase()) ? whole : head + "x".repeat(name.length),
   );
+  // Before the addresses: a serial that is an address is left to them
   out = out.replace(USB_INSTANCE, serial(true)).replace(USB_RECORD, serial(false));
-  for (const re of SEPARATED) out = out.replace(re, (_, head: string) => `${head}xx${head[2]}xx${head[2]}xx`);
-  return out.replace(BARE, "$1xxxxxx");
+  for (const re of SEPARATED) out = out.replace(re, (whole: string) => addressPseudonym(whole));
+  return out.replace(BARE, (whole: string) => addressPseudonym(whole));
 }
 
 /**
