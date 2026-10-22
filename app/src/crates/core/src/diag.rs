@@ -724,9 +724,20 @@ pub fn quoted(name: &str) -> String {
 ///   it was told ([`Masker::know`]: the profile's, the saved devices')
 ///   wherever they appear -> `<device-1>`, `<device-2>`..., the same name
 ///   the same number for the masker's lifetime, so a bundle's files agree.
-/// - The Windows user name in paths: `C:\Users\<name>\...` ('/' too,
-///   JSON's doubled '\' too) -> as many 'x' as characters; `Public`,
-///   `Default` and `All Users` are nobody's.
+/// - Paths: everything above the app's own folder (`A2DPWB`, the settings
+///   folder; `A2DP Windows Bridge`, the installed one) -> `<path>`, so
+///   `C:\Users\taro\AppData\Roaming\A2DPWB\logs\x.log` is
+///   `<path>\A2DPWB\logs\x.log`. A path without the app's folder keeps its
+///   last part only: `<path>\a2dpwb-core.exe`, `<path>\foobar2000.exe`.
+///   Drive paths ('/' too, JSON's doubled '\' too, `\\?\` before); the
+///   drive, the user's folders and whatever else the PC's layout tells are
+///   gone.
+/// - The Windows user name in paths without a drive: `\Users\<name>\...`
+///   -> as many 'x' as characters; `Public`, `Default` and `All Users`
+///   are nobody's.
+/// - Windows account SIDs (`S-1-5-21-<machine>-<user>`, the IPC pipe's
+///   name is one) -> `<sid>`: the machine part is unique to the PC. The
+///   well-known short ones (`S-1-5-18`, SYSTEM) say nothing and stay.
 /// - Bluetooth addresses, "AA:BB:CC:DD:EE:FF" or with '-', and the same
 ///   without separators (a word of 12 hex digits: Windows' BTHENUM / BTHLE
 ///   IDs, USB serial numbers that are the adapter's address) ->
@@ -811,7 +822,11 @@ impl Masker {
     pub fn mask(&mut self, text: &str) -> String {
         let text = self.mask_quoted_names(text);
         let text = self.mask_known_names(&text);
+        // The user name first: a path that ends in the user's folder keeps
+        // that part
         let text = mask_user_paths(&text);
+        let text = mask_path_heads(&text);
+        let text = mask_sids(&text);
         let mut b = text.into_bytes();
         // Before the addresses: a serial that is an address is left to them
         mask_usb_serials(&mut b);
@@ -889,6 +904,95 @@ impl Masker {
         }
         out
     }
+}
+
+/// The app's own folders: a path is kept from one of these on
+const APP_FOLDERS: &[&str] = &["A2DPWB", "A2DP Windows Bridge"];
+
+/// `X:\` (or '/') at `i`, not inside a word
+fn path_start_at(b: &[u8], i: usize) -> bool {
+    b.get(i).is_some_and(u8::is_ascii_alphabetic)
+        && b.get(i + 1) == Some(&b':')
+        && b.get(i + 2).is_some_and(|&c| c == b'\\' || c == b'/')
+        && (i == 0 || !b[i - 1].is_ascii_alphanumeric())
+}
+
+/// A drive path -> `<path>` and the part from the app's own folder on
+/// ([`APP_FOLDERS`]), or its last part. A part ends at what a file name
+/// cannot contain, or at a space that starts another path.
+fn mask_path_heads(text: &str) -> String {
+    let b = text.as_bytes();
+    let is_sep = |c: u8| c == b'\\' || c == b'/';
+    let ends = |c: u8| c < 0x20 || b"\\/:*?\"<>|".contains(&c);
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < b.len() {
+        if path_start_at(b, i) {
+            // (the separators before it, the part): the part may be empty
+            // after a trailing separator
+            let mut parts: Vec<(usize, usize, usize)> = Vec::new();
+            let mut j = i + 2;
+            loop {
+                let seps = j;
+                while j < b.len() && is_sep(b[j]) {
+                    j += 1;
+                }
+                let start = j;
+                while j < b.len() && !ends(b[j]) && !(b[j].is_ascii_whitespace() && path_start_at(b, j + 1)) {
+                    j += 1;
+                }
+                parts.push((seps, start, j));
+                if !(j < b.len() && is_sep(b[j])) {
+                    break;
+                }
+            }
+            let keep = parts
+                .iter()
+                .position(|&(_, s, e)| APP_FOLDERS.iter().any(|f| text[s..e].eq_ignore_ascii_case(f)))
+                .or_else(|| parts.iter().rposition(|&(_, s, e)| e > s))
+                .unwrap_or(parts.len() - 1);
+            out.push_str("<path>");
+            out.push_str(&text[parts[keep].0..j]);
+            i = j;
+            continue;
+        }
+        let c = text[i..].chars().next().expect("at a char boundary");
+        out.push(c);
+        i += c.len_utf8();
+    }
+    out
+}
+
+/// A SID with a machine or domain part, `S-1-5-21-a-b-c-rid` (`S-1-`, then
+/// five or more numbers) -> `<sid>`; not inside a longer word (a '-' on
+/// either side is fine: the pipe's `a2dpwb-<sid>-<instance>`)
+fn mask_sids(text: &str) -> String {
+    let b = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i..].starts_with(b"S-1-") && (i == 0 || !b[i - 1].is_ascii_alphanumeric()) {
+            // The numbers after "S-1-", each after a '-'
+            let mut j = i + 1;
+            let mut groups = 0;
+            while j < b.len() && b[j] == b'-' && b.get(j + 1).is_some_and(u8::is_ascii_digit) {
+                j += 1;
+                while j < b.len() && b[j].is_ascii_digit() {
+                    j += 1;
+                }
+                groups += 1;
+            }
+            if groups >= 5 && !b.get(j).is_some_and(u8::is_ascii_alphanumeric) {
+                out.push_str("<sid>");
+                i = j;
+                continue;
+            }
+        }
+        let c = text[i..].chars().next().expect("at a char boundary");
+        out.push(c);
+        i += c.len_utf8();
+    }
+    out
 }
 
 /// `\Users\<name>\` (or '/'; JSON's `\\Users\\<name>\\` too) -> the name as
@@ -1780,28 +1884,84 @@ mod tests {
     }
 
     #[test]
-    fn masks_user_paths() {
+    fn masks_path_heads() {
         let m = mask_identifiers;
+        // From the app's own folder on, whatever is above it
         assert_eq!(
             m(r"settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB"),
-            r"settings folder: C:\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB"
+            r"settings folder: <path>\A2DPWB"
         );
-        // Non-ASCII names: one 'x' per character; a name at the end
-        assert_eq!(m(r"C:\Users\山田太郎\AppData"), r"C:\Users\xxxx\AppData");
-        assert_eq!(m(r"C:\Users\taro"), r"C:\Users\xxxx");
-        // JSON's doubled '\', '/', a device path, any case
-        assert_eq!(m(r#"{"path":"C:\\Users\\taro\\x.txt"}"#), r#"{"path":"C:\\Users\\xxxx\\x.txt"}"#);
-        assert_eq!(m("file:///C:/users/taro/x.txt"), "file:///C:/users/xxxx/x.txt");
-        assert_eq!(m(r"\\?\C:\USERS\TARO\x"), r"\\?\C:\USERS\xxxx\x");
+        assert_eq!(
+            m(r"dump: C:\Users\admin\AppData\Roaming\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp"),
+            r"dump: <path>\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp"
+        );
+        assert_eq!(m(r"D:\Apps\a2dpwb\firmware\x.bin"), r"<path>\a2dpwb\firmware\x.bin");
+        assert_eq!(
+            m(r"C:\Program Files\A2DP Windows Bridge\a2dpwb-ui.exe"),
+            r"<path>\A2DP Windows Bridge\a2dpwb-ui.exe"
+        );
+        // Without it: the last part only (the executable, an app captured)
+        assert_eq!(
+            m(r"starting: pid 1, Windows build 26200, I:\A2DP-Windows-Bridge\target\release\a2dpwb-core.exe"),
+            r"starting: pid 1, Windows build 26200, <path>\a2dpwb-core.exe"
+        );
+        assert_eq!(m(r"C:\Users\山田太郎\Music\foobar2000\foobar2000.exe"), r"<path>\foobar2000.exe");
+        // The last part takes the text after it (a path is not delimited),
+        // but not another path; a trailing separator keeps the folder
+        assert_eq!(
+            m(r"HCI capture running: C:\x\A2DPWB\hci.pklg (3.0 MB)"),
+            r"HCI capture running: <path>\A2DPWB\hci.pklg (3.0 MB)"
+        );
+        assert_eq!(m(r"moved C:\a\b\x.bin to C:\a\c\x.bin"), r"moved <path>\x.bin to <path>\x.bin");
+        assert_eq!(m("folder C:\\a\\b\\\n"), "folder <path>\\b\\\n");
+        assert_eq!(m(r"C:\ only"), r"<path>\ only");
+        // JSON's doubled '\', '/', a device path, any case, a user's folder
+        // at the end (its name as 'x's)
+        assert_eq!(m(r#"{"path":"C:\\Users\\taro\\x.txt"}"#), r#"{"path":"<path>\\x.txt"}"#);
+        assert_eq!(m("file:///C:/users/taro/x.txt"), "file:///<path>/x.txt");
+        assert_eq!(m(r"\\?\C:\USERS\TARO\x"), r"\\?\<path>\x");
+        assert_eq!(m("dump: C:\\Users\\taro\n"), "dump: <path>\\xxxx\n");
+        assert_eq!(m(r#""C:\Users\taro""#), r#""<path>\xxxx""#);
+        // Not paths
+        assert_eq!(
+            m("at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c"),
+            "at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c"
+        );
+        assert_eq!(m(r"\\.\pipe\a2dpwb-x"), r"\\.\pipe\a2dpwb-x");
+    }
+
+    #[test]
+    fn masks_user_paths() {
+        // A user's folder in a path without a drive: the name as 'x's,
+        // one per character
+        let m = mask_identifiers;
+        assert_eq!(m(r"\Users\Taro Yamada\AppData\Roaming\A2DPWB"), r"\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB");
+        assert_eq!(m(r"\Users\山田太郎\AppData"), r"\Users\xxxx\AppData");
+        assert_eq!(m(r"/users/taro/x.txt"), r"/users/xxxx/x.txt");
         // Nobody's folders, and "Users" elsewhere
-        assert_eq!(m(r"C:\Users\Public\Desktop"), r"C:\Users\Public\Desktop");
-        assert_eq!(m(r"C:\Users\Default\x and C:\Users\All Users\y"), r"C:\Users\Default\x and C:\Users\All Users\y");
-        assert_eq!(m("3 Users, C:\\Users\\\n"), "3 Users, C:\\Users\\\n");
+        assert_eq!(m(r"\Users\Public\Desktop"), r"\Users\Public\Desktop");
+        assert_eq!(m(r"\Users\Default\x and \Users\All Users\y"), r"\Users\Default\x and \Users\All Users\y");
+        assert_eq!(m("3 Users, \\Users\\\n"), "3 Users, \\Users\\\n");
         assert_eq!(m("in Users\\taro"), "in Users\\taro");
-        assert_eq!(m(r"C:\Users"), r"C:\Users");
+        assert_eq!(m(r"\Users"), r"\Users");
         // The name stops at what a name cannot contain
-        assert_eq!(m("dump: C:\\Users\\taro\n"), "dump: C:\\Users\\xxxx\n");
-        assert_eq!(m(r#""C:\Users\taro""#), r#""C:\Users\xxxx""#);
+        assert_eq!(m("dump: \\Users\\taro\n"), "dump: \\Users\\xxxx\n");
+        assert_eq!(m(r#""\Users\taro""#), r#""\Users\xxxx""#);
+    }
+
+    #[test]
+    fn masks_sids() {
+        let m = mask_identifiers;
+        assert_eq!(
+            m(r"IPC: listening on \\.\pipe\a2dpwb-S-1-5-21-2123068572-4202720387-3275098450-1001"),
+            r"IPC: listening on \\.\pipe\a2dpwb-<sid>"
+        );
+        assert_eq!(m("user S-1-5-21-1-2-3-500, then"), "user <sid>, then");
+        // An instance suffix after it (ipc::instance_suffix)
+        assert_eq!(m(r"S-1-5-21-1-2-3-1001\x and a2dpwb-S-1-5-21-1-2-3-1001-dev"), r"<sid>\x and a2dpwb-<sid>-dev");
+        // Well-known SIDs, the start of one, a longer word
+        assert_eq!(m("S-1-5-18 S-1-5-32-544 S-1-5-21- S-1-"), "S-1-5-18 S-1-5-32-544 S-1-5-21- S-1-");
+        assert_eq!(m("xS-1-5-21-1-2-3-4 S-1-5-21-1-2-3-4x"), "xS-1-5-21-1-2-3-4 S-1-5-21-1-2-3-4x");
     }
 
     #[test]
@@ -2003,7 +2163,8 @@ mod tests {
             "  Device SBC: 44.1/48 kHz; mono/joint_stereo; blocks 4/8/12/16; subbands 4/8; snr/loudness; bitpool 2-53\n"
         ));
         assert!(text.contains("  Media packets sent 1500 (0 bytes), queue drops 0, send errors 0\n"));
-        assert!(text.contains("  HCI capture running: C:\\a2dpwb\\hci.pklg (3.0 MB)\n"));
+        // Masked: the path from the app's folder on
+        assert!(text.contains("  HCI capture running: <path>\\a2dpwb\\hci.pklg (3.0 MB)\n"), "{text}");
         assert!(text.contains("[Flow]\nConnection flow: attempt #1, started T+1.001\n"));
         // Issues and lines of the current attempt only
         assert!(!text.contains("before the attempt"));

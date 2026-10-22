@@ -40,6 +40,14 @@ const QUOTED_NAME = /\u201C([^\u201C\u201D\n]{1,256})\u201D/g;
 /** \Users\<name>\ (or '/', JSON's doubled '\'): the name, up to what a name cannot contain */
 const USER_PATH = /([\\/]Users[\\/]+)([^\\/:*?"<>|\x00-\x1f]+)/gi;
 const NOBODY = ["public", "default", "default user", "all users"];
+/** A drive path, X:\ (or '/'), not in a word: its parts, each after separators; a part
+ *  stops at what a file name cannot contain, or at a space that starts another path */
+const DRIVE_PATH = /(?<![A-Za-z0-9])[A-Za-z]:((?:[\\/]+(?:(?!\s[A-Za-z]:[\\/])[^\\/:*?"<>|\x00-\x1f])*)+)/g;
+/** The app's own folders: a path is kept from one of these on */
+const APP_FOLDERS = ["a2dpwb", "a2dp windows bridge"];
+/** A SID with a machine part, S-1-5-21-a-b-c-rid (five or more numbers); not in a longer
+ *  word (a '-' on either side is fine: the pipe's a2dpwb-<sid>-<instance>) */
+const SID = /(?<![A-Za-z0-9])S-1(?:-\d+){5,}(?![A-Za-z0-9]|-\d)/g;
 
 /** Names and addresses seen so far -> their number: the same one the same
  *  <device-N> / <addr-N> while the window is open */
@@ -70,8 +78,11 @@ const addressPseudonym = (addr: string) => {
 /**
  * Masks what identifies the user, the PC and their devices, as the core's
  * mask_identifiers: device names in typographic quotes (“...”, how the core
- * logs them) -> "<device-N>", the Windows user name in paths
- * ("C:\Users\<name>\...") -> x's, Bluetooth addresses "AC:80:0A:12:34:56"
+ * logs them) -> "<device-N>", paths -> "<path>" and the part from the app's
+ * own folder on ("<path>\A2DPWB\logs\x.log") or their last part alone
+ * ("<path>\a2dpwb-core.exe"), the Windows user name in a path without a
+ * drive ("\Users\<name>\...") -> x's, Windows account SIDs (the IPC pipe's
+ * name) -> "<sid>", Bluetooth addresses "AC:80:0A:12:34:56"
  * (or with '-', or the 12 hex digits alone: Windows' Bluetooth device IDs,
  * USB serials that are the adapter's address) -> "<addr-N>", the same
  * address the same N whatever its form, the adapters' own (knowAdapters)
@@ -90,6 +101,15 @@ export function maskIdentifiers(text: string): string {
   out = out.replace(USER_PATH, (whole, head: string, name: string) =>
     NOBODY.includes(name.toLowerCase()) ? whole : head + "x".repeat(name.length),
   );
+  // After the user name: a path that ends in the user's folder keeps that part
+  out = out.replace(DRIVE_PATH, (_, tail: string) => {
+    const parts = [...tail.matchAll(/([\\/]+)([^\\/]*)/g)];
+    let keep = parts.findIndex((p) => APP_FOLDERS.includes(p[2].toLowerCase()));
+    if (keep < 0) keep = parts.findLastIndex((p) => p[2] !== "");
+    if (keep < 0) keep = parts.length - 1;
+    return "<path>" + parts.slice(keep).map((p) => p[0]).join("");
+  });
+  out = out.replace(SID, "<sid>");
   // Before the addresses: a serial that is an address is left to them
   out = out.replace(USB_INSTANCE, serial(true)).replace(USB_RECORD, serial(false));
   for (const re of SEPARATED) out = out.replace(re, (whole: string) => addressPseudonym(whole));

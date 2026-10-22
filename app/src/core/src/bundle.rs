@@ -202,8 +202,8 @@ fn readme(stamp: &str, mask: bool, hci: bool, skipped: &[String]) -> String {
         "Identifiers: {}",
         if mask {
             "masked in the text files: Bluetooth addresses (<addr-N>, the adapter's own <adapter>), USB serial \
-             numbers, device names (<device-N>) and the Windows user name in paths; the same N for the same \
-             address or name in every file"
+             numbers, device names (<device-N>), paths above the app's own folder (<path>) and account SIDs \
+             (<sid>); the same N for the same address or name in every file"
         } else {
             "not masked"
         }

@@ -7,7 +7,7 @@ import { errorText, useApp, type AppContext } from "../app/context";
 import { t, tm } from "../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { liveBitpool } from "../lib/codecdetails";
-import { copyText, khz, kbps, percentToVolume, volumePercent } from "../lib/format";
+import { copyText, khz, kbps, maskIdentifiers, percentToVolume, volumePercent } from "../lib/format";
 import { bugReportUrl, firmwareUrl, type BugReport } from "../lib/links";
 import { IpcError } from "../ipc/types";
 import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState } from "../ipc/types";
@@ -509,15 +509,18 @@ export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugRep
 
 /** What a report holds: `head` (the error, the crash), `details` (a crash
  *  report's text) and the diagnostic info with its warnings and recent log
- *  (addresses masked: it goes into a public issue). `log` is the details
- *  and the info for the issue's log field; `text` all of it, for the
- *  clipboard. Without the core's info: what the UI has. */
+ *  (identifiers masked: it goes into a public issue; the core masks its
+ *  info, the UI the head and the details, which name the user's folder in
+ *  a crash report's dump path). `log` is the details and the info for the
+ *  issue's log field; `text` all of it, for the clipboard. Without the
+ *  core's info: what the UI has. */
 export async function reportText(app: AppContext, head: string, details = ""): Promise<{ text: string; log: string }> {
   const info = await app.core
     .request("diag.info", { mask: true })
     .then((d) => d.text.replace(/^```text\n/, "").replace(/\n?```\s*$/, "\n"))
     .catch(() => "");
-  const log = [details.trimEnd(), info].filter(Boolean).join("\n\n");
+  head = maskIdentifiers(head);
+  const log = [maskIdentifiers(details.trimEnd()), info].filter(Boolean).join("\n\n");
   return { text: log ? `${head}\n\n\`\`\`text\n${log.trimEnd()}\n\`\`\`\n` : head, log };
 }
 
