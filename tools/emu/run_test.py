@@ -16,7 +16,8 @@ The cases of NEGOTIATION run the same way with another sink or command line
 (Auto choosing SBC XQ, or SBC on a sink without dual channel or one that
 refuses it; Opus and Opus 05 at 48 kHz
 from a 44.1 kHz request, Auto choosing Opus over AAC and LHDC V5 over Opus,
-but never Opus 05; SBC with another frame setup from --sbc-* options).
+but never Opus 05; SBC with another frame setup from --sbc-* options;
+LDAC from a sink listing 18 SEPs).
 
 Outputs (captures, logs, reports, WAV) go to tools/emu/out/<codec>/.
 Exit code 0 when every codec passed. Uses only the Python standard library;
@@ -116,6 +117,9 @@ NEGOTIATION = {
     # Opus 05: 48 kHz from a 44.1 kHz request; Auto never takes it (AAC here)
     'opus05-from-44k': ('opus05', [], 'opus05', ['--rate', '44100']),
     'auto-not-opus05': ('auto', ['--codecs', 'sbc', 'aac', 'opus05'], 'aac', []),
+    # 18 free sink SEPs, LDAC the 14th: BTstack 1.8.1 overflowed its 10-entry
+    # SEP discovery array (crash); none may be dropped either
+    'many-seps-ldac': ('ldac', ['--extra-seps', '8'], 'ldac', []),
 }
 TONES = ((1000.0, 0.5), (1500.0, 0.5))  # (frequency, amplitude) per channel, as --test-tone
 LATE_SDU_FAILURE = 'reached the controller after their SDU interval began'  # LE Audio cases run once more
