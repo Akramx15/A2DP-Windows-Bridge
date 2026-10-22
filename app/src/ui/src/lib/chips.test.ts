@@ -154,7 +154,7 @@ describe("firmware state", () => {
     expect(adapterFirmwareTag(other("Intel", "firmware.vendor_intel"), s).key).toBe("ui.adapter.firmware_not_realtek");
     expect(adapterFirmwareTag(other("Qualcomm", "firmware.vendor_unsupported"), s)).toEqual({
       key: "ui.adapter.firmware_unsupported",
-      status: "warn",
+      status: "bad",
     });
     expect(adapterFirmwareTag(rtl(null), setting(CHIP_NOT_REALTEK)).key).toBe("ui.adapter.firmware_not_realtek");
     expect(adapterFirmwareTag(other("Unknown", null), s)).toEqual({ key: "ui.adapter.firmware_choose_chip", status: "warn" });

@@ -1,12 +1,10 @@
 // The tray flyout (360×440): everyday control without the main window.
-// Device and state, the big Connect / Disconnect, volume right below,
-// the profile switcher, codec and link quality, the capture source,
-// "Open app".
+// Device, state and battery, the big Connect / Disconnect, volume right
+// below, the profile switcher, codec and link quality, "Open app".
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { CaptureSign } from "../app/indicators";
-import { CapturePicker } from "../components/CapturePicker";
 import { Button, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
@@ -60,11 +58,17 @@ export function Flyout() {
         </Ring>
         <div class="fly-title">
           <div class="device-name ellipsis">{profile()?.device_name || profile()?.name || t("profile.none_selected")}</div>
-          <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
-            <span class="dot" aria-hidden="true" />
-            <span class="ellipsis">
-              {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
-            </span>
+          <div class="fly-state">
+            <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
+              <span class="dot" aria-hidden="true" />
+              <span class="ellipsis">
+                {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
+              </span>
+            </div>
+            {/* With the device it belongs to (issue #86) */}
+            <Show when={stream().battery !== null}>
+              <BatteryLevel class="fly-battery" percent={stream().battery!} />
+            </Show>
           </div>
         </div>
         <IconButton icon="dismiss" label={t("modal.close")} onClick={() => void core.transport.hideWindow()} />
@@ -73,19 +77,19 @@ export function Flyout() {
       <Show when={profile()} fallback={<p class="muted">{t("profile.empty")}</p>}>
         <ConnectButton compact onError={(e) => setReqError(IpcError.from(e))} />
         <VolumeControl />
-        <ProfileSwitcher />
+        <div class="fly-profile">
+          <span class="muted">{t("ui.flyout.profile")}</span>
+          <ProfileSwitcher />
+        </div>
       </Show>
 
       <div class="fly-row">
         <CodecBadge />
         <QualityIndicator />
       </div>
-      <Show when={stream().battery !== null}>
-        <BatteryLevel class="fly-battery" percent={stream().battery!} />
-      </Show>
-      <Show when={profile() || snap().capture}>
+      {/* Kept simple: the capture source is chosen in the main window (issue #86) */}
+      <Show when={snap().capture}>
         <div class="fly-meta">
-          <Show when={profile()}>{(p) => <CapturePicker profile={p()} />}</Show>
           <CaptureSign onOpen={() => void openMain("diagnostics")} />
         </div>
       </Show>

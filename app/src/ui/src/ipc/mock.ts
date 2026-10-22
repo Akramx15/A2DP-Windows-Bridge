@@ -79,6 +79,7 @@ const RTL: AdapterInfo = {
   restart_needed: false,
   le_audio: null,
   address: "00:1A:7D:DA:71:13",
+  bt_version: "5.1",
 };
 
 export function sampleProfile(over: Partial<Profile> = {}): Profile {
@@ -125,6 +126,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     include_prereleases: false,
     media_keys: true,
     remember_volume: true,
+    device_options: { "AC:80:0A:12:34:56": { media_keys: false, remember_volume: null } },
     developer_mode: false,
     dev_overrides: {
       rtp_marker: false,

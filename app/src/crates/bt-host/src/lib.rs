@@ -589,6 +589,12 @@ impl BtHost {
         self.shared.lock().local_address.clone()
     }
 
+    /// The HCI version the controller reports (the Bluetooth core version:
+    /// 12 = 5.3), once it has answered Read Local Version
+    pub fn hci_version(&self) -> Option<u8> {
+        self.shared.lock().hci_version
+    }
+
     /// The controller has LE Audio's isochronous channels (its supported
     /// commands at HCI init; also known with LE Audio off). Streaming still
     /// needs ISO buffers ([`BtHost::le_iso_buffers`]).

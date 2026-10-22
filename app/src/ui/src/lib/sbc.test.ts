@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { sampleDevice, sampleProfile, XM5_SBC } from "../ipc/mock";
-import { knownSbcCaps, sbcFrameLength, sbcKbps, sbcOffered, sbcRates, sbcSetup } from "./sbc";
+import { knownSbcCaps, sbcFrameLength, sbcKbps, sbcKbpsText, sbcOffered, sbcRate, sbcSetup } from "./sbc";
 
 const sbc = (over: Partial<ReturnType<typeof sampleProfile>> = {}) => sampleProfile({ codec: "sbc", ...over });
 
@@ -48,9 +48,12 @@ describe("SBC frame length and bit rate", () => {
     expect(sbcOffered(caps, "subbands", 4)).toBe(false);
     expect(sbcOffered(caps, "blocks", 4)).toBe(true);
     expect(sbcOffered(null, "subbands", 4)).toBe(true);
-    expect(sbcRates({ sample_rate: 0 }, { ...caps, sample_rates: [48000] })).toEqual([48000]);
-    expect(sbcRates({ sample_rate: 44100 }, null)).toEqual([44100]);
-    expect(sbcRates({ sample_rate: 0 }, null)).toEqual([44100, 48000]);
+    expect(sbcRate({ sample_rate: 0 }, { ...caps, sample_rates: [48000] })).toBe(48000);
+    expect(sbcRate({ sample_rate: 0 }, { ...caps, sample_rates: [44100] })).toBe(44100);
+    expect(sbcRate({ sample_rate: 44100 }, null)).toBe(44100);
+    // Auto: the highest only
+    expect(sbcRate({ sample_rate: 0 }, null)).toBe(48000);
+    expect(sbcKbpsText(sbc({}), null)).toBe(`≈ ${sbcSetup(sbc({}), 48000, null).kbps} kbps`);
   });
 
   it("finds the caps of the profile's device", () => {

@@ -221,16 +221,17 @@ export function CodecBadge(props: { compact?: boolean }) {
               </span>
             )}
           </Show>
-          <Show when={i().abr}>
-            <span class="muted" title={t(abrTooltipKey(i()))}>
-              {abrLabel(i())}
-            </span>
-          </Show>
           <Show when={!props.compact}>
             <span class="num">{khz(i().sample_rate)} kHz</span>
             <Show when={i().bits > 0}>
               <span class="num">{t(`bitdepth.${i().bits}`)}</span>
             </Show>
+          </Show>
+          {/* Last, as in the sidebar's line (issue #86) */}
+          <Show when={i().abr}>
+            <span class="muted" title={t(abrTooltipKey(i()))}>
+              {abrLabel(i())}
+            </span>
           </Show>
         </span>
       )}

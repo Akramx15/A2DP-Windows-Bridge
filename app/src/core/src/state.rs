@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -43,6 +43,36 @@ pub struct BalloonRequest {
 /// the tray" hint was shown once
 const TRAY_HINT_SHOWN: &str = "tray_hint_shown";
 
+/// The low-battery balloon: below this level (percent)
+const BATTERY_LOW: u8 = 20;
+/// It is shown again only after the level was back at this (charged)
+const BATTERY_REARM: u8 = 25;
+
+/// Whether a battery report shows the low-battery balloon: once when the
+/// level is below [`BATTERY_LOW`] (also the first report of a connection),
+/// again only after it was back at [`BATTERY_REARM`] or more. `warned` is
+/// cleared for each connection.
+fn battery_low_alert(warned: &mut bool, level: u8) -> bool {
+    if level >= BATTERY_REARM {
+        *warned = false;
+        return false;
+    }
+    if level < BATTERY_LOW && !*warned {
+        *warned = true;
+        return true;
+    }
+    false
+}
+
+/// The streamed profile's device: its name, else its address
+fn streamed_device(s: &Snapshot) -> Option<&str> {
+    s.stream
+        .profile
+        .as_ref()
+        .and_then(|n| s.profiles.iter().find(|p| &p.name == n))
+        .map(|p| if p.device_name.is_empty() { p.device_address.as_str() } else { p.device_name.as_str() })
+}
+
 /// What the tray shows
 #[derive(Debug, Clone)]
 pub struct TrayView {
@@ -70,6 +100,8 @@ pub struct CoreState {
     /// The profile the last stream.start asked for: the session stopped for
     /// it reports Idle after it, which clears the snapshot's profile
     starting_profile: Mutex<Option<String>>,
+    /// The low-battery balloon was shown for this connection
+    battery_warned: AtomicBool,
     tray: Box<dyn Fn(TrayView) + Send + Sync>,
     quit: Box<dyn Fn() + Send + Sync>,
     balloon: Box<dyn Fn(BalloonRequest) + Send + Sync>,
@@ -172,6 +204,13 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         include_prereleases: s.include_prereleases,
         media_keys: s.media_keys,
         remember_volume: s.remember_volume,
+        device_options: s
+            .device_options
+            .iter()
+            .map(|(a, o)| {
+                (a.clone(), ipc::DeviceOptions { media_keys: o.media_keys, remember_volume: o.remember_volume })
+            })
+            .collect(),
         developer_mode: s.debug_mode,
         dev_overrides: DevOverrides {
             rtp_marker: s.dev_overrides.rtp_marker,
@@ -212,6 +251,18 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.include_prereleases = s.include_prereleases;
     c.media_keys = s.media_keys;
     c.remember_volume = s.remember_volume;
+    // Keys in capitals; a device with no override left is dropped
+    c.device_options = s
+        .device_options
+        .iter()
+        .map(|(a, o)| {
+            (
+                a.to_uppercase(),
+                a2dpwb_core::settings::DeviceOptions { media_keys: o.media_keys, remember_volume: o.remember_volume },
+            )
+        })
+        .filter(|(_, o)| !o.is_empty())
+        .collect();
     c.debug_mode = s.developer_mode;
     c.dev_overrides = codec::dev::DevOverrides {
         rtp_marker: s.dev_overrides.rtp_marker,
@@ -298,6 +349,9 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 restart_needed: a.device.problem_code == Some(CM_PROB_NEED_RESTART),
                 le_audio: a2dpwb_core::adapter::le_audio(config_dir, a.device.vid, a.device.pid),
                 address: a2dpwb_core::adapter::address(config_dir, a.device.vid, a.device.pid),
+                bt_version: a2dpwb_core::adapter::hci_version(config_dir, a.device.vid, a.device.pid)
+                    .and_then(a2dpwb_core::adapter::bt_core_version)
+                    .map(str::to_owned),
             }
         })
         .collect()
@@ -739,6 +793,7 @@ impl CoreState {
             started: Instant::now(),
             rates: Mutex::new(None),
             starting_profile: Mutex::new(None),
+            battery_warned: AtomicBool::new(false),
             tray,
             quit,
             balloon,
@@ -847,12 +902,7 @@ impl CoreState {
             a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DPWB - Idle")
         };
         // The streamed profile's device (v1)
-        let device = s
-            .stream
-            .profile
-            .as_ref()
-            .and_then(|n| s.profiles.iter().find(|p| &p.name == n))
-            .map(|p| if p.device_name.is_empty() { p.device_address.as_str() } else { p.device_name.as_str() });
+        let device = streamed_device(&s);
         let tooltip = if streaming {
             let mut lines = Vec::new();
             if let Some(i) = &s.stream.info {
@@ -896,6 +946,10 @@ impl CoreState {
                     CoreStreamState::Error => StreamState::Error,
                 };
                 stream.message = msg(&m);
+                // A new connection may warn about its battery again
+                if matches!(state, CoreStreamState::Idle | CoreStreamState::Error | CoreStreamState::Connecting) {
+                    self.battery_warned.store(false, Ordering::Release);
+                }
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error) {
                     stream.info = None;
                     stream.volume = None;
@@ -951,7 +1005,15 @@ impl CoreState {
                 devices_changed = true;
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
-            ServiceEvent::Battery(v) => stream.battery = Some(v),
+            ServiceEvent::Battery(v) => {
+                stream.battery = Some(v);
+                let mut warned = self.battery_warned.load(Ordering::Acquire);
+                let alert = battery_low_alert(&mut warned, v);
+                self.battery_warned.store(warned, Ordering::Release);
+                if alert {
+                    self.battery_low(&s, v);
+                }
+            }
         }
         self.publish(Event::Stream(stream));
         if devices_changed {
@@ -1182,6 +1244,19 @@ impl CoreState {
             tracing::warn!("cannot save the settings: {e}");
         }
         self.service.set_settings(s);
+    }
+
+    /// The streamed headphones' battery went low: a balloon, once per
+    /// connection ([`battery_low_alert`])
+    fn battery_low(&self, s: &Snapshot, level: u8) {
+        let device = streamed_device(s).unwrap_or("A2DPWB");
+        tracing::info!("battery: {device} at {level}%, below {BATTERY_LOW}%: balloon");
+        let template = self.tr("notify.battery_low", "%s: battery low (%d%%)");
+        (self.balloon)(BalloonRequest {
+            title: "A2DPWB".into(),
+            text: a2dpwb_core::messages::format_printf(&template, &[device.to_string(), level.to_string()]),
+            url: None,
+        });
     }
 
     /// The automatic check found a newer release: a balloon whose click
@@ -1786,6 +1861,7 @@ mod tests {
             restart_needed: false,
             le_audio: None,
             address: None,
+            bt_version: None,
         }
     }
 
@@ -2149,6 +2225,21 @@ mod tests {
     }
 
     #[test]
+    fn battery_low_balloon_once_per_connection() {
+        let mut warned = false;
+        let alerts: Vec<bool> = [50, 30, 20, 19, 15, 10, 22, 18, 25, 19, 5]
+            .into_iter()
+            .map(|v| battery_low_alert(&mut warned, v))
+            .collect();
+        // Below 20 once; back at 22 is not enough, 25 rearms it
+        assert_eq!(alerts, [false, false, false, true, false, false, false, false, false, true, false]);
+        // A connection that starts low warns at its first report
+        let mut warned = false;
+        assert!(battery_low_alert(&mut warned, 12));
+        assert!(!battery_low_alert(&mut warned, 11));
+    }
+
+    #[test]
     fn le_audio_profiles_and_settings_map_both_ways() {
         let core = CoreProfile {
             name: "Buds LE Audio".into(),
@@ -2171,6 +2262,20 @@ mod tests {
         let merged = merge_settings(&base, &off);
         assert!(!merged.le_audio_experimental && merged.le_audio_low_latency);
         assert_eq!(to_ipc_settings(&merged), off);
+
+        // Per-device options: keys in capitals, empty ones dropped
+        let mut options = std::collections::BTreeMap::new();
+        options.insert(
+            "aa:bb:cc:dd:ee:ff".to_string(),
+            ipc::DeviceOptions { media_keys: Some(false), remember_volume: None },
+        );
+        options.insert("11:22:33:44:55:66".to_string(), ipc::DeviceOptions::default());
+        let per_device = Settings { device_options: options, ..off };
+        let merged = merge_settings(&base, &per_device);
+        assert_eq!(merged.device_options.keys().collect::<Vec<_>>(), ["AA:BB:CC:DD:EE:FF"]);
+        assert!(!merged.media_keys_for("aa:bb:cc:dd:ee:ff") && merged.media_keys_for("11:22:33:44:55:66"));
+        let back = to_ipc_settings(&merged);
+        assert_eq!(back.device_options["AA:BB:CC:DD:EE:FF"].media_keys, Some(false));
     }
 
     #[test]

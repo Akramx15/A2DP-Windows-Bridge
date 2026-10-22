@@ -31,6 +31,9 @@ pub struct State {
     /// The controller's own Bluetooth address ("AA:BB:CC:DD:EE:FF"), once it
     /// has answered Read BD_ADDR
     pub local_address: Option<String>,
+    /// The HCI version the controller reports (Bluetooth core version:
+    /// 12 = 5.3), once it has answered Read Local Version
+    pub hci_version: Option<u8>,
     /// The headphones' battery level in percent (HFP), once they said
     pub battery: Option<u8>,
 

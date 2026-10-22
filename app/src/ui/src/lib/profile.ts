@@ -5,6 +5,46 @@ import type { AudioDevice, Device, ParamsOf, Profile } from "../ipc/types";
 import { PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
 import { parseAddress } from "./format";
 
+/** What belongs to the audio device rather than the codec: the capture
+ *  source and Windows Volume Sync. Set on the Audio Devices screen and kept
+ *  the same in all the device's profiles (issue #86). */
+export const DEVICE_FIELDS = [
+  "capture_mode",
+  "audio_device_id",
+  "audio_device_name",
+  "auto_switch_device",
+  "app_exe",
+  "app_name",
+  "volume_sync",
+  "volume_device_id",
+  "volume_device_name",
+] as const;
+
+export type DeviceFields = Pick<Profile, (typeof DEVICE_FIELDS)[number]>;
+
+export function deviceFields(p: Profile): DeviceFields {
+  return Object.fromEntries(DEVICE_FIELDS.map((k) => [k, p[k]])) as DeviceFields;
+}
+
+/** The device's profiles (address in any case) */
+export function profilesOf(profiles: readonly Profile[], address: string): Profile[] {
+  const a = address.toUpperCase();
+  return profiles.filter((p) => p.device_address.toUpperCase() === a);
+}
+
+/** A device's settings are complete: a virtual device or an app chosen when captured from */
+export function deviceFieldsComplete(f: DeviceFields): boolean {
+  if (f.capture_mode === "virtual") return f.audio_device_id !== "";
+  if (f.capture_mode === "app") return f.app_exe !== "";
+  return true;
+}
+
+/** The device's settings as its profiles have them (the first one's), for a new profile of it */
+export function deviceDefaults(profiles: readonly Profile[], address: string): DeviceFields | null {
+  const p = profilesOf(profiles, address)[0];
+  return p ? deviceFields(p) : null;
+}
+
 export function newProfile(): Profile {
   return {
     name: "",
