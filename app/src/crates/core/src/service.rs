@@ -268,6 +268,9 @@ pub(crate) struct Inner {
     /// The session waits for headphones that were turned off: a scan may
     /// end it
     waiting: AtomicBool,
+    /// The device (address in capitals) of the A2DP session, while one
+    /// runs: its own options (Settings::device_options) are in force
+    device: Mutex<Option<String>>,
 }
 
 impl Inner {
@@ -385,7 +388,7 @@ impl Inner {
                 Ok(h) => {
                     let h = Arc::new(h);
                     let s = self.settings.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                    h.set_media_keys(s.media_keys);
+                    h.set_media_keys(self.media_keys_now(&s));
                     h.set_afh_policy(self.opts.afh.as_deref().unwrap_or(&s.afh));
                     self.le_active.store(le_on, Ordering::Release);
                     self.streamed.store(false, Ordering::Release);
@@ -422,6 +425,11 @@ impl Inner {
                 for _ in 0..20 {
                     if let Some(a) = host.local_address() {
                         crate::adapter::save_address(&dir, vid, pid, &a);
+                        // Read Local Version is answered before Read BD_ADDR
+                        match host.hci_version() {
+                            Some(v) => crate::adapter::save_hci_version(&dir, vid, pid, v),
+                            None => tracing::debug!("adapter: no HCI version, not saved"),
+                        }
                         return;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(250));
@@ -599,9 +607,40 @@ impl Inner {
         }
     }
 
+    /// The A2DP session's device (None when it ends): its media keys
+    /// option goes to the running stack
+    pub fn set_device(&self, addr: Option<&str>) {
+        let addr = addr.map(str::to_uppercase);
+        let media_keys = match &addr {
+            Some(a) => self.media_keys_for(a),
+            None => self.settings.lock().unwrap_or_else(|e| e.into_inner()).media_keys,
+        };
+        tracing::debug!("session device {addr:?}: media keys {media_keys}");
+        *self.device.lock().unwrap_or_else(|e| e.into_inner()) = addr;
+        let host = self.host.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(h) = host {
+            h.set_media_keys(media_keys);
+        }
+    }
+
+    /// Whether the buttons of this device act as media keys (its override,
+    /// else the global setting)
+    pub fn media_keys_for(&self, addr: &str) -> bool {
+        self.settings.lock().unwrap_or_else(|e| e.into_inner()).media_keys_for(addr)
+    }
+
+    /// The media keys setting in force: the session device's, else the
+    /// global one
+    fn media_keys_now(&self, s: &Settings) -> bool {
+        match self.device.lock().unwrap_or_else(|e| e.into_inner()).as_deref() {
+            Some(a) => s.media_keys_for(a),
+            None => s.media_keys,
+        }
+    }
+
     pub fn saved_volume(&self, addr: &str) -> Option<u8> {
         let s = self.settings.lock().unwrap_or_else(|e| e.into_inner());
-        if !s.remember_volume {
+        if !s.remember_volume_for(addr) {
             return None;
         }
         s.saved_volumes.get(&addr.to_uppercase()).and_then(|&v| u8::try_from(v).ok())
@@ -612,7 +651,7 @@ impl Inner {
     pub fn remember_volume(&self, addr: &str, volume: Option<u8>) {
         let Some(v) = volume else { return };
         let mut s = self.settings.lock().unwrap_or_else(|e| e.into_inner());
-        if !s.remember_volume {
+        if !s.remember_volume_for(addr) {
             return;
         }
         let key = addr.to_uppercase();
@@ -700,6 +739,7 @@ impl Service {
             le_support: Mutex::new(None),
             streamed: AtomicBool::new(false),
             waiting: AtomicBool::new(false),
+            device: Mutex::new(None),
         });
         // Without a window, also while only the tray runs
         let weak = Arc::downgrade(&inner);
@@ -762,8 +802,9 @@ impl Service {
     /// says so). The low-latency setting applies to the next LE stream.
     pub fn set_settings(&self, settings: Settings) {
         tracing::debug!(
-            "settings applied: media keys {}, afh {:?}, LE {}, debug mode {}",
+            "settings applied: media keys {} ({} device override(s)), afh {:?}, LE {}, debug mode {}",
             settings.media_keys,
+            settings.device_options.len(),
             settings.afh,
             settings.le_audio_experimental,
             settings.debug_mode
@@ -771,7 +812,7 @@ impl Service {
         apply_dev_overrides(&settings);
         let host = self.host();
         if let Some(h) = &host {
-            h.set_media_keys(settings.media_keys);
+            h.set_media_keys(self.inner.media_keys_now(&settings));
             h.set_afh_policy(self.inner.opts.afh.as_deref().unwrap_or(&settings.afh));
         }
         let old = std::mem::replace(&mut *self.inner.settings.lock().unwrap_or_else(|e| e.into_inner()), settings);
@@ -1004,7 +1045,13 @@ impl Service {
                     saved.len()
                 );
                 for e in &entries {
-                    tracing::debug!("le scan: {} \"{}\" rssi {} set {}", e.address, e.name, e.rssi, e.le_audio_set);
+                    tracing::debug!(
+                        "le scan: {} {} rssi {} set {}",
+                        e.address,
+                        crate::diag::quoted(&e.name),
+                        e.rssi,
+                        e.le_audio_set
+                    );
                 }
                 le_found = found;
                 list.extend(entries);

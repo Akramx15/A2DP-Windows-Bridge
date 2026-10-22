@@ -6,7 +6,7 @@
 // name an entry). Once one is picked, the others are folded away until asked
 // for or a new scan. Used by the profile editor and the first-run setup.
 
-import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, Show, type JSX } from "solid-js";
 import { useApp } from "../app/context";
 import { t } from "../i18n";
 import type { Device } from "../ipc/types";
@@ -39,6 +39,8 @@ export function DevicePicker(props: {
   /** The profile editor: the saved devices only, to choose from; they are
    *  managed on the Audio Devices screen */
   savedOnly?: boolean;
+  /** With manage: a saved device's own settings, below its row */
+  settings?: (d: Device) => JSX.Element;
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
@@ -114,15 +116,21 @@ export function DevicePicker(props: {
     const ok = await app.run(() =>
       app.core.request("device.rename", { address, name: saved, ...(leAudio ? { le_audio: true } : {}) }),
     );
-    // A device without a profile gets one that picks the best codec, ready
-    // to connect (like pairing does on other systems); the user makes more
+    // A device without a profile gets one that picks the best codec and is
+    // connected with it right away (pairing it, as other systems do); the
+    // user makes more. A running stream and the first-run setup (it tests
+    // the device itself) are left alone.
     if (ok && !leAudio && !snap().profiles.some((p) => p.device_address.toUpperCase() === address.toUpperCase())) {
       const taken = snap().profiles.map((p) => p.name);
       const base = defaultProfileName(saved, address, false, t("codec.auto"));
       let profileName = base;
       for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
       const profile = normalizeProfile({ ...newProfile(), name: profileName, device_address: address, device_name: saved });
-      await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
+      const made = await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
+      const state = snap().stream.state;
+      if (made && !app.setupActive() && (state === "idle" || state === "error")) {
+        await app.run(() => app.core.request("stream.start", { profile: profileName }));
+      }
     }
     setBusy(false);
   };
@@ -137,200 +145,249 @@ export function DevicePicker(props: {
     setForgetting(null);
   };
 
-  return (
-    <div class="device-picker">
-      <div class="picker-head">
-        <span class="muted" role="status" aria-live="polite">
-          {scanning()
-            ? t(
-                snap().le_scanning
-                  ? "status.le_scanning"
-                  : "connection.scanning_hint",
-              )
-            : t("ui.devices.count", devices().length)}
-        </span>
-        <Show
-          when={!props.savedOnly}
-          fallback={
-            <Button
-              icon="bluetooth"
-              onClick={() => (location.hash = "#/devices")}
-            >
-              {t("ui.devices.manage")}
-            </Button>
-          }
-        >
-          <Button icon="search" busy={scanning()} onClick={scan}>
-            {scanning() ? t("connection.scanning") : t("connection.scan")}
-          </Button>
+  // One device's row; on the Audio Devices screen a saved one has its
+  // settings below it
+  const row = (d: Device, i: () => number, prefix: string) => {
+    const label = () => d.name || t("device.name_unknown");
+    const nameId = () => `${uid}-${prefix}${i()}`;
+    return (
+      // The radio covers the row (app.css); the buttons sit above it
+      <div
+        class="device-row"
+        classList={{ on: chosen(d), dim: !d.audio }}
+        data-key={deviceKey(d)}
+      >
+        <Show when={!props.manage}>
+          <input
+            type="radio"
+            name={name}
+            value={deviceKey(d)}
+            checked={chosen(d)}
+            aria-labelledby={nameId()}
+            onChange={() => pick(d.address, d.name, d.le_audio)}
+          />
         </Show>
-      </div>
-      {/* Folded with a typed address: no row, only the button below */}
-      <Show when={!folded() || shown().length > 0}>
-        <div
-          class="device-list"
-          role="radiogroup"
-          aria-label={t("connection.device_addr")}
-        >
+        <Icon name={d.audio ? "headphones" : "bluetooth"} />
+        <span class="device-row-text" id={nameId()}>
+          <span class="device-row-name">{label()}</span>{" "}
+          <span class="mono muted">{d.address}</span>
+        </span>
+        <span class="tags">
+          <Show when={d.saved}>
+            <span class="tag">{t("device.tag_saved")}</span>
+          </Show>
           <Show
-            when={shown().length > 0}
+            when={d.le_audio}
             fallback={
-              <p class="muted empty-line">
-                {t(
-                  props.savedOnly
-                    ? "ui.devices.saved_empty"
-                    : "connection.no_devices",
-                )}
-              </p>
+              <Show when={d.audio}>
+                <span class="tag">{t("device.tag_audio")}</span>
+              </Show>
             }
           >
-            <For each={shown()}>
-              {(d, i) => {
-                const label = () => d.name || t("device.name_unknown");
-                const nameId = () => `${uid}-${i()}`;
-                return (
-                  // The radio covers the row (app.css); the buttons sit above it
-                  <div
-                    class="device-row"
-                    classList={{ on: chosen(d), dim: !d.audio }}
-                    data-key={deviceKey(d)}
-                  >
-                    <Show when={!props.manage}>
-                      <input
-                        type="radio"
-                        name={name}
-                        value={deviceKey(d)}
-                        checked={chosen(d)}
-                        aria-labelledby={nameId()}
-                        onChange={() => pick(d.address, d.name, d.le_audio)}
-                      />
-                    </Show>
-                    <Icon name={d.audio ? "headphones" : "bluetooth"} />
-                    <span class="device-row-text" id={nameId()}>
-                      <span class="device-row-name">{label()}</span>{" "}
-                      <span class="mono muted">{d.address}</span>
-                    </span>
-                    <span class="tags">
-                      <Show when={d.saved}>
-                        <span class="tag">{t("device.tag_saved")}</span>
-                      </Show>
-                      <Show
-                        when={d.le_audio}
-                        fallback={
-                          <Show when={d.audio}>
-                            <span class="tag">{t("device.tag_audio")}</span>
-                          </Show>
-                        }
-                      >
-                        <span class="tag">
-                          {t(
-                            d.le_audio_set
-                              ? "device.tag_le_audio_set"
-                              : "device.tag_le_audio",
-                          )}
-                        </span>
-                      </Show>
-                      <Show when={d.rssi !== null}>
-                        <span class="tag num">{d.rssi} dBm</span>
-                      </Show>
-                    </span>
-                    <Show when={props.manage && !d.saved}>
-                      <span class="inline device-row-actions">
-                        <Button
-                          kind="subtle"
-                          icon="add"
-                          disabled={busy()}
-                          onClick={() =>
-                            void add(d.address, d.name, d.le_audio)
-                          }
-                        >
-                          {t("ui.devices.add")}
-                        </Button>
-                      </span>
-                    </Show>
-                    <Show when={d.saved && !props.savedOnly}>
-                      <span class="inline device-row-actions">
-                        <IconButton
-                          icon="edit"
-                          label={`${t("device.edit_name")}: ${label()}`}
-                          onClick={() => {
-                            setNewName(d.name);
-                            setRenameTried(false);
-                            setRenaming(d);
-                          }}
-                        />
-                        <IconButton
-                          icon="delete"
-                          label={`${t("ui.device.forget")}: ${label()}`}
-                          onClick={() => setForgetting(d)}
-                        />
-                      </span>
-                    </Show>
-                  </div>
-                );
-              }}
-            </For>
+            <span class="tag">
+              {t(
+                d.le_audio_set
+                  ? "device.tag_le_audio_set"
+                  : "device.tag_le_audio",
+              )}
+            </span>
           </Show>
-        </div>
-      </Show>
-      <Show when={folded() && others() > 0 && !props.manage}>
-        <div>
+          <Show when={d.rssi !== null}>
+            <span class="tag num">{d.rssi} dBm</span>
+          </Show>
+        </span>
+        <Show when={props.manage && !d.saved}>
+          <span class="inline device-row-actions">
+            <Button
+              kind="subtle"
+              icon="add"
+              disabled={busy()}
+              onClick={() =>
+                void add(d.address, d.name, d.le_audio)
+              }
+            >
+              {t("ui.devices.add")}
+            </Button>
+          </span>
+        </Show>
+        <Show when={d.saved && !props.savedOnly}>
+          <span class="inline device-row-actions">
+            <IconButton
+              icon="edit"
+              label={`${t("device.edit_name")}: ${label()}`}
+              onClick={() => {
+                setNewName(d.name);
+                setRenameTried(false);
+                setRenaming(d);
+              }}
+            />
+            <IconButton
+              icon="delete"
+              label={`${t("ui.device.forget")}: ${label()}`}
+              onClick={() => setForgetting(d)}
+            />
+          </span>
+        </Show>
+      </div>
+    );
+  };
+
+  const head = (count: number) => (
+    <div class="picker-head">
+      <span class="muted" role="status" aria-live="polite">
+        {scanning()
+          ? t(
+              snap().le_scanning
+                ? "status.le_scanning"
+                : "connection.scanning_hint",
+            )
+          : t("ui.devices.count", count)}
+      </span>
+      <Show
+        when={!props.savedOnly}
+        fallback={
           <Button
-            kind="subtle"
-            icon="chevron_down"
-            onClick={() => setFolded(false)}
+            icon="bluetooth"
+            onClick={() => (location.hash = "#/devices")}
           >
-            {t("ui.devices.show_others", others())}
+            {t("ui.devices.manage")}
+          </Button>
+        }
+      >
+        <Button icon="search" busy={scanning()} onClick={scan}>
+          {scanning() ? t("connection.scanning") : t("connection.scan")}
+        </Button>
+      </Show>
+    </div>
+  );
+
+  const manualField = () => (
+    <Field
+      label={t("connection.manual")}
+      hint={t("ui.devices.manual_hint")}
+      error={
+        manual() && !parseAddress(manual())
+          ? t("error.invalid_address_format")
+          : props.error
+      }
+    >
+      {(id, described) => (
+        <div class="inline">
+          <input
+            id={id}
+            class="input mono"
+            placeholder="AA:BB:CC:DD:EE:FF"
+            value={manual()}
+            aria-describedby={described}
+            spellcheck={false}
+            onInput={(e) => setManual(e.currentTarget.value)}
+          />
+          <Button
+            disabled={!parseAddress(manual())}
+            onClick={() => {
+              const a = parseAddress(manual());
+              if (!a) return;
+              if (props.manage) {
+                void add(a, "", false).then(() => setManual(""));
+              } else {
+                // A typed address keeps the kind chosen (the profile's check box)
+                pick(a, "", props.leAudio ?? false);
+              }
+            }}
+          >
+            {props.manage
+              ? t("ui.devices.add")
+              : t("ui.devices.use_address")}
           </Button>
         </div>
-      </Show>
-      <Show when={props.savedOnly && props.error}>
-        <p class="field-error">
-          <Icon name="warning" />
-          <span>{props.error}</span>
-        </p>
-      </Show>
-      <Show when={!props.savedOnly}>
-        <Field
-          label={t("connection.manual")}
-          hint={t("ui.devices.manual_hint")}
-          error={
-            manual() && !parseAddress(manual())
-              ? t("error.invalid_address_format")
-              : props.error
-          }
+      )}
+    </Field>
+  );
+
+  // The Audio Devices screen (issue #86): the saved devices, each with its
+  // settings, then a card to add one (scan, or the address by hand)
+  const saved = () => devices().filter((d) => d.saved);
+  const found = () => devices().filter((d) => !d.saved);
+  const managed = () => (
+    <>
+      <div class="device-list saved-devices">
+        <Show
+          when={saved().length > 0}
+          fallback={<p class="muted empty-line">{t("ui.devices.none_saved")}</p>}
         >
-          {(id, described) => (
-            <div class="inline">
-              <input
-                id={id}
-                class="input mono"
-                placeholder="AA:BB:CC:DD:EE:FF"
-                value={manual()}
-                aria-describedby={described}
-                spellcheck={false}
-                onInput={(e) => setManual(e.currentTarget.value)}
-              />
-              <Button
-                disabled={!parseAddress(manual())}
-                onClick={() => {
-                  const a = parseAddress(manual());
-                  if (!a) return;
-                  if (props.manage) {
-                    void add(a, "", false).then(() => setManual(""));
-                  } else {
-                    // A typed address keeps the kind chosen (the profile's check box)
-                    pick(a, "", props.leAudio ?? false);
-                  }
-                }}
-              >
-                {props.manage
-                  ? t("ui.devices.add")
-                  : t("ui.devices.use_address")}
-              </Button>
-            </div>
-          )}
-        </Field>
+          <For each={saved()}>
+            {(d, i) => (
+              <div class="device-entry">
+                {row(d, i, "s")}
+                {props.settings?.(d)}
+              </div>
+            )}
+          </For>
+        </Show>
+      </div>
+      <section class="card device-add" aria-label={t("ui.devices.add_title")}>
+        <h2 class="mini-title">{t("ui.devices.add_title")}</h2>
+        {head(found().length)}
+        <Show when={found().length > 0 || scanning()}>
+          <div class="device-list">
+            <Show
+              when={found().length > 0}
+              fallback={<p class="muted empty-line">{t("connection.no_devices")}</p>}
+            >
+              <For each={found()}>{(d, i) => row(d, i, "f")}</For>
+            </Show>
+          </div>
+        </Show>
+        {manualField()}
+      </section>
+    </>
+  );
+
+  return (
+    <div class="device-picker">
+      <Show when={!props.manage} fallback={managed()}>
+        {head(devices().length)}
+        {/* Folded with a typed address: no row, only the button below */}
+        <Show when={!folded() || shown().length > 0}>
+          <div
+            class="device-list"
+            role="radiogroup"
+            aria-label={t("connection.device_addr")}
+          >
+            <Show
+              when={shown().length > 0}
+              fallback={
+                <p class="muted empty-line">
+                  {t(
+                    props.savedOnly
+                      ? "ui.devices.saved_empty"
+                      : "connection.no_devices",
+                  )}
+                </p>
+              }
+            >
+              <For each={shown()}>{(d, i) => row(d, i, "")}</For>
+            </Show>
+          </div>
+        </Show>
+        <Show when={folded() && others() > 0 && !props.manage}>
+          <div>
+            <Button
+              kind="subtle"
+              icon="chevron_down"
+              onClick={() => setFolded(false)}
+            >
+              {t("ui.devices.show_others", others())}
+            </Button>
+          </div>
+        </Show>
+        <Show when={props.savedOnly && props.error}>
+          <p class="field-error">
+            <Icon name="warning" />
+            <span>{props.error}</span>
+          </p>
+        </Show>
+        <Show when={!props.savedOnly}>{manualField()}</Show>
       </Show>
       <Dialog
         open={renaming() !== null}

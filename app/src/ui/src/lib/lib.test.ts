@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
-import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
+import { abrCarries, bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
-import { maskAddresses, parseAddress } from "./format";
+import { knowAdapters, maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
 import { validateProfile } from "./profile";
 
@@ -153,7 +153,17 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "ldac" })).toMatchObject({ quality: "hq", abr: true, sample_rate: 96000, bit_depth: 24 });
     // AAC takes the flag as VBR (the editor clears it when the codec changes to or from AAC)
     expect(fitToCodec({ ...p, codec: "aac" })).toMatchObject({ abr: true, sample_rate: 0, bit_depth: 0 });
-    expect(fitToCodec({ ...p, codec: "sbc", sbc_bitpool: 40 })).toMatchObject({ abr: false, sbc_bitpool: 40 });
+    // SBC takes it as its adaptive bitpool (the editor clears it when the
+    // codec changes to or from SBC / SBC XQ: abrCarries)
+    expect(fitToCodec({ ...p, codec: "sbc", sbc_bitpool: 40 })).toMatchObject({ abr: true, sbc_bitpool: 40 });
+    expect(fitToCodec({ ...p, codec: "faststream" })).toMatchObject({ abr: false });
+    expect(abrCarries("ldac", "lhdcv5")).toBe(true);
+    expect(abrCarries("auto", "ldac")).toBe(true);
+    expect(abrCarries("sbc", "sbcxq")).toBe(true);
+    expect(abrCarries("ldac", "sbc")).toBe(false);
+    expect(abrCarries("sbcxq", "auto")).toBe(false);
+    expect(abrCarries("aac", "sbc")).toBe(false);
+    expect(abrCarries("aac", "ldac")).toBe(false);
     expect(fitToCodec({ ...p, codec: "ldac", sbc_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0 });
     // SBC and SBC XQ keep their own bitpool
     expect(fitToCodec({ ...p, codec: "sbcxq", sbc_bitpool: 53, sbcxq_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0, sbcxq_bitpool: 40 });
@@ -212,8 +222,92 @@ describe("profiles", () => {
     expect(codecLabelKey("Ldac")).toBe("codec.ldac");
   });
 
-  it("masks the device part of addresses", () => {
-    expect(maskAddresses("connecting to AC:80:0A:12:34:56 now")).toBe("connecting to AC:80:0A:xx:xx:xx now");
+  /** The number an address got (the map lives as long as the module) */
+  const addrOf = (addr: string) => /<addr-(\d+)>/.exec(maskIdentifiers(addr))?.[1];
+
+  it("masks addresses as <addr-N>, the same address the same N in every form", () => {
+    const m = maskIdentifiers;
+    const n = addrOf("AC:80:0A:12:34:56");
+    expect(n).toBeDefined();
+    expect(m("connecting to AC:80:0A:12:34:56 now")).toBe(`connecting to <addr-${n}> now`);
+    expect(m("ac-80-0a-12-34-56 and AC800A123456")).toBe(`<addr-${n}> and <addr-${n}>`);
+    expect(addrOf("00:1A:7D:DA:71:13")).not.toBe(n);
+  });
+
+  // The same cases as the core's mask_identifiers tests
+  it("masks addresses in other forms", () => {
+    const m = maskIdentifiers;
+    const a = addrOf("00-1A-7D-DA-71-13");
+    const b = addrOf("46:62:99:4A:5B:6C");
+    const c = addrOf("58:18:62:3a:1b:2c");
+    expect(m("00-1A-7D-DA-71-13")).toBe(`<addr-${a}>`);
+    // A colon after it ends the address (the LE Audio pairing lines of #81)
+    expect(m("LE Audio: 46:62:99:4A:5B:6C: pairing (Just Works)")).toBe(`LE Audio: <addr-${b}>: pairing (Just Works)`);
+    expect(m("to 46:62:99:4A:5B:6C:")).toBe(`to <addr-${b}>:`);
+    expect(m("46-62-99-4A-5B-6C-x")).toBe(`<addr-${b}>-x`);
+    expect(m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c")).toBe(`BluetoothLE#BluetoothLE<addr-${a}>-<addr-${c}>`);
+    expect(m("fe80::00:11:22:33:44:55")).toBe("fe80::00:11:22:33:44:55");
+    expect(m("00:11:22:33:44:55:66")).toBe("00:11:22:33:44:55:66");
+    expect(m("00:11:22:33:44:556")).toBe("00:11:22:33:44:556");
+    expect(m("ヘッドホン5818623A1B2C接続")).toBe(`ヘッドホン<addr-${c}>接続`);
+    expect(m(String.raw`BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&5818623A1B2C_C00000000`)).toBe(
+      String.raw`BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&<addr-${c}>_C00000000`,
+    );
+    expect(m("5818623A1B2C5818623A1B2C, 0x5818623A1B2C, 5818623A1B2G")).toBe(
+      "5818623A1B2C5818623A1B2C, 0x5818623A1B2C, 5818623A1B2G",
+    );
+  });
+
+  it("shows the adapters' own addresses as <adapter>", () => {
+    knowAdapters(["00:e0:4c:00:00:01", null, "nope"]);
+    expect(maskIdentifiers(String.raw`local 00:E0:4C:00:00:01, USB\VID_0BDA&PID_4853\00E04C000001`)).toBe(
+      String.raw`local <adapter>, USB\VID_0BDA&PID_4853\<adapter>`,
+    );
+  });
+
+  it("masks USB serial numbers", () => {
+    const m = maskIdentifiers;
+    const n = addrOf("00E04C000002");
+    expect(m(String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04C000002 (event 0x81)`)).toBe(
+      String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\<addr-${n}> (event 0x81)`,
+    );
+    expect(m(String.raw`USB\VID_18D1&PID_4EE7\HT7A1B234567`)).toBe(String.raw`USB\VID_18D1&PID_4EE7\xxxxxxxxxxxx`);
+    expect(m(String.raw`\\?\usb#vid_0a12&pid_0001#serial42#{a5dcbf10-6530-11d2-901f-00c04fb951ed}`)).toBe(
+      String.raw`\\?\usb#vid_0a12&pid_0001#xxxxxxxx#{a5dcbf10-6530-11d2-901f-00c04fb951ed}`,
+    );
+    expect(m(String.raw`USB\VID_8087&PID_0026&MI_00\SN123`)).toBe(String.raw`USB\VID_8087&PID_0026&MI_00\xxxxx`);
+    expect(m(String.raw`USB\VID_8087&PID_0026\5&2C7B4E3&0&14.`)).toBe(String.raw`USB\VID_8087&PID_0026\5&2C7B4E3&0&14.`);
+    expect(m("USB_VID_0BDA_PID_8771_SN123.json")).toBe("USB_VID_0BDA_PID_8771_xxxxx.json");
+    expect(m("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.")).toBe("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.");
+  });
+
+  it("masks the Windows user name in paths", () => {
+    const m = maskIdentifiers;
+    expect(m(String.raw`settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB`)).toBe(
+      String.raw`settings folder: C:\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB`,
+    );
+    expect(m(String.raw`C:\Users\山田太郎\AppData`)).toBe(String.raw`C:\Users\xxxx\AppData`);
+    expect(m(String.raw`{"path":"C:\\Users\\taro\\x.txt"}`)).toBe(String.raw`{"path":"C:\\Users\\xxxx\\x.txt"}`);
+    expect(m("file:///C:/users/taro/x.txt")).toBe("file:///C:/users/xxxx/x.txt");
+    expect(m("dump: C:\\Users\\taro\n")).toBe("dump: C:\\Users\\xxxx\n");
+    expect(m(String.raw`C:\Users\Public\Desktop and C:\Users\All Users\y`)).toBe(String.raw`C:\Users\Public\Desktop and C:\Users\All Users\y`);
+    expect(m("3 Users, C:\\Users\\\n")).toBe("3 Users, C:\\Users\\\n");
+    expect(m("in Users\\taro")).toBe("in Users\\taro");
+  });
+
+  it("masks quoted device names, the same name the same number", () => {
+    const m = maskIdentifiers;
+    const first = m("stream: device AA:BB:CC:DD:EE:FF source virtual device “Taro's AirPods”");
+    const n = /<device-(\d+)>$/.exec(first)?.[1];
+    expect(n).toBeDefined();
+    const a = addrOf("AA:BB:CC:DD:EE:FF");
+    expect(first).toBe(`stream: device <addr-${a}> source virtual device <device-${n}>`);
+    expect(m("remote name of AA:BB:CC:DD:EE:FF: name=“Taro's AirPods”")).toBe(`remote name of <addr-${a}>: name=<device-${n}>`);
+    expect(m("name=“Hanako's iPhone”")).not.toBe(`name=<device-${n}>`);
+    expect(m("name=“Hanako's iPhone”")).toMatch(/^name=<device-\d+>$/);
+    // Empty, unclosed and multi-line quotes stay
+    expect(m("name=“” and “open")).toBe("name=“” and “open");
+    expect(m("“a\nb”")).toBe("“a\nb”");
   });
 });
 

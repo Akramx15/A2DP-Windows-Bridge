@@ -33,7 +33,7 @@ use windows::Win32::UI::Shell::{
     NIN_BALLOONUSERCLICK, NOTIFY_ICON_INFOTIP_FLAGS, NOTIFYICONDATAW, RemoveWindowSubclass, SetWindowSubclass,
     Shell_NotifyIconW, ShellExecuteW,
 };
-use windows::Win32::UI::WindowsAndMessaging::{SW_SHOWNORMAL, WM_NCDESTROY};
+use windows::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow, SW_SHOWNORMAL, WM_NCDESTROY};
 use windows::core::{GUID, HSTRING, w};
 
 /// The icon's callback message in tray-icon (`WM_USER_TRAYICON` in its
@@ -291,6 +291,17 @@ unsafe extern "system" fn subclass_proc(
     }
     // SAFETY: forwards the message unchanged to the next procedure.
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// After a click on the tray icon: the shell lets the icon's process take
+/// the foreground, and this passes that on, so that the UI process the
+/// click opens (or the running one it forwards to) can bring its window to
+/// the front (#140)
+pub fn allow_foreground_for_click() {
+    // SAFETY: plain call without pointers
+    if let Err(e) = unsafe { AllowSetForegroundWindow(ASFW_ANY) } {
+        tracing::debug!("AllowSetForegroundWindow: {e}");
+    }
 }
 
 /// Opens `url` with its default program (the browser for http/https)

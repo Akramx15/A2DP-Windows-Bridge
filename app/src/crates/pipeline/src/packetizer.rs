@@ -207,6 +207,43 @@ mod tests {
     }
 
     #[test]
+    fn sbc_frames_of_changing_length_share_a_packet() {
+        // SBC ABR changes the bitpool between frames: 119-byte frames
+        // (bitpool 53), then 115 (51) and 51 (19) bytes, mtu 679 (678 bytes
+        // of frames)
+        let mut p = Packetizer::new(CodecKind::Sbc, 679, 48000);
+        let mut out = Vec::new();
+        let mut ts = 0;
+        let mut push = |p: &mut Packetizer, len: usize, bitpool: u8, out: &mut Vec<(Vec<u8>, u32)>| {
+            let mut frame = vec![0u8; len];
+            frame[0] = 0x9C;
+            frame[2] = bitpool;
+            p.push(&frame, 1, ts, &mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+            ts += 128;
+        };
+        for _ in 0..3 {
+            push(&mut p, 119, 53, &mut out);
+        }
+        for _ in 0..2 {
+            push(&mut p, 115, 51, &mut out);
+        }
+        // 3 * 119 + 2 * 115 = 587: one more 115 does not fit, a 51 does
+        push(&mut p, 51, 19, &mut out);
+        assert!(out.is_empty());
+        push(&mut p, 115, 51, &mut out);
+        p.flush(&mut |pk| out.push((pk.payload().to_vec(), pk.timestamp)));
+        assert_eq!(out.len(), 2);
+        let (first, ts0) = &out[0];
+        assert_eq!((first[0], first.len(), *ts0), (6, 1 + 3 * 119 + 2 * 115 + 51, 0));
+        // Each frame keeps its own header and bitpool
+        let starts = [0, 119, 238, 357, 472, 587].map(|o| 1 + o);
+        let bitpools: Vec<u8> = starts.iter().map(|&o| first[o + 2]).collect();
+        assert!(starts.iter().all(|&o| first[o] == 0x9C));
+        assert_eq!(bitpools, [53, 53, 53, 51, 51, 19]);
+        assert_eq!((out[1].0[0], out[1].0.len(), out[1].1), (1, 1 + 115, 6 * 128));
+    }
+
+    #[test]
     fn faststream_packets_are_three_frames() {
         assert_eq!(max_raw(CodecKind::FastStream, 1023, 48000), 216);
         let mut p = Packetizer::new(CodecKind::FastStream, 1023, 48000);

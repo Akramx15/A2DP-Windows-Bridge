@@ -114,6 +114,10 @@ pub struct AdapterInfo {
     /// it (remembered); None if none ran on it yet
     #[serde(default)]
     pub address: Option<String>,
+    /// Bluetooth core version the controller reports (HCI version: "5.3"),
+    /// remembered; None if no stack ran on it yet
+    #[serde(default)]
+    pub bt_version: Option<String>,
 }
 
 /// A Realtek firmware pair found in the settings folder
@@ -211,8 +215,10 @@ pub struct StreamInfo {
     /// The profile's codec, when the device did not offer it (fallback)
     pub requested_codec: Option<String>,
     pub requested_in_use: bool,
-    /// Adaptive bit rate on (LDAC, LHDC V5): LHDC V5 then stays at 400
-    /// kbps or below whatever the quality
+    /// Adaptive bit rate on (LDAC, LHDC V5, SBC and SBC XQ): LHDC V5 then
+    /// stays at 400 kbps or below whatever the quality. bitrate_kbps (and
+    /// SBC's details.sbc.bitpool, frame_bytes, frames_per_packet) follow
+    /// it: the core sends a new StreamInfo while they change.
     #[serde(default)]
     pub abr: bool,
     /// The device's maximum bit rate lowered the profile's (LHDC V5)
@@ -266,13 +272,19 @@ pub struct SbcDetails {
     pub subbands: u32,
     /// "loudness", "snr"
     pub allocation: String,
-    /// The bitpool the encoder uses
+    /// The bitpool the encoder uses (under ABR: now; the core sends a new
+    /// StreamInfo while it changes)
     pub bitpool: u32,
     /// The bitpool range of the configuration (SET_CONFIGURATION), min and
     /// max; None for FastStream (its codec information has none)
     pub config_bitpool: Option<(u32, u32)>,
     /// What the device's SBC endpoint offers, when it said
     pub device: Option<SbcDeviceCaps>,
+    /// SBC / SBC XQ under ABR: the range the bitpool moves in (floor,
+    /// ceiling); None without ABR and from an older core
+    #[ts(optional = nullable)]
+    #[serde(default)]
+    pub abr_bitpool: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -469,6 +481,19 @@ impl Default for DevLog {
     }
 }
 
+/// A device's own values of options that are otherwise global; None
+/// follows the global value
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct DeviceOptions {
+    /// Its buttons act as Windows media keys
+    #[serde(default)]
+    pub media_keys: Option<bool>,
+    /// Its volume is remembered and set again when it connects
+    #[serde(default)]
+    pub remember_volume: Option<bool>,
+}
+
 /// Application settings the UI edits
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
@@ -481,8 +506,16 @@ pub struct Settings {
     pub minimize_to_tray: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
+    /// The headphones' buttons act as Windows media keys (the default for
+    /// devices without an override in device_options)
     pub media_keys: bool,
+    /// Remember each device's volume (the default for devices without an
+    /// override in device_options)
     pub remember_volume: bool,
+    /// Per-device overrides of media_keys and remember_volume; key: the
+    /// device address in capitals ("AA:BB:CC:DD:EE:FF")
+    #[serde(default)]
+    pub device_options: std::collections::BTreeMap<String, DeviceOptions>,
     /// Developer mode: receiver test, HCI capture, debug details
     pub developer_mode: bool,
     /// Developer mode: overrides of the codec and media path, in force
@@ -623,8 +656,9 @@ pub struct DiagBundle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 
 pub struct DiagBundleParams {
-    /// Bluetooth addresses masked in the text files (default true; HCI
-    /// captures keep them)
+    /// Bluetooth addresses (<addr-N>), device names (<device-N>), USB serial
+    /// numbers and the Windows user name masked in the text files (default
+    /// true; HCI captures keep the addresses)
     #[ts(optional = nullable)]
     #[serde(default)]
     pub mask: Option<bool>,
@@ -1101,7 +1135,8 @@ pub struct DiagInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 
 pub struct DiagInfoParams {
-    /// Bluetooth addresses as AA:BB:CC:xx:xx:xx (default true)
+    /// Bluetooth addresses as <addr-N>, device names as <device-N>, the
+    /// Windows user name and USB serial numbers hidden (default true)
     #[ts(optional = nullable)]
     #[serde(default)]
     pub mask: Option<bool>,
@@ -1438,7 +1473,11 @@ mod tests {
             "bt_chip_fw_stem": "", "afh": "auto", "remote_sink": ""}))
         .unwrap();
         assert!(!settings.le_audio_experimental && !settings.le_audio_low_latency);
-        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, ..settings };
+        assert!(settings.device_options.is_empty());
+        let mut device_options = std::collections::BTreeMap::new();
+        device_options
+            .insert("AA:BB:CC:DD:EE:FF".to_string(), DeviceOptions { media_keys: Some(false), remember_volume: None });
+        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, device_options, ..settings };
         assert_eq!(serde_json::from_value::<Settings>(serde_json::to_value(&on).unwrap()).unwrap(), on);
 
         let info: StreamInfo = serde_json::from_value(serde_json::json!({

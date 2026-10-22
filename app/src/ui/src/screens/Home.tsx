@@ -13,7 +13,9 @@ import {
   ConnectButton,
   currentProfile,
   ErrorPanel,
+  FirmwareDownload,
   LinkSparkline,
+  openFirmwareFolder,
   QualityIndicator,
   Ring,
   VolumeControl,
@@ -31,8 +33,12 @@ export function adaptersMissingFirmware(snap: Snapshot): AdapterInfo[] {
 /** The bar over Home while an adapter lacks its firmware files, or the
  *  running stack found its Realtek adapter on the ROM code (issue #81) */
 function FirmwareMissing() {
-  const { core, navigate } = useApp();
+  const app = useApp();
+  const { core, navigate } = app;
   const missing = () => adaptersMissingFirmware(core.state.snap!);
+  // One whose files the core can fetch (the first: one download at a time)
+  const downloadable = () => missing().find((a) => a.firmware_download);
+  const toFirmware = () => navigate({ name: "adapter", arg: "firmware" });
   return (
     <Show
       when={missing().length > 0}
@@ -42,7 +48,7 @@ function FirmwareMissing() {
             kind="warn"
             title={t("ui.adapter.rom_firmware")}
             actions={
-              <Button kind="strong" icon="usb_stick" onClick={() => navigate({ name: "adapter" })}>
+              <Button kind="strong" icon="usb_stick" onClick={toFirmware}>
                 {t("ui.home.firmware_fix")}
               </Button>
             }
@@ -56,9 +62,17 @@ function FirmwareMissing() {
         kind="warn"
         title={missing().some((a) => a.firmware_invalid) ? t("firmware.invalid_short") : t("firmware.missing_manual")}
         actions={
-          <Button kind="strong" icon="usb_stick" onClick={() => navigate({ name: "adapter" })}>
-            {t("ui.home.firmware_fix")}
-          </Button>
+          // The Adapter screen's actions right here (issue #81): the
+          // download, the folder for the files fetched by hand, the details
+          <>
+            <Show when={downloadable()}>{(a) => <FirmwareDownload files={a().firmware_files} kind="strong" />}</Show>
+            <Button icon="folder_open" onClick={() => void openFirmwareFolder(app)}>
+              {t("firmware.open_folder")}
+            </Button>
+            <Button kind={downloadable() ? undefined : "strong"} icon="usb_stick" onClick={toFirmware}>
+              {t("ui.home.firmware_fix")}
+            </Button>
+          </>
         }
       >
         <For each={missing()}>
@@ -158,24 +172,28 @@ export function Home() {
                 <Icon name="headphones" />
               </Ring>
               <div class="device-info">
+                {/* Four lines (issue #86): the device, battery and state,
+                    the profile, the codec; the sidebar shows the same */}
                 <div class="device-name">{p().device_name || p().device_address}</div>
-                <div class="muted device-sub">
-                  <span>{p().name}</span>
-                  <Show when={!p().device_name}>
-                    <span class="mono">{p().device_address}</span>
+                <div class="device-state">
+                  <Show when={stream().battery !== null}>
+                    <BatteryLevel percent={stream().battery!} />
+                    <span class="muted" aria-hidden="true">
+                      |
+                    </span>
                   </Show>
+                  <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
+                    <span class="dot" aria-hidden="true" />
+                    <span>
+                      {/* An error's text is in the panel above, with its fix */}
+                      {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
+                    </span>
+                  </div>
                 </div>
-                <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
-                  <span class="dot" aria-hidden="true" />
-                  <span>
-                    {/* An error's text is in the panel above, with its fix */}
-                    {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
-                  </span>
+                <div class="muted device-sub">
+                  <span>{t("ui.home.profile_line", p().name)}</span>
                 </div>
                 <CodecBadge />
-                <Show when={stream().battery !== null}>
-                  <BatteryLevel percent={stream().battery!} />
-                </Show>
               </div>
             </section>
 
@@ -190,7 +208,7 @@ export function Home() {
                 <div class="mini-body">
                   <CapturePicker profile={p()} />
                 </div>
-                <button type="button" class="link" onClick={() => navigate({ name: "profiles", arg: p().name })}>
+                <button type="button" class="link" onClick={() => navigate({ name: "devices" })}>
                   {t("ui.home.capture_more")}
                 </button>
               </section>

@@ -1,14 +1,15 @@
-// Choosing the capture source right where it shows (Home, the tray flyout):
-// System Loopback, a virtual device or a playing app, without opening the
-// profile editor. The choice is saved into the profile; a profile in use
-// starts again with it (profile.save in the core).
+// Choosing the capture source right where it shows (Home): System Loopback,
+// a virtual device or a playing app, without opening Audio Devices. The
+// source is the device's: the choice is saved into all the device's
+// profiles (issue #86); a profile in use starts again with it (profile.save
+// in the core).
 
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { t } from "../i18n";
 import type { AudioApp, AudioDevice, Profile } from "../ipc/types";
-import { appCaptureSupport, normalizeProfile, toneParams } from "../lib/profile";
+import { appCaptureSupport, deviceFields, normalizeProfile, profilesOf, toneParams } from "../lib/profile";
 import { Icon } from "./Icon";
 import type { IconName } from "./icons";
 import { CaptureSource, sourceText } from "./stream";
@@ -162,7 +163,18 @@ export function CapturePicker(props: { profile: Profile }) {
     setSaving(true);
     void app
       .run(async () => {
-        if (!same) await core.request("profile.save", { profile: next, original_name: name });
+        if (!same) {
+          await core.request("profile.save", { profile: next, original_name: name });
+          // The device's other profiles capture the same (LE Audio ones no app)
+          const fields = deviceFields(next);
+          for (const o of profilesOf(core.state.snap?.profiles ?? [], next.device_address)) {
+            if (o.name === name || (o.le_audio && fields.capture_mode === "app")) continue;
+            await core.request("profile.save", {
+              profile: normalizeProfile({ ...structuredClone(unwrap(o)), ...fields }),
+              original_name: o.name,
+            });
+          }
+        }
         // The tone gives way to the profile with the chosen source
         if (fromTone) await core.request("stream.start", { profile: name });
       })

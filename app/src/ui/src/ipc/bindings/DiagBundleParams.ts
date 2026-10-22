@@ -2,8 +2,9 @@
 
 export type DiagBundleParams = { 
 /**
- * Bluetooth addresses masked in the text files (default true; HCI
- * captures keep them)
+ * Bluetooth addresses (<addr-N>), device names (<device-N>), USB serial
+ * numbers and the Windows user name masked in the text files (default
+ * true; HCI captures keep the addresses)
  */
 mask?: boolean | null, 
 /**

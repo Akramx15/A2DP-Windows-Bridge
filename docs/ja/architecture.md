@@ -308,7 +308,7 @@ AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用�
 - ウィンドウの画面は **Vite** でビルドし（`app/src/ui` で `pnpm build`）、Tauri が `a2dpwb.exe` に埋め込みます
 - IPC プロトコルの TypeScript の型は Rust の型から生成します（`cargo test -p ipc export_bindings`）
 - 言語ファイル（`app/lang/*.json`）はウィンドウとコアのトレイメニューが使います
-- `installer/build-release.ps1` が NSIS インストーラー（Tauri のバンドラー）、ポータブル zip、更新用のマニフェストを作ります。[ビルド](building)を参照
+- `installer/build-release.ps1` がインストーラー（Inno Setup、`installer/A2DPWB.iss`）、ポータブル zip、更新用のマニフェストを作ります。[ビルド](building)を参照
 
 ## 重要な注意事項
 

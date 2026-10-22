@@ -14,7 +14,8 @@ channel_mode: string, blocks: number, subbands: number,
  */
 allocation: string, 
 /**
- * The bitpool the encoder uses
+ * The bitpool the encoder uses (under ABR: now; the core sends a new
+ * StreamInfo while it changes)
  */
 bitpool: number, 
 /**
@@ -25,4 +26,9 @@ config_bitpool: [number, number] | null,
 /**
  * What the device's SBC endpoint offers, when it said
  */
-device: SbcDeviceCaps | null, };
+device: SbcDeviceCaps | null, 
+/**
+ * SBC / SBC XQ under ABR: the range the bitpool moves in (floor,
+ * ceiling); None without ABR and from an older core
+ */
+abr_bitpool?: [number, number] | null, };

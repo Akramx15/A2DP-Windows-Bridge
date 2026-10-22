@@ -138,29 +138,60 @@ impl Recorder {
     }
 }
 
+/// L2CAP's fixed channel of the Security Manager (LE pairing)
+const CID_SMP: u16 = 0x0006;
+
 /// The packet with its pairing keys zeroed, for the flight recorder (its
-/// files go into diagnostic bundles that get posted): Link Key
-/// Notification, Link Key Request Reply, LE Long Term Key Request Reply, LE
-/// Enable Encryption. A manual capture keeps them.
+/// files go into diagnostic bundles that get posted). Classic: Link Key
+/// Notification, Link Key Request Reply. LE: LE Long Term Key Request
+/// Reply, LE Enable Encryption, LE Encrypt and its result, LE Generate DHKey
+/// Complete, and the SMP key distribution on the ACL link (Encryption
+/// Information = LTK, Master Identification, Identity Information = IRK,
+/// Signing Information = CSRK), which is plain at the HCI layer. A manual
+/// capture keeps them.
 fn without_keys(packet_type: u8, p: &[u8]) -> std::borrow::Cow<'_, [u8]> {
-    let key_at = match packet_type {
-        // Event code, length, address (6), key
-        HCI_EVENT_PACKET if p.first() == Some(&0x18) => Some(8),
+    // Offset and length of the secret
+    let key_at: Option<(usize, usize)> = match packet_type {
+        HCI_EVENT_PACKET => match p.first() {
+            // Link Key Notification: code, length, address (6), key
+            Some(0x18) => Some((8, 16)),
+            // LE Generate DHKey Complete: code, length, subevent 0x09, status, DHKey (32)
+            Some(0x3E) if p.get(2) == Some(&0x09) => Some((4, 32)),
+            // Command Complete of LE Encrypt: code, length, packets, opcode (2), status, data (16)
+            Some(0x0E) if p.len() >= 6 && le16(p, 3) == 0x2017 => Some((6, 16)),
+            _ => None,
+        },
         HCI_COMMAND_DATA_PACKET if p.len() >= 3 => match le16(p, 0) {
             // Opcode, length, address (6), key
-            0x040B => Some(9),
+            0x040B => Some((9, 16)),
+            // LE Encrypt: opcode, length, key (16), plaintext (16)
+            0x2017 => Some((3, 16)),
             // Opcode, length, handle (2), LTK
-            0x201A => Some(5),
+            0x201A => Some((5, 16)),
             // Opcode, length, handle (2), random (8), EDIV (2), LTK
-            0x2019 => Some(15),
+            0x2019 => Some((15, 16)),
+            _ => None,
+        },
+        // Handle (2), ACL length (2), L2CAP length (2), CID (2), SMP code,
+        // then the key (one fragment: an SMP PDU fits in an LE ACL packet)
+        HCI_ACL_DATA_PACKET if p.len() >= 9 && le16(p, 6) == CID_SMP && (p[1] >> 4) & 0x03 != 0x01 => match p[8] {
+            // Encryption Information: LTK
+            0x06 => Some((9, 16)),
+            // Master Identification: EDIV (2), Rand (8)
+            0x07 => Some((9, 10)),
+            // Identity Information: IRK
+            0x08 => Some((9, 16)),
+            // Signing Information: CSRK
+            0x09 => Some((9, 16)),
             _ => None,
         },
         _ => None,
     };
     match key_at {
-        Some(at) if p.len() >= at + 16 => {
+        Some((at, len)) if p.len() > at => {
             let mut v = p.to_vec();
-            v[at..at + 16].fill(0);
+            let end = (at + len).min(v.len());
+            v[at..end].fill(0);
             std::borrow::Cow::Owned(v)
         }
         _ => std::borrow::Cow::Borrowed(p),
@@ -629,6 +660,56 @@ mod tests {
         // The address stays
         assert_eq!(&recent[0].1[13 + 2..13 + 8], &[1, 2, 3, 4, 5, 6]);
         assert_eq!(without_keys(HCI_EVENT_PACKET, &[0x0E, 1, 0]).len(), 3);
+    }
+
+    #[test]
+    fn flight_recorder_drops_le_keys() {
+        let zeroed = |t: u8, p: &[u8], at: usize, len: usize| {
+            let out = without_keys(t, p);
+            assert_eq!(out.len(), p.len());
+            assert!(out[at..at + len].iter().all(|&b| b == 0), "{out:02X?}");
+            assert_eq!(&out[..at], &p[..at]);
+            assert_eq!(&out[at + len..], &p[at + len..]);
+        };
+        // SMP over ACL: Encryption Information (LTK), Master Identification,
+        // Identity Information (IRK), Signing Information (CSRK)
+        let smp = |code: u8, body: &[u8]| acl(CID_SMP, &[&[code], body].concat());
+        zeroed(HCI_ACL_DATA_PACKET, &smp(0x06, &[0x33; 16]), 9, 16);
+        zeroed(HCI_ACL_DATA_PACKET, &smp(0x07, &[0x44; 10]), 9, 10);
+        zeroed(HCI_ACL_DATA_PACKET, &smp(0x08, &[0x55; 16]), 9, 16);
+        zeroed(HCI_ACL_DATA_PACKET, &smp(0x09, &[0x66; 16]), 9, 16);
+        // Pairing Request, Public Key: no secret in them
+        for code in [0x01, 0x03, 0x04, 0x0C] {
+            let p = smp(code, &[0x77; 16]);
+            assert_eq!(without_keys(HCI_ACL_DATA_PACKET, &p), p);
+        }
+        // Another channel with the same code byte stays
+        let att = acl(0x0004, &[&[0x06u8][..], &[0x33; 16]].concat());
+        assert_eq!(without_keys(HCI_ACL_DATA_PACKET, &att), att);
+        // A continuation fragment is not an SMP PDU
+        let mut cont = smp(0x06, &[0x33; 16]);
+        cont[1] = 0x10;
+        assert_eq!(without_keys(HCI_ACL_DATA_PACKET, &cont), cont);
+        // LE Generate DHKey Complete, LE Encrypt and its Command Complete, LE
+        // LTK Request Reply, LE Start Encryption
+        zeroed(HCI_EVENT_PACKET, &[&[0x3E, 34, 0x09, 0x00], &[0x88; 32][..]].concat(), 4, 32);
+        zeroed(HCI_EVENT_PACKET, &[&[0x0E, 20, 1, 0x17, 0x20, 0x00], &[0x99; 16][..]].concat(), 6, 16);
+        zeroed(HCI_COMMAND_DATA_PACKET, &[&[0x17, 0x20, 32], &[0xAA; 16][..], &[0x01; 16][..]].concat(), 3, 16);
+        zeroed(HCI_COMMAND_DATA_PACKET, &[&[0x1A, 0x20, 18, 0x40, 0x00], &[0xBB; 16][..]].concat(), 5, 16);
+        zeroed(
+            HCI_COMMAND_DATA_PACKET,
+            &[&[0x19, 0x20, 28, 0x40, 0x00], &[0x02; 10][..], &[0xCC; 16][..]].concat(),
+            15,
+            16,
+        );
+        // Other LE events keep their payload (LE Connection Complete)
+        let conn = [0x3E, 19, 0x01, 0x00, 0x40, 0x00, 0x00, 0x00, 1, 2, 3, 4, 5, 6];
+        assert_eq!(without_keys(HCI_EVENT_PACKET, &conn), &conn[..]);
+        // A truncated packet: what is there is zeroed, nothing panics
+        let short = smp(0x06, &[0x33; 4]);
+        let mut expected = short.clone();
+        expected[9..].fill(0);
+        assert_eq!(without_keys(HCI_ACL_DATA_PACKET, &short), expected);
     }
 
     #[test]

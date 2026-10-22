@@ -14,8 +14,10 @@ bits: number, source_sample_rate: number, source_channels: number, source_bits: 
  */
 requested_codec: string | null, requested_in_use: boolean, 
 /**
- * Adaptive bit rate on (LDAC, LHDC V5): LHDC V5 then stays at 400
- * kbps or below whatever the quality
+ * Adaptive bit rate on (LDAC, LHDC V5, SBC and SBC XQ): LHDC V5 then
+ * stays at 400 kbps or below whatever the quality. bitrate_kbps (and
+ * SBC's details.sbc.bitpool, frame_bytes, frames_per_packet) follow
+ * it: the core sends a new StreamInfo while they change.
  */
 abr: boolean, 
 /**

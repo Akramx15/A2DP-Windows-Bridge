@@ -267,7 +267,7 @@ fn open_device(id: Option<&str>, options: &CaptureOptions) -> Result<Stream, Cap
         BUFFER_HNS / 10_000
     );
     tracing::info!(
-        "audio capture: loopback of \"{name}\": mix {} Hz {} ch {} bit, capturing {} Hz {:?}{}",
+        "audio capture: loopback of \u{201C}{name}\u{201D}: mix {} Hz {} ch {} bit, capturing {} Hz {:?}{}",
         mix.get_samplespersec(),
         mix.get_nchannels(),
         mix.get_bitspersample(),

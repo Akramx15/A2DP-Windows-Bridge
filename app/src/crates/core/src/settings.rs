@@ -61,6 +61,34 @@ fn default_true() -> bool {
 fn default_afh() -> String {
     "auto".into()
 }
+/// A pre-release build ("2.0.2-beta.5") offers pre-releases by default: its
+/// user is on the beta channel already
+fn default_prereleases() -> bool {
+    is_prerelease(env!("CARGO_PKG_VERSION"))
+}
+fn is_prerelease(version: &str) -> bool {
+    version.contains('-')
+}
+
+/// Per-device overrides of the global options; None follows the global
+/// value
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct DeviceOptions {
+    /// The headphones' buttons act as Windows media keys
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_keys: Option<bool>,
+    /// Remember the headphones' volume and set it again when they connect
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remember_volume: Option<bool>,
+}
+
+impl DeviceOptions {
+    /// No override set
+    pub fn is_empty(&self) -> bool {
+        self.media_keys.is_none() && self.remember_volume.is_none()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -82,7 +110,9 @@ pub struct Settings {
     pub check_updates_on_startup: bool,
     /// ISO date of the last automatic check
     pub last_update_check: String,
-    /// Also offer releases marked as pre-release on GitHub (beta channel)
+    /// Also offer releases marked as pre-release on GitHub (beta channel);
+    /// on by default in a pre-release build
+    #[serde(default = "default_prereleases")]
     pub include_prereleases: bool,
 
     /// The headphones' buttons act as Windows media keys
@@ -92,6 +122,9 @@ pub struct Settings {
     /// 0..127) and set it again when they connect
     pub remember_volume: bool,
     pub saved_volumes: BTreeMap<String, i32>,
+    /// Per-device overrides of media_keys and remember_volume (address in
+    /// capitals "AA:BB:..")
+    pub device_options: BTreeMap<String, DeviceOptions>,
 
     pub debug_mode: bool,
     /// Developer mode: overrides of the codec and media path (in force only
@@ -204,10 +237,11 @@ impl Default for Settings {
             minimize_to_tray: true,
             check_updates_on_startup: true,
             last_update_check: String::new(),
-            include_prereleases: false,
+            include_prereleases: default_prereleases(),
             media_keys: true,
             remember_volume: false,
             saved_volumes: BTreeMap::new(),
+            device_options: BTreeMap::new(),
             debug_mode: false,
             dev_overrides: codec::dev::DevOverrides::default(),
             dev_log: DevLog::default(),
@@ -228,6 +262,23 @@ impl Settings {
     /// The logging in force: developer mode's, else the defaults
     pub fn log(&self) -> DevLog {
         if self.debug_mode { self.dev_log.clamped() } else { DevLog::default() }
+    }
+
+    /// A device's override, if one (any case of the address)
+    fn device(&self, addr: &str) -> Option<&DeviceOptions> {
+        self.device_options.get(&addr.to_uppercase())
+    }
+
+    /// Whether a device's buttons act as media keys: its override, else the
+    /// global media_keys
+    pub fn media_keys_for(&self, addr: &str) -> bool {
+        self.device(addr).and_then(|o| o.media_keys).unwrap_or(self.media_keys)
+    }
+
+    /// Whether a device's volume is remembered: its override, else the
+    /// global remember_volume
+    pub fn remember_volume_for(&self, addr: &str) -> bool {
+        self.device(addr).and_then(|o| o.remember_volume).unwrap_or(self.remember_volume)
     }
 
     pub fn path(dir: &Path) -> PathBuf {
@@ -255,6 +306,11 @@ impl Settings {
                     );
                 }
                 s.theme = normalize_theme(&s.theme).into();
+                s.device_options = std::mem::take(&mut s.device_options)
+                    .into_iter()
+                    .filter(|(_, o)| !o.is_empty())
+                    .map(|(a, o)| (a.to_uppercase(), o))
+                    .collect();
                 tracing::debug!(
                     "settings: loaded {} (schema {}, {} unknown key(s))",
                     path.display(),
@@ -355,6 +411,68 @@ mod tests {
         // v1 wrote no schema; save() writes the current one (migrate.rs)
         assert_eq!(out["schema_version"], 1);
         assert!(out.get("max_media_payload").is_none());
+    }
+
+    #[test]
+    fn device_options_override_the_global_values() {
+        let mut s: Settings = serde_json::from_str(
+            r#"{"media_keys":true,"remember_volume":false,
+                "device_options":{"AA:BB:CC:DD:EE:FF":{"media_keys":false},"11:22:33:44:55:66":{"remember_volume":true}}}"#,
+        )
+        .unwrap();
+        assert!(!s.media_keys_for("aa:bb:cc:dd:ee:ff"));
+        assert!(!s.remember_volume_for("AA:BB:CC:DD:EE:FF"));
+        assert!(s.media_keys_for("11:22:33:44:55:66"));
+        assert!(s.remember_volume_for("11:22:33:44:55:66"));
+        // No override: the global values
+        assert!(s.media_keys_for("00:00:00:00:00:01"));
+        assert!(!s.remember_volume_for("00:00:00:00:00:01"));
+        s.media_keys = false;
+        s.remember_volume = true;
+        assert!(!s.media_keys_for("00:00:00:00:00:01"));
+        assert!(s.remember_volume_for("00:00:00:00:00:01"));
+        // Only its media keys are its own: the volume follows the global value
+        assert!(s.remember_volume_for("aa:bb:cc:dd:ee:ff"));
+        assert!(!s.media_keys_for("11:22:33:44:55:66"));
+    }
+
+    #[test]
+    fn device_options_round_trip() {
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert!(s.device_options.is_empty());
+        let mut s = Settings::default();
+        s.device_options
+            .insert("AA:BB:CC:DD:EE:FF".into(), DeviceOptions { media_keys: Some(false), remember_volume: None });
+        let out = serde_json::to_value(&s).unwrap();
+        assert_eq!(out["device_options"], serde_json::json!({"AA:BB:CC:DD:EE:FF": {"media_keys": false}}));
+        let back: Settings = serde_json::from_value(out).unwrap();
+        assert_eq!(back, s);
+
+        // load(): keys in capitals, empty overrides dropped
+        let dir = std::env::temp_dir().join(format!("a2dpwb-devopt-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            Settings::path(&dir),
+            r#"{"device_options":{"aa:bb:cc:dd:ee:ff":{"remember_volume":true},"11:22:33:44:55:66":{}}}"#,
+        )
+        .unwrap();
+        let loaded = Settings::load(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(loaded.device_options.len(), 1);
+        assert_eq!(loaded.device_options["AA:BB:CC:DD:EE:FF"].remember_volume, Some(true));
+    }
+
+    #[test]
+    fn prereleases_by_default_in_a_prerelease_build() {
+        assert!(is_prerelease("2.0.2-beta.5"));
+        assert!(!is_prerelease("2.0.2"));
+        let expected = env!("CARGO_PKG_VERSION").contains('-');
+        assert_eq!(Settings::default().include_prereleases, expected);
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.include_prereleases, expected);
+        // A saved choice stays
+        let s: Settings = serde_json::from_str(r#"{"include_prereleases":false}"#).unwrap();
+        assert!(!s.include_prereleases);
     }
 
     #[test]

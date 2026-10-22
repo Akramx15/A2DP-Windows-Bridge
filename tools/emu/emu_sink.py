@@ -262,6 +262,13 @@ async def main(args):
 
     def on_avdtp_connection(server):
         log.info('AVDTP connection')
+        for _ in range(args.extra_seps):
+            # A codec A2DPWB does not know, discovered before the real ones
+            server.add_sink(MediaCodecCapabilities(
+                media_type=AVDTP_AUDIO_MEDIA_TYPE,
+                media_codec_type=A2DP_NON_A2DP_CODEC_TYPE,
+                media_codec_information=VendorSpecificMediaCodecInformation(0x0000FFFE, 0x0001, bytes(1)),
+            ))
         for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities(not args.sbc_no_dual, args.sbc_max_bitpool,
                                                                          args.aptxad_r2)):
             if args.codecs and name not in args.codecs:
@@ -305,6 +312,8 @@ if __name__ == '__main__':
                         help='report the SEP of these codecs as in use by another device (multipoint)')
     parser.add_argument('--codecs', nargs='+', choices=CODEC_NAMES, metavar='CODEC',
                         help='offer only these codecs (default: all)')
+    parser.add_argument('--extra-seps', type=int, default=0, metavar='N',
+                        help='list N more sink SEPs (an unknown vendor codec) before the codecs')
     parser.add_argument('--sbc-no-dual', action='store_true',
                         help='SBC without dual channel (no SBC XQ)')
     parser.add_argument('--sbc-reject-dual', action='store_true',

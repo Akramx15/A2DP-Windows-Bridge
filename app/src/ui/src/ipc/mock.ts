@@ -79,6 +79,7 @@ const RTL: AdapterInfo = {
   restart_needed: false,
   le_audio: null,
   address: "00:1A:7D:DA:71:13",
+  bt_version: "5.1",
 };
 
 export function sampleProfile(over: Partial<Profile> = {}): Profile {
@@ -125,6 +126,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     include_prereleases: false,
     media_keys: true,
     remember_volume: true,
+    device_options: { "AC:80:0A:12:34:56": { media_keys: false, remember_volume: null } },
     developer_mode: false,
     dev_overrides: {
       rtp_marker: false,
@@ -401,6 +403,14 @@ const CODEC_INFO: Record<string, StreamInfo> = {
   auto: { codec: "LDAC", bitrate_kbps: 990, sample_rate: 48000, channels: 2, bits: 24, source_sample_rate: 48000, source_channels: 2, source_bits: 32, requested_codec: null, requested_in_use: false, abr: false, bitrate_capped: false, source: null, le: null, details: { ...LDAC_DETAILS, frame_samples: 128 } },
 };
 
+/** SBC under ABR: the bitpool moves within 19..53 (sbcAbrStep) */
+const SBC_ABR_INFO: StreamInfo = {
+  ...CODEC_INFO.sbc,
+  bitrate_kbps: 357,
+  abr: true,
+  details: { ...SBC_DETAILS, sbc: { ...SBC_DETAILS.sbc!, abr_bitpool: [19, 53] } },
+};
+
 /** An LE Audio stream as the core reports it: BAP preset 48_4_2 (GMAP
  *  low latency: 48_4_gr), one CIS per earbud of a set */
 function lc3Info(lowLatency: boolean, set: boolean): StreamInfo {
@@ -450,6 +460,8 @@ interface StreamTarget {
   profile: string | null;
   source: SourceInfo;
   sampleRate: number | null;
+  /** The profile's ABR (SBC / SBC XQ: the adaptive bitpool) */
+  abr?: boolean;
 }
 
 function sourceOf(mode: string, id: string, name: string): SourceInfo {
@@ -966,6 +978,7 @@ export class MockCore implements Transport {
       profile: name,
       source: sourceOf(profile.capture_mode, profile.capture_mode === "app" ? profile.app_exe : profile.audio_device_id, profile.audio_device_name),
       sampleRate: profile.sample_rate || null,
+      abr: profile.abr,
     });
     return null;
   }
@@ -989,6 +1002,7 @@ export class MockCore implements Transport {
       profile: null,
       source: sourceOf(mode, String(p.source_id ?? ""), String(p.source_name ?? "")),
       sampleRate: typeof p.sample_rate === "number" && p.sample_rate > 0 ? p.sample_rate : null,
+      abr: p.abr === true,
     });
     return null;
   }
@@ -1012,7 +1026,9 @@ export class MockCore implements Transport {
     const info = (): StreamInfo => {
       const base = t.le
         ? lc3Info(this.snap.settings.le_audio_low_latency, set)
-        : (CODEC_INFO[t.codec] ?? { ...CODEC_INFO.aac, codec: t.codec.toUpperCase() });
+        : t.codec === "sbc" && t.abr
+          ? SBC_ABR_INFO
+          : (CODEC_INFO[t.codec] ?? { ...CODEC_INFO.aac, codec: t.codec.toUpperCase() });
       // The app is not running in the mock: application capture waits for it
       const source = { ...t.source, waiting: t.source.kind === "app" };
       return { ...base, sample_rate: t.sampleRate ?? base.sample_rate, source };
@@ -1070,7 +1086,41 @@ export class MockCore implements Transport {
           : { state: "streaming", message: { key: "status.streaming", args: [] }, profile: name, info: info(), volume: 76, battery: 80 };
       this.log("info", "a2dpwb_core::service", "state Streaming: Streaming");
       this.emit({ kind: "stream", value: this.snap.stream });
+      if (this.snap.stream.info?.details?.sbc?.abr_bitpool) this.later(500, () => this.sbcAbrStep(0));
     });
+  }
+
+  /** SBC ABR in the mock: every 30 s a congested stretch takes the bitpool
+   *  down by 2 every 0.5 s for 3 s, then it climbs back by 1 a second (the
+   *  core's policy); the stream info follows as the core sends it */
+  private sbcAbrStep(step: number) {
+    const st = this.snap.stream;
+    const info = st.info;
+    const s = info?.details?.sbc;
+    if (st.state !== "streaming" || !info?.details || !s?.abr_bitpool) return;
+    const [lo, hi] = s.abr_bitpool;
+    const phase = step % 60;
+    const want = phase < 6 ? s.bitpool - 2 : phase % 2 === 0 ? s.bitpool + 1 : s.bitpool;
+    const bitpool = Math.min(hi, Math.max(lo, want));
+    if (bitpool !== s.bitpool) {
+      // Joint stereo, 16 blocks, 8 subbands (A2DP 12.9)
+      const frame = 4 + 8 + Math.ceil((8 + 16 * bitpool) / 8);
+      this.snap.stream = {
+        ...st,
+        info: {
+          ...info,
+          bitrate_kbps: Math.floor((8 * frame * info.sample_rate) / 128 / 1000),
+          details: {
+            ...info.details,
+            frame_bytes: frame,
+            frames_per_packet: Math.min(15, Math.floor((info.details.mtu - 1) / frame)),
+            sbc: { ...s, bitpool },
+          },
+        },
+      };
+      this.emit({ kind: "stream", value: this.snap.stream });
+    }
+    this.later(500, () => this.sbcAbrStep(step + 1));
   }
 
   /** A connection learnt what the device offers (and saved it, as the core does) */
@@ -1424,8 +1474,15 @@ export class MockCore implements Transport {
       `Profiles: ${s.profiles.map((p) => `${p.name} [${p.device_address}]`).join(", ")}`,
       `Config: ${s.config_dir}`,
     ].join("\n");
-    // AA:BB:CC:xx:xx:xx, as the core masks them
-    return mask ? text.replace(/\b([0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}):[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}\b/gi, "$1:xx:xx:xx") : text;
+    // <addr-N>, as the core masks them
+    const seen: string[] = [];
+    return mask
+      ? text.replace(/\b[0-9A-F]{2}(:[0-9A-F]{2}){5}\b/gi, (a) => {
+          const key = a.toUpperCase();
+          if (!seen.includes(key)) seen.push(key);
+          return `<addr-${seen.indexOf(key) + 1}>`;
+        })
+      : text;
   }
 }
 

@@ -2,11 +2,11 @@
 // WinUSB assign / restore, the chip for the firmware, and AFH.
 
 import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { type AppContext, useApp } from "../app/context";
+import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
-import { ErrorPanel, FirmwareDownload, WinusbDialog } from "../components/stream";
+import { ErrorPanel, FirmwareDownload, openFirmwareFolder, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
 import type { AdapterInfo, DriverKind, FirmwareFile } from "../ipc/types";
 import {
@@ -27,6 +27,14 @@ export function usableFirst(list: readonly AdapterInfo[]): AdapterInfo[] {
 
 const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 
+/** "Realtek RTL8761BU": the vendor and chip, without the VID:PID the line
+ *  below shows (issue #86); "MediaTek [unsupported]" keeps its mark */
+export function adapterTitle(a: Pick<AdapterInfo, "display_name" | "vendor">): string {
+  const name = a.display_name.replace(/\s*\(0x[0-9a-f]{4}:0x[0-9a-f]{4}\)/i, "").trim();
+  if (!a.vendor || name.toLowerCase().startsWith(a.vendor.toLowerCase())) return name;
+  return `${a.vendor} ${name}`;
+}
+
 export function driverText(d: DriverKind): { text: string; status: "good" | "warn" | "bad" } {
   switch (d) {
     case "winusb":
@@ -40,16 +48,14 @@ export function driverText(d: DriverKind): { text: string; status: "good" | "war
   }
 }
 
-/** Opens the settings folder (the shell creates it if it is not there yet) */
-function openConfigFolder(app: AppContext) {
-  return app.run(() => app.core.transport.openFolder(`${app.core.state.snap!.config_dir}\\firmware`));
-}
 
 export function Adapter() {
   const app = useApp();
   const { core } = app;
   const snap = () => core.state.snap!;
   const adapter = () => snap().adapter;
+  // The order shown; the chip section goes with its adapter in it
+  const sorted = () => usableFirst(adapter().adapters);
   const [dialog, setDialog] = createSignal<{ adapter: AdapterInfo; mode: "assign" | "restore" } | null>(null);
   const [listing, setListing] = createSignal(false);
   // The *_fw.bin files in the settings folder: chips the table lacks
@@ -80,9 +86,11 @@ export function Adapter() {
     window.addEventListener("focus", onFocus);
   });
   onCleanup(() => window.removeEventListener("focus", onFocus));
-  // #/adapter/afh (the receiver test links there): the AFH section in view
+  // #/adapter/afh (the receiver test links there): the AFH section in view;
+  // #/adapter/firmware (Home's firmware bar): the firmware part
   createEffect(() => {
-    if (app.route().arg === "afh") document.getElementById(AFH_SECTION)?.scrollIntoView?.({ block: "start" });
+    const id = { afh: AFH_SECTION, firmware: FIRMWARE_SECTION }[app.route().arg ?? ""];
+    if (id) document.getElementById(id)?.scrollIntoView?.({ block: "start" });
   });
 
   return (
@@ -113,18 +121,18 @@ export function Adapter() {
           </Banner>
         }
       >
-        <For each={usableFirst(adapter().adapters)}>
+        <For each={sorted()}>
           {(a, i) => {
             const drv = () => driverText(a.driver);
             const fw = () => adapterFirmwareTag(a, snap().settings);
             return (
-              <section class="card adapter-card" aria-label={a.display_name}>
+              <section class="card adapter-card" aria-label={adapterTitle(a)}>
                 <div class="adapter-head">
                   <Icon name="usb_stick" />
                   <div>
-                    <h2>{a.display_name}</h2>
+                    <h2>{adapterTitle(a)}</h2>
                     <span class="muted">
-                      {a.device_name} · {a.vendor} · <span class="mono">{hex4(a.vid)}:{hex4(a.pid)}</span>
+                      {a.device_name} · <span class="mono">{hex4(a.vid)}:{hex4(a.pid)}</span>
                     </span>
                   </div>
                 </div>
@@ -133,6 +141,13 @@ export function Adapter() {
                     <div>
                       <dt>{t("ui.adapter.address")}</dt>
                       <dd class="mono">{a.address}</dd>
+                    </div>
+                  </Show>
+                  {/* What the controller itself reports (HCI), not Windows' name */}
+                  <Show when={a.bt_version}>
+                    <div>
+                      <dt>{t("ui.adapter.bt_version")}</dt>
+                      <dd class="num">{a.bt_version}</dd>
                     </div>
                   </Show>
                   <div>
@@ -182,7 +197,7 @@ export function Adapter() {
                   </Show>
                 </div>
                 {/* The chip setting is one for all adapters: with the one it applies to */}
-                <Show when={i() === chipTargetIndex(adapter().adapters)}>
+                <Show when={i() === chipTargetIndex(sorted())}>
                   <ChipSection files={files()} onChanged={loadFiles} embedded />
                 </Show>
               </section>
@@ -241,7 +256,7 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
         </Show>
       </div>
       <div class="inline">
-        <Button icon="folder_open" kind="subtle" onClick={() => void openConfigFolder(app)}>
+        <Button icon="folder_open" kind="subtle" onClick={() => void openFirmwareFolder(app)}>
           {t("firmware.open_folder")}
         </Button>
         <Button icon="open" kind="subtle" onClick={() => app.core.transport.openUrl(LINKS.setupGuide)}>
@@ -252,8 +267,15 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
   );
   const headId = createUniqueId();
   return (
-    <Show when={props.embedded} fallback={<Section title={t("firmware.title")}>{body()}</Section>}>
-      <div class="adapter-firmware" role="group" aria-labelledby={headId}>
+    <Show
+      when={props.embedded}
+      fallback={
+        <Section id={FIRMWARE_SECTION} title={t("firmware.title")}>
+          {body()}
+        </Section>
+      }
+    >
+      <div id={FIRMWARE_SECTION} class="adapter-firmware" role="group" aria-labelledby={headId}>
         <h3 id={headId}>{t("firmware.title")}</h3>
         {body()}
       </div>
@@ -353,6 +375,7 @@ export function parseAfhChannels(s: string): string | null {
 }
 
 const AFH_SECTION = "adapter-afh";
+const FIRMWARE_SECTION = "adapter-firmware";
 
 function AfhSection() {
   const app = useApp();

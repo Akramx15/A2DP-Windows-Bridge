@@ -391,7 +391,7 @@ A2DPWB 自己的 12 位元組 RTP 標頭（BTstack 不另加）：酬載類型 9
 - IPC 通訊協定的 TypeScript 型別由 Rust 型別產生
   （`cargo test -p ipc export_bindings`）
 - 語言檔（`app/lang/*.json`）由視窗與核心的系統匣選單共同使用
-- `installer/build-release.ps1` 會產生 NSIS 安裝程式（Tauri 的 bundler）、
+- `installer/build-release.ps1` 會產生安裝程式（Inno Setup，`installer/A2DPWB.iss`）、
   免安裝版 zip 與更新程式資訊清單。請參閱 [建置](building)
 
 ## 重要注意事項

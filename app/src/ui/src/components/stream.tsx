@@ -6,6 +6,7 @@ import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-
 import { errorText, useApp, type AppContext } from "../app/context";
 import { t, tm } from "../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
+import { liveBitpool } from "../lib/codecdetails";
 import { copyText, khz, kbps, percentToVolume, volumePercent } from "../lib/format";
 import { bugReportUrl, firmwareUrl, type BugReport } from "../lib/links";
 import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState } from "../ipc/types";
@@ -156,12 +157,29 @@ export function BatteryLevel(props: { percent: number; class?: string }) {
   );
 }
 
-/** AAC runs a variable bit rate, the others an adaptive one */
-export const abrLabel = (info: StreamInfo) => (info.codec === "aac" ? "VBR" : "ABR");
+// The stream's codec is the core's display name ("AAC"), not a profile key
+const isAac = (info: StreamInfo) => info.codec === "AAC";
 
-/** What the codec runs with, in short: "990 kbps", "48 kHz", "24-bit", "ABR" */
+/** AAC runs a variable bit rate, the others an adaptive one */
+export const abrLabel = (info: StreamInfo) => (isAac(info) ? "VBR" : "ABR");
+
+/** What the ABR / VBR mark explains: AAC's VBR, SBC's adaptive bitpool, the others' ABR */
+export const abrTooltipKey = (info: StreamInfo) =>
+  isAac(info) ? "tooltip.vbr" : liveBitpool(info) ? "tooltip.sbc_abr" : "tooltip.abr";
+
+/** SBC under ABR: "bitpool 41/53" (now / the highest it goes back to) */
+export function bitpoolText(info: StreamInfo): string | null {
+  const bp = liveBitpool(info);
+  return bp ? t("ui.codec.bitpool_live", bp.now, bp.max) : null;
+}
+
+/** What the codec runs with, in short: "990 kbps", "48 kHz", "24-bit",
+ *  "ABR"; SBC under ABR "328 kbps", "bitpool 53/53", ... as it moves */
 export function codecDetails(info: StreamInfo): string[] {
-  const out = [`${info.bitrate_kbps} kbps`, `${khz(info.sample_rate)} kHz`];
+  const out = [`${info.bitrate_kbps} kbps`];
+  const bp = bitpoolText(info);
+  if (bp) out.push(bp);
+  out.push(`${khz(info.sample_rate)} kHz`);
   if (info.bits > 0) out.push(t(`bitdepth.${info.bits}`));
   if (info.abr) out.push(abrLabel(info));
   return out;
@@ -196,16 +214,24 @@ export function CodecBadge(props: { compact?: boolean }) {
           <span class="num" title={bitrateNote(i())}>
             {i().bitrate_kbps} kbps
           </span>
-          <Show when={i().abr}>
-            <span class="muted" title={t(i().codec === "aac" ? "tooltip.vbr" : "tooltip.abr")}>
-              {abrLabel(i())}
-            </span>
+          <Show when={liveBitpool(i())}>
+            {(bp) => (
+              <span class="num live-bitpool" title={t("tooltip.sbc_bitpool_live", bp().min, bp().max)}>
+                {bitpoolText(i())}
+              </span>
+            )}
           </Show>
           <Show when={!props.compact}>
             <span class="num">{khz(i().sample_rate)} kHz</span>
             <Show when={i().bits > 0}>
               <span class="num">{t(`bitdepth.${i().bits}`)}</span>
             </Show>
+          </Show>
+          {/* Last, as in the sidebar's line (issue #86) */}
+          <Show when={i().abr}>
+            <span class="muted" title={t(abrTooltipKey(i()))}>
+              {abrLabel(i())}
+            </span>
           </Show>
         </span>
       )}
@@ -372,12 +398,12 @@ export function useFixes() {
     }
     if (key === "firmware.rom_running") {
       // The Adapter screen names the files and opens the download page
-      return { label: t("ui.nav.adapter"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
+      return { label: t("ui.nav.adapter"), icon: "usb_stick", run: () => navigate({ name: "adapter", arg: "firmware" }) };
     }
     if (code === "adapter.firmware_missing" || key.startsWith("firmware.")) {
       // The Adapter screen downloads the files where the core can fetch them
       if (snap.adapter.adapters.some((a) => a.firmware_present === false && a.firmware_download)) {
-        return { label: t("ui.home.firmware_fix"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
+        return { label: t("ui.home.firmware_fix"), icon: "usb_stick", run: () => navigate({ name: "adapter", arg: "firmware" }) };
       }
       const vendor = snap.adapter.adapters[0]?.vendor ?? "";
       return { label: t("firmware.open_download_page"), icon: "open", run: () => core.transport.openUrl(firmwareUrl(vendor)) };
@@ -463,7 +489,9 @@ export function isAppFault(key: string, code?: string | null): boolean {
 }
 
 /** A bug report's URL with what the state tells (the issue form's fields)
- *  around the diagnostic info */
+ *  around the diagnostic info. Not the device's name: it is often the
+ *  owner's ("Taro's AirPods") and the issue is public, so the headphones
+ *  field stays for the user to fill in with the model. */
 export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugReport> = {}): string {
   const profile = currentProfile(snap);
   const adapter = snap.adapter.adapters.find((a) => a.driver === "winusb") ?? snap.adapter.adapters[0];
@@ -472,7 +500,6 @@ export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugRep
     version: snap.update.current_version,
     info,
     adapter: adapter && `${adapter.display_name} (${hex(adapter.vid)}:${hex(adapter.pid)})`,
-    headphones: profile?.device_name || undefined,
     codec: profile?.codec,
     captureMode: profile?.capture_mode,
     ...extra,
@@ -634,6 +661,11 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
       <p class="muted">{t("ui.adapter.uac_note")}</p>
     </Dialog>
   );
+}
+
+/** Opens the firmware folder (the shell creates it if it is not there yet) */
+export function openFirmwareFolder(app: AppContext) {
+  return app.run(() => app.core.transport.openFolder(`${app.core.state.snap!.config_dir}\\firmware`));
 }
 
 /** Fetches an adapter's Realtek files from linux-firmware once the user

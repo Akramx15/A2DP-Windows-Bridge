@@ -127,6 +127,7 @@ fn core_codec_details(d: ipc::CodecDetails) -> a2dpwb_core::CodecDetails {
             allocation: s.allocation,
             bitpool: s.bitpool,
             config_bitpool: s.config_bitpool,
+            abr_bitpool: s.abr_bitpool,
             device: s.device.map(|c| a2dpwb_core::SbcDeviceCaps {
                 sample_rates: c.sample_rates,
                 channel_modes: c.channel_modes,
@@ -192,6 +193,7 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
     let stats = state.service.stats();
     let capture = state.service.capture();
     let capture_path = capture.path();
+    let adapter_addresses = adapter_addresses(&s.adapter.adapters);
     diag::diag_text(&diag::DiagInput {
         env: diag::Environment::current(),
         settings: &settings,
@@ -207,9 +209,15 @@ pub(crate) fn diag_text(state: &state::CoreState, mask: bool) -> String {
         log: &log,
         clock: hub.clock(),
         mask,
+        adapter_addresses: &adapter_addresses,
         le_audio: le_audio.as_ref(),
         logging: Some(&logging_line(&state.config_dir())),
     })
+}
+
+/// The adapters' own addresses, as remembered (`<adapter>` in masked text)
+pub(crate) fn adapter_addresses(adapters: &[ipc::AdapterInfo]) -> Vec<String> {
+    adapters.iter().filter_map(|a| a.address.clone()).collect()
 }
 
 /// "Logging" of the diagnostic info: verbose logging, and the crash
@@ -325,6 +333,7 @@ mod tests {
             restart_needed: false,
             le_audio: None,
             address: None,
+            bt_version: None,
         };
         let csr = ipc::AdapterInfo { display_name: "CSR8510".into(), firmware_present: None, ..a.clone() };
         let page = ipc::AdapterInfo { firmware_invalid: Some("rtl8761bu_fw.bin".into()), ..a.clone() };

@@ -343,7 +343,8 @@ describe("mock core", () => {
     expect(line?.session).toBe(flow.session);
 
     const info = await core.request("diag.info");
-    expect(info.text).toContain("AC:80:0A:xx:xx:xx");
+    expect(info.text).toContain("<addr-1>");
+    expect(info.text).not.toContain("AC:80:0A");
     expect((await core.request("diag.info", { mask: false })).text).toContain("AC:80:0A:12:34:56");
 
     await expect(core.request("app.check_update")).rejects.toMatchObject({ code: "update.failed" });

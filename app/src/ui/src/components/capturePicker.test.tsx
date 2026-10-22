@@ -77,16 +77,14 @@ describe("in place", () => {
     });
   });
 
-  it("the flyout offers it too", async () => {
-    const { calls } = start("", { window: "flyout" });
-    const select = await screen.findByRole("combobox", { name: "Capture Source" });
-    await screen.findByRole("option", { name: "Spotify" });
-    fireEvent.change(select, { target: { value: "app:spotify.exe" } });
-    await waitFor(() => expect(saved(calls)[0]).toMatchObject({ capture_mode: "app", app_exe: "Spotify.exe" }));
+  it("is not in the flyout, kept simple (issue #86)", async () => {
+    start("", { window: "flyout" });
+    await screen.findByRole("button", { name: /Open app/ });
+    expect(screen.queryByRole("combobox", { name: "Capture Source" })).toBeNull();
   });
 
   it("shows the test tone in the picker; a source chosen then ends it and starts the profile", async () => {
-    const { mock, calls } = start("", { window: "flyout" });
+    const { mock, calls } = start("#/home");
     const select = await screen.findByRole("combobox", { name: "Capture Source" });
     await screen.findByRole("option", { name: "Spotify" });
     await mock.call("stream.start_custom", { device: "AC:80:0A:12:34:56", codec: "sbc", quality: "hq", source: "tone" });
@@ -100,7 +98,7 @@ describe("in place", () => {
   });
 
   it("choosing the profile's own source during the tone only starts the profile", async () => {
-    const { mock, calls } = start("", { window: "flyout" });
+    const { mock, calls } = start("#/home");
     const select = await screen.findByRole("combobox", { name: "Capture Source" });
     await mock.call("stream.start_custom", { device: "AC:80:0A:12:34:56", codec: "sbc", quality: "hq", source: "tone" });
     await waitFor(() => expect((select as HTMLSelectElement).value).toBe("tone"));

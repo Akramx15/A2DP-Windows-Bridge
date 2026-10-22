@@ -129,8 +129,13 @@ describe("Home", () => {
     const title = await screen.findByText("Firmware not found");
     const bar = title.closest(".banner") as HTMLElement;
     expect(bar).toHaveTextContent("rtl8761bu_fw.bin, rtl8761bu_config.bin");
+    // The Adapter screen's firmware actions are in the bar as well (issue #81)
+    expect(within(bar).getByRole("button", { name: t("firmware.download") })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: t("firmware.open_folder") })).toBeInTheDocument();
     fireEvent.click(within(bar).getByRole("button", { name: t("ui.home.firmware_fix") }));
     expect(await screen.findByRole("heading", { level: 1, name: "Adapters" })).toBeInTheDocument();
+    expect(location.hash).toBe("#/adapter/firmware");
+    expect(document.getElementById("adapter-firmware")).toBeInTheDocument();
   });
 
   it("copies the error with the diagnostic log", async () => {
@@ -201,13 +206,13 @@ describe("Home", () => {
 });
 
 describe("flyout", () => {
-  it("shows the capture source and the capture sign", async () => {
+  it("shows the capture sign (the capture source is chosen in the main window)", async () => {
     const { mock } = start("", { window: "flyout" });
     await screen.findByRole("button", { name: "Connect" });
+    expect(screen.queryByRole("button", { name: "HCI capture running" })).toBeNull();
     await mock.call("diag.capture_start");
-    await mock.call("stream.start_custom", { device: "AC:80:0A:12:34:56", codec: "sbc", quality: "hq", source: "tone" });
-    expect(await screen.findByText("Test tone")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "HCI capture running" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "HCI capture running" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Capture Source" })).toBeNull();
   });
 });
 

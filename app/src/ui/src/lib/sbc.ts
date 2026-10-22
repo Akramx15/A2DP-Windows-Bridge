@@ -102,9 +102,14 @@ export function sbcSetup(p: SbcFields, rate: number, caps: SbcCaps | null): SbcS
   return { blocks, subbands, allocation, mode, bitpool, frameBytes, kbps: sbcKbps(frameBytes, rate, blocks, subbands) };
 }
 
-/** The rates the bit rate is shown at: the profile's, or both when it is Auto */
-export function sbcRates(p: Pick<Profile, "sample_rate">, caps: SbcCaps | null): number[] {
-  if (p.sample_rate === 44100 || p.sample_rate === 48000) return [p.sample_rate];
-  const rates = [44100, 48000].filter((r) => !caps || caps.sample_rates.includes(r));
-  return rates.length ? rates : [44100, 48000];
+/** The rate the bit rate is shown at: the profile's, or on Auto the highest
+ *  the device takes (one figure is enough, issue #86) */
+export function sbcRate(p: Pick<Profile, "sample_rate">, caps: SbcCaps | null): number {
+  if (p.sample_rate === 44100 || p.sample_rate === 48000) return p.sample_rate;
+  return !caps || caps.sample_rates.includes(48000) || !caps.sample_rates.includes(44100) ? 48000 : 44100;
+}
+
+/** "≈ 552 kbps": the bit rate SBC / SBC XQ streams with at that rate */
+export function sbcKbpsText(p: SbcFields, caps: SbcCaps | null): string {
+  return `≈ ${sbcSetup(p, sbcRate(p, caps), caps).kbps} kbps`;
 }

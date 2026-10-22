@@ -317,7 +317,7 @@ pub struct EncoderConfig {
     pub mtu: u16,
     /// 16 or 24: LDAC, aptX HD and LHDC V5 take 24-bit PCM (as I32)
     pub bits_per_sample: u8,
-    /// Adaptive bit rate (LDAC, LHDC V5)
+    /// Adaptive bit rate (LDAC, LHDC V5, SBC and SBC XQ: the bitpool)
     pub abr: bool,
     pub peer: PeerParams,
 }
@@ -326,10 +326,14 @@ pub struct EncoderConfig {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EncoderDetails {
     /// Bytes of every codec frame, when they all have the same length
+    /// (SBC under ABR: of the frames encoded now)
     pub frame_bytes: Option<u32>,
     /// SBC, SBC XQ and FastStream: the frame setup, with the bitpool the
     /// encoder uses
     pub sbc: Option<sbc::SbcConfig>,
+    /// SBC, SBC XQ under ABR: the range the bitpool moves in (floor,
+    /// ceiling)
+    pub sbc_abr: Option<(u8, u8)>,
 }
 
 /// One [`Encoder::encode`] call's output

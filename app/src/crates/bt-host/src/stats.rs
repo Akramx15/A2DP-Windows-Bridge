@@ -37,6 +37,35 @@ pub struct LinkStats {
     pub radio: Mutex<LinkRadio>,
     /// Longest waits along the stream path (core's stream health log)
     pub timing: StreamTiming,
+    /// What the encoder runs at now, as the encode thread last saw it under
+    /// ABR ([`LiveCodec::pack`]; 0 without ABR or an encode thread)
+    pub live_codec: AtomicU64,
+}
+
+/// What an ABR encoder runs at now: published by the encode thread, put
+/// into the stream info by core while it changes
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LiveCodec {
+    pub bitrate_kbps: u32,
+    /// SBC / SBC XQ: the bitpool of the frames encoded now (0 = not SBC)
+    pub bitpool: u8,
+    /// Bytes of the codec frames encoded now, when they all have the same
+    /// length (0 = not)
+    pub frame_bytes: u16,
+}
+
+impl LiveCodec {
+    /// One word, so that a reader never sees half an update; 0 = nothing
+    /// (a bit rate of 0 is not reported)
+    pub fn pack(self) -> u64 {
+        u64::from(self.bitrate_kbps.min(0xFF_FFFF)) << 24 | u64::from(self.bitpool) << 16 | u64::from(self.frame_bytes)
+    }
+
+    pub fn unpack(v: u64) -> Option<LiveCodec> {
+        let c =
+            LiveCodec { bitrate_kbps: (v >> 24) as u32 & 0xFF_FFFF, bitpool: (v >> 16) as u8, frame_bytes: v as u16 };
+        (c.bitrate_kbps > 0).then_some(c)
+    }
 }
 
 /// The largest value recorded since the last [`MaxGauge::take`]
@@ -95,6 +124,17 @@ impl LinkStats {
         self.radio.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
+    /// What an ABR encoder runs at now (None without ABR)
+    pub fn live_codec(&self) -> Option<LiveCodec> {
+        LiveCodec::unpack(self.live_codec.load(Ordering::Acquire))
+    }
+
+    /// The encode thread: what its ABR encoder runs at now (None: nothing
+    /// to report, e.g. the thread ended)
+    pub fn set_live_codec(&self, c: Option<LiveCodec>) {
+        self.live_codec.store(c.map_or(0, LiveCodec::pack), Ordering::Release);
+    }
+
     pub(crate) fn with_radio(&self, f: impl FnOnce(&mut LinkRadio)) {
         f(&mut self.radio.lock().unwrap_or_else(|e| e.into_inner()));
     }
@@ -111,4 +151,24 @@ pub struct LinkRadio {
     pub afh_avoided: String,
     /// Channels the link hops over (Read AFH Channel Map)
     pub afh_in_use: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_codec_round_trip() {
+        let s = LinkStats::default();
+        assert_eq!(s.live_codec(), None);
+        let c = LiveCodec { bitrate_kbps: 328, bitpool: 41, frame_bytes: 95 };
+        s.set_live_codec(Some(c));
+        assert_eq!(s.live_codec(), Some(c));
+        let big = LiveCodec { bitrate_kbps: 1000, bitpool: 255, frame_bytes: u16::MAX };
+        assert_eq!(LiveCodec::unpack(big.pack()), Some(big));
+        // No bit rate is nothing
+        assert_eq!(LiveCodec::unpack(LiveCodec { bitpool: 5, ..Default::default() }.pack()), None);
+        s.set_live_codec(None);
+        assert_eq!(s.live_codec(), None);
+    }
 }

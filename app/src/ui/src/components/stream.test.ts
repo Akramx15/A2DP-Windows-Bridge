@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
-import type { LinkSample } from "../ipc/types";
-import { linkQuality } from "./stream";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLanguage } from "../i18n";
+import type { CodecDetails, LinkSample, StreamInfo } from "../ipc/types";
+import { abrTooltipKey, codecDetails, linkQuality } from "./stream";
 
 const sample = (i: number, over: Partial<LinkSample> = {}): LinkSample => ({
   time_ms: i * 250,
@@ -40,5 +41,67 @@ describe("link quality", () => {
   it("has no data when nothing streams", () => {
     expect(linkQuality([])).toBeNull();
     expect(linkQuality([sample(0, { bytes_per_second: 0, rssi: null })])).toBeNull();
+  });
+});
+
+const SBC_ABR: CodecDetails = {
+  mtu: 1011,
+  rtp: true,
+  media_header: 1,
+  frame_samples: 128,
+  frame_bytes: 95,
+  frames_per_packet: 10,
+  sbc: {
+    channel_mode: "joint_stereo",
+    blocks: 16,
+    subbands: 8,
+    allocation: "loudness",
+    bitpool: 41,
+    config_bitpool: [2, 53],
+    device: null,
+    abr_bitpool: [19, 53],
+  },
+  aac: null,
+};
+
+const SBC_INFO: StreamInfo = {
+  codec: "SBC",
+  bitrate_kbps: 285,
+  sample_rate: 48000,
+  channels: 2,
+  bits: 16,
+  source_sample_rate: 48000,
+  source_channels: 2,
+  source_bits: 32,
+  requested_codec: null,
+  requested_in_use: false,
+  abr: true,
+  bitrate_capped: false,
+  source: null,
+  le: null,
+  details: SBC_ABR,
+};
+
+describe("codec summary", () => {
+  beforeAll(() => setLanguage("en"));
+
+  it("shows SBC's bitpool now and its ceiling under ABR", () => {
+    expect(codecDetails(SBC_INFO)).toEqual(["285 kbps", "bitpool 41/53", "48 kHz", "16-bit", "ABR"]);
+    expect(codecDetails(SBC_INFO).join(" | ")).toBe("285 kbps | bitpool 41/53 | 48 kHz | 16-bit | ABR");
+    expect(abrTooltipKey(SBC_INFO)).toBe("tooltip.sbc_abr");
+  });
+
+  it("shows no bitpool without ABR, nor for other codecs", () => {
+    const fixed: StreamInfo = { ...SBC_INFO, abr: false, details: { ...SBC_ABR, sbc: { ...SBC_ABR.sbc!, abr_bitpool: null } } };
+    expect(codecDetails(fixed)).toEqual(["285 kbps", "48 kHz", "16-bit"]);
+    const ldac: StreamInfo = { ...SBC_INFO, codec: "LDAC", bitrate_kbps: 660, bits: 24, details: null };
+    expect(codecDetails(ldac)).toEqual(["660 kbps", "48 kHz", "24-bit", "ABR"]);
+    expect(abrTooltipKey(ldac)).toBe("tooltip.abr");
+  });
+
+  it("calls AAC's flag VBR (the core names the codec \"AAC\")", () => {
+    const aac: StreamInfo = { ...SBC_INFO, codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, details: null };
+    expect(codecDetails(aac)).toEqual(["256 kbps", "44.1 kHz", "16-bit", "VBR"]);
+    expect(abrTooltipKey(aac)).toBe("tooltip.vbr");
   });
 });

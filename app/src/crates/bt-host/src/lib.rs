@@ -40,7 +40,7 @@ pub use le::{
 };
 pub use media::{MediaPacket, MediaSink};
 use shared::{Shared, Wait};
-pub use stats::{LinkRadio, LinkStats, MaxGauge, StreamTiming};
+pub use stats::{LinkRadio, LinkStats, LiveCodec, MaxGauge, StreamTiming};
 
 const INIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// No HCI event at all this long after power on: the controller does not
@@ -587,6 +587,12 @@ impl BtHost {
 
     pub fn local_address(&self) -> Option<String> {
         self.shared.lock().local_address.clone()
+    }
+
+    /// The HCI version the controller reports (the Bluetooth core version:
+    /// 12 = 5.3), once it has answered Read Local Version
+    pub fn hci_version(&self) -> Option<u8> {
+        self.shared.lock().hci_version
     }
 
     /// The controller has LE Audio's isochronous channels (its supported

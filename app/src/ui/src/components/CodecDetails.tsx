@@ -13,6 +13,7 @@ import {
   chips,
   frameMs,
   khz,
+  liveBitpool,
   packetFill,
   SBC_ALLOCATIONS,
   SBC_BLOCKS,
@@ -66,17 +67,21 @@ function BitpoolBarView(props: { sbc: SbcDetails }) {
     const p: { cls: string; text: string }[] = [];
     if (s.device) p.push({ cls: "device", text: t("ui.diag.cd_bitpool_device", s.device.min_bitpool, s.device.max_bitpool) });
     if (s.config_bitpool) p.push({ cls: "config", text: t("ui.diag.cd_bitpool_config", s.config_bitpool[0], s.config_bitpool[1]) });
+    if (s.abr_bitpool) p.push({ cls: "abr", text: t("ui.diag.cd_bitpool_abr_range", s.abr_bitpool[0], s.abr_bitpool[1]) });
     p.push({ cls: "used", text: t("ui.diag.cd_bitpool_used", s.bitpool) });
     return p;
   };
   return (
-    <div class="bitpool">
+    <div class="bitpool" classList={{ live: !!props.sbc.abr_bitpool }}>
       <div class="bitpool-track" role="img" aria-label={parts().map((p) => p.text).join(", ")}>
         <Show when={bar().device}>
           {(r) => <span class="bitpool-range device" style={{ left: `${r().from}%`, width: `${r().width}%` }} />}
         </Show>
         <Show when={bar().config}>
           {(r) => <span class="bitpool-range config" style={{ left: `${r().from}%`, width: `${r().width}%` }} />}
+        </Show>
+        <Show when={bar().abr}>
+          {(r) => <span class="bitpool-range abr" style={{ left: `${r().from}%`, width: `${r().width}%` }} />}
         </Show>
         <span class="bitpool-used" style={{ left: `${bar().used}%` }} />
       </div>
@@ -100,9 +105,14 @@ function BitpoolBarView(props: { sbc: SbcDetails }) {
 
 function SbcRows(props: { sbc: SbcDetails; info: StreamInfo }) {
   const dev = () => props.sbc.device;
+  // Under ABR: "41 (ABR 19–53)", updating as it moves
+  const bitpool = () => {
+    const bp = liveBitpool(props.info);
+    return bp ? t("ui.diag.cd_bitpool_abr", bp.now, bp.min, bp.max) : String(props.sbc.bitpool);
+  };
   return (
     <>
-      <Row label={t("ui.diag.cd_bitpool")} value={String(props.sbc.bitpool)}>
+      <Row label={t("ui.diag.cd_bitpool")} value={bitpool()}>
         <BitpoolBarView sbc={props.sbc} />
       </Row>
       <ChipRow label={t("ui.diag.cd_rate")} items={chips(SBC_RATES, dev()?.sample_rates, props.info.sample_rate)} text={khz} />
@@ -198,6 +208,9 @@ export function CodecDetailsCard(props: { info: StreamInfo; details: CodecDetail
               <SbcRows sbc={s()} info={props.info} />
             </dl>
             <p class="hint">{t("ui.diag.cd_bitpool_help")}</p>
+            <Show when={s().abr_bitpool}>
+              <p class="hint">{t("ui.diag.cd_bitpool_abr_help")}</p>
+            </Show>
           </>
         )}
       </Show>

@@ -68,7 +68,7 @@ A2DP-Windows-Bridge/
 │   ├── lang/               Lokalisierung (en.json ist die Vorlage; tools/check_lang.py prüft die übrigen)
 │   └── resources/          Symbol und Manifest
 ├── Cargo.toml              Cargo-Workspace
-├── installer/              Release-Skript, NSIS-Hooks, Hinweise zum Updater (installer/README.md)
+├── installer/              Release-Skript, Inno-Setup-Skript, Hinweise zum Updater (installer/README.md)
 ├── compat/                 MSVC-Kompatibilitätsheader für den AOSP-Code
 ├── docs/                   Dokumentation (diese Website) und das Designdokument (v2-design.md)
 ├── extern/                 C-Bibliotheken von Drittanbietern (git submodules)
@@ -99,7 +99,7 @@ python tools/check_lang.py
 pwsh installer/build-release.ps1 -Arch x64
 ```
 
-schreibt das Installationsprogramm (`A2DPWB-<version>-win64-setup.exe`), das portable ZIP und das Updater-Manifest nach `target/dist`. Die Signierung der In-App-Updates und die übrigen Details stehen in `installer/README.md`.
+schreibt das Installationsprogramm (`A2DPWB-<version>-win64-setup.exe`), das portable ZIP und das Updater-Manifest nach `target/dist`. Dafür wird Inno Setup 6.5 oder neuer benötigt (`winget install JRSoftware.InnoSetup`). Die Signierung der In-App-Updates und die übrigen Details stehen in `installer/README.md`.
 
 ## Testen ohne Hardware (tools/emu) {#emu}
 

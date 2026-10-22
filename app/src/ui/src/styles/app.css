@@ -790,7 +790,8 @@ option {
 
 .shell {
   display: grid;
-  grid-template-columns: 13.5rem 1fr;
+  /* Wide enough for a long device name and the codec line unwrapped (issue #86) */
+  grid-template-columns: 16.5rem 1fr;
   height: 100%;
 }
 .nav {
@@ -896,14 +897,23 @@ option {
 .status-pill-state {
   color: var(--st-text);
 }
+.status-pill-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+}
 .status-pill-codec {
   display: flex;
   align-items: center;
   gap: var(--s1);
-  margin-top: var(--s1);
+  min-width: 0;
+  white-space: nowrap;
 }
 .status-pill-details {
   color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Collapsed to icons: narrow windows, or by the toggle */
@@ -1035,6 +1045,14 @@ option {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s3);
+}
+/* Battery | state */
+.device-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
 }
 .status-line {
   display: inline-flex;
@@ -1353,6 +1371,12 @@ option {
   min-width: 0;
   flex: 1;
 }
+.profile-card-device {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
 .profile-card-meta {
   display: flex;
   gap: var(--s2);
@@ -1399,6 +1423,38 @@ option {
   justify-content: space-between;
   align-items: center;
   gap: var(--s3);
+}
+/* Audio Devices: each saved device with its settings, then the add card */
+.device-list.saved-devices {
+  max-height: none;
+  overflow: visible;
+  border: none;
+  gap: var(--s3);
+}
+.device-entry {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.device-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4) var(--s4);
+  border-top: 1px solid var(--border);
+}
+.device-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4);
+}
+/* A worked-out value where a choice would be (the SBC bit rate) */
+.input.readonly {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  color: var(--text);
 }
 .device-list,
 .choice-list {
@@ -2085,6 +2141,27 @@ option {
 .bitpool-swatch.used {
   background: var(--accent-1);
 }
+/* SBC ABR: the range the bitpool moves in, drawn around the track */
+.bitpool-range.abr {
+  top: -0.25rem;
+  bottom: -0.25rem;
+  border: 2px dashed var(--accent-1);
+  border-radius: 4px;
+  background: transparent;
+}
+.bitpool-swatch.abr {
+  box-sizing: border-box;
+  border: 2px dashed var(--accent-1);
+}
+/* Under ABR the mark moves with the bitpool */
+.bitpool.live .bitpool-used {
+  transition: left 0.4s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bitpool.live .bitpool-used {
+    transition: none;
+  }
+}
 .bitpool-scale {
   display: flex;
   justify-content: space-between;
@@ -2140,6 +2217,11 @@ option {
   .bitpool-used,
   .bitpool-swatch.used {
     background: Highlight;
+  }
+  .bitpool-range.abr,
+  .bitpool-swatch.abr {
+    border-color: Highlight;
+    background: transparent;
   }
 }
 @media (forced-colors: active) {
@@ -2364,6 +2446,23 @@ html.win-flyout body {
   gap: var(--s3);
 }
 .fly-title {
+  flex: 1;
+  min-width: 0;
+}
+.fly-state {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+  font-size: var(--fs-12);
+}
+.fly-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+.fly-profile > :last-child {
   flex: 1;
   min-width: 0;
 }

@@ -71,7 +71,7 @@ impl std::fmt::Display for SourceRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SourceRequest::SystemLoopback => f.write_str("system output"),
-            SourceRequest::VirtualDevice { name, .. } => write!(f, "virtual device \"{name}\""),
+            SourceRequest::VirtualDevice { name, .. } => write!(f, "virtual device {}", crate::diag::quoted(name)),
             SourceRequest::Application { exe } => write!(f, "app {exe}"),
             SourceRequest::TestTone => f.write_str("test tone"),
         }
@@ -104,7 +104,7 @@ pub struct StreamInfo {
     pub requested_codec: Option<String>,
     /// ... maybe because another device streams on its endpoint
     pub requested_in_use: bool,
-    /// Adaptive bit rate on (LDAC, LHDC V5)
+    /// Adaptive bit rate on (LDAC, LHDC V5, SBC and SBC XQ)
     pub abr: bool,
     /// The device's maximum bit rate lowered the profile's (LHDC V5)
     pub bitrate_capped: bool,
@@ -153,6 +153,9 @@ pub struct SbcDetails {
     pub config_bitpool: Option<(u32, u32)>,
     /// What the device's SBC endpoint offers, when it said
     pub device: Option<SbcDeviceCaps>,
+    /// SBC / SBC XQ under ABR: the range the bitpool moves in (floor,
+    /// ceiling); `bitpool` is then the one in use now
+    pub abr_bitpool: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -247,6 +250,7 @@ pub fn codec_details(
             _ => None,
         },
         device: remote.sbc_caps.filter(|_| kind != CodecKind::FastStream).as_ref().map(sbc_device_caps),
+        abr_bitpool: e.sbc_abr.map(|(lo, hi)| (lo.into(), hi.into())),
     });
     let aac = match config.request {
         caps::ConfigRequest::Aac { object_type, bit_rate, .. } => Some(AacDetails {
@@ -436,9 +440,10 @@ impl DefaultDeviceGuard {
     /// one role (Console, Multimedia) before the other failed.
     pub(crate) fn switch_to(id: &str, name: &str) -> DefaultDeviceGuard {
         let before = audio_capture::default_render_device();
-        tracing::debug!("default output: switching to '{name}' ({id}), was {before:?}");
+        let name = crate::diag::quoted(name);
+        tracing::debug!("default output: switching to {name} ({id}), was {before:?}");
         if let Err(e) = audio_capture::set_default_render_device(id) {
-            tracing::warn!("failed to make '{name}' the default output device: {e}");
+            tracing::warn!("failed to make {name} the default output device: {e}");
         }
         DefaultDeviceGuard(restore_target(before, id))
     }
@@ -690,6 +695,13 @@ fn sbc_xq_fallback(kind: CodecKind, failure: &ConfigFailure, requested: Option<C
         && (requested.is_none() || fallback)
 }
 
+/// SBC / SBC XQ adaptive bitpool: only when the profile asks for that codec
+/// itself with ABR on. A profile's ABR was LDAC's and LHDC V5's: Auto, or a
+/// fallback from LDAC, landing on SBC keeps today's fixed bitpool.
+fn sbc_abr(req: &StreamRequest, kind: CodecKind) -> bool {
+    req.abr && matches!(kind, CodecKind::Sbc | CodecKind::SbcXq) && req.codec == Some(kind)
+}
+
 /// Starts the encode thread; ABR as the encoder runs it
 fn start_pipeline(
     encoder: Box<dyn Encoder>,
@@ -714,6 +726,16 @@ struct StreamedMark<'a>(&'a Inner);
 impl Drop for StreamedMark<'_> {
     fn drop(&mut self) {
         self.0.mark_streamed();
+    }
+}
+
+/// The session's device for its own options (media keys), cleared when the
+/// session ends
+struct SessionDevice<'a>(&'a Inner);
+
+impl Drop for SessionDevice<'_> {
+    fn drop(&mut self) {
+        self.0.set_device(None);
     }
 }
 
@@ -749,6 +771,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     if stopped() {
         return inner.notify(StreamState::Idle, Msg::new("status.ready"));
     }
+
+    // The device's own options: media keys now, the volume below
+    inner.set_device(Some(&addr));
+    let _device = SessionDevice(inner);
+    host.set_media_keys(inner.media_keys_for(&addr));
 
     // Remembered headphone volume, set as soon as AVRCP connects
     let restore = inner.saved_volume(&addr);
@@ -894,6 +921,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     let mut default_guard = DefaultDeviceGuard(None);
+    // Restored while the headphones are off: switched again when they are back
+    let mut switch_default_again = false;
     let options = CaptureOptions { preferred_rate: Some(preferred), fill_silence: !test_tone };
     let (source, opened): (Option<Source>, Option<Capture>) = match &req.source {
         SourceRequest::TestTone => (Some(Source::TestTone), None),
@@ -1041,7 +1070,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         // For AAC: variable bit rate, where the sink lists it
         abr: req.abr
             && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5 | CodecKind::AptxAdaptive)
-                || (kind == CodecKind::Aac && vbr)),
+                || (kind == CodecKind::Aac && vbr))
+            || sbc_abr(&req, kind),
         peer: peer_params(&remote, kind, channels, &req),
     };
     tracing::debug!("encoder config: {encoder_config:?}");
@@ -1189,6 +1219,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 // and the stream resumes
                 tracing::info!("the headphones were turned off or disconnected themselves");
                 inner.notify(StreamState::Idle, Msg::new("status.device_off"));
+                // Windows plays through the device before (its speakers)
+                // meanwhile, as after Disconnect (#132)
+                if default_guard.0.is_some() {
+                    default_guard = DefaultDeviceGuard(None);
+                    switch_default_again = true;
+                }
                 if !wait_for_device(inner, &host, req.device, &mut pipeline) {
                     lost_for_good = true;
                     break;
@@ -1296,6 +1332,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                     }
                 }
                 host.set_restore_volume(inner.saved_volume(&addr));
+                host.set_media_keys(inner.media_keys_for(&addr));
                 if stopped() {
                     break;
                 }
@@ -1426,6 +1463,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             pipeline = Some(p);
             inner.stream_info(info.clone());
         }
+        if switch_default_again && let SourceRequest::VirtualDevice { id, name, .. } = &req.source {
+            default_guard = DefaultDeviceGuard::switch_to(id, name);
+            switch_default_again = false;
+        }
         inner.notify(StreamState::Streaming, Msg::new("status.reconnected"));
     }
 
@@ -1458,6 +1499,28 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sbc_abr_only_for_a_profile_of_that_codec() {
+        let req = |codec: &str, abr: bool| {
+            crate::profiles::Profile {
+                device_address: "AA:BB:CC:DD:EE:FF".into(),
+                codec: codec.into(),
+                abr,
+                ..Default::default()
+            }
+            .to_request(1023)
+            .unwrap()
+        };
+        assert!(sbc_abr(&req("sbc", true), CodecKind::Sbc));
+        assert!(sbc_abr(&req("sbcxq", true), CodecKind::SbcXq));
+        // ABR off, or another codec asked for (Auto, a fallback from LDAC)
+        assert!(!sbc_abr(&req("sbc", false), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("auto", true), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("ldac", true), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("sbcxq", true), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("faststream", true), CodecKind::FastStream));
+    }
 
     #[test]
     fn a_working_link_is_left_alone() {

@@ -1,6 +1,7 @@
-// Settings: language, theme, startup, updates, headphone buttons, volume,
-// developer mode, the settings folder, about. (LE Audio and its GMAP low
-// latency are chosen per profile.)
+// Settings: the general ones only: language, theme, startup, updates,
+// developer mode, the settings folder. (A device's buttons and remembered
+// volume are on Audio Devices; LE Audio and its GMAP low latency are chosen
+// per profile.)
 
 import { createSignal, Match, onMount, Show, Switch } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -86,11 +87,6 @@ export function Settings() {
           onChange={(v) => set({ start_minimized: v })}
         />
         <Toggle label={t("settings.minimize_to_tray")} checked={s().minimize_to_tray} onChange={(v) => set({ minimize_to_tray: v })} />
-      </Section>
-
-      <Section title={t("ui.settings.headphones")}>
-        <Toggle label={t("settings.media_keys")} checked={s().media_keys} onChange={(v) => set({ media_keys: v })} />
-        <Toggle label={t("settings.remember_volume")} checked={s().remember_volume} onChange={(v) => set({ remember_volume: v })} />
       </Section>
 
       <Section
@@ -179,7 +175,7 @@ export function Settings() {
             <span class="hint mono">{snap().config_dir}</span>
           </span>
           <Button icon="folder_open" onClick={() => core.transport.openFolder(snap().config_dir)}>
-            {t("firmware.open_folder")}
+            {t("ui.settings.open_config_folder")}
           </Button>
         </div>
         <div class="row">

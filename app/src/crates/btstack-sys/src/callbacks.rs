@@ -254,6 +254,7 @@ extern "C" fn a2dpwb_rs_log_message(level: c_int, message: *const c_char) {
         }
         // SAFETY: vsnprintf in shim.c produced a NUL-terminated string.
         let text = unsafe { CStr::from_ptr(message) }.to_string_lossy();
+        let text = without_key_material(&text);
         // HCI_DUMP_LOG_LEVEL_DEBUG 0, _INFO 1, _ERROR 2, _PRINT 3 (the
         // Realtek driver's printf, see build.rs)
         match level {
@@ -264,6 +265,50 @@ extern "C" fn a2dpwb_rs_log_message(level: c_int, message: *const c_char) {
             _ => tracing::trace!(target: "btstack", "{text}"),
         }
     })
+}
+
+/// BTstack's info log prints key material (ENABLE_LOG_INFO; sm.c,
+/// btstack_crypto.c): `log_info_key` writes "ltk    <32 hex digits>" for
+/// the LTK, IRK, CSRK, the local IR / ER / DHK roots and the derived link
+/// key, `log_info_hexdump` the DH key and the CMAC inputs as lines of 16
+/// "AB " pairs. With verbose logging on, those lines reach the log file and
+/// the diagnostics, so the digits become 'x' here, before the line is a
+/// tracing event: a word of exactly 32 hex digits, and a line that is
+/// nothing but 16 hex bytes (ATT values of that size go with it).
+pub(crate) fn without_key_material(text: &str) -> std::borrow::Cow<'_, str> {
+    let b = text.as_bytes();
+    let trimmed = text.trim_end();
+    let mut pairs = trimmed.split(' ');
+    let hexdump = pairs.by_ref().take(16).filter(|p| p.len() == 2 && p.bytes().all(|c| c.is_ascii_hexdigit())).count()
+        == 16
+        && pairs.next().is_none();
+    let mut out: Option<Vec<u8>> = None;
+    if hexdump {
+        let v = out.get_or_insert_with(|| b.to_vec());
+        for c in &mut v[..trimmed.len()] {
+            if c.is_ascii_hexdigit() {
+                *c = b'x';
+            }
+        }
+    }
+    let mut i = 0;
+    while i < b.len() {
+        if !b[i].is_ascii_alphanumeric() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < b.len() && b[i].is_ascii_alphanumeric() {
+            i += 1;
+        }
+        if i - start == 32 && b[start..i].iter().all(u8::is_ascii_hexdigit) {
+            out.get_or_insert_with(|| b.to_vec())[start..i].fill(b'x');
+        }
+    }
+    match out {
+        Some(v) => std::borrow::Cow::Owned(String::from_utf8(v).expect("only ASCII bytes were replaced")),
+        None => std::borrow::Cow::Borrowed(text),
+    }
 }
 
 /// A log line of BTstack's firmware loaders ("btstack_chipset_realtek.c.972:
@@ -364,7 +409,38 @@ extern "C" fn a2dpwb_rs_lk_at(index: c_int, addr: *mut u8, key: *mut u8, key_typ
 
 #[cfg(test)]
 mod tests {
-    use super::from_chipset_driver;
+    use super::{from_chipset_driver, without_key_material};
+
+    #[test]
+    fn key_material_is_masked() {
+        let m = without_key_material;
+        // log_info_key: "%-6s %s"
+        assert_eq!(m("ltk    0123456789ABCDEF0123456789ABCDEF"), "ltk    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+        assert_eq!(m("IRK    0123456789abcdef0123456789abcdef"), "IRK    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+        assert_eq!(m("Link Key 0123456789ABCDEF0123456789ABCDEF"), "Link Key xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+        // log_info_hexdump: 16 bytes per line, a space after each
+        assert_eq!(
+            m("01 23 45 67 89 AB CD EF 01 23 45 67 89 AB CD EF "),
+            "xx xx xx xx xx xx xx xx xx xx xx xx xx xx xx xx "
+        );
+        assert_eq!(
+            m("01 23 45 67 89 AB CD EF 01 23 45 67 89 AB CD EF"),
+            "xx xx xx xx xx xx xx xx xx xx xx xx xx xx xx xx"
+        );
+        // Shorter dumps (ATT values, L2CAP options) and other hex stay
+        assert_eq!(m("01 23 45 67 89 AB CD EF "), "01 23 45 67 89 AB CD EF ");
+        assert_eq!(
+            m("01 23 45 67 89 AB CD EF 01 23 45 67 89 AB CD EF 01 "),
+            "01 23 45 67 89 AB CD EF 01 23 45 67 89 AB CD EF 01 "
+        );
+        assert_eq!(
+            m("hci.c.123: handle 0x0040 addr 00:11:22:33:44:55"),
+            "hci.c.123: handle 0x0040 addr 00:11:22:33:44:55"
+        );
+        assert_eq!(m("sm: hash 0123456789ABCDEF0123456789ABCDE"), "sm: hash 0123456789ABCDEF0123456789ABCDE");
+        assert_eq!(m("x0123456789ABCDEF0123456789ABCDEF0"), "x0123456789ABCDEF0123456789ABCDEF0");
+        assert!(matches!(m("plain"), std::borrow::Cow::Borrowed(_)));
+    }
 
     #[test]
     fn chipset_driver_lines() {

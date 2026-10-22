@@ -88,13 +88,14 @@ function ConnectionScreen(props: { compact?: boolean }) {
 
 const NAV: { name: RouteName; icon: IconName; label: string }[] = [
   { name: "home", icon: "home", label: "ui.nav.home" },
-  { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
   { name: "profiles", icon: "headphones", label: "ui.nav.profiles" },
-  { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
-  { name: "developer", icon: "wrench", label: "ui.nav.developer" },
+  { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
   { name: "adapter", icon: "usb_stick", label: "ui.nav.adapter" },
+  { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
   { name: "settings", icon: "settings", label: "ui.nav.settings" },
   { name: "about", icon: "info", label: "ui.nav.about" },
+  // Shown in developer mode only: last, out of the way
+  { name: "developer", icon: "wrench", label: "ui.nav.developer" },
 ];
 
 function MainWindow() {
@@ -255,7 +256,7 @@ function StatusPill() {
   };
   const details = () => {
     const i = stream().info;
-    return i ? codecDetails(i).join(" | ") : "";
+    return i ? codecDetails(i).join(" ") : "";
   };
   // Also the name while collapsed to the dot
   const label = () => {
@@ -272,33 +273,32 @@ function StatusPill() {
     >
       <span class="dot" aria-hidden="true" />
       <span class="status-pill-text">
+        {/* Four lines, as Home's (issue #86): the device, battery and
+            state, the profile, the codec */}
         <Show when={profile()}>
-          {(p) => (
-            <>
-              <span class="status-pill-device ellipsis">{device()}</span>
-              <span class="status-pill-sub ellipsis">{p().name}</span>
-              {/* The address only stands in for a device without a name */}
-              <Show when={!p().device_name}>
-                <span class="status-pill-sub mono">{p().device_address}</span>
-              </Show>
-            </>
-          )}
+          <span class="status-pill-device ellipsis">{device()}</span>
         </Show>
-        <span class="status-pill-state">{stateLabel(stream().state)}</span>
-        <Show when={stream().battery !== null}>
-          <BatteryLevel class="status-pill-sub" percent={stream().battery!} />
+        <span class="status-pill-line">
+          <Show when={stream().battery !== null}>
+            <BatteryLevel class="status-pill-sub" percent={stream().battery!} />
+            <span class="status-pill-sub" aria-hidden="true">
+              |
+            </span>
+          </Show>
+          <span class="status-pill-state">{stateLabel(stream().state)}</span>
+        </span>
+        <Show when={profile()}>
+          {(p) => <span class="status-pill-sub ellipsis">{t("ui.home.profile_line", p().name)}</span>}
         </Show>
         <Show when={stream().info}>
           {(i) => (
-            <>
-              <span class="status-pill-codec">
-                <Show when={i().requested_codec}>
-                  <Icon name="warning" class="st-warn" />
-                </Show>
-                <strong>{codecName(i())}</strong>
-              </span>
+            <span class="status-pill-codec">
+              <Show when={i().requested_codec}>
+                <Icon name="warning" class="st-warn" />
+              </Show>
+              <strong>{codecName(i())}</strong>
               <span class="status-pill-details num">{details()}</span>
-            </>
+            </span>
           )}
         </Show>
       </span>
