@@ -21,8 +21,8 @@ use bt_host::chips::{self, ChipVendor};
 use ipc::{
     AdapterInfo, AdapterState, AdapterStatus, AudioApp, AudioDevice, CaptureState, DevLog, DevOverrides, Device,
     DiagInfo, DriverKind, ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, Method, Msg, Profile,
-    ReceiverConnection, ReceiverState, Settings, SettingsApplied, Snapshot, SourceInfo, StreamState, StreamStatus,
-    UpdateState,
+    ReceiverConnection, ReceiverState, Settings, SettingsApplied, Snapshot, SourceInfo, SpatialControls, SpatialSelect,
+    SpatialSlider, StreamState, StreamStatus, UpdateState,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -169,6 +169,82 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.sbc_allocation = p.sbc_allocation.clone();
     c.sbc_channel_mode = p.sbc_channel_mode.clone();
     c
+}
+
+/// The core's controls as the UI's
+fn to_ipc_controls(c: &a2dpwb_core::spatial::SpatialControls) -> SpatialControls {
+    SpatialControls {
+        supported: c.supported,
+        sliders: c
+            .sliders
+            .iter()
+            .map(|s| SpatialSlider {
+                key: s.key.clone(),
+                label: s.label.clone(),
+                min: s.min,
+                max: s.max,
+                step: s.step,
+                default: s.default,
+                value: s.value,
+            })
+            .collect(),
+        selects: c
+            .selects
+            .iter()
+            .map(|s| SpatialSelect {
+                key: s.key.clone(),
+                label: s.label.clone(),
+                options: s.options.clone(),
+                default: s.default.clone(),
+                value: s.value.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// The stage a profile runs through, if it has one
+fn stage_program(p: &CoreProfile) -> Option<PathBuf> {
+    if !p.spatial_engine {
+        return None;
+    }
+    let path = PathBuf::from(p.spatial_engine_path.trim());
+    (!path.as_os_str().is_empty()).then_some(path)
+}
+
+/// The controls of the stage a profile uses
+fn spatial_controls(dir: &Path, name: &str) -> Result<SpatialControls, ErrorInfo> {
+    let list = profiles::load(dir);
+    let p = list.iter().find(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
+    let Some(program) = stage_program(p) else {
+        return Ok(SpatialControls::default());
+    };
+    Ok(to_ipc_controls(&a2dpwb_core::spatial::controls_for(p, &program)))
+}
+
+/// The user's values for the stage a profile uses: they are kept in the
+/// profile and in the app's copy of the stage's config. The profiles come
+/// back, to be saved.
+fn set_spatial_controls(
+    dir: &Path,
+    name: &str,
+    values: &BTreeMap<String, Value>,
+) -> Result<(SpatialControls, Vec<CoreProfile>), ErrorInfo> {
+    let mut list = profiles::load(dir);
+    let pos =
+        list.iter().position(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
+    let Some(program) = stage_program(&list[pos]) else {
+        return Err(bad_request(
+            "spatial.no_stage",
+            "spatial.set_controls",
+            format!("the profile \"{name}\" has no spatial stage"),
+        ));
+    };
+    let controls = {
+        let p = &mut list[pos];
+        a2dpwb_core::spatial::write_controls(dir, p, &program, values)
+            .map_err(|why| bad_request("spatial.invalid_value", "spatial.set_controls", why))?
+    };
+    Ok((to_ipc_controls(&controls), list))
 }
 
 fn to_ipc_settings(s: &CoreSettings) -> Settings {
@@ -1027,9 +1103,14 @@ impl CoreState {
         let list = profiles::load(&dir);
         let p =
             list.iter().find(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
-        let req = p
+        let mut req = p
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
+        // The stage reads the user's values from the app's copy of its
+        // config, not from the stage's own file
+        if let Some(program) = stage_program(p) {
+            req.spatial_config = a2dpwb_core::spatial::config_for(&dir, p, &program);
+        }
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -1280,6 +1361,20 @@ impl CoreState {
                 let engines = a2dpwb_core::spatial::list(std::path::Path::new(&path));
                 Ok(json(&engines))
             }
+            Method::SpatialControls { profile } => Ok(json(&spatial_controls(&self.config_dir(), &profile)?)),
+            Method::SpatialSetControls { profile, values } => {
+                let dir = self.config_dir();
+                let (controls, list) = set_spatial_controls(&dir, &profile, &values)?;
+                let (_, s) = self.snapshot();
+                self.save_profiles(&list, s.active_profile.clone())?;
+                // The stage reads its settings when it starts: the stream
+                // starts again with the new values
+                if restart_after_save(&s.stream, &profile) {
+                    tracing::info!("spatial: the controls of \"{profile}\" changed: the stream starts again");
+                    self.start_profile(&profile)?;
+                }
+                Ok(json(&controls))
+            }
             Method::StreamStart { profile } => self.start_profile(&profile).map(|()| Value::Null),
             Method::StreamStartCustom {
                 device,
@@ -1401,6 +1496,10 @@ impl CoreState {
                 };
                 self.save_profiles(&list, active)?;
                 self.refresh_devices();
+                // The app's copy of the stage's config follows the name
+                if key != profile.name {
+                    a2dpwb_core::spatial::rename_values(&dir, &key, &profile.name);
+                }
                 // The profile in use starts again with what was saved (v1)
                 if restart_after_save(&s.stream, &key) {
                     tracing::info!("profile \"{key}\" saved while in use: it starts again as \"{}\"", profile.name);
@@ -1414,6 +1513,8 @@ impl CoreState {
                 let (_, s) = self.snapshot();
                 let active = s.active_profile.filter(|a| *a != name);
                 self.save_profiles(&list, active)?;
+                // The app's copy of the stage's config is not needed any more
+                a2dpwb_core::spatial::remove_values(&self.config_dir(), &name);
                 Ok(Value::Null)
             }
             Method::ProfileSetActive { name } => {
@@ -2157,5 +2258,74 @@ mod tests {
         let merged = merge_profile(Some(&core), &other);
         assert_eq!(merged.purpose_kind, "autoeq");
         assert_eq!(merged.purpose_note, "the bass ones");
+    }
+
+    /// A stage with a slider and a choice, and a config file of its own
+    fn stage_with_controls(dir: &Path) -> PathBuf {
+        let d = dir.join("upmixer");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("upmixer.exe"), b"x").unwrap();
+        std::fs::write(
+            d.join("STAGE-MANIFEST.json"),
+            r#"{
+                "label": "Upmixer",
+                "command": ["upmixer.exe", "--config", "config.json", "-", "stream", "1", "1024"],
+                "controls": {
+                    "sliders": [ { "key": "center_focus", "label": "Center focus",
+                        "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.5 } ],
+                    "selects": [ { "key": "correction", "label": "Bass correction",
+                        "options": ["none", "sony-xm6-ba"], "default": "none" } ]
+                }
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(d.join("config.json"), r#"{"center_focus": 0.25, "correction": "sony-xm6-ba"}"#).unwrap();
+        d.join("upmixer.exe")
+    }
+
+    #[test]
+    fn a_profile_says_which_controls_its_stage_has() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-state-spatial-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let program = stage_with_controls(&dir);
+        let profile = CoreProfile {
+            name: "WH LDAC".into(),
+            device_address: "00:A2:D0:00:00:02".into(),
+            spatial_engine: true,
+            spatial_engine_path: program.display().to_string(),
+            ..CoreProfile::default()
+        };
+        profiles::save(&dir, std::slice::from_ref(&profile)).unwrap();
+        // The stage's own config holds the values
+        let controls = spatial_controls(&dir, "WH LDAC").unwrap();
+        assert!(controls.supported);
+        assert_eq!(controls.sliders.len(), 1);
+        assert_eq!(controls.sliders[0].key, "center_focus");
+        assert_eq!(controls.sliders[0].value, 0.25);
+        assert_eq!(controls.selects[0].value, "sony-xm6-ba");
+        // The user sets one: the value comes back, and the file follows
+        let mut values = BTreeMap::new();
+        values.insert("center_focus".to_string(), Value::from(0.75));
+        let (controls, list) = set_spatial_controls(&dir, "WH LDAC", &values).unwrap();
+        assert_eq!(controls.sliders[0].value, 0.75);
+        assert_eq!(controls.selects[0].value, "sony-xm6-ba");
+        assert_eq!(list.len(), 1);
+        let file = a2dpwb_core::spatial::values_path(&dir, "WH LDAC");
+        assert!(file.is_file(), "{} is missing", file.display());
+        let config: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(config["center_focus"], Value::from(0.75));
+        // A value the control does not take is refused
+        let mut bad = BTreeMap::new();
+        bad.insert("center_focus".to_string(), Value::from(2.0));
+        assert!(set_spatial_controls(&dir, "WH LDAC", &bad).is_err());
+        // A profile without a stage has no controls
+        profiles::save(&dir, &[CoreProfile { name: "Plain".into(), ..CoreProfile::default() }]).unwrap();
+        let controls = spatial_controls(&dir, "Plain").unwrap();
+        assert!(!controls.supported);
+        assert!(set_spatial_controls(&dir, "Plain", &values).is_err());
+        // A profile that is not there at all
+        assert!(spatial_controls(&dir, "Gone").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

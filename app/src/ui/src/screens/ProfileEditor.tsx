@@ -17,8 +17,9 @@ import { Banner, Button, Check, Dialog, Field, IconButton, Section, Segmented, S
 import { SpatialPicker } from "../components/SpatialPicker";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
-import { t } from "../i18n";
-import type { AudioApp, AudioDevice, Profile } from "../ipc/types";
+import { hasKey, t } from "../i18n";
+import type { SpatialSlider } from "../ipc/bindings/SpatialSlider";
+import type { AudioApp, AudioDevice, Profile, SpatialControls } from "../ipc/types";
 import {
   bitDepths,
   CODECS,
@@ -263,6 +264,8 @@ export function ProfileEditor(props: { original: string | null }) {
                     )}
                   </For>
                 </div>
+                {/* What the three bars of a card mean */}
+                <p class="hint">{t("ui.codec.bars_hint")}</p>
                 <Show when={notOffered() > 0 || showAll()}>
                   <Check
                     label={t("ui.profile.codecs_force", notOffered())}
@@ -484,6 +487,9 @@ export function ProfileEditor(props: { original: string | null }) {
               <SpatialPicker profile={p} onPick={(e) => setP({ spatial_engine: true, spatial_engine_path: e.path })} />
             </Show>
           </Section>
+
+          {/* The controls of the stage the profile runs through */}
+          <SpatialStageControls profile={props.original} />
 
           {/* The one setting left of "Advanced": shown as it is (issue #86) */}
           <Section title={t("ui.profile.advanced")}>
@@ -893,4 +899,148 @@ function CaptureFormat(props: { profile: Profile; devices: AudioDevice[] | null 
       }}
     </Show>
   );
+}
+
+/**
+ * The controls of the stage a profile runs through: the sliders and the
+ * choices the stage's manifest declares. They belong to a saved profile
+ * (the core reads them from the profile's own copy of the stage's config),
+ * so a profile that is written for the first time has none yet. The core
+ * restarts the stream itself when the profile streams, so the UI only
+ * sends the value the user changed.
+ */
+function SpatialStageControls(props: { profile: string | null }) {
+  const app = useApp();
+  const { core } = app;
+  const [saving, setSaving] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [controls, { mutate }] = createResource(
+    () => props.profile,
+    async (name): Promise<SpatialControls> => {
+      try {
+        return await core.request("spatial.controls", { profile: name });
+      } catch (e) {
+        setError(errorText(e));
+        return { supported: false, sliders: [], selects: [] };
+      }
+    },
+  );
+  const sliders = createMemo(() => controls()?.sliders ?? []);
+  const selects = createMemo(() => controls()?.selects ?? []);
+
+  const send = async (key: string, value: number | string): Promise<boolean> => {
+    const name = props.profile;
+    if (!name) return false;
+    setSaving(true);
+    setError(null);
+    try {
+      mutate(await core.request("spatial.set_controls", { profile: name, values: { [key]: value } }));
+      return true;
+    } catch (e) {
+      setError(errorText(e));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Show when={error()}>
+        <Banner kind="error" title={t("status.error")}>
+          {error()}
+        </Banner>
+      </Show>
+      {/* A stage without controls shows nothing at all */}
+      <Show when={controls()?.supported}>
+        <Section title={t("spatial.controls")}>
+          <p class="hint">{t("spatial.controls_hint")}</p>
+          <For each={sliders()}>
+            {(s) => (
+              <StageSlider slider={s} value={s.value} disabled={saving()} onCommit={(v) => send(s.key, v)} />
+            )}
+          </For>
+          <For each={selects()}>
+            {(s) => (
+              <Field label={controlLabel(s.key, s.label)}>
+                {(id, described) => (
+                  <Select
+                    id={id}
+                    describedBy={described}
+                    value={s.value}
+                    disabled={saving()}
+                    options={s.options.map((o) => ({ value: o, label: choiceLabel(o) }))}
+                    onChange={(v) => void send(s.key, v)}
+                  />
+                )}
+              </Field>
+            )}
+          </For>
+        </Section>
+      </Show>
+    </>
+  );
+}
+
+/**
+ * One slider of a stage: the range, the value beside it, and the value the
+ * user sends when they let go of it (the core restarts the stream then)
+ */
+function StageSlider(props: {
+  slider: SpatialSlider;
+  value: number;
+  disabled: boolean;
+  onCommit: (v: number) => Promise<boolean>;
+}) {
+  // The value while the user drags it, before the core answers
+  const [held, setHeld] = createSignal<number | null>(null);
+  const shown = () => held() ?? props.value;
+  const label = () => controlLabel(props.slider.key, props.slider.label);
+  const fill = () => {
+    const s = props.slider;
+    const span = s.max - s.min;
+    return span > 0 ? `${(((shown() - s.min) / span) * 100).toFixed(2)}%` : "0%";
+  };
+  return (
+    <Field label={label()}>
+      {(id, described) => (
+        <div class="volume">
+          <input
+            id={id}
+            type="range"
+            min={props.slider.min}
+            max={props.slider.max}
+            step={props.slider.step}
+            value={shown()}
+            disabled={props.disabled}
+            aria-describedby={described}
+            aria-valuetext={shown().toFixed(2)}
+            style={{ "--fill": fill() }}
+            onInput={(e) => setHeld(Number(e.currentTarget.value))}
+            onChange={async (e) => {
+              const v = Number(e.currentTarget.value);
+              setHeld(v);
+              // A refused change leaves the value the stage runs with
+              if (!(await props.onCommit(v))) setHeld(null);
+            }}
+          />
+          <span class="num volume-value">{shown().toFixed(2)}</span>
+        </div>
+      )}
+    </Field>
+  );
+}
+
+/** The label of a control: the app's own text for the known keys, the
+ *  stage's label for the others */
+function controlLabel(key: string, label: string): string {
+  const k = `spatial.control_${key}`;
+  return hasKey(k) ? t(k) : label;
+}
+
+/** The label of a choice: the app's own text for the known values, the
+ *  value itself for the others */
+function choiceLabel(value: string): string {
+  const k = `spatial.correction_${value.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+  return hasKey(k) ? t(k) : value;
 }

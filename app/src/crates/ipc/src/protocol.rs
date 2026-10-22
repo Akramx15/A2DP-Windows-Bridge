@@ -13,6 +13,8 @@
 //! Errors and status texts are translation keys of app/lang ([`Msg`]): the
 //! UI translates them.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -498,6 +500,51 @@ pub struct SpatialEngine {
     pub path: String,
     /// The stage's family ("sony", "upmixer")
     pub family: String,
+}
+
+/// One slider of a spatial stage: a value the user can change
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct SpatialSlider {
+    /// The key the value has in the stage's config
+    pub key: String,
+    /// The label the UI shows
+    pub label: String,
+    /// The smallest value the slider takes
+    pub min: f64,
+    /// The largest one
+    pub max: f64,
+    /// How much one step of the slider is
+    pub step: f64,
+    /// The value the stage's manifest declares
+    pub default: f64,
+    /// The value the stage runs with now
+    pub value: f64,
+}
+
+/// One choice of a spatial stage: one of its options
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SpatialSelect {
+    /// The key the value has in the stage's config
+    pub key: String,
+    /// The label the UI shows
+    pub label: String,
+    /// The values the user can choose from
+    pub options: Vec<String>,
+    /// The value the stage's manifest declares
+    pub default: String,
+    /// The value the stage runs with now
+    pub value: String,
+}
+
+/// The controls of a spatial stage, with the values it runs with now
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+pub struct SpatialControls {
+    /// The stage has controls the user can change
+    pub supported: bool,
+    /// The sliders, in the order the manifest lists them
+    pub sliders: Vec<SpatialSlider>,
+    /// The choices, in the order the manifest lists them
+    pub selects: Vec<SpatialSelect>,
 }
 
 /// Application settings the UI edits
@@ -1004,6 +1051,13 @@ pub enum Method {
     /// -> SpatialEngine[]: the engine programs in a folder
     #[serde(rename = "spatial.engines")]
     SpatialEngines { path: String },
+    /// -> SpatialControls: the controls of the stage the profile uses (the
+    /// stage reads them when it starts, so a change needs a new stream)
+    #[serde(rename = "spatial.controls")]
+    SpatialControls { profile: String },
+    /// Sets the controls of the stage the profile uses -> SpatialControls
+    #[serde(rename = "spatial.set_controls")]
+    SpatialSetControls { profile: String, values: BTreeMap<String, serde_json::Value> },
     /// Log lines at `logs` level and above (None: off), link samples, the
     /// receiver test's state (absent: off)
     #[serde(rename = "diag.subscribe")]
@@ -1386,6 +1440,31 @@ mod tests {
             serde_json::to_value(&e).unwrap(),
             serde_json::json!({"type": "event", "rev": 3, "event": {"kind": "scanning", "value": true}})
         );
+    }
+
+    /// The spatial stage's controls are asked for and set
+    #[test]
+    fn the_spatial_controls_are_on_the_wire() {
+        let m = ClientMessage::Request { id: 3, call: Method::SpatialControls { profile: "WH".into() } };
+        let j = serde_json::to_value(&m).unwrap();
+        assert_eq!(
+            j,
+            serde_json::json!({"type": "request", "id": 3, "method": "spatial.controls", "params": {"profile": "WH"}})
+        );
+        let back: ClientMessage = serde_json::from_value(j).unwrap();
+        assert_eq!(back, m);
+        let set = Method::SpatialSetControls {
+            profile: "WH".into(),
+            values: BTreeMap::from([("center_focus".to_string(), serde_json::json!(0.75))]),
+        };
+        let j = serde_json::to_value(&set).unwrap();
+        assert_eq!(
+            j,
+            serde_json::json!({"method": "spatial.set_controls",
+                "params": {"profile": "WH", "values": {"center_focus": 0.75}}})
+        );
+        let back: Method = serde_json::from_value(j).unwrap();
+        assert_eq!(back, set);
     }
 
     /// Requests of a UI built before the additions still parse

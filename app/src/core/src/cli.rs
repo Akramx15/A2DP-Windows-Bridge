@@ -497,6 +497,7 @@ pub fn run(args: &[String]) -> i32 {
         max_media_payload: a.max_packet,
         le: None,
         spatial: a.spatial.clone(),
+        spatial_config: None,
         spatial_keep_rate: a.rate == Some(96_000),
     };
 

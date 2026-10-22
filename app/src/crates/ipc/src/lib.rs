@@ -125,5 +125,8 @@ mod tests {
         DiagBundle::export_all(&cfg).unwrap();
         DiagBundleParams::export_all(&cfg).unwrap();
         SpatialEngine::export_all(&cfg).unwrap();
+        SpatialControls::export_all(&cfg).unwrap();
+        SpatialSlider::export_all(&cfg).unwrap();
+        SpatialSelect::export_all(&cfg).unwrap();
     }
 }

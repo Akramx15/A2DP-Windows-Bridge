@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
 import { setLanguage, t } from "../i18n";
-import { MockCore } from "../ipc/mock";
+import { MockCore, sampleProfile } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 
 let mock: MockCore | null = null;
@@ -16,12 +16,14 @@ function start(hash: string) {
   mock = new MockCore({ speed: 0, onCall: (method, params) => calls.push({ method, params }) });
   const core = createCore(mock);
   render(() => <App core={core} />);
-  return { calls };
+  return { calls, core };
 }
 
 const edit = (name: string) => `#/profiles/edit/${encodeURIComponent(name)}`;
 /** A new profile's device: the codecs and what follows wait for one */
 const pickDevice = async () => fireEvent.click(await screen.findByRole("radio", { name: /WH-1000XM5/ }));
+/** The core's answer (the mock answers on the next tick) */
+const tick = () => new Promise((r) => setTimeout(r, 10));
 
 afterEach(async () => {
   cleanup();
@@ -165,6 +167,59 @@ describe("codec cards", () => {
     expect(await screen.findByText(t("ui.profile.codecs_unknown"))).toBeInTheDocument();
     expect(screen.queryByText(t("ui.profile.codec_offered"))).toBeNull();
     expect(screen.queryByText(t("ui.profile.codec_not_offered"))).toBeNull();
+  });
+
+  it("say what the three bars of a card mean", async () => {
+    start(edit("WH-1000XM5 (LDAC)"));
+    expect(await screen.findByText(t("ui.codec.bars_hint"))).toBeInTheDocument();
+  });
+});
+
+describe("the effect controls", () => {
+  it("show the sliders and the choices of the stage", async () => {
+    const { calls, core } = start("#/profiles");
+    // A saved profile that runs through a stage
+    await core.request("profile.save", {
+      profile: sampleProfile({
+        name: "XM6 with the engine",
+        spatial_engine: true,
+        spatial_engine_path: "C:\\A2DPWB\\engines\\upmixer\\Upmixer.exe",
+      }),
+      original_name: null,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: `${t("profile.edit")}: XM6 with the engine` }));
+
+    // The slider of the stage, with the value it runs with
+    const slider = await screen.findByRole("slider", { name: t("spatial.control_center_focus") });
+    expect(slider).toHaveValue("0.55");
+    expect(screen.getByText("0.55")).toBeInTheDocument();
+    // The choice of the bass correction
+    const select = screen.getByLabelText(t("spatial.control_correction"));
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      t("spatial.correction_none"),
+      t("spatial.correction_sony_xm6_ba"),
+      t("spatial.correction_autoeq"),
+    ]);
+    // What the section says
+    expect(screen.getByRole("heading", { name: t("spatial.controls") })).toBeInTheDocument();
+    expect(screen.getByText(t("spatial.controls_hint"))).toBeInTheDocument();
+
+    // Moving the slider sends the new value (the core restarts the stream)
+    fireEvent.change(slider, { target: { value: "0.75" } });
+    await waitFor(() => expect(calls.some((c) => c.method === "spatial.set_controls")).toBe(true));
+    expect(calls.find((c) => c.method === "spatial.set_controls")?.params).toEqual({
+      profile: "XM6 with the engine",
+      values: { center_focus: 0.75 },
+    });
+    await waitFor(() => expect(screen.getByText("0.75")).toBeInTheDocument());
+  });
+
+  it("show nothing when the stage has none", async () => {
+    const { calls } = start(edit("Desk speaker (AAC)"));
+    await waitFor(() => expect(calls.some((c) => c.method === "spatial.controls")).toBe(true));
+    await tick();
+    expect(screen.queryByRole("heading", { name: t("spatial.controls") })).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull();
   });
 });
 

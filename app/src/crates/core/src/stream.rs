@@ -50,6 +50,10 @@ pub struct StreamRequest {
     /// Spatial engine (the xm6 360 chain) as a child process: the captured
     /// audio runs through it before it is encoded. None: no such stage.
     pub spatial: Option<PathBuf>,
+    /// The app's copy of the stage's config (the user's control values),
+    /// when the profile has any: the stage is started with it instead of
+    /// its own config file (it reads its settings when it starts)
+    pub spatial_config: Option<PathBuf>,
     /// Keep the requested capture rate and resample around the spatial
     /// engine's 48 kHz instead of forcing the capture to 48 kHz (the 96 kHz
     /// transport). Only honored when the rate is [`CAPTURE_RATE`].
@@ -709,6 +713,9 @@ struct SpatialStage {
     resample: bool,
     /// How the stage is started (from its manifest)
     command: crate::spatial::StageCommand,
+    /// The app's copy of the stage's config (the user's values), when the
+    /// profile has any
+    config: Option<PathBuf>,
 }
 
 impl SpatialStage {
@@ -716,7 +723,7 @@ impl SpatialStage {
     fn of(req: &StreamRequest, resample: bool) -> Option<Self> {
         req.spatial.clone().map(|exe| {
             let command = crate::spatial::command_for(&exe);
-            SpatialStage { exe, resample, command }
+            SpatialStage { exe, resample, command, config: req.spatial_config.clone() }
         })
     }
 }
@@ -733,15 +740,24 @@ fn start_pipeline(
 ) -> (Pipeline, CaptureInput) {
     let abr = encoder.abr_active();
     let (spatial, resample) = match spatial {
-        Some(s) => (
-            Some(SpatialConfig {
-                exe: s.exe,
-                program: s.command.program,
-                args: s.command.args,
-                cwd: Some(s.command.cwd),
-            }),
-            s.resample.then_some(ResampleConfig { capture_rate: format.sample_rate }),
-        ),
+        Some(s) => {
+            // The stage reads its settings from the config file its
+            // command names: the app's copy (the user's values) takes
+            // its place
+            let command = match &s.config {
+                Some(config) => s.command.with_config(config),
+                None => s.command.clone(),
+            };
+            (
+                Some(SpatialConfig {
+                    exe: s.exe,
+                    program: command.program,
+                    args: command.args,
+                    cwd: Some(command.cwd),
+                }),
+                s.resample.then_some(ResampleConfig { capture_rate: format.sample_rate }),
+            )
+        }
         None => (None, None),
     };
     Pipeline::start(

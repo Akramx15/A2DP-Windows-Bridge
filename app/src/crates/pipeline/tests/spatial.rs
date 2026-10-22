@@ -187,3 +187,42 @@ fn a_stage_with_its_own_command_runs() {
     assert_eq!(out.len(), block.len(), "the stage returns as many bytes as it got");
     assert_ne!(out, block, "the stage changes the audio");
 }
+
+/// A stage that is started with a config file of its own reads that file:
+/// the stage's settings are read when it starts, so the app's copy of the
+/// config (the user's values) takes the stage's own file's place.
+#[cfg(windows)]
+#[test]
+fn a_stage_runs_with_the_config_it_is_given() {
+    let dir = std::env::temp_dir().join(format!("a2dpwb-spatial-config-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // The stage writes down the arguments it was given, and reads the
+    // config file they name
+    std::fs::write(dir.join("stage.bat"), "@echo off\r\necho %* > args.txt\r\ntype user.json > used.txt\r\n").unwrap();
+    std::fs::write(dir.join("user.json"), "{\"center_focus\":0.75}").unwrap();
+    let mut engine = SpatialEngine::start(&SpatialConfig {
+        exe: PathBuf::from("stage.bat"),
+        program: PathBuf::from("cmd.exe"),
+        args: vec!["/c".into(), "stage.bat".into(), "--config".into(), "user.json".into()],
+        cwd: Some(dir.clone()),
+    })
+    .expect("the stage starts");
+    // The stage is given a block of audio (it does not answer with any:
+    // it is only the config that matters here)
+    let _ = engine.process(&tone_block(), SampleType::F32, 2);
+    // The stage was started with the config file it was given, and read it
+    let mut used = String::new();
+    for _ in 0..100 {
+        if let Ok(text) = std::fs::read_to_string(dir.join("used.txt")) {
+            used = text;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(used.contains("center_focus"), "the stage did not read its config: {used:?}");
+    let args = std::fs::read_to_string(dir.join("args.txt")).unwrap_or_default();
+    assert!(args.contains("--config"), "the stage got no config: {args:?}");
+    assert!(args.contains("user.json"), "the stage got another config: {args:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
