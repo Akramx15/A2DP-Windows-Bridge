@@ -1004,7 +1004,13 @@ impl Service {
                     saved.len()
                 );
                 for e in &entries {
-                    tracing::debug!("le scan: {} \"{}\" rssi {} set {}", e.address, e.name, e.rssi, e.le_audio_set);
+                    tracing::debug!(
+                        "le scan: {} {} rssi {} set {}",
+                        e.address,
+                        crate::diag::quoted(&e.name),
+                        e.rssi,
+                        e.le_audio_set
+                    );
                 }
                 le_found = found;
                 list.extend(entries);

@@ -35,19 +35,39 @@ const SERIAL_END = `\\\\#\\s"',;:.()[\\]{}\\u0080-\\uffff`;
 const USB_INSTANCE = new RegExp(`(VID_${H}{4}&PID_${H}{4}[A-Z0-9_&]*[\\\\#]+)([^${SERIAL_END}]*)`, "gi");
 /** A driver record's name, USB_VID_0BDA_PID_8771_<serial> */
 const USB_RECORD = new RegExp(`(VID_${H}{4}_PID_${H}{4}_)([^${SERIAL_END}]*)`, "gi");
+/** A device name as the core logs it: “Taro's AirPods” (one line, up to 256 characters) */
+const QUOTED_NAME = /\u201C([^\u201C\u201D\n]{1,256})\u201D/g;
+/** \Users\<name>\ (or '/', JSON's doubled '\'): the name, up to what a name cannot contain */
+const USER_PATH = /([\\/]Users[\\/]+)([^\\/:*?"<>|\x00-\x1f]+)/gi;
+const NOBODY = ["public", "default", "default user", "all users"];
+
+/** Names seen so far -> their number: the same name the same <device-N>
+ *  while the window is open */
+const deviceNumbers = new Map<string, number>();
 
 /**
- * Masks what identifies the user's devices, as the core's mask_identifiers:
- * Bluetooth addresses "AC:80:0A:12:34:56" (or with '-') -> "AC:80:0A:xx:xx:xx"
- * (the vendor part stays, as v1's debug console), the same without
- * separators "AC800A123456" -> "AC800Axxxxxx" (Windows' Bluetooth device IDs,
- * USB serials that are the adapter's address), other USB serial numbers ->
- * x's. IDs Windows generates ("5&2C7B4E3&0&2") stay.
+ * Masks what identifies the user, the PC and their devices, as the core's
+ * mask_identifiers: device names in typographic quotes (“...”, how the core
+ * logs them) -> "<device-N>", the Windows user name in paths
+ * ("C:\Users\<name>\...") -> x's, Bluetooth addresses "AC:80:0A:12:34:56"
+ * (or with '-') -> "AC:80:0A:xx:xx:xx" (the vendor part stays, as v1's debug
+ * console), the same without separators "AC800A123456" -> "AC800Axxxxxx"
+ * (Windows' Bluetooth device IDs, USB serials that are the adapter's
+ * address), other USB serial numbers -> x's. IDs Windows generates
+ * ("5&2C7B4E3&0&2") stay.
  */
 export function maskIdentifiers(text: string): string {
   const serial = (generatedStays: boolean) => (_: string, head: string, s: string) =>
     head + ((generatedStays && s.includes("&")) || /^[0-9A-Fa-f]{12}$/.test(s) ? s : "x".repeat(s.length));
-  let out = text.replace(USB_INSTANCE, serial(true)).replace(USB_RECORD, serial(false));
+  let out = text.replace(QUOTED_NAME, (_, name: string) => {
+    let n = deviceNumbers.get(name);
+    if (n === undefined) deviceNumbers.set(name, (n = deviceNumbers.size + 1));
+    return `<device-${n}>`;
+  });
+  out = out.replace(USER_PATH, (whole, head: string, name: string) =>
+    NOBODY.includes(name.toLowerCase()) ? whole : head + "x".repeat(name.length),
+  );
+  out = out.replace(USB_INSTANCE, serial(true)).replace(USB_RECORD, serial(false));
   for (const re of SEPARATED) out = out.replace(re, (_, head: string) => `${head}xx${head[2]}xx${head[2]}xx`);
   return out.replace(BARE, "$1xxxxxx");
 }

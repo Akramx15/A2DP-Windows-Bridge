@@ -16,14 +16,17 @@
 //!   they hold Bluetooth addresses; the recorder zeroes pairing keys).
 //!   Captures started by hand keep the keys and stay out.
 //!
-//! With `mask`, Bluetooth addresses and USB serial numbers in the text files
-//! (and the driver records' names) are masked as in the diagnostics view.
-//! Bundles go to `logs\bundles\`, the newest [`KEEP_BUNDLES`] kept.
+//! With `mask`, Bluetooth addresses, USB serial numbers, device names and
+//! the Windows user name in the text files (and the driver records' names)
+//! are masked as in the diagnostics view ([`Masker`]); the device names of
+//! the profiles and the saved devices are masked wherever they appear, in
+//! the config files too. Bundles go to `logs\bundles\`, the newest
+//! [`KEEP_BUNDLES`] kept.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use a2dpwb_core::diag::mask_identifiers;
+use a2dpwb_core::diag::{Masker, quoted};
 use a2dpwb_core::paths;
 use ipc::DiagBundle;
 
@@ -51,10 +54,21 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
     let stamp = paths::local_stamp();
     let t = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     let mut zip = ZipWriter::new((t.year() as u16, u8::from(t.month()), t.day(), t.hour(), t.minute(), t.second()));
-    let text = |s: String| if mask { mask_identifiers(&s) } else { s };
+    // One masker for all the files: a device name is the same <device-N>
+    // in each of them
+    let mut masker = Masker::new();
+    for p in a2dpwb_core::profiles::load(&config) {
+        for n in [&p.device_name, &p.audio_device_name, &p.volume_device_name, &p.name] {
+            masker.know(n);
+        }
+    }
+    for d in a2dpwb_core::devices::load(&config).into_iter().chain(a2dpwb_core::devices::load_le(&config)) {
+        masker.know(&d.name);
+    }
+    let mut text = |s: String| if mask { masker.mask(&s) } else { s };
     let mut skipped: Vec<String> = Vec::new();
 
-    zip.add("diagnostics.txt", crate::diag_text(state, mask).as_bytes());
+    zip.add("diagnostics.txt", text(crate::diag_text(state, false)).as_bytes());
     zip.add("system.txt", text(system_text(&config)).as_bytes());
 
     // Logs: core, UI, driver helper; the newest first while the budget lasts
@@ -98,7 +112,12 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
             dumps += 1;
         }
         if let Ok(data) = std::fs::read(path) {
-            zip.add(&format!("crash/{name}"), &data);
+            if name.ends_with(".txt") {
+                // The report names its dump's path
+                zip.add(&format!("crash/{name}"), text(String::from_utf8_lossy(&data).into_owned()).as_bytes());
+            } else {
+                zip.add(&format!("crash/{name}"), &data);
+            }
         }
     }
     if hci {
@@ -166,21 +185,27 @@ fn readme(stamp: &str, mask: bool, hci: bool, skipped: &[String]) -> String {
          system.txt       Windows, USB Bluetooth adapters and drivers, paired devices, audio endpoints\n\
          logs/            log files: a2dpwb-core (the service), a2dpwb-ui (the window), a2dpwb-driver (driver changes)\n\
          config/          settings, profiles, known devices (no link keys)\n\
-         crash/           crash reports: .txt, and .dmp minidumps for Visual Studio / WinDbg\n\
+         crash/           crash reports: .txt, and .dmp minidumps for Visual Studio / WinDbg (raw memory: not masked)\n\
          hci/             HCI captures (.pklg) for Wireshark: recorder-* is the flight recorder at the time of\n\
                           this bundle, hci-* were saved when a stream failed. Media payloads are cut short\n\
-                          and pairing keys zeroed; captures started by hand are not included (they keep them)\n\n",
+                          and pairing keys zeroed (link keys, LTK, IRK, CSRK, DH key); captures started by\n\
+                          hand are not included (they keep them)\n\n",
         env!("CARGO_PKG_VERSION")
     );
     let _ = writeln!(
         s,
-        "Bluetooth addresses: {}",
-        if mask { "masked in the text files (AA:BB:CC:xx:xx:xx), and so are USB serial numbers" } else { "not masked" }
+        "Identifiers: {}",
+        if mask {
+            "masked in the text files: Bluetooth addresses (AA:BB:CC:xx:xx:xx), USB serial numbers, \
+             device names (<device-N>, the same N for the same name) and the Windows user name in paths"
+        } else {
+            "not masked"
+        }
     );
     if !hci {
         s.push_str("HCI captures: left out\n");
     } else if mask {
-        s.push_str("HCI captures: they contain the full Bluetooth addresses (not the pairing keys)\n");
+        s.push_str("HCI captures: they contain the full Bluetooth addresses and device names (not the pairing keys)\n");
     }
     for k in skipped {
         let _ = writeln!(s, "left out: {k}");
@@ -241,9 +266,9 @@ fn system_text(config: &Path) -> String {
             for d in devices {
                 let _ = writeln!(
                     s,
-                    "{} {:?}: class 0x{:06X}, connected {}, remembered {}, authenticated {}",
+                    "{} {}: class 0x{:06X}, connected {}, remembered {}, authenticated {}",
                     d.address_string(),
-                    d.name,
+                    quoted(&d.name),
                     d.class_of_device,
                     d.connected,
                     d.remembered,
@@ -264,7 +289,7 @@ fn system_text(config: &Path) -> String {
                 let _ = writeln!(
                     s,
                     "{}{}{}: {}",
-                    d.name,
+                    quoted(&d.name),
                     if d.is_default { " (default)" } else { "" },
                     if d.is_virtual { " (virtual)" } else { "" },
                     mix.map_or("mix format unknown".into(), |m| format!(

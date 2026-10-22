@@ -300,7 +300,7 @@ const RULES: &[Rule] = &[
     rule(STREAM, Prefix, "codec selected: ", Step::Codec, A::Done, D::After),
     rule(CAPTURE, Prefix, "audio capture: loopback of ", Step::Capture, A::Detail, D::After),
     rule(CAPTURE, Prefix, "audio capture: process ", Step::Capture, A::Detail, D::After),
-    rule(STREAM, Prefix, "failed to make '", Step::Capture, A::Warning, D::Whole),
+    rule(STREAM, Prefix, "failed to make \u{201C}", Step::Capture, A::Warning, D::Whole),
     rule(STREAM, Prefix, "capture: ", Step::Capture, A::Done, D::After),
     rule(STREAM, Prefix, "audio capture: ", Step::Capture, A::Failed, D::Whole),
     rule(BT, Prefix, "codec configured", Step::Config, A::Running, D::After),
@@ -706,8 +706,27 @@ pub fn format_elapsed(ms: u64) -> String {
     format!("+{}.{:03} s", ms / 1000, ms % 1000)
 }
 
-/// Masks what identifies the user's devices (the UI's maskIdentifiers does
-/// the same):
+/// Masks what identifies the user, the PC and their devices (the UI's
+/// maskIdentifiers does the same), see [`Masker`]
+pub fn mask_identifiers(text: &str) -> String {
+    Masker::new().mask(text)
+}
+
+/// The quotes device names are logged in (`“Taro's AirPods”`): what the
+/// mask takes for a name, see [`Masker`]
+pub fn quoted(name: &str) -> String {
+    format!("\u{201C}{name}\u{201D}")
+}
+
+/// Masks what identifies the user, the PC and their devices:
+/// - Device names: the text between typographic quotes `“...”` (what
+///   [`quoted`] makes: the app logs device names that way) and the names
+///   it was told ([`Masker::know`]: the profile's, the saved devices')
+///   wherever they appear -> `<device-1>`, `<device-2>`..., the same name
+///   the same number for the masker's lifetime, so a bundle's files agree.
+/// - The Windows user name in paths: `C:\Users\<name>\...` ('/' too,
+///   JSON's doubled '\' too) -> as many 'x' as characters; `Public`,
+///   `Default` and `All Users` are nobody's.
 /// - Bluetooth addresses, "AA:BB:CC:DD:EE:FF" or with '-' ->
 ///   "AA:BB:CC:xx:xx:xx": the vendor part (OUI) stays. Not when part of a
 ///   longer run (an IPv6 address); a letter before is fine (Windows'
@@ -720,13 +739,126 @@ pub fn format_elapsed(ms: u64) -> String {
 ///   (`USB_VID_0BDA_PID_8771_<serial>`) -> x's. IDs Windows generates
 ///   (`5&2C7B4E3&0&2`) say nothing about the device and stay.
 ///
-/// Only ASCII is replaced, by as many 'x', so the text keeps its length.
-pub fn mask_identifiers(text: &str) -> String {
-    let mut b = text.as_bytes().to_vec();
-    mask_usb_serials(&mut b);
-    mask_separated_addresses(&mut b);
-    mask_bare_addresses(&mut b);
-    String::from_utf8(b).expect("only ASCII bytes were replaced")
+/// Besides the names, only ASCII is replaced, by as many 'x', so the text
+/// keeps its length.
+#[derive(Debug, Default)]
+pub struct Masker {
+    /// Names seen or told, numbered from 1 in this order
+    names: Vec<String>,
+}
+
+impl Masker {
+    pub fn new() -> Masker {
+        Masker::default()
+    }
+
+    /// A name to mask wherever it appears, quoted or not (nothing for an
+    /// empty or very short one: a word that short would hit other text)
+    pub fn know(&mut self, name: &str) {
+        let name = name.trim();
+        if name.chars().count() >= 3 && !self.names.iter().any(|n| n == name) {
+            self.names.push(name.to_owned());
+        }
+    }
+
+    /// The pseudonym of a name
+    fn pseudonym(&mut self, name: &str) -> String {
+        let n = match self.names.iter().position(|n| n == name) {
+            Some(i) => i + 1,
+            None => {
+                self.names.push(name.to_owned());
+                self.names.len()
+            }
+        };
+        format!("<device-{n}>")
+    }
+
+    pub fn mask(&mut self, text: &str) -> String {
+        let text = self.mask_quoted_names(text);
+        let text = self.mask_known_names(&text);
+        let text = mask_user_paths(&text);
+        let mut b = text.into_bytes();
+        mask_usb_serials(&mut b);
+        mask_separated_addresses(&mut b);
+        mask_bare_addresses(&mut b);
+        String::from_utf8(b).expect("only ASCII bytes were replaced")
+    }
+
+    /// `“name”` -> `<device-N>`, on one line, up to 256 characters
+    fn mask_quoted_names(&mut self, text: &str) -> String {
+        const OPEN: char = '\u{201C}';
+        const CLOSE: char = '\u{201D}';
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(start) = rest.find(OPEN) {
+            let after = &rest[start + OPEN.len_utf8()..];
+            let end = after.find([CLOSE, OPEN, '\n']).filter(|&e| after[e..].starts_with(CLOSE));
+            match end {
+                Some(e) if e > 0 && after[..e].chars().count() <= 256 => {
+                    out.push_str(&rest[..start]);
+                    out.push_str(&self.pseudonym(&after[..e]));
+                    rest = &after[e + CLOSE.len_utf8()..];
+                }
+                _ => {
+                    out.push_str(&rest[..start + OPEN.len_utf8()]);
+                    rest = after;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// The names told, longest first (a name that contains another)
+    fn mask_known_names(&mut self, text: &str) -> String {
+        let mut order: Vec<usize> = (0..self.names.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(self.names[i].len()));
+        let mut out = text.to_owned();
+        for i in order {
+            if out.contains(&self.names[i]) {
+                out = out.replace(&self.names[i], &format!("<device-{}>", i + 1));
+            }
+        }
+        out
+    }
+}
+
+/// `\Users\<name>\` (or '/'; JSON's `\\Users\\<name>\\` too) -> the name as
+/// 'x's
+fn mask_user_paths(text: &str) -> String {
+    const NOBODY: &[&str] = &["Public", "Default", "Default User", "All Users"];
+    let is_sep = |c: u8| c == b'\\' || c == b'/';
+    // What a Windows user name cannot contain, and where a path stops
+    let ends = |c: u8| c < 0x20 || b"\\/:*?\"<>|".contains(&c);
+    let b = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < b.len() {
+        if is_sep(b[i])
+            && b.get(i + 1..i + 6).is_some_and(|w| w.eq_ignore_ascii_case(b"Users"))
+            && b.get(i + 6).is_some_and(|&c| is_sep(c))
+        {
+            let mut j = i + 6;
+            while j < b.len() && is_sep(b[j]) {
+                j += 1;
+            }
+            let start = j;
+            while j < b.len() && !ends(b[j]) {
+                j += 1;
+            }
+            let name = &text[start..j];
+            if !name.is_empty() && !NOBODY.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                out.push_str(&text[i..start]);
+                out.extend(std::iter::repeat_n('x', name.chars().count()));
+                i = j;
+                continue;
+            }
+        }
+        let c = text[i..].chars().next().expect("at a char boundary");
+        out.push(c);
+        i += c.len_utf8();
+    }
+    out
 }
 
 fn mask_separated_addresses(b: &mut [u8]) {
@@ -1035,7 +1167,7 @@ fn le_audio_section(out: &mut String, s: &Settings, le: Option<&LeAudioDiag>) {
             (true, false) => "connected",
             _ => "disconnected",
         };
-        let _ = write!(out, "  Device {} '{}': {state}, {} sink ASE(s)", d.addr, d.name, d.sink_ases);
+        let _ = write!(out, "  Device {} {}: {state}, {} sink ASE(s)", d.addr, quoted(&d.name), d.sink_ases);
         if !d.roles.is_empty() {
             let _ = write!(out, ", {}", d.roles);
         }
@@ -1107,8 +1239,8 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
     out.push_str("\n[Profile]\n");
     match d.profile {
         Some(p) => {
-            let _ = writeln!(out, "  Name: {}", p.name);
-            let _ = writeln!(out, "  Device: {} [{}]", p.device_name, p.device_address);
+            let _ = writeln!(out, "  Name: {}", quoted(&p.name));
+            let _ = writeln!(out, "  Device: {} [{}]", quoted(&p.device_name), p.device_address);
             let auto_or = |v: u32| if v == 0 { "auto".to_string() } else { v.to_string() };
             let _ = writeln!(
                 out,
@@ -1126,13 +1258,13 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
                     let _ = write!(out, " '{}'", if p.app_name.is_empty() { &p.app_exe } else { &p.app_name });
                 }
             } else if !p.audio_device_name.is_empty() {
-                let _ = write!(out, " '{}'", p.audio_device_name);
+                let _ = write!(out, " {}", quoted(&p.audio_device_name));
             }
             let payload = p.max_media_payload.map(|v| v.to_string()).unwrap_or_else(|| "not set".into());
             let _ = writeln!(out, ", auto switch {}, max media packet {payload}", on_off(p.auto_switch_device));
             let _ = write!(out, "  Volume sync: {}", p.volume_sync);
             if p.volume_sync == "device" {
-                let _ = write!(out, " '{}'", p.volume_device_name);
+                let _ = write!(out, " {}", quoted(&p.volume_device_name));
             }
             out.push('\n');
         }
@@ -1159,7 +1291,14 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
                 out,
                 "  Source: {}{}{}",
                 src.kind,
-                if src.name.is_empty() { String::new() } else { format!(" '{}'", src.name) },
+                // An application's executable is no device name
+                if src.name.is_empty() {
+                    String::new()
+                } else if src.kind == "app" {
+                    format!(" '{}'", src.name)
+                } else {
+                    format!(" {}", quoted(&src.name))
+                },
                 if src.waiting { " (waiting for the app to start)" } else { "" }
             );
             if let Some(req) = &i.requested_codec {
@@ -1245,7 +1384,16 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         let _ = writeln!(out, "{}", format_line(e, d.clock));
     }
     out.push_str("```\n");
-    if d.mask { mask_identifiers(&out) } else { out }
+    if !d.mask {
+        return out;
+    }
+    let mut m = Masker::new();
+    if let Some(p) = d.profile {
+        for n in [&p.device_name, &p.audio_device_name, &p.volume_device_name, &p.name] {
+            m.know(n);
+        }
+    }
+    m.mask(&out)
 }
 
 #[cfg(test)]
@@ -1562,6 +1710,72 @@ mod tests {
     }
 
     #[test]
+    fn masks_user_paths() {
+        let m = mask_identifiers;
+        assert_eq!(
+            m(r"settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB"),
+            r"settings folder: C:\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB"
+        );
+        // Non-ASCII names: one 'x' per character; a name at the end
+        assert_eq!(m(r"C:\Users\山田太郎\AppData"), r"C:\Users\xxxx\AppData");
+        assert_eq!(m(r"C:\Users\taro"), r"C:\Users\xxxx");
+        // JSON's doubled '\', '/', a device path, any case
+        assert_eq!(m(r#"{"path":"C:\\Users\\taro\\x.txt"}"#), r#"{"path":"C:\\Users\\xxxx\\x.txt"}"#);
+        assert_eq!(m("file:///C:/users/taro/x.txt"), "file:///C:/users/xxxx/x.txt");
+        assert_eq!(m(r"\\?\C:\USERS\TARO\x"), r"\\?\C:\USERS\xxxx\x");
+        // Nobody's folders, and "Users" elsewhere
+        assert_eq!(m(r"C:\Users\Public\Desktop"), r"C:\Users\Public\Desktop");
+        assert_eq!(m(r"C:\Users\Default\x and C:\Users\All Users\y"), r"C:\Users\Default\x and C:\Users\All Users\y");
+        assert_eq!(m("3 Users, C:\\Users\\\n"), "3 Users, C:\\Users\\\n");
+        assert_eq!(m("in Users\\taro"), "in Users\\taro");
+        assert_eq!(m(r"C:\Users"), r"C:\Users");
+        // The name stops at what a name cannot contain
+        assert_eq!(m("dump: C:\\Users\\taro\n"), "dump: C:\\Users\\xxxx\n");
+        assert_eq!(m(r#""C:\Users\taro""#), r#""C:\Users\xxxx""#);
+    }
+
+    #[test]
+    fn masks_device_names() {
+        let mut m = Masker::new();
+        // Quoted names, the same name the same number
+        assert_eq!(
+            m.mask("stream: device AA:BB:CC:DD:EE:FF source virtual device “Taro's AirPods”"),
+            "stream: device AA:BB:CC:xx:xx:xx source virtual device <device-1>"
+        );
+        assert_eq!(
+            m.mask("inquiry result: 11:22:33:44:55:66 name=“Hanako's iPhone”"),
+            "inquiry result: 11:22:33:xx:xx:xx name=<device-2>"
+        );
+        assert_eq!(
+            m.mask("remote name of AA:BB:CC:DD:EE:FF: name=“Taro's AirPods”"),
+            "remote name of AA:BB:CC:xx:xx:xx: name=<device-1>"
+        );
+        // Empty, unclosed, nested and multi-line quotes stay
+        assert_eq!(m.mask("name=“” and “open"), "name=“” and “open");
+        assert_eq!(m.mask("“a\nb”"), "“a\nb”");
+        assert_eq!(m.mask("“x “y” z”"), "“x <device-3> z”");
+        // Known names, quoted or not, inside other names; longest first
+        let mut m = Masker::new();
+        m.know("Taro's AirPods");
+        m.know("Headphones (Taro's AirPods Stereo)");
+        m.know("");
+        m.know("LE");
+        assert_eq!(
+            m.mask(
+                "Device: Taro's AirPods [AA:BB:CC:DD:EE:FF], loopback of “Headphones (Taro's AirPods Stereo)”, LE on"
+            ),
+            "Device: <device-1> [AA:BB:CC:xx:xx:xx], loopback of <device-2>, LE on"
+        );
+        assert_eq!(m.mask(r#""device_name": "Taro's AirPods""#), r#""device_name": "<device-1>""#);
+        assert_eq!(m.mask("AA:BB:CC:DD:EE:FF|Taro's AirPods"), "AA:BB:CC:xx:xx:xx|<device-1>");
+        // Known again: the same number
+        m.know("Taro's AirPods");
+        assert_eq!(m.mask("“Taro's AirPods”"), "<device-1>");
+        // Names and addresses do not mask each other's text
+        assert_eq!(mask_identifiers("“AA:BB:CC:DD:EE:FF”"), "<device-1>");
+    }
+
+    #[test]
     fn masks_usb_serials() {
         let m = mask_identifiers;
         // A serial that is the adapter's address keeps the vendor part
@@ -1703,7 +1917,9 @@ mod tests {
         assert!(text.contains("  Setting: chip PID 0x0000 (auto)\n"), "{text}");
         assert!(text.contains("  Realtek RTL8761B [0BDA:8771], driver WinUsb\n"));
         assert!(text.contains("  chip: RTL8761B (0x8771) (auto)\n"));
-        assert!(text.contains("  Device: WH-1000XM4 [00:1A:7D:xx:xx:xx]\n"), "{text}");
+        // The device's name goes with the addresses (the profile's names are known)
+        assert!(text.contains("  Device: <device-1> [00:1A:7D:xx:xx:xx]\n"), "{text}");
+        assert!(!text.contains("WH-1000XM4"), "{text}");
         assert!(text.contains("  Codec: ldac, quality hq, ABR off, fallback on, sample rate auto, bit depth auto\n"));
         assert!(text.contains("  LDAC 48000 Hz 2 ch, 990 kbps; source 48000 Hz 2 ch 32 bit\n"));
         assert!(text.contains("  Source: app 'Spotify.exe' (waiting for the app to start)\n"));
@@ -1777,13 +1993,16 @@ mod tests {
         assert!(text.contains(
             "  ISO: 1000 SDU sets sent (2000 SDUs), 12 silence, 1 underruns, 3 dropped, 0 send errors, prefill 6\n"
         ));
+        // The device's name is masked with the rest
         assert!(
-            text.contains(
-                "  Device C0:11:22:xx:xx:xx 'Earbuds': ready, 2 sink ASE(s), TMAP: UMR, GMAP: UGT (UGT features 0x3C: \
-                 sink)\n"
-            ),
+            text.contains(": ready, 2 sink ASE(s), TMAP: UMR, GMAP: UGT (UGT features 0x3C: sink)\n")
+                && text.contains("  Device C0:11:22:xx:xx:xx <device-")
+                && !text.contains("Earbuds"),
             "{text}"
         );
+        input.mask = false;
+        let text = diag_text(&input);
+        assert!(text.contains("  Device C0:11:22:33:44:55 \u{201C}Earbuds\u{201D}: ready"), "{text}");
     }
 
     #[test]

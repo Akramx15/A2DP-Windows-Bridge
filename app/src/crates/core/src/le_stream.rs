@@ -241,7 +241,7 @@ pub(crate) fn refusal(le_enabled: bool, source: &SourceRequest) -> Option<&'stat
 pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let le = req.le.clone().unwrap_or_default();
     let addr = bt_host::addr_str(&req.device);
-    tracing::info!("LE Audio (experimental) stream to {addr} ({})", req.device_name);
+    tracing::info!("LE Audio (experimental) stream to {addr} ({})", crate::diag::quoted(&req.device_name));
     tracing::debug!("le stream: request {req:?}");
     let stopped = || inner.stop_requested();
     let ready = || inner.notify(StreamState::Idle, Msg::new("status.ready"));

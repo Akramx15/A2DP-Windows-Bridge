@@ -1443,7 +1443,11 @@ impl CoreState {
                 self.refresh_devices();
                 // The profile in use starts again with what was saved (v1)
                 if restart_after_save(&s.stream, &key) {
-                    tracing::info!("profile \"{key}\" saved while in use: it starts again as \"{}\"", profile.name);
+                    tracing::info!(
+                        "profile {} saved while in use: it starts again as {}",
+                        a2dpwb_core::diag::quoted(&key),
+                        a2dpwb_core::diag::quoted(&profile.name)
+                    );
                     self.start_profile(&profile.name)?;
                 }
                 Ok(Value::Null)
