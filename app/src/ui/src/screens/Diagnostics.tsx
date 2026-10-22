@@ -17,7 +17,7 @@ import { t } from "../i18n";
 import type { CaptureState, DiagBundle, FlowStepView, LogLevel, LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { STEPS, type Step, type StepStatus, stepDetail } from "../lib/flow";
-import { clock, copyText, kbps, maskIdentifiers } from "../lib/format";
+import { clock, copyText, kbps, knowAdapters, maskIdentifiers } from "../lib/format";
 import {
   dropsPerSample,
   EDR3_MAX_KBPS,
@@ -131,6 +131,8 @@ export function Diagnostics() {
   const app = useApp();
   const { core } = app;
   const [tab, setTab] = createSignal<Tab>("link");
+  // The adapters' own addresses: <adapter> in masked copies
+  createEffect(() => knowAdapters(core.state.snap?.adapter.adapters.map((a) => a.address) ?? []));
   const capture = () => core.state.snap!.capture;
   const [capBusy, setCapBusy] = createSignal(false);
   const [bundleBusy, setBundleBusy] = createSignal(false);

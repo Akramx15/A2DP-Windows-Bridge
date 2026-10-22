@@ -71,7 +71,7 @@ impl std::fmt::Display for SourceRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SourceRequest::SystemLoopback => f.write_str("system output"),
-            SourceRequest::VirtualDevice { name, .. } => write!(f, "virtual device \"{name}\""),
+            SourceRequest::VirtualDevice { name, .. } => write!(f, "virtual device {}", crate::diag::quoted(name)),
             SourceRequest::Application { exe } => write!(f, "app {exe}"),
             SourceRequest::TestTone => f.write_str("test tone"),
         }
@@ -440,9 +440,10 @@ impl DefaultDeviceGuard {
     /// one role (Console, Multimedia) before the other failed.
     pub(crate) fn switch_to(id: &str, name: &str) -> DefaultDeviceGuard {
         let before = audio_capture::default_render_device();
-        tracing::debug!("default output: switching to '{name}' ({id}), was {before:?}");
+        let name = crate::diag::quoted(name);
+        tracing::debug!("default output: switching to {name} ({id}), was {before:?}");
         if let Err(e) = audio_capture::set_default_render_device(id) {
-            tracing::warn!("failed to make '{name}' the default output device: {e}");
+            tracing::warn!("failed to make {name} the default output device: {e}");
         }
         DefaultDeviceGuard(restore_target(before, id))
     }

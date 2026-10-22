@@ -246,7 +246,7 @@
   "dbgc.copy_log": "複製顯示的記錄",
   "dbgc.copy_selected": "複製選取的行",
   "dbgc.mask": "遮蔽藍牙位址",
-  "dbgc.mask_tip": "複製時位址顯示為 AA:BB:CC:xx:xx:xx (保留廠商部分)。USB 序號也會隱藏。",
+  "dbgc.mask_tip": "複製時藍牙位址顯示為 <addr-1>、<addr-2>... (介面卡自身為 <adapter>)，裝置名稱顯示為 <device-1>、<device-2>...；USB 序號和 Windows 使用者名稱也會隱藏。",
   "dbgc.copied": "已複製到剪貼簿 (%u 行)",
   "dbgc.copy_failed": "無法開啟剪貼簿",
   "receiver.title": "對端接收器測試",

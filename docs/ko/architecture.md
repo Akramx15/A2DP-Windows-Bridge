@@ -398,7 +398,7 @@ A2DPWB는 로그에만 기록하며, 싱크가 기본 aptX를 별도로 제공�
 - IPC 프로토콜의 TypeScript 타입은 Rust 타입에서 생성됩니다
   (`cargo test -p ipc export_bindings`)
 - 언어 파일(`app/lang/*.json`)은 창과 코어의 트레이 메뉴에서 사용됩니다
-- `installer/build-release.ps1`이 NSIS 설치 프로그램(Tauri의 번들러),
+- `installer/build-release.ps1`이 설치 프로그램(Inno Setup, `installer/A2DPWB.iss`),
   포터블 zip, 업데이터 매니페스트를 만듭니다. [빌드](building)를 참조하십시오
 
 ## 중요 고려 사항

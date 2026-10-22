@@ -915,7 +915,12 @@ impl HostApp {
                 } else {
                     String::new()
                 };
-                tracing::info!("inquiry result: {} CoD=0x{cod:06X} RSSI={} name={name}", addr_str(&addr), rssi as i8);
+                tracing::info!(
+                    "inquiry result: {} CoD=0x{cod:06X} RSSI={} name={}",
+                    addr_str(&addr),
+                    rssi as i8,
+                    format_args!("“{name}”")
+                );
                 self.shared.update(|s| {
                     if !s.inquiry_done {
                         s.discovered.push(DiscoveredDevice { addr, name, class_of_device: cod, rssi: rssi as i8 });
@@ -929,7 +934,11 @@ impl HostApp {
                 let raw = p.get(9..).unwrap_or_default();
                 let raw = &raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())];
                 let name = String::from_utf8_lossy(raw).trim().to_string();
-                tracing::info!("remote name of {}: status 0x{status:02X} name={name}", addr_str(&addr));
+                tracing::info!(
+                    "remote name of {}: status 0x{status:02X} name={}",
+                    addr_str(&addr),
+                    format_args!("“{name}”")
+                );
                 self.shared.update(|s| {
                     if status == 0 && !name.is_empty() {
                         for d in s.discovered.iter_mut().filter(|d| d.addr == addr && d.name.is_empty()) {

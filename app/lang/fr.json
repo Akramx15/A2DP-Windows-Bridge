@@ -246,7 +246,7 @@
   "dbgc.copy_log": "Copier le journal affiché",
   "dbgc.copy_selected": "Copier les lignes sélectionnées",
   "dbgc.mask": "Masquer les adresses Bluetooth",
-  "dbgc.mask_tip": "Les copies affichent les adresses sous la forme AA:BB:CC:xx:xx:xx (la partie fabricant est conservée). Les numéros de série USB sont aussi masqués.",
+  "dbgc.mask_tip": "Les copies affichent les adresses Bluetooth sous la forme <addr-1>, <addr-2>... (celle de l'adaptateur : <adapter>) et les noms d'appareils sous la forme <device-1>, <device-2>... ; les numéros de série USB et votre nom d'utilisateur Windows sont aussi masqués.",
   "dbgc.copied": "Copié dans le Presse-papiers (%u lignes)",
   "dbgc.copy_failed": "Impossible d'ouvrir le Presse-papiers",
   "receiver.title": "Test avec récepteur pair",

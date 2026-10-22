@@ -41,7 +41,10 @@ fn main() {
         .on_page_load(|webview, payload| {
             let event = match payload.event() {
                 PageLoadEvent::Started => "loading",
-                PageLoadEvent::Finished => "loaded",
+                PageLoadEvent::Finished => {
+                    windows::page_loaded(webview.label());
+                    "loaded"
+                }
             };
             tracing::info!("[{}] page {event}: {}", webview.label(), payload.url());
         })

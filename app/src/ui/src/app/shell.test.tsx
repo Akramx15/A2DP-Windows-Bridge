@@ -129,8 +129,13 @@ describe("Home", () => {
     const title = await screen.findByText("Firmware not found");
     const bar = title.closest(".banner") as HTMLElement;
     expect(bar).toHaveTextContent("rtl8761bu_fw.bin, rtl8761bu_config.bin");
+    // The Adapter screen's firmware actions are in the bar as well (issue #81)
+    expect(within(bar).getByRole("button", { name: t("firmware.download") })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: t("firmware.open_folder") })).toBeInTheDocument();
     fireEvent.click(within(bar).getByRole("button", { name: t("ui.home.firmware_fix") }));
     expect(await screen.findByRole("heading", { level: 1, name: "Adapters" })).toBeInTheDocument();
+    expect(location.hash).toBe("#/adapter/firmware");
+    expect(document.getElementById("adapter-firmware")).toBeInTheDocument();
   });
 
   it("copies the error with the diagnostic log", async () => {

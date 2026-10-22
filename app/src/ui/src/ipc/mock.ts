@@ -1474,8 +1474,15 @@ export class MockCore implements Transport {
       `Profiles: ${s.profiles.map((p) => `${p.name} [${p.device_address}]`).join(", ")}`,
       `Config: ${s.config_dir}`,
     ].join("\n");
-    // AA:BB:CC:xx:xx:xx, as the core masks them
-    return mask ? text.replace(/\b([0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}):[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}\b/gi, "$1:xx:xx:xx") : text;
+    // <addr-N>, as the core masks them
+    const seen: string[] = [];
+    return mask
+      ? text.replace(/\b[0-9A-F]{2}(:[0-9A-F]{2}){5}\b/gi, (a) => {
+          const key = a.toUpperCase();
+          if (!seen.includes(key)) seen.push(key);
+          return `<addr-${seen.indexOf(key) + 1}>`;
+        })
+      : text;
   }
 }
 
