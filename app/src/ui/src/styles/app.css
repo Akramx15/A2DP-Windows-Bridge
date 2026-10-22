@@ -2085,6 +2085,27 @@ option {
 .bitpool-swatch.used {
   background: var(--accent-1);
 }
+/* SBC ABR: the range the bitpool moves in, drawn around the track */
+.bitpool-range.abr {
+  top: -0.25rem;
+  bottom: -0.25rem;
+  border: 2px dashed var(--accent-1);
+  border-radius: 4px;
+  background: transparent;
+}
+.bitpool-swatch.abr {
+  box-sizing: border-box;
+  border: 2px dashed var(--accent-1);
+}
+/* Under ABR the mark moves with the bitpool */
+.bitpool.live .bitpool-used {
+  transition: left 0.4s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bitpool.live .bitpool-used {
+    transition: none;
+  }
+}
 .bitpool-scale {
   display: flex;
   justify-content: space-between;
@@ -2140,6 +2161,11 @@ option {
   .bitpool-used,
   .bitpool-swatch.used {
     background: Highlight;
+  }
+  .bitpool-range.abr,
+  .bitpool-swatch.abr {
+    border-color: Highlight;
+    background: transparent;
   }
 }
 @media (forced-colors: active) {

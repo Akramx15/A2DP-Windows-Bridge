@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
-import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
+import { abrCarries, bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
@@ -153,7 +153,17 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "ldac" })).toMatchObject({ quality: "hq", abr: true, sample_rate: 96000, bit_depth: 24 });
     // AAC takes the flag as VBR (the editor clears it when the codec changes to or from AAC)
     expect(fitToCodec({ ...p, codec: "aac" })).toMatchObject({ abr: true, sample_rate: 0, bit_depth: 0 });
-    expect(fitToCodec({ ...p, codec: "sbc", sbc_bitpool: 40 })).toMatchObject({ abr: false, sbc_bitpool: 40 });
+    // SBC takes it as its adaptive bitpool (the editor clears it when the
+    // codec changes to or from SBC / SBC XQ: abrCarries)
+    expect(fitToCodec({ ...p, codec: "sbc", sbc_bitpool: 40 })).toMatchObject({ abr: true, sbc_bitpool: 40 });
+    expect(fitToCodec({ ...p, codec: "faststream" })).toMatchObject({ abr: false });
+    expect(abrCarries("ldac", "lhdcv5")).toBe(true);
+    expect(abrCarries("auto", "ldac")).toBe(true);
+    expect(abrCarries("sbc", "sbcxq")).toBe(true);
+    expect(abrCarries("ldac", "sbc")).toBe(false);
+    expect(abrCarries("sbcxq", "auto")).toBe(false);
+    expect(abrCarries("aac", "sbc")).toBe(false);
+    expect(abrCarries("aac", "ldac")).toBe(false);
     expect(fitToCodec({ ...p, codec: "ldac", sbc_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0 });
     // SBC and SBC XQ keep their own bitpool
     expect(fitToCodec({ ...p, codec: "sbcxq", sbc_bitpool: 53, sbcxq_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0, sbcxq_bitpool: 40 });

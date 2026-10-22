@@ -432,6 +432,7 @@ fn to_ipc_codec_details(d: a2dpwb_core::CodecDetails) -> ipc::CodecDetails {
             bitpool: s.bitpool,
             config_bitpool: s.config_bitpool,
             device: s.device.map(to_ipc_sbc_caps),
+            abr_bitpool: s.abr_bitpool,
         }),
         aac: d.aac.map(|a| ipc::AacDetails {
             object_type: a.object_type,
@@ -457,6 +458,33 @@ fn to_ipc_le_stream(d: &LeStreamDetails) -> LeStreamInfo {
         low_latency: d.low_latency,
         summary: d.summary.clone(),
     }
+}
+
+/// The stream info with what an ABR encoder runs at now (the encode
+/// thread's [`LinkStats::live_codec`]): the bit rate, and SBC's bitpool,
+/// frame length and frames per packet. None when nothing changed, or the
+/// stream is not an A2DP one under ABR (the values may be a stream's that
+/// ended).
+pub fn live_info(info: &ipc::StreamInfo, live: bt_host::LiveCodec) -> Option<ipc::StreamInfo> {
+    if !info.abr || info.le.is_some() {
+        return None;
+    }
+    let mut next = info.clone();
+    next.bitrate_kbps = live.bitrate_kbps;
+    if let Some(d) = next.details.as_deref_mut() {
+        if let Some(s) = d.sbc.as_mut().filter(|s| s.abr_bitpool.is_some() && live.bitpool > 0) {
+            s.bitpool = live.bitpool.into();
+        }
+        if live.frame_bytes > 0 && d.frame_bytes.is_some() {
+            let bytes = u32::from(live.frame_bytes);
+            d.frame_bytes = Some(bytes);
+            // As stream::codec_details: whole frames in the payload, SBC
+            // counts them in 4 bits
+            let n = d.mtu.saturating_sub(d.media_header) / bytes;
+            d.frames_per_packet = Some(if d.media_header == 1 { n.min(15) } else { n });
+        }
+    }
+    (next != *info).then_some(next)
 }
 
 /// The cumulative media counters, those when the current stream started,
@@ -767,6 +795,32 @@ impl CoreState {
             g.0
         };
         let _ = self.events.send((rev, Arc::new(event)));
+        self.update_tray();
+    }
+
+    /// What an ABR encoder runs at now into the stream info (the sampler, a
+    /// few times a second): published when it changed. Checked and applied
+    /// under one lock, so that a state change meanwhile is never undone.
+    pub fn apply_live_codec(&self, live: Option<bt_host::LiveCodec>) {
+        let Some(live) = live else { return };
+        {
+            let mut g = self.snapshot.lock().unwrap_or_else(|e| e.into_inner());
+            let stream = &g.1.stream;
+            let next = match (&stream.state, &stream.info) {
+                (StreamState::Streaming, Some(i)) => live_info(i, live),
+                _ => None,
+            };
+            let Some(next) = next else { return };
+            tracing::trace!(
+                "stream info: {} kbps, bitpool {:?}",
+                next.bitrate_kbps,
+                next.details.as_ref().and_then(|d| d.sbc.as_ref()).map(|s| s.bitpool)
+            );
+            g.1.stream.info = Some(next);
+            g.0 += 1;
+            let event = Event::Stream(g.1.stream.clone());
+            let _ = self.events.send((g.0, Arc::new(event)));
+        }
         self.update_tray();
     }
 
@@ -1813,6 +1867,87 @@ mod tests {
         assert_eq!(state.snapshot().1.stream.profile.as_deref(), Some("B"));
         event(CoreStreamState::Streaming);
         assert_eq!(state.snapshot().1.stream.profile.as_deref(), Some("B"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// SBC at 48 kHz under ABR (bitpool 19..53), 1011-byte payloads
+    fn sbc_abr_info() -> ipc::StreamInfo {
+        serde_json::from_value(serde_json::json!({
+            "codec": "SBC", "bitrate_kbps": 357, "sample_rate": 48000, "channels": 2, "bits": 16,
+            "source_sample_rate": 48000, "source_channels": 2, "source_bits": 32,
+            "requested_codec": null, "requested_in_use": false, "abr": true,
+            "details": {
+                "mtu": 1011, "rtp": true, "media_header": 1, "frame_samples": 128,
+                "frame_bytes": 119, "frames_per_packet": 8,
+                "sbc": {
+                    "channel_mode": "joint_stereo", "blocks": 16, "subbands": 8, "allocation": "loudness",
+                    "bitpool": 53, "config_bitpool": [2, 53], "device": null, "abr_bitpool": [19, 53]
+                },
+                "aac": null
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn live_codec_values_go_into_the_stream_info() {
+        let info = sbc_abr_info();
+        let live = bt_host::LiveCodec { bitrate_kbps: 249, bitpool: 35, frame_bytes: 83 };
+        let next = live_info(&info, live).unwrap();
+        assert_eq!(next.bitrate_kbps, 249);
+        let d = next.details.as_deref().unwrap();
+        assert_eq!((d.frame_bytes, d.frames_per_packet), (Some(83), Some(12)));
+        let s = d.sbc.as_ref().unwrap();
+        assert_eq!((s.bitpool, s.abr_bitpool, s.config_bitpool), (35, Some((19, 53)), Some((2, 53))));
+        // Nothing changed: nothing to send
+        assert_eq!(live_info(&next, live), None);
+        // At most 15 frames (the 4-bit count)
+        let small = bt_host::LiveCodec { bitrate_kbps: 100, bitpool: 12, frame_bytes: 40 };
+        assert_eq!(live_info(&info, small).unwrap().details.unwrap().frames_per_packet, Some(15));
+        // Not under ABR, or LE Audio: left alone
+        let fixed = ipc::StreamInfo { abr: false, ..info.clone() };
+        assert_eq!(live_info(&fixed, live), None);
+        // LDAC under ABR: the bit rate only
+        let ldac = ipc::StreamInfo { codec: "LDAC".into(), details: None, ..info };
+        assert_eq!(live_info(&ldac, live).map(|i| (i.bitrate_kbps, i.details)), Some((249, None)));
+    }
+
+    #[test]
+    fn live_codec_updates_only_a_streaming_snapshot() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-state-live-{}", std::process::id()));
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let options = a2dpwb_core::ServiceOptions {
+            config_dir: dir.clone(),
+            hci_tcp: None,
+            capture: bt_host::HciCapture::new(),
+            afh: None,
+            usb: Default::default(),
+        };
+        let state =
+            CoreState::new(Arc::new(Service::new(options, tx)), Box::new(|_| {}), Box::new(|| {}), Box::new(|_| {}));
+        let live = bt_host::LiveCodec { bitrate_kbps: 249, bitpool: 35, frame_bytes: 83 };
+        let mut events = state.subscribe();
+        let set = |st: StreamState| {
+            state.publish(Event::Stream(StreamStatus { state: st, info: Some(sbc_abr_info()), ..Default::default() }))
+        };
+        set(StreamState::Reconnecting);
+        let _ = events.try_recv();
+        state.apply_live_codec(Some(live));
+        assert!(events.try_recv().is_err());
+        set(StreamState::Streaming);
+        let _ = events.try_recv();
+        state.apply_live_codec(None);
+        assert!(events.try_recv().is_err());
+        let rev = state.snapshot().0;
+        state.apply_live_codec(Some(live));
+        let (r, e) = events.try_recv().unwrap();
+        assert_eq!(r, rev + 1);
+        let Event::Stream(st) = &*e else { panic!("{e:?}") };
+        assert_eq!(st.info.as_ref().map(|i| i.bitrate_kbps), Some(249));
+        assert_eq!(state.snapshot().1.stream.info.unwrap().details.unwrap().sbc.unwrap().bitpool, 35);
+        // The same again: no event
+        state.apply_live_codec(Some(live));
+        assert!(events.try_recv().is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

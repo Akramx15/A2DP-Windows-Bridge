@@ -19,6 +19,7 @@ import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import type { AudioApp, AudioDevice, Profile } from "../ipc/types";
 import {
+  abrCarries,
   bitDepths,
   CODECS,
   codecSpec,
@@ -121,8 +122,9 @@ export function ProfileEditor(props: { original: string | null }) {
 
   const pickCodec = (c: CodecSpec) => {
     const cur = unwrap(p);
-    // The flag is VBR under AAC and ABR elsewhere: not carried across
-    const abr = (c.id === "aac") !== (cur.codec === "aac") ? false : cur.abr;
+    // The flag is VBR under AAC, the adaptive bitpool under SBC and ABR
+    // elsewhere: not carried across
+    const abr = abrCarries(cur.codec, c.id) ? cur.abr : false;
     setP(fitToCodec({ ...cur, abr, codec: c.id }));
     followName();
   };
@@ -611,7 +613,7 @@ function CodecSettings(props: {
             quality: p.quality,
             sample_rate: p.sample_rate,
             bit_depth: p.bit_depth,
-            abr: (s.id === "aac") !== (p.codec === "aac") ? false : p.abr,
+            abr: abrCarries(p.codec, s.id) ? p.abr : false,
             sbc_bitpool: p.sbc_bitpool,
             sbcxq_bitpool: p.sbcxq_bitpool,
             sbc_blocks: p.sbc_blocks,
@@ -712,7 +714,12 @@ function CodecSettings(props: {
           )}
         </Field>
         <Show when={spec().abr}>
-          <Check label={t("connection.abr")} title={t("tooltip.abr")} checked={v.abr} onChange={(x) => setV("abr", x)} />
+          <Check
+            label={t("connection.abr")}
+            title={t(spec().bitpool ? "tooltip.sbc_abr" : "tooltip.abr")}
+            checked={v.abr}
+            onChange={(x) => setV("abr", x)}
+          />
         </Show>
         <Show when={spec().vbr}>
           <Check label={t("connection.vbr")} title={t("tooltip.vbr")} checked={v.abr} onChange={(x) => setV("abr", x)} />

@@ -101,6 +101,10 @@ NEGOTIATION = {
     'sbc-8b-4sb-snr': ('sbc', [], 'sbc-8b-4sb-snr', ['--sbc-blocks', '8', '--sbc-subbands', '4', '--sbc-alloc', 'snr']),
     'sbc-stereo-12b': ('sbc', [], 'sbc-stereo-12b',
                        ['--rate', '44100', '--sbc-mode', 'stereo', '--sbc-blocks', '12', '--sbc-bitpool', '40']),
+    # SBC / SBC XQ with ABR (the adaptive bitpool): the emulated link keeps
+    # up, so the bitpool stays at the ceiling; every frame within the range
+    'sbc-abr': ('sbc', [], 'sbc', ['-a']),
+    'sbcxq-abr': ('sbcxq', [], 'sbcxq', ['-a', '--rate', '44100']),
     'faststream-44k': ('faststream', [], 'faststream', ['--rate', '44100']),
     # Auto never takes FastStream, even over SBC
     'auto-not-faststream': ('auto', ['--codecs', 'sbc', 'faststream', '--sbc-no-dual'], 'sbc', []),

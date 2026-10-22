@@ -162,6 +162,8 @@ async fn sampler(state: Arc<CoreState>) {
             state.refresh_capture();
             state.expire_verbose();
         }
+        // ABR: the bit rate and SBC bitpool as they move
+        state.apply_live_codec(stats.live_codec());
         if !state.link_subscribed() {
             last_link = None;
             continue;

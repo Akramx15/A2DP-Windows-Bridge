@@ -313,3 +313,32 @@ describe("capture source", () => {
     }
   });
 });
+
+describe("SBC ABR", () => {
+  it("is in the SBC dialog, and LDAC's ABR does not carry over to it", async () => {
+    const { calls } = start(edit("WH-1000XM5 (LDAC)"));
+    // LDAC with ABR on
+    let dialog = await codecSettings("codec.ldac");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // SBC's dialog starts with its adaptive bitpool off
+    dialog = await codecSettings("codec.sbc");
+    const abr = within(dialog).getByRole("checkbox", { name: t("connection.abr") });
+    expect(abr).not.toBeChecked();
+    fireEvent.click(abr);
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    const saved = calls.find((c) => c.method === "profile.save")!.params as { profile: Record<string, unknown> };
+    expect(saved.profile).toMatchObject({ codec: "sbc", abr: true });
+  });
+
+  it("SBC XQ offers it too", async () => {
+    start(edit("WH-1000XM5 (LDAC)"));
+    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_force", 8) }));
+    const dialog = await codecSettings("codec.sbc_xq");
+    expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).not.toBeChecked();
+  });
+});

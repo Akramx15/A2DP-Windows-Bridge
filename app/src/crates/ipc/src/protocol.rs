@@ -211,8 +211,10 @@ pub struct StreamInfo {
     /// The profile's codec, when the device did not offer it (fallback)
     pub requested_codec: Option<String>,
     pub requested_in_use: bool,
-    /// Adaptive bit rate on (LDAC, LHDC V5): LHDC V5 then stays at 400
-    /// kbps or below whatever the quality
+    /// Adaptive bit rate on (LDAC, LHDC V5, SBC and SBC XQ): LHDC V5 then
+    /// stays at 400 kbps or below whatever the quality. bitrate_kbps (and
+    /// SBC's details.sbc.bitpool, frame_bytes, frames_per_packet) follow
+    /// it: the core sends a new StreamInfo while they change.
     #[serde(default)]
     pub abr: bool,
     /// The device's maximum bit rate lowered the profile's (LHDC V5)
@@ -266,13 +268,19 @@ pub struct SbcDetails {
     pub subbands: u32,
     /// "loudness", "snr"
     pub allocation: String,
-    /// The bitpool the encoder uses
+    /// The bitpool the encoder uses (under ABR: now; the core sends a new
+    /// StreamInfo while it changes)
     pub bitpool: u32,
     /// The bitpool range of the configuration (SET_CONFIGURATION), min and
     /// max; None for FastStream (its codec information has none)
     pub config_bitpool: Option<(u32, u32)>,
     /// What the device's SBC endpoint offers, when it said
     pub device: Option<SbcDeviceCaps>,
+    /// SBC / SBC XQ under ABR: the range the bitpool moves in (floor,
+    /// ceiling); None without ABR and from an older core
+    #[ts(optional = nullable)]
+    #[serde(default)]
+    pub abr_bitpool: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
