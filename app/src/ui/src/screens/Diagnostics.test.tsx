@@ -63,7 +63,10 @@ describe("Diagnostics", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save…" }));
     const dialog = await screen.findByRole("dialog", { name: "Save Diagnostic Bundle" });
     expect(calls.some((c) => c.method === "diag.bundle")).toBe(false);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Include HCI captures" }));
+    // HCI captures are off unless asked for: ticking the box opts in
+    const hci = screen.getByRole("checkbox", { name: "Include HCI captures" });
+    expect(hci).not.toBeChecked();
+    fireEvent.click(hci);
     fireEvent.click(dialog.querySelector(".dialog-actions .btn-strong")!);
     const saved = await waitFor(() => {
       const el = view.container.querySelector(".bundle-saved");
@@ -71,7 +74,7 @@ describe("Diagnostics", () => {
       return el!;
     });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(calls.find((c) => c.method === "diag.bundle")!.params).toEqual({ mask: true, hci: false });
+    expect(calls.find((c) => c.method === "diag.bundle")!.params).toEqual({ mask: true, hci: true });
     expect(saved).toHaveTextContent(/a2dpwb-diag-\d{8}_\d{6}\.zip · \d+ KB/);
     expect(saved).toHaveTextContent("Attach this file to your GitHub issue");
 

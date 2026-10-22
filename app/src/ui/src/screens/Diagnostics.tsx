@@ -53,8 +53,9 @@ const [savedCapture, setSavedCapture] = createSignal<CaptureState | null>(null);
 /** The diagnostic bundle saved last */
 const [savedBundle, setSavedBundle] = createSignal<DiagBundle | null>(null);
 
-/** The bundle's HCI captures (they hold Bluetooth addresses) */
-const [withHci, setWithHci] = createSignal(true);
+/** The bundle's HCI captures: off unless asked for (they hold Bluetooth
+ *  addresses and device names, and most reports do not need them) */
+const [withHci, setWithHci] = createSignal(false);
 /** GitHub takes issue attachments up to this size */
 const GITHUB_ATTACHMENT_LIMIT = 25 * 1024 * 1024;
 

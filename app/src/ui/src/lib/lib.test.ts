@@ -281,18 +281,51 @@ describe("profiles", () => {
     expect(m("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.")).toBe("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.");
   });
 
-  it("masks the Windows user name in paths", () => {
+  it("masks a path above the app's own folder, or all but its last part", () => {
     const m = maskIdentifiers;
-    expect(m(String.raw`settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB`)).toBe(
-      String.raw`settings folder: C:\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB`,
+    expect(m(String.raw`settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB`)).toBe(String.raw`settings folder: <path>\A2DPWB`);
+    expect(m(String.raw`dump: C:\Users\admin\AppData\Roaming\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp`)).toBe(
+      String.raw`dump: <path>\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp`,
     );
-    expect(m(String.raw`C:\Users\山田太郎\AppData`)).toBe(String.raw`C:\Users\xxxx\AppData`);
-    expect(m(String.raw`{"path":"C:\\Users\\taro\\x.txt"}`)).toBe(String.raw`{"path":"C:\\Users\\xxxx\\x.txt"}`);
-    expect(m("file:///C:/users/taro/x.txt")).toBe("file:///C:/users/xxxx/x.txt");
-    expect(m("dump: C:\\Users\\taro\n")).toBe("dump: C:\\Users\\xxxx\n");
-    expect(m(String.raw`C:\Users\Public\Desktop and C:\Users\All Users\y`)).toBe(String.raw`C:\Users\Public\Desktop and C:\Users\All Users\y`);
-    expect(m("3 Users, C:\\Users\\\n")).toBe("3 Users, C:\\Users\\\n");
+    expect(m(String.raw`C:\Program Files\A2DP Windows Bridge\a2dpwb-ui.exe`)).toBe(String.raw`<path>\A2DP Windows Bridge\a2dpwb-ui.exe`);
+    expect(m(String.raw`starting: pid 1, I:\A2DP-Windows-Bridge\target\release\a2dpwb-core.exe`)).toBe(
+      String.raw`starting: pid 1, <path>\a2dpwb-core.exe`,
+    );
+    expect(m(String.raw`C:\Users\山田太郎\Music\foobar2000\foobar2000.exe`)).toBe(String.raw`<path>\foobar2000.exe`);
+    // The last part takes the text after it, but not another path; a trailing separator keeps the folder
+    expect(m(String.raw`HCI capture running: C:\x\A2DPWB\hci.pklg (3.0 MB)`)).toBe(String.raw`HCI capture running: <path>\A2DPWB\hci.pklg (3.0 MB)`);
+    expect(m(String.raw`moved C:\a\b\x.bin to C:\a\c\x.bin`)).toBe(String.raw`moved <path>\x.bin to <path>\x.bin`);
+    expect(m("folder C:\\a\\b\\\n")).toBe("folder <path>\\b\\\n");
+    expect(m(String.raw`C:\ only`)).toBe(String.raw`<path>\ only`);
+    // JSON's doubled '\', '/', a device path, a user's folder at the end (its name as x's)
+    expect(m(String.raw`{"path":"C:\\Users\\taro\\x.txt"}`)).toBe(String.raw`{"path":"<path>\\x.txt"}`);
+    expect(m("file:///C:/users/taro/x.txt")).toBe("file:///<path>/x.txt");
+    expect(m(String.raw`\\?\C:\USERS\TARO\x`)).toBe(String.raw`\\?\<path>\x`);
+    expect(m("dump: C:\\Users\\taro\n")).toBe("dump: <path>\\xxxx\n");
+    // Not paths
+    expect(m("at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c")).toBe("at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c");
+    expect(m(String.raw`\\.\pipe\a2dpwb-x`)).toBe(String.raw`\\.\pipe\a2dpwb-x`);
+  });
+
+  it("masks the Windows user name in a path without a drive", () => {
+    const m = maskIdentifiers;
+    expect(m(String.raw`\Users\Taro Yamada\AppData\Roaming\A2DPWB`)).toBe(String.raw`\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB`);
+    expect(m(String.raw`\Users\山田太郎\AppData`)).toBe(String.raw`\Users\xxxx\AppData`);
+    expect(m("/users/taro/x.txt")).toBe("/users/xxxx/x.txt");
+    expect(m(String.raw`\Users\Public\Desktop and \Users\All Users\y`)).toBe(String.raw`\Users\Public\Desktop and \Users\All Users\y`);
+    expect(m("3 Users, \\Users\\\n")).toBe("3 Users, \\Users\\\n");
     expect(m("in Users\\taro")).toBe("in Users\\taro");
+  });
+
+  it("masks account SIDs", () => {
+    const m = maskIdentifiers;
+    expect(m(String.raw`IPC: listening on \\.\pipe\a2dpwb-S-1-5-21-2123068572-4202720387-3275098450-1001`)).toBe(
+      String.raw`IPC: listening on \\.\pipe\a2dpwb-<sid>`,
+    );
+    expect(m("user S-1-5-21-1-2-3-500, then")).toBe("user <sid>, then");
+    // Well-known SIDs, the start of one, a longer word
+    expect(m("S-1-5-18 S-1-5-32-544 S-1-5-21- S-1-")).toBe("S-1-5-18 S-1-5-32-544 S-1-5-21- S-1-");
+    expect(m("xS-1-5-21-1-2-3-4 S-1-5-21-1-2-3-4x a2dpwb-S-1-5-21-1-2-3-4-dev")).toBe("xS-1-5-21-1-2-3-4 S-1-5-21-1-2-3-4x a2dpwb-<sid>-dev");
   });
 
   it("masks quoted device names, the same name the same number", () => {
