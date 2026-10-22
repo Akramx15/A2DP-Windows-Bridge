@@ -68,7 +68,7 @@ A2DP-Windows-Bridge/
 │   ├── lang/               다국어 리소스 (en.json이 원본, 나머지는 tools/check_lang.py로 검사)
 │   └── resources/          아이콘과 매니페스트
 ├── Cargo.toml              Cargo 워크스페이스
-├── installer/              릴리스 스크립트, NSIS 훅, 업데이터 메모 (installer/README.md)
+├── installer/              릴리스 스크립트, Inno Setup 스크립트, 업데이터 메모 (installer/README.md)
 ├── compat/                 AOSP 코드용 MSVC 호환 헤더
 ├── docs/                   문서 (이 사이트)와 설계 문서 (v2-design.md)
 ├── extern/                 서드파티 C 라이브러리 (git 서브모듈)
@@ -99,7 +99,7 @@ python tools/check_lang.py
 pwsh installer/build-release.ps1 -Arch x64
 ```
 
-위 명령은 설치 프로그램(`A2DPWB-<version>-win64-setup.exe`), 포터블 zip, 업데이터 매니페스트를 `target/dist`에 생성합니다. 앱 내 업데이트 서명과 기타 세부 사항은 `installer/README.md`를 참조하십시오.
+위 명령은 설치 프로그램(`A2DPWB-<version>-win64-setup.exe`), 포터블 zip, 업데이터 매니페스트를 `target/dist`에 생성합니다. Inno Setup 6.5 이상이 필요합니다(`winget install JRSoftware.InnoSetup`). 앱 내 업데이트 서명과 기타 세부 사항은 `installer/README.md`를 참조하십시오.
 
 ## 하드웨어 없이 테스트 (tools/emu) {#emu}
 

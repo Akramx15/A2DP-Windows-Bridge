@@ -306,7 +306,7 @@ AAC 和 SBC 使用 A2DP 规范中定义的标准 A2DP 编解码器 ID。
 - 窗口的页面由 **Vite** 构建（在 `app/src/ui` 中运行 `pnpm build`），并由 Tauri 嵌入 `a2dpwb.exe`
 - IPC 协议的 TypeScript 类型由 Rust 类型生成（`cargo test -p ipc export_bindings`）
 - 语言文件（`app/lang/*.json`）供窗口和核心的托盘菜单使用
-- `installer/build-release.ps1` 生成 NSIS 安装程序（Tauri 的打包工具）、便携版 zip 和更新程序清单。请参阅[构建](building)
+- `installer/build-release.ps1` 生成安装程序（Inno Setup，`installer/A2DPWB.iss`）、便携版 zip 和更新程序清单。请参阅[构建](building)
 
 ## 重要注意事项
 

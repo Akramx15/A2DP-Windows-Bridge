@@ -135,7 +135,7 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | 更新はリリースページを開くだけ | `tauri-plugin-updater` | 署名付きの更新をアプリ内でダウンロードして入れられる（機能追加） |
 | stderrを `debug.log` に向けてUIがファイルを読む | `tracing` + `tracing-appender` | 構造化ログを別スレッドで書き出す。ローテーション付きで、UIにはIPCで直接届く |
 | wxのトレイと二重起動防止のmutex | `tray-icon` + `tauri-plugin-single-instance` | トレイは常駐するコア側に置き、UIの二重起動は既存のウィンドウを前に出す |
-| Inno Setup 6 | TauriのNSISバンドラ | 更新機能と同じ仕組みで配布できる。ユーザー単位のインストール、8言語のセットアップ画面、アンインストール時のRunキー削除はフックで引き継ぐ |
+| Inno Setup 6 | Inno Setup 6（2.0.2-beta.5 までは TauriのNSISバンドラ） | 台本が人に読みやすく、開発が活発で、小さいうちに移しておけば後が楽（改訂履歴 2026-10-22）。ユーザー単位のインストール、8言語のセットアップ画面、アンインストール時のRunキー削除は `installer/A2DPWB.iss` の [Code] で行う |
 | Zadig（外部ツール、手作業） | `win-sys::driver`（SetupAPI） | アプリの中で割り当てと解除ができる。コピーレフトのライブラリを使わない（[ドライバ](#ドライバwinusb)） |
 
 **Cのまま残すライブラリ**
@@ -326,13 +326,13 @@ v1から上書きインストールするだけで、プロファイル、ペア
 
 **配布物**
 
-- `A2DPWB-<版>-win64-setup.exe` / `A2DPWB-<版>-arm64-setup.exe`: TauriのNSISバンドラで作ります（`installer/build-release.ps1`）。中身は `a2dpwb-core.exe`、`a2dpwb.exe`、`a2dpwb-driver.exe`（コアと昇格ヘルパーはTauriのsidecarとして同梱）、ライセンス文書（Rustのクレートは `cargo-about` で `licenses/rust-crates.txt` にまとめる）、`SOURCE.txt` です。インストールはユーザー単位だけにします（管理者権限なし、8言語のセットアップ画面）。全ユーザー向けは外しました。NSISのMultiUserで両方を選べるようにすると、管理者のアカウントでは起動時と更新のたびにUACの確認が出るためです。
+- `A2DPWB-<版>-win64-setup.exe` / `A2DPWB-<版>-arm64-setup.exe`: Inno Setup で作ります（`installer/A2DPWB.iss`、`installer/build-release.ps1`）。中身はポータブル版と同じで、`a2dpwb-core.exe`、`a2dpwb.exe`、`a2dpwb-driver.exe`、ライセンス文書（Rustのクレートは `cargo-about` で `licenses/rust-crates.txt` にまとめる）、`SOURCE.txt` です。インストールはユーザー単位だけにします（管理者権限なし、8言語のセットアップ画面）。全ユーザー向けは外しました。両方を選べるようにすると、管理者のアカウントでは起動時と更新のたびにUACの確認が出るためです。
 - `A2DPWB-<版>-win64-portable.zip` / `A2DPWB-<版>-arm64-portable.zip`: 今と同じく用意します。ポータブル版では、更新機能は通知だけにします。
 - WebView2ランタイムは、無ければインストーラが入れます（ブートストラッパーを同梱。Windows 11には標準で入っています）。
 
 **v1からの乗り換え**
 
-1. v2のインストーラは、Inno Setupで入ったv1をレジストリから見つけて、設定フォルダを残したままアンインストールします。v1が動いていれば、同じmutex（`A2DPWB_SingleInstance`）を見て終了を促します。動いているv2のコアは `a2dpwb-core.exe --quit` で終了させ（配信を止めてアダプタを放す）、インストール後に起動し直します（`installer/hooks.nsh`）。
+1. v2のインストーラは、Inno Setupで入ったv1をレジストリから見つけて、設定フォルダを残したままアンインストールします。v1が動いていれば、同じmutex（`A2DPWB_SingleInstance`）を見て終了を促します。動いているv2のコアは `a2dpwb-core.exe --quit` で終了させ（配信を止めてアダプタを放す）、インストール後に起動し直します（`installer/A2DPWB.iss`）。2.0.0〜2.0.2-beta.5 の NSIS でのインストールは、その更新モード（`uninstall.exe /S /UPDATE`: アダプタの WinUSB、ショートカット、Runキーは残る）でアンインストールして、同じフォルダを引き継ぎます。
 2. 自動起動のRunキー（値の名前は v1 と同じ `A2DPWB`）が有効だったときは、`a2dpwb-core.exe --background` に書き換えます。アンインストールでは、そのインストール先を指しているときだけ消します。
    - アンインストールでは、A2DPWB が WinUSB を割り当てたアダプターを Windows に戻すかを尋ねます（[ドライバ](#ドライバwinusb)の「アンインストール時の復元」）。v1 は Zadig に任せていたのでこの心配がありませんでしたが、v2 はアプリの中で割り当てるため、何もしないとアプリを消した後もドングルが Windows の Bluetooth から消えたままになり、デバイスマネージャーでしか戻せません。
 3. 初回起動時、コアは設定フォルダを `backup-v1\` に丸ごと（v2の `logs\` を除いて）コピーしてから読みます。コピーは一度だけで、`settings.json` に `schema_version` が付いた後はしません（`app/src/crates/core/src/migrate.rs`）。
@@ -384,8 +384,8 @@ Windows 8 以降は WinUSB ドライバ（`winusb.inf`）が OS に標準で入�
 
 - 管理者権限が要るので、常駐のコアは昇格させず、`a2dpwb-driver.exe` を UAC 昇格（`ShellExecuteEx` の `runas`）で一時起動します。ヘルパーは引数で受け取った1台だけを処理し（アンインストール時の `restore --records` を除く）、結果を終了コードとJSONで返します。
 - 割り当て中は Windows の Bluetooth からそのドングルが消えることを、実行前の確認画面で説明します。
-- **アンインストール時の復元**: コアは割り当てのたびに `assign` の結果（割り当て前のドライバを含む）を設定フォルダの `driver\<インスタンスIDの英数字以外を _ にした名前>.json` に残し、「元のドライバに戻す」が成功すると消します。アンインストーラ（`installer/hooks.nsh` の `NSIS_HOOK_PREUNINSTALL`、更新のときは除く）は、コアを終了させた後にこの記録があれば戻すかを尋ね、「はい」なら `a2dpwb-driver.exe restore --records <フォルダ>` を UAC 昇格で1回だけ起動します。ヘルパーは記録ごとに `restore --previous @<記録>` と同じ処理をし、戻せたアダプタの記録を消します。終了コードは全体で一番重いもの（未昇格 3 > 失敗 1 > 未確認 5 > 抜かれている 4 > 成功 0）で、0 以外ならアンインストーラがデバイスマネージャーでの手順を案内します。決めたこと:
-  - NSIS で JSON を読まずに済むよう、記録の解釈と複数台の処理はヘルパーに置く。UAC の確認は台数によらず1回。
+- **アンインストール時の復元**: コアは割り当てのたびに `assign` の結果（割り当て前のドライバを含む）を設定フォルダの `driver\<インスタンスIDの英数字以外を _ にした名前>.json` に残し、「元のドライバに戻す」が成功すると消します。アンインストーラ（`installer/A2DPWB.iss` の `RestoreDrivers`。更新はアンインストーラを通らない）は、コアを終了させた後にこの記録があれば戻すかを尋ね、「はい」なら `a2dpwb-driver.exe restore --records <フォルダ>` を UAC 昇格で1回だけ起動します。ヘルパーは記録ごとに `restore --previous @<記録>` と同じ処理をし、戻せたアダプタの記録を消します。終了コードは全体で一番重いもの（未昇格 3 > 失敗 1 > 未確認 5 > 抜かれている 4 > 成功 0）で、0 以外ならアンインストーラがデバイスマネージャーでの手順を案内します。決めたこと:
+  - インストーラで JSON を読まずに済むよう、記録の解釈と複数台の処理はヘルパーに置く。UAC の確認は台数によらず1回。
   - 割り当てを頼まれた時点ですでに WinUSB だったアダプタ（`already_winusb`。Zadig など）は A2DPWB が変えたものではないので戻さず、記録だけ消す。読めない記録は消さずに残す。
   - サイレント（`/S`）では尋ねる相手がおらず、UAC の確認を出すべきでもないので WinUSB のまま残す（既定の答えは「いいえ」）。v1 が動いているかインストールされているときは、v1 も WinUSB を使うので既定のボタンを「いいえ」にして一言添える。
   - 抜かれているアダプタは戻せないので記録を残す（次にアプリを入れ直したときの「元のドライバに戻す」でも使える）。
@@ -502,6 +502,7 @@ v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動�
 
 ## 改訂履歴
 
+- 2026-10-22（インストーラを Inno Setup に）: Tauri の NSIS バンドラから Inno Setup 6（`installer/A2DPWB.iss`）に移した（issue #86）。NSIS で困っていたことはないが、(1) 台本が人に読みやすい（NSIS のフックは Tauri の生成する `installer.nsi` の流れと `$0`〜`$9` のレジスタを追わないと読めず、`System::Call` で構造体を組んでいた）、(2) 開発が活発で将来性がある、(3) 利用者とインストール済みの環境が少ない今のうちに移すほうが楽、の3点で決めた。`tauri build --no-bundle` で `a2dpwb.exe` だけを作り、ポータブル版のフォルダをそのまま Inno Setup に渡す。更新は引き続き `tauri-plugin-updater`（署名は `tauri signer sign --app-version`）で、プラグインが付ける `/UPDATE` に `/SILENT /NORESTART` を足す（`installMode: basicUi`）。beta.5 以前の更新機能が付ける NSIS の `/P` では、ページをすべて飛ばして進行状況だけを出す（セットアップの .exe はローダーが開いたままなので、`/SILENT` で起動し直すことはできなかった）。NSIS でのインストールは更新モードでアンインストールしてフォルダを引き継ぐ。インストール済みの判定は `uninstall.exe` から `unins000.exe` に。v1 とは別の AppId。中国語（簡体・繁体）の翻訳は Inno Setup 6 に同梱されないので `installer/languages/` に置く。
 - 2026-10-18（ブランチ名）: `develop-2.0` を `develop-v2.x`、v1 の `develop` を `develop-v1.x` に改名した。CI のプッシュ時のテストは `develop-v2.x` と `main` で動く。
 - 2026-10-18（未決事項の解消、ARM64）: `DiInstallDevice` が使えない環境では Zadig の案内に戻すと決めた（割り当ての失敗に専用の文言 `error.driver_assign_failed`、8言語）。実機（UB500）で割り当て → 解除 → 割り当ての往復を確認した。x64 の PC での ARM64 のビルドには、rustls の `ring` のために Visual Studio の clang が要る（`installer/build-release.ps1` が探して PATH に足す）。手元で ARM64 の3つの exe が組めることを確かめた（ARM64 の実機では未確認）。
 - 2026-10-18（Opus 05）: PipeWire 独自の A2DP Opus（ベンダー 0x000005F1 / 0x1005、`opus_05`）のステレオの音楽の方向を、試験的に `opus05` として追加した。Auto は選ばない。エンコーダは Opus のものを共用し、設定したビットレートで頭打ちにする。ストリームエンドポイントは 10 個になった。サラウンド、双方向、Pro Audio は未実装。[Opus 05](#opus-05)を参照。

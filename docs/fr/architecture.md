@@ -410,7 +410,7 @@ formats qu'en v1 :
   (`cargo test -p ipc export_bindings`)
 - Les fichiers de langue (`app/lang/*.json`) sont utilisés par la fenêtre et par le menu
   de la zone de notification du cœur
-- `installer/build-release.ps1` produit le programme d'installation NSIS (le bundler de Tauri),
+- `installer/build-release.ps1` produit le programme d'installation (Inno Setup, `installer/A2DPWB.iss`),
   le zip portable et le manifeste de mise à jour. Voir [Compilation](building)
 
 ## Points importants
