@@ -157,12 +157,15 @@ export function BatteryLevel(props: { percent: number; class?: string }) {
   );
 }
 
+// The stream's codec is the core's display name ("AAC"), not a profile key
+const isAac = (info: StreamInfo) => info.codec === "AAC";
+
 /** AAC runs a variable bit rate, the others an adaptive one */
-export const abrLabel = (info: StreamInfo) => (info.codec === "aac" ? "VBR" : "ABR");
+export const abrLabel = (info: StreamInfo) => (isAac(info) ? "VBR" : "ABR");
 
 /** What the ABR / VBR mark explains: AAC's VBR, SBC's adaptive bitpool, the others' ABR */
 export const abrTooltipKey = (info: StreamInfo) =>
-  info.codec === "aac" ? "tooltip.vbr" : liveBitpool(info) ? "tooltip.sbc_abr" : "tooltip.abr";
+  isAac(info) ? "tooltip.vbr" : liveBitpool(info) ? "tooltip.sbc_abr" : "tooltip.abr";
 
 /** SBC under ABR: "bitpool 41/53" (now / the highest it goes back to) */
 export function bitpoolText(info: StreamInfo): string | null {

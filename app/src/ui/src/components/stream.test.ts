@@ -98,4 +98,10 @@ describe("codec summary", () => {
     expect(codecDetails(ldac)).toEqual(["660 kbps", "48 kHz", "24-bit", "ABR"]);
     expect(abrTooltipKey(ldac)).toBe("tooltip.abr");
   });
+
+  it("calls AAC's flag VBR (the core names the codec \"AAC\")", () => {
+    const aac: StreamInfo = { ...SBC_INFO, codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, details: null };
+    expect(codecDetails(aac)).toEqual(["256 kbps", "44.1 kHz", "16-bit", "VBR"]);
+    expect(abrTooltipKey(aac)).toBe("tooltip.vbr");
+  });
 });
