@@ -1,7 +1,7 @@
 // Adapter: the USB Bluetooth adapters with their driver and firmware,
 // WinUSB assign / restore, the chip for the firmware, and AFH.
 
-import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
@@ -237,6 +237,12 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
     // (and releases an idle stack); the folder may have changed as well
     if (await saveSettings(app, { bt_chip_pid: o.pid, bt_chip_fw_stem: o.stem })) await props.onChanged();
   };
+  // A new object on every published state would build the banner anew and
+  // close a firmware download's dialog while it runs: only a changed status
+  // counts
+  const status = createMemo(() => chipStatus(settings(), adapters(), props.files), undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
   const body = () => (
     <>
       <Field label={t("settings.bt_chip")} hint={hint()}>
@@ -251,7 +257,7 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
         )}
       </Field>
       <div aria-live="polite">
-        <Show when={chipStatus(settings(), adapters(), props.files)} keyed>
+        <Show when={status()} keyed>
           {(st) => <FirmwareStatus status={st} />}
         </Show>
       </div>

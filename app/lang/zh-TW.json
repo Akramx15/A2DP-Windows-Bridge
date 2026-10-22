@@ -130,6 +130,8 @@
   "firmware.download_explain": "A2DPWB 會從 linux-firmware (kernel.org) 下載以下檔案，驗證後儲存到設定資料夾。A2DPWB 本身不包含這些檔案。",
   "firmware.download_license": "這些檔案是 Realtek 的專有韌體，可依 linux-firmware 的 WHENCE 與 LICENCE.rtlwifi_firmware.txt 中的條款再散布。僅在您接受這些條款時下載。",
   "firmware.downloaded": "韌體已下載。藍牙會在下次連線時載入。",
+  "firmware.downloading": "正在從 kernel.org 下載韌體… 最多可能需要一分鐘。",
+  "firmware.download_slow": "下載花費較久。它會在背景繼續，檔案儲存後此畫面會自動更新。",
   "firmware.download_failed": "無法下載韌體（無法連線至 kernel.org，或檔案不相符）。請使用「開啟下載頁面」自行取得檔案。",
   "menu.help.report_issue": "回報問題",
   "help.about_title": "關於 A2DPWB",

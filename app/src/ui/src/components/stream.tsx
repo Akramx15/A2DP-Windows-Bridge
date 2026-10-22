@@ -9,6 +9,7 @@ import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { liveBitpool } from "../lib/codecdetails";
 import { copyText, khz, kbps, percentToVolume, volumePercent } from "../lib/format";
 import { bugReportUrl, firmwareUrl, type BugReport } from "../lib/links";
+import { IpcError } from "../ipc/types";
 import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState } from "../ipc/types";
 import { Sparkline } from "./charts";
 import { Banner, Button, Dialog } from "./controls";
@@ -680,7 +681,10 @@ export function FirmwareDownload(props: { files: string[]; kind?: "strong" }) {
       await app.core.request("adapter.download_firmware", { file: props.files[0] });
       app.notify(t("firmware.downloaded"));
     } catch (e) {
-      app.notify(errorText(e), "error");
+      // The UI stopped waiting, the core did not: it publishes the adapter
+      // anew when the files are saved, so this is no failure yet
+      if (IpcError.from(e).code === "ipc.timeout") app.notify(t("firmware.download_slow"));
+      else app.notify(errorText(e), "error");
     } finally {
       setBusy(false);
       setOpen(false);
@@ -700,11 +704,23 @@ export function FirmwareDownload(props: { files: string[]; kind?: "strong" }) {
         onConfirm={go}
         onCancel={() => setOpen(false)}
       >
-        <p>{t("firmware.download_explain")}</p>
-        <ul class="mono files">
-          <For each={props.files}>{(f) => <li>{f}</li>}</For>
-        </ul>
-        <p class="muted">{t("firmware.download_license")}</p>
+        <Show
+          when={busy()}
+          fallback={
+            <>
+              <p>{t("firmware.download_explain")}</p>
+              <ul class="mono files">
+                <For each={props.files}>{(f) => <li>{f}</li>}</For>
+              </ul>
+              <p class="muted">{t("firmware.download_license")}</p>
+            </>
+          }
+        >
+          <div class="working" role="status">
+            <span class="spinner big" aria-hidden="true" />
+            <p>{t("firmware.downloading")}</p>
+          </div>
+        </Show>
       </Dialog>
     </>
   );

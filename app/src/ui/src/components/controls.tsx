@@ -265,10 +265,15 @@ export function Dialog(props: {
       if (before instanceof HTMLElement) before.focus();
     });
   });
+  // While the confirmed action runs the dialog stays: closing it would hide
+  // the spinner, not stop the work
+  const cancel = () => {
+    if (!props.busy) props.onCancel();
+  };
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      props.onCancel();
+      cancel();
     } else if (e.key === "Tab" && box) {
       const f = [...box.querySelectorAll<HTMLElement>("button:not([disabled]),input,select,textarea,[tabindex='0']")];
       if (f.length === 0) return;
@@ -286,12 +291,12 @@ export function Dialog(props: {
   return (
     <Show when={props.open}>
       <Portal>
-        <div class="backdrop" onClick={(e) => e.target === e.currentTarget && props.onCancel()}>
+        <div class="backdrop" onClick={(e) => e.target === e.currentTarget && cancel()}>
           <div class="dialog card" role="dialog" aria-modal="true" aria-labelledby={id} ref={box} onKeyDown={onKey}>
             <h2 id={id}>{props.title}</h2>
             <div class="dialog-body">{props.children}</div>
             <div class="dialog-actions">
-              <Button kind="subtle" onClick={() => props.onCancel()} data-autofocus>
+              <Button kind="subtle" disabled={props.busy} onClick={cancel} data-autofocus>
                 {props.cancel}
               </Button>
               <Button kind={props.danger ? "danger" : "strong"} busy={props.busy} onClick={() => props.onConfirm()}>

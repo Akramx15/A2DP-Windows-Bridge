@@ -130,6 +130,8 @@
   "firmware.download_explain": "A2DPWB が linux-firmware (kernel.org) から次のファイルをダウンロードし、内容を確認して設定フォルダに保存します。これらのファイルは A2DPWB には含まれていません。",
   "firmware.download_license": "これらは Realtek のプロプライエタリなファームウェアで、linux-firmware の WHENCE と LICENCE.rtlwifi_firmware.txt の条件で再配布が認められています。条件に同意する場合のみダウンロードしてください。",
   "firmware.downloaded": "ファームウェアをダウンロードしました。次の接続時に読み込まれます。",
+  "firmware.downloading": "kernel.org からファームウェアをダウンロードしています… 最大 1 分ほどかかります。",
+  "firmware.download_slow": "ダウンロードに時間がかかっています。バックグラウンドで続いており、保存が終わるとこの画面に反映されます。",
   "firmware.download_failed": "ファームウェアをダウンロードできませんでした（kernel.org に接続できないか、ファイルが一致しません）。「ダウンロードページを開く」から手動で入手してください。",
   "menu.help.report_issue": "問題を報告",
   "help.about_title": "A2DPWB について",
