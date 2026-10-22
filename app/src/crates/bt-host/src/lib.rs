@@ -40,7 +40,7 @@ pub use le::{
 };
 pub use media::{MediaPacket, MediaSink};
 use shared::{Shared, Wait};
-pub use stats::{LinkRadio, LinkStats, MaxGauge, StreamTiming};
+pub use stats::{LinkRadio, LinkStats, LiveCodec, MaxGauge, StreamTiming};
 
 const INIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// No HCI event at all this long after power on: the controller does not

@@ -127,6 +127,7 @@ fn core_codec_details(d: ipc::CodecDetails) -> a2dpwb_core::CodecDetails {
             allocation: s.allocation,
             bitpool: s.bitpool,
             config_bitpool: s.config_bitpool,
+            abr_bitpool: s.abr_bitpool,
             device: s.device.map(|c| a2dpwb_core::SbcDeviceCaps {
                 sample_rates: c.sample_rates,
                 channel_modes: c.channel_modes,

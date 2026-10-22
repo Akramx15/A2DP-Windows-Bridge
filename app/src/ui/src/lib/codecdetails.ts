@@ -1,7 +1,7 @@
 // What Diagnostics' codec details card shows: each codec setting with what
 // the device offered, the SBC bitpool bar's scale and how full a packet is.
 
-import type { CodecDetails } from "../ipc/types";
+import type { CodecDetails, StreamInfo } from "../ipc/types";
 
 export type SbcDetails = NonNullable<CodecDetails["sbc"]>;
 export type AacDetails = NonNullable<CodecDetails["aac"]>;
@@ -37,11 +37,13 @@ export interface BitpoolBar {
   max: number;
   device: { from: number; width: number } | null;
   config: { from: number; width: number } | null;
+  /** SBC ABR: the range the bitpool moves in */
+  abr: { from: number; width: number } | null;
   used: number;
 }
 
 export function bitpoolBar(s: SbcDetails): BitpoolBar {
-  const top = Math.max(64, s.device?.max_bitpool ?? 0, s.config_bitpool?.[1] ?? 0, s.bitpool);
+  const top = Math.max(64, s.device?.max_bitpool ?? 0, s.config_bitpool?.[1] ?? 0, s.abr_bitpool?.[1] ?? 0, s.bitpool);
   const max = Math.ceil(top / 16) * 16;
   const pct = (v: number) => (Math.min(Math.max(v, 0), max) / max) * 100;
   const span = (lo: number, hi: number) => ({ from: pct(lo), width: Math.max(pct(hi) - pct(lo), 0) });
@@ -49,8 +51,21 @@ export function bitpoolBar(s: SbcDetails): BitpoolBar {
     max,
     device: s.device ? span(s.device.min_bitpool, s.device.max_bitpool) : null,
     config: s.config_bitpool ? span(s.config_bitpool[0], s.config_bitpool[1]) : null,
+    abr: s.abr_bitpool ? span(s.abr_bitpool[0], s.abr_bitpool[1]) : null,
     used: pct(s.bitpool),
   };
+}
+
+/**
+ * SBC / SBC XQ under ABR: the bitpool in use now and the range it moves in
+ * (floor .. the bitpool the stream started with). The core sends a new
+ * StreamInfo while it changes. null without SBC ABR (a fixed bitpool, or
+ * another codec).
+ */
+export function liveBitpool(info: StreamInfo): { now: number; min: number; max: number } | null {
+  const s = info.details?.sbc;
+  if (!info.abr || !s?.abr_bitpool) return null;
+  return { now: s.bitpool, min: s.abr_bitpool[0], max: s.abr_bitpool[1] };
 }
 
 /** A codec frame's duration in ms (0 while the rate is not known) */

@@ -104,7 +104,7 @@ pub struct StreamInfo {
     pub requested_codec: Option<String>,
     /// ... maybe because another device streams on its endpoint
     pub requested_in_use: bool,
-    /// Adaptive bit rate on (LDAC, LHDC V5)
+    /// Adaptive bit rate on (LDAC, LHDC V5, SBC and SBC XQ)
     pub abr: bool,
     /// The device's maximum bit rate lowered the profile's (LHDC V5)
     pub bitrate_capped: bool,
@@ -153,6 +153,9 @@ pub struct SbcDetails {
     pub config_bitpool: Option<(u32, u32)>,
     /// What the device's SBC endpoint offers, when it said
     pub device: Option<SbcDeviceCaps>,
+    /// SBC / SBC XQ under ABR: the range the bitpool moves in (floor,
+    /// ceiling); `bitpool` is then the one in use now
+    pub abr_bitpool: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -247,6 +250,7 @@ pub fn codec_details(
             _ => None,
         },
         device: remote.sbc_caps.filter(|_| kind != CodecKind::FastStream).as_ref().map(sbc_device_caps),
+        abr_bitpool: e.sbc_abr.map(|(lo, hi)| (lo.into(), hi.into())),
     });
     let aac = match config.request {
         caps::ConfigRequest::Aac { object_type, bit_rate, .. } => Some(AacDetails {
@@ -689,6 +693,13 @@ fn sbc_xq_fallback(kind: CodecKind, failure: &ConfigFailure, requested: Option<C
         && (requested.is_none() || fallback)
 }
 
+/// SBC / SBC XQ adaptive bitpool: only when the profile asks for that codec
+/// itself with ABR on. A profile's ABR was LDAC's and LHDC V5's: Auto, or a
+/// fallback from LDAC, landing on SBC keeps today's fixed bitpool.
+fn sbc_abr(req: &StreamRequest, kind: CodecKind) -> bool {
+    req.abr && matches!(kind, CodecKind::Sbc | CodecKind::SbcXq) && req.codec == Some(kind)
+}
+
 /// Starts the encode thread; ABR as the encoder runs it
 fn start_pipeline(
     encoder: Box<dyn Encoder>,
@@ -1036,7 +1047,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         mtu,
         bits_per_sample: bits,
         // For AAC: variable bit rate, where the sink lists it
-        abr: req.abr && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5) || (kind == CodecKind::Aac && vbr)),
+        abr: req.abr && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5) || (kind == CodecKind::Aac && vbr))
+            || sbc_abr(&req, kind),
         peer: peer_params(&remote, kind, channels, &req),
     };
     tracing::debug!("encoder config: {encoder_config:?}");
@@ -1453,6 +1465,28 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sbc_abr_only_for_a_profile_of_that_codec() {
+        let req = |codec: &str, abr: bool| {
+            crate::profiles::Profile {
+                device_address: "AA:BB:CC:DD:EE:FF".into(),
+                codec: codec.into(),
+                abr,
+                ..Default::default()
+            }
+            .to_request(1023)
+            .unwrap()
+        };
+        assert!(sbc_abr(&req("sbc", true), CodecKind::Sbc));
+        assert!(sbc_abr(&req("sbcxq", true), CodecKind::SbcXq));
+        // ABR off, or another codec asked for (Auto, a fallback from LDAC)
+        assert!(!sbc_abr(&req("sbc", false), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("auto", true), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("ldac", true), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("sbcxq", true), CodecKind::Sbc));
+        assert!(!sbc_abr(&req("faststream", true), CodecKind::FastStream));
+    }
 
     #[test]
     fn a_working_link_is_left_alone() {

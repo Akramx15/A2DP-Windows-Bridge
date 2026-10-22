@@ -176,15 +176,115 @@ pub fn bitrate_kbps(frame_len: usize, sample_rate: u32, pcm_frames: usize) -> u3
     (8 * frame_len as u64 * sample_rate as u64 / pcm_frames.max(1) as u64 / 1000) as u32
 }
 
+// Adaptive bitpool (SBC and SBC XQ under ABR), after PipeWire's SBC
+// (spa/plugins/bluez5/a2dp-codec-sbc.c, codec_reduce_bitpool -2 and
+// codec_increase_bitpool +1, clamped to min_bitpool = max(the
+// configuration's minimum, 12) .. the configured maximum; media-sink.c
+// lowers it when a write finds the socket full, at most every 0.5 s, and
+// raises it when a packet goes out with nothing unsent and nothing was
+// lowered or raised for 1 s). A2DPWB has no socket: the encode thread
+// passes the send queue depth every 100 ms (ldac::ABR_INTERVAL_MS), so a
+// queue past LDAC's "dangerous" threshold stands for the full socket and a
+// nearly empty one for nothing unsent.
+
+/// Send queue depth (packets of the 64-slot queue) that lowers the bitpool:
+/// LDAC's "dangerous trend" threshold (`ldac::ABR_THRESHOLDS`). About 170
+/// ms of SBC High at 1023-byte packets.
+pub const ABR_DOWN_DEPTH: u32 = 8;
+/// Depth at or below which the queue counts as drained (the packets of the
+/// round just encoded may still wait for the controller)
+pub const ABR_UP_DEPTH: u32 = 2;
+/// PipeWire's steps
+pub const ABR_DOWN_STEP: u8 = 2;
+pub const ABR_UP_STEP: u8 = 1;
+/// ABR steps (100 ms each) between two steps down: PipeWire's 0.5 s
+pub const ABR_DOWN_TICKS: u32 = 5;
+/// ABR steps the queue has to stay drained for one step up: PipeWire's 1 s
+pub const ABR_UP_TICKS: u32 = 10;
+/// PipeWire's lowest bitpool
+pub const ABR_MIN_BITPOOL: u8 = 12;
+
+/// The lowest bitpool ABR goes to: never below the sink's minimum or
+/// PipeWire's 12, and not below the Mobile quality's bitpool of the stream
+/// ([`auto_bitpool`] for SBC: 19 joint stereo, stereo and mono, 10 -> 12
+/// dual channel; [`xq_bitpool`] for SBC XQ: 32 at 44.1 kHz, 29 at 48 kHz,
+/// ~385 kbps). Below Mobile the stream sounds worse than what a profile can
+/// ask for, and SBC XQ below its Mobile is no longer XQ (SBC is the codec
+/// for that). Never above `ceiling`.
+pub fn abr_floor(kind: CodecKind, channel_mode: ChannelMode, sample_rate: u32, sink_min: u8, ceiling: u8) -> u8 {
+    let mobile = if kind == CodecKind::SbcXq {
+        xq_bitpool(Quality::Mobile, sample_rate)
+    } else {
+        auto_bitpool(Quality::Mobile, channel_mode)
+    };
+    mobile.max(ABR_MIN_BITPOOL).max(sink_min).min(ceiling)
+}
+
+/// The adaptive bitpool state: the bitpool the stream started with is the
+/// ceiling, congestion lowers it by [`ABR_DOWN_STEP`] (at most every
+/// [`ABR_DOWN_TICKS`]), a drained queue raises it by [`ABR_UP_STEP`] every
+/// [`ABR_UP_TICKS`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitpoolAbr {
+    pub floor: u8,
+    pub ceiling: u8,
+    /// Steps since the last step down
+    since_down: u32,
+    /// Steps the queue stayed drained since the last change
+    calm: u32,
+}
+
+impl BitpoolAbr {
+    pub fn new(floor: u8, ceiling: u8) -> BitpoolAbr {
+        BitpoolAbr { floor: floor.min(ceiling), ceiling, since_down: ABR_DOWN_TICKS, calm: 0 }
+    }
+
+    /// One step (every 100 ms) with the send queue depth: the bitpool for
+    /// the next frames
+    pub fn step(&mut self, bitpool: u8, queue_depth: u32) -> u8 {
+        self.since_down = self.since_down.saturating_add(1);
+        if queue_depth >= ABR_DOWN_DEPTH {
+            self.calm = 0;
+            if self.since_down >= ABR_DOWN_TICKS && bitpool > self.floor {
+                self.since_down = 0;
+                return bitpool.saturating_sub(ABR_DOWN_STEP).max(self.floor);
+            }
+            return bitpool;
+        }
+        if queue_depth <= ABR_UP_DEPTH {
+            self.calm += 1;
+        } else {
+            self.calm = 0;
+        }
+        if self.calm >= ABR_UP_TICKS && bitpool < self.ceiling {
+            self.calm = 0;
+            return bitpool.saturating_add(ABR_UP_STEP).min(self.ceiling);
+        }
+        bitpool
+    }
+
+    /// Where a stream starts: the ceiling, the history forgotten
+    pub fn reset(&mut self) -> u8 {
+        *self = BitpoolAbr::new(self.floor, self.ceiling);
+        self.ceiling
+    }
+}
+
 /// The A2DP SBC encoder: one SBC frame (blocks x subbands PCM frames, 128
 /// by default) per `encode`
 pub struct SbcEncoder {
     kind: CodecKind,
     frame: SbcFrameEncoder,
+    /// Length of the frames encoded now (ABR changes it)
     frame_len: usize,
+    /// ... and of those at the ceiling, the largest
+    max_frame_len: usize,
     sample_rate: u32,
     /// Mono frames from stereo input: the input mixed down into this
     downmix: Option<Vec<i16>>,
+    /// Adaptive bitpool: Some when EncoderConfig::abr is set and the floor
+    /// is below the bitpool asked for
+    abr: Option<BitpoolAbr>,
 }
 
 impl SbcEncoder {
@@ -233,20 +333,54 @@ impl SbcEncoder {
         // Bitpool is never 0 here, so every frame has exactly this length
         let frame_len = frame.max_frame_len();
         let downmix = (config.channels == 2 && channel_mode == ChannelMode::Mono).then(|| vec![0; frame.pcm_samples()]);
-        Ok(SbcEncoder { kind, frame, frame_len, sample_rate: config.sample_rate, downmix })
+        let ceiling = frame.config().effective_bitpool();
+        let abr = config.abr.then(|| {
+            let floor = abr_floor(kind, channel_mode, config.sample_rate, config.peer.sbc_min_bitpool, ceiling);
+            tracing::debug!("{kind}: ABR bitpool {floor}..{ceiling}");
+            BitpoolAbr::new(floor, ceiling)
+        });
+        let abr = abr.filter(|a| {
+            if a.floor >= a.ceiling {
+                tracing::info!("{kind}: no ABR: bitpool {ceiling} is already at its floor");
+            }
+            a.floor < a.ceiling
+        });
+        Ok(SbcEncoder {
+            kind,
+            frame,
+            frame_len,
+            max_frame_len: frame_len,
+            sample_rate: config.sample_rate,
+            downmix,
+            abr,
+        })
     }
 
     fn pcm_frames(&self) -> usize {
         self.frame.config().pcm_frames_per_frame()
     }
 
-    /// Length of every SBC frame of this stream
+    /// Length of the SBC frames encoded now (all of them without ABR)
     pub fn frame_len(&self) -> usize {
         self.frame_len
     }
 
+    /// The bitpool of the frames encoded now
     pub fn bitpool(&self) -> u8 {
         self.frame.config().bitpool
+    }
+
+    /// The adaptive bitpool's range (floor, ceiling), when ABR runs
+    pub fn abr_range(&self) -> Option<(u8, u8)> {
+        self.abr.map(|a| (a.floor, a.ceiling))
+    }
+
+    fn set_bitpool(&mut self, bitpool: u8) {
+        if bitpool == self.bitpool() {
+            return;
+        }
+        self.frame.set_bitpool(bitpool);
+        self.frame_len = self.frame.max_frame_len();
     }
 }
 
@@ -263,8 +397,9 @@ impl Encoder for SbcEncoder {
         self.pcm_frames()
     }
 
+    /// The frame length at the ceiling: ABR only ever shrinks frames
     fn max_output_bytes(&self) -> usize {
-        self.frame_len
+        self.max_frame_len
     }
 
     fn encode(&mut self, pcm: Pcm<'_>, out: &mut [u8]) -> Result<Encoded, EncoderError> {
@@ -287,9 +422,37 @@ impl Encoder for SbcEncoder {
     }
 
     /// As v1: 8 * frame length * sample rate / (subbands * blocks), in kbps,
-    /// rounded down
+    /// rounded down; under ABR that of the bitpool now
     fn bitrate_kbps(&self) -> u32 {
         bitrate_kbps(self.frame_len, self.sample_rate, self.pcm_frames())
+    }
+
+    /// One [`BitpoolAbr::step`]: call every 100 ms with the send queue
+    /// depth. The new bitpool applies from the next frame. Does nothing
+    /// without ABR.
+    fn abr_adjust(&mut self, queue_depth: u32) {
+        let Some(abr) = self.abr.as_mut() else { return };
+        let before = self.frame.config().bitpool;
+        let bitpool = abr.step(before, queue_depth);
+        if bitpool != before {
+            self.set_bitpool(bitpool);
+            tracing::debug!(
+                "{}: ABR bitpool {before} -> {bitpool} ({} kbps, queue {queue_depth})",
+                self.kind,
+                self.bitrate_kbps()
+            );
+        }
+    }
+
+    fn abr_active(&self) -> bool {
+        self.abr.is_some()
+    }
+
+    /// Back to the ceiling
+    fn abr_reset(&mut self) {
+        let Some(abr) = self.abr.as_mut() else { return };
+        let bitpool = abr.reset();
+        self.set_bitpool(bitpool);
     }
 
     fn details(&self) -> EncoderDetails {
@@ -297,6 +460,7 @@ impl Encoder for SbcEncoder {
         EncoderDetails {
             frame_bytes: Some(self.frame_len as u32),
             sbc: Some(SbcConfig { bitpool: c.effective_bitpool(), ..c }),
+            sbc_abr: self.abr_range(),
         }
     }
 }
@@ -658,6 +822,217 @@ mod tests {
         let small = SbcParams { blocks: 8, ..Default::default() };
         let e = SbcEncoder::new_xq(&with_params(44100, 2, Quality::High, small, 0)).unwrap();
         assert_eq!((e.frame_len(), e.pcm_frames_per_encode()), (4 + 8 + 94, 64));
+    }
+
+    fn abr_config(rate: u32, ch: u32, quality: Quality) -> EncoderConfig {
+        EncoderConfig { abr: true, ..config(rate, ch, quality) }
+    }
+
+    #[test]
+    fn abr_policy_down_on_congestion_with_a_pause() {
+        let mut a = BitpoolAbr::new(19, 53);
+        // The first congested step lowers at once, by 2
+        assert_eq!(a.step(53, ABR_DOWN_DEPTH), 51);
+        // ... then waits 0.5 s (5 steps) before the next
+        let mut bp = 51;
+        for _ in 0..ABR_DOWN_TICKS - 1 {
+            bp = a.step(bp, 64);
+            assert_eq!(bp, 51);
+        }
+        assert_eq!(a.step(bp, 64), 49);
+        // A queue below the threshold lowers nothing
+        let mut a = BitpoolAbr::new(19, 53);
+        assert_eq!(a.step(53, ABR_DOWN_DEPTH - 1), 53);
+    }
+
+    #[test]
+    fn abr_policy_floor() {
+        let mut a = BitpoolAbr::new(19, 53);
+        let mut bp = 53;
+        for _ in 0..200 {
+            bp = a.step(bp, 64);
+        }
+        assert_eq!(bp, 19);
+        // An odd distance ends on the floor, not below it
+        let mut a = BitpoolAbr::new(20, 23);
+        assert_eq!(a.step(23, 64), 21);
+        for _ in 0..ABR_DOWN_TICKS {
+            bp = a.step(21, 64);
+        }
+        assert_eq!(bp, 20);
+        // The floor never goes above the ceiling
+        assert_eq!(BitpoolAbr::new(30, 20).floor, 20);
+    }
+
+    #[test]
+    fn abr_policy_up_slowly_to_the_ceiling() {
+        let mut a = BitpoolAbr::new(19, 53);
+        let mut bp = a.step(53, 64);
+        assert_eq!(bp, 51);
+        // One step up per second (10 steps) of a drained queue
+        for _ in 0..ABR_UP_TICKS - 1 {
+            bp = a.step(bp, 0);
+            assert_eq!(bp, 51);
+        }
+        assert_eq!(a.step(bp, ABR_UP_DEPTH), 52);
+        // A queue between the thresholds starts the second over
+        let mut bp = 52;
+        for _ in 0..ABR_UP_TICKS - 1 {
+            bp = a.step(bp, 0);
+        }
+        bp = a.step(bp, ABR_UP_DEPTH + 1);
+        assert_eq!(bp, 52);
+        for _ in 0..ABR_UP_TICKS - 1 {
+            bp = a.step(bp, 1);
+        }
+        assert_eq!(bp, 52);
+        assert_eq!(a.step(bp, 1), 53);
+        // Never above the ceiling
+        for _ in 0..100 {
+            bp = a.step(bp, 0);
+        }
+        assert_eq!(bp, 53);
+        // 34 steps (34 s) from the floor back to 53
+        let mut a = BitpoolAbr::new(19, 53);
+        let (mut bp, mut steps) = (19, 0);
+        while bp < 53 {
+            bp = a.step(bp, 0);
+            steps += 1;
+        }
+        assert_eq!(steps, 34 * ABR_UP_TICKS);
+    }
+
+    #[test]
+    fn abr_policy_reset() {
+        let mut a = BitpoolAbr::new(19, 53);
+        let bp = a.step(53, 64);
+        assert_eq!(bp, 51);
+        assert_eq!(a.reset(), 53);
+        // The pause after a step down is forgotten too
+        assert_eq!(a.step(53, 64), 51);
+    }
+
+    #[test]
+    fn abr_floors() {
+        use ChannelMode::*;
+        let sbc = |mode, min, ceiling| abr_floor(CodecKind::Sbc, mode, 48000, min, ceiling);
+        assert_eq!(sbc(JointStereo, 2, 53), 19);
+        assert_eq!(sbc(Stereo, 2, 53), 19);
+        assert_eq!(sbc(Mono, 2, 53), 19);
+        // Dual channel: Mobile's 10 per channel, raised to PipeWire's 12
+        assert_eq!(sbc(DualChannel, 2, 27), 12);
+        // The sink's minimum
+        assert_eq!(sbc(JointStereo, 25, 53), 25);
+        // Never above the ceiling
+        assert_eq!(sbc(JointStereo, 2, 15), 15);
+        let xq = |rate| abr_floor(CodecKind::SbcXq, DualChannel, rate, 2, 47);
+        assert_eq!((xq(44100), xq(48000)), (32, 29));
+    }
+
+    #[test]
+    fn sbc_abr_lowers_the_bitpool_of_the_next_frames() {
+        let mut e = SbcEncoder::new(&abr_config(48000, 2, Quality::High)).unwrap();
+        assert!(e.abr_active());
+        assert_eq!(e.abr_range(), Some((19, 53)));
+        assert_eq!((e.bitpool(), e.frame_len(), e.bitrate_kbps()), (53, 119, 357));
+        assert_eq!(e.max_output_bytes(), 119);
+        let mut out = vec![0u8; e.max_output_bytes()];
+        let pcm: Vec<i16> = (0..256).map(|i| ((i * 7919) % 20000) as i16 - 10000).collect();
+        assert_eq!(e.encode(Pcm::I16(&pcm), &mut out).unwrap().bytes, 119);
+        assert_eq!(out[2], 53);
+
+        // Congestion: 53 -> 51, the frames shrink, the buffer size stays
+        e.abr_adjust(64);
+        let want = SbcConfig { bitpool: 51, ..*e.frame.config() }.frame_len();
+        assert_eq!((e.bitpool(), e.frame_len()), (51, want));
+        assert_eq!(want, 115);
+        assert_eq!(e.max_output_bytes(), 119);
+        assert_eq!(e.bitrate_kbps(), bitrate_kbps(115, 48000, 128));
+        let r = e.encode(Pcm::I16(&pcm), &mut out).unwrap();
+        assert_eq!(r, Encoded { bytes: 115, frames: 1 });
+        // The header carries the new bitpool, the rest of it unchanged
+        assert_eq!((out[0], out[1], out[2]), (0x9C, 0b1111_1101, 51));
+        let d = e.details();
+        assert_eq!((d.frame_bytes, d.sbc.unwrap().bitpool, d.sbc_abr), (Some(115), 51, Some((19, 53))));
+
+        // Down to the floor: 19, 51-byte frames
+        for _ in 0..200 {
+            e.abr_adjust(64);
+        }
+        assert_eq!((e.bitpool(), e.frame_len()), (19, 51));
+        let r = e.encode(Pcm::I16(&pcm), &mut out).unwrap();
+        assert_eq!((r.bytes, out[2]), (51, 19));
+
+        // Back up one step per second, and at once after a reset
+        for _ in 0..ABR_UP_TICKS {
+            e.abr_adjust(0);
+        }
+        assert_eq!(e.bitpool(), 20);
+        e.abr_reset();
+        assert_eq!((e.bitpool(), e.frame_len(), e.bitrate_kbps()), (53, 119, 357));
+        assert_eq!(e.encode(Pcm::I16(&pcm), &mut out).unwrap().bytes, 119);
+        assert_eq!(out[2], 53);
+    }
+
+    #[test]
+    fn sbc_abr_frames_match_a_fresh_encoder_at_that_bitpool() {
+        // The changed bitpool encodes as an encoder set up with it (the
+        // analysis history aside: compare from silence)
+        let mut e = SbcEncoder::new(&abr_config(44100, 2, Quality::High)).unwrap();
+        e.abr_adjust(64);
+        let mut fresh = SbcEncoder::new(&EncoderConfig {
+            peer: PeerParams { sbc_bitpool: 51, ..Default::default() },
+            ..config(44100, 2, Quality::High)
+        })
+        .unwrap();
+        let (mut a, mut b) = (vec![0u8; 119], vec![0u8; 119]);
+        let n = e.encode(Pcm::I16(&[0; 256]), &mut a).unwrap().bytes;
+        let m = fresh.encode(Pcm::I16(&[0; 256]), &mut b).unwrap().bytes;
+        assert_eq!((n, m), (115, 115));
+        assert_eq!(a[..n], b[..m]);
+    }
+
+    #[test]
+    fn sbc_xq_abr() {
+        let mut e = SbcEncoder::new_xq(&abr_config(44100, 2, Quality::High)).unwrap();
+        assert_eq!(e.abr_range(), Some((32, 47)));
+        let mut out = vec![0u8; e.max_output_bytes()];
+        assert_eq!(out.len(), 200);
+        for _ in 0..100 {
+            e.abr_adjust(64);
+        }
+        assert_eq!((e.bitpool(), e.frame_len(), e.bitrate_kbps()), (32, 140, 385));
+        let r = e.encode(Pcm::I16(&[0; 256]), &mut out).unwrap();
+        assert_eq!((r.bytes, out[1], out[2]), (140, 0b1011_0101, 32));
+        e.abr_reset();
+        assert_eq!(e.bitpool(), 47);
+    }
+
+    #[test]
+    fn no_abr_without_the_setting_or_room() {
+        // Not asked: the queue changes nothing
+        let mut e = SbcEncoder::new(&config(48000, 2, Quality::High)).unwrap();
+        assert!(!e.abr_active());
+        e.abr_adjust(64);
+        assert_eq!(e.bitpool(), 53);
+        assert_eq!(e.details().sbc_abr, None);
+        // Mobile is the floor already
+        let e = SbcEncoder::new(&abr_config(48000, 2, Quality::Mobile)).unwrap();
+        assert!(!e.abr_active());
+        let e = SbcEncoder::new_xq(&abr_config(48000, 2, Quality::Mobile)).unwrap();
+        assert!(!e.abr_active());
+        // The sink's minimum is the floor
+        let mut c = abr_config(48000, 2, Quality::High);
+        c.peer.sbc_min_bitpool = 40;
+        c.peer.sbc_max_bitpool = 53;
+        let mut e = SbcEncoder::new(&c).unwrap();
+        for _ in 0..100 {
+            e.abr_adjust(64);
+        }
+        assert_eq!(e.bitpool(), 40);
+        // FastStream keeps its fixed bitpool
+        let f = crate::create(CodecKind::FastStream, &abr_config(48000, 2, Quality::High)).unwrap();
+        assert!(!f.abr_active());
     }
 
     #[test]

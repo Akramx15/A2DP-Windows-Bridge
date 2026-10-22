@@ -1,8 +1,9 @@
 import { cleanup, render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setLanguage } from "../i18n";
 import type { CodecDetails, StreamInfo } from "../ipc/types";
-import { bitpoolBar, chips, frameMs, packetFill } from "../lib/codecdetails";
+import { bitpoolBar, chips, frameMs, liveBitpool, packetFill } from "../lib/codecdetails";
 import { CodecDetailsCard } from "./CodecDetails";
 
 const SBC: CodecDetails = {
@@ -144,5 +145,45 @@ describe("codec details", () => {
     const used = [...c.querySelectorAll(".cd-chip.cd-used")].map((e) => e.firstChild!.textContent);
     expect(used).toEqual(["MPEG-2 AAC-LC", "44.1 kHz", "2"]);
     expect(c.querySelectorAll(".cd-chip.cd-off")).toHaveLength(0);
+  });
+
+  it("shows SBC ABR's range and the bitpool as it moves", () => {
+    const abr = (bitpool: number): CodecDetails => ({
+      ...SBC,
+      sbc: { ...SBC.sbc!, bitpool, config_bitpool: [2, 53], device: { ...SBC.sbc!.device!, max_bitpool: 53 }, abr_bitpool: [19, 53] },
+    });
+    const info = (bitpool: number): StreamInfo => ({ ...INFO, abr: true, details: abr(bitpool) });
+    expect(liveBitpool(info(41))).toEqual({ now: 41, min: 19, max: 53 });
+    // Not under ABR, or no ABR range (an older core, another codec): none
+    expect(liveBitpool({ ...info(41), abr: false })).toBeNull();
+    expect(liveBitpool(INFO)).toBeNull();
+    expect(liveBitpool({ ...INFO, abr: true, details: null })).toBeNull();
+    const bar = bitpoolBar(abr(41).sbc!);
+    expect(bar.abr!.from).toBeCloseTo((19 / 64) * 100);
+    expect(bar.abr!.width).toBeCloseTo((34 / 64) * 100);
+    expect(bitpoolBar(SBC.sbc!).abr).toBeNull();
+
+    const [bp, setBp] = createSignal(53);
+    const view = render(() => <CodecDetailsCard info={info(bp())} details={abr(bp())} />);
+    const c = view.container;
+    expect(c).toHaveTextContent("Bitpool53 (ABR 19–53)");
+    expect(c.querySelector(".bitpool-track")).toHaveAttribute("aria-label", "Device 2–53, Configured 2–53, ABR 19–53, In use 53");
+    expect(c.querySelector(".bitpool.live")).not.toBeNull();
+    expect(c.querySelector(".bitpool-range.abr")).not.toBeNull();
+    expect(c).toHaveTextContent("Under ABR the bitpool drops by 2");
+    // A new stream info moves it
+    setBp(41);
+    expect(c).toHaveTextContent("Bitpool41 (ABR 19–53)");
+    const used = c.querySelector<HTMLElement>(".bitpool-used")!;
+    expect(parseFloat(used.style.left)).toBeCloseTo((41 / 64) * 100);
+  });
+
+  it("shows a fixed bitpool without ABR", () => {
+    const view = render(() => <CodecDetailsCard info={INFO} details={SBC} />);
+    const c = view.container;
+    expect(c).toHaveTextContent("Bitpool51");
+    expect(c).not.toHaveTextContent("ABR");
+    expect(c.querySelector(".bitpool.live")).toBeNull();
+    expect(c.querySelector(".bitpool-range.abr")).toBeNull();
   });
 });

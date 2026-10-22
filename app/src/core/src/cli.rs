@@ -36,7 +36,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
                         (\\\\?\\usb#vid_0bda&pid_8771#...) or VID:PID (0bda:8771)
   -c <codec>           ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream, auto (default)
   -q <quality>          hq (default), sq, mq; mhq for LHDC V5
-  -a                    adaptive bit rate (LDAC, LHDC V5)
+  -a                    adaptive bit rate (LDAC, LHDC V5; SBC / SBC XQ: bitpool)
   -m <mode>             capture: loopback (default), virtual, app
   --audio-device <id>   render device for -m virtual
   --app <exe>           executable for -m app

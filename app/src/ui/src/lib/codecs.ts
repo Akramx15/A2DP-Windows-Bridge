@@ -1,7 +1,7 @@
 // The codecs a profile can ask for and what each allows, as v1's profile
 // dialog (wx_profile_dialog.cpp on the develop branch, update_codec_dependent): quality
 // modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
-// pick them), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
+// pick them; v2 adds SBC / SBC XQ's adaptive bitpool), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
 // "mhq" only for LHDC V5, no quality choice for the aptX family or under LHDC
 // V5 ABR, 48 kHz only for Opus and Opus 05.
 
@@ -136,7 +136,9 @@ export const CODECS: CodecSpec[] = [
       { id: "sq", label: SQ, kbps: "~505" },
       { id: "mq", label: MQ, kbps: "~385" },
     ],
-    abr: false,
+    // Adaptive bitpool, down to Mobile's (core: SBC ABR only when the
+    // profile asks for SBC / SBC XQ itself)
+    abr: true,
     bitpool: true,
     hiRes: false,
   },
@@ -149,7 +151,7 @@ export const CODECS: CodecSpec[] = [
       { id: "sq", label: SQ, kbps: "~240" },
       { id: "mq", label: MQ, kbps: "~150" },
     ],
-    abr: false,
+    abr: true,
     bitpool: true,
     hiRes: false,
   },
@@ -218,6 +220,17 @@ export function codecSupport(codec: string, known: readonly string[]): CodecSupp
 export function sampleRates(codec: string): number[] {
   const spec = codecSpec(codec);
   return spec.rates ?? (spec.hiRes ? [0, 44100, 48000, 88200, 96000] : [0, 44100, 48000]);
+}
+
+/**
+ * The profile's ABR flag means AAC's VBR under AAC, SBC's adaptive bitpool
+ * under SBC / SBC XQ, and LDAC's / LHDC V5's ABR elsewhere: switching
+ * between those leaves it off rather than carrying it over (an LDAC profile
+ * with ABR moved to SBC does not start adapting its bitpool unasked).
+ */
+export function abrCarries(from: string, to: string): boolean {
+  const family = (c: string) => (c === "aac" ? "vbr" : c === "sbc" || c === "sbcxq" ? "bitpool" : "abr");
+  return family(from) === family(to);
 }
 
 /** LHDC V5 ABR runs at 400 kbps or below whatever the quality (as on

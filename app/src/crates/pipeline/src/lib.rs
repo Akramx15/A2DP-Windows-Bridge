@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
 
-use bt_host::{LinkStats, MediaSink};
+use bt_host::{LinkStats, LiveCodec, MediaSink};
 use codec::{CodecKind, Encoder, Pcm, PcmFormat};
 
 pub use convert::SampleType;
@@ -177,6 +177,9 @@ impl Pipeline {
         let kind = config.encoder.kind();
         let bitrate_kbps = config.encoder.bitrate_kbps();
         let frame_bytes = config.input.frame_bytes();
+        // Before the stream info goes out: core never shows the last
+        // stream's values for this one
+        stats.set_live_codec(config.abr.then(|| live_codec(config.encoder.as_ref())));
         tracing::debug!(
             "pipeline: start {kind} at {bitrate_kbps} kbps, input {:?}, sending {} ch, mtu {}, abr {}, buffer {:?}: \
              capture ring {ring} bytes ({} ms)",
@@ -253,6 +256,16 @@ fn abr_per_packet(kind: CodecKind) -> bool {
 
 const ABR_INTERVAL: Duration = Duration::from_millis(100);
 
+/// What an ABR encoder runs at now, for [`LinkStats::live_codec`]
+fn live_codec(encoder: &dyn Encoder) -> LiveCodec {
+    let d = encoder.details();
+    LiveCodec {
+        bitrate_kbps: encoder.bitrate_kbps(),
+        bitpool: d.sbc.map_or(0, |c| c.bitpool),
+        frame_bytes: d.frame_bytes.map_or(0, |b| b.min(u32::from(u16::MAX)) as u16),
+    }
+}
+
 /// How often the encode thread reports capture ring overflows (v1)
 const OVERFLOW_REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -313,6 +326,7 @@ fn encode_thread(
     // stream health log)
     let mut last_round: Option<Instant> = None;
     let mut window = RoundStats::new();
+    let mut live = abr.then(|| live_codec(encoder.as_ref()));
     tracing::debug!(
         "encode thread: {kind}, {:?} {} ch -> {fmt:?} {out_ch} ch at {} Hz, {per_encode} frames per encode, \
          {per_codec_frame} per codec frame (rtp timestamp step), rounds of {round_frames} frames, output buffer {} \
@@ -341,6 +355,7 @@ fn encode_thread(
             packetizer.reset();
             if abr {
                 encoder.abr_reset();
+                publish_live(encoder.as_ref(), &sink, &mut live);
             }
             abr_last = Instant::now();
         }
@@ -429,10 +444,21 @@ fn encode_thread(
 
         if abr {
             abr_round(encoder.as_mut(), &sink, abr_per_packet(kind), queue_before, sent, &mut abr_last);
+            publish_live(encoder.as_ref(), &sink, &mut live);
         }
     }
     tracing::debug!("encode thread: stopped at timestamp {timestamp}, {encode_errors} encode errors");
+    sink.stats().set_live_codec(None);
     sink
+}
+
+/// Publishes what the ABR encoder runs at when it changed
+fn publish_live(encoder: &dyn Encoder, sink: &MediaSink, last: &mut Option<LiveCodec>) {
+    let now = live_codec(encoder);
+    if *last != Some(now) {
+        *last = Some(now);
+        sink.stats().set_live_codec(Some(now));
+    }
 }
 
 /// How often the encode thread logs its debug summary
@@ -598,6 +624,88 @@ mod tests {
         last = Instant::now() - ABR_INTERVAL * 2;
         abr_round(&mut enc, &sink, false, 0, 3, &mut last);
         assert_eq!(calls.adjust.load(Ordering::Relaxed), 4);
+    }
+
+    #[test]
+    fn sbc_abr_publishes_the_bitpool_as_the_queue_backs_up() {
+        let stats = Arc::new(LinkStats::default());
+        let (sink, mut consumer, streaming) = bt_host::media::detached_queue(stats.clone());
+        let config = codec::EncoderConfig {
+            sample_rate: 48000,
+            channels: 2,
+            quality: codec::Quality::High,
+            mtu: 1011,
+            bits_per_sample: 16,
+            abr: true,
+            peer: codec::PeerParams::default(),
+        };
+        let encoder = codec::create(CodecKind::Sbc, &config).unwrap();
+        assert!(encoder.abr_active());
+        let config = PipelineConfig {
+            encoder,
+            input: InputFormat { sample_rate: 48000, channels: 2, sample: SampleType::I16 },
+            channels: 2,
+            mtu: 1011,
+            abr: true,
+            buffer: BufferPreset::Standard,
+        };
+        let (pipeline, mut input) = Pipeline::start(config, sink, stats.clone());
+        // Published before the stream info goes out
+        assert_eq!(stats.live_codec(), Some(LiveCodec { bitrate_kbps: 357, bitpool: 53, frame_bytes: 119 }));
+        streaming.store(true, Ordering::Release);
+        // Nothing drains the queue: it fills, and ABR lowers the bitpool
+        let audio: Vec<u8> = (0..480 * 2).flat_map(|i| ((i * 7919 % 20000) as i16 - 10000).to_le_bytes()).collect();
+        let until = Instant::now() + Duration::from_secs(10);
+        while stats.live_codec().is_some_and(|c| c.bitpool > 49) && Instant::now() < until {
+            input.push(&audio);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let live = stats.live_codec().unwrap();
+        assert!(live.bitpool <= 49, "{live:?}");
+        let want = codec::sbc::SbcConfig {
+            sample_rate: 48000,
+            channel_mode: codec::sbc::ChannelMode::JointStereo,
+            blocks: 16,
+            subbands: 8,
+            allocation: codec::sbc::Allocation::Loudness,
+            bitpool: live.bitpool,
+        }
+        .frame_len();
+        assert_eq!(usize::from(live.frame_bytes), want);
+        assert_eq!(live.bitrate_kbps, codec::sbc::bitrate_kbps(want, 48000, 128));
+        // The queued packets start at 53 (their first frame's header)
+        let mut bitpools = Vec::new();
+        while let Ok(p) = consumer.pop() {
+            bitpools.push(p.payload()[1 + 2]);
+        }
+        assert_eq!(bitpools.first(), Some(&53));
+        // A reset goes back to the ceiling
+        pipeline.reset();
+        let until = Instant::now() + Duration::from_secs(5);
+        while stats.live_codec().is_some_and(|c| c.bitpool != 53) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(stats.live_codec().map(|c| c.bitpool), Some(53));
+        assert!(pipeline.stop().is_some());
+        assert_eq!(stats.live_codec(), None);
+    }
+
+    #[test]
+    fn no_live_codec_without_abr() {
+        let stats = Arc::new(LinkStats::default());
+        stats.set_live_codec(Some(LiveCodec { bitrate_kbps: 1, bitpool: 2, frame_bytes: 3 }));
+        let (sink, _consumer, _streaming) = bt_host::media::detached_queue(stats.clone());
+        let config = PipelineConfig {
+            encoder: Box::new(Mock(Arc::new(Calls::default()))),
+            input: InputFormat { sample_rate: 48000, channels: 2, sample: SampleType::I16 },
+            channels: 2,
+            mtu: 600,
+            abr: false,
+            buffer: BufferPreset::Standard,
+        };
+        let (pipeline, _input) = Pipeline::start(config, sink, stats.clone());
+        assert_eq!(stats.live_codec(), None);
+        assert!(pipeline.stop().is_some());
     }
 
     #[test]

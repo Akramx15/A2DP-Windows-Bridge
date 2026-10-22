@@ -815,6 +815,9 @@ fn codec_details(out: &mut String, c: &crate::CodecDetails) {
         if let Some((lo, hi)) = s.config_bitpool {
             let _ = write!(out, " (configured {lo}-{hi})");
         }
+        if let Some((lo, hi)) = s.abr_bitpool {
+            let _ = write!(out, " (ABR {lo}-{hi})");
+        }
         out.push('\n');
         if let Some(d) = &s.device {
             let _ = writeln!(
@@ -1501,6 +1504,7 @@ mod tests {
                     allocation: "loudness".into(),
                     bitpool: 53,
                     config_bitpool: Some((2, 53)),
+                    abr_bitpool: None,
                     device: Some(crate::SbcDeviceCaps {
                         sample_rates: vec![44100, 48000],
                         channel_modes: vec!["mono".into(), "joint_stereo".into()],

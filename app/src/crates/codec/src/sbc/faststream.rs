@@ -117,6 +117,7 @@ impl Encoder for FastStreamEncoder {
         EncoderDetails {
             frame_bytes: Some(FASTSTREAM_FRAME_BYTES as u32),
             sbc: Some(SbcConfig { bitpool: c.effective_bitpool(), ..c }),
+            sbc_abr: None,
         }
     }
 }
