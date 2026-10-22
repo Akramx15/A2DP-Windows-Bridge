@@ -737,7 +737,12 @@ fn mask_separated_addresses(b: &mut [u8]) {
         let is_addr = (sep == b':' || sep == b'-')
             && (0..LEN).all(|k| if k % 3 == 2 { b[i + k] == sep } else { b[i + k].is_ascii_hexdigit() })
             && (i == 0 || b[i - 1] != sep)
-            && b.get(i + LEN).is_none_or(|&c| c != sep && !c.is_ascii_hexdigit());
+            // Not continued by hex, or by the separator and two more hex
+            // digits ("00:11:22:33:44:55:66"); a colon that ends it is
+            // punctuation ("LE Audio: 46:62:99:4A:5B:6C: pairing")
+            && !b.get(i + LEN).is_some_and(u8::is_ascii_hexdigit)
+            && !(b.get(i + LEN) == Some(&sep)
+                && b.get(i + LEN + 1..i + LEN + 3).is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit)));
         if is_addr {
             for k in (9..LEN).filter(|k| k % 3 != 2) {
                 b[i + k] = b'x';
@@ -1517,6 +1522,13 @@ mod tests {
         assert_eq!(m("aa:bb:cc:dd:ee:ff"), "aa:bb:cc:xx:xx:xx");
         assert_eq!(m("[00:11:22:33:44:55|66:77:88:99:AA:BB]"), "[00:11:22:xx:xx:xx|66:77:88:xx:xx:xx]");
         assert_eq!(m("00-1A-7D-DA-71-13"), "00-1A-7D-xx-xx-xx");
+        // A colon after it ends the address (the LE Audio pairing lines of #81)
+        assert_eq!(
+            m("LE Audio: 46:62:99:4A:5B:6C: pairing (Just Works)"),
+            "LE Audio: 46:62:99:xx:xx:xx: pairing (Just Works)"
+        );
+        assert_eq!(m("to 46:62:99:4A:5B:6C:"), "to 46:62:99:xx:xx:xx:");
+        assert_eq!(m("46-62-99-4A-5B-6C-x"), "46-62-99-xx-xx-xx-x");
         // After a letter: Windows' LE device IDs
         assert_eq!(
             m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c"),

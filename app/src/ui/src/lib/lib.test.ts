@@ -224,6 +224,10 @@ describe("profiles", () => {
   it("masks addresses in other forms", () => {
     const m = maskIdentifiers;
     expect(m("00-1A-7D-DA-71-13")).toBe("00-1A-7D-xx-xx-xx");
+    // A colon after it ends the address (the LE Audio pairing lines of #81)
+    expect(m("LE Audio: 46:62:99:4A:5B:6C: pairing (Just Works)")).toBe("LE Audio: 46:62:99:xx:xx:xx: pairing (Just Works)");
+    expect(m("to 46:62:99:4A:5B:6C:")).toBe("to 46:62:99:xx:xx:xx:");
+    expect(m("46-62-99-4A-5B-6C-x")).toBe("46-62-99-xx-xx-xx-x");
     expect(m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c")).toBe(
       "BluetoothLE#BluetoothLE00:1a:7d:xx:xx:xx-58:18:62:xx:xx:xx",
     );
