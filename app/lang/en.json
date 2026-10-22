@@ -246,7 +246,7 @@
   "dbgc.copy_log": "Copy Shown Log",
   "dbgc.copy_selected": "Copy Selected Lines",
   "dbgc.mask": "Mask Bluetooth addresses",
-  "dbgc.mask_tip": "Copies show addresses as AA:BB:CC:xx:xx:xx (the vendor part stays).",
+  "dbgc.mask_tip": "Copies show addresses as AA:BB:CC:xx:xx:xx (the vendor part stays). USB serial numbers are hidden too.",
   "dbgc.copied": "Copied to the clipboard (%u lines)",
   "dbgc.copy_failed": "Could not open the clipboard",
   "receiver.title": "Peer Receiver Test",

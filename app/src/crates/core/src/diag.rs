@@ -706,32 +706,117 @@ pub fn format_elapsed(ms: u64) -> String {
     format!("+{}.{:03} s", ms / 1000, ms % 1000)
 }
 
-/// "AA:BB:CC:DD:EE:FF" -> "AA:BB:CC:xx:xx:xx": keeps the vendor part (OUI).
-/// Only whole addresses (not part of a longer hex / colon run).
-pub fn mask_addresses(text: &str) -> String {
+/// Masks what identifies the user's devices (the UI's maskIdentifiers does
+/// the same):
+/// - Bluetooth addresses, "AA:BB:CC:DD:EE:FF" or with '-' ->
+///   "AA:BB:CC:xx:xx:xx": the vendor part (OUI) stays. Not when part of a
+///   longer run (an IPv6 address); a letter before is fine (Windows'
+///   "BluetoothLE#BluetoothLE<adapter>-<device>" IDs).
+/// - The same without separators, a word of 12 hex digits ->
+///   "AABBCCxxxxxx": Windows' BTHENUM / BTHLE IDs, and USB serial numbers
+///   that are the adapter's address. Not after '-' (a GUID's last part).
+/// - Other USB serial numbers, in instance IDs and device paths
+///   (`USB\VID_0BDA&PID_8771\<serial>`) and driver record names
+///   (`USB_VID_0BDA_PID_8771_<serial>`) -> x's. IDs Windows generates
+///   (`5&2C7B4E3&0&2`) say nothing about the device and stay.
+///
+/// Only ASCII is replaced, by as many 'x', so the text keeps its length.
+pub fn mask_identifiers(text: &str) -> String {
+    let mut b = text.as_bytes().to_vec();
+    mask_usb_serials(&mut b);
+    mask_separated_addresses(&mut b);
+    mask_bare_addresses(&mut b);
+    String::from_utf8(b).expect("only ASCII bytes were replaced")
+}
+
+fn mask_separated_addresses(b: &mut [u8]) {
     const LEN: usize = 17;
-    let b = text.as_bytes();
-    let part = |c: u8| c == b':' || c.is_ascii_hexdigit();
-    let is_addr_at = |i: usize| {
-        (0..LEN).all(|k| if k % 3 == 2 { b[i + k] == b':' } else { b[i + k].is_ascii_hexdigit() })
-            && (i == 0 || !part(b[i - 1]))
-            && (i + LEN == b.len() || !part(b[i + LEN]))
-    };
-    let mut out = String::with_capacity(text.len());
-    let (mut i, mut copied) = (0, 0);
+    let mut i = 0;
     while i + LEN <= b.len() {
-        if is_addr_at(i) {
-            // ASCII at i and i + 9: both are char boundaries
-            out.push_str(&text[copied..i + 9]);
-            out.push_str("xx:xx:xx");
+        let sep = b[i + 2];
+        let is_addr = (sep == b':' || sep == b'-')
+            && (0..LEN).all(|k| if k % 3 == 2 { b[i + k] == sep } else { b[i + k].is_ascii_hexdigit() })
+            && (i == 0 || b[i - 1] != sep)
+            && b.get(i + LEN).is_none_or(|&c| c != sep && !c.is_ascii_hexdigit());
+        if is_addr {
+            for k in (9..LEN).filter(|k| k % 3 != 2) {
+                b[i + k] = b'x';
+            }
             i += LEN;
-            copied = i;
         } else {
             i += 1;
         }
     }
-    out.push_str(&text[copied..]);
-    out
+}
+
+fn mask_bare_addresses(b: &mut [u8]) {
+    let mut i = 0;
+    while i < b.len() {
+        if !b[i].is_ascii_alphanumeric() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < b.len() && b[i].is_ascii_alphanumeric() {
+            i += 1;
+        }
+        if i - start == 12 && b[start..i].iter().all(u8::is_ascii_hexdigit) && (start == 0 || b[start - 1] != b'-') {
+            b[start + 6..i].fill(b'x');
+        }
+    }
+}
+
+/// `VID_xxxx<joint>PID_xxxx` at `i` (any case) -> the joint
+fn vid_pid_at(b: &[u8], i: usize) -> Option<u8> {
+    let hex4 = |at: usize| b.get(at..at + 4).is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit));
+    let joint = *b.get(i + 8)?;
+    (b.get(i..i + 4)?.eq_ignore_ascii_case(b"VID_")
+        && hex4(i + 4)
+        && (joint == b'&' || joint == b'_')
+        && b.get(i + 9..i + 13)?.eq_ignore_ascii_case(b"PID_")
+        && hex4(i + 13))
+    .then_some(joint)
+}
+
+fn mask_usb_serials(b: &mut [u8]) {
+    let ends = |c: u8| !c.is_ascii() || c.is_ascii_whitespace() || b"\\#\"',;:.()[]{}".contains(&c);
+    let mut i = 0;
+    while i < b.len() {
+        let Some(joint) = vid_pid_at(b, i) else {
+            i += 1;
+            continue;
+        };
+        i += 17;
+        if joint == b'&' {
+            // An instance ID or device path: "&MI_00" and the like, then
+            // '\' or '#' (doubled in JSON)
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_' || b[i] == b'&') {
+                i += 1;
+            }
+            let sep = i;
+            while i < b.len() && (b[i] == b'\\' || b[i] == b'#') {
+                i += 1;
+            }
+            if i == sep {
+                continue;
+            }
+        } else if b.get(i) == Some(&b'_') {
+            // A driver record name: the rest of it (where Windows' own '&' became '_')
+            i += 1;
+        } else {
+            continue;
+        }
+        let start = i;
+        while i < b.len() && !ends(b[i]) {
+            i += 1;
+        }
+        let serial = &b[start..i];
+        let generated = joint == b'&' && serial.contains(&b'&');
+        let address = serial.len() == 12 && serial.iter().all(u8::is_ascii_hexdigit); // mask_bare_addresses
+        if !generated && !address {
+            b[start..i].fill(b'x');
+        }
+    }
 }
 
 /// A log line as the diagnostics read it (borrowed from the log buffer)
@@ -1152,7 +1237,7 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         let _ = writeln!(out, "{}", format_line(e, d.clock));
     }
     out.push_str("```\n");
-    if d.mask { mask_addresses(&out) } else { out }
+    if d.mask { mask_identifiers(&out) } else { out }
 }
 
 #[cfg(test)]
@@ -1424,18 +1509,72 @@ mod tests {
 
     #[test]
     fn masks_addresses() {
-        assert_eq!(mask_addresses("to 00:1A:7D:DA:71:13."), "to 00:1A:7D:xx:xx:xx.");
-        assert_eq!(mask_addresses("aa:bb:cc:dd:ee:ff"), "aa:bb:cc:xx:xx:xx");
-        assert_eq!(mask_addresses("[00:11:22:33:44:55|66:77:88:99:AA:BB]"), "[00:11:22:xx:xx:xx|66:77:88:xx:xx:xx]");
-        // Part of a longer run (an IPv6 address, a hash): left alone
-        assert_eq!(mask_addresses("fe80::00:11:22:33:44:55"), "fe80::00:11:22:33:44:55");
-        assert_eq!(mask_addresses("00:11:22:33:44:55:66"), "00:11:22:33:44:55:66");
-        assert_eq!(mask_addresses("0011:22:33:44:55"), "0011:22:33:44:55");
+        let m = mask_identifiers;
+        assert_eq!(m("to 00:1A:7D:DA:71:13."), "to 00:1A:7D:xx:xx:xx.");
+        assert_eq!(m("aa:bb:cc:dd:ee:ff"), "aa:bb:cc:xx:xx:xx");
+        assert_eq!(m("[00:11:22:33:44:55|66:77:88:99:AA:BB]"), "[00:11:22:xx:xx:xx|66:77:88:xx:xx:xx]");
+        assert_eq!(m("00-1A-7D-DA-71-13"), "00-1A-7D-xx-xx-xx");
+        // After a letter: Windows' LE device IDs
+        assert_eq!(
+            m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c"),
+            "BluetoothLE#BluetoothLE00:1a:7d:xx:xx:xx-58:18:62:xx:xx:xx"
+        );
+        // Part of a longer run (an IPv6 address): left alone
+        assert_eq!(m("fe80::00:11:22:33:44:55"), "fe80::00:11:22:33:44:55");
+        assert_eq!(m("00:11:22:33:44:55:66"), "00:11:22:33:44:55:66");
+        assert_eq!(m("0011:22:33:44:55"), "0011:22:33:44:55");
+        assert_eq!(m("00:11:22:33:44:556"), "00:11:22:33:44:556");
         // Not hex
-        assert_eq!(mask_addresses("00:11:22:33:44:5G"), "00:11:22:33:44:5G");
+        assert_eq!(m("00:11:22:33:44:5G"), "00:11:22:33:44:5G");
         // Multi-byte text around it
-        assert_eq!(mask_addresses("ヘッドホン 00:11:22:33:44:55 接続"), "ヘッドホン 00:11:22:xx:xx:xx 接続");
-        assert_eq!(mask_addresses(""), "");
+        assert_eq!(m("ヘッドホン 00:11:22:33:44:55 接続"), "ヘッドホン 00:11:22:xx:xx:xx 接続");
+        assert_eq!(m("ヘッドホン5818623A1B2C接続"), "ヘッドホン581862xxxxxx接続");
+        assert_eq!(m(""), "");
+    }
+
+    #[test]
+    fn masks_bare_addresses() {
+        let m = mask_identifiers;
+        assert_eq!(
+            m(r"BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&5818623A1B2C_C00000000"),
+            r"BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&581862xxxxxx_C00000000"
+        );
+        assert_eq!(m(r"BTHLE\DEV_5818623a1b2c\8&1&0"), r"BTHLE\DEV_581862xxxxxx\8&1&0");
+        // A GUID's last part; longer hex, after 0x; not all hex or shorter
+        assert_eq!(m("{0000110b-0000-1000-8000-00805f9b34fb}"), "{0000110b-0000-1000-8000-00805f9b34fb}");
+        assert_eq!(m("5818623A1B2C5818623A1B2C, 0x5818623A1B2C"), "5818623A1B2C5818623A1B2C, 0x5818623A1B2C");
+        assert_eq!(m("5818623A1B2G 818623A1B2C"), "5818623A1B2G 818623A1B2C");
+    }
+
+    #[test]
+    fn masks_usb_serials() {
+        let m = mask_identifiers;
+        // A serial that is the adapter's address keeps the vendor part
+        assert_eq!(
+            m(r"USB: opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04C000001 (event 0x81)"),
+            r"USB: opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04Cxxxxxx (event 0x81)"
+        );
+        assert_eq!(m(r"USB\VID_18D1&PID_4EE7\HT7A1B234567"), r"USB\VID_18D1&PID_4EE7\xxxxxxxxxxxx");
+        // A device path, any case; JSON's doubled '\'
+        assert_eq!(
+            m(r"\\?\usb#vid_0a12&pid_0001#serial42#{a5dcbf10-6530-11d2-901f-00c04fb951ed}"),
+            r"\\?\usb#vid_0a12&pid_0001#xxxxxxxx#{a5dcbf10-6530-11d2-901f-00c04fb951ed}"
+        );
+        assert_eq!(
+            m(r#"{"instance_id":"USB\\VID_2357&PID_0604\\SN123"}"#),
+            r#"{"instance_id":"USB\\VID_2357&PID_0604\\xxxxx"}"#
+        );
+        // An interface of a composite device; IDs Windows generates stay
+        assert_eq!(m(r"USB\VID_8087&PID_0026&MI_00\SN123"), r"USB\VID_8087&PID_0026&MI_00\xxxxx");
+        assert_eq!(m(r"USB\VID_8087&PID_0026\5&2C7B4E3&0&14."), r"USB\VID_8087&PID_0026\5&2C7B4E3&0&14.");
+        // A driver record's name
+        assert_eq!(m("USB_VID_0BDA_PID_8771_SN123.json"), "USB_VID_0BDA_PID_8771_xxxxx.json");
+        assert_eq!(m("USB_VID_0BDA_PID_8771_00E04C000001.json"), "USB_VID_0BDA_PID_8771_00E04Cxxxxxx.json");
+        // VID and PID alone
+        assert_eq!(
+            m("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853."),
+            "RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853."
+        );
     }
 
     #[test]

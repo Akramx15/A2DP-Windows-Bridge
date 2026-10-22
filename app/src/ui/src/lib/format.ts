@@ -20,11 +20,33 @@ export function clock(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(f).padStart(3, "0")}`;
 }
 
-const ADDRESS = /\b([0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}):[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\b/g;
+const H = "[0-9A-Fa-f]";
+/** "AC:80:0A:12:34:56" or with '-'; not in a longer run (IPv6), a letter before is fine */
+const SEPARATED = [":", "\\-"].map(
+  (s) => new RegExp(`(?<!${s})(${H}{2}${s}${H}{2}${s}${H}{2}${s})${H}{2}${s}${H}{2}${s}${H}{2}(?!${H}|${s})`, "g"),
+);
+/** A word of 12 hex digits, not a GUID's last part */
+const BARE = /(?<![A-Za-z0-9-])([0-9A-Fa-f]{6})[0-9A-Fa-f]{6}(?![A-Za-z0-9])/g;
+const SERIAL_END = `\\\\#\\s"',;:.()[\\]{}\\u0080-\\uffff`;
+/** USB\VID_0BDA&PID_8771\<serial>, a device path's #<serial># */
+const USB_INSTANCE = new RegExp(`(VID_${H}{4}&PID_${H}{4}[A-Z0-9_&]*[\\\\#]+)([^${SERIAL_END}]*)`, "gi");
+/** A driver record's name, USB_VID_0BDA_PID_8771_<serial> */
+const USB_RECORD = new RegExp(`(VID_${H}{4}_PID_${H}{4}_)([^${SERIAL_END}]*)`, "gi");
 
-/** "AC:80:0A:12:34:56" -> "AC:80:0A:xx:xx:xx" (the vendor part stays), as v1's debug console */
-export function maskAddresses(text: string): string {
-  return text.replace(ADDRESS, "$1:xx:xx:xx");
+/**
+ * Masks what identifies the user's devices, as the core's mask_identifiers:
+ * Bluetooth addresses "AC:80:0A:12:34:56" (or with '-') -> "AC:80:0A:xx:xx:xx"
+ * (the vendor part stays, as v1's debug console), the same without
+ * separators "AC800A123456" -> "AC800Axxxxxx" (Windows' Bluetooth device IDs,
+ * USB serials that are the adapter's address), other USB serial numbers ->
+ * x's. IDs Windows generates ("5&2C7B4E3&0&2") stay.
+ */
+export function maskIdentifiers(text: string): string {
+  const serial = (generatedStays: boolean) => (_: string, head: string, s: string) =>
+    head + ((generatedStays && s.includes("&")) || /^[0-9A-Fa-f]{12}$/.test(s) ? s : "x".repeat(s.length));
+  let out = text.replace(USB_INSTANCE, serial(true)).replace(USB_RECORD, serial(false));
+  for (const re of SEPARATED) out = out.replace(re, (_, head: string) => `${head}xx${head[2]}xx${head[2]}xx`);
+  return out.replace(BARE, "$1xxxxxx");
 }
 
 /**

@@ -4,7 +4,7 @@ import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
 import { bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
-import { maskAddresses, parseAddress } from "./format";
+import { maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
 import { validateProfile } from "./profile";
 
@@ -207,7 +207,41 @@ describe("profiles", () => {
   });
 
   it("masks the device part of addresses", () => {
-    expect(maskAddresses("connecting to AC:80:0A:12:34:56 now")).toBe("connecting to AC:80:0A:xx:xx:xx now");
+    expect(maskIdentifiers("connecting to AC:80:0A:12:34:56 now")).toBe("connecting to AC:80:0A:xx:xx:xx now");
+  });
+
+  // The same cases as the core's mask_identifiers tests
+  it("masks addresses in other forms", () => {
+    const m = maskIdentifiers;
+    expect(m("00-1A-7D-DA-71-13")).toBe("00-1A-7D-xx-xx-xx");
+    expect(m("BluetoothLE#BluetoothLE00:1a:7d:da:71:13-58:18:62:3a:1b:2c")).toBe(
+      "BluetoothLE#BluetoothLE00:1a:7d:xx:xx:xx-58:18:62:xx:xx:xx",
+    );
+    expect(m("fe80::00:11:22:33:44:55")).toBe("fe80::00:11:22:33:44:55");
+    expect(m("00:11:22:33:44:55:66")).toBe("00:11:22:33:44:55:66");
+    expect(m("00:11:22:33:44:556")).toBe("00:11:22:33:44:556");
+    expect(m("ヘッドホン5818623A1B2C接続")).toBe("ヘッドホン581862xxxxxx接続");
+    expect(m(String.raw`BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&5818623A1B2C_C00000000`)).toBe(
+      String.raw`BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d\7&1a2b3c4d&0&581862xxxxxx_C00000000`,
+    );
+    expect(m("5818623A1B2C5818623A1B2C, 0x5818623A1B2C, 5818623A1B2G")).toBe(
+      "5818623A1B2C5818623A1B2C, 0x5818623A1B2C, 5818623A1B2G",
+    );
+  });
+
+  it("masks USB serial numbers", () => {
+    const m = maskIdentifiers;
+    expect(m(String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04C000001 (event 0x81)`)).toBe(
+      String.raw`opened 0BDA:4853 USB\VID_0BDA&PID_4853\00E04Cxxxxxx (event 0x81)`,
+    );
+    expect(m(String.raw`USB\VID_18D1&PID_4EE7\HT7A1B234567`)).toBe(String.raw`USB\VID_18D1&PID_4EE7\xxxxxxxxxxxx`);
+    expect(m(String.raw`\\?\usb#vid_0a12&pid_0001#serial42#{a5dcbf10-6530-11d2-901f-00c04fb951ed}`)).toBe(
+      String.raw`\\?\usb#vid_0a12&pid_0001#xxxxxxxx#{a5dcbf10-6530-11d2-901f-00c04fb951ed}`,
+    );
+    expect(m(String.raw`USB\VID_8087&PID_0026&MI_00\SN123`)).toBe(String.raw`USB\VID_8087&PID_0026&MI_00\xxxxx`);
+    expect(m(String.raw`USB\VID_8087&PID_0026\5&2C7B4E3&0&14.`)).toBe(String.raw`USB\VID_8087&PID_0026\5&2C7B4E3&0&14.`);
+    expect(m("USB_VID_0BDA_PID_8771_SN123.json")).toBe("USB_VID_0BDA_PID_8771_xxxxx.json");
+    expect(m("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.")).toBe("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.");
   });
 });
 
