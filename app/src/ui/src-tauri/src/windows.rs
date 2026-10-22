@@ -6,6 +6,7 @@
 //! System Tray" off, closing the main window exits A2DPWB, core included,
 //! as the tray's Exit does (v1).
 
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::utils::config::WindowEffectsConfig;
@@ -21,6 +22,30 @@ pub const FLYOUT: &str = "flyout";
 const HIDDEN_EXIT_AFTER: Duration = Duration::from_secs(180);
 /// Gap between the flyout and the screen edge / taskbar (logical pixels)
 const FLYOUT_MARGIN: f64 = 12.0;
+/// How long the flyout counts as opening after it was shown (or its page
+/// appeared) (#140). Meanwhile another click on the tray icon (a double
+/// click, or a second click while a cold start is still loading the page)
+/// does not close it, and losing the focus does not hide it: the taskbar
+/// can take the focus back just after a click on the icon.
+const FLYOUT_OPENING: Duration = Duration::from_millis(800);
+
+/// When the flyout was last shown or its page appeared
+static FLYOUT_OPENED: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn flyout_opened_now() {
+    *FLYOUT_OPENED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+}
+
+fn flyout_opening() -> bool {
+    FLYOUT_OPENED.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|t| t.elapsed() < FLYOUT_OPENING)
+}
+
+/// The flyout's page has loaded: on a cold start this is when it appears
+pub fn page_loaded(label: &str) {
+    if label == FLYOUT {
+        flyout_opened_now();
+    }
+}
 
 /// Mica needs Windows 11 (build 22000). On Windows 10 a transparent window
 /// would show the desktop through it, so there the windows stay opaque.
@@ -109,6 +134,7 @@ pub fn show_flyout(app: &AppHandle) -> tauri::Result<()> {
         let y = area.position.y + area.size.height as i32 - size.height as i32 - margin;
         w.set_position(PhysicalPosition::new(x.max(area.position.x), y.max(area.position.y)))?;
     }
+    flyout_opened_now();
     w.show()?;
     w.set_focus()?;
     tracing::info!("[{FLYOUT}] shown");
@@ -118,7 +144,14 @@ pub fn show_flyout(app: &AppHandle) -> tauri::Result<()> {
 
 pub fn toggle_flyout(app: &AppHandle) -> tauri::Result<()> {
     match app.get_webview_window(FLYOUT) {
-        Some(w) if w.is_visible().unwrap_or(false) => w.hide(),
+        Some(w) if w.is_visible().unwrap_or(false) => {
+            if flyout_opening() {
+                tracing::info!("[{FLYOUT}] still opening; stays");
+                w.set_focus()
+            } else {
+                w.hide()
+            }
+        }
         _ => show_flyout(app),
     }
 }
@@ -135,7 +168,12 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
             }
         }
         WindowEvent::Focused(false) if window.label() == FLYOUT => {
-            let _ = window.hide();
+            if flyout_opening() {
+                tracing::info!("[{FLYOUT}] lost the focus while opening; taking it back");
+                let _ = window.set_focus();
+            } else {
+                let _ = window.hide();
+            }
         }
         // Gone for good (the system closed it): its subscriptions end
         WindowEvent::Destroyed => {

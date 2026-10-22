@@ -393,7 +393,10 @@ pub fn run(args: &[String]) -> i32 {
                 }
                 view = Some(v);
             }
-            TaoEvent::UserEvent(UserEvent::Click) => launch_ui(true),
+            TaoEvent::UserEvent(UserEvent::Click) => {
+                win_sys::notify::allow_foreground_for_click();
+                launch_ui(true);
+            }
             TaoEvent::UserEvent(UserEvent::Balloon(b)) => match &notifier {
                 Some(n) => show_balloon(n, b),
                 None => tracing::info!("no tray icon for the balloon \"{}\"", b.title),
