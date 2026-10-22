@@ -36,6 +36,7 @@ import type {
   Settings,
   Snapshot,
   SourceInfo,
+  SpatialEngine,
   StreamInfo,
 } from "./types";
 
@@ -84,6 +85,8 @@ const RTL: AdapterInfo = {
 export function sampleProfile(over: Partial<Profile> = {}): Profile {
   return {
     name: "WH-1000XM5 (LDAC)",
+    purpose_kind: "",
+    purpose_note: "",
     device_address: "AC:80:0A:12:34:56",
     device_name: "WH-1000XM5",
     codec: "ldac",
@@ -180,7 +183,20 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const profiles = fresh
     ? []
     : [
-        long ? sampleProfile({ name: LONG_NAME, device_name: LONG_DEVICE, capture_mode: "app", app_exe: "AVeryLongApplicationExecutableName_With_No_Spaces_Whatsoever.exe", app_name: "" }) : sampleProfile(),
+        long
+          ? sampleProfile({
+              name: LONG_NAME,
+              device_name: LONG_DEVICE,
+              capture_mode: "app",
+              app_exe: "AVeryLongApplicationExecutableName_With_No_Spaces_Whatsoever.exe",
+              app_name: "",
+              purpose_kind: "headphones",
+              purpose_note: "リビングのListening用プロファイル",
+            })
+          : sampleProfile({
+              purpose_kind: "headphones",
+              purpose_note: "WH-1000XM5 with the AutoEQ bass correction",
+            }),
         sampleProfile({
           name: "Desk speaker (AAC)",
           device_address: "00:1A:7D:DA:71:13",
@@ -189,6 +205,8 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
           capture_mode: "app",
           app_exe: "Spotify.exe",
           app_name: "Spotify",
+          purpose_kind: "speaker",
+          purpose_note: "Spotify on the desk speaker",
         }),
         ...(le
           ? [
@@ -198,6 +216,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
                 device_name: LE_BUDS.name,
                 codec: "auto",
                 le_audio: true,
+                purpose_kind: "headphones",
               }),
             ]
           : []),
@@ -302,6 +321,28 @@ const AUDIO_APPS: AudioApp[] = [
   { exe: "Spotify.exe", name: "Spotify" },
   { exe: "chrome.exe", name: "Google Chrome" },
   { exe: "foobar2000.exe", name: "foobar2000" },
+];
+
+/** The engines in the sample folder (the xm6 360 chain's stages) */
+const SPATIAL_ENGINES: SpatialEngine[] = [
+  {
+    id: "sony_native",
+    label: "Sony native (reference)",
+    path: "C:\\A2DPWB\\engines\\sony_native\\sony_native.exe",
+    family: "sony",
+  },
+  {
+    id: "personalized_hpp",
+    label: "Personalized HPP + XM6 BA",
+    path: "C:\\A2DPWB\\engines\\personalized_hpp\\PersonalizedHPP.exe",
+    family: "sony",
+  },
+  {
+    id: "upmixer",
+    label: "Upmixer + personal ear file (experimental)",
+    path: "C:\\A2DPWB\\engines\\upmixer\\Upmixer.exe",
+    family: "upmixer",
+  },
 ];
 
 /** The firmware pairs in the sample settings folder (adapter.firmware_files):
@@ -661,6 +702,8 @@ export class MockCore implements Transport {
         return AUDIO_DEVICES;
       case "audio.apps":
         return AUDIO_APPS;
+      case "spatial.engines":
+        return SPATIAL_ENGINES;
       case "diag.subscribe":
         this.subscribe((p.logs as LogLevel | null) ?? null, Boolean(p.link), Boolean(p.receiver));
         return null;

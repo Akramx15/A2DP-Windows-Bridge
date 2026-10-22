@@ -150,6 +150,16 @@
   "profile.empty": "沒有設定檔。建立一個以開始使用。",
   "profile.name": "設定檔名稱",
   "profile.name_hint": "例如 我的耳機 (LDAC HQ)",
+  "profile.purpose": "用途",
+  "profile.purpose_hint": "此設定檔的用途。應用程式會把它顯示在設定檔卡片上，讓你知道該選哪一個。",
+  "profile.purpose_kind_label": "類型",
+  "profile.purpose_none": "未設定",
+  "profile.purpose_headphones": "耳機",
+  "profile.purpose_autoeq": "AutoEQ",
+  "profile.purpose_speaker": "喇叭",
+  "profile.purpose_custom": "自訂",
+  "profile.purpose_note": "備註",
+  "profile.purpose_note_hint": "用你自己的話寫一句簡短的備註，例如「WH-1000XM6 加上 AutoEQ 低音修正」。",
   "profile.le_audio": "LE Audio 裝置（實驗性，LC3）",
   "profile.spatial_engine": "XM6 360 空間音訊引擎",
   "profile.spatial_engine_hint": "在編碼前將擷取的音訊交給空間音訊引擎處理。此引擎需要 48 kHz 立體聲音訊。",
@@ -731,5 +741,6 @@
   "ui.profile.sbc_not_offered": "%s（未提供）",
   "ui.profile.sbc_bitrate": "≈ %d kbps，%s kHz",
   "status.device_off": "耳機已關閉或中斷連線",
-  "status.device_unreachable": "耳機已關閉或超出範圍"
+  "status.device_unreachable": "耳機已關閉或超出範圍",
+  "status.device_back": "耳機已重新開啟，正在連線..."
 }

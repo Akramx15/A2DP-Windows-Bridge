@@ -150,6 +150,16 @@
   "profile.empty": "没有配置文件。请创建一个以开始使用。",
   "profile.name": "配置文件名称",
   "profile.name_hint": "例如：我的耳机（LDAC HQ）",
+  "profile.purpose": "用途",
+  "profile.purpose_hint": "此配置文件的用途。应用会把它显示在配置文件卡片上，让你知道该选哪一个。",
+  "profile.purpose_kind_label": "类型",
+  "profile.purpose_none": "未设置",
+  "profile.purpose_headphones": "耳机",
+  "profile.purpose_autoeq": "AutoEQ",
+  "profile.purpose_speaker": "扬声器",
+  "profile.purpose_custom": "自定义",
+  "profile.purpose_note": "备注",
+  "profile.purpose_note_hint": "用你自己的话写一句简短的备注，例如“WH-1000XM6 加上 AutoEQ 低音修正”。",
   "profile.le_audio": "LE Audio 设备（实验性，LC3）",
   "profile.spatial_engine": "XM6 360 空间音频引擎",
   "profile.spatial_engine_hint": "在编码前将捕获的音频交给空间音频引擎处理。该引擎需要 48 kHz 立体声音频。",
@@ -731,5 +741,6 @@
   "ui.profile.sbc_not_offered": "%s（未提供）",
   "ui.profile.sbc_bitrate": "≈ %d kbps，%s kHz",
   "status.device_off": "耳机已关闭或断开连接",
-  "status.device_unreachable": "耳机已关闭或超出范围"
+  "status.device_unreachable": "耳机已关闭或超出范围",
+  "status.device_back": "耳机已重新打开，正在连接..."
 }

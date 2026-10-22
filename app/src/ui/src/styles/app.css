@@ -749,6 +749,13 @@ option {
   color: var(--st-text);
   border-color: color-mix(in srgb, var(--st) 55%, transparent);
 }
+/* What the profile is for: a pill of its own, so it reads apart from the
+   technical tags (a shade of the accent, quieter than the status one) */
+.tag-purpose {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent-1) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-1) 12%, transparent);
+}
 .tags {
   display: flex;
   gap: var(--s1);

@@ -150,6 +150,16 @@
   "profile.empty": "No hay perfiles. Cree uno para empezar.",
   "profile.name": "Nombre del perfil",
   "profile.name_hint": "p. ej. Mis auriculares (LDAC HQ)",
+  "profile.purpose": "Propósito",
+  "profile.purpose_hint": "Para qué sirve este perfil. La aplicación lo muestra en la tarjeta del perfil para que sepas cuál elegir.",
+  "profile.purpose_kind_label": "Tipo",
+  "profile.purpose_none": "Sin definir",
+  "profile.purpose_headphones": "Auriculares",
+  "profile.purpose_autoeq": "AutoEQ",
+  "profile.purpose_speaker": "Altavoz",
+  "profile.purpose_custom": "Personalizado",
+  "profile.purpose_note": "Nota",
+  "profile.purpose_note_hint": "Una nota breve con tus propias palabras, p. ej. \"WH-1000XM6 con la corrección de graves AutoEQ\".",
   "profile.le_audio": "Dispositivo LE Audio (experimental, LC3)",
   "profile.spatial_engine": "Motor espacial XM6 360",
   "profile.spatial_engine_hint": "Pasa el audio capturado por el motor espacial antes de codificarlo. El motor necesita audio estéreo de 48 kHz.",
@@ -731,5 +741,6 @@
   "ui.profile.sbc_not_offered": "%s (no ofrecido)",
   "ui.profile.sbc_bitrate": "≈ %d kbps a %s kHz",
   "status.device_off": "Los auriculares se apagaron o se desconectaron",
-  "status.device_unreachable": "Los auriculares están apagados o fuera de alcance"
+  "status.device_unreachable": "Los auriculares están apagados o fuera de alcance",
+  "status.device_back": "Los auriculares se han vuelto a encender, conectando..."
 }

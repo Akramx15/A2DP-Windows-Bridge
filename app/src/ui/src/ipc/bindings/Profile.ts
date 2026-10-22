@@ -3,7 +3,16 @@
 /**
  * A connection profile, as in profiles.json
  */
-export type Profile = { name: string, device_address: string, device_name: string, 
+export type Profile = { name: string, 
+/**
+ * What this profile is for: "", "headphones", "autoeq", "speaker" or
+ * "custom"
+ */
+purpose_kind: string, 
+/**
+ * A note about this profile (free text, the user's own words)
+ */
+purpose_note: string, device_address: string, device_name: string, 
 /**
  * auto, ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream
  */

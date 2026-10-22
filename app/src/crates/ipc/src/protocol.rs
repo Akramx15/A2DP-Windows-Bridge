@@ -369,6 +369,13 @@ pub struct StreamStatus {
 
 pub struct Profile {
     pub name: String,
+    /// What this profile is for: "", "headphones", "autoeq", "speaker" or
+    /// "custom"
+    #[serde(default)]
+    pub purpose_kind: String,
+    /// A note about this profile (free text, the user's own words)
+    #[serde(default)]
+    pub purpose_note: String,
     pub device_address: String,
     pub device_name: String,
     /// auto, ldac, aptxhd, aptxll, aptx, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream
@@ -1538,5 +1545,25 @@ mod tests {
             now.since(&base),
             LinkTotals { packets: 6, bytes: 600, dropped: 0, capture_frames: 480, capture_dropped: 0 }
         );
+    }
+
+    /// What a profile is for travels with it (an older core's profile has
+    /// none: the purpose is empty)
+    #[test]
+    fn a_profile_purpose_is_on_the_wire() {
+        let profile: Profile = serde_json::from_value(serde_json::json!({
+            "name": "P", "device_address": "A", "device_name": "", "codec": "auto", "quality": "hq",
+            "abr": false, "codec_fallback": true, "sample_rate": 0, "bit_depth": 0, "capture_mode": "loopback",
+            "audio_device_id": "", "audio_device_name": "", "auto_switch_device": true, "app_exe": "",
+            "app_name": "", "volume_sync": "auto", "volume_device_id": "", "volume_device_name": "",
+            "max_media_payload": 1023}))
+        .unwrap();
+        assert_eq!(profile.purpose_kind, "");
+        assert_eq!(profile.purpose_note, "");
+        let p = Profile { purpose_kind: "autoeq".into(), purpose_note: "the bass ones".into(), ..profile };
+        let j = serde_json::to_value(&p).unwrap();
+        assert_eq!(j["purpose_kind"], "autoeq");
+        assert_eq!(j["purpose_note"], "the bass ones");
+        assert_eq!(serde_json::from_value::<Profile>(j).unwrap(), p);
     }
 }

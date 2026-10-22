@@ -51,6 +51,25 @@ describe("a new profile", () => {
   });
 });
 
+describe("the purpose of a profile", () => {
+  it("is the first section, and saves the kind of use and the note", async () => {
+    const { calls } = start("#/profiles/new");
+    const sections = await screen.findAllByRole("heading", { level: 2 });
+    expect(sections[0]).toHaveTextContent(t("profile.purpose"));
+
+    fireEvent.input(screen.getByLabelText(t("profile.name")), { target: { value: "XM6 AutoEQ" } });
+    fireEvent.click(screen.getByRole("radio", { name: /WH-1000XM5/ }));
+    fireEvent.click(screen.getByRole("radio", { name: t("profile.purpose_autoeq") }));
+    fireEvent.input(screen.getByLabelText(t("profile.purpose_note")), {
+      target: { value: "AutoEQ for the XM6" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
+    const saved = calls.find((c) => c.method === "profile.save")!.params as { profile: Record<string, unknown> };
+    expect(saved.profile).toMatchObject({ purpose_kind: "autoeq", purpose_note: "AutoEQ for the XM6" });
+  });
+});
+
 describe("saved devices on the Audio Devices screen", () => {
   it("renames a saved device", async () => {
     const { calls } = start("#/devices");

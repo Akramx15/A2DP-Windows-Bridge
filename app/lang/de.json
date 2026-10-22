@@ -150,6 +150,16 @@
   "profile.empty": "Keine Profile. Zum Starten ein Profil erstellen.",
   "profile.name": "Profilname",
   "profile.name_hint": "z. B. Meine Kopfhörer (LDAC HQ)",
+  "profile.purpose": "Zweck",
+  "profile.purpose_hint": "Wofür dieses Profil gedacht ist. Die App zeigt es auf der Profilkarte, damit Sie wissen, welches Profil Sie wählen sollen.",
+  "profile.purpose_kind_label": "Art",
+  "profile.purpose_none": "Nicht festgelegt",
+  "profile.purpose_headphones": "Kopfhörer",
+  "profile.purpose_autoeq": "AutoEQ",
+  "profile.purpose_speaker": "Lautsprecher",
+  "profile.purpose_custom": "Benutzerdefiniert",
+  "profile.purpose_note": "Notiz",
+  "profile.purpose_note_hint": "Eine kurze Notiz in eigenen Worten, z. B. \"WH-1000XM6 mit der AutoEQ-Basskorrektur\".",
   "profile.le_audio": "LE-Audio-Gerät (experimentell, LC3)",
   "profile.spatial_engine": "XM6-360-Raumklang-Engine",
   "profile.spatial_engine_hint": "Leitet das aufgenommene Audio vor der Kodierung durch die Raumklang-Engine. Die Engine benötigt 48-kHz-Stereoaudio.",
@@ -731,5 +741,6 @@
   "ui.profile.sbc_not_offered": "%s (nicht angeboten)",
   "ui.profile.sbc_bitrate": "≈ %d kbit/s bei %s kHz",
   "status.device_off": "Der Kopfhörer wurde ausgeschaltet oder getrennt",
-  "status.device_unreachable": "Der Kopfhörer ist aus oder außer Reichweite"
+  "status.device_unreachable": "Der Kopfhörer ist aus oder außer Reichweite",
+  "status.device_back": "Der Kopfhörer ist wieder an, Verbindung wird hergestellt..."
 }

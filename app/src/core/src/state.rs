@@ -99,6 +99,8 @@ fn json<T: serde::Serialize>(v: &T) -> Value {
 fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
     Profile {
         name: p.name.clone(),
+        purpose_kind: p.purpose_kind.clone(),
+        purpose_note: p.purpose_note.clone(),
         device_address: p.device_address.clone(),
         device_name: p.device_name.clone(),
         codec: p.codec.clone(),
@@ -135,6 +137,8 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
 fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     let mut c = base.cloned().unwrap_or_default();
     c.name = p.name.clone();
+    c.purpose_kind = p.purpose_kind.clone();
+    c.purpose_note = p.purpose_note.clone();
     c.device_address = p.device_address.to_uppercase();
     c.device_name = p.device_name.clone();
     c.codec = p.codec.clone();
@@ -2131,5 +2135,27 @@ mod tests {
         assert_eq!(s.len(), 15);
         assert_eq!(&s[8..9], "_");
         assert!(s.bytes().enumerate().all(|(i, b)| i == 8 || b.is_ascii_digit()));
+    }
+
+    #[test]
+    fn a_profile_purpose_survives_the_ui() {
+        let core = CoreProfile {
+            name: "WH LDAC".into(),
+            purpose_kind: "headphones".into(),
+            purpose_note: "the ones with the ANC".into(),
+            ..CoreProfile::default()
+        };
+        let ui = to_ipc_profile(&core, 679);
+        assert_eq!(ui.purpose_kind, "headphones");
+        assert_eq!(ui.purpose_note, "the ones with the ANC");
+        // The UI's save keeps it (a field missing in the merge is lost)
+        let merged = merge_profile(Some(&core), &ui);
+        assert_eq!(merged.purpose_kind, "headphones");
+        assert_eq!(merged.purpose_note, "the ones with the ANC");
+        // What the UI says is what is stored
+        let other = Profile { purpose_kind: "autoeq".into(), purpose_note: "the bass ones".into(), ..ui };
+        let merged = merge_profile(Some(&core), &other);
+        assert_eq!(merged.purpose_kind, "autoeq");
+        assert_eq!(merged.purpose_note, "the bass ones");
     }
 }

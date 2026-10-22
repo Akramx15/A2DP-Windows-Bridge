@@ -150,6 +150,16 @@
   "profile.empty": "프로필이 없습니다. 시작하려면 프로필을 만드십시오.",
   "profile.name": "프로필 이름",
   "profile.name_hint": "예: 내 헤드폰(LDAC HQ)",
+  "profile.purpose": "용도",
+  "profile.purpose_hint": "이 프로필의 용도입니다. 앱이 프로필 카드에 표시해 주므로 어떤 프로필을 고를지 알 수 있습니다.",
+  "profile.purpose_kind_label": "종류",
+  "profile.purpose_none": "설정 안 함",
+  "profile.purpose_headphones": "헤드폰",
+  "profile.purpose_autoeq": "AutoEQ",
+  "profile.purpose_speaker": "스피커",
+  "profile.purpose_custom": "사용자 지정",
+  "profile.purpose_note": "메모",
+  "profile.purpose_note_hint": "자기 말로 짧게 적어 두세요 (예: \"WH-1000XM6에 AutoEQ 저역 보정 적용\").",
   "profile.le_audio": "LE 오디오 기기 (실험적, LC3)",
   "profile.spatial_engine": "XM6 360 공간 엔진",
   "profile.spatial_engine_hint": "캡처한 오디오를 인코딩 전에 공간 엔진으로 통과시킵니다. 엔진에는 48kHz 스테레오 오디오가 필요합니다.",
@@ -731,5 +741,6 @@
   "ui.profile.sbc_not_offered": "%s (미제공)",
   "ui.profile.sbc_bitrate": "≈ %d kbps, %s kHz",
   "status.device_off": "헤드폰이 꺼졌거나 연결이 끊어졌습니다",
-  "status.device_unreachable": "헤드폰이 꺼져 있거나 범위를 벗어났습니다"
+  "status.device_unreachable": "헤드폰이 꺼져 있거나 범위를 벗어났습니다",
+  "status.device_back": "헤드폰이 다시 켜졌습니다. 연결 중..."
 }

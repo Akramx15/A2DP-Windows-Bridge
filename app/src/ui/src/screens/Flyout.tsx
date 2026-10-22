@@ -27,6 +27,7 @@ import {
 } from "../components/stream";
 import { t, tm } from "../i18n";
 import { IpcError } from "../ipc/types";
+import { purposeLabel } from "../lib/profile";
 
 export function Flyout() {
   const app = useApp();
@@ -50,6 +51,16 @@ export function Flyout() {
     if (stream().state === "error") return { code: null, message: stream().message };
     return null;
   };
+  // What the active profile is for: its kind of use and the user's own
+  // note about it (nothing when the profile has neither)
+  const purpose = () => {
+    const p = profile();
+    if (!p) return "";
+    const kind = purposeLabel(p.purpose_kind, t);
+    const note = p.purpose_note.trim();
+    if (kind && note) return `${kind} · ${note}`;
+    return kind || note;
+  };
   // In the flyout a fix that needs a screen opens the main window there
   const openMain = (route?: string) => core.transport.showMain(route).catch(() => {});
 
@@ -61,6 +72,13 @@ export function Flyout() {
         </Ring>
         <div class="fly-title">
           <div class="device-name ellipsis">{profile()?.device_name || profile()?.name || t("profile.none_selected")}</div>
+          <Show when={purpose()}>
+            {(what) => (
+              <div class="hint ellipsis" title={what()}>
+                {what()}
+              </div>
+            )}
+          </Show>
           <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
             <span class="dot" aria-hidden="true" />
             <span class="ellipsis">

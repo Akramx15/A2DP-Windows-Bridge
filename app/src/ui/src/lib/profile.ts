@@ -1,13 +1,17 @@
-// A new profile's defaults and the checks before profile.save. The values
-// are those of v1's profile dialog; the core checks again.
+// A new profile's defaults, the checks before profile.save, and the plain
+// words a profile card shows (what it is for). The values are those of v1's
+// profile dialog; the core checks again.
 
-import type { AudioDevice, Device, ParamsOf, Profile } from "../ipc/types";
-import { PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
+import { captureText } from "../components/CapturePicker";
+import type { AudioDevice, Device, ParamsOf, Profile, SpatialEngine } from "../ipc/types";
+import { codecSpec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN, qualityTag } from "./codecs";
 import { parseAddress } from "./format";
 
 export function newProfile(): Profile {
   return {
     name: "",
+    purpose_kind: "",
+    purpose_note: "",
     device_address: "",
     device_name: "",
     codec: "auto",
@@ -167,6 +171,47 @@ export async function appCaptureSupport(): Promise<AppCaptureSupport> {
   } catch {
     return "unknown";
   }
+}
+
+// ---- The words a profile shows ------------------------------------------
+//
+// The card, the switcher and the flyout say what a profile is for: the
+// device, the codec and the capture source in one line, the kind of use
+// ("headphones", "AutoEQ", ...) and the user's own note about it.
+
+/** The kinds of use a profile can have, and the key of each label */
+const PURPOSE_KINDS: Record<string, string> = {
+  headphones: "profile.purpose_headphones",
+  autoeq: "profile.purpose_autoeq",
+  speaker: "profile.purpose_speaker",
+  custom: "profile.purpose_custom",
+};
+
+/** What a profile is for, as the card's pill says it (empty: not set,
+ *  an unknown kind: as it is) */
+export function purposeLabel(kind: string, t: (key: string) => string): string {
+  const key = PURPOSE_KINDS[kind];
+  return key ? t(key) : kind;
+}
+
+/** The profile in one line of plain words: the device, the codec with its
+ *  quality and the capture source ("WH-1000XM6 · LDAC High (990 kbps) ·
+ *  System Loopback") */
+export function profileSummary(p: Profile, t: (key: string) => string): string {
+  const parts: string[] = [];
+  const device = p.device_name || p.device_address;
+  if (device) parts.push(device);
+  const codec = p.le_audio ? t("ui.codec.lc3") : t(codecSpec(p.codec).label);
+  const quality = qualityTag(p, t);
+  parts.push(quality ? `${codec} ${quality}` : codec);
+  parts.push(captureText(p).text);
+  return parts.join(" · ");
+}
+
+/** The label of the engine the profile runs (empty: none, or not among
+ *  the ones the core lists) */
+export function engineLabelOf(p: Profile, engines: readonly SpatialEngine[]): string {
+  return engines.find((e) => e.path === p.spatial_engine_path)?.label ?? "";
 }
 
 /** stream.start_custom for the core's test tone (left 1 kHz, right

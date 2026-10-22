@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
 import { setLanguage } from "../i18n";
-import { MockCore, type MockOptions } from "../ipc/mock";
+import { MockCore, sampleProfile, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 
 let mock: MockCore | null = null;
@@ -80,6 +80,35 @@ describe("profiles", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
     expect(calls.some((c) => c.method === "stream.stop")).toBe(false);
+  });
+
+  it("says what each profile is for", async () => {
+    start("#/profiles");
+    const card = (await screen.findByRole("heading", { name: "WH-1000XM5 (LDAC)" })).closest("li")!;
+    // The device, the codec with its quality and the capture source
+    expect(card).toHaveTextContent("WH-1000XM5 · LDAC High (990 kbps) · System Loopback");
+    // The kind of use and the user's own words about it
+    expect(card).toHaveTextContent("Headphones");
+    expect(card).toHaveTextContent("WH-1000XM5 with the AutoEQ bass correction");
+    // The pill of its own, so it reads apart from the technical tags
+    expect(card.querySelector(".tag-purpose")).toHaveTextContent("Headphones");
+  });
+
+  it("names the engine a profile runs, not the engine in general", async () => {
+    const { core } = start("#/profiles");
+    await screen.findByRole("heading", { name: "WH-1000XM5 (LDAC)" });
+    await core.request("profile.save", {
+      profile: sampleProfile({
+        name: "XM6 with the engine",
+        spatial_engine: true,
+        spatial_engine_registry: "C:\\A2DPWB\\engines",
+        spatial_engine_path: "C:\\A2DPWB\\engines\\personalized_hpp\\PersonalizedHPP.exe",
+      }),
+      original_name: null,
+    });
+    const card = (await screen.findByRole("heading", { name: "XM6 with the engine" })).closest("li")!;
+    await waitFor(() => expect(card).toHaveTextContent("Personalized HPP + XM6 BA"));
+    expect(card).not.toHaveTextContent("XM6 360 spatial engine");
   });
 });
 
@@ -169,6 +198,8 @@ describe("every screen renders", () => {
     start("", { window: "flyout" });
     expect(await screen.findByRole("button", { name: "Connect" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open app" })).toBeInTheDocument();
+    // What the active profile is for, under its name
+    expect(await screen.findByText("Headphones · WH-1000XM5 with the AutoEQ bass correction")).toBeInTheDocument();
   });
 
   it("in Japanese", async () => {

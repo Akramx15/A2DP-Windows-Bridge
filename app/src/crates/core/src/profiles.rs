@@ -34,6 +34,13 @@ fn is_zero(n: &u8) -> bool {
 #[serde(default)]
 pub struct Profile {
     pub name: String,
+    /// What this profile is for: "", "headphones", "autoeq", "speaker" or
+    /// "custom"
+    #[serde(default)]
+    pub purpose_kind: String,
+    /// A note about this profile (free text, the user's own words)
+    #[serde(default)]
+    pub purpose_note: String,
     /// XX:XX:XX:XX:XX:XX
     pub device_address: String,
     pub device_name: String,
@@ -117,6 +124,8 @@ impl Default for Profile {
     fn default() -> Self {
         Profile {
             name: String::new(),
+            purpose_kind: String::new(),
+            purpose_note: String::new(),
             device_address: String::new(),
             device_name: String::new(),
             codec: auto(),
@@ -425,5 +434,36 @@ mod tests {
         // A bad address is refused as for A2DP
         let bad = Profile { device_address: "nope".into(), ..p.clone() };
         assert_eq!(bad.to_request(1023), Err(ProfileError::Address("nope".into())));
+    }
+
+    #[test]
+    fn a_profile_says_what_it_is_for() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-profiles-purpose-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = Profile {
+            name: "WH LDAC".into(),
+            purpose_kind: "headphones".into(),
+            purpose_note: "the ones with the ANC".into(),
+            device_address: "00:A2:D0:00:00:02".into(),
+            ..Profile::default()
+        };
+        // Saved and loaded again: the purpose is there
+        save(&dir, std::slice::from_ref(&p)).unwrap();
+        let list = load(&dir);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].purpose_kind, "headphones");
+        assert_eq!(list[0].purpose_note, "the ones with the ANC");
+        // A file from before the purpose existed still loads: it is empty
+        std::fs::write(
+            path(&dir),
+            r#"{"profiles":[{"name":"Old","device_address":"00:A2:D0:00:00:02","codec":"ldac"}]}"#,
+        )
+        .unwrap();
+        let list = load(&dir);
+        assert_eq!(list[0].name, "Old");
+        assert_eq!(list[0].purpose_kind, "");
+        assert_eq!(list[0].purpose_note, "");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

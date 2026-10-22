@@ -2,13 +2,13 @@
 // screen, Connect / Disconnect; volume right below; codec, capture source
 // (chosen right there) and link quality small but always there.
 
-import { createEffect, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import { useApp } from "../app/context";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
 import { SpatialModes } from "../components/SpatialModes";
-import { SpatialPicker } from "../components/SpatialPicker";
+import { registryFolder, SpatialPicker } from "../components/SpatialPicker";
 import {
   BatteryLevel,
   CodecBadge,
@@ -22,7 +22,8 @@ import {
 } from "../components/stream";
 import { ProfileSwitcher } from "../components/ProfileSwitcher";
 import { t, tm } from "../i18n";
-import { IpcError, type AdapterInfo, type Snapshot } from "../ipc/types";
+import { IpcError, type AdapterInfo, type Snapshot, type SpatialEngine } from "../ipc/types";
+import { engineLabelOf, purposeLabel } from "../lib/profile";
 
 /** Adapters whose firmware files are missing from the settings folder or
  *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
@@ -107,6 +108,25 @@ export function Home() {
   const [reqError, setReqError] = createSignal<IpcError | null>(null);
   createEffect(on(() => stream().state, () => setReqError(null), { defer: true }));
 
+  // The engine the active profile runs, by the label the core gives it
+  const engineFolder = createMemo(() => {
+    const p = profile();
+    return p ? registryFolder(p) : "";
+  });
+  const [engines] = createResource(engineFolder, async (path): Promise<SpatialEngine[]> => {
+    if (!path) return [];
+    try {
+      return ((await core.request("spatial.engines", { path })) ?? []) as SpatialEngine[];
+    } catch {
+      return [];
+    }
+  });
+  const engineLabel = () => {
+    const p = profile();
+    if (!p || !p.spatial_engine) return "";
+    return engineLabelOf(p, engines() ?? []);
+  };
+
   const error = () => {
     const e = reqError();
     if (e) return { code: e.code, message: e.msg };
@@ -165,6 +185,13 @@ export function Home() {
                   <span>{p().name}</span>
                   <Show when={!p().device_name}>
                     <span class="mono">{p().device_address}</span>
+                  </Show>
+                  {/* What this profile is for, and the engine it runs */}
+                  <Show when={purposeLabel(p().purpose_kind, t)}>
+                    {(kind) => <span>{kind()}</span>}
+                  </Show>
+                  <Show when={engineLabel()}>
+                    {(engine) => <span class="ellipsis">{engine()}</span>}
                   </Show>
                 </div>
                 <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">

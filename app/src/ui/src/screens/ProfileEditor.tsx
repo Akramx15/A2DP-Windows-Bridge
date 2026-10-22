@@ -171,6 +171,34 @@ export function ProfileEditor(props: { original: string | null }) {
         <h1>{props.original ? t("profile.edit_title") : t("profile.new_title")}</h1>
       </header>
       <form class="form" onSubmit={save} novalidate>
+        {/* What the profile is for: the part the user reads first */}
+        <Section title={t("profile.purpose")}>
+          <p class="hint">{t("profile.purpose_hint")}</p>
+          <Segmented
+            label={t("profile.purpose_kind_label")}
+            value={p.purpose_kind}
+            options={[
+              { value: "", label: t("profile.purpose_none") },
+              { value: "headphones", label: t("profile.purpose_headphones") },
+              { value: "autoeq", label: t("profile.purpose_autoeq") },
+              { value: "speaker", label: t("profile.purpose_speaker") },
+              { value: "custom", label: t("profile.purpose_custom") },
+            ]}
+            onChange={(v) => setP("purpose_kind", v)}
+          />
+          <Field label={t("profile.purpose_note")} hint={t("profile.purpose_note_hint")}>
+            {(id, described) => (
+              <input
+                id={id}
+                class="input"
+                value={p.purpose_note}
+                aria-describedby={described}
+                onInput={(e) => setP("purpose_note", e.currentTarget.value)}
+              />
+            )}
+          </Field>
+        </Section>
+
         <Section title={t("device.tag")}>
           <Field label={t("profile.name")} hint={t("profile.name_hint")} error={tp(problems().name)}>
             {(id, described) => (
