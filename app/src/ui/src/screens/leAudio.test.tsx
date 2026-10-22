@@ -138,17 +138,13 @@ describe("profile editor", () => {
     expect(saved).toMatchObject({ le_audio: true, le_low_latency: false });
   });
 
-  it("refuses application capture for LE Audio", async () => {
-    const { calls } = start("#/profiles/new", "le");
-    fireEvent.click(await screen.findByRole("radio", { name: /WH-1000XM5/ }));
-    fireEvent.click(leCheck()!);
-    fireEvent.click(screen.getByRole("radio", { name: t("capture.app") }));
-    expect(await screen.findByText(t("error.le_audio_capture"))).toBeInTheDocument();
-    fireEvent.change(await screen.findByLabelText(t("capture.app_select")), { target: { value: "Spotify.exe" } });
-    fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
-    expect(await screen.findByText(t("ui.profile.fix_problems"))).toBeInTheDocument();
-    expect(screen.getAllByText(t("error.le_audio_capture")).length).toBe(2);
-    expect(calls.some((c) => c.method === "profile.save")).toBe(false);
+  it("offers no application capture for an LE Audio device (Audio Devices)", async () => {
+    start("#/devices", "le");
+    const entry = (await screen.findAllByText(/Galaxy Buds2 Pro/))
+      .map((e) => e.closest(".device-entry"))
+      .find((e) => e) as HTMLElement;
+    expect(within(entry).getByRole("radio", { name: t("capture.app") })).toBeDisabled();
+    expect(within(entry).getByRole("radio", { name: t("capture.loopback") })).not.toBeDisabled();
   });
 
   it("shows the LE Audio profile with LC3 in the list", async () => {

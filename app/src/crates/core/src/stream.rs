@@ -727,6 +727,16 @@ impl Drop for StreamedMark<'_> {
     }
 }
 
+/// The session's device for its own options (media keys), cleared when the
+/// session ends
+struct SessionDevice<'a>(&'a Inner);
+
+impl Drop for SessionDevice<'_> {
+    fn drop(&mut self) {
+        self.0.set_device(None);
+    }
+}
+
 /// The session thread. Returns when stopped or on an error (state reported).
 pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let addr = bt_host::addr_str(&req.device);
@@ -759,6 +769,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     if stopped() {
         return inner.notify(StreamState::Idle, Msg::new("status.ready"));
     }
+
+    // The device's own options: media keys now, the volume below
+    inner.set_device(Some(&addr));
+    let _device = SessionDevice(inner);
+    host.set_media_keys(inner.media_keys_for(&addr));
 
     // Remembered headphone volume, set as soon as AVRCP connects
     let restore = inner.saved_volume(&addr);
@@ -1311,6 +1326,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                     }
                 }
                 host.set_restore_volume(inner.saved_volume(&addr));
+                host.set_media_keys(inner.media_keys_for(&addr));
                 if stopped() {
                     break;
                 }

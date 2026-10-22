@@ -61,4 +61,9 @@ le_audio: boolean | null,
  * The adapter's own Bluetooth address, as a stack running on it read
  * it (remembered); None if none ran on it yet
  */
-address: string | null, };
+address: string | null, 
+/**
+ * Bluetooth core version the controller reports (HCI version: "5.3"),
+ * remembered; None if no stack ran on it yet
+ */
+bt_version: string | null, };

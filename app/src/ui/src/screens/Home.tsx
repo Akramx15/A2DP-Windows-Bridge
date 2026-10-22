@@ -158,24 +158,28 @@ export function Home() {
                 <Icon name="headphones" />
               </Ring>
               <div class="device-info">
+                {/* Four lines (issue #86): the device, battery and state,
+                    the profile, the codec; the sidebar shows the same */}
                 <div class="device-name">{p().device_name || p().device_address}</div>
-                <div class="muted device-sub">
-                  <span>{p().name}</span>
-                  <Show when={!p().device_name}>
-                    <span class="mono">{p().device_address}</span>
+                <div class="device-state">
+                  <Show when={stream().battery !== null}>
+                    <BatteryLevel percent={stream().battery!} />
+                    <span class="muted" aria-hidden="true">
+                      |
+                    </span>
                   </Show>
+                  <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
+                    <span class="dot" aria-hidden="true" />
+                    <span>
+                      {/* An error's text is in the panel above, with its fix */}
+                      {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
+                    </span>
+                  </div>
                 </div>
-                <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
-                  <span class="dot" aria-hidden="true" />
-                  <span>
-                    {/* An error's text is in the panel above, with its fix */}
-                    {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
-                  </span>
+                <div class="muted device-sub">
+                  <span>{t("ui.home.profile_line", p().name)}</span>
                 </div>
                 <CodecBadge />
-                <Show when={stream().battery !== null}>
-                  <BatteryLevel percent={stream().battery!} />
-                </Show>
               </div>
             </section>
 
@@ -190,7 +194,7 @@ export function Home() {
                 <div class="mini-body">
                   <CapturePicker profile={p()} />
                 </div>
-                <button type="button" class="link" onClick={() => navigate({ name: "profiles", arg: p().name })}>
+                <button type="button" class="link" onClick={() => navigate({ name: "devices" })}>
                   {t("ui.home.capture_more")}
                 </button>
               </section>

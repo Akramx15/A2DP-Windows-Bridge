@@ -114,6 +114,10 @@ pub struct AdapterInfo {
     /// it (remembered); None if none ran on it yet
     #[serde(default)]
     pub address: Option<String>,
+    /// Bluetooth core version the controller reports (HCI version: "5.3"),
+    /// remembered; None if no stack ran on it yet
+    #[serde(default)]
+    pub bt_version: Option<String>,
 }
 
 /// A Realtek firmware pair found in the settings folder
@@ -477,6 +481,19 @@ impl Default for DevLog {
     }
 }
 
+/// A device's own values of options that are otherwise global; None
+/// follows the global value
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct DeviceOptions {
+    /// Its buttons act as Windows media keys
+    #[serde(default)]
+    pub media_keys: Option<bool>,
+    /// Its volume is remembered and set again when it connects
+    #[serde(default)]
+    pub remember_volume: Option<bool>,
+}
+
 /// Application settings the UI edits
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
@@ -489,8 +506,16 @@ pub struct Settings {
     pub minimize_to_tray: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
+    /// The headphones' buttons act as Windows media keys (the default for
+    /// devices without an override in device_options)
     pub media_keys: bool,
+    /// Remember each device's volume (the default for devices without an
+    /// override in device_options)
     pub remember_volume: bool,
+    /// Per-device overrides of media_keys and remember_volume; key: the
+    /// device address in capitals ("AA:BB:CC:DD:EE:FF")
+    #[serde(default)]
+    pub device_options: std::collections::BTreeMap<String, DeviceOptions>,
     /// Developer mode: receiver test, HCI capture, debug details
     pub developer_mode: bool,
     /// Developer mode: overrides of the codec and media path, in force
@@ -1446,7 +1471,11 @@ mod tests {
             "bt_chip_fw_stem": "", "afh": "auto", "remote_sink": ""}))
         .unwrap();
         assert!(!settings.le_audio_experimental && !settings.le_audio_low_latency);
-        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, ..settings };
+        assert!(settings.device_options.is_empty());
+        let mut device_options = std::collections::BTreeMap::new();
+        device_options
+            .insert("AA:BB:CC:DD:EE:FF".to_string(), DeviceOptions { media_keys: Some(false), remember_volume: None });
+        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, device_options, ..settings };
         assert_eq!(serde_json::from_value::<Settings>(serde_json::to_value(&on).unwrap()).unwrap(), on);
 
         let info: StreamInfo = serde_json::from_value(serde_json::json!({

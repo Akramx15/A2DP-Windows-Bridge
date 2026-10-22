@@ -1060,6 +1060,9 @@ impl HostApp {
             return;
         }
         let hci_ver = u8_at(p, 6).unwrap_or(0);
+        if let Some(v) = u8_at(p, 6) {
+            self.shared.update(|s| s.hci_version = Some(v));
+        }
         let manufacturer = le16(p, 10).unwrap_or(0);
         let lmp_subver = le16(p, 12).unwrap_or(0);
         tracing::debug!(

@@ -7,9 +7,30 @@ import { Button, Dialog, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import { codecSpec, codecSupport, qualityTag } from "../lib/codecs";
+import { khz } from "../lib/format";
 import { knownCodecs } from "../lib/profile";
-import { captureText } from "../components/CapturePicker";
+import { knownSbcCaps, sbcKbpsText } from "../lib/sbc";
+import type { Device, Profile } from "../ipc/types";
 import { ProfileEditor } from "./ProfileEditor";
+
+/** The quality and its bit rate; SBC and SBC XQ the bit rate their
+ *  bitpool and frame setup give ("≈ 552 kbps") */
+export function qualityText(p: Profile, devices: readonly Device[]): string | null {
+  if (!p.le_audio && codecSpec(p.codec).bitpool) return sbcKbpsText(p, knownSbcCaps(devices, p.device_address));
+  return qualityTag(p, t);
+}
+
+/** The sample rate, bit depth and ABR / VBR a profile asks for ("48 kHz",
+ *  "24-bit", "ABR"); what is left on Auto is not listed */
+export function formatTags(p: Profile): string[] {
+  if (p.le_audio) return [];
+  const spec = codecSpec(p.codec);
+  const out: string[] = [];
+  if (p.sample_rate > 0) out.push(`${khz(p.sample_rate)} kHz`);
+  if (p.bit_depth > 0) out.push(t(`bitdepth.${p.bit_depth}`));
+  if (p.abr && (spec.abr || spec.vbr)) out.push(spec.vbr ? "VBR" : "ABR");
+  return out;
+}
 
 export function Profiles() {
   const app = useApp();
@@ -61,11 +82,25 @@ function ProfileList() {
                     <Icon name="headphones" />
                     <div class="profile-card-title">
                       <h2 class="ellipsis">{p.name}</h2>
-                      <span class="muted ellipsis">{p.device_name || p.device_address}</span>
+                      <span class="profile-card-device">
+                        <span class="muted ellipsis">{p.device_name || p.device_address}</span>
+                        <Show when={shown()}>
+                          <span class={`tag st-${snap().stream.state}`}>{t(`status.${snap().stream.state}`)}</span>
+                        </Show>
+                      </span>
                     </div>
-                    <Show when={shown()}>
-                      <span class={`tag st-${snap().stream.state}`}>{t(`status.${snap().stream.state}`)}</span>
-                    </Show>
+                    {/* Edit and delete with the name, out of the way of Connect (issue #86) */}
+                    <IconButton
+                      icon="edit"
+                      label={`${t("profile.edit")}: ${p.name}`}
+                      onClick={() => navigate({ name: "profiles", arg: p.name })}
+                    />
+                    <IconButton
+                      icon="delete"
+                      label={`${t("profile.delete")}: ${p.name}`}
+                      disabled={live()}
+                      onClick={() => setDeleting(p.name)}
+                    />
                   </div>
                   <div class="profile-card-meta">
                     {/* LE Audio (experimental): LC3, no codec choice */}
@@ -73,7 +108,7 @@ function ProfileList() {
                       <span class="tag">{t("ui.codec.lc3")}</span>
                     </Show>
                     {/* The quality and its bit rate (v1's list) */}
-                    <Show when={qualityTag(p, t)}>{(q) => <span class="tag num">{q()}</span>}</Show>
+                    <Show when={qualityText(p, snap().devices)}>{(q) => <span class="tag num">{q()}</span>}</Show>
                     {/* The device did not offer this codec when it last connected */}
                     <Show
                       when={
@@ -82,13 +117,11 @@ function ProfileList() {
                     >
                       <span class="tag">
                         <Icon name="warning" />
-                        {t("ui.profile.codec_not_offered")}
+                        {t("ui.profile.codec_not_supported")}
                       </span>
                     </Show>
-                    <span class="tag">
-                      <Icon name={captureText(p).icon} />
-                      <span class="ellipsis">{captureText(p).text}</span>
-                    </span>
+                    {/* The format it asks for; the capture source is the device's (Audio Devices) */}
+                    <For each={formatTags(p)}>{(tag) => <span class="tag num">{tag}</span>}</For>
                   </div>
                   <div class="profile-card-actions">
                     <Button
@@ -102,17 +135,6 @@ function ProfileList() {
                     >
                       {live() ? t("connection.disconnect") : t("profile.connect")}
                     </Button>
-                    <IconButton
-                      icon="edit"
-                      label={`${t("profile.edit")}: ${p.name}`}
-                      onClick={() => navigate({ name: "profiles", arg: p.name })}
-                    />
-                    <IconButton
-                      icon="delete"
-                      label={`${t("profile.delete")}: ${p.name}`}
-                      disabled={live()}
-                      onClick={() => setDeleting(p.name)}
-                    />
                   </div>
                 </li>
               );

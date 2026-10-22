@@ -1,23 +1,24 @@
 // The profile editor: device, codec (cards comparing quality, latency and
-// stability, and whether the device offered it when it last connected; the
-// ones it did not offer hidden unless forced, each with its quality,
-// sample rate and bit depth behind "..."), capture source (with the capture
-// device's format), volume sync, and the packet size. The defaults give the
-// best sound; the codec settings only offer what that codec can do
-// (lib/codecs.ts). With LE Audio (experimental) on and an adapter known to
-// stream it, "LE Audio device" makes an LE Audio profile: LC3, so no codec,
-// quality, sample rate or bit depth, and no application capture; that choice
+// stability, and whether the device supported it when it last connected;
+// the ones it did not support hidden unless asked for, each with its
+// quality, sample rate and bit depth behind "..."), and the packet size.
+// The capture source and volume sync are the device's, on the Audio
+// Devices screen (issue #86); a new profile takes them from the device's
+// other profiles. The defaults give the best sound; the codec settings only
+// offer what that codec can do (lib/codecs.ts). With LE Audio (experimental)
+// on and an adapter known to stream it, "LE Audio device" makes an LE Audio
+// profile: LC3, so no codec, quality, sample rate or bit depth; that choice
 // sits with the codecs. Codec and what follows wait for a device: the codecs
 // offered are the device's.
 
-import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
 import { errorText, useApp } from "../app/context";
-import { Banner, Button, Check, Dialog, Field, IconButton, Section, Segmented, Select, Toggle } from "../components/controls";
+import { Banner, Button, Check, Dialog, Field, IconButton, Section, Select } from "../components/controls";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
-import type { AudioApp, AudioDevice, Profile } from "../ipc/types";
+import type { Profile } from "../ipc/types";
 import {
   abrCarries,
   bitDepths,
@@ -36,13 +37,10 @@ import {
   type CodecSpec,
   type CodecSupport,
 } from "../lib/codecs";
-import { LINKS } from "../lib/links";
-import { knownSbcCaps, SBC_ALLOCATIONS, SBC_BLOCKS, SBC_CHANNEL_MODES, SBC_SUBBANDS, sbcOffered, sbcRates, sbcSetup, type SbcCaps } from "../lib/sbc";
+import { knownSbcCaps, SBC_ALLOCATIONS, SBC_BLOCKS, SBC_CHANNEL_MODES, SBC_SUBBANDS, sbcOffered, sbcRate, sbcSetup, type SbcCaps } from "../lib/sbc";
 import {
-  appCaptureSupport,
-  captureDevice,
   defaultProfileName,
-  formatMismatch,
+  deviceDefaults,
   knownCodecs,
   newProfile,
   normalizeProfile,
@@ -73,30 +71,6 @@ export function ProfileEditor(props: { original: string | null }) {
     if (tried()) setProblems(now);
   });
 
-  // ---- Audio devices and apps (asked from the core when needed) ----------
-  const [devices, setDevices] = createSignal<AudioDevice[] | null>(null);
-  const [apps, setApps] = createSignal<AudioApp[] | null>(null);
-  const loadDevices = () =>
-    core
-      .request("audio.devices")
-      .then(setDevices)
-      .catch(() => setDevices([]));
-  const loadApps = () =>
-    core
-      .request("audio.apps")
-      .then(setApps)
-      .catch(() => setApps([]));
-  createEffect(
-    on(
-      () => [p.capture_mode, p.volume_sync] as const,
-      ([mode, sync]) => {
-        // Loopback and virtual device: the capture device's format line
-        if ((mode !== "app" || sync === "device") && devices() === null) void loadDevices();
-        if (mode === "app" && apps() === null) void loadApps();
-      },
-    ),
-  );
-
   const leOn = () => snap().settings.le_audio_experimental;
   // Whether the adapter can stream LE Audio: checked when the stack first
   // runs on it, and remembered; not known yet counts as no
@@ -109,6 +83,10 @@ export function ProfileEditor(props: { original: string | null }) {
   };
   const pickDevice = (address: string, name: string, leAudio: boolean) => {
     setP({ device_address: address, device_name: name });
+    // The capture source and volume sync are the device's (Audio Devices):
+    // a new profile takes them from its other profiles
+    const own = deviceDefaults(snap().profiles.filter((x) => x.name !== props.original), address);
+    if (own) setP(own);
     // A new profile follows the entry picked (the classic or the LE Audio
     // entry of a device); an existing one keeps its kind, only the check
     // box changes that (v1)
@@ -154,7 +132,6 @@ export function ProfileEditor(props: { original: string | null }) {
   };
 
   const spec = () => codecSpec(p.codec);
-  const virtualDevices = createMemo(() => (devices() ?? []).filter((d) => d.is_virtual));
   // What the device offered when it last connected (empty: not known yet)
   const known = createMemo(() => knownCodecs(snap().devices, p.device_address));
   const support = (id: string) => codecSupport(id, known());
@@ -163,7 +140,6 @@ export function ProfileEditor(props: { original: string | null }) {
   const [showAll, setShowAll] = createSignal(false);
   const notOffered = () => CODECS.filter((c) => c.id !== p.codec && support(c.id) === "not_offered").length;
   const shownCodecs = () => CODECS.filter((c) => showAll() || c.id === p.codec || support(c.id) !== "not_offered");
-  const [appSupport] = createResource(appCaptureSupport);
 
   return (
     <div class="page editor">
@@ -238,10 +214,10 @@ export function ProfileEditor(props: { original: string | null }) {
                 </div>
                 <Show when={notOffered() > 0 || showAll()}>
                   <Check
-                    label={t("ui.profile.codecs_force", notOffered())}
+                    label={t("ui.profile.codecs_hide", notOffered())}
                     title={t("ui.profile.codecs_force_hint")}
-                    checked={showAll()}
-                    onChange={setShowAll}
+                    checked={!showAll()}
+                    onChange={(hide) => setShowAll(!hide)}
                   />
                 </Show>
                 <Show when={p.device_address && known().length === 0}>
@@ -304,128 +280,13 @@ export function ProfileEditor(props: { original: string | null }) {
             </Show>
           </Section>
 
-          <Section title={t("capture.mode")}>
-            <Segmented
-              label={t("capture.mode")}
-              value={p.capture_mode}
-              options={[
-                { value: "loopback", label: t("capture.loopback"), icon: "speaker_2" },
-                { value: "virtual", label: t("capture.virtual"), icon: "desktop_speaker" },
-                { value: "app", label: t("capture.app"), icon: "window_apps" },
-              ]}
-              onChange={(v) => setP("capture_mode", v)}
-            />
-            <p class="hint">
-              {p.capture_mode === "virtual"
-                ? t("capture.hint_virtual")
-                : p.capture_mode === "app"
-                  ? t("capture.hint_app")
-                  : t("capture.hint_loopback")}
-            </p>
-            <Show when={p.le_audio && p.capture_mode === "app"}>
-              <Banner kind="warn">{t("error.le_audio_capture")}</Banner>
-            </Show>
-            <CaptureFormat profile={p} devices={devices()} />
-            <Show when={p.capture_mode === "virtual"}>
-              <Field label={t("capture.audio_device")} hint={t("tooltip.audio_device")} error={tp(problems().audio_device)}>
-                {(id, described) => (
-                  <Show
-                    when={virtualDevices().length > 0 || devices() === null}
-                    fallback={
-                      <div class="inline">
-                        <span class="muted">{t("capture.no_virtual_device")}</span>
-                        <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
-                          {t("vbcable.download")}
-                        </Button>
-                      </div>
-                    }
-                  >
-                    <Select
-                      id={id}
-                      describedBy={described}
-                      value={p.audio_device_id}
-                      options={[
-                        { value: "", label: "—", disabled: true },
-                        ...virtualDevices().map((d) => ({ value: d.id, label: d.name })),
-                      ]}
-                      onChange={(v) => {
-                        const d = virtualDevices().find((x) => x.id === v);
-                        setP({ audio_device_id: v, audio_device_name: d?.name ?? "" });
-                      }}
-                    />
-                  </Show>
-                )}
-              </Field>
-              <Toggle
-                label={t("capture.auto_switch")}
-                hint={t("tooltip.auto_switch")}
-                checked={p.auto_switch_device}
-                onChange={(v) => setP("auto_switch_device", v)}
-              />
-            </Show>
-            <Show when={p.capture_mode === "app"}>
-              {/* Whether this Windows can capture one app: only the core knows
-                  the build for sure (it refuses the stream on an older Windows); the UI asks
-                  the WebView's client hints and shows a hint without them */}
-              <Show
-                when={appSupport() === "no"}
-                fallback={
-                  <Show when={appSupport() !== "yes"}>
-                    <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
-                  </Show>
-                }
-              >
-                <Banner kind="warn">{t("ui.profile.app_capture_unsupported")}</Banner>
-              </Show>
-              <Field label={t("capture.app_select")} hint={t("capture.app_hint")} error={tp(problems().app)}>
-                {(id, described) => (
-                  <div class="inline">
-                    <Select
-                      id={id}
-                      describedBy={described}
-                      value={p.app_exe}
-                      disabled={appSupport() === "no"}
-                      options={appOptions(apps(), p)}
-                      onChange={(v) => {
-                        const a = (apps() ?? []).find((x) => x.exe === v);
-                        setP({ app_exe: v, app_name: a?.name ?? v });
-                      }}
-                    />
-                    <IconButton
-                      icon="arrow_sync"
-                      label={t("capture.app_refresh")}
-                      disabled={appSupport() === "no"}
-                      onClick={() => void loadApps()}
-                    />
-                  </div>
-                )}
-              </Field>
-            </Show>
-            <Field label={t("capture.volume_sync")} hint={t("tooltip.volume_sync")}>
-              {(id, described) => (
-                <Select
-                  id={id}
-                  describedBy={described}
-                  value={p.volume_sync === "device" ? `device:${p.volume_device_id}` : p.volume_sync}
-                  options={[
-                    { value: "auto", label: t("capture.volume_sync_auto") },
-                    { value: "off", label: t("capture.volume_sync_off") },
-                    ...volumeDevices(devices(), p).map((d) => ({ value: `device:${d.id}`, label: d.name })),
-                  ]}
-                  onChange={(v) => {
-                    if (v.startsWith("device:")) {
-                      const did = v.slice("device:".length);
-                      const d = (devices() ?? []).find((x) => x.id === did);
-                      setP({ volume_sync: "device", volume_device_id: did, volume_device_name: d?.name ?? p.volume_device_name });
-                    } else {
-                      setP({ volume_sync: v });
-                      if (devices() === null) void loadDevices();
-                    }
-                  }}
-                />
-              )}
-            </Field>
-          </Section>
+          {/* The capture source and volume sync are the device's (issue #86) */}
+          <p class="hint">
+            {t("ui.profile.capture_moved")}{" "}
+            <button type="button" class="link" onClick={() => navigate({ name: "devices" })}>
+              {t("ui.nav.devices")}
+            </button>
+          </p>
 
           {/* The one setting left of "Advanced": shown as it is (issue #86) */}
           <Section title={t("ui.profile.advanced")}>
@@ -486,23 +347,6 @@ export function ProfileEditor(props: { original: string | null }) {
   );
 }
 
-function appOptions(apps: AudioApp[] | null, p: Profile) {
-  const list = (apps ?? []).map((a) => ({ value: a.exe, label: `${a.name} (${a.exe})` }));
-  // The saved app, also when it is not playing now
-  if (p.app_exe && !list.some((o) => o.value === p.app_exe)) {
-    list.unshift({ value: p.app_exe, label: t("capture.app_not_playing", p.app_name || p.app_exe) });
-  }
-  return [{ value: "", label: "—", disabled: true }, ...list];
-}
-
-function volumeDevices(devices: AudioDevice[] | null, p: Profile): { id: string; name: string }[] {
-  const list = (devices ?? []).map((d) => ({ id: d.id, name: d.name }));
-  if (p.volume_sync === "device" && p.volume_device_id && !list.some((d) => d.id === p.volume_device_id)) {
-    list.unshift({ id: p.volume_device_id, name: t("capture.volume_sync_missing", p.volume_device_name || p.volume_device_id) });
-  }
-  return list;
-}
-
 /** One codec choice with its three comparison bars, and "..." for its settings */
 function CodecCard(props: {
   spec: CodecSpec;
@@ -532,7 +376,7 @@ function CodecCard(props: {
             <span>
               <span class="tag">
                 <Icon name={s() === "offered" ? "checkmark" : "dismiss"} />
-                {s() === "offered" ? t("ui.profile.codec_offered") : t("ui.profile.codec_not_offered")}
+                {s() === "offered" ? t("ui.profile.codec_supported") : t("ui.profile.codec_not_supported")}
               </span>
             </span>
           )}
@@ -610,7 +454,8 @@ function CodecSettings(props: {
         setV(
           fitToCodec({
             codec: s.id,
-            quality: p.quality,
+            // SBC / SBC XQ: no quality to choose, Auto is the highest bitpool
+            quality: s.bitpool ? "hq" : p.quality,
             sample_rate: p.sample_rate,
             bit_depth: p.bit_depth,
             abr: abrCarries(p.codec, s.id) ? p.abr : false,
@@ -653,12 +498,12 @@ function CodecSettings(props: {
   ];
   // The bit rate it gives, as the core works it out, at the profile's rate
   // (both when Auto)
-  const sbcBitrate = () =>
-    bitpoolError()
-      ? ""
-      : sbcRates(v, props.sbcCaps)
-          .map((r) => t("ui.profile.sbc_bitrate", sbcSetup(v, r, props.sbcCaps).kbps, r === 44100 ? "44.1" : "48"))
-          .join(" / ");
+  // (on Auto the highest rate the device takes: one figure, issue #86)
+  const sbcBitrate = () => {
+    if (bitpoolError()) return "";
+    const r = sbcRate(v, props.sbcCaps);
+    return t("ui.profile.sbc_bitrate", sbcSetup(v, r, props.sbcCaps).kbps, r === 44100 ? "44.1" : "48");
+  };
   return (
     <Dialog
       open={props.spec !== null}
@@ -671,22 +516,37 @@ function CodecSettings(props: {
       onCancel={() => props.onCancel()}
     >
       <div class="codec-settings">
-        <Field label={t("connection.quality")} hint={t("tooltip.quality")}>
-          {(id, described) => (
-            <Select
-              id={id}
-              describedBy={described}
-              value={v.quality}
-              disabled={spec().qualities.length === 0 || qualityIgnored(v.codec, v.abr)}
-              options={
-                spec().qualities.length
-                  ? spec().qualities.map((q) => ({ value: q.id, label: q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label) }))
-                  : [{ value: v.quality, label: t("ui.profile.fixed_bitrate") }]
-              }
-              onChange={(x) => setV("quality", x)}
-            />
-          )}
-        </Field>
+        {/* SBC and SBC XQ: the bitpool and frame setup below decide the bit
+            rate, shown here as worked out (issue #86) */}
+        <Show
+          when={!spec().bitpool}
+          fallback={
+            <Field label={t("connection.quality")} hint={t("ui.profile.sbc_quality_hint")}>
+              {(id, described) => (
+                <output id={id} class="input readonly num" aria-describedby={described} aria-live="polite">
+                  {sbcBitrate() || "–"}
+                </output>
+              )}
+            </Field>
+          }
+        >
+          <Field label={t("connection.quality")} hint={t("tooltip.quality")}>
+            {(id, described) => (
+              <Select
+                id={id}
+                describedBy={described}
+                value={v.quality}
+                disabled={spec().qualities.length === 0 || qualityIgnored(v.codec, v.abr)}
+                options={
+                  spec().qualities.length
+                    ? spec().qualities.map((q) => ({ value: q.id, label: q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label) }))
+                    : [{ value: v.quality, label: t("ui.profile.fixed_bitrate") }]
+                }
+                onChange={(x) => setV("quality", x)}
+              />
+            )}
+          </Field>
+        </Show>
         <Field label={t("connection.sample_rate")} hint={t("tooltip.sample_rate")}>
           {(id, described) => (
             <Select
@@ -798,46 +658,11 @@ function CodecSettings(props: {
             </Show>
             <p class="hint">{t("ui.profile.sbc_frame_hint")}</p>
           </fieldset>
-          <p class="sbc-bitrate" role="status" aria-live="polite">
-            {sbcBitrate()}
-          </p>
         </Show>
         <Show when={v.codec !== props.profile.codec}>
           <p class="hint">{t("ui.profile.codec_settings_apply", name())}</p>
         </Show>
       </div>
     </Dialog>
-  );
-}
-
-/**
- * The format Windows mixes the captured device in, red when the profile
- * asks for another rate or bit depth (v1 capture.device_format)
- */
-function CaptureFormat(props: { profile: Profile; devices: AudioDevice[] | null }) {
-  const device = () => captureDevice(props.profile, props.devices ?? []);
-  return (
-    <Show when={device()}>
-      {(d) => {
-        const off = () => formatMismatch(props.profile, d());
-        const text = () => t("capture.device_format", d().mix_rate ?? 0, d().mix_bits ?? 0);
-        const which = () =>
-          [off().rate ? t("connection.sample_rate") : "", off().bits ? t("connection.bit_depth") : ""]
-            .filter((x) => x)
-            .join(", ");
-        return (
-          <Show when={d().mix_rate !== null && d().mix_bits !== null}>
-            <Show when={off().rate || off().bits} fallback={<p class="hint">{text()}</p>}>
-              <p class="field-error">
-                <Icon name="warning" />
-                <span>
-                  {text()}. {t("ui.profile.format_differs", which())}
-                </span>
-              </p>
-            </Show>
-          </Show>
-        );
-      }}
-    </Show>
   );
 }

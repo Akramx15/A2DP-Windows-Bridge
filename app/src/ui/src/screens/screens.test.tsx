@@ -49,7 +49,9 @@ describe("Home", () => {
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(card().querySelector(".status-pill-codec")).toHaveTextContent("LDAC"));
     expect(card()).toHaveTextContent("Streaming");
-    expect(card().querySelector(".status-pill-details")).toHaveTextContent(/^990 kbps \| [\d.]+ kHz \| 24-bit$/);
+    // One line: "LDAC 990 kbps 96 kHz 24-bit", the profile on its own line
+    expect(card().querySelector(".status-pill-details")).toHaveTextContent(/^990 kbps [\d.]+ kHz 24-bit$/);
+    expect(card()).toHaveTextContent("Profile: WH-1000XM5 (LDAC)");
     expect(card()).toHaveAccessibleName(/^WH-1000XM5, .*, LDAC 990 kbps/);
   });
 

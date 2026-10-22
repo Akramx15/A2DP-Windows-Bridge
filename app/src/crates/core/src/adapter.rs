@@ -235,6 +235,9 @@ struct AdapterCaps {
     /// The adapter's own Bluetooth address
     #[serde(default, skip_serializing_if = "Option::is_none")]
     address: Option<String>,
+    /// The HCI version the controller reports (Bluetooth core version)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hci_version: Option<u8>,
 }
 
 fn caps_key(vid: u16, pid: u16) -> String {
@@ -286,6 +289,36 @@ pub fn save_address(dir: &Path, vid: u16, pid: u16, address: &str) {
     }
 }
 
+/// The HCI version the controller on this VID:PID reported, as a stack
+/// running on it read it
+pub fn hci_version(dir: &Path, vid: u16, pid: u16) -> Option<u8> {
+    load_caps(dir).get(&caps_key(vid, pid)).and_then(|c| c.hci_version)
+}
+
+/// Remembers the controller's HCI version
+pub fn save_hci_version(dir: &Path, vid: u16, pid: u16, version: u8) {
+    let mut caps = load_caps(dir);
+    let entry = caps.entry(caps_key(vid, pid)).or_default();
+    if entry.hci_version == Some(version) {
+        return;
+    }
+    entry.hci_version = Some(version);
+    tracing::debug!("adapter caps: {} HCI version {version}, saving {CAPS_FILE}", caps_key(vid, pid));
+    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
+    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
+        tracing::warn!("cannot write {CAPS_FILE}: {e}");
+    }
+}
+
+/// The Bluetooth core specification of an HCI version ("5.3" for 12);
+/// None for one the table does not know
+pub fn bt_core_version(hci_version: u8) -> Option<&'static str> {
+    const VERSIONS: [&str; 16] = [
+        "1.0b", "1.1", "1.2", "2.0", "2.1", "3.0", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2", "5.3", "5.4", "6.0", "6.1",
+    ];
+    VERSIONS.get(hci_version as usize).copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,7 +358,26 @@ mod tests {
         assert_eq!(address(&dir, 0x0BDA, 0xA729).as_deref(), Some("00:11:22:33:44:55"));
         assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), Some(false));
         assert!(std::fs::read_to_string(dir.join(CAPS_FILE)).unwrap().contains("\"0BDA:A729\""));
+        assert_eq!(hci_version(&dir, 0x0BDA, 0xA729), None);
+        save_hci_version(&dir, 0x0BDA, 0xA729, 10);
+        assert_eq!(hci_version(&dir, 0x0BDA, 0xA729), Some(10));
+        assert_eq!(hci_version(&dir, 0x8087, 0x0032), None);
+        // The other values stay
+        assert_eq!(address(&dir, 0x0BDA, 0xA729).as_deref(), Some("00:11:22:33:44:55"));
+        assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), Some(false));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hci_version_to_core_version() {
+        assert_eq!(bt_core_version(0), Some("1.0b"));
+        assert_eq!(bt_core_version(6), Some("4.0"));
+        assert_eq!(bt_core_version(9), Some("5.0"));
+        assert_eq!(bt_core_version(12), Some("5.3"));
+        assert_eq!(bt_core_version(14), Some("6.0"));
+        assert_eq!(bt_core_version(15), Some("6.1"));
+        assert_eq!(bt_core_version(16), None);
+        assert_eq!(bt_core_version(0xFF), None);
     }
 
     #[test]
