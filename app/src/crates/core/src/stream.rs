@@ -892,6 +892,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     let mut default_guard = DefaultDeviceGuard(None);
+    // Restored while the headphones are off: switched again when they are back
+    let mut switch_default_again = false;
     let options = CaptureOptions { preferred_rate: Some(preferred), fill_silence: !test_tone };
     let (source, opened): (Option<Source>, Option<Capture>) = match &req.source {
         SourceRequest::TestTone => (Some(Source::TestTone), None),
@@ -1184,6 +1186,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 // and the stream resumes
                 tracing::info!("the headphones were turned off or disconnected themselves");
                 inner.notify(StreamState::Idle, Msg::new("status.device_off"));
+                // Windows plays through the device before (its speakers)
+                // meanwhile, as after Disconnect (#132)
+                if default_guard.0.is_some() {
+                    default_guard = DefaultDeviceGuard(None);
+                    switch_default_again = true;
+                }
                 if !wait_for_device(inner, &host, req.device, &mut pipeline) {
                     lost_for_good = true;
                     break;
@@ -1420,6 +1428,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             pipeline = Some(p);
             inner.stream_info(info.clone());
+        }
+        if switch_default_again && let SourceRequest::VirtualDevice { id, name, .. } = &req.source {
+            default_guard = DefaultDeviceGuard::switch_to(id, name);
+            switch_default_again = false;
         }
         inner.notify(StreamState::Streaming, Msg::new("status.reconnected"));
     }
