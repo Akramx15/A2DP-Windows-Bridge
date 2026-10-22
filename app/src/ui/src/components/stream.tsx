@@ -397,12 +397,12 @@ export function useFixes() {
     }
     if (key === "firmware.rom_running") {
       // The Adapter screen names the files and opens the download page
-      return { label: t("ui.nav.adapter"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
+      return { label: t("ui.nav.adapter"), icon: "usb_stick", run: () => navigate({ name: "adapter", arg: "firmware" }) };
     }
     if (code === "adapter.firmware_missing" || key.startsWith("firmware.")) {
       // The Adapter screen downloads the files where the core can fetch them
       if (snap.adapter.adapters.some((a) => a.firmware_present === false && a.firmware_download)) {
-        return { label: t("ui.home.firmware_fix"), icon: "usb_stick", run: () => navigate({ name: "adapter" }) };
+        return { label: t("ui.home.firmware_fix"), icon: "usb_stick", run: () => navigate({ name: "adapter", arg: "firmware" }) };
       }
       const vendor = snap.adapter.adapters[0]?.vendor ?? "";
       return { label: t("firmware.open_download_page"), icon: "open", run: () => core.transport.openUrl(firmwareUrl(vendor)) };
@@ -659,6 +659,11 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
       <p class="muted">{t("ui.adapter.uac_note")}</p>
     </Dialog>
   );
+}
+
+/** Opens the firmware folder (the shell creates it if it is not there yet) */
+export function openFirmwareFolder(app: AppContext) {
+  return app.run(() => app.core.transport.openFolder(`${app.core.state.snap!.config_dir}\\firmware`));
 }
 
 /** Fetches an adapter's Realtek files from linux-firmware once the user
