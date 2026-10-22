@@ -2,11 +2,11 @@
 // WinUSB assign / restore, the chip for the firmware, and AFH.
 
 import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { type AppContext, useApp } from "../app/context";
+import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
-import { ErrorPanel, FirmwareDownload, WinusbDialog } from "../components/stream";
+import { ErrorPanel, FirmwareDownload, openFirmwareFolder, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
 import type { AdapterInfo, DriverKind, FirmwareFile } from "../ipc/types";
 import {
@@ -40,10 +40,6 @@ export function driverText(d: DriverKind): { text: string; status: "good" | "war
   }
 }
 
-/** Opens the settings folder (the shell creates it if it is not there yet) */
-function openConfigFolder(app: AppContext) {
-  return app.run(() => app.core.transport.openFolder(`${app.core.state.snap!.config_dir}\\firmware`));
-}
 
 export function Adapter() {
   const app = useApp();
@@ -80,9 +76,11 @@ export function Adapter() {
     window.addEventListener("focus", onFocus);
   });
   onCleanup(() => window.removeEventListener("focus", onFocus));
-  // #/adapter/afh (the receiver test links there): the AFH section in view
+  // #/adapter/afh (the receiver test links there): the AFH section in view;
+  // #/adapter/firmware (Home's firmware bar): the firmware part
   createEffect(() => {
-    if (app.route().arg === "afh") document.getElementById(AFH_SECTION)?.scrollIntoView?.({ block: "start" });
+    const id = { afh: AFH_SECTION, firmware: FIRMWARE_SECTION }[app.route().arg ?? ""];
+    if (id) document.getElementById(id)?.scrollIntoView?.({ block: "start" });
   });
 
   return (
@@ -241,7 +239,7 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
         </Show>
       </div>
       <div class="inline">
-        <Button icon="folder_open" kind="subtle" onClick={() => void openConfigFolder(app)}>
+        <Button icon="folder_open" kind="subtle" onClick={() => void openFirmwareFolder(app)}>
           {t("firmware.open_folder")}
         </Button>
         <Button icon="open" kind="subtle" onClick={() => app.core.transport.openUrl(LINKS.setupGuide)}>
@@ -252,8 +250,15 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
   );
   const headId = createUniqueId();
   return (
-    <Show when={props.embedded} fallback={<Section title={t("firmware.title")}>{body()}</Section>}>
-      <div class="adapter-firmware" role="group" aria-labelledby={headId}>
+    <Show
+      when={props.embedded}
+      fallback={
+        <Section id={FIRMWARE_SECTION} title={t("firmware.title")}>
+          {body()}
+        </Section>
+      }
+    >
+      <div id={FIRMWARE_SECTION} class="adapter-firmware" role="group" aria-labelledby={headId}>
         <h3 id={headId}>{t("firmware.title")}</h3>
         {body()}
       </div>
@@ -353,6 +358,7 @@ export function parseAfhChannels(s: string): string | null {
 }
 
 const AFH_SECTION = "adapter-afh";
+const FIRMWARE_SECTION = "adapter-firmware";
 
 function AfhSection() {
   const app = useApp();

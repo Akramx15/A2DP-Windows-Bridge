@@ -13,7 +13,9 @@ import {
   ConnectButton,
   currentProfile,
   ErrorPanel,
+  FirmwareDownload,
   LinkSparkline,
+  openFirmwareFolder,
   QualityIndicator,
   Ring,
   VolumeControl,
@@ -31,8 +33,12 @@ export function adaptersMissingFirmware(snap: Snapshot): AdapterInfo[] {
 /** The bar over Home while an adapter lacks its firmware files, or the
  *  running stack found its Realtek adapter on the ROM code (issue #81) */
 function FirmwareMissing() {
-  const { core, navigate } = useApp();
+  const app = useApp();
+  const { core, navigate } = app;
   const missing = () => adaptersMissingFirmware(core.state.snap!);
+  // One whose files the core can fetch (the first: one download at a time)
+  const downloadable = () => missing().find((a) => a.firmware_download);
+  const toFirmware = () => navigate({ name: "adapter", arg: "firmware" });
   return (
     <Show
       when={missing().length > 0}
@@ -42,7 +48,7 @@ function FirmwareMissing() {
             kind="warn"
             title={t("ui.adapter.rom_firmware")}
             actions={
-              <Button kind="strong" icon="usb_stick" onClick={() => navigate({ name: "adapter" })}>
+              <Button kind="strong" icon="usb_stick" onClick={toFirmware}>
                 {t("ui.home.firmware_fix")}
               </Button>
             }
@@ -56,9 +62,17 @@ function FirmwareMissing() {
         kind="warn"
         title={missing().some((a) => a.firmware_invalid) ? t("firmware.invalid_short") : t("firmware.missing_manual")}
         actions={
-          <Button kind="strong" icon="usb_stick" onClick={() => navigate({ name: "adapter" })}>
-            {t("ui.home.firmware_fix")}
-          </Button>
+          // The Adapter screen's actions right here (issue #81): the
+          // download, the folder for the files fetched by hand, the details
+          <>
+            <Show when={downloadable()}>{(a) => <FirmwareDownload files={a().firmware_files} kind="strong" />}</Show>
+            <Button icon="folder_open" onClick={() => void openFirmwareFolder(app)}>
+              {t("firmware.open_folder")}
+            </Button>
+            <Button kind={downloadable() ? undefined : "strong"} icon="usb_stick" onClick={toFirmware}>
+              {t("ui.home.firmware_fix")}
+            </Button>
+          </>
         }
       >
         <For each={missing()}>
