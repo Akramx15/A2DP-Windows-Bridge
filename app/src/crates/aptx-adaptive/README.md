@@ -5,6 +5,9 @@ The pure-Rust aptX Adaptive encoder (R1 / R2 bitstreams, HQ and low latency,
 `crates/aptx-adaptive` at commit `25099004b2d33ff86a661a85f3c8acb5d7b7e177`
 (2026-10-22), MIT licensed (`LICENSE`). See `LEGAL.md` for the upstream
 project's statement on how the codec and its numeric tables were obtained.
+Checked against upstream `42ae0e2` (2026-10-22): no changes to the crate,
+`LEGAL.md` or `LICENSE` since (later commits touch only its PipeWire plugin,
+the source type 0 path and its PipeWire / BlueZ patches).
 
 Changes from upstream:
 
