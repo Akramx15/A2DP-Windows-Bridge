@@ -68,7 +68,7 @@ A2DP-Windows-Bridge/
 │   ├── lang/               翻訳（en.json が原本。他の言語は tools/check_lang.py で確認）
 │   └── resources/          アイコンとマニフェスト
 ├── Cargo.toml              Cargo workspace
-├── installer/              リリース用スクリプト、NSIS のフック、更新の手順（installer/README.md）
+├── installer/              リリース用スクリプト、Inno Setup のスクリプト、更新の手順（installer/README.md）
 ├── compat/                 AOSP コード用の MSVC 互換ヘッダー
 ├── docs/                   ドキュメント（このサイト）と設計書（v2-design.md）
 ├── extern/                 サードパーティの C ライブラリ（git サブモジュール）
@@ -99,7 +99,7 @@ python tools/check_lang.py
 pwsh installer/build-release.ps1 -Arch x64
 ```
 
-`target/dist` にインストーラ（`A2DPWB-<バージョン>-win64-setup.exe`）、ポータブル版の zip、更新用のマニフェストを書き出します。アプリ内更新の署名などは `installer/README.md` を見てください。
+`target/dist` にインストーラ（`A2DPWB-<バージョン>-win64-setup.exe`）、ポータブル版の zip、更新用のマニフェストを書き出します。Inno Setup 6.5 以降が必要です（`winget install JRSoftware.InnoSetup`）。アプリ内更新の署名などは `installer/README.md` を見てください。
 
 ## 実機なしでのテスト（tools/emu） {#emu}
 
