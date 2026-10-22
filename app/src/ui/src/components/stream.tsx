@@ -488,7 +488,9 @@ export function isAppFault(key: string, code?: string | null): boolean {
 }
 
 /** A bug report's URL with what the state tells (the issue form's fields)
- *  around the diagnostic info */
+ *  around the diagnostic info. Not the device's name: it is often the
+ *  owner's ("Taro's AirPods") and the issue is public, so the headphones
+ *  field stays for the user to fill in with the model. */
 export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugReport> = {}): string {
   const profile = currentProfile(snap);
   const adapter = snap.adapter.adapters.find((a) => a.driver === "winusb") ?? snap.adapter.adapters[0];
@@ -497,7 +499,6 @@ export function bugReportFor(snap: Snapshot, info: string, extra: Partial<BugRep
     version: snap.update.current_version,
     info,
     adapter: adapter && `${adapter.display_name} (${hex(adapter.vid)}:${hex(adapter.pid)})`,
-    headphones: profile?.device_name || undefined,
     codec: profile?.codec,
     captureMode: profile?.capture_mode,
     ...extra,

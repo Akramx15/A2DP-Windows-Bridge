@@ -797,7 +797,7 @@ impl<'a> LeCtx<'a> {
         result: Arc<Mutex<ConnectResult>>,
         done: LeDone,
     ) {
-        tracing::debug!("LE Audio: connect request {addr} (type {}) name {name:?}", addr.addr_type);
+        tracing::debug!("LE Audio: connect request {addr} (type {}) name “{name}”", addr.addr_type);
         if self.core.connect.is_some() {
             tracing::debug!("LE Audio: connect refused, another attempt is in progress");
             result.lock().unwrap_or_else(|e| e.into_inner()).error = "another LE connection is being set up".into();

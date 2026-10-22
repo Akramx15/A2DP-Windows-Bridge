@@ -257,6 +257,34 @@ describe("profiles", () => {
     expect(m("USB_VID_0BDA_PID_8771_SN123.json")).toBe("USB_VID_0BDA_PID_8771_xxxxx.json");
     expect(m("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.")).toBe("RTL8852BU (0BDA:4853 -> 0xB85B), VID_0BDA&PID_4853.");
   });
+
+  it("masks the Windows user name in paths", () => {
+    const m = maskIdentifiers;
+    expect(m(String.raw`settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB`)).toBe(
+      String.raw`settings folder: C:\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB`,
+    );
+    expect(m(String.raw`C:\Users\山田太郎\AppData`)).toBe(String.raw`C:\Users\xxxx\AppData`);
+    expect(m(String.raw`{"path":"C:\\Users\\taro\\x.txt"}`)).toBe(String.raw`{"path":"C:\\Users\\xxxx\\x.txt"}`);
+    expect(m("file:///C:/users/taro/x.txt")).toBe("file:///C:/users/xxxx/x.txt");
+    expect(m("dump: C:\\Users\\taro\n")).toBe("dump: C:\\Users\\xxxx\n");
+    expect(m(String.raw`C:\Users\Public\Desktop and C:\Users\All Users\y`)).toBe(String.raw`C:\Users\Public\Desktop and C:\Users\All Users\y`);
+    expect(m("3 Users, C:\\Users\\\n")).toBe("3 Users, C:\\Users\\\n");
+    expect(m("in Users\\taro")).toBe("in Users\\taro");
+  });
+
+  it("masks quoted device names, the same name the same number", () => {
+    const m = maskIdentifiers;
+    const first = m("stream: device AA:BB:CC:DD:EE:FF source virtual device “Taro's AirPods”");
+    const n = /<device-(\d+)>$/.exec(first)?.[1];
+    expect(n).toBeDefined();
+    expect(first).toBe(`stream: device AA:BB:CC:xx:xx:xx source virtual device <device-${n}>`);
+    expect(m("remote name of AA:BB:CC:DD:EE:FF: name=“Taro's AirPods”")).toBe(`remote name of AA:BB:CC:xx:xx:xx: name=<device-${n}>`);
+    expect(m("name=“Hanako's iPhone”")).not.toBe(`name=<device-${n}>`);
+    expect(m("name=“Hanako's iPhone”")).toMatch(/^name=<device-\d+>$/);
+    // Empty, unclosed and multi-line quotes stay
+    expect(m("name=“” and “open")).toBe("name=“” and “open");
+    expect(m("“a\nb”")).toBe("“a\nb”");
+  });
 });
 
 describe("about", () => {
