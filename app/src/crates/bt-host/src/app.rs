@@ -1227,7 +1227,10 @@ impl HostApp {
             Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_OTHER_CAPABILITY) => {
                 let seid = u8_at(p, 5).unwrap_or(0);
                 let len = le16(p, 9).unwrap_or(0) as usize;
-                let Some(info) = p.get(11..11 + len) else { return };
+                // The length is the remote's; BTstack copies at most 30
+                // bytes (AVDTP_MAX_MEDIA_CODEC_INFORMATION_LENGTH): aptX
+                // Adaptive's 40 arrive cut to 30, which still hold all it uses
+                let Some(info) = p.get(11..).map(|rest| &rest[..len.min(rest.len())]) else { return };
                 tracing::debug!("SEID {seid} codec capability (header {:02X?}): {info:02X?}", p.get(3..11));
                 match self.caps.add_vendor(seid, info) {
                     VendorCapability::Taken(kind) => {
@@ -1237,8 +1240,8 @@ impl HostApp {
                         tracing::info!("remote supports {kind} (SEID {seid}) - {why}, ignored")
                     }
                     VendorCapability::AptxAdaptive => tracing::info!(
-                        "remote supports aptX Adaptive (SEID {seid}) - never selected (no open encoder); \
-                         classic aptX is used only if the remote lists it"
+                        "remote supports aptX Adaptive (SEID {seid}) - not built in; classic aptX is used only \
+                         if the remote lists it"
                     ),
                     VendorCapability::Unknown { vendor_id, codec_id } => tracing::info!(
                         "remote vendor codec 0x{vendor_id:08X}/0x{codec_id:04X} (SEID {seid}) - unsupported"
@@ -1303,13 +1306,14 @@ impl HostApp {
             Some(A2DP_SUBEVENT_SIGNALING_CAPABILITIES_COMPLETE) => {
                 let c = &self.caps;
                 tracing::info!(
-                    "capability discovery complete (LDAC={} aptX HD={} aptX LL={} aptX={} aptX Adaptive={} [not encodable] \
+                    "capability discovery complete (LDAC={} aptX HD={} aptX LL={} aptX={} aptX Adaptive={}{} \
                      SBC={} SBC XQ={} AAC={} LHDC V5={} Opus={} Opus 05={} FastStream={}{})",
                     c.ldac.is_some(),
                     c.aptx_hd.is_some(),
                     c.aptx_ll.is_some(),
                     c.aptx.is_some(),
                     c.aptx_adaptive,
+                    if c.aptx_adaptive && c.aptxad.is_none() { " [not usable]" } else { "" },
                     c.sbc.is_some(),
                     c.has(CodecKind::SbcXq),
                     c.aac.is_some(),

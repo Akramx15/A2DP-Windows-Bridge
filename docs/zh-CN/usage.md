@@ -38,8 +38,8 @@ nav_order: 2
 - **捕获源**：系统环回、虚拟设备或应用程序（请参阅[捕获模式](#capture-modes)）
 - **Windows 音量同步**（请参阅[音量](#volume)）
 - **高级**（音质、采样率、位深度、数据包大小）：只提供所选编解码器支持的选项
-  - **音质**：LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)；LHDC V5 高 (1000 kbps) / 中高 (900 kbps) / 标准 (500 kbps) / 移动 (400 kbps)，即 Android 提供的四个级别；AAC 和 SBC 也有音质级别，aptX 系列则为固定比特率
-  - **ABR（自适应比特率）**：用于 LDAC 和 LHDC V5（请参阅 [ABR](#abr)）
+  - **音质**：LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)；LHDC V5 高 (1000 kbps) / 中高 (900 kbps) / 标准 (500 kbps) / 移动 (400 kbps)，即 Android 提供的四个级别；aptX Adaptive 高 / 标准 / 移动 / 低延迟（请参阅 [aptX Adaptive](#aptx-adaptive)）；AAC 和 SBC 也有音质级别，其他 aptX 编解码器则为固定比特率
+  - **ABR（自适应比特率）**：用于 LDAC、LHDC V5 和 aptX Adaptive（请参阅 [ABR](#abr)）
   - **采样率**：“自动”跟随捕获设备
   - **位深度**：LDAC 和 LHDC V5 为 16 或 24 bit（“自动”：24 bit）；其他编解码器为 16 bit
   - **最大媒体数据包大小（字节）**（请参阅[最大媒体数据包大小](#max-packet)）
@@ -117,11 +117,13 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (experimental; to PipeWire sinks)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz)
 ```
 
-自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream 仅在明确选择时使用）
+自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream、Opus 05 和 aptX Adaptive 均为实验性，仅在明确选择时使用）
 
-如果耳机不提供所请求的编解码器，CLI 会停止并显示说明原因的错误；使用 `-c auto`（默认）即可采用耳机提供的最佳编解码器。aptX Adaptive 永远不会被选中——请参阅 [aptX 系列与 aptX Adaptive 的兼容性](#aptx-compatibility)。
+如果耳机不提供所请求的编解码器，CLI 会停止并显示说明原因的错误；使用 `-c auto`（默认）即可采用耳机提供的最佳编解码器。“自动”永远不会选择 aptX Adaptive；请使用 `-c aptxad`——请参阅 [aptX 系列与 aptX Adaptive](#aptx-compatibility)。
 
 ### 音质
 
@@ -132,6 +134,9 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
 # LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+
+# aptX Adaptive: hq 427 / sq 364 / mq 318 / ll 265 kbps (R1 sinks)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Low Latency
 ```
 
 ### ABR（自适应比特率） {#abr}
@@ -139,9 +144,10 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
 ```bash
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -a
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -a
 ```
 
-ABR 会在 Bluetooth 连接不稳定时自动降低比特率，并在状况改善后提高比特率。LDAC 在其各音质模式之间切换；LHDC V5 遵循 Android 的策略，保持在 160 到 400 kbps 之间。在窗口中，ABR 位于配置文件编辑器的**高级**下。
+ABR 会在 Bluetooth 连接不稳定时自动降低比特率，并在状况改善后提高比特率。LDAC 在其各音质模式之间切换；LHDC V5 遵循 Android 的策略，保持在 160 到 400 kbps 之间；aptX Adaptive 在高音质下于其各级别之间逐级切换（请参阅 [aptX Adaptive](#aptx-adaptive)）。在窗口中，ABR 位于配置文件编辑器的**高级**下。
 
 ### 设备发现
 
@@ -157,9 +163,9 @@ a2dpwb-core.exe --cli --scan
 | 选项 | 说明 |
 |:-------|:------------|
 | `-d <addr>` | 耳机 / 接收器的 Bluetooth 地址（`AA:BB:CC:DD:EE:FF`） |
-| `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`lhdcv5`、`opus`、`auto`（默认：`auto`） |
-| `-q <mode>` | 音质：`hq`（默认）、`sq`、`mq`；LHDC V5 另有 `mhq`（900 kbps） |
-| `-a` | ABR（LDAC 和 LHDC V5） |
+| `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`lhdcv5`、`opus`、`opus05`、`aptxad`、`auto`（默认：`auto`） |
+| `-q <mode>` | 音质：`hq`（默认）、`sq`、`mq`；LHDC V5 另有 `mhq`（900 kbps）；aptX Adaptive 另有 `ll`（低延迟；其他编解码器视为 `hq`） |
+| `-a` | ABR（LDAC、LHDC V5 和 aptX Adaptive） |
 | `-m <mode>` | 捕获模式：`loopback`（默认）、`virtual`、`app` |
 | `--audio-device <id>` | 用于 `-m virtual` 的渲染设备 |
 | `--app <exe>` | 用于 `-m app` 的可执行文件（如 `spotify.exe`） |
@@ -281,9 +287,9 @@ A2DPWB 支持三种音频捕获模式，分别录制音频路径中的不同位�
 
 配置文件编辑器在每张编解码器卡片上以三个指标条显示相同的比较。
 
-## aptX 系列与 aptX Adaptive 的兼容性 {#aptx-compatibility}
+## aptX 系列与 aptX Adaptive {#aptx-compatibility}
 
-A2DPWB 支持三种 aptX 编解码器，均使用 [libopenaptx](https://github.com/pali/libopenaptx) 编码。**不**支持 aptX Adaptive。
+A2DPWB 支持三种使用 [libopenaptx](https://github.com/pali/libopenaptx) 编码的 aptX 编解码器，以及使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 编码器编码的 aptX Adaptive（实验性）。
 
 {: .warning }
 **aptX HD 和 aptX Low Latency 为实验性功能。** 它们参照 Android / PipeWire 的实现，并通过了编码/解码往返测试，但尚未在真实耳机上验证。
@@ -296,20 +302,38 @@ A2DPWB 支持三种 aptX 编解码器，均使用 [libopenaptx](https://github.c
 | aptX | 0x0000004F / 0x0001 | 无 | 支持（44.1/48 kHz 下 352/384 kbps） |
 | aptX HD | 0x000000D7 / 0x0024 | 有 | 支持（576 kbps，24-bit 输入） |
 | aptX Low Latency | 0x0000000A 或 0x000000D7 / 0x0002 | 无 | 支持（352 kbps） |
-| aptX Adaptive | 0x000000D7 / 0x00AD | -- | **不支持**——仅检测并记录到日志 |
+| aptX Adaptive | 0x000000D7 / 0x00AD | 有 | 实验性（265-427 kbps，48 kHz，24-bit；需明确选择） |
 
-### 为什么不支持 aptX Adaptive
+### aptX Adaptive（实验性） {#aptx-adaptive}
 
-不存在开源的 aptX Adaptive 编码器。libopenaptx 只实现了 aptX 和 aptX HD（A2DPWB 也将其用于 aptX Low Latency）。[arkq/openaptx](https://github.com/arkq/openaptx) 只是重新实现了 aptX / aptX HD，不包含 aptX Adaptive 编码器，且不允许再分发二进制文件。因此 A2DPWB 只检测 aptX Adaptive 并将其写入日志。
+{: .warning }
+**aptX Adaptive 为实验性功能，尚未在真实耳机上试用。** 它已通过单元测试、上游的逐位一致性测试套件，以及针对虚拟 Bluetooth 接收端的端到端测试（`tools/emu`，检查 RTP 标头、数据包大小和帧类型；由于没有开源解码器，不对音频进行解码）。上游报告它在 Linux / PipeWire 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e，48 kHz，高音质和低延迟均可。[欢迎反馈](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)。
+
+编码器是 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust aptX Adaptive 编码器（MIT）。上游称其为净室重新实现，其中的数值表是根据合法获得的 Qualcomm 已出货二进制文件和空中抓包重建的；不包含任何 Qualcomm 代码、SDK 或二进制文件（请参阅[许可证](licenses)）。
+
+- **选择方式**：“自动”从不选择它。请在配置文件中选择 **aptX Adaptive**，或使用 `-c aptxad`。
+- **格式**：仅 48 kHz 立体声、24-bit；请求 44.1 或 96 kHz 时以 48 kHz 捕获。
+- **耳机**：R1 接收端（无能力扩展，例如 B&W Px7 S2e）和 R2 接收端（R2 比特流）。
+
+| 音质（配置文件 / `-q`） | R1 接收端 | R2 接收端 | 数据包 |
+|:-------------------------|:---------|:---------|:--------|
+| 高（`hq`） | 427 kbps | 427 kbps | 12 ms，656 字节 |
+| 标准（`sq`；参考实现的默认值） | 364 kbps | 270 kbps | 14 ms |
+| 移动（`mq`） | 318 kbps | 204 kbps | 16 ms |
+| 低延迟（`ll`） | 265 kbps | 270 kbps | 10 ms，348 字节 |
+
+`ll` 仅供 aptX Adaptive 使用；其他编解码器将其视为高。
+
+**ABR**（配置文件中的 **ABR**，CLI `-a`）：在高音质下，当发送队列中有 3 个或更多数据包时，比特率降低一级（不低于移动），最多约每 0.5 秒一次；当队列中最多只有一个数据包持续约 3 秒后，再提高一级（最高到所选音质）。低延迟没有 ABR。
 
 ### 不存在从 aptX Adaptive 到 aptX 的“回退”
 
-A2DPWB 连接时，耳机会通告一个**编解码器列表**（AVDTP 流端点）。A2DPWB 从该列表中选择一种编解码器。aptX Adaptive 从来不是候选项，因此也就不存在从它“回退”的情况：
+A2DPWB 连接时，耳机会通告一个**编解码器列表**（AVDTP 流端点）。A2DPWB 从该列表中选择一种编解码器。aptX Adaptive 和经典 aptX 是列表中各自独立的项，而且“自动”从不选择 aptX Adaptive，因此也就不存在从它“回退”的情况：
 
 - **耳机同时列出了经典 aptX**——许多 aptX Adaptive 耳机都是如此，因为 Qualcomm 宣传 aptX Adaptive 向下兼容 aptX / aptX HD。这种情况下 A2DPWB 会直接选择经典 aptX；它是耳机列表中独立的一种编解码器，而不是 aptX Adaptive 的降级模式。
-- **耳机只列出了 aptX Adaptive**（没有经典 aptX、aptX HD 或 aptX LL）——无法通过 A2DPWB 使用 aptX。“自动”会按优先级顺序选择下一个编解码器，通常是 AAC 或 SBC。
+- **耳机只列出了 aptX Adaptive**（没有经典 aptX、aptX HD 或 aptX LL）——请明确选择 aptX Adaptive（实验性）。“自动”会按优先级顺序选择下一个编解码器，通常是 AAC 或 SBC。
 
-自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream 仅在明确选择时使用）
+自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream、Opus 05 和 aptX Adaptive 均为实验性，仅在明确选择时使用）
 
 ### 明确指定的编解码器不可用 {#codec-fallback}
 
@@ -318,7 +342,7 @@ A2DPWB 连接时，耳机会通告一个**编解码器列表**（AVDTP 流端点
 | 位置 | 行为 |
 |:------|:---------|
 | 配置文件，开启了**此编解码器不可用时使用其他编解码器**（默认） | 按“自动”的优先级顺序，使用耳机提供的最佳编解码器连接，编解码器标签会显示改用了哪种编解码器以及原因。 |
-| 配置文件，关闭了该选项 | 连接因错误而停止（“设备不支持 ...”）。如果你请求的是 aptX、aptX HD 或 aptX LL，而耳机只提供 aptX Adaptive，消息中会说明这一点，并建议使用“自动”、AAC 或 SBC。 |
+| 配置文件，关闭了该选项 | 连接因错误而停止（“设备不支持 ...”）。如果你请求的是 aptX、aptX HD 或 aptX LL，而耳机只提供 aptX Adaptive，消息中会说明这一点，并建议选择 aptX Adaptive（实验性）、“自动”、AAC 或 SBC。 |
 | CLI（`-c <codec>`） | 以相同的错误停止。使用 `-c auto` 可用耳机提供的最佳编解码器连接。 |
 
 该选项位于配置文件编辑器中编解码器卡片的下方（选择“自动”时不使用）。
@@ -337,7 +361,7 @@ capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 
 ### 采样率
 
-aptX、aptX HD 和 aptX LL 只支持 44.1 kHz 和 48 kHz。A2DPWB 会从耳机通告的采样率中选择一个（优先使用当前 Windows 设备的采样率，否则使用 48 kHz），并由 WASAPI 对捕获的音频进行重采样。使用 aptX 时无需更改 Windows 声音设置。
+aptX、aptX HD 和 aptX LL 只支持 44.1 kHz 和 48 kHz（aptX Adaptive 只支持 48 kHz）。A2DPWB 会从耳机通告的采样率中选择一个（优先使用当前 Windows 设备的采样率，否则使用 48 kHz），并由 WASAPI 对捕获的音频进行重采样。使用 aptX 时无需更改 Windows 声音设置。
 
 ### 查看耳机提供的编解码器
 
@@ -348,13 +372,14 @@ aptX、aptX HD 和 aptX LL 只支持 44.1 kHz 和 48 kHz。A2DPWB 会从耳机�
 
 ```
 remote supports aptX (SEID ..., [...])
-remote supports aptX Adaptive (SEID ...) - never selected (no open encoder); classic aptX is used only if the remote lists it
+remote supports aptX Adaptive (SEID ..., [...])
 remote vendor codec 0x........./0x.... (SEID ...) - unsupported
-capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)
+capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true SBC=true SBC XQ=true AAC=true LHDC V5=false Opus=false Opus 05=false FastStream=false)
 ```
 
-- `aptX=true`——可以使用经典 aptX（即使同时有 `aptX Adaptive=true`）。
-- `aptX=false`、`aptX HD=false`、`aptX LL=false` 且 `aptX Adaptive=true`——耳机只提供 aptX Adaptive；请使用“自动”、AAC 或 SBC。
+- `aptX=true`——可以使用经典 aptX（即使同时有 `aptX Adaptive=true`）；“自动”会使用它。
+- `aptX=false`、`aptX HD=false`、`aptX LL=false` 且 `aptX Adaptive=true`——耳机只提供 aptX Adaptive；请选择 aptX Adaptive（实验性），或使用“自动”、AAC 或 SBC。
+- `aptX Adaptive=true [not usable]`——耳机提供的 aptX Adaptive 不支持 A2DPWB 所需的 48 kHz 立体声。
 - `remote vendor codec ... - unsupported`——A2DPWB 未实现的其他厂商编解码器。
 
 ## 最大媒体数据包大小（每个配置文件） {#max-packet}

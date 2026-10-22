@@ -25,7 +25,7 @@ Oct 17, 2026 · @seiya ／ 改訂: 未決事項の決定を反映（同日）
 
 - 対応OSは Windows 10 (22H2) / 11 です。**x64 と ARM64 の両方を v2.0 で出します**（[ARM64](#arm64) を参照）。
 - 使い方は今と同じです。WinUSBを割り当てたUSBドングルを btstack で直接制御して、WASAPIで取り込んだシステム音声をA2DPで送ります。
-- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。v2 では SBC XQ、FastStream と Android の A2DP Opus（試験的）を加えます（[v2 で加えたコーデック](#v2-で加えたコーデック)、[Opus](#opus)）。
+- コーデックは今と同じものを用意します（SBC / AAC / aptX / aptX HD / aptX LL / LDAC / LHDC V5）。v2 では SBC XQ、FastStream と Android の A2DP Opus（試験的）を加えます（[v2 で加えたコーデック](#v2-で加えたコーデック)、[Opus](#opus)）。aptX Adaptive も試験的に加えました（[aptX Adaptive](#aptx-adaptive)）。
 - アプリ名（A2DP Windows Bridge / A2DPWB）とアイコンは v1 のまま変えません。
 
 **今回やらないこと**
@@ -96,7 +96,7 @@ v1.1.0の機能は、開発者向けのものも含めてすべて次期版に�
 | 1. FFI | `ldac-sys` / `openaptx-sys` / `fdkaac-sys` / `lhdcv5-sys` / `opus-sys` | 残すCコーデックをビルドしてFFIを提供。ライセンスの異なるライブラリをクレート単位で分けて管理する | 可 |
 | 1. FFI | `win-sys` | `windows` クレートで、Rustのライブラリが無いWin32 APIを包む。MMCSS、IPolicyConfig（既定デバイスの切り替え）、WLAN API（AFH用）、電源通知、レジストリのRunキー、メディアキー送出、**WinUSBドライバの割り当てと解除（SetupAPI / DiInstallDevice）** | 可 |
 | 2. 部品 | `hci-transport` | HCI H2（`nusb` でWinUSBを直接制御）とH4 over TCP（エミュレータ用）。現行の改造版 `hci_transport_h2_winusb.c` の復旧処理（パイプリセット、読み取り失敗からの復帰、コマンドタイムアウト、終了時のHCI Reset）を移植し、btstackには `btstack-sys` のコールバック表で接続する | 禁止 |
-| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC。FastStream は明示的に選んだときだけ）も担当 | 禁止 |
+| 2. 部品 | `codec` | `trait Encoder`、Rustで書き直したSBCエンコーダ、その他コーデックの安全なラッパー。Codec Informationの生成・解析と能力の交渉（Autoの優先順位 LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC。FastStream、Opus 05、aptX Adaptive は明示的に選んだときだけ）も担当 | 禁止 |
 | 2. 部品 | `audio-capture` | `wasapi` クレートで取り込む。システムループバック、仮想デバイス、アプリ単位のループバック（build 19041以降）。デバイス一覧、エンドポイント音量、テストトーン | 禁止 |
 | 3. エンジン | `bt-host` | btstackのランループを専用スレッドに閉じ込め、外からはコマンドチャネルと型付きイベントだけで操作する。GAP / A2DP Source / AVRCP（絶対音量、ボタン操作）/ SDP / リンクキー / AFH / ファームウェア読み込み / pklgキャプチャ | 禁止 |
 | 3. エンジン | `pipeline` | リングバッファ、形式変換、リサンプル、ダウンミックス、エンコード、メディアペイロードの組み立て、送信ペースの制御、ABR | 禁止 |
@@ -428,6 +428,26 @@ Auto は Opus 05 を選びません（FastStream と同じく、明示的に選�
 
 検証: 単体テスト（能力の解析、設定、双方向の SEP の扱い、ローカルの SEP、エンコードと libopus での復号、ビットレートの上限）と `tools/emu`（PipeWire の `opus_05` と同じ能力を出すシンクでの `opus05`、44.1 kHz を指定しても 48 kHz で送る `opus05-from-44k`、SBC・AAC・Opus 05 のシンクで Auto が AAC を選ぶ `auto-not-opus05`）。`tools/a2dp_decode` は Opus 05 の設定を解析して、Opus と同じように復号します。実機の PipeWire では未確認です。
 
+## aptX Adaptive
+
+aptX Adaptive（ベンダー ID 0x000000D7 Qualcomm、コーデック ID 0x00AD）を、試験的に `aptxad`（表示名 "aptX Adaptive"）として加えます。エンコーダは [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の Rust だけで書かれたエンコーダ（MIT、Copyright (c) 2026 Prateek Mittal (AKS-Logic)）で、上流のコミット 25099004b2d3（2026-10-22）を `app/src/crates/aptx-adaptive` に取り込みました。上流はこれをクリーンルームでの再実装とし、数値テーブルは合法に入手した Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したと説明しています（クレートの横に写した上流の `LEGAL.md`）。Qualcomm のコード、SDK、バイナリは含みません。aptX / aptX Adaptive は Qualcomm の商標で、国や地域によっては特許の対象になりえます。使ってよいかどうかは利用者の責任です（上流の注意書き）。
+
+| 項目 | 値 |
+| --- | --- |
+| 形式 | 48 kHz ステレオだけ、24 ビット。44.1 / 96 kHz を指定しても 48 kHz で取り込む |
+| シンク | R1（能力の拡張がない。例: B&W Px7 S2e）と R2（R2 のビットストリーム） |
+| 品質（R1） | 高音質 `hq` 427 kbps（12 ms、656 バイト）、標準 `sq` 364 kbps（14 ms。参照実装の既定値）、モバイル `mq` 318 kbps（16 ms）、低遅延 `ll` 265 kbps（10 ms、348 バイト）。R2 のシンクでは 427 / 270 / 204 / 270 kbps。`ll` は aptX Adaptive だけが使う新しい品質キーで、ほかのコーデックは高音質として扱う |
+| ABR | 高音質のとき、送信キューに 3 パケット以上ある間は 1 段下げ（モバイルより下げない。最短でも約 0.5 秒おき）、約 3 秒間キューが 1 パケット以下なら 1 段上げる（選んだ品質まで）。低遅延は ABR なし |
+| パケット | メディアパケット 1 つにコーデックのパケット 1 つ。A2DPWB 自身の 12 バイトの RTP ヘッダー（BTstack は付けない）: ペイロードタイプ 96、シーケンス番号はパケットごとに +1、タイムスタンプはパケットのチャネルあたりのサンプル数（時刻ではない）、SSRC はシンクの遅延モード（HQ 0x000000A3、LL 0x000000A1）。ペイロードは 16 ビット単位でバイトを入れ替える |
+| 設定 | SET_CONFIGURATION は 48 kHz、ソースタイプ 2（ホストのエンコーダ: 再生のタイミングはシンクが決める）、ステレオ。R1 のシンクにはシンク自身の目標遅延のバイトを返し、LL0 は 80 ms 以上に上げ、HQ の遅延が 0 なら 200 ms にする。R2 のシンクにはソース側の R2 ブロックを送る |
+| 能力 | Codec Information は 40 バイト。BTstack の能力のイベントでは 30 バイトに切られるが、使う値はすべてその中にある |
+
+Auto は aptX Adaptive を選びません（FastStream、Opus 05 と同じく、明示的に選んだときだけ）。Auto の優先順位は変えていません。シンクが aptX / aptX HD / aptX LL を出していれば Auto はそちらを選びます。プロファイルで aptX / aptX HD / aptX LL を選んだのにシンクが aptX Adaptive しか出していないときのエラーは、aptX Adaptive（試験的）、Auto、AAC、SBC を選ぶように案内します。
+
+ストリームエンドポイントが 1 つ増えるので、BTstack の `MAX_NR_AVDTP_STREAM_ENDPOINTS` を 11 にしました。シムのバッファは 40 バイトにしました。
+
+検証: 単体テスト、上流のビット単位で一致するテスト（Windows でも通る）、`tools/emu` の仮想シンクとの end-to-end テスト（RTP ヘッダー、パケットの大きさ、フレームの種類を確かめる。公開されたデコーダがないので音は復号しない）。A2DPWB では実機のヘッドホンで未確認です。上流は Linux / PipeWire で Bose QuietComfort Ultra（第1世代）と B&W Px7 S2e での 48 kHz の HQ と LL の動作を報告しています。
+
 ## ARM64
 
 **決定: v2.0 で x64 と ARM64 の両方を出します。**
@@ -502,6 +522,7 @@ v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動�
 
 ## 改訂履歴
 
+- 2026-10-22（aptX Adaptive）: AKS-Logic/aptx-adaptive-linux の Rust のエンコーダ（MIT、上流のコミット 25099004b2d3）を `app/src/crates/aptx-adaptive` に取り込み、aptX Adaptive を試験的に `aptxad` として追加した。R1 と R2 のシンク、48 kHz ステレオ、品質は高音質 / 標準 / モバイル / 低遅延（新しいキー `ll`）、高音質では ABR。Auto は選ばない。ストリームエンドポイントは 11 個になった。実機のヘッドホンでは未確認。[aptX Adaptive](#aptx-adaptive)を参照。
 - 2026-10-18（ブランチ名）: `develop-2.0` を `develop-v2.x`、v1 の `develop` を `develop-v1.x` に改名した。CI のプッシュ時のテストは `develop-v2.x` と `main` で動く。
 - 2026-10-18（未決事項の解消、ARM64）: `DiInstallDevice` が使えない環境では Zadig の案内に戻すと決めた（割り当ての失敗に専用の文言 `error.driver_assign_failed`、8言語）。実機（UB500）で割り当て → 解除 → 割り当ての往復を確認した。x64 の PC での ARM64 のビルドには、rustls の `ring` のために Visual Studio の clang が要る（`installer/build-release.ps1` が探して PATH に足す）。手元で ARM64 の3つの exe が組めることを確かめた（ARM64 の実機では未確認）。
 - 2026-10-18（Opus 05）: PipeWire 独自の A2DP Opus（ベンダー 0x000005F1 / 0x1005、`opus_05`）のステレオの音楽の方向を、試験的に `opus05` として追加した。Auto は選ばない。エンコーダは Opus のものを共用し、設定したビットレートで頭打ちにする。ストリームエンドポイントは 10 個になった。サラウンド、双方向、Pro Audio は未実装。[Opus 05](#opus-05)を参照。

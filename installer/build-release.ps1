@@ -132,6 +132,7 @@ $docs = [ordered]@{
     'licenses/libopenaptx-LGPL-2.1.txt'    = Join-Path $ext 'libopenaptx/COPYING'
     'licenses/lhdcv5-enc-LICENSE.txt'      = Join-Path $ext 'lhdcv5-enc/LICENSE'
     'licenses/opus-COPYING.txt'            = Join-Path $ext 'opus/COPYING'
+    'licenses/aptx-adaptive-LICENSE.txt'   = Join-Path $repo 'app/src/crates/aptx-adaptive/LICENSE'
     # LE Audio (experimental): LC3 encoder and LE Secure Connections' P-256
     'licenses/liblc3-LICENSE.txt'          = Join-Path $ext 'btstack/3rd-party/lc3-google/LICENSE'
     'licenses/micro-ecc-LICENSE.txt'       = Join-Path $ext 'btstack/3rd-party/micro-ecc/LICENSE.txt'

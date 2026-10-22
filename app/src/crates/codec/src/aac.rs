@@ -18,7 +18,7 @@ const CODEC: CodecKind = CodecKind::Aac;
 /// Target bit rate per quality, as v1 (MediumHigh is LHDC V5 only: High)
 fn quality_bitrate(quality: Quality) -> u32 {
     match quality {
-        Quality::High | Quality::MediumHigh => 256_000,
+        Quality::High | Quality::MediumHigh | Quality::LowLatency => 256_000,
         Quality::Standard => 192_000,
         Quality::Mobile => 128_000,
     }
@@ -27,7 +27,7 @@ fn quality_bitrate(quality: Quality) -> u32 {
 /// fdk-aac's variable bit rate mode (3 medium .. 5 very high) per quality
 fn vbr_mode(quality: Quality) -> u32 {
     match quality {
-        Quality::High | Quality::MediumHigh => 5,
+        Quality::High | Quality::MediumHigh | Quality::LowLatency => 5,
         Quality::Standard => 4,
         Quality::Mobile => 3,
     }

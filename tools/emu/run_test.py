@@ -9,9 +9,9 @@ with a2dpwb_decode:
   - A2DPWB streams the requested codec and a2dpwb_decode finds no problem,
     on the sent side and on the received side
   - the sink received every media packet / frame A2DPWB sent
-  - decoded audio (all codecs but LDAC and LHDC V5, which have no open-source
-    decoder) is identical on both sides and is the test tone: 1 kHz left,
-    1.5 kHz right, amplitude 0.5
+  - decoded audio (all codecs but LDAC, LHDC V5 and aptX Adaptive, which
+    have no open-source decoder) is identical on both sides and is the test
+    tone: 1 kHz left, 1.5 kHz right, amplitude 0.5
 The cases of NEGOTIATION run the same way with another sink or command line
 (Auto choosing SBC XQ, or SBC on a sink without dual channel or one that
 refuses it; Opus and Opus 05 at 48 kHz
@@ -84,8 +84,17 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'opus': r'Opus 48000 Hz, stereo, 20 ms',
     # PipeWire's choice: 10 ms, one coupled stream, 312 x 1024 bps, no return channel
     'opus05': r'Opus 05 48000 Hz, stereo, 10 ms frames, location 0x00000003, max 312 x 1024 bps, no return channel$',
+    # The Px7 S2e's configuration from a host source: its latencies with LL0
+    # raised to 80 ms and HQ's 0 to 200 ms; an R2 sink gets the source's own
+    'aptxad': r'aptX Adaptive 48000 Hz, stereo, R1, source type 2, target latency LL0 80 ms, LL1 106 ms, '
+              r'HQ 200 ms, TWS 350 ms$',
+    'aptxad-r2': r'aptX Adaptive 48000 Hz, stereo, R2, source type 2, target latency LL0 80 ms, LL1 100 ms, '
+                 r'HQ 200 ms, TWS 200 ms$',
 }
-NO_DECODER = {'ldac', 'lhdcv5'}  # frame headers are validated, audio is not decoded
+# Frame headers are validated, audio is not decoded (aptX Adaptive: its RTP
+# header, packet sizes and frame types)
+NO_DECODER = {'ldac', 'lhdcv5', 'aptxad', 'aptxad-r2'}
+APTXAD_SINK = ['--codecs', 'sbc', 'aac', 'aptx', 'aptxad']
 # Further cases: name -> (A2DPWB -c, emu_sink.py arguments, the codec expected,
 # more A2DPWB arguments)
 NEGOTIATION = {
@@ -112,6 +121,17 @@ NEGOTIATION = {
     # Opus 05: 48 kHz from a 44.1 kHz request; Auto never takes it (AAC here)
     'opus05-from-44k': ('opus05', [], 'opus05', ['--rate', '44100']),
     'auto-not-opus05': ('auto', ['--codecs', 'sbc', 'aac', 'opus05'], 'aac', []),
+    # aptX Adaptive (offered by the sink only when named, with SBC, AAC and
+    # aptX as aptX Adaptive headsets list them: emu_sink.py): HQ, low latency
+    # (SSRC 0xA1, 348-byte packets), an R2 sink in HQ and LL (frame types 3 /
+    # 4), ABR, 48 kHz from a 44.1 kHz request; Auto never takes it (AAC here)
+    'aptxad': ('aptxad', APTXAD_SINK, 'aptxad', []),
+    'aptxad-ll': ('aptxad', APTXAD_SINK, 'aptxad', ['-q', 'll']),
+    'aptxad-r2': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
+    'aptxad-r2-ll': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['-q', 'll']),
+    'aptxad-abr': ('aptxad', APTXAD_SINK, 'aptxad', ['-a']),
+    'aptxad-from-44k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '44100']),
+    'auto-not-aptxad': ('auto', ['--codecs', 'sbc', 'aac', 'aptxad'], 'aac', []),
 }
 TONES = ((1000.0, 0.5), (1500.0, 0.5))  # (frequency, amplitude) per channel, as --test-tone
 LATE_SDU_FAILURE = 'reached the controller after their SDU interval began'  # LE Audio cases run once more

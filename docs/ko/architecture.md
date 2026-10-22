@@ -252,21 +252,22 @@ Windows 8 이상에는 Microsoft가 서명한 WinUSB 드라이버(`winusb.inf`)�
 ### 코덱 선택 (`codec::caps`)
 
 - 원격 장치의 기능을 구문 분석합니다. 표준 SBC 및 AAC 요소와 벤더 코덱이
-  대상이며, 두 벤더 ID의 aptX LL과 aptX Adaptive(감지하여 로그에만 기록)를
-  포함합니다
+  대상이며, 두 벤더 ID의 aptX LL과 aptX Adaptive(R1 및 R2 싱크, 48 kHz 스테레오에서만
+  사용 가능)를 포함합니다
 - 코덱을 선택합니다. 자동은 원격 장치가 제공하는 최적의 코덱을 선택합니다.
   원격 장치가 제공하지 않는 코덱을 요청하면, 프로필이 허용하는 경우
   (**이 코덱을 사용할 수 없으면 다른 코덱 사용**) 자동의 선택으로 대체되고,
   그렇지 않으면 오류가 됩니다
 - aptX 계열 샘플링 속도를 선택합니다(원격 장치가 알리는 속도 중 44.1 / 48 kHz,
-  캡처는 WASAPI가 리샘플링)
+  캡처는 WASAPI가 리샘플링). aptX Adaptive는 항상 48 kHz
 
 ### Bluetooth 호스트 (`bt-host`)
 
 **역할**:
 - USB(또는 TCP) HCI 전송으로 BTstack을 자체 스레드에서 실행
 - 스트림 엔드포인트 등록: 벤더 코덱(LDAC, aptX HD, aptX, aptX LL,
-  LHDC V5, FastStream, Opus) 및 SBC(SBC XQ도 사용)와 AAC
+  LHDC V5, FastStream, Opus, Opus 05, aptX Adaptive) 및 SBC(SBC XQ도 사용)와
+  AAC, 모두 11개 (BTstack의 `MAX_NR_AVDTP_STREAM_ENDPOINTS`)
 - SDP 레코드 등록 (A2DP Source, AVRCP Controller, AVRCP Target)
 - SSP 페어링 관리 (Just Works, General Bonding, 링크 키 저장)
 - 연결 시간 초과 후 반쯤 열린 연결을 해제하여 재시도가 가능하도록 함
@@ -286,7 +287,8 @@ Windows 8 이상에는 Microsoft가 서명한 WinUSB 드라이버(`winusb.inf`)�
 - `a2dp_source_stream_send_media_payload_rtp()` — 인코딩된 오디오를
   RTP 헤더와 함께 전송 (LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5, Opus)
 - `a2dp_source_stream_send_media_packet()` — RTP 헤더 없이 원시 미디어
-  패킷 전송 (aptX, aptX LL, FastStream)
+  패킷 전송 (aptX, aptX LL, FastStream), 또는 A2DPWB 자체 RTP 헤더와 함께
+  전송 (aptX Adaptive)
 
 ### 오디오 캡처 (`audio-capture`)
 
@@ -312,6 +314,7 @@ Windows Audio Session API를 사용하여 오디오를 실시간으로 캡처합
 | FastStream | 같은 SBC 인코더 | 198/216 kbps (44.1/48 kHz) | CSR 벤더 코덱, 음악 방향만 (음성 백채널 없음): SBC joint stereo bitpool 29, 프레임을 72바이트로 패딩, 패킷당 3개, 미디어 페이로드 헤더와 RTP 헤더 없음 (PipeWire와 동일). 자동에서는 선택되지 않음 |
 | LHDC V5 | lhdcv5-enc (AOSP 인코더의 C 포팅) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24비트, 5 ms 프레임, 2바이트 미디어 페이로드 헤더, RTP 헤더 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (스테레오, 모노는 절반) | 실험적. Android의 A2DP Opus: 48 kHz, 20 ms 프레임(싱크가 10 ms만 지원하면 10 ms), 미디어 페이로드에 맞춘 상한이 있는 constrained VBR, 패킷당 프레임 하나, 1바이트 미디어 페이로드 헤더, RTP 헤더 |
+| aptX Adaptive | aptx-adaptive (AKS-Logic/aptx-adaptive-linux의 순수 Rust 인코더, MIT) | R1 싱크: 427/364/318 kbps (높음/표준/모바일), 저지연 265 kbps. R2 싱크: 427/270/204, 270 kbps | 실험적. 48 kHz 스테레오, 24비트. 미디어 패킷당 코덱 패킷 하나, A2DPWB 자체 RTP 헤더. 높음에서 ABR. 자동에서는 선택되지 않음 |
 
 모든 인코더는 `codec::Encoder` 트레이트를 구현합니다. 각 인코더는 PCM 형식과
 한 번의 호출에서 소비하는 프레임 수를 명시하고, 코덱 프레임을 반환합니다.
@@ -330,7 +333,7 @@ PCM을 입력으로 받습니다. aptX 래퍼는 16비트 또는 32비트 샘플
 | aptX | APT (0x0000004F) | 0x0001 |
 | aptX HD | Qualcomm (0x000000D7) | 0x0024 |
 | aptX Low Latency | CSR (0x0000000A) 또는 Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD (감지만 하며 선택하지 않음) |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
@@ -363,14 +366,24 @@ AAC와 SBC는 A2DP 사양에 정의된 표준 A2DP 코덱 ID를 사용합니다.
   스테레오, 10 ms와 20 ms를 제공하고, 20 ms 스테레오로 구성함(모노는 모노
   입력이고 싱크가 모노를 지원할 때만). 미디어 패킷에는 1바이트 페이로드 헤더
   (하위 4비트에 frame count 1) 뒤에 Opus 패킷 하나가 담김
+- **aptX Adaptive**: 40바이트. BTstack의 기능 이벤트는 싱크의 코덱 정보를
+  30바이트로 자르지만, A2DPWB가 사용하는 값은 모두 그 안에 있음.
+  SET_CONFIGURATION: 48 kHz, source type 2(호스트 인코더: 재생 타이밍은 싱크가
+  직접 맞춤), 스테레오. R1 싱크에는 싱크 자신의 목표 지연 바이트를 돌려주되
+  LL0은 80 ms 이상으로 올리고 HQ 지연이 0이면 200 ms로 바꿈. R2 싱크에는
+  소스 자신의 R2 블록을 보냄
 
 **RTP 사용 여부**: LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5, Opus 미디어 패킷에는
 12바이트 RTP 헤더가 붙습니다. aptX, aptX LL, FastStream은 (Android 및
 PipeWire와 마찬가지로) RTP 헤더 **없이** 전송되므로, L2CAP MTU 전체를 aptX 프레임에 사용할 수 있습니다.
 
-**aptX Adaptive**는 오픈 소스 인코더가 없으므로(libopenaptx는 이를
-구현하지 않음) A2DPWB는 이를 등록하거나 선택하지 않습니다. 싱크가 이를 제공하면
-A2DPWB는 로그에만 기록하며, 싱크가 기본 aptX를 별도로 제공하면 그것을 사용합니다.
+**aptX Adaptive**(실험적)는 미디어 패킷 하나에 코덱 패킷 하나를 A2DPWB 자체의
+12바이트 RTP 헤더 뒤에 담아 보냅니다(BTstack은 RTP 헤더를 붙이지 않음).
+페이로드 타입 96, 시퀀스 번호는 패킷마다 +1, 타임스탬프는 패킷의 채널당 샘플
+수(시계 값이 아님), SSRC는 싱크의 지연 모드(HQ 0x000000A3, LL 0x000000A1)입니다.
+페이로드는 16비트 워드 단위로 바이트를 뒤바꿉니다. HQ 패킷은 656바이트(12 ms),
+LL 패킷은 348바이트(10 ms)입니다. 자동은 이를 선택하지 않으며, 기본 aptX도 제공하는
+싱크에는 자동이 기본 aptX를 사용합니다.
 
 ## 설정과 파일
 
@@ -412,4 +425,4 @@ A2DPWB는 로그에만 기록하며, 싱크가 기본 aptX를 별도로 제공�
   A2DPWB에는 전용 USB 어댑터 사용
 - 일부 Bluetooth 어댑터는 펌웨어 때문에 달성 가능한 비트레이트가 제한됨
 - USB Bluetooth 5.0 이상 어댑터는 일반적으로 LDAC에서 잘 작동함
-- 자동 코덱 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (실험적) > AAC > SBC XQ > SBC (FastStream은 직접 선택한 경우에만)
+- 자동 코덱 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (실험적) > AAC > SBC XQ > SBC (FastStream, Opus 05, aptX Adaptive는 직접 선택한 경우에만)

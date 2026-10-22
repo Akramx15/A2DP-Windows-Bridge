@@ -260,20 +260,21 @@ result. Listing adapters and their driver needs no elevation.
 
 - Parses the remote's capabilities: the standard SBC and AAC elements and the
   vendor codecs, including aptX LL under both vendor IDs and aptX Adaptive
-  (detected and logged only)
+  (R1 and R2 sinks; usable only with 48 kHz stereo)
 - Picks the codec: Auto takes the best codec the remote offers; a requested
   codec the remote does not offer is replaced by Auto's choice when the
   profile allows it (**Use another codec if this one is not available**), and
   is an error otherwise
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
-  advertises; WASAPI resamples the capture)
+  advertises; WASAPI resamples the capture); aptX Adaptive always uses 48 kHz
 
 ### Bluetooth host (`bt-host`)
 
 **Responsibilities**:
 - Run BTstack with the USB (or TCP) HCI transport on its own thread
 - Register stream endpoints: vendor codecs (LDAC, aptX HD, aptX, aptX LL,
-  LHDC V5, FastStream, Opus) plus SBC (also used by SBC XQ) and AAC
+  LHDC V5, FastStream, Opus, Opus 05, aptX Adaptive) plus SBC (also used by
+  SBC XQ) and AAC: 11 in all (BTstack's `MAX_NR_AVDTP_STREAM_ENDPOINTS`)
 - Register SDP records (A2DP Source, AVRCP Controller, AVRCP Target)
 - Manage SSP pairing (Just Works, General Bonding; link keys persisted)
 - Tear down a half-open connection after a connect timeout so retries work
@@ -294,7 +295,8 @@ result. Listing adapters and their driver needs no elevation.
 - `a2dp_source_stream_send_media_payload_rtp()` — Send encoded audio with an
   RTP header (LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5, Opus)
 - `a2dp_source_stream_send_media_packet()` — Send raw media packets without
-  an RTP header (aptX, aptX LL, FastStream)
+  an RTP header (aptX, aptX LL, FastStream), or with A2DPWB's own RTP header
+  (aptX Adaptive)
 
 ### Audio capture (`audio-capture`)
 
@@ -321,6 +323,7 @@ Captures audio in real time using the Windows Audio Session API.
 | FastStream | the same SBC encoder | 198/216 kbps (44.1/48 kHz) | CSR vendor codec, music direction only (no voice backchannel): SBC joint stereo bitpool 29, frames padded to 72 bytes, 3 per packet, no media payload header and no RTP header (as PipeWire); never chosen by Auto |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
+| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | R1 sinks: 427/364/318 kbps (High/Standard/Mobile), 265 kbps Low Latency; R2 sinks: 427/270/204, 270 kbps | Experimental; 48 kHz stereo, 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; never chosen by Auto |
 
 All encoders implement the `codec::Encoder` trait: they state the PCM
 format and the number of frames one call consumes, and return codec frames.
@@ -339,7 +342,7 @@ Non-standard codecs are registered as Vendor Specific in AVDTP:
 | aptX | APT (0x0000004F) | 0x0001 |
 | aptX HD | Qualcomm (0x000000D7) | 0x0024 |
 | aptX Low Latency | CSR (0x0000000A) or Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD (detected only, never selected) |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
@@ -374,14 +377,24 @@ Codec information element sizes (including the 6-byte vendor/codec ID):
   and stereo, 10 and 20 ms, and configures 20 ms stereo (mono only for mono
   input to a sink that has it). Media packets carry one Opus packet behind
   a 1-byte payload header (frame count 1 in the low 4 bits)
+- **aptX Adaptive**: 40 bytes. BTstack's capability event cuts the sink's
+  codec information to 30 bytes, which still hold everything A2DPWB uses.
+  SET_CONFIGURATION: 48 kHz with source type 2 (host encoder: the sink times
+  playback itself), stereo; an R1 sink gets its own target-latency bytes
+  back with LL0 raised to at least 80 ms and a zero HQ latency replaced by
+  200 ms; an R2 sink gets the source's own R2 block
 
 **RTP vs no RTP**: LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5 and Opus media packets carry the
 12-byte RTP header. aptX, aptX LL and FastStream are sent **without** an RTP header (as Android and
 PipeWire do), so the whole L2CAP MTU is available for aptX frames.
 
-**aptX Adaptive** has no open-source encoder (libopenaptx does not implement
-it), so A2DPWB never registers or selects it. When a sink lists it, A2DPWB
-only logs it; classic aptX is used if the sink lists that separately.
+**aptX Adaptive** (experimental) sends one codec packet per media packet
+behind A2DPWB's own 12-byte RTP header (BTstack adds none): payload type 96,
+sequence number +1 per packet, timestamp = the samples per channel in the
+packet (not a clock), SSRC = the sink's latency mode (0x000000A3 HQ,
+0x000000A1 LL). The payload is byte-swapped in 16-bit words. HQ packets are
+656 bytes (12 ms), LL packets 348 bytes (10 ms). Auto never selects it; a
+sink that also lists classic aptX gets classic aptX from Auto.
 
 ## Settings and Files
 
@@ -425,4 +438,4 @@ formats as v1:
   dedicated USB adapter for A2DPWB
 - Some Bluetooth adapters' firmware limits achievable bitrate
 - USB Bluetooth 5.0+ adapters generally work well for LDAC
-- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream and Opus 05 only when chosen)
+- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 and aptX Adaptive only when chosen)

@@ -129,7 +129,7 @@ describe("codec cards", () => {
     expect(screen.queryByRole("radio", { name: /aptX HD/ })).toBeNull();
     expect(screen.getAllByRole("radio", { name: /./ }).filter((r) => r.closest(".codec-grid"))).toHaveLength(4);
     // Forced: shown with their "Not offered" tag
-    const force = screen.getByRole("checkbox", { name: t("ui.profile.codecs_force", 8) });
+    const force = screen.getByRole("checkbox", { name: t("ui.profile.codecs_force", 9) });
     fireEvent.click(force);
     const hd = await screen.findByRole("radio", { name: /aptX HD/ });
     expect(hd.closest("label")).toHaveTextContent(t("ui.profile.codec_not_offered"));
@@ -246,7 +246,7 @@ describe("SBC settings", () => {
   it("SBC XQ has no channel mode of its own", async () => {
     start(edit("WH-1000XM5 (LDAC)"));
     // Not among what the mock's WH-1000XM5 offered: shown when forced
-    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_force", 8) }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_force", 9) }));
     const dialog = await codecSettings("codec.sbc_xq");
     expect(within(dialog).queryByLabelText(t("ui.diag.cd_channel_mode"))).toBeNull();
     expect(within(dialog).getByRole("status")).toHaveTextContent(t("ui.profile.sbc_bitrate", 551, "44.1"));

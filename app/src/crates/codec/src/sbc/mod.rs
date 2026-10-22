@@ -115,7 +115,7 @@ impl Allocation {
 /// SBC bitpool for a quality mode (joint stereo; mono takes the same)
 pub fn quality_bitpool(quality: Quality) -> u8 {
     match quality {
-        Quality::High | Quality::MediumHigh => 53,
+        Quality::High | Quality::MediumHigh | Quality::LowLatency => 53,
         Quality::Standard => 35,
         Quality::Mobile => 19,
     }
@@ -132,7 +132,7 @@ pub fn quality_bitpool(quality: Quality) -> u8 {
 /// - Mobile: 32 / 29, PipeWire's dual channel default without XQ (~385 kbps).
 pub fn xq_bitpool(quality: Quality, sample_rate: u32) -> u8 {
     let (at_44100, at_48000) = match quality {
-        Quality::High | Quality::MediumHigh => (47, 43),
+        Quality::High | Quality::MediumHigh | Quality::LowLatency => (47, 43),
         Quality::Standard => (43, 39),
         Quality::Mobile => (32, 29),
     };

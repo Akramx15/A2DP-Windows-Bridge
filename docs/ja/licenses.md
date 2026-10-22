@@ -38,6 +38,7 @@ A2DPWB のソースコードは Apache-2.0 / MIT のデュアルライセンス�
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC エンコーダー |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder)（AOSP エンコーダーの C 移植版） | commit 3f9d198 | Apache-2.0（FFT 部分は BSD-3-Clause、KISS FFT） | LHDC V5 エンコーダー |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus エンコーダー |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)（Rust 製エンコーダー、取り込み） | commit 25099004b2d3 | MIT | aptX Adaptive エンコーダー（試験的） |
 | Rust のクレート: [Tauri](https://tauri.app/) 2.12、tokio、serde、windows、nusb、wasapi、tray-icon など | `Cargo.lock` | ほとんどが Apache-2.0 / MIT。ほかに BSD、ISC、Zlib、Unicode-3.0、CDLA-Permissive-2.0、MPL-2.0 | ウィンドウ、トレイ、IPC、USB、音声、更新 |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | ウィンドウの UI ライブラリ |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Tauri の JavaScript 側 |
@@ -75,7 +76,9 @@ libopenaptx は `a2dpwb-core.exe` に静的リンクしています。インス�
 
 ### aptX 特許に関する注意
 
-aptX（クラシック）、aptX HD、aptX Low Latency、aptX Adaptive は Qualcomm の商標です。libopenaptx は README によれば「ffmpeg 4.0 プロジェクトから派生した」（derived from ffmpeg 4.0 project）オープンソースの aptX 実装で、本ツールでは aptX、aptX HD、aptX Low Latency に使用しています。aptX エンコーディングは一部の法域で特許の対象となる場合があります。A2DPWB は aptX Adaptive エンコーダーを含みません。
+aptX（クラシック）、aptX HD、aptX Low Latency、aptX Adaptive は Qualcomm の商標です。libopenaptx は README によれば「ffmpeg 4.0 プロジェクトから派生した」（derived from ffmpeg 4.0 project）オープンソースの aptX 実装で、本ツールでは aptX、aptX HD、aptX Low Latency に使用しています。aptX エンコーディングは一部の法域で特許の対象となる場合があります。
+
+aptX Adaptive は [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の Rust だけで書かれたエンコーダー（MIT、Copyright (c) 2026 Prateek Mittal (AKS-Logic)）でエンコードします。上流のコミット 25099004b2d3 を `app/src/crates/aptx-adaptive` に取り込んでいます。上流はこれをクリーンルームでの再実装とし、数値テーブルは合法に入手した Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したと説明しています（クレートの横に写した上流の `LEGAL.md`）。Qualcomm のコード、SDK、バイナリは含みません。このコーデックは一部の法域で特許の対象となる場合があり、上流の注意書きのとおり、利用が合法かどうかは利用者の責任です。THIRD_PARTY_LICENSES.md の §19 を参照してください。
 
 ### fdk-aac のライセンスと AAC 特許に関する注意
 

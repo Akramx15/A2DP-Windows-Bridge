@@ -38,6 +38,7 @@ Le code source d'A2DPWB est sous double licence Apache-2.0 ou MIT. Le `a2dpwb-co
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | Encodeur AAC-LC |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (portage en C de l'encodeur AOSP) | commit 3f9d198 | Apache-2.0 (FFT : BSD-3-Clause, KISS FFT) | Encodeur LHDC V5 |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Encodeur Opus |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (encodeur Rust, intégré au dépôt) | commit 25099004b2d3 | MIT | Encodeur aptX Adaptive (expérimental) |
 | Crates Rust : [Tauri](https://tauri.app/) 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ... | `Cargo.lock` | Principalement Apache-2.0 / MIT ; aussi BSD, ISC, Zlib, Unicode-3.0, CDLA-Permissive-2.0 et MPL-2.0 | Fenêtre, zone de notification, IPC, USB, audio, mises à jour |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | Bibliothèque d'interface de la fenêtre |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Partie JavaScript de Tauri |
@@ -75,7 +76,9 @@ libopenaptx est liée statiquement à `a2dpwb-core.exe`. Le programme d'installa
 
 ### Avis sur les brevets aptX
 
-aptX (classique), aptX HD, aptX Low Latency et aptX Adaptive sont des marques de Qualcomm. D'après son README, libopenaptx est une implémentation open source de l'aptX « dérivée du projet ffmpeg 4.0 » ; elle est utilisée ici pour l'aptX, l'aptX HD et l'aptX Low Latency. L'encodage aptX peut être couvert par des brevets dans certaines juridictions. A2DPWB n'inclut pas d'encodeur aptX Adaptive.
+aptX (classique), aptX HD, aptX Low Latency et aptX Adaptive sont des marques de Qualcomm. D'après son README, libopenaptx est une implémentation open source de l'aptX « dérivée du projet ffmpeg 4.0 » ; elle est utilisée ici pour l'aptX, l'aptX HD et l'aptX Low Latency. L'encodage aptX peut être couvert par des brevets dans certaines juridictions.
+
+L'aptX Adaptive est encodé avec l'encodeur en Rust pur d'[AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT, Copyright (c) 2026 Prateek Mittal (AKS-Logic)), intégré dans `app/src/crates/aptx-adaptive` à partir du commit amont 25099004b2d3. L'amont le décrit comme une réimplémentation en salle blanche dont les tables numériques ont été reconstituées à partir de binaires Qualcomm distribués, obtenus légalement, et de captures radio (son `LEGAL.md`, copié à côté du crate) ; il ne contient aucun code, SDK ni binaire de Qualcomm. Le codec peut être couvert par des brevets dans certaines juridictions et, comme l'indique l'avis de l'amont, il revient aux utilisateurs de vérifier que son usage est légal là où ils se trouvent. Voir THIRD_PARTY_LICENSES.md §19.
 
 ### Licence fdk-aac et avis sur les brevets AAC
 

@@ -38,6 +38,7 @@ A2DPWB 源代码采用 Apache-2.0 或 MIT 双重许可。分发的 `a2dpwb-core.
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC 编码器 |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder)（AOSP 编码器的 C 语言移植版） | commit 3f9d198 | Apache-2.0（FFT：BSD-3-Clause，KISS FFT） | LHDC V5 编码器 |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus 编码器 |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)（Rust 编码器，内置副本） | commit 25099004b2d3 | MIT | aptX Adaptive 编码器（实验性） |
 | Rust crate：[Tauri](https://tauri.app/) 2.12、tokio、serde、windows、nusb、wasapi、tray-icon 等 | `Cargo.lock` | 大多为 Apache-2.0 / MIT；另有 BSD、ISC、Zlib、Unicode-3.0、CDLA-Permissive-2.0 和 MPL-2.0 | 窗口、托盘、IPC、USB、音频、更新 |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | 窗口的 UI 库 |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Tauri 的 JavaScript 端 |
@@ -75,7 +76,9 @@ libopenaptx 静态链接到 `a2dpwb-core.exe` 中。安装程序和 zip 包附�
 
 ### aptX 专利声明
 
-aptX（经典）、aptX HD、aptX Low Latency 和 aptX Adaptive 是 Qualcomm 的商标。根据其 README，libopenaptx 是一个“derived from ffmpeg 4.0 project”（源自 ffmpeg 4.0 项目）的开源 aptX 实现；本项目将其用于 aptX、aptX HD 和 aptX Low Latency。在某些司法管辖区，aptX 编码可能受专利保护。A2DPWB 不包含 aptX Adaptive 编码器。
+aptX（经典）、aptX HD、aptX Low Latency 和 aptX Adaptive 是 Qualcomm 的商标。根据其 README，libopenaptx 是一个“derived from ffmpeg 4.0 project”（源自 ffmpeg 4.0 项目）的开源 aptX 实现；本项目将其用于 aptX、aptX HD 和 aptX Low Latency。在某些司法管辖区，aptX 编码可能受专利保护。
+
+aptX Adaptive 使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust 编码器编码（MIT，Copyright (c) 2026 Prateek Mittal (AKS-Logic)），取自上游 commit 25099004b2d3，内置于 `app/src/crates/aptx-adaptive`。上游称其为净室重新实现，其中的数值表是根据合法获得的 Qualcomm 已出货二进制文件和空中抓包重建的（见其 `LEGAL.md`，已复制到该 crate 旁）；不包含任何 Qualcomm 代码、SDK 或二进制文件。在某些司法管辖区，该编解码器可能受专利保护；正如上游的声明所述，在所在地使用是否合法由用户自行负责。请参阅 THIRD_PARTY_LICENSES.md §19。
 
 ### fdk-aac 许可证与 AAC 专利声明
 

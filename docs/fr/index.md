@@ -11,7 +11,7 @@ has_toc: false
 Diffusion audio Bluetooth A2DP pour Windows, avec tous les codecs.
 {: .fs-6 .fw-300 }
 
-Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** et (à titre expérimental) **Opus** ainsi que l'**Opus 05** de PipeWire grâce à un adaptateur Bluetooth USB en mode WinUSB -- sans pilote noyau ni signature de test.
+Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** et (à titre expérimental) **Opus**, l'**Opus 05** de PipeWire et l'**aptX Adaptive** grâce à un adaptateur Bluetooth USB en mode WinUSB -- sans pilote noyau ni signature de test.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -35,6 +35,7 @@ Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
 | LC3 (LE Audio) 🧪 | 32--124 kbps par canal | 16/24/32/48 kHz | 16 bit | ~140 ms |
 | LC3 faible latence (LE Audio GMAP) 🧪 | 64--96 kbps par canal | 32/48 kHz | 16 bit | ~30 ms |
 
@@ -53,8 +54,8 @@ Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus (Opus A2DP d'Android) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`) ; absent d'Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 expérimental |
 | Opus 05 (Opus propre à PipeWire) | ❌ | ❌ | ✅ PipeWire 0.3.57+ (`opus_05`, uniquement vers des appareils PipeWire) | 🧪 expérimental (choisi explicitement) |
+| aptX Adaptive | ❌ | ❌ | ❌ | 🧪 expérimental (choisi explicitement) |
 | LC3 (LE Audio, BAP unicast) | ❌ | ✅ sur les PC dont le matériel et le pilote Bluetooth prennent en charge LE Audio | ✅ PipeWire BAP `lc3` (LE Audio de BlueZ) | 🧪 expérimental (profil LE Audio ; faible latence GMAP avec les casques gaming ; adaptateur Bluetooth 5.2 avec ISO, [Utilisation](usage#le-audio)) |
-| aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ pris en charge · 🧪 expérimental · ❌ non pris en charge. Toutes les colonnes concernent le côté émetteur (PC → casque). « Natif » désigne l'audio Bluetooth propre au système, sans A2DPWB ; la colonne Ubuntu correspond aux codecs PipeWire d'Ubuntu 26.04 (`libspa-0.2-bluetooth`).
 
@@ -76,8 +77,8 @@ Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC
 {: .note }
 **Seul l'aptX classique vous intéresse ?** Windows 10 prend déjà en charge l'aptX classique dans sa pile Bluetooth intégrée (pas aptX HD, aptX LL ni aptX Adaptive) : A2DPWB n'est donc pas nécessaire pour cela. A2DPWB sert surtout pour LDAC, aptX HD et aptX Low Latency.
 
-{: .note }
-**aptX Adaptive n'est pas pris en charge** (il n'existe pas d'encodeur open source). Si votre casque propose aussi l'aptX classique, A2DPWB utilise directement l'aptX ; sinon, Auto choisit AAC ou SBC. Voir [Famille aptX et compatibilité aptX Adaptive](usage#aptx-compatibility).
+{: .warning }
+**aptX Adaptive est expérimental et non vérifié sur du matériel réel.** Il est encodé avec l'encodeur en Rust pur, sous licence MIT, d'[AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), dont les auteurs ont reconstitué les tables à partir de binaires Qualcomm distribués et de captures radio. 48 kHz stéréo uniquement (une demande en 44,1 / 96 kHz est capturée en 48 kHz), 24 bits : Haute 427 kbps, Standard 364, Mobile 318 et Faible latence 265 kbps avec les récepteurs R1 (les récepteurs R2 ont leur propre table), ABR en Haute. Auto ne le choisit jamais ; choisissez-le dans le profil ou avec `-c aptxad`. Il réussit les tests unitaires, les tests bit à bit de l'amont et le test de bout en bout avec un récepteur virtuel, mais A2DPWB ne l'a pas encore essayé avec un vrai casque ; l'amont indique qu'il fonctionne sous Linux avec les Bose QuietComfort Ultra (1re génération) et B&W Px7 S2e. Si votre casque propose aussi l'aptX classique, Auto utilise celui-ci. Voir [Famille aptX et aptX Adaptive](usage#aptx-compatibility).
 
 ## Plateformes prises en charge {#platform-support}
 
@@ -134,13 +135,13 @@ A2DPWB contourne entièrement la pile Bluetooth de Windows. Il communique direct
 
 ## Fonctionnalités
 
-- **Multi-codec** : LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 et (à titre expérimental) Opus / Opus 05, avec négociation automatique
+- **Multi-codec** : LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 et (à titre expérimental) Opus / Opus 05 / aptX Adaptive, avec négociation automatique
 - **LE Audio (expérimental)** : LC3 vers des casques et écouteurs LE Audio (BAP unicast, les deux écouteurs d'une paire, volume du casque, boutons multimédia, faible latence GMAP). Nécessite un adaptateur avec canaux isochrones Bluetooth 5.2 ; testé uniquement avec l'émulateur Bluetooth, pas encore avec de vrais casques LE Audio ([Utilisation](usage#le-audio))
 - **Trois modes de capture** : bouclage système, routage via un périphérique audio virtuel, ou sortie d'une seule application
 - **Fenêtre, zone de notification et CLI** : une fenêtre pour la configuration et le diagnostic, un volet et un menu dans la zone de notification pour se connecter au quotidien, et une ligne de commande (voir [Utilisation](usage))
 - **WinUSB depuis l'application** : attribue le pilote WinUSB à l'adaptateur et restaure le pilote d'origine, sans Zadig (voir [Installation](setup#winusb))
 - **Configuration au premier lancement** : adaptateur, pilote et firmware, casque, une première connexion
-- **ABR** : débit adaptatif pour les connexions instables (LDAC et LHDC V5)
+- **ABR** : débit adaptatif pour les connexions instables (LDAC, LHDC V5 et aptX Adaptive)
 - **Reconnexion automatique** : se reconnecte en cas de déconnexion (jusqu'à 10 tentatives), ainsi qu'à la sortie de veille du PC
 - **Qualité de liaison et AFH** : affiche ce qui est envoyé, le RSSI et les canaux utilisés ; indique à l'adaptateur les canaux Wi-Fi à éviter (voir [Utilisation](usage#link-quality))
 - **Commandes du casque (AVRCP)** : curseur de volume synchronisé avec le casque et le volume de Windows ; les boutons lecture/pause, suivant et précédent du casque contrôlent la lecture sur le PC (voir [Utilisation](usage#headphone-buttons))

@@ -50,6 +50,10 @@ pub(crate) const INIT_ATT: u32 = 64;
 /// HFP audio gateway and RFCOMM (Stack::hfp_ag_init)
 const INIT_HFP: u32 = 128;
 
+/// Largest codec information of a stream endpoint or a SET_CONFIGURATION
+/// (shim.c A2DPWB_CODEC_INFO_MAX): aptX Adaptive's 40 bytes
+pub const CODEC_INFO_MAX: usize = 40;
+
 thread_local! {
     static INITIALIZED: Cell<u32> = const { Cell::new(0) };
     /// Paths handed to BTstack, which keeps the pointers
@@ -194,14 +198,15 @@ impl Stack {
         unsafe { ffi::a2dpwb_sdp_register_records(controller_features, target_features) };
     }
 
-    /// A2DP source stream endpoint in slot 0..7. Returns the local SEID.
+    /// A2DP source stream endpoint in slot 0..MAX_NR_AVDTP_STREAM_ENDPOINTS.
+    /// Returns the local SEID.
     pub fn create_stream_endpoint(&self, slot: usize, codec_type: u8, caps: &[u8], config: &[u8]) -> Option<u8> {
-        if caps.len() > 32 || config.len() > 32 {
-            tracing::debug!(target: "btstack", "stream endpoint slot {slot}: caps {} / config {} bytes over 32", caps.len(), config.len());
+        if caps.len() > CODEC_INFO_MAX || config.len() > CODEC_INFO_MAX {
+            tracing::debug!(target: "btstack", "stream endpoint slot {slot}: caps {} / config {} bytes over {CODEC_INFO_MAX}", caps.len(), config.len());
             return None;
         }
         // SAFETY: on the BTstack thread after a2dp_source_init; the shim
-        // copies caps / config into static buffers of 32 bytes.
+        // copies caps / config into static buffers of CODEC_INFO_MAX bytes.
         let seid = unsafe {
             ffi::a2dpwb_create_stream_endpoint(
                 slot as c_int,
@@ -496,12 +501,12 @@ impl Stack {
     }
 
     pub fn a2dp_set_config_other(&self, a2dp_cid: u16, local_seid: u8, remote_seid: u8, info: &[u8]) -> u8 {
-        if info.len() > 32 {
-            tracing::debug!(target: "btstack", "set config other: {} bytes of codec info, over 32", info.len());
+        if info.len() > CODEC_INFO_MAX {
+            tracing::debug!(target: "btstack", "set config other: {} bytes of codec info, over {CODEC_INFO_MAX}", info.len());
             return crate::consts::ERROR_CODE_INVALID_HCI_COMMAND_PARAMETERS;
         }
-        // SAFETY: on the BTstack thread; the shim copies info (<= 32 bytes)
-        // into a persistent buffer.
+        // SAFETY: on the BTstack thread; the shim copies info (<=
+        // CODEC_INFO_MAX bytes) into a persistent buffer.
         unsafe { ffi::a2dpwb_set_config_other(a2dp_cid, local_seid, remote_seid, info.as_ptr(), info.len() as u8) }
     }
 

@@ -651,6 +651,7 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &Stream
         opus_channels,
         opus_max_bitrate,
         aac_max_bitrate: if kind == CodecKind::Aac { remote.aac_max_bitrate() } else { 0 },
+        aptxad_r2: kind == CodecKind::AptxAdaptive && remote.aptxad_r2(),
     }
 }
 
@@ -876,12 +877,13 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         preferred = kind.max_sample_rate();
     }
     // aptX family, AAC: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates;
-    // Opus, Opus 05: 48 kHz only. WASAPI resamples to the requested rate.
+    // Opus, Opus 05, aptX Adaptive: 48 kHz only. WASAPI resamples to the
+    // requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
-        CodecKind::Opus | CodecKind::Opus05 => 48000,
+        CodecKind::Opus | CodecKind::Opus05 | CodecKind::AptxAdaptive => 48000,
         CodecKind::Aac => remote.pick_aac_sample_rate(preferred),
         CodecKind::Sbc | CodecKind::SbcXq if preferred != 44100 => 48000,
         _ => preferred,
@@ -955,8 +957,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     );
 
     // LDAC, aptX HD and LHDC V5 carry 24-bit unless the profile says 16
-    // (LHDC V5 only when the sink has 24-bit)
+    // (LHDC V5 only when the sink has 24-bit); aptX Adaptive always
     let bits: u8 = match (kind, req.bit_depth) {
+        (CodecKind::AptxAdaptive, _) => 24,
         (_, Some(16)) => 16,
         (CodecKind::Ldac | CodecKind::AptxHd, _) => 24,
         (CodecKind::LhdcV5, _) if remote.lhdcv5_24bit() => 24,
@@ -1036,7 +1039,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         mtu,
         bits_per_sample: bits,
         // For AAC: variable bit rate, where the sink lists it
-        abr: req.abr && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5) || (kind == CodecKind::Aac && vbr)),
+        abr: req.abr
+            && (matches!(kind, CodecKind::Ldac | CodecKind::LhdcV5 | CodecKind::AptxAdaptive)
+                || (kind == CodecKind::Aac && vbr)),
         peer: peer_params(&remote, kind, channels, &req),
     };
     tracing::debug!("encoder config: {encoder_config:?}");

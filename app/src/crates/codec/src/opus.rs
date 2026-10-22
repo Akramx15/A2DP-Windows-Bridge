@@ -51,7 +51,7 @@ const COMPLEXITY: i32 = 10;
 /// Target bit rate per quality, stereo (mono: half)
 fn quality_bitrate(quality: Quality, channels: u32) -> u32 {
     let stereo = match quality {
-        Quality::High | Quality::MediumHigh => 256_000,
+        Quality::High | Quality::MediumHigh | Quality::LowLatency => 256_000,
         Quality::Standard => 192_000,
         Quality::Mobile => 128_000,
     };

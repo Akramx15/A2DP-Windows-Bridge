@@ -430,7 +430,8 @@ void a2dpwb_sdp_register_records(uint16_t controller_features, uint16_t target_f
 }
 
 #define A2DPWB_MAX_ENDPOINTS MAX_NR_AVDTP_STREAM_ENDPOINTS
-#define A2DPWB_CODEC_INFO_MAX 32
+/* aptX Adaptive's codec information is the longest: 40 bytes */
+#define A2DPWB_CODEC_INFO_MAX 40
 static uint8_t endpoint_caps[A2DPWB_MAX_ENDPOINTS][A2DPWB_CODEC_INFO_MAX];
 static uint8_t endpoint_config[A2DPWB_MAX_ENDPOINTS][A2DPWB_CODEC_INFO_MAX];
 

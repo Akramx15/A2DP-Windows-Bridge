@@ -79,7 +79,7 @@ impl LdacEncoder {
             )));
         }
         let eqmid = match config.quality {
-            Quality::High | Quality::MediumHigh => ffi::LDACBT_EQMID_HQ,
+            Quality::High | Quality::MediumHigh | Quality::LowLatency => ffi::LDACBT_EQMID_HQ,
             Quality::Standard => ffi::LDACBT_EQMID_SQ,
             Quality::Mobile => ffi::LDACBT_EQMID_MQ,
         };
