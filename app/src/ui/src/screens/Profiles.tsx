@@ -83,10 +83,10 @@ function ProfileList() {
                     <div class="profile-card-title">
                       <h2 class="ellipsis">{p.name}</h2>
                       <span class="profile-card-device">
-                        <span class="muted ellipsis">{p.device_name || p.device_address}</span>
                         <Show when={shown()}>
                           <span class={`tag st-${snap().stream.state}`}>{t(`status.${snap().stream.state}`)}</span>
                         </Show>
+                        <span class="muted ellipsis">{p.device_name || p.device_address}</span>
                       </span>
                     </div>
                     {/* Edit and delete with the name, out of the way of Connect (issue #86) */}
