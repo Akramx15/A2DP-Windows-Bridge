@@ -38,6 +38,7 @@ A2DPWB 소스 코드는 Apache-2.0 또는 MIT 이중 라이선스입니다. 배�
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC 인코더 |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (AOSP 인코더의 C 포팅) | commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC V5 인코더 |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus 인코더 |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (Rust 인코더, 내장 사본) | commit 25099004b2d3 | MIT | aptX Adaptive 인코더 (실험적) |
 | Rust 크레이트: [Tauri](https://tauri.app/) 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ... | `Cargo.lock` | 대부분 Apache-2.0 / MIT, 그 밖에 BSD, ISC, Zlib, Unicode-3.0, CDLA-Permissive-2.0, MPL-2.0 | 창, 트레이, IPC, USB, 오디오, 업데이트 |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | 창의 UI 라이브러리 |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Tauri의 JavaScript 쪽 |
@@ -73,7 +74,9 @@ libopenaptx는 `a2dpwb-core.exe`에 정적으로 링크됩니다. 설치 프로�
 
 ### aptX 특허 고지
 
-aptX(기본), aptX HD, aptX Low Latency, aptX Adaptive는 Qualcomm의 상표입니다. libopenaptx는 README에 따르면 "derived from ffmpeg 4.0 project"인 오픈 소스 aptX 구현이며, 여기서는 aptX, aptX HD, aptX Low Latency에 사용됩니다. aptX 인코딩은 일부 관할권에서 특허의 대상일 수 있습니다. A2DPWB에는 aptX Adaptive 인코더가 포함되어 있지 않습니다.
+aptX(기본), aptX HD, aptX Low Latency, aptX Adaptive는 Qualcomm의 상표입니다. libopenaptx는 README에 따르면 "derived from ffmpeg 4.0 project"인 오픈 소스 aptX 구현이며, 여기서는 aptX, aptX HD, aptX Low Latency에 사용됩니다. aptX 인코딩은 일부 관할권에서 특허의 대상일 수 있습니다.
+
+aptX Adaptive는 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 순수 Rust 인코더(MIT, Copyright (c) 2026 Prateek Mittal (AKS-Logic))로 인코딩하며, 업스트림 커밋 25099004b2d3에서 `app/src/crates/aptx-adaptive`에 가져왔습니다. 업스트림은 이를 클린룸 재구현으로 설명하며, 숫자 테이블은 합법적으로 입수한 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성했습니다(크레이트 옆에 복사된 업스트림의 `LEGAL.md`). Qualcomm의 코드, SDK, 바이너리는 포함되어 있지 않습니다. 이 코덱은 일부 관할권에서 특허의 대상일 수 있으며, 업스트림의 고지대로 사용하는 곳에서 그 사용이 합법적인지는 사용자의 책임입니다. THIRD_PARTY_LICENSES.md §19를 참조하십시오.
 
 ### fdk-aac 라이선스 및 AAC 특허 고지
 

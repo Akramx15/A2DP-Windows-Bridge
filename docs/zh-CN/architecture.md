@@ -202,15 +202,15 @@ Windows 8 及更高版本自带 Microsoft 签名的 WinUSB 驱动程序（`winus
 
 ### 编解码器选择（`codec::caps`）
 
-- 解析远端的能力：标准的 SBC 和 AAC 元素以及厂商编解码器，包括两种厂商 ID 下的 aptX LL 以及 aptX Adaptive（仅检测并记录到日志）
+- 解析远端的能力：标准的 SBC 和 AAC 元素以及厂商编解码器，包括两种厂商 ID 下的 aptX LL 以及 aptX Adaptive（R1 和 R2 接收端；仅在支持 48 kHz 立体声时可用）
 - 选择编解码器：“自动”会选择远端提供的最佳编解码器；如果请求的编解码器远端不提供，在配置文件允许时（**此编解码器不可用时使用其他编解码器**）会改用“自动”选择的编解码器，否则视为错误
-- 选择 aptX 系列的采样率（从远端通告的采样率中选择 44.1 / 48 kHz；由 WASAPI 对捕获的音频重采样）
+- 选择 aptX 系列的采样率（从远端通告的采样率中选择 44.1 / 48 kHz；由 WASAPI 对捕获的音频重采样）；aptX Adaptive 始终使用 48 kHz
 
 ### Bluetooth 主机（`bt-host`）
 
 **职责**：
 - 在独立线程上以 USB（或 TCP）HCI 传输运行 BTstack
-- 注册流端点：厂商编解码器（LDAC、aptX HD、aptX、aptX LL、LHDC V5、FastStream、Opus）以及 SBC（SBC XQ 也使用它）和 AAC
+- 注册流端点：厂商编解码器（LDAC、aptX HD、aptX、aptX LL、LHDC V5、FastStream、Opus、Opus 05、aptX Adaptive）以及 SBC（SBC XQ 也使用它）和 AAC：共 11 个（BTstack 的 `MAX_NR_AVDTP_STREAM_ENDPOINTS`）
 - 注册 SDP 记录（A2DP Source、AVRCP Controller、AVRCP Target）
 - 管理 SSP 配对（Just Works、General Bonding；链接密钥持久保存）
 - 连接超时后断开半开的连接，以便重试能够正常进行
@@ -226,7 +226,7 @@ Windows 8 及更高版本自带 Microsoft 签名的 WinUSB 驱动程序（`winus
 - `a2dp_source_establish_stream()`——连接到 A2DP 接收端
 - `a2dp_source_set_config_other()`——配置厂商特定的编解码器
 - `a2dp_source_stream_send_media_payload_rtp()`——发送带 RTP 标头的编码音频（LDAC、aptX HD、AAC、SBC、SBC XQ、LHDC V5、Opus）
-- `a2dp_source_stream_send_media_packet()`——发送不带 RTP 标头的原始媒体数据包（aptX、aptX LL、FastStream）
+- `a2dp_source_stream_send_media_packet()`——发送不带 RTP 标头的原始媒体数据包（aptX、aptX LL、FastStream），或带有 A2DPWB 自己的 RTP 标头的媒体数据包（aptX Adaptive）
 
 ### 音频捕获（`audio-capture`）
 
@@ -249,6 +249,7 @@ Windows 8 及更高版本自带 Microsoft 签名的 WinUSB 驱动程序（`winus
 | FastStream | 同一 SBC 编码器 | 198/216 kbps（44.1/48 kHz） | CSR 厂商编解码器，仅音乐方向（无语音回传）：SBC 联合立体声、bitpool 29，帧填充到 72 字节，每个数据包 3 帧，无媒体负载标头也无 RTP 标头（与 PipeWire 相同）；“自动”从不选择 |
 | LHDC V5 | lhdcv5-enc（AOSP 编码器的 C 语言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 16/24-bit，5 ms 帧，2 字节媒体负载标头，RTP 标头 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（立体声；单声道减半） | 实验性；Android 的 A2DP Opus：48 kHz，20 ms 帧（接收端只支持 10 ms 时为 10 ms），以媒体负载为上限的受约束 VBR，每个数据包一帧，1 字节媒体负载标头，RTP 标头 |
+| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux 的纯 Rust 编码器，MIT） | R1 接收端：427/364/318 kbps（高/标准/移动），低延迟 265 kbps；R2 接收端：427/270/204，270 kbps | 实验性；48 kHz 立体声，24-bit；每个媒体数据包一个编解码器数据包，位于 A2DPWB 自己的 RTP 标头之后；高音质下支持 ABR；“自动”从不选择 |
 
 所有编码器都实现了 `codec::Encoder` trait：它们声明 PCM 格式以及每次调用消耗的帧数，并返回编解码器帧。
 
@@ -264,7 +265,7 @@ libopenaptx 要求输入为每组 4 个立体声采样、打包为 24 位小端�
 | aptX | APT (0x0000004F) | 0x0001 |
 | aptX HD | Qualcomm (0x000000D7) | 0x0024 |
 | aptX Low Latency | CSR (0x0000000A) 或 Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD（仅检测，永不选择） |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
@@ -279,10 +280,11 @@ AAC 和 SBC 使用 A2DP 规范中定义的标准 A2DP 编解码器 ID。
 - **LHDC V5**：11 字节（Android `a2dp_vendor_lhdcv5_constants.h`）：第 6 字节为采样率（0x20 44.1k、0x10 48k、0x04 96k、0x01 192k），第 7 字节为位深度（0x04 16-bit、0x02 24-bit）以及接收端的最小/最大比特率限制，第 8 字节为编解码器子版本（0x01 = V5 ver.1）和 0x10 = 5 ms 帧，第 9-10 字节为可选功能（低延迟、无损、JAS、AR、META），A2DPWB 均不提供。仅支持立体声。与 Android 一样，接收端的比特率限制会在配置中回传并应用到编码器。媒体数据包带有 2 字节的负载标头：帧数 << 2（延迟位为 0）以及序列号
 - **FastStream**：8 字节（PipeWire `a2dp_faststream_t`）：第 6 字节为方向（0x01 sink = 音乐，0x02 source = 语音），第 7 字节的低 4 位为接收方向的采样率（0x2 44.1k、0x1 48k），高 4 位为发送方向的采样率（0x2 16k）。A2DPWB 只提供并配置音乐方向
 - **Opus**：7 字节（Android `a2dp_vendor_opus_constants.h`）：第 6 字节的位 2..0 为声道模式（0x01 单声道、0x02 立体声、0x04 双单声道），位 4..3 为帧长（0x08 10 ms、0x10 20 ms），位 7 为 48 kHz。A2DPWB 提供单声道和立体声、10 ms 和 20 ms，并配置为 20 ms 立体声（仅当输入为单声道且接收端支持单声道时才使用单声道）。媒体数据包在 1 字节的负载标头（低 4 位为帧数 1）之后携带一个 Opus 数据包
+- **aptX Adaptive**：40 字节。BTstack 的能力事件会把接收端的编解码器信息截断为 30 字节，但其中仍包含 A2DPWB 用到的全部内容。SET_CONFIGURATION：48 kHz，源类型 2（主机编码器：由接收端自行控制播放时序），立体声；R1 接收端会收到它自己的目标延迟字节，其中 LL0 提高到至少 80 ms，HQ 延迟为 0 时改为 200 ms；R2 接收端会收到源端自己的 R2 块
 
 **有无 RTP**：LDAC、aptX HD、AAC、SBC、SBC XQ、LHDC V5 和 Opus 的媒体数据包带有 12 字节的 RTP 标头。aptX、aptX LL 和 FastStream **不带** RTP 标头发送（与 Android 和 PipeWire 相同），因此整个 L2CAP MTU 都可用于 aptX 帧。
 
-**aptX Adaptive** 没有开源编码器（libopenaptx 未实现它），因此 A2DPWB 从不注册或选择它。当接收端列出它时，A2DPWB 只会记录到日志；如果接收端另外列出了经典 aptX，则使用经典 aptX。
+**aptX Adaptive**（实验性）在 A2DPWB 自己的 12 字节 RTP 标头（BTstack 不添加）之后，每个媒体数据包发送一个编解码器数据包：负载类型 96，序列号每个数据包 +1，时间戳 = 数据包中每声道的采样数（不是时钟），SSRC = 接收端的延迟模式（0x000000A3 HQ、0x000000A1 LL）。负载按 16 位字进行字节交换。HQ 数据包为 656 字节（12 ms），LL 数据包为 348 字节（10 ms）。“自动”从不选择它；同时列出经典 aptX 的接收端，“自动”会为其选择经典 aptX。
 
 ## 设置与文件
 
@@ -315,4 +317,4 @@ AAC 和 SBC 使用 A2DP 规范中定义的标准 A2DP 编解码器 ID。
 - **建议使用第二个适配器**：内置 Bluetooth 留给 Windows 使用，专用 USB 适配器用于 A2DPWB
 - 某些 Bluetooth 适配器的固件会限制可达到的比特率
 - USB Bluetooth 5.0+ 适配器通常能很好地支持 LDAC
-- 自动选择编解码器的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream 仅在明确选择时使用）
+- 自动选择编解码器的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream、Opus 05 和 aptX Adaptive 仅在明确选择时使用）

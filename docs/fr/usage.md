@@ -38,8 +38,8 @@ Un profil, c'est un appareil et ses réglages sonores. Les cartes affichent l'ap
 - **Source de capture** : Bouclage système, Périphérique virtuel ou Application (voir [Modes de capture](#capture-modes))
 - **Synchro du volume Windows** (voir [Volume](#volume))
 - **Avancé** (qualité, fréquence d'échantillonnage, profondeur de bits, taille des paquets) : ne propose que ce que permet le codec choisi
-  - **Qualité** : LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps) ; LHDC V5 Haute (1000 kbps) / Moyenne-haute (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), les quatre niveaux proposés par Android ; AAC et SBC ont aussi des niveaux de qualité, la famille aptX un débit fixe
-  - **ABR (débit adaptatif)** : pour LDAC et LHDC V5 (voir [ABR](#abr))
+  - **Qualité** : LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps) ; LHDC V5 Haute (1000 kbps) / Moyenne-haute (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), les quatre niveaux proposés par Android ; aptX Adaptive Haute / Standard / Mobile / Faible latence (voir [aptX Adaptive](#aptx-adaptive)) ; AAC et SBC ont aussi des niveaux de qualité, les autres codecs aptX un débit fixe
+  - **ABR (débit adaptatif)** : pour LDAC, LHDC V5 et aptX Adaptive (voir [ABR](#abr))
   - **Fréquence d'échantillonnage** : Auto suit le périphérique de capture
   - **Profondeur de bits** : 16 ou 24 bits pour LDAC et LHDC V5 (Auto : 24 bits) ; 16 bits pour les autres
   - **Taille max. des paquets média (octets)** (voir [Taille max. des paquets média](#max-packet))
@@ -117,11 +117,13 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (expérimental ; 48 kHz, 256 kbps)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 de PipeWire (expérimental ; vers des récepteurs PipeWire)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (expérimental ; 48 kHz)
 ```
 
-Priorité du choix automatique : LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (expérimental) > AAC > SBC XQ > SBC (FastStream uniquement s'il est choisi)
+Priorité du choix automatique : LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (expérimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 et aptX Adaptive, tous expérimentaux, uniquement s'ils sont choisis)
 
-Si le casque ne propose pas le codec demandé, la CLI s'arrête sur une erreur qui en indique la raison ; utilisez `-c auto` (par défaut) pour prendre le meilleur codec qu'il propose. aptX Adaptive n'est jamais choisi -- voir [Famille aptX et compatibilité aptX Adaptive](#aptx-compatibility).
+Si le casque ne propose pas le codec demandé, la CLI s'arrête sur une erreur qui en indique la raison ; utilisez `-c auto` (par défaut) pour prendre le meilleur codec qu'il propose. Auto ne choisit jamais aptX Adaptive ; utilisez `-c aptxad` -- voir [Famille aptX et aptX Adaptive](#aptx-compatibility).
 
 ### Qualité
 
@@ -132,6 +134,9 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
 # LHDC V5 : hq 1000 / mhq 900 / sq 500 / mq 400 kbps (les quatre niveaux d'Android)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+
+# aptX Adaptive : hq 427 / sq 364 / mq 318 / ll 265 kbps (récepteurs R1)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Faible latence
 ```
 
 ### ABR (débit adaptatif) {#abr}
@@ -139,9 +144,10 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
 ```bash
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -a
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -a
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -a
 ```
 
-L'ABR baisse automatiquement le débit quand la connexion Bluetooth est instable, et le remonte quand les conditions s'améliorent. LDAC passe d'un mode de qualité à l'autre ; LHDC V5 suit la politique d'Android et reste entre 160 et 400 kbps. Dans la fenêtre, l'ABR se trouve dans l'éditeur de profil, sous **Avancé**.
+L'ABR baisse automatiquement le débit quand la connexion Bluetooth est instable, et le remonte quand les conditions s'améliorent. LDAC passe d'un mode de qualité à l'autre ; LHDC V5 suit la politique d'Android et reste entre 160 et 400 kbps ; aptX Adaptive passe d'un niveau à l'autre en Haute (voir [aptX Adaptive](#aptx-adaptive)). Dans la fenêtre, l'ABR se trouve dans l'éditeur de profil, sous **Avancé**.
 
 ### Découverte des appareils
 
@@ -157,9 +163,9 @@ Mettez d'abord le casque en mode d'association.
 | Option | Description |
 |:-------|:------------|
 | `-d <addr>` | Adresse Bluetooth du casque / du récepteur (`AA:BB:CC:DD:EE:FF`) |
-| `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `auto` (par défaut : `auto`) |
-| `-q <mode>` | Qualité : `hq` (par défaut), `sq`, `mq` ; pour LHDC V5 aussi `mhq` (900 kbps) |
-| `-a` | ABR (LDAC et LHDC V5) |
+| `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `opus05`, `aptxad`, `auto` (par défaut : `auto`) |
+| `-q <mode>` | Qualité : `hq` (par défaut), `sq`, `mq` ; pour LHDC V5 aussi `mhq` (900 kbps) ; pour aptX Adaptive aussi `ll` (Faible latence ; les autres codecs le traitent comme `hq`) |
+| `-a` | ABR (LDAC, LHDC V5 et aptX Adaptive) |
 | `-m <mode>` | Mode de capture : `loopback` (par défaut), `virtual`, `app` |
 | `--audio-device <id>` | Périphérique de rendu pour `-m virtual` |
 | `--app <exe>` | Exécutable pour `-m app` (p. ex. `spotify.exe`) |
@@ -281,9 +287,9 @@ Le bouclage système et le périphérique virtuel utilisent le mode partagé de 
 
 L'éditeur de profil présente la même comparaison sous forme de trois barres sur chaque carte de codec.
 
-## Famille aptX et compatibilité aptX Adaptive {#aptx-compatibility}
+## Famille aptX et aptX Adaptive {#aptx-compatibility}
 
-A2DPWB prend en charge trois codecs aptX, tous encodés avec [libopenaptx](https://github.com/pali/libopenaptx). aptX Adaptive n'est **pas** pris en charge.
+A2DPWB prend en charge trois codecs aptX encodés avec [libopenaptx](https://github.com/pali/libopenaptx), ainsi que l'aptX Adaptive (expérimental), encodé avec l'encodeur d'[AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux).
 
 {: .warning }
 **aptX HD et aptX Low Latency sont expérimentaux.** Ils suivent les implémentations d'Android / PipeWire et réussissent les tests d'aller-retour encodage/décodage, mais n'ont pas encore été vérifiés avec un vrai casque.
@@ -296,20 +302,38 @@ A2DPWB prend en charge trois codecs aptX, tous encodés avec [libopenaptx](https
 | aptX | 0x0000004F / 0x0001 | Non | Pris en charge (352/384 kbps à 44.1/48 kHz) |
 | aptX HD | 0x000000D7 / 0x0024 | Oui | Pris en charge (576 kbps, entrée 24 bits) |
 | aptX Low Latency | 0x0000000A ou 0x000000D7 / 0x0002 | Non | Pris en charge (352 kbps) |
-| aptX Adaptive | 0x000000D7 / 0x00AD | -- | **Non pris en charge** -- seulement détecté et journalisé |
+| aptX Adaptive | 0x000000D7 / 0x00AD | Oui | Expérimental (265-427 kbps, 48 kHz, 24 bits ; choisi explicitement) |
 
-### Pourquoi aptX Adaptive n'est pas pris en charge
+### aptX Adaptive (expérimental) {#aptx-adaptive}
 
-Il n'existe pas d'encodeur aptX Adaptive open source. libopenaptx n'implémente que l'aptX et l'aptX HD (A2DPWB l'utilise aussi pour l'aptX Low Latency). [arkq/openaptx](https://github.com/arkq/openaptx) ne réimplémente que l'aptX / aptX HD, ne contient pas d'encodeur aptX Adaptive et n'autorise pas la redistribution sous forme binaire. A2DPWB se contente donc de détecter l'aptX Adaptive et de l'inscrire dans le journal.
+{: .warning }
+**aptX Adaptive est expérimental et n'a pas encore été essayé avec un vrai casque.** Il réussit les tests unitaires, la suite de tests bit à bit de l'amont et le test de bout en bout avec le récepteur Bluetooth virtuel (`tools/emu`, qui vérifie l'en-tête RTP, la taille des paquets et les types de trames ; l'audio n'est pas décodé, faute de décodeur ouvert). L'amont indique qu'il fonctionne sous Linux / PipeWire avec les Bose QuietComfort Ultra (1re génération) et B&W Px7 S2e à 48 kHz en Haute et en Faible latence. [Vos retours sont les bienvenus](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+
+L'encodeur est l'encodeur aptX Adaptive en Rust pur d'[AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). L'amont le décrit comme une réimplémentation en salle blanche dont les tables numériques ont été reconstituées à partir de binaires Qualcomm distribués, obtenus légalement, et de captures radio ; aucun code, SDK ni binaire de Qualcomm n'est inclus (voir [Licences](licenses)).
+
+- **Le choisir** : Auto ne le choisit jamais. Choisissez **aptX Adaptive** dans le profil, ou `-c aptxad`.
+- **Format** : 48 kHz stéréo, 24 bits uniquement ; une demande en 44,1 ou 96 kHz est capturée en 48 kHz.
+- **Casques** : récepteurs R1 (sans extension de capacités, p. ex. B&W Px7 S2e) et récepteurs R2 (flux binaire R2).
+
+| Qualité (profil / `-q`) | Récepteurs R1 | Récepteurs R2 | Paquets |
+|:-------------------------|:---------|:---------|:--------|
+| Haute (`hq`) | 427 kbps | 427 kbps | 12 ms, 656 octets |
+| Standard (`sq` ; valeur par défaut de la référence) | 364 kbps | 270 kbps | 14 ms |
+| Mobile (`mq`) | 318 kbps | 204 kbps | 16 ms |
+| Faible latence (`ll`) | 265 kbps | 270 kbps | 10 ms, 348 octets |
+
+`ll` n'est utilisé que par aptX Adaptive ; les autres codecs le traitent comme Haute.
+
+**ABR** (**ABR** dans le profil, `-a` en CLI) : en Haute, le débit descend d'un niveau (jamais sous Mobile) tant que la file d'envoi contient 3 paquets ou plus, au plus toutes les ~0,5 s, et remonte d'un niveau (jusqu'à la qualité choisie) après ~3 s avec au plus un paquet en file. Faible latence n'a pas d'ABR.
 
 ### Il n'y a pas de « repli » de l'aptX Adaptive vers l'aptX
 
-Lorsque A2DPWB se connecte, le casque annonce une **liste de codecs** (stream endpoints AVDTP). A2DPWB choisit un codec dans cette liste. L'aptX Adaptive n'est tout simplement jamais candidat : il n'y a donc aucun « repli » à partir de lui :
+Lorsque A2DPWB se connecte, le casque annonce une **liste de codecs** (stream endpoints AVDTP). A2DPWB choisit un codec dans cette liste. L'aptX Adaptive et l'aptX classique y sont des entrées distinctes, et Auto ne choisit jamais l'aptX Adaptive : il n'y a donc aucun « repli » à partir de lui :
 
 - **Le casque propose aussi l'aptX classique** -- C'est le cas de nombreux casques aptX Adaptive, car Qualcomm présente l'aptX Adaptive comme rétrocompatible avec l'aptX / aptX HD. A2DPWB choisit alors directement l'aptX classique ; c'est un codec distinct dans la liste du casque, et non un mode réduit de l'aptX Adaptive.
-- **Le casque ne propose que l'aptX Adaptive** (ni aptX classique, ni aptX HD, ni aptX LL) -- l'aptX n'est pas possible avec A2DPWB. Auto choisit le codec suivant dans l'ordre de priorité, généralement AAC ou SBC.
+- **Le casque ne propose que l'aptX Adaptive** (ni aptX classique, ni aptX HD, ni aptX LL) -- choisissez explicitement l'aptX Adaptive (expérimental). Auto choisit le codec suivant dans l'ordre de priorité, généralement AAC ou SBC.
 
-Priorité du choix automatique : LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (expérimental) > AAC > SBC XQ > SBC (FastStream uniquement s'il est choisi)
+Priorité du choix automatique : LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (expérimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 et aptX Adaptive, tous expérimentaux, uniquement s'ils sont choisis)
 
 ### Codec choisi explicitement mais non proposé {#codec-fallback}
 
@@ -318,7 +342,7 @@ Lorsque vous demandez un codec précis que le casque ne propose pas :
 | Où | Comportement |
 |:------|:---------|
 | Profil, **Utiliser un autre codec si celui-ci est indisponible** activé (par défaut) | Se connecte avec le meilleur codec proposé par le casque, dans l'ordre de priorité d'Auto, et le badge du codec indique quel codec est utilisé à la place et pourquoi. |
-| Profil, option désactivée | La connexion s'arrête sur une erreur (« L'appareil ne prend pas en charge ... »). Si vous avez demandé aptX, aptX HD ou aptX LL et que le casque ne propose que l'aptX Adaptive, le message le précise et suggère Auto, AAC ou SBC. |
+| Profil, option désactivée | La connexion s'arrête sur une erreur (« L'appareil ne prend pas en charge ... »). Si vous avez demandé aptX, aptX HD ou aptX LL et que le casque ne propose que l'aptX Adaptive, le message le précise et suggère aptX Adaptive (expérimental), Auto, AAC ou SBC. |
 | CLI (`-c <codec>`) | S'arrête sur la même erreur. Utilisez `-c auto` pour vous connecter avec le meilleur codec proposé. |
 
 L'option se trouve dans l'éditeur de profil, sous les cartes de codec (non utilisée avec Auto).
@@ -337,7 +361,7 @@ et l'erreur indique que des endpoints sont utilisés par un autre appareil. Déc
 
 ### Fréquence d'échantillonnage
 
-aptX, aptX HD et aptX LL ne prennent en charge que 44,1 kHz et 48 kHz. A2DPWB choisit l'une des fréquences annoncées par le casque (de préférence la fréquence actuelle du périphérique Windows, sinon 48 kHz) et laisse WASAPI rééchantillonner la capture. Vous n'avez pas besoin de modifier les paramètres Son de Windows pour l'aptX.
+aptX, aptX HD et aptX LL ne prennent en charge que 44,1 kHz et 48 kHz (aptX Adaptive uniquement 48 kHz). A2DPWB choisit l'une des fréquences annoncées par le casque (de préférence la fréquence actuelle du périphérique Windows, sinon 48 kHz) et laisse WASAPI rééchantillonner la capture. Vous n'avez pas besoin de modifier les paramètres Son de Windows pour l'aptX.
 
 ### Vérifier ce que propose votre casque
 
@@ -348,13 +372,14 @@ Les mêmes lignes figurent dans les fichiers journaux du dossier de configuratio
 
 ```
 remote supports aptX (SEID ..., [...])
-remote supports aptX Adaptive (SEID ...) - never selected (no open encoder); classic aptX is used only if the remote lists it
+remote supports aptX Adaptive (SEID ..., [...])
 remote vendor codec 0x........./0x.... (SEID ...) - unsupported
-capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true [not encodable] SBC=true AAC=true LHDC V5=false Opus=false)
+capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true aptX Adaptive=true SBC=true SBC XQ=true AAC=true LHDC V5=false Opus=false Opus 05=false FastStream=false)
 ```
 
-- `aptX=true` -- l'aptX classique est disponible (même si `aptX Adaptive=true` aussi).
-- `aptX=false`, `aptX HD=false`, `aptX LL=false` avec `aptX Adaptive=true` -- le casque ne propose que l'aptX Adaptive ; utilisez Auto, AAC ou SBC.
+- `aptX=true` -- l'aptX classique est disponible (même si `aptX Adaptive=true` aussi) ; Auto l'utilise.
+- `aptX=false`, `aptX HD=false`, `aptX LL=false` avec `aptX Adaptive=true` -- le casque ne propose que l'aptX Adaptive ; choisissez aptX Adaptive (expérimental), ou Auto, AAC ou SBC.
+- `aptX Adaptive=true [not usable]` -- le casque propose l'aptX Adaptive sans le 48 kHz stéréo dont A2DPWB a besoin.
 - `remote vendor codec ... - unsupported` -- un autre codec constructeur qu'A2DPWB n'implémente pas.
 
 ## Taille max. des paquets média (par profil) {#max-packet}

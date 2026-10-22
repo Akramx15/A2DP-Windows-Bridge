@@ -160,7 +160,7 @@ describe("codec cards", () => {
     // AAC and LDAC are supported, Auto is always there
     expect(screen.queryByRole("radio", { name: /aptX HD/ })).toBeNull();
     expect(screen.getAllByRole("radio", { name: /./ }).filter((r) => r.closest(".codec-grid"))).toHaveLength(4);
-    const hide = screen.getByRole("checkbox", { name: t("ui.profile.codecs_hide", 8) });
+    const hide = screen.getByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) });
     expect(hide).toBeChecked();
     // Shown: with their "Not supported" tag
     fireEvent.click(hide);
@@ -281,7 +281,7 @@ describe("SBC settings", () => {
   it("SBC XQ has no channel mode of its own", async () => {
     start(edit("WH-1000XM5 (LDAC)"));
     // Not among what the mock's WH-1000XM5 supported: shown when not hidden
-    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_hide", 8) }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) }));
     const dialog = await codecSettings("codec.sbc_xq");
     expect(within(dialog).queryByLabelText(t("ui.diag.cd_channel_mode"))).toBeNull();
     // Bitpool 43 per channel at 48 kHz
@@ -398,7 +398,7 @@ describe("SBC ABR", () => {
 
   it("SBC XQ offers it too", async () => {
     start(edit("WH-1000XM5 (LDAC)"));
-    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_hide", 8) }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) }));
     const dialog = await codecSettings("codec.sbc_xq");
     expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).not.toBeChecked();
   });

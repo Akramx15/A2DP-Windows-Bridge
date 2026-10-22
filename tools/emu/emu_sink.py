@@ -5,7 +5,7 @@ Runs two Bumble virtual controllers on one in-process link:
     `a2dpwb-core.exe --cli --hci-tcp 127.0.0.1:<port>`
   - controller "SINK" is driven by a Bumble host acting as an A2DP sink that
     offers SBC (SBC XQ capable), AAC, aptX, aptX HD, aptX LL, LDAC, LHDC V5,
-    FastStream, Opus and Opus 05 like a typical headset
+    FastStream, Opus, Opus 05 and aptX Adaptive like a typical headset
 
 The sink's HCI traffic is written to a PacketLogger (.pklg) capture, so
 a2dpwb_decode --received can check what actually arrived at the sink.
@@ -127,13 +127,23 @@ class PacketLoggerSnooper(Snooper):
 
 
 # Codec of each sink_codec_capabilities() entry, in order (for --in-use)
-CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus', 'opus05']
+CODEC_NAMES = ['sbc', 'aac', 'aptx', 'aptxhd', 'aptxll', 'ldac', 'lhdcv5', 'faststream', 'opus', 'opus05', 'aptxad']
+
+# aptX Adaptive as the B&W Px7 S2e lists it (AKS-Logic/aptx-adaptive-linux
+# spec/px7s2e-a2dp-caps.md), after the vendor header: an R1 sink, 48 + 44.1
+# kHz with its own flag 0x01, stereo + joint stereo, its target latencies (HQ
+# 0), the R1 end marker; 40 bytes in all
+APTXAD_R1 = [0x19, 0x0A, 0x37, 0x6A, 0x00, 0xAF, 0x64, 0x4B, 0x00, 0x00, 0xAA] + [0] * 23
+# An R2 sink: capability extension version 1, the R2.1 features word
+# 0x0F000003, setup preferences, the end marker at 24..25
+APTXAD_R2 = ([0x39, 0x0A, 0x37, 0x6A, 0x00, 0xAF, 0x64, 0x4B, 0x00, 0x01, 0x03, 0x00, 0x00, 0x0F,
+              0x02, 0x03, 0x03, 0x03, 0x00, 0xAA] + [0] * 14)
 
 
-def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53):
+def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53, aptxad_r2=False):
     """Endpoints a typical high-end headset offers (all sample rates / modes).
     SBC allows SBC XQ (dual channel, bitpool up to 53) unless sbc_dual is
-    False."""
+    False; aptX Adaptive is an R1 sink's unless aptxad_r2."""
     sbc = SbcMediaCodecInformation
     sbc_modes = sbc.ChannelMode.MONO | sbc.ChannelMode.STEREO | sbc.ChannelMode.JOINT_STEREO
     if sbc_dual:
@@ -201,6 +211,7 @@ def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53):
         # direction stereo at front left + right (0x00000003), every frame
         # duration (0x1F), no bit rate limit; no return channel
         vendor(0x000005F1, 0x1005, [2, 0, 0x03, 0, 0, 0, 0x1F, 0, 0] + [0] * 9),
+        vendor(0x000000D7, 0x00AD, APTXAD_R2 if aptxad_r2 else APTXAD_R1),
     ]
 
 
@@ -258,8 +269,14 @@ async def main(args):
                 media_codec_type=A2DP_NON_A2DP_CODEC_TYPE,
                 media_codec_information=VendorSpecificMediaCodecInformation(0x0000FFFE, 0x0001, bytes(1)),
             ))
-        for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities(not args.sbc_no_dual, args.sbc_max_bitpool)):
+        for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities(not args.sbc_no_dual, args.sbc_max_bitpool,
+                                                                         args.aptxad_r2)):
             if args.codecs and name not in args.codecs:
+                continue
+            # BTstack 1.8.1 keeps at most 10 discovered SEPs (a2dp.c
+            # AVDTP_MAX_SEP_NUM) and overflows its array beyond that: aptX
+            # Adaptive, the 11th, only when asked for with --codecs
+            if not args.codecs and name == 'aptxad':
                 continue
             sink = server.add_sink(capabilities)
             if name == 'sbc' and args.sbc_reject_dual:
@@ -303,5 +320,7 @@ if __name__ == '__main__':
                         help='list dual channel but reject a configuration with it')
     parser.add_argument('--sbc-max-bitpool', type=int, default=53,
                         help='largest SBC bitpool the sink takes (default 53)')
+    parser.add_argument('--aptxad-r2', action='store_true',
+                        help='aptX Adaptive as an R2 sink lists it (default: R1, the B&W Px7 S2e)')
     bumble.logging.setup_basic_logging(parser.parse_known_args()[0].log_level)
     asyncio.run(main(parser.parse_args()))

@@ -989,7 +989,7 @@ export class MockCore implements Transport {
       throw errorInfo("profile.invalid_address", "error.invalid_address_format");
     }
     const codec = String(p.codec || "auto").toLowerCase();
-    if (!["auto", "ldac", "aptxhd", "aptxll", "aptx", "sbcxq", "sbc", "aac", "lhdcv5", "opus", "opus05", "faststream"].includes(codec)) {
+    if (!["auto", "ldac", "aptxhd", "aptxll", "aptx", "aptxad", "sbcxq", "sbc", "aac", "lhdcv5", "opus", "opus05", "faststream"].includes(codec)) {
       throw errorInfo("stream.bad_codec", "ipc.error.bad_request", ["stream.start_custom", `unknown codec "${codec}"`]);
     }
     const mode = String(p.source || "loopback");

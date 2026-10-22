@@ -240,19 +240,20 @@ Windows 8 以上內建由 Microsoft 簽署的 WinUSB 驅動程式（`winusb.inf`
 ### 轉碼器選擇 (`codec::caps`)
 
 - 解析遠端的功能：標準的 SBC 與 AAC 元素以及廠商轉碼器，包括兩種 Vendor ID
-  下的 aptX LL，以及 aptX Adaptive（僅偵測並記錄）
+  下的 aptX LL，以及 aptX Adaptive（R1 與 R2 接收端；僅在支援 48 kHz 立體聲時可用）
 - 選擇轉碼器：「自動」會選用遠端提供的最佳轉碼器；若指定的轉碼器不在遠端
   提供的清單中，在設定檔允許時（**無法使用此轉碼器時改用其他轉碼器**）會改用
   「自動」的選擇，否則視為錯誤
 - 選擇 aptX 系列的取樣率（從遠端公布的取樣率中選擇 44.1 / 48 kHz；
-  由 WASAPI 對擷取的音訊重新取樣）
+  由 WASAPI 對擷取的音訊重新取樣）；aptX Adaptive 一律使用 48 kHz
 
 ### 藍牙主機 (`bt-host`)
 
 **職責**：
 - 在專用執行緒上，以 USB（或 TCP）HCI 傳輸執行 BTstack
 - 註冊串流端點：廠商轉碼器（LDAC、aptX HD、aptX、aptX LL、
-  LHDC V5、FastStream、Opus）以及 SBC（SBC XQ 也使用）與 AAC
+  LHDC V5、FastStream、Opus、Opus 05、aptX Adaptive）以及 SBC（SBC XQ 也使用）
+  與 AAC：共 11 個（BTstack 的 `MAX_NR_AVDTP_STREAM_ENDPOINTS`）
 - 註冊 SDP 記錄（A2DP Source、AVRCP Controller、AVRCP Target）
 - 管理 SSP 配對（Just Works、General Bonding；保存連結金鑰）
 - 連線逾時後拆除半開的連線，讓重試能正常運作
@@ -271,7 +272,8 @@ Windows 8 以上內建由 Microsoft 簽署的 WinUSB 驅動程式（`winusb.inf`
 - `a2dp_source_stream_send_media_payload_rtp()` — 傳送附 RTP 標頭的
   編碼音訊（LDAC、aptX HD、AAC、SBC、SBC XQ、LHDC V5、Opus）
 - `a2dp_source_stream_send_media_packet()` — 傳送不含 RTP 標頭的
-  原始媒體封包（aptX、aptX LL、FastStream）
+  原始媒體封包（aptX、aptX LL、FastStream），或帶有 A2DPWB 自己的 RTP 標頭
+  的媒體封包（aptX Adaptive）
 
 ### 音訊擷取 (`audio-capture`)
 
@@ -295,6 +297,7 @@ Windows 8 以上內建由 Microsoft 簽署的 WinUSB 驅動程式（`winusb.inf`
 | FastStream | 同一個 SBC 編碼器 | 198/216 kbps (44.1/48 kHz) | CSR 廠商轉碼器，僅音樂方向（無語音回傳通道）：SBC joint stereo、bitpool 29，訊框補齊至 72 位元組，每個封包 3 個訊框，無媒體酬載標頭也無 RTP 標頭（與 PipeWire 相同）；「自動」永遠不會選用 |
 | LHDC V5 | lhdcv5-enc（AOSP 編碼器的 C 語言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 16/24 位元、5 ms 訊框、2 位元組媒體酬載標頭、RTP 標頭 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（立體聲；單聲道為一半） | 實驗性；Android 的 A2DP Opus：48 kHz、20 ms 訊框（接收端只支援 10 ms 時為 10 ms）、上限為媒體酬載大小的受限 VBR、每個封包一個訊框、1 位元組媒體酬載標頭、RTP 標頭 |
+| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux 的純 Rust 編碼器，MIT） | R1 接收端：427/364/318 kbps（高/標準/行動）、低延遲 265 kbps；R2 接收端：427/270/204、270 kbps | 實驗性；48 kHz 立體聲、24 位元；每個媒體封包一個轉碼器封包，前面為 A2DPWB 自己的 RTP 標頭；高品質時 ABR；「自動」永遠不會選用 |
 
 所有編碼器都實作 `codec::Encoder` trait：它們會說明 PCM 格式與每次呼叫
 消耗的訊框數，並回傳轉碼器訊框。
@@ -313,7 +316,7 @@ PCM；aptX 包裝函式會將 16 位元或 32 位元取樣轉換為該格式，�
 | aptX | APT (0x0000004F) | 0x0001 |
 | aptX HD | Qualcomm (0x000000D7) | 0x0024 |
 | aptX Low Latency | CSR (0x0000000A) 或 Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD（僅偵測，永不選用） |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
@@ -345,14 +348,22 @@ AAC 與 SBC 使用 A2DP 規格中定義的標準 A2DP Codec ID。
   與立體聲、10 與 20 ms，並設定為 20 ms 立體聲（只有在單聲道輸入且接收端支援
   單聲道時才使用單聲道）。媒體封包在 1 位元組的酬載標頭（低 4 位元為訊框數 1）
   之後帶有一個 Opus 封包
+- **aptX Adaptive**：40 位元組。BTstack 的能力事件會將接收端的轉碼器資訊截斷為
+  30 位元組，但其中仍包含 A2DPWB 使用的所有內容。SET_CONFIGURATION：48 kHz、
+  來源類型 2（主機編碼器：由接收端自行控制播放時序）、立體聲；R1 接收端會收到
+  它自己的目標延遲位元組，其中 LL0 提高至至少 80 ms，HQ 延遲為 0 時改為 200 ms；
+  R2 接收端則收到來源端自己的 R2 區塊
 
 **RTP 與無 RTP**：LDAC、aptX HD、AAC、SBC、SBC XQ、LHDC V5 與 Opus 的媒體封包帶有
 12 位元組的 RTP 標頭。aptX、aptX LL 與 FastStream 則 **不帶** RTP 標頭傳送（與 Android 及
 PipeWire 相同），因此整個 L2CAP MTU 都可用於 aptX 訊框。
 
-**aptX Adaptive** 沒有開放原始碼的編碼器（libopenaptx 未實作），
-因此 A2DPWB 永遠不會註冊或選用它。當接收端列出它時，A2DPWB
-只會記錄下來；若接收端另外列出傳統 aptX，則使用傳統 aptX。
+**aptX Adaptive**（實驗性）在每個媒體封包中傳送一個轉碼器封包，前面為
+A2DPWB 自己的 12 位元組 RTP 標頭（BTstack 不另加）：酬載類型 96，序號每個封包
++1，時間戳記為封包中每聲道的取樣數（不是時鐘），SSRC 為接收端的延遲模式
+（HQ 0x000000A3、LL 0x000000A1）。酬載以 16 位元字組為單位交換位元組。HQ 封包
+為 656 位元組（12 ms），LL 封包為 348 位元組（10 ms）。「自動」永遠不會選用它；
+同時列出傳統 aptX 的接收端，「自動」會選用傳統 aptX。
 
 ## 設定與檔案
 
@@ -394,4 +405,4 @@ PipeWire 相同），因此整個 L2CAP MTU 都可用於 aptX 訊框。
   A2DPWB 使用專用的 USB 介面卡
 - 部分藍牙介面卡的韌體會限制可達到的位元率
 - USB 藍牙 5.0 以上的介面卡通常很適合 LDAC
-- 自動轉碼器選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（實驗性） > AAC > SBC XQ > SBC（FastStream 僅在明確選擇時使用）
+- 自動轉碼器選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（實驗性） > AAC > SBC XQ > SBC（FastStream、Opus 05 與 aptX Adaptive 僅在明確選擇時使用）

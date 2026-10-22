@@ -38,6 +38,7 @@ El código fuente de A2DPWB tiene licencia dual Apache-2.0 o MIT. El `a2dpwb-cor
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | Codificador AAC-LC |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (port en C del codificador de AOSP) | commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | Codificador LHDC V5 |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Codificador Opus |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (codificador en Rust, incluido en el repositorio) | commit 25099004b2d3 | MIT | Codificador aptX Adaptive (experimental) |
 | Crates de Rust: [Tauri](https://tauri.app/) 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ... | `Cargo.lock` | Sobre todo Apache-2.0 / MIT; también BSD, ISC, Zlib, Unicode-3.0, CDLA-Permissive-2.0 y MPL-2.0 | Ventana, bandeja, IPC, USB, audio, actualizaciones |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | Biblioteca de interfaz de la ventana |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Parte de JavaScript de Tauri |
@@ -75,7 +76,9 @@ libopenaptx se enlaza de forma estática en `a2dpwb-core.exe`. El instalador y e
 
 ### Aviso de patentes de aptX
 
-aptX (clásico), aptX HD, aptX Low Latency y aptX Adaptive son marcas comerciales de Qualcomm. Según su README, libopenaptx es una implementación de código abierto de aptX "derived from ffmpeg 4.0 project" (derivada del proyecto ffmpeg 4.0); aquí se usa para aptX, aptX HD y aptX Low Latency. La codificación aptX puede estar cubierta por patentes en algunas jurisdicciones. A2DPWB no incluye un codificador aptX Adaptive.
+aptX (clásico), aptX HD, aptX Low Latency y aptX Adaptive son marcas comerciales de Qualcomm. Según su README, libopenaptx es una implementación de código abierto de aptX "derived from ffmpeg 4.0 project" (derivada del proyecto ffmpeg 4.0); aquí se usa para aptX, aptX HD y aptX Low Latency. La codificación aptX puede estar cubierta por patentes en algunas jurisdicciones.
+
+aptX Adaptive se codifica con el codificador en Rust puro de [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT, Copyright (c) 2026 Prateek Mittal (AKS-Logic)), incluido en `app/src/crates/aptx-adaptive` a partir del commit 25099004b2d3 del proyecto original. El proyecto original lo describe como una reimplementación en sala limpia cuyas tablas numéricas se reconstruyeron a partir de binarios de Qualcomm distribuidos y obtenidos legalmente y de capturas por aire (su `LEGAL.md`, copiado junto al crate); no contiene código, SDK ni binarios de Qualcomm. El códec puede estar cubierto por patentes en algunas jurisdicciones y, como indica el aviso del proyecto original, cada usuario es responsable de que su uso sea legal donde se encuentre. Consulte THIRD_PARTY_LICENSES.md §19.
 
 ### Licencia de fdk-aac y aviso de patentes de AAC
 

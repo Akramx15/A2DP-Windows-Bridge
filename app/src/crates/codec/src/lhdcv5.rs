@@ -144,10 +144,10 @@ impl LhdcV5Encoder {
             ffi::LHDC_QUALITY_AUTO
         } else {
             match config.quality {
-                Quality::High => ffi::LHDC_QUALITY_HIGH1,      // 1000 kbps
-                Quality::MediumHigh => ffi::LHDC_QUALITY_HIGH, // 900 kbps
-                Quality::Standard => ffi::LHDC_QUALITY_MID,    // 500 kbps (480 at 44.1 kHz)
-                Quality::Mobile => ffi::LHDC_QUALITY_LOW,      // 400 kbps
+                Quality::High | Quality::LowLatency => ffi::LHDC_QUALITY_HIGH1, // 1000 kbps
+                Quality::MediumHigh => ffi::LHDC_QUALITY_HIGH,                  // 900 kbps
+                Quality::Standard => ffi::LHDC_QUALITY_MID,                     // 500 kbps (480 at 44.1 kHz)
+                Quality::Mobile => ffi::LHDC_QUALITY_LOW,                       // 400 kbps
             }
         };
 

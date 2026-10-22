@@ -201,15 +201,15 @@ Windows 8 以降には、Microsoft 署名済みの WinUSB ドライバー（`win
 
 ### コーデックの選択（`codec::caps`）
 
-- リモートの能力を解析: 標準の SBC と AAC の要素、ベンダーコーデック（aptX LL は両方の Vendor ID、aptX Adaptive は検出してログに記録するだけ）
+- リモートの能力を解析: 標準の SBC と AAC の要素、ベンダーコーデック（aptX LL は両方の Vendor ID、aptX Adaptive は R1 と R2 のシンク。48 kHz ステレオがあるときだけ使える）
 - コーデックを選択: Auto はリモートが提示する一番良いコーデックを選ぶ。リモートが提示しないコーデックを指定した場合、プロファイルで **このコーデックが使えないときは別のコーデックで接続** がオンなら Auto の選択に置き換え、オフならエラー
-- aptX 系のサンプルレートを選択（リモートが通知するレートから 44.1 / 48 kHz を選び、キャプチャのリサンプリングは WASAPI に任せる）
+- aptX 系のサンプルレートを選択（リモートが通知するレートから 44.1 / 48 kHz を選び、キャプチャのリサンプリングは WASAPI に任せる）。aptX Adaptive は常に 48 kHz
 
 ### Bluetooth ホスト（`bt-host`）
 
 **責務**:
 - USB（または TCP）の HCI トランスポートで BTstack を専用スレッドで動かす
-- ストリームエンドポイントの登録: ベンダーコーデック（LDAC、aptX HD、aptX、aptX LL、LHDC V5、FastStream、Opus）と SBC（SBC XQ も使う）、AAC
+- ストリームエンドポイントの登録: ベンダーコーデック（LDAC、aptX HD、aptX、aptX LL、LHDC V5、FastStream、Opus、Opus 05、aptX Adaptive）と SBC（SBC XQ も使う）、AAC。合わせて 11 個（BTstack の `MAX_NR_AVDTP_STREAM_ENDPOINTS`）
 - SDP レコードの登録（A2DP Source、AVRCP Controller、AVRCP Target）
 - SSP ペアリングの管理（Just Works、General Bonding、リンクキーを永続化）
 - 接続タイムアウト後は半開きの接続を切断し、再試行できるようにする
@@ -225,7 +225,7 @@ Windows 8 以降には、Microsoft 署名済みの WinUSB ドライバー（`win
 - `a2dp_source_establish_stream()` -- A2DP シンクへの接続
 - `a2dp_source_set_config_other()` -- ベンダー固有コーデックの設定
 - `a2dp_source_stream_send_media_payload_rtp()` -- RTP ヘッダー付きでエンコード済み音声を送信（LDAC、aptX HD、AAC、SBC、SBC XQ、LHDC V5、Opus）
-- `a2dp_source_stream_send_media_packet()` -- RTP ヘッダーなしの生メディアパケットを送信（aptX、aptX LL、FastStream）
+- `a2dp_source_stream_send_media_packet()` -- RTP ヘッダーなしの生メディアパケット（aptX、aptX LL、FastStream）、または A2DPWB 自身の RTP ヘッダー付きのメディアパケット（aptX Adaptive）を送信
 
 ### 音声の取り込み（`audio-capture`）
 
@@ -248,6 +248,7 @@ Windows Audio Session API でオーディオをリアルタイムに取り込み
 | FastStream | 同じ SBC エンコーダー | 198/216 kbps (44.1/48 kHz) | CSR のベンダーコーデック、音楽方向のみ（音声の逆方向チャネルなし）: SBC ジョイントステレオ bitpool 29、フレームを 72 バイトに詰め、1 パケット 3 フレーム、メディアペイロードヘッダーも RTP ヘッダーもなし（PipeWire と同じ）。自動では選ばれない |
 | LHDC V5 | lhdcv5-enc（AOSP エンコーダーの C 移植版） | 400/500/900/1000 kbps、ABR 160–400 kbps | 16/24 bit、5 ms フレーム、2 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（ステレオ。モノラルは半分） | 試験的。Android の A2DP Opus: 48 kHz、20 ms フレーム（シンクが 10 ms だけならそれ）、メディアペイロードに収まる上限付きの制約付き VBR、1 パケット 1 フレーム、1 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
+| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux の Rust 製エンコーダー、MIT） | R1 のシンク: 427/364/318 kbps（高音質/標準/モバイル）、低遅延 265 kbps。R2 のシンク: 427/270/204、270 kbps | 試験的。48 kHz ステレオ、24 bit。メディアパケット 1 つにコーデックのパケット 1 つ、A2DPWB 自身の RTP ヘッダー付き。高音質で ABR。Auto では選ばない |
 
 すべてのエンコーダーは `codec::Encoder` トレイトを実装しています。入力の PCM 形式と 1 回に使うフレーム数を示し、コーデックのフレームを返します。
 
@@ -263,7 +264,7 @@ libopenaptx は 4 ステレオサンプル単位のパック済み 24-bit リト
 | aptX | APT (0x0000004F) | 0x0001 |
 | aptX HD | Qualcomm (0x000000D7) | 0x0024 |
 | aptX Low Latency | CSR (0x0000000A) または Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD（検出のみ、選択されない） |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
@@ -279,10 +280,11 @@ AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用�
 - **LHDC V5**: 11 バイト（Android `a2dp_vendor_lhdcv5_constants.h`）。バイト 6 がサンプルレート（0x20 44.1k、0x10 48k、0x04 96k、0x01 192k）、バイト 7 がビット深度（0x04 16 bit、0x02 24 bit）とシンクの最小/最大ビットレート制限、バイト 8 がコーデックサブバージョン（0x01 = V5 ver.1）と 0x10 = 5 ms フレーム、バイト 9-10 がオプション機能（低遅延、ロスレス、JAS、AR、META。A2DPWB はいずれも提示しません）。ステレオのみ。シンクのビットレート制限は Android と同様に設定へそのまま返し、エンコーダーにも適用します。メディアパケットには 2 バイトのペイロードヘッダー（フレーム数 << 2、遅延ビットは 0、続いてシーケンス番号）が付きます
 - **FastStream**: 8 バイト（PipeWire `a2dp_faststream_t`）。バイト 6 が方向（0x01 シンク = 音楽、0x02 ソース = 音声）、バイト 7 の下位 4 ビットがシンク側のサンプルレート（0x2 44.1k、0x1 48k）、上位 4 ビットがソース側のサンプルレート（0x2 16k）。A2DPWB は音楽方向だけを提示し、設定します
 - **Opus**: 7 バイト（Android `a2dp_vendor_opus_constants.h`）。バイト 6 のビット 2..0 がチャネルモード（0x01 モノラル、0x02 ステレオ、0x04 デュアルモノラル）、ビット 4..3 がフレーム長（0x08 10 ms、0x10 20 ms）、ビット 7 が 48 kHz。A2DPWB はモノラルとステレオ、10 ms と 20 ms を提示し、20 ms ステレオで設定します（モノラルはモノラル入力で、シンクが対応しているときだけ）。メディアパケットには 1 バイトのペイロードヘッダー（下位 4 ビットがフレーム数 1）に続けて Opus パケットを 1 つ入れます
+- **aptX Adaptive**: 40 バイト。BTstack の能力のイベントではシンクのコーデック情報が 30 バイトに切られますが、A2DPWB が使う値はすべてその中にあります。SET_CONFIGURATION は 48 kHz、ソースタイプ 2（ホストのエンコーダー: 再生のタイミングはシンクが決める）、ステレオ。R1 のシンクにはシンク自身の目標遅延のバイトを返し、LL0 は 80 ms 以上に上げ、HQ の遅延が 0 なら 200 ms にします。R2 のシンクにはソース側の R2 ブロックを送ります
 
 **RTP ヘッダーの有無**: LDAC・aptX HD・AAC・SBC・SBC XQ・LHDC V5・Opus のメディアパケットには 12 バイトの RTP ヘッダーが付きます。aptX、aptX LL、FastStream は（Android や PipeWire と同様に）RTP ヘッダー**なし**で送信するため、L2CAP MTU 全体を aptX フレームに使えます。
 
-**aptX Adaptive** にはオープンソースのエンコーダーがない（libopenaptx も未実装）ため、A2DPWB は登録も選択もしません。シンクが通知した場合はログに記録するだけで、シンクがクラシック aptX を別途通知していればそちらを使用します。
+**aptX Adaptive**（試験的）は、メディアパケット 1 つにコーデックのパケットを 1 つ入れ、A2DPWB 自身の 12 バイトの RTP ヘッダーを付けて送ります（BTstack は付けません）。ペイロードタイプ 96、シーケンス番号はパケットごとに +1、タイムスタンプはパケットのチャネルあたりのサンプル数（時刻ではありません）、SSRC はシンクの遅延モード（HQ 0x000000A3、LL 0x000000A1）です。ペイロードは 16 ビット単位でバイトを入れ替えます。HQ のパケットは 656 バイト（12 ms）、LL のパケットは 348 バイト（10 ms）です。Auto では選ばれません。シンクがクラシック aptX も通知していれば、Auto はクラシック aptX を使います。
 
 ## 設定とファイル
 
@@ -315,4 +317,4 @@ AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用�
 - **セカンドアダプター推奨**: Windows には内蔵 Bluetooth、A2DPWB には専用 USB アダプターを使用
 - 一部の Bluetooth アダプターのファームウェアは達成可能なビットレートを制限する場合がある
 - USB Bluetooth 5.0 以上のアダプターは LDAC に適している
-- 自動コーデック選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream と Opus 05 は明示的に選んだときだけ）
+- 自動コーデック選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream、Opus 05、aptX Adaptive は明示的に選んだときだけ）

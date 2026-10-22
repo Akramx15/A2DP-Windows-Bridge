@@ -9,7 +9,7 @@ nav_order: 1
 Bluetooth A2DP audio streaming for Windows with full codec support.
 {: .fs-6 .fw-300 }
 
-Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** and (experimental) **Opus** and PipeWire's **Opus 05** using a USB Bluetooth adapter in WinUSB mode -- no kernel driver or test signing required.
+Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** and (experimental) **Opus**, PipeWire's **Opus 05** and **aptX Adaptive** using a USB Bluetooth adapter in WinUSB mode -- no kernel driver or test signing required.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](images/app_sample.png)
 
@@ -33,6 +33,7 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
 | LC3 (LE Audio) 🧪 | 32--124 kbps per channel | 16/24/32/48 kHz | 16 bit | ~140 ms |
 | LC3 low latency (LE Audio GMAP) 🧪 | 64--96 kbps per channel | 32/48 kHz | 16 bit | ~30 ms |
 
@@ -51,8 +52,8 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus (Android's A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); not in Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimental |
 | Opus 05 (PipeWire's own Opus) | ❌ | ❌ | ✅ PipeWire 0.3.57+ (`opus_05`, to PipeWire devices only) | 🧪 experimental (chosen explicitly) |
+| aptX Adaptive | ❌ | ❌ | ❌ | 🧪 experimental (chosen explicitly) |
 | LC3 (LE Audio, BAP unicast) | ❌ | ✅ on PCs whose Bluetooth hardware and driver support LE Audio | ✅ PipeWire BAP `lc3` (BlueZ LE Audio) | 🧪 experimental (LE Audio profile; GMAP low latency with gaming headsets; Bluetooth 5.2 adapter with ISO, [Usage](usage#le-audio)) |
-| aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ supported · 🧪 experimental · ❌ not supported. All columns are the sending side (PC → headphones). "Built-in" is the OS's own Bluetooth audio, without A2DPWB; the Ubuntu column is the PipeWire codec set of Ubuntu 26.04 (`libspa-0.2-bluetooth`).
 
@@ -74,8 +75,8 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 {: .note }
 **Only need classic aptX?** Windows 10 already supports classic aptX in its built-in Bluetooth stack (not aptX HD, aptX LL or aptX Adaptive), so A2DPWB is not required for it. A2DPWB is mainly useful for LDAC, aptX HD and aptX Low Latency.
 
-{: .note }
-**aptX Adaptive is not supported** (there is no open-source encoder). If your headphones also list classic aptX, A2DPWB uses aptX directly; otherwise Auto picks AAC or SBC. See [aptX Family and aptX Adaptive Compatibility](usage#aptx-compatibility).
+{: .warning }
+**aptX Adaptive is experimental and unverified.** It is encoded with the MIT-licensed pure-Rust encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped Qualcomm binaries and on-air captures. 48 kHz stereo only (44.1 / 96 kHz requests are captured at 48 kHz), 24-bit: High 427 kbps, Standard 364, Mobile 318 and Low Latency 265 kbps with R1 sinks (R2 sinks have their own table), ABR in High. Auto never picks it; choose it in the profile or with `-c aptxad`. It passes the unit tests, upstream's bit-exact tests and the end-to-end test against a virtual sink, but A2DPWB has not yet tried it with real headphones; upstream reports it working on Linux with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e. If your headphones also list classic aptX, Auto uses that. See [aptX Family and aptX Adaptive](usage#aptx-compatibility).
 
 ## Platform Support
 
@@ -132,13 +133,13 @@ A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly w
 
 ## Features
 
-- **Multi-codec**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 and (experimental) Opus / Opus 05 with automatic negotiation
+- **Multi-codec**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 and (experimental) Opus / Opus 05 / aptX Adaptive with automatic negotiation
 - **LE Audio (experimental)**: LC3 to LE Audio headphones and earbuds (BAP unicast, both earbuds of a pair, headset volume, media buttons, GMAP low latency). Needs an adapter with Bluetooth 5.2 isochronous channels; tested only against the Bluetooth emulator, not yet with real LE Audio headphones ([Usage](usage#le-audio))
 - **Three capture modes**: System loopback, virtual audio device routing, or one application's output
 - **Window, tray and CLI**: a window for setup and diagnostics, a tray flyout and menu for everyday connecting, and a command line (see [Usage](usage))
 - **WinUSB in the app**: assigns the WinUSB driver to the adapter and restores the original driver, no Zadig needed (see [Setup](setup#winusb))
 - **First-run setup**: adapter, driver and firmware, headphones, a first connection
-- **ABR**: Adaptive Bit Rate for unstable connections (LDAC and LHDC V5)
+- **ABR**: Adaptive Bit Rate for unstable connections (LDAC, LHDC V5 and aptX Adaptive)
 - **Auto-reconnect**: Reconnects on disconnection (up to 10 attempts), and after the PC resumes from sleep
 - **Link quality and AFH**: Shows what is sent, the RSSI and the channels in use; tells the adapter which Wi-Fi channels to avoid (see [Usage](usage#link-quality))
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones and the Windows volume; their play/pause, next and previous buttons control playback on the PC (see [Usage](usage#headphone-buttons))

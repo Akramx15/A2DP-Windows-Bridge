@@ -259,20 +259,21 @@ JSON. Enumerar los adaptadores y su controlador no requiere elevación.
 
 - Analiza las capacidades del dispositivo remoto: los elementos estándar de SBC y AAC y los
   códecs de fabricante, incluido aptX LL con ambos Vendor ID y aptX Adaptive
-  (solo se detecta y se registra)
+  (receptores R1 y R2; solo utilizable con 48 kHz estéreo)
 - Elige el códec: Automático toma el mejor códec que ofrece el dispositivo remoto; un códec
   solicitado que el remoto no ofrece se sustituye por la elección de Automático cuando el
   perfil lo permite (**Usar otro códec si este no está disponible**), y
   en caso contrario es un error
 - Elige la frecuencia de muestreo de la familia aptX (44.1 / 48 kHz entre las que
-  anuncia el remoto; WASAPI remuestrea la captura)
+  anuncia el remoto; WASAPI remuestrea la captura); aptX Adaptive usa siempre 48 kHz
 
 ### Host Bluetooth (`bt-host`)
 
 **Responsabilidades**:
 - Ejecutar BTstack con el transporte HCI USB (o TCP) en su propio hilo
 - Registrar los extremos de transmisión: códecs de fabricante (LDAC, aptX HD, aptX, aptX LL,
-  LHDC V5, FastStream, Opus) además de SBC (que también usa SBC XQ) y AAC
+  LHDC V5, FastStream, Opus, Opus 05, aptX Adaptive) además de SBC (que también usa
+  SBC XQ) y AAC: 11 en total (`MAX_NR_AVDTP_STREAM_ENDPOINTS` de BTstack)
 - Registrar los registros SDP (A2DP Source, AVRCP Controller, AVRCP Target)
 - Gestionar el emparejamiento SSP (Just Works, General Bonding; claves de enlace persistentes)
 - Cerrar una conexión semiabierta tras un tiempo de espera de conexión, para que los reintentos funcionen
@@ -293,7 +294,8 @@ JSON. Enumerar los adaptadores y su controlador no requiere elevación.
 - `a2dp_source_stream_send_media_payload_rtp()` — Enviar audio codificado con
   encabezado RTP (LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5, Opus)
 - `a2dp_source_stream_send_media_packet()` — Enviar paquetes multimedia sin procesar, sin
-  encabezado RTP (aptX, aptX LL, FastStream)
+  encabezado RTP (aptX, aptX LL, FastStream), o con el encabezado RTP propio de A2DPWB
+  (aptX Adaptive)
 
 ### Captura de audio (`audio-capture`)
 
@@ -320,6 +322,7 @@ Captura el audio en tiempo real mediante Windows Audio Session API.
 | FastStream | el mismo codificador SBC | 198/216 kbps (44.1/48 kHz) | Códec de fabricante de CSR, solo en la dirección de música (sin canal de retorno de voz): SBC joint stereo con bitpool 29, tramas rellenadas hasta 72 bytes, 3 por paquete, sin encabezado de carga útil multimedia ni encabezado RTP (como PipeWire); Automático nunca lo elige |
 | LHDC V5 | lhdcv5-enc (port en C del codificador de AOSP) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24 bits, tramas de 5 ms, encabezado de carga útil multimedia de 2 bytes, encabezado RTP |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (estéreo; mono la mitad) | Experimental; Opus A2DP de Android: 48 kHz, tramas de 20 ms (10 ms si el receptor solo admite eso), VBR restringida limitada a la carga útil multimedia, una trama por paquete, encabezado de carga útil multimedia de 1 byte, encabezado RTP |
+| aptX Adaptive | aptx-adaptive (codificador en Rust puro de AKS-Logic/aptx-adaptive-linux, MIT) | Receptores R1: 427/364/318 kbps (Alta/Estándar/Móvil), 265 kbps Baja latencia; receptores R2: 427/270/204, 270 kbps | Experimental; 48 kHz estéreo, 24 bits; un paquete del códec por paquete multimedia tras el encabezado RTP propio de A2DPWB; ABR en Alta; Automático nunca lo elige |
 
 Todos los codificadores implementan el trait `codec::Encoder`: indican el formato PCM
 y el número de tramas que consume una llamada, y devuelven tramas del códec.
@@ -338,7 +341,7 @@ Los códecs no estándar se registran como Vendor Specific en AVDTP:
 | aptX | APT (0x0000004F) | 0x0001 |
 | aptX HD | Qualcomm (0x000000D7) | 0x0024 |
 | aptX Low Latency | CSR (0x0000000A) o Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD (solo se detecta, nunca se selecciona) |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
 | FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus | Google (0x000000E0) | 0x0001 |
@@ -372,14 +375,24 @@ Tamaños de los elementos de información de códec (incluidos los 6 bytes de Ve
   y estéreo, 10 y 20 ms, y configura estéreo a 20 ms (mono solo para una entrada
   mono hacia un receptor que lo admita). Los paquetes multimedia llevan un paquete Opus tras
   un encabezado de carga útil de 1 byte (número de tramas 1 en los 4 bits bajos)
+- **aptX Adaptive**: 40 bytes. El evento de capacidades de BTstack recorta la
+  información del códec del receptor a 30 bytes, que siguen conteniendo todo lo que usa A2DPWB.
+  SET_CONFIGURATION: 48 kHz con tipo de fuente 2 (codificador en el host: el receptor
+  temporiza la reproducción por sí mismo), estéreo; un receptor R1 recibe de vuelta sus propios
+  bytes de latencia objetivo, con LL0 elevada a al menos 80 ms y una latencia HQ de cero
+  sustituida por 200 ms; un receptor R2 recibe el bloque R2 propio de la fuente
 
 **Con o sin RTP**: los paquetes multimedia de LDAC, aptX HD, AAC, SBC, SBC XQ, LHDC V5 y Opus llevan el
 encabezado RTP de 12 bytes. aptX, aptX LL y FastStream se envían **sin** encabezado RTP (como hacen Android y
 PipeWire), de modo que toda la MTU de L2CAP queda disponible para las tramas aptX.
 
-**aptX Adaptive** no tiene codificador de código abierto (libopenaptx no lo
-implementa), así que A2DPWB nunca lo registra ni lo selecciona. Cuando un receptor lo ofrece, A2DPWB
-solo lo registra en el log; se usa aptX clásico si el receptor lo ofrece por separado.
+**aptX Adaptive** (experimental) envía un paquete del códec por paquete multimedia
+tras el encabezado RTP de 12 bytes propio de A2DPWB (BTstack no añade ninguno): tipo de carga útil 96,
+número de secuencia +1 por paquete, marca de tiempo = las muestras por canal del
+paquete (no un reloj), SSRC = el modo de latencia del receptor (0x000000A3 HQ,
+0x000000A1 LL). La carga útil lleva los bytes intercambiados en palabras de 16 bits. Los paquetes HQ tienen
+656 bytes (12 ms) y los LL 348 bytes (10 ms). Automático nunca lo selecciona; un
+receptor que también ofrece aptX clásico recibe aptX clásico de Automático.
 
 ## Configuración y archivos
 
@@ -423,4 +436,4 @@ formatos que la v1:
   un adaptador USB dedicado para A2DPWB
 - El firmware de algunos adaptadores Bluetooth limita la tasa de bits alcanzable
 - Por lo general, los adaptadores USB Bluetooth 5.0+ funcionan bien con LDAC
-- Prioridad de la selección automática de códec: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream solo si se elige)
+- Prioridad de la selección automática de códec: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 y aptX Adaptive solo si se eligen)

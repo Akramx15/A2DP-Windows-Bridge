@@ -40,7 +40,7 @@ describe("receiver test", () => {
     expect(steps()[0]).toHaveTextContent("Find receiver");
 
     // Choices: SBC, MTU 679, buffer 300 ms, system audio
-    fireEvent.change(screen.getByLabelText("Codec"), { target: { selectedIndex: 9 } });
+    fireEvent.change(screen.getByLabelText("Codec"), { target: { selectedIndex: 10 } });
     fireEvent.change(screen.getByLabelText("L2CAP MTU"), { target: { selectedIndex: 2 } });
     fireEvent.change(screen.getByLabelText("Playout buffer"), { target: { selectedIndex: 3 } });
     fireEvent.click(screen.getByRole("radio", { name: "System audio" }));

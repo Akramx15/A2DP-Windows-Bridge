@@ -8,9 +8,22 @@
 //! others none. LDAC, Opus and AAC send each encoder output as a packet of its
 //! own. FastStream packets are always three padded SBC frames (PipeWire), so
 //! a round does not flush a partly filled one ([`Packetizer::end_round`]).
+//! aptX Adaptive's encoder outputs whole media packets, its own RTP header
+//! included: each goes out as is.
 
 use bt_host::media::{MAX_MEDIA_PACKET_SIZE, MediaPacket, RTP_HEADER_SIZE};
 use codec::CodecKind;
+
+/// Each encoder output is a packet of its own. libldac sizes each output for
+/// one packet (frames per 2-DH5 / 3-DH5): send it as is, as Android does,
+/// rather than merging outputs. Opus: one frame per packet (Android;
+/// PipeWire's decoder takes no other). AAC: one LATM AudioMuxElement per
+/// packet; concatenated ones (small frames of quiet audio) are not
+/// decodable, and sinks such as the JBL Tune 510BT stay silent (issue #87).
+/// aptX Adaptive: one RTP packet per output.
+fn one_output_per_packet(kind: CodecKind) -> bool {
+    matches!(kind, CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05 | CodecKind::Aac | CodecKind::AptxAdaptive)
+}
 
 pub struct Packetizer {
     kind: CodecKind,
@@ -30,6 +43,8 @@ pub fn max_raw(kind: CodecKind, mtu: u16, sample_rate: u32) -> usize {
     match kind {
         CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05 => mtu - 1,
         CodecKind::LhdcV5 => mtu - 2,
+        // The encoder's RTP header and one codec packet
+        CodecKind::AptxAdaptive => (mtu + RTP_HEADER_SIZE).min(MAX_MEDIA_PACKET_SIZE),
         // No RTP header, no media payload header: three 72-byte frames
         CodecKind::FastStream => (mtu + RTP_HEADER_SIZE).min(codec::sbc::FASTSTREAM_MAX_PAYLOAD),
         // aptX and aptX LL go without the RTP header: the whole L2CAP MTU is
@@ -58,11 +73,7 @@ impl Packetizer {
             "packetizer: {kind}, mtu {mtu}, {sample_rate} Hz, media header {header} bytes, up to {max_raw} codec \
              bytes per packet, rtp {}, {}",
             kind.uses_rtp(),
-            if matches!(kind, CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05 | CodecKind::Aac) {
-                "one encoder output per packet"
-            } else {
-                "frames merged up to the limit"
-            }
+            if one_output_per_packet(kind) { "one encoder output per packet" } else { "frames merged up to the limit" }
         );
         Packetizer {
             kind,
@@ -109,13 +120,7 @@ impl Packetizer {
                 MAX_MEDIA_PACKET_SIZE - at
             );
         }
-        // libldac sizes each output for one packet (frames per 2-DH5 / 3-DH5):
-        // send it as is, as Android does, rather than merging outputs. Opus:
-        // one frame per packet (Android; PipeWire's decoder takes no other).
-        // AAC: one LATM AudioMuxElement per packet; concatenated ones (small
-        // frames of quiet audio) are not decodable, and sinks such as the JBL
-        // Tune 510BT stay silent (issue #87)
-        if matches!(self.kind, CodecKind::Ldac | CodecKind::Opus | CodecKind::Opus05 | CodecKind::Aac) {
+        if one_output_per_packet(self.kind) {
             sent += self.flush(send);
         }
         sent
@@ -295,6 +300,21 @@ mod tests {
             assert_eq!(out, vec![(vec![1, 0xFC, 1, 2], 0), (vec![1, 0xFC, 3], 960)], "{kind}");
             assert_eq!(max_raw(kind, 1011, 48000), 1010);
         }
+    }
+
+    #[test]
+    fn aptx_adaptive_packets_go_out_as_encoded() {
+        // The encoder's RTP header and codec packet, no media payload header,
+        // no BTstack RTP header, one packet per output
+        let mut p = Packetizer::new(CodecKind::AptxAdaptive, 1011, 48000);
+        let mut out = Vec::new();
+        let rtp = [0x80, 0x60, 0, 7, 0, 0, 0x02, 0xA0, 0, 0, 0, 0xA3];
+        let packet: Vec<u8> = rtp.iter().copied().chain([0x81, 0x00, 0xD0, 0xA1]).collect();
+        p.push(&packet, 1, 0, &mut |pk| out.push((pk.payload().to_vec(), pk.rtp)));
+        p.push(&packet, 1, 672, &mut |pk| out.push((pk.payload().to_vec(), pk.rtp)));
+        assert_eq!(p.end_round(&mut |pk| out.push((pk.payload().to_vec(), pk.rtp))), 0);
+        assert_eq!(out, vec![(packet.clone(), false), (packet, false)]);
+        assert_eq!(max_raw(CodecKind::AptxAdaptive, 1011, 48000), 1023);
     }
 
     #[test]

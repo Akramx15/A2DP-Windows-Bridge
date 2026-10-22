@@ -11,7 +11,7 @@ has_toc: false
 Windows 向け Bluetooth A2DP オーディオストリーミングツール（全コーデック対応）
 {: .fs-6 .fw-300 }
 
-USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5**（および試験的に **Opus** と PipeWire の **Opus 05**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
+USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5**（および試験的に **Opus**、PipeWire の **Opus 05**、**aptX Adaptive**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -35,6 +35,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | LHDC V5 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
 | LC3（LE Audio） 🧪 | 1 チャネルあたり 32--124 kbps | 16/24/32/48 kHz | 16 bit | 約 140 ms |
 | LC3 低遅延（LE Audio GMAP） 🧪 | 1 チャネルあたり 64--96 kbps | 32/48 kHz | 16 bit | 約 30 ms |
 
@@ -53,8 +54,8 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus（Android の A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2 以降（`opus_g`）。Ubuntu 24.04（PipeWire 1.0.5）にはない | 🧪 実験的 |
 | Opus 05（PipeWire 独自の Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57 以降（`opus_05`、相手も PipeWire のときだけ） | 🧪 実験的（明示的に選んだとき） |
+| aptX Adaptive | ❌ | ❌ | ❌ | 🧪 実験的（明示的に選んだとき） |
 | LC3（LE Audio、BAP ユニキャスト） | ❌ | ✅ Bluetooth のハードウェアとドライバーが LE Audio に対応した PC のみ | ✅ PipeWire の BAP `lc3`（BlueZ の LE Audio） | 🧪 実験的（LE Audio のプロファイル、ゲーミングヘッドセットでは GMAP の低遅延、ISO 対応の Bluetooth 5.2 アダプターが必要、[使い方](usage#le-audio)） |
-| aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 対応 · 🧪 実験的 · ❌ 非対応。どの列も送信側（PC → ヘッドホン）です。「標準」は A2DPWB を使わない OS 自身の Bluetooth オーディオで、Ubuntu の列は Ubuntu 26.04 の PipeWire（`libspa-0.2-bluetooth`）が持つコーデックです。
 
@@ -76,8 +77,8 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 {: .note }
 **クラシック aptX だけが目的なら**、Windows 10 標準の Bluetooth スタックがクラシック aptX に対応しています（aptX HD・aptX LL・aptX Adaptive は非対応）。その場合 A2DPWB は不要です。A2DPWB が主に役立つのは LDAC・aptX HD・aptX Low Latency です。
 
-{: .note }
-**aptX Adaptive には対応していません**（オープンソースのエンコーダーが存在しないため）。ヘッドホンがクラシック aptX も通知していれば A2DPWB は aptX を直接使用し、そうでなければ Auto は AAC か SBC を選びます。詳しくは [aptX ファミリーと aptX Adaptive の互換性](usage#aptx-compatibility)を参照してください。
+{: .warning }
+**aptX Adaptive は実験的な対応で、実機では未確認です。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオのみ（44.1 / 96 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。自動選択では選ばれないので、プロファイルか `-c aptxad` で選んでください。単体テスト、上流のビット単位で一致するテスト、仮想シンクとのエンドツーエンドテストには合格していますが、A2DPWB では実際のヘッドホンでまだ試していません。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。ヘッドホンがクラシック aptX も通知していれば、Auto はそちらを使います。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
 
 ## 対応プラットフォーム {#platform-support}
 
@@ -134,13 +135,13 @@ A2DPWB は Windows の Bluetooth スタックを完全にバイパスします�
 
 ## 主な機能
 
-- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、Opus / Opus 05（試験的）（自動ネゴシエーション対応）
+- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、Opus / Opus 05 / aptX Adaptive（試験的）（自動ネゴシエーション対応）
 - **LE Audio（実験的）**: LE Audio のヘッドホン・イヤホンへ LC3 で送信（BAP ユニキャスト、左右一組のイヤホン、ヘッドセットの音量、メディアボタン、GMAP の低遅延）。Bluetooth 5.2 のアイソクロナスチャネルに対応したアダプターが必要です。確かめたのは Bluetooth のエミュレータだけで、実機の LE Audio ヘッドホンではまだ試していません（[使い方](usage#le-audio)を参照）
 - **3 つのキャプチャモード**: システムループバック、仮想オーディオデバイスルーティング、または 1 つのアプリの出力
 - **ウィンドウ・トレイ・CLI**: セットアップと診断はウィンドウ、毎日の接続はトレイのフライアウトとメニュー、ほかにコマンドライン（[使い方](usage)を参照）
 - **アプリ内で WinUSB を割り当て**: アダプターへの WinUSB ドライバーの割り当てと元のドライバーへの復元。Zadig は不要です（[セットアップ](setup#winusb)を参照）
 - **初回セットアップ**: アダプター、ドライバーとファームウェア、ヘッドホン、最初の接続
-- **ABR**: 不安定な接続時のアダプティブビットレート（LDAC と LHDC V5）
+- **ABR**: 不安定な接続時のアダプティブビットレート（LDAC、LHDC V5、aptX Adaptive）
 - **自動再接続**: 切断時に自動再接続（最大 10 回）。PC のスリープからの復帰後も再接続
 - **通信品質と AFH**: 送信内容・RSSI・使用中のチャネルを表示し、避けるべき Wi-Fi チャネルをアダプターに伝えます（[使い方](usage#link-quality)を参照）
 - **ヘッドホン操作（AVRCP）**: ヘッドホンや Windows の音量と連動する音量スライダー、ヘッドホンの再生/一時停止・曲送り・曲戻しで PC の再生を操作（[使い方](usage#headphone-buttons) を参照）

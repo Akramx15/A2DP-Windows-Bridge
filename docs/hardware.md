@@ -39,7 +39,7 @@ Intel, MediaTek and Qualcomm adapters have no reports yet: see [Recommended Adap
 | Sony WH-1000XM4 | ASUS BT400 | ✅ LDAC 990 kbps, 48 kHz / 24 bit | Windows 10 22H2 | 1.0.12, 1.0.15 | [#18](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/18), [#27](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/27) |
 | Sony WH-1000XM6 | Built-in RTL8852BU | ✅ LDAC 990 kbps, 48 kHz / 24 bit (5 minutes, 0 packets lost) | LE Audio off on the headphones. The first connection needs pairing mode | 2.0.1, 2.0.2-beta.1 | [#81](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/81) |
 | EarFun Air Pro 4+ | RTL8761B (0BDA:A729) | ✅ LDAC · ✅ AAC · ✅ SBC · ✅ SBC XQ · ✅ aptX | | 2.0.2-beta.1 | [#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86) |
-| Grado GW100x | "MA530" | ✅ aptX | Offers aptX Adaptive, which has no open-source encoder: A2DPWB sends its classic aptX | 1.0.9 | [#9](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/9) |
+| Grado GW100x | "MA530" | ✅ aptX | Offers aptX Adaptive too; 1.0.9 had no aptX Adaptive encoder and sent classic aptX (the experimental aptX Adaptive is not tried on it yet) | 1.0.9 | [#9](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/9) |
 | LHDC V5 headphones (model not given) | RTL8761B | ✅ LHDC V5 1000 kbps / 192 kHz | Set the headphones' app to its 192 kHz mode; in 96 kHz mode they accept only 400 kbps | 1.1.1-beta.1 | [#50](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/50) |
 | JBL Tune 510BT | TP-Link UB500 | ✅ SBC · ⚠️ AAC (silent) | The AAC fix ([#89](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/pull/89)) is not confirmed on this model yet | 2.0.1 | [#43](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/43), [#84](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/84), [#87](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/87) |
 | Huawei FreeBuds Pro 4 | ASUS BT400 | ✅ AAC 256 kbps · ❌ LDAC | They do not offer LDAC to A2DPWB (only SBC and AAC); L2HC is proprietary | 1.0.16 | [#30](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/30) |
@@ -54,6 +54,6 @@ Intel, MediaTek and Qualcomm adapters have no reports yet: see [Recommended Adap
 
 ## Not verified yet
 
-- **Codecs on real headphones**: aptX HD, aptX Low Latency, Opus, Opus 05, FastStream
+- **Codecs on real headphones**: aptX HD, aptX Low Latency, Opus, Opus 05, FastStream, aptX Adaptive
 - **LE Audio**: tested only against the emulator; none of the adapters above has isochronous channels
 - **Windows on ARM64**, and **Windows 10 with v2** (v1 ran on Windows 10 22H2: [#18](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/18), [#30](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/30))

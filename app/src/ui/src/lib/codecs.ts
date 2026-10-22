@@ -2,8 +2,9 @@
 // dialog (wx_profile_dialog.cpp on the develop branch, update_codec_dependent): quality
 // modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them; v2 adds SBC / SBC XQ's adaptive bitpool), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
-// "mhq" only for LHDC V5, no quality choice for the aptX family or under LHDC
-// V5 ABR, 48 kHz only for Opus and Opus 05.
+// "mhq" only for LHDC V5, no quality choice for the aptX family (but aptX
+// Adaptive) or under LHDC V5 ABR, 48 kHz only for Opus, Opus 05 and aptX
+// Adaptive, whose "ll" quality is its low latency mode.
 
 export type CodecId =
   | "auto"
@@ -11,6 +12,7 @@ export type CodecId =
   | "aptxhd"
   | "aptxll"
   | "aptx"
+  | "aptxad"
   | "lhdcv5"
   | "opus"
   | "aac"
@@ -55,6 +57,7 @@ const HQ = "quality.high";
 const MHQ = "quality.medium_high";
 const SQ = "quality.standard";
 const MQ = "quality.mobile";
+const LL = "quality.low_latency";
 
 export const CODECS: CodecSpec[] = [
   {
@@ -98,6 +101,23 @@ export const CODECS: CodecSpec[] = [
   { id: "aptxhd", label: "codec.aptx_hd", bars: { quality: 4, latency: 3, stability: 3 }, qualities: [], abr: false, hiRes: false },
   { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
   { id: "aptxll", label: "codec.aptx_ll", bars: { quality: 2, latency: 5, stability: 4 }, qualities: [], abr: false, hiRes: false },
+  {
+    // aptX Adaptive (experimental, never picked by Auto): the levels with an
+    // R1 sink (an R2 sink: 427 / 364 -> 340 / 270), 48 kHz; ABR steps between
+    // Mobile and the quality chosen; Low Latency has a fixed bit rate
+    id: "aptxad",
+    label: "codec.aptx_adaptive",
+    bars: { quality: 4, latency: 3, stability: 4 },
+    qualities: [
+      { id: "hq", label: HQ, kbps: "427" },
+      { id: "sq", label: SQ, kbps: "364" },
+      { id: "mq", label: MQ, kbps: "318" },
+      { id: "ll", label: LL, kbps: "265" },
+    ],
+    abr: true,
+    hiRes: false,
+    rates: [0, 48000],
+  },
   {
     id: "opus",
     label: "codec.opus",
@@ -189,6 +209,8 @@ export function codecLabelKey(name: string): string {
     aptxhd: "codec.aptx_hd",
     aptxll: "codec.aptx_ll",
     aptxlowlatency: "codec.aptx_ll",
+    aptxad: "codec.aptx_adaptive",
+    aptxadaptive: "codec.aptx_adaptive",
     aac: "codec.aac",
     sbc: "codec.sbc",
     sbcxq: "codec.sbc_xq",

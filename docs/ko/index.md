@@ -11,7 +11,7 @@ has_toc: false
 모든 코덱을 지원하는 Windows용 Bluetooth A2DP 오디오 스트리밍 도구
 {: .fs-6 .fw-300 }
 
-WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** 및 (실험적) **Opus**와 PipeWire의 **Opus 05**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
+WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** 및 (실험적) **Opus**, PipeWire의 **Opus 05**, **aptX Adaptive**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -35,6 +35,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
 | LC3 (LE 오디오) 🧪 | 채널당 32--124 kbps | 16/24/32/48 kHz | 16 bit | 약 140 ms |
 | LC3 저지연 (LE 오디오 GMAP) 🧪 | 채널당 64--96 kbps | 32/48 kHz | 16 bit | 약 30 ms |
 
@@ -53,8 +54,8 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus (Android의 A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2 이상 (`opus_g`); Ubuntu 24.04(PipeWire 1.0.5)에는 없음 | 🧪 실험적 |
 | Opus 05 (PipeWire 자체 Opus) | ❌ | ❌ | ✅ PipeWire 0.3.57 이상 (`opus_05`, PipeWire 기기로만) | 🧪 실험적 (직접 선택한 경우) |
+| aptX Adaptive | ❌ | ❌ | ❌ | 🧪 실험적 (직접 선택한 경우) |
 | LC3 (LE 오디오, BAP 유니캐스트) | ❌ | ✅ Bluetooth 하드웨어와 드라이버가 LE 오디오를 지원하는 PC에서만 | ✅ PipeWire BAP `lc3` (BlueZ LE 오디오) | 🧪 실험적 (LE 오디오 프로필, 게이밍 헤드셋에서는 GMAP 저지연, ISO를 지원하는 Bluetooth 5.2 어댑터 필요, [사용법](usage#le-audio)) |
-| aptX Adaptive | ❌ | ❌ | ❌ | ❌ |
 
 ✅ 지원 · 🧪 실험적 · ❌ 미지원. 모든 열은 전송 측(PC → 헤드폰) 기준입니다. "기본"은 A2DPWB 없이 OS 자체 Bluetooth 오디오를 사용하는 경우이며, Ubuntu 열은 Ubuntu 26.04의 PipeWire 코덱 구성(`libspa-0.2-bluetooth`)입니다.
 
@@ -76,8 +77,8 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 {: .note }
 **기본 aptX만 필요하십니까?** Windows 10의 기본 Bluetooth 스택은 이미 기본 aptX를 지원하므로(aptX HD, aptX LL, aptX Adaptive는 미지원) 이 경우 A2DPWB가 필요하지 않습니다. A2DPWB는 주로 LDAC, aptX HD, aptX Low Latency에 유용합니다.
 
-{: .note }
-**aptX Adaptive는 지원하지 않습니다**(오픈 소스 인코더가 없음). 헤드폰이 기본 aptX도 함께 제공하면 A2DPWB는 aptX를 직접 사용하고, 그렇지 않으면 자동 모드가 AAC 또는 SBC를 선택합니다. [aptX 계열과 aptX Adaptive 호환성](usage#aptx-compatibility)을 참조하십시오.
+{: .warning }
+**aptX Adaptive는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 MIT 라이선스 순수 Rust 인코더로 인코딩하며, 이 인코더의 테이블은 개발자들이 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성한 것입니다. 48 kHz 스테레오만 지원하며(44.1 / 96 kHz를 요청하면 48 kHz로 캡처) 24비트입니다. R1 싱크에서는 높음 427 kbps, 표준 364, 모바일 318, 저지연 265 kbps이며(R2 싱크는 별도의 표), 높음에서는 ABR을 사용합니다. 자동 선택은 이를 고르지 않으므로 프로필에서 또는 `-c aptxad`로 선택하십시오. 단위 테스트, 업스트림의 비트 단위 일치 테스트, 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, A2DPWB에서는 아직 실제 헤드폰으로 시험하지 않았습니다. 업스트림은 Linux에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 동작한다고 보고합니다. 헤드폰이 기본 aptX도 함께 제공하면 자동은 그것을 사용합니다. [aptX 계열과 aptX Adaptive](usage#aptx-compatibility)를 참조하십시오.
 
 ## 지원 플랫폼 {#platform-support}
 
@@ -134,13 +135,13 @@ A2DPWB는 Windows Bluetooth 스택을 완전히 우회합니다. [BTstack](https
 
 ## 주요 기능
 
-- **다중 코덱**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 및 (실험적) Opus / Opus 05, 자동 협상
+- **다중 코덱**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 및 (실험적) Opus / Opus 05 / aptX Adaptive, 자동 협상
 - **LE 오디오 (실험적)**: LE 오디오 헤드폰과 이어폰으로 LC3 전송(BAP 유니캐스트, 한 쌍의 양쪽 이어폰, 헤드셋 음량, 미디어 버튼, GMAP 저지연). Bluetooth 5.2의 등시성 채널을 지원하는 어댑터가 필요합니다. Bluetooth 에뮬레이터로만 시험했고 실제 LE 오디오 헤드폰으로는 아직 확인하지 않았습니다([사용법](usage#le-audio) 참조)
 - **세 가지 캡처 모드**: 시스템 루프백, 가상 오디오 장치 라우팅, 또는 한 응용 프로그램의 출력
 - **창, 트레이, CLI**: 설정과 진단을 위한 창, 평소 연결에 쓰는 트레이 플라이아웃과 메뉴, 그리고 명령줄 ([사용법](usage) 참조)
 - **앱 내 WinUSB 할당**: 어댑터에 WinUSB 드라이버를 할당하고 원래 드라이버를 복원하며, Zadig가 필요 없습니다 ([설정](setup#winusb) 참조)
 - **첫 실행 설정**: 어댑터, 드라이버와 펌웨어, 헤드폰, 첫 연결
-- **ABR**: 불안정한 연결을 위한 적응형 비트레이트 (LDAC 및 LHDC V5)
+- **ABR**: 불안정한 연결을 위한 적응형 비트레이트 (LDAC, LHDC V5, aptX Adaptive)
 - **자동 다시 연결**: 연결이 끊기면 다시 연결 (최대 10회), PC가 절전 모드에서 복귀한 후에도 다시 연결
 - **연결 품질과 AFH**: 전송 내용, RSSI, 사용 중인 채널을 표시하고, 피해야 할 Wi-Fi 채널을 어댑터에 알립니다 ([사용법](usage#link-quality) 참조)
 - **헤드폰 제어 (AVRCP)**: 헤드폰 및 Windows 볼륨과 연동되는 볼륨 슬라이더, 헤드폰의 재생/일시 정지, 다음 곡, 이전 곡 버튼으로 PC 재생 제어 ([사용법](usage#headphone-buttons) 참조)

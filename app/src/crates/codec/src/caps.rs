@@ -19,7 +19,7 @@ pub const APTXLL_VENDOR_ID2: u32 = 0x0000_00D7; // some sinks list aptX LL under
 pub const APTXLL_CODEC_ID: u16 = 0x0002;
 pub const APTX_VENDOR_ID: u32 = 0x0000_004F; // APT
 pub const APTX_CODEC_ID: u16 = 0x0001;
-/// aptX Adaptive: no open-source encoder; detected for messages only
+/// aptX Adaptive (Qualcomm)
 pub const APTXAD_VENDOR_ID: u32 = 0x0000_00D7;
 pub const APTXAD_CODEC_ID: u16 = 0x00AD;
 pub const LHDCV5_VENDOR_ID: u32 = 0x0000_053A; // Savitech
@@ -117,6 +117,55 @@ const OPUS05_LOCATION_STEREO: u32 = 0x0000_0003; // front left, front right
 pub const OPUS05_MAX_BITRATE_UNITS: u16 = 312;
 /// The bit rate field's unit
 pub const OPUS05_BITRATE_UNIT: u32 = 1024;
+
+// aptX Adaptive (AKS-Logic/aptx-adaptive-linux spec/a2dp-integration.md §1,
+// §7G-§7J; the public CodeAurora / LineageOS headers): 40 bytes, the vendor
+// header then
+//   6: bits 7..3 rates (0x08 44.1k, 0x10 48k, 0x20 96k), bits 2..0 the
+//      source type (0x02: a host encoder, the sink times playback itself;
+//      0x01 is the sink's own flag, never sent)
+//   7: channel modes (0x01 mono, 0x02 stereo, 0x04 TWS stereo, 0x08 joint
+//      stereo, 0x10 TWS mono, 0x20 TWS+)
+//   8..13: target latencies (LL0, LL1 in ms; HQ, TWS in 2 ms units)
+//   14: reserved; R1: 15 0x00, 16 0xAA (end marker); R2: 15 the capability
+//      extension version 1, 16..19 the features word (LE), 20..23 setup
+//      preferences, 24..25 the end marker 00 AA
+// BTstack reports at most 30 bytes of a remote's codec information, enough
+// for all of it (bytes 26..39 are reserved).
+const APTXAD_INFO_LEN: usize = 40;
+/// The R1 layout's end (its end marker), the least a usable SEP reports
+const APTXAD_R1_LEN: usize = 17;
+const APTXAD_RATE_48000: u8 = 0x10;
+const APTXAD_SOURCE_TYPE_HOST: u8 = 0x02;
+const APTXAD_CH_STEREO: u8 = 0x02;
+const APTXAD_CH_JOINT_STEREO: u8 = 0x08;
+const APTXAD_DATA: usize = 8;
+const APTXAD_EXT_VERSION: usize = 15;
+const APTXAD_R2_DATA_END: usize = 26;
+/// The target latencies a host source sends where the sink's are 0 (a 0 ms
+/// HQ target makes the sink stutter after a minute or two, §7G): LL0 80 ms,
+/// LL1 100 ms, HQ 200 ms, TWS 200 ms; LL0 at least 80 ms for host jitter
+const APTXAD_TTP_DEFAULTS: [u8; 4] = [0x50, 0x64, 0x64, 0x64];
+const APTXAD_LL0_MIN: u8 = 0x50;
+/// The R1 block a source advertises: target latencies, reserved, then R1's
+/// end marker
+const APTXAD_R1_DATA: [u8; 9] = [0x50, 0x64, 0x64, 0x64, 0xFF, 0xFF, 0x00, 0x00, 0xAA];
+/// What a source sends to an R2 sink from byte 8 on: its own target
+/// latencies, extension version 1, features 0x0F000092 (R2.0's word with the
+/// low byte a Snapdragon phone sends: a zero low byte makes a Bose QC Ultra 2
+/// restart), setup preferences 02 03 03 03, the end marker
+const APTXAD_R2_DATA: [u8; 18] =
+    [0x50, 0x64, 0x64, 0x64, 0xFF, 0xFF, 0x00, 0x01, 0x92, 0x00, 0x00, 0x0F, 0x02, 0x03, 0x03, 0x03, 0x00, 0xAA];
+
+/// aptX Adaptive codec information: the vendor header, `rate`,
+/// `channel_mode`, then `data` from byte 8 on
+fn aptxad_element(rate: u8, channel_mode: u8, data: &[u8]) -> Vec<u8> {
+    let mut info = vendor_header(APTXAD_VENDOR_ID, APTXAD_CODEC_ID);
+    info.extend_from_slice(&[rate, channel_mode]);
+    info.extend_from_slice(data);
+    info.resize(APTXAD_INFO_LEN, 0);
+    info
+}
 
 /// One Opus 05 direction (9 bytes)
 fn opus05_direction(channels: u8, coupled: u8, location: u32, frames: u8, bitrate: u16) -> [u8; 9] {
@@ -439,6 +488,18 @@ pub fn local_endpoints() -> Vec<LocalEndpoint> {
             &opus05_direction(2, 1, OPUS05_LOCATION_STEREO, OPUS05_FRAME_10MS, OPUS05_MAX_BITRATE_UNITS),
         ));
     }
+    if CodecKind::AptxAdaptive.available() {
+        // 48 kHz from a host encoder, stereo / joint stereo, the R1 block
+        // (as upstream's plugin; whether a source should advertise the R2
+        // extension is open there)
+        let rate = APTXAD_RATE_48000 | APTXAD_SOURCE_TYPE_HOST;
+        eps.push(LocalEndpoint {
+            kind: CodecKind::AptxAdaptive,
+            codec_type: CODEC_TYPE_VENDOR,
+            caps: aptxad_element(rate, APTXAD_CH_STEREO | APTXAD_CH_JOINT_STEREO, &APTXAD_R1_DATA),
+            config: aptxad_element(rate, APTXAD_CH_STEREO, &APTXAD_R1_DATA),
+        });
+    }
     eps
 }
 
@@ -474,8 +535,12 @@ pub struct RemoteCaps {
     /// aptX LL: the vendor ID the remote used and its codec information
     pub aptxll_vendor_id: u32,
     pub aptxll_info: Vec<u8>,
-    /// aptX Adaptive offered (never selected: no open encoder)
+    /// aptX Adaptive offered (usable or not, for messages)
     pub aptx_adaptive: bool,
+    /// aptX Adaptive at 48 kHz stereo, and its codec information (as
+    /// reported: up to 30 bytes)
+    pub aptxad: Option<RemoteSep>,
+    pub aptxad_info: Vec<u8>,
     /// LHDC V5 codec information (11 bytes) when usable
     pub lhdcv5_info: [u8; LHDCV5_INFO_LEN],
     /// Opus codec information byte 6 (channel modes, frame durations, rate)
@@ -500,6 +565,7 @@ pub enum VendorCapability {
     /// Known codec, but not usable (e.g. mono-only aptX, an LHDC version we
     /// do not encode)
     Ignored(CodecKind, &'static str),
+    /// aptX Adaptive, which this build does not encode
     AptxAdaptive,
     Unknown {
         vendor_id: u32,
@@ -526,6 +592,7 @@ impl RemoteCaps {
             CodecKind::Opus => self.opus,
             CodecKind::Opus05 => self.opus05,
             CodecKind::FastStream => self.faststream,
+            CodecKind::AptxAdaptive => self.aptxad,
         }
     }
 
@@ -698,7 +765,22 @@ impl RemoteCaps {
         }
         if vid == APTXAD_VENDOR_ID && cid == APTXAD_CODEC_ID {
             self.aptx_adaptive = true;
-            return VendorCapability::AptxAdaptive;
+            if !CodecKind::AptxAdaptive.available() {
+                return VendorCapability::AptxAdaptive;
+            }
+            // 48 kHz (every sink's rate) in stereo or joint stereo; at least
+            // the R1 layout
+            let usable = info.len() >= APTXAD_R1_LEN
+                && byte(6) & APTXAD_RATE_48000 != 0
+                && byte(7) & (APTXAD_CH_STEREO | APTXAD_CH_JOINT_STEREO) != 0;
+            if !usable {
+                return VendorCapability::Ignored(CodecKind::AptxAdaptive, "no 48 kHz stereo");
+            }
+            if self.aptxad.is_none() {
+                self.aptxad = Some(RemoteSep { seid });
+                self.aptxad_info = info[..info.len().min(APTXAD_INFO_LEN)].to_vec();
+            }
+            return VendorCapability::Taken(CodecKind::AptxAdaptive);
         }
         if vid == LHDCV5_VENDOR_ID && cid == LHDCV5_CODEC_ID {
             let usable = info.len() >= LHDCV5_INFO_LEN
@@ -833,6 +915,12 @@ impl RemoteCaps {
             }
             _ => (0, 0, 0),
         }
+    }
+
+    /// aptX Adaptive: the sink is R2 (capability extension version 1), which
+    /// decides the bitstream; else R1 (§1.3)
+    pub fn aptxad_r2(&self) -> bool {
+        self.aptxad_info.get(APTXAD_EXT_VERSION) == Some(&1)
     }
 
     /// The best codec both sides have (Auto)
@@ -1090,6 +1178,34 @@ impl RemoteCaps {
                 let frame = if frame_ms == 10 { OPUS_FRAME_10MS } else { OPUS_FRAME_20MS };
                 let mut info = vendor_header(OPUS_VENDOR_ID, OPUS_CODEC_ID);
                 info.push(OPUS_FREQ_48000 | frame | ch);
+                ConfigRequest::Vendor(info)
+            }
+            CodecKind::AptxAdaptive => {
+                if sample_rate != 48000 {
+                    return Err(ConfigError::SampleRate(kind, sample_rate));
+                }
+                // As upstream's select_config: 48 kHz from a host encoder,
+                // stereo (joint stereo if the sink lists only that; the
+                // encoder runs stereo either way). An R2 sink gets the
+                // source's own R2 block, an R1 sink its own bytes 8..25 back
+                // with zero target latencies replaced and LL0 at least 80 ms
+                // (§7G, §7H, §7J).
+                let rc = &self.aptxad_info;
+                let byte = |i: usize| rc.get(i).copied().unwrap_or(0);
+                let mode = if byte(7) & APTXAD_CH_STEREO != 0 { APTXAD_CH_STEREO } else { APTXAD_CH_JOINT_STEREO };
+                let rate = APTXAD_RATE_48000 | APTXAD_SOURCE_TYPE_HOST;
+                let info = if self.aptxad_r2() {
+                    aptxad_element(rate, mode, &APTXAD_R2_DATA)
+                } else {
+                    let mut data: Vec<u8> = (APTXAD_DATA..APTXAD_R2_DATA_END).map(byte).collect();
+                    for (b, default) in data.iter_mut().zip(APTXAD_TTP_DEFAULTS) {
+                        if *b == 0 {
+                            *b = default;
+                        }
+                    }
+                    data[0] = data[0].max(APTXAD_LL0_MIN);
+                    aptxad_element(rate, mode, &data)
+                };
                 ConfigRequest::Vendor(info)
             }
             CodecKind::Opus05 => {
@@ -1768,7 +1884,7 @@ mod tests {
         assert_eq!(ep.caps, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x9B]);
         assert_eq!(ep.config, vec![0xE0, 0, 0, 0, 0x01, 0x00, 0x92]);
         // BTstack's static endpoint pool (MAX_NR_AVDTP_STREAM_ENDPOINTS)
-        assert!(eps.len() <= 10);
+        assert!(eps.len() <= 11);
     }
 
     /// PipeWire's opus_05 sink SEP (codec_fill_caps): stereo at front left +
@@ -1871,7 +1987,7 @@ mod tests {
         config.resize(24, 0);
         assert_eq!(ep.config, config);
         // BTstack's static endpoint pool (MAX_NR_AVDTP_STREAM_ENDPOINTS)
-        assert!(eps.len() <= 10);
+        assert!(eps.len() <= 11);
     }
 
     #[test]
@@ -1881,5 +1997,130 @@ mod tests {
         assert_eq!(caps.pick_aptx_sample_rate(CodecKind::Aptx, 48000), 44100);
         assert_eq!(caps.pick_aptx_sample_rate(CodecKind::Aptx, 96000), 44100);
         assert!(caps.configuration(CodecKind::Aptx, 48000, 2, 16).is_err());
+    }
+
+    /// The B&W Px7 S2e's aptX Adaptive capabilities (upstream's
+    /// spec/px7s2e-a2dp-caps.md): an R1 sink, 48 + 44.1 kHz, stereo + joint
+    /// stereo, vendor-tuned target latencies with HQ 0
+    const PX7_S2E_APTXAD: [u8; 40] = [
+        0xD7, 0, 0, 0, 0xAD, 0, 0x19, 0x0A, 0x37, 0x6A, 0, 0xAF, 0x64, 0x4B, 0, 0, 0xAA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+
+    /// An R2 sink's capabilities with features `features`
+    fn r2_aptxad(features: u32) -> Vec<u8> {
+        let mut info = PX7_S2E_APTXAD.to_vec();
+        info[6] = 0x18 | 0x20;
+        info[15] = 1;
+        info[16..20].copy_from_slice(&features.to_le_bytes());
+        info[20..24].copy_from_slice(&[0x02, 0x03, 0x03, 0x03]);
+        info[24..26].copy_from_slice(&[0x00, 0xAA]);
+        info
+    }
+
+    #[test]
+    fn aptx_adaptive_caps_and_configuration() {
+        if !CodecKind::AptxAdaptive.available() {
+            let mut caps = RemoteCaps::default();
+            assert_eq!(caps.add_vendor(9, &PX7_S2E_APTXAD), VendorCapability::AptxAdaptive);
+            assert!(caps.aptx_adaptive && !caps.has(CodecKind::AptxAdaptive));
+            return;
+        }
+        // BTstack cuts the 40 bytes to 30: all that is used is there
+        for info in [&PX7_S2E_APTXAD[..], &PX7_S2E_APTXAD[..30]] {
+            let mut caps = RemoteCaps::default();
+            caps.add_sbc(1);
+            assert_eq!(caps.add_vendor(9, info), VendorCapability::Taken(CodecKind::AptxAdaptive));
+            assert!(caps.aptx_adaptive && caps.has(CodecKind::AptxAdaptive));
+            assert!(!caps.aptxad_r2());
+            // Not Auto's choice
+            assert_eq!(caps.best(), Some(CodecKind::Sbc));
+            // Upstream's verified configuration for the Px7 S2e: 48 kHz from
+            // a host encoder (0x12), stereo, the sink's latencies with LL0
+            // raised to 80 ms and the zero HQ byte to 200 ms
+            let c = caps.configuration(CodecKind::AptxAdaptive, 48000, 2, 24).unwrap();
+            assert_eq!(c.remote_seid, 9);
+            let mut want = vec![0xD7, 0, 0, 0, 0xAD, 0, 0x12, 0x02, 0x50, 0x6A, 0x64, 0xAF, 0x64, 0x4B, 0, 0, 0xAA];
+            want.resize(40, 0);
+            assert_eq!(c.request, ConfigRequest::Vendor(want));
+            assert_eq!(
+                caps.configuration(CodecKind::AptxAdaptive, 44100, 2, 24),
+                Err(ConfigError::SampleRate(CodecKind::AptxAdaptive, 44100))
+            );
+        }
+
+        // R2 sinks get the source's own R2 block, whatever their features
+        for features in [0x0F00_0000, 0x0F00_0003, 0x0F00_0017] {
+            let mut caps = RemoteCaps::default();
+            caps.add_vendor(4, &r2_aptxad(features)[..30]);
+            assert!(caps.aptxad_r2());
+            let ConfigRequest::Vendor(info) =
+                caps.configuration(CodecKind::AptxAdaptive, 48000, 2, 24).unwrap().request
+            else {
+                panic!("not a vendor configuration")
+            };
+            assert_eq!(info.len(), 40);
+            assert_eq!(info[6..8], [0x12, 0x02]);
+            assert_eq!(info[8..26], APTXAD_R2_DATA);
+            assert!(info[26..].iter().all(|&b| b == 0));
+        }
+
+        // Joint stereo only: configured as such
+        let mut joint = RemoteCaps::default();
+        let mut info = PX7_S2E_APTXAD;
+        info[7] = 0x08;
+        joint.add_vendor(2, &info);
+        let ConfigRequest::Vendor(c) = joint.configuration(CodecKind::AptxAdaptive, 48000, 2, 24).unwrap().request
+        else {
+            panic!("not a vendor configuration")
+        };
+        assert_eq!(c[7], 0x08);
+
+        // Unusable: no 48 kHz, mono / TWS only, shorter than the R1 layout
+        let mut no48 = PX7_S2E_APTXAD;
+        no48[6] = 0x09;
+        let mut mono = PX7_S2E_APTXAD;
+        mono[7] = 0x01;
+        for info in [&no48[..], &mono[..], &PX7_S2E_APTXAD[..16]] {
+            let mut c = RemoteCaps::default();
+            assert!(
+                matches!(c.add_vendor(3, info), VendorCapability::Ignored(CodecKind::AptxAdaptive, _)),
+                "{info:02X?}"
+            );
+            assert!(c.aptx_adaptive && !c.has(CodecKind::AptxAdaptive));
+        }
+
+        // aptX asked for, aptX Adaptive the only aptX: said so
+        let mut only = RemoteCaps::default();
+        only.add_sbc(1);
+        only.add_vendor(9, &PX7_S2E_APTXAD);
+        assert_eq!(
+            choose(&only, Some(CodecKind::Aptx), false),
+            Err(Some((CodecKind::Aptx, Unavailable::AdaptiveOnly)))
+        );
+        assert_eq!(choose(&only, Some(CodecKind::AptxAdaptive), false).unwrap().kind, CodecKind::AptxAdaptive);
+        assert_eq!(CodecKind::from_key("aptxad"), Some(CodecKind::AptxAdaptive));
+    }
+
+    #[test]
+    fn aptx_adaptive_local_endpoint() {
+        let eps = local_endpoints();
+        let ep = eps.iter().find(|e| e.kind == CodecKind::AptxAdaptive);
+        if !CodecKind::AptxAdaptive.available() {
+            assert!(ep.is_none());
+            return;
+        }
+        let ep = ep.unwrap();
+        assert_eq!(ep.codec_type, CODEC_TYPE_VENDOR);
+        // 48 kHz host source, stereo + joint stereo, the R1 block
+        let mut caps = vec![0xD7, 0, 0, 0, 0xAD, 0, 0x12, 0x0A, 0x50, 0x64, 0x64, 0x64, 0xFF, 0xFF, 0, 0, 0xAA];
+        caps.resize(40, 0);
+        assert_eq!(ep.caps, caps);
+        assert_eq!(ep.config[6..8], [0x12, 0x02]);
+        assert_eq!(ep.config.len(), 40);
+        // BTstack's endpoint pool and the shim's buffers (btstack_config.h,
+        // shim.c) hold them all
+        assert!(eps.len() <= 11);
+        assert!(eps.iter().all(|e| e.caps.len() <= 40 && e.config.len() <= 40));
     }
 }
