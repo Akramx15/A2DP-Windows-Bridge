@@ -259,6 +259,7 @@ impl Worker {
             return;
         }
         self.manager_tried = Some(Instant::now());
+        pin_factory_dll::<Manager>("session manager factory");
         self.manager = wait_result!(Manager::RequestAsync());
         tracing::debug!("MCP media: session manager request: available {}", self.manager.is_some());
         if let Some(m) = &self.manager {
@@ -283,6 +284,7 @@ impl Worker {
         if let Some(n) = self.names.get(aumid) {
             return n.clone();
         }
+        pin_factory_dll::<AppInfo>("app info factory");
         let name = AppInfo::GetFromAppUserModelId(&HSTRING::from(aumid))
             .inspect(|a| pin_dll_of("app info", a))
             .and_then(|a| a.DisplayInfo())
@@ -487,16 +489,42 @@ impl Worker {
     }
 }
 
-/// Keeps the DLL of a WinRT class loaded for good, once per class:
-/// windows-rs caches its factory for the process, and a media thread that
-/// started after COM unloaded the DLL crashed in it (win_sys::com)
-fn pin_dll_of<I: windows::core::Interface>(what: &'static str, object: &I) {
+/// True the first time it is asked for `what`
+fn first_pin(what: &'static str) -> bool {
     static PINNED: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
     let mut pinned = PINNED.lock().unwrap_or_else(|e| e.into_inner());
     if pinned.contains(&what) {
-        return;
+        return false;
     }
     pinned.push(what);
+    true
+}
+
+/// Keeps the DLL of a WinRT class's activation factory loaded for good,
+/// before the first static call caches the factory: windows-rs caches it
+/// for the process, and a media thread that started after COM unloaded the
+/// DLL crashed in it (win_sys::com). Pinning the object a call returns is
+/// not enough: a call that fails caches the factory too, and returns
+/// nothing to pin (GetFromAppUserModelId for Chrome, no packaged app,
+/// left Windows.ApplicationModel.dll to be unloaded: crash on 2026-10-22).
+fn pin_factory_dll<C: windows::core::RuntimeName>(what: &'static str) {
+    if !first_pin(what) {
+        return;
+    }
+    let pinned =
+        windows::core::factory::<C, windows::core::IInspectable>().ok().and_then(|f| win_sys::com::pin_module_of(&f));
+    match pinned {
+        Some(dll) => tracing::debug!("MCP media: {what}: {dll} kept loaded"),
+        None => tracing::warn!("MCP media: {what}: cannot keep its DLL loaded"),
+    }
+}
+
+/// Keeps the DLL of a WinRT object loaded for good, once per class (see
+/// [`pin_factory_dll`])
+fn pin_dll_of<I: windows::core::Interface>(what: &'static str, object: &I) {
+    if !first_pin(what) {
+        return;
+    }
     match win_sys::com::pin_module_of(object) {
         Some(dll) => tracing::debug!("MCP media: {what}: {dll} kept loaded"),
         None => tracing::warn!("MCP media: {what}: cannot keep its DLL loaded"),
