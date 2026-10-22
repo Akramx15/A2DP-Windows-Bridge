@@ -16,9 +16,11 @@
 //!   they hold Bluetooth addresses; the recorder zeroes pairing keys).
 //!   Captures started by hand keep the keys and stay out.
 //!
-//! With `mask`, Bluetooth addresses, USB serial numbers, device names and
-//! the Windows user name in the text files (and the driver records' names)
-//! are masked as in the diagnostics view ([`Masker`]); the device names of
+//! With `mask`, Bluetooth addresses (`<addr-N>`, the adapters' own
+//! `<adapter>`), USB serial numbers, device names (`<device-N>`) and the
+//! Windows user name in the text files (and the driver records' names) are
+//! masked as in the diagnostics view ([`Masker`]), one masker for the whole
+//! bundle so that the numbers agree between its files; the device names of
 //! the profiles and the saved devices are masked wherever they appear, in
 //! the config files too. Bundles go to `logs\bundles\`, the newest
 //! [`KEEP_BUNDLES`] kept.
@@ -64,6 +66,9 @@ pub fn create(state: &CoreState, mask: bool, hci: bool) -> Result<DiagBundle, St
     }
     for d in a2dpwb_core::devices::load(&config).into_iter().chain(a2dpwb_core::devices::load_le(&config)) {
         masker.know(&d.name);
+    }
+    for a in crate::adapter_addresses(&state.snapshot().1.adapter.adapters) {
+        masker.know_adapter(&a);
     }
     let mut text = |s: String| if mask { masker.mask(&s) } else { s };
     let mut skipped: Vec<String> = Vec::new();
@@ -184,7 +189,7 @@ fn readme(stamp: &str, mask: bool, hci: bool, skipped: &[String]) -> String {
          diagnostics.txt  the diagnostic info (as copied from Diagnostics)\n\
          system.txt       Windows, USB Bluetooth adapters and drivers, paired devices, audio endpoints\n\
          logs/            log files: a2dpwb-core (the service), a2dpwb-ui (the window), a2dpwb-driver (driver changes)\n\
-         config/          settings, profiles, known devices (no link keys)\n\
+         config/          settings, profiles, known devices (no link keys; addresses and names masked as everywhere)\n\
          crash/           crash reports: .txt, and .dmp minidumps for Visual Studio / WinDbg (raw memory: not masked)\n\
          hci/             HCI captures (.pklg) for Wireshark: recorder-* is the flight recorder at the time of\n\
                           this bundle, hci-* were saved when a stream failed. Media payloads are cut short\n\
@@ -196,8 +201,9 @@ fn readme(stamp: &str, mask: bool, hci: bool, skipped: &[String]) -> String {
         s,
         "Identifiers: {}",
         if mask {
-            "masked in the text files: Bluetooth addresses (AA:BB:CC:xx:xx:xx), USB serial numbers, \
-             device names (<device-N>, the same N for the same name) and the Windows user name in paths"
+            "masked in the text files: Bluetooth addresses (<addr-N>, the adapter's own <adapter>), USB serial \
+             numbers, device names (<device-N>) and the Windows user name in paths; the same N for the same \
+             address or name in every file"
         } else {
             "not masked"
         }

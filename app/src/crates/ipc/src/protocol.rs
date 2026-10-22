@@ -631,8 +631,9 @@ pub struct DiagBundle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 
 pub struct DiagBundleParams {
-    /// Bluetooth addresses and USB serial numbers masked in the text files
-    /// (default true; HCI captures keep the addresses)
+    /// Bluetooth addresses (<addr-N>), device names (<device-N>), USB serial
+    /// numbers and the Windows user name masked in the text files (default
+    /// true; HCI captures keep the addresses)
     #[ts(optional = nullable)]
     #[serde(default)]
     pub mask: Option<bool>,
@@ -1109,7 +1110,8 @@ pub struct DiagInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 
 pub struct DiagInfoParams {
-    /// Bluetooth addresses as AA:BB:CC:xx:xx:xx (default true)
+    /// Bluetooth addresses as <addr-N>, device names as <device-N>, the
+    /// Windows user name and USB serial numbers hidden (default true)
     #[ts(optional = nullable)]
     #[serde(default)]
     pub mask: Option<bool>,
