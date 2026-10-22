@@ -1887,13 +1887,19 @@ mod tests {
     fn masks_path_heads() {
         let m = mask_identifiers;
         // From the app's own folder on, whatever is above it
-        assert_eq!(m(r"settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB"), r"settings folder: <path>\A2DPWB");
+        assert_eq!(
+            m(r"settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB"),
+            r"settings folder: <path>\A2DPWB"
+        );
         assert_eq!(
             m(r"dump: C:\Users\admin\AppData\Roaming\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp"),
             r"dump: <path>\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp"
         );
         assert_eq!(m(r"D:\Apps\a2dpwb\firmware\x.bin"), r"<path>\a2dpwb\firmware\x.bin");
-        assert_eq!(m(r"C:\Program Files\A2DP Windows Bridge\a2dpwb-ui.exe"), r"<path>\A2DP Windows Bridge\a2dpwb-ui.exe");
+        assert_eq!(
+            m(r"C:\Program Files\A2DP Windows Bridge\a2dpwb-ui.exe"),
+            r"<path>\A2DP Windows Bridge\a2dpwb-ui.exe"
+        );
         // Without it: the last part only (the executable, an app captured)
         assert_eq!(
             m(r"starting: pid 1, Windows build 26200, I:\A2DP-Windows-Bridge\target\release\a2dpwb-core.exe"),
@@ -1902,7 +1908,10 @@ mod tests {
         assert_eq!(m(r"C:\Users\山田太郎\Music\foobar2000\foobar2000.exe"), r"<path>\foobar2000.exe");
         // The last part takes the text after it (a path is not delimited),
         // but not another path; a trailing separator keeps the folder
-        assert_eq!(m(r"HCI capture running: C:\x\A2DPWB\hci.pklg (3.0 MB)"), r"HCI capture running: <path>\A2DPWB\hci.pklg (3.0 MB)");
+        assert_eq!(
+            m(r"HCI capture running: C:\x\A2DPWB\hci.pklg (3.0 MB)"),
+            r"HCI capture running: <path>\A2DPWB\hci.pklg (3.0 MB)"
+        );
         assert_eq!(m(r"moved C:\a\b\x.bin to C:\a\c\x.bin"), r"moved <path>\x.bin to <path>\x.bin");
         assert_eq!(m("folder C:\\a\\b\\\n"), "folder <path>\\b\\\n");
         assert_eq!(m(r"C:\ only"), r"<path>\ only");
@@ -1914,7 +1923,10 @@ mod tests {
         assert_eq!(m("dump: C:\\Users\\taro\n"), "dump: <path>\\xxxx\n");
         assert_eq!(m(r#""C:\Users\taro""#), r#""<path>\xxxx""#);
         // Not paths
-        assert_eq!(m("at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c"), "at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c");
+        assert_eq!(
+            m("at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c"),
+            "at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c"
+        );
         assert_eq!(m(r"\\.\pipe\a2dpwb-x"), r"\\.\pipe\a2dpwb-x");
     }
 
