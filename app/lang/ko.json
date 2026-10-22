@@ -130,6 +130,8 @@
   "firmware.download_explain": "A2DPWB가 linux-firmware(kernel.org)에서 다음 파일을 다운로드하고 확인한 뒤 설정 폴더에 저장합니다. 이 파일은 A2DPWB에 포함되어 있지 않습니다.",
   "firmware.download_license": "이 파일은 Realtek의 독점 펌웨어로, linux-firmware의 WHENCE 및 LICENCE.rtlwifi_firmware.txt 조건에 따라 재배포가 허용됩니다. 이 조건에 동의하는 경우에만 다운로드하세요.",
   "firmware.downloaded": "펌웨어를 다운로드했습니다. 다음 연결 시 Bluetooth가 불러옵니다.",
+  "firmware.downloading": "kernel.org에서 펌웨어를 다운로드하는 중… 최대 1분 정도 걸릴 수 있습니다.",
+  "firmware.download_slow": "다운로드에 시간이 걸리고 있습니다. 백그라운드에서 계속되며, 파일이 저장되면 이 화면이 갱신됩니다.",
   "firmware.download_failed": "펌웨어를 다운로드할 수 없습니다(kernel.org에 연결할 수 없거나 파일이 일치하지 않음). '다운로드 페이지 열기'로 직접 파일을 받으세요.",
   "menu.help.report_issue": "문제 보고",
   "help.about_title": "A2DPWB 정보",

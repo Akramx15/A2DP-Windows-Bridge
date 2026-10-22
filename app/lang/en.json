@@ -130,6 +130,8 @@
   "firmware.download_explain": "A2DPWB downloads these files from linux-firmware (kernel.org), checks them and saves them in the firmware folder. They are not included in A2DPWB.",
   "firmware.download_license": "The files are Realtek's proprietary firmware, redistributable under the terms in linux-firmware's WHENCE and LICENCE.rtlwifi_firmware.txt. Download them only if you accept those terms.",
   "firmware.downloaded": "Firmware downloaded. Bluetooth loads it at the next connection.",
+  "firmware.downloading": "Downloading the firmware from kernel.org… This can take up to a minute.",
+  "firmware.download_slow": "The download is taking a while. It goes on in the background, and this screen updates when the files are saved.",
   "firmware.download_failed": "Could not download the firmware (no connection to kernel.org, or a file did not match). Use Open Download Page to get the files yourself.",
   "menu.help.report_issue": "Report an Issue",
   "help.about_title": "About A2DPWB",

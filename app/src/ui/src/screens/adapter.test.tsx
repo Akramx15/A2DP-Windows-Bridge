@@ -72,4 +72,43 @@ describe("Adapter firmware", () => {
     expect(await screen.findByText("Firmware downloaded. Bluetooth loads it at the next connection.")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("Firmware not found")).not.toBeInTheDocument());
   });
+
+  /** Opens the download dialog for a chip with no files and starts the
+   *  download, which the test answers itself */
+  async function startDownload() {
+    const { mock } = start();
+    let answer!: { resolve: (v: unknown) => void; reject: (e: unknown) => void };
+    vi.spyOn(mock as any, "downloadFirmware").mockImplementation(
+      () => new Promise((resolve, reject) => (answer = { resolve, reject })),
+    );
+    const chip = (await screen.findByLabelText("Bluetooth Chip")) as HTMLSelectElement;
+    fireEvent.change(chip, { target: { value: [...chip.options].find((o) => o.text.startsWith("RTL8852BU"))!.value } });
+    expect(await screen.findByText("Firmware not found")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Download Firmware" }));
+    const dialog = await screen.findByRole("dialog", { name: "Download the Realtek firmware" });
+    fireEvent.click([...dialog.querySelectorAll("button")].find((b) => b.textContent === "Download Firmware")!);
+    await waitFor(() => expect(answer).toBeDefined());
+    return { dialog, answer: () => answer };
+  }
+
+  it("shows a spinner and stays open while downloading", async () => {
+    const { dialog, answer } = await startDownload();
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Downloading the firmware from kernel.org");
+    expect(dialog.querySelector(".spinner.big")).not.toBeNull();
+    // Neither Cancel, Escape nor the backdrop closes it meanwhile
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+    expect(cancel).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.click(dialog.parentElement!);
+    expect(screen.getByRole("dialog", { name: "Download the Realtek firmware" })).toBeInTheDocument();
+    answer().resolve([]);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("does not call the UI's own timeout a failed download", async () => {
+    const { answer } = await startDownload();
+    answer().reject({ code: "ipc.timeout", message: { key: "ipc.error.timeout", args: ["adapter.download_firmware"] } });
+    expect(await screen.findByText(/The download is taking a while/)).toBeInTheDocument();
+    expect(screen.queryByText(/not responding/i)).not.toBeInTheDocument();
+  });
 });

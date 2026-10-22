@@ -99,6 +99,9 @@ fn timeout_for(method: &str, params: &Value) -> Duration {
             Duration::from_secs(30.max(seconds + 10))
         }
         "adapter.assign_winusb" | "adapter.restore_driver" => Duration::from_secs(120),
+        // Up to two files, each fetched with a 30 s limit, then the
+        // adapters are listed again
+        "adapter.download_firmware" => Duration::from_secs(90),
         "stream.start"
         | "stream.start_custom"
         | "adapter.restart"
@@ -432,6 +435,8 @@ mod tests {
         assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 10 })), Duration::from_secs(30));
         assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 40 })), Duration::from_secs(50));
         assert!(timeout_for("adapter.assign_winusb", &Value::Null) >= Duration::from_secs(60));
+        // Two 30 s fetches and the adapter list
+        assert!(timeout_for("adapter.download_firmware", &Value::Null) > Duration::from_secs(60));
         // Discovery waits 1.5 s; connecting ends an older connection first
         assert!(timeout_for("receiver.discover", &Value::Null) >= Duration::from_secs(10));
         assert!(timeout_for("receiver.connect", &Value::Null) >= Duration::from_secs(10));

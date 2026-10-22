@@ -686,6 +686,15 @@ option {
   margin: 0;
   padding-left: var(--s5);
 }
+/* A dialog's body while its action runs */
+.working {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s4) 0;
+  text-align: center;
+}
 
 .backdrop {
   position: fixed;
