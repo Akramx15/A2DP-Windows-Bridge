@@ -1,7 +1,8 @@
 // First-run setup, shown when there is no profile or no adapter on WinUSB:
-// 1 choose the adapter, 2 driver and firmware (WinUSB with one button),
-// 3 find the headphones and create a profile, 4 choose what to send and
-// connect (developer mode also offers the core's test tone).
+// 1 choose the adapter, 2 driver and firmware (one button switches it to
+// WinUSB and downloads its firmware), 3 find the headphones and create a
+// profile, 4 choose what to send and connect (developer mode also offers the
+// core's test tone).
 
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -9,8 +10,9 @@ import { Banner, Button, Field } from "../components/controls";
 import { DevicePicker } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
-import { CodecBadge, ConnectButton, currentProfile, FirmwareDownload, Ring, WinusbDialog } from "../components/stream";
+import { CodecBadge, ConnectButton, currentProfile, openFirmwareFolder, Ring } from "../components/stream";
 import { t, tm } from "../i18n";
+import { IpcError } from "../ipc/types";
 import type { AdapterInfo, Snapshot, StreamState } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
 import { defaultProfileName, newProfile, normalizeProfile, toneParams, validateProfile } from "../lib/profile";
@@ -180,70 +182,130 @@ function StepAdapter(props: { chosen: AdapterInfo | null; onChoose: (id: string)
   );
 }
 
+/**
+ * One explanation and one button (issue #86: the driver and firmware
+ * choices were intimidating): it switches the adapter to WinUSB and
+ * downloads its firmware when it needs some. The separate steps stay on the
+ * Adapters screen. Firmware A2DPWB cannot fetch still has the manual way.
+ */
 function StepDriver(props: { adapter: AdapterInfo | null }) {
   const app = useApp();
-  const [dialog, setDialog] = createSignal(false);
+  const { core } = app;
+  const [phase, setPhase] = createSignal<"idle" | "driver" | "firmware">("idle");
+  const [failed, setFailed] = createSignal<string | null>(null);
+  // The download outlived the UI's wait; the core finishes it and publishes the adapter
+  const [slow, setSlow] = createSignal(false);
+
+  const setUp = async (a: AdapterInfo) => {
+    setFailed(null);
+    setSlow(false);
+    try {
+      let now = a;
+      if (a.driver !== "winusb") {
+        setPhase("driver");
+        const list = await core.request("adapter.assign_winusb", { instance_id: a.instance_id });
+        now = list.find((x) => x.instance_id === a.instance_id) ?? a;
+      }
+      if (now.firmware_present === false && now.firmware_download) {
+        setPhase("firmware");
+        try {
+          await core.request("adapter.download_firmware", { file: now.firmware_files[0] });
+        } catch (e) {
+          if (IpcError.from(e).code !== "ipc.timeout") throw e;
+          setSlow(true);
+        }
+      }
+    } catch (e) {
+      setFailed(errorText(e));
+    } finally {
+      setPhase("idle");
+    }
+  };
+
   return (
     <Show when={props.adapter} fallback={<p class="muted">{t("firmware.no_adapters")}</p>}>
-      {(a) => (
-        <div class="stack">
-          <div class="selected-device">
-            <Icon name="usb_stick" />
-            <span>
-              <strong>{a().display_name}</strong>{" "}
-              <span class="muted">
-                {a().device_name} · {a().vendor}
+      {(a) => {
+        const needsDriver = () => a().driver !== "winusb";
+        const needsFirmware = () => a().firmware_present === false;
+        // Firmware the user has to fetch: the button does the driver only
+        const manualFirmware = () => needsFirmware() && !a().firmware_download;
+        const todo = () => needsDriver() || (needsFirmware() && a().firmware_download);
+        return (
+          <div class="stack">
+            <div class="selected-device">
+              <Icon name="usb_stick" />
+              <span>
+                <strong>{a().display_name}</strong>{" "}
+                <span class="muted">
+                  {a().device_name} · {a().vendor}
+                </span>
               </span>
-            </span>
-          </div>
-          <h3 class="sub">{t("ui.adapter.driver")}</h3>
-          <Show
-            when={a().driver === "winusb"}
-            fallback={
-              <Banner
-                kind="info"
-                title={t("ui.adapter.assign_title")}
-                actions={
-                  <Button kind="strong" icon="shield" onClick={() => setDialog(true)}>
-                    {t("ui.adapter.assign_winusb")}
+            </div>
+            <Switch>
+              <Match when={phase() !== "idle"}>
+                <div class="working" role="status">
+                  <span class="spinner big" aria-hidden="true" />
+                  <p>{phase() === "driver" ? t("ui.setup.auto_driver") : t("firmware.downloading")}</p>
+                </div>
+              </Match>
+              <Match when={todo()}>
+                <p>{t("ui.setup.auto_explain")}</p>
+                <ul class="files">
+                  <Show when={needsDriver()}>
+                    <li>{t("ui.setup.auto_will_driver")}</li>
+                  </Show>
+                  <Show when={needsFirmware() && a().firmware_download}>
+                    <li>
+                      {t("ui.setup.auto_will_firmware")} <span class="mono">{a().firmware_files.join(", ")}</span>
+                    </li>
+                  </Show>
+                </ul>
+                <Show when={needsFirmware() && a().firmware_download}>
+                  <p class="hint">{t("firmware.download_license")}</p>
+                </Show>
+                <Show when={needsDriver()}>
+                  <p class="hint">{t("ui.adapter.uac_note")}</p>
+                </Show>
+                <div>
+                  <Button kind="strong" icon="checkmark" onClick={() => setUp(a())}>
+                    {t("ui.setup.auto_button")}
                   </Button>
-                }
-              >
-                <p>{t("ui.adapter.assign_explain")}</p>
-                <p class="muted">{t("ui.adapter.uac_note")}</p>
-              </Banner>
-            }
-          >
-            <Banner kind="good" title={t("ui.setup.driver_ok")}>
-              {t("ui.adapter.restore_short")}
-            </Banner>
-          </Show>
-          <h3 class="sub">{t("ui.adapter.firmware")}</h3>
-          <Switch>
-            <Match when={a().firmware_present === null}>
-              <p class="muted">{t("ui.adapter.firmware_not_needed")}</p>
-            </Match>
-            <Match when={a().firmware_present === true}>
-              <Banner kind="good" title={t("firmware.present")}>
-                {a().realtek_chip}
-              </Banner>
-            </Match>
-            <Match when={a().firmware_present === false}>
+                </div>
+                <p class="hint">{t("ui.setup.auto_advanced")}</p>
+              </Match>
+              <Match when={!manualFirmware()}>
+                <Banner kind="good" title={t("ui.setup.driver_ok")}>
+                  {t("ui.adapter.restore_short")}
+                </Banner>
+              </Match>
+            </Switch>
+            <Show when={failed()}>
+              {(why) => (
+                <Banner kind="error" title={t("ui.setup.auto_failed")}>
+                  <p>{why()}</p>
+                  <p class="hint">{t("ui.setup.auto_advanced")}</p>
+                </Banner>
+              )}
+            </Show>
+            <Show when={slow() && needsFirmware()}>
+              <Banner kind="info" title={t("firmware.download_slow")} />
+            </Show>
+            <Show when={!needsDriver() && a().restart_needed}>
+              <Banner kind="warn" title={t("ui.adapter.assigned_restart", a().display_name)} />
+            </Show>
+            <Show when={phase() === "idle" && manualFirmware()}>
               <Banner
                 kind="warn"
                 title={a().firmware_invalid ? t("firmware.invalid_short") : t("firmware.missing_manual")}
                 actions={
                   <>
-                    <Show when={a().firmware_download}>
-                      <FirmwareDownload files={a().firmware_files} kind="strong" />
-                    </Show>
-                    <Button icon="open" onClick={() => app.core.transport.openUrl(firmwareUrl(a().vendor))}>
+                    <Button icon="open" onClick={() => core.transport.openUrl(firmwareUrl(a().vendor))}>
                       {t("firmware.open_download_page")}
                     </Button>
-                    <Button icon="folder_open" onClick={() => app.core.transport.openFolder(app.core.state.snap!.config_dir)}>
+                    <Button icon="folder_open" onClick={() => openFirmwareFolder(app)}>
                       {t("firmware.open_folder")}
                     </Button>
-                    <Button icon="open" kind="subtle" onClick={() => app.core.transport.openUrl(LINKS.setupGuide)}>
+                    <Button icon="open" kind="subtle" onClick={() => core.transport.openUrl(LINKS.setupGuide)}>
                       {t("ui.setup.guide")}
                     </Button>
                   </>
@@ -255,11 +317,10 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
                 </p>
                 <p class="hint">{t("firmware.manual_instructions")}</p>
               </Banner>
-            </Match>
-          </Switch>
-          <WinusbDialog adapter={dialog() ? a() : null} mode="assign" onClose={() => setDialog(false)} />
-        </div>
-      )}
+            </Show>
+          </div>
+        );
+      }}
     </Show>
   );
 }
