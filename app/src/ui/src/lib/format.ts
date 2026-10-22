@@ -21,9 +21,12 @@ export function clock(ms: number): string {
 }
 
 const H = "[0-9A-Fa-f]";
-/** "AC:80:0A:12:34:56" or with '-'; not in a longer run (IPv6), a letter before is fine */
+/**
+ * "AC:80:0A:12:34:56" or with '-'; not in a longer run (IPv6, "...:55:66"), a
+ * letter before or a colon after ("AC:80:0A:12:34:56: pairing") is fine
+ */
 const SEPARATED = [":", "\\-"].map(
-  (s) => new RegExp(`(?<!${s})(${H}{2}${s}${H}{2}${s}${H}{2}${s})${H}{2}${s}${H}{2}${s}${H}{2}(?!${H}|${s})`, "g"),
+  (s) => new RegExp(`(?<!${s})(${H}{2}${s}${H}{2}${s}${H}{2}${s})${H}{2}${s}${H}{2}${s}${H}{2}(?!${H}|${s}${H}{2})`, "g"),
 );
 /** A word of 12 hex digits, not a GUID's last part */
 const BARE = /(?<![A-Za-z0-9-])([0-9A-Fa-f]{6})[0-9A-Fa-f]{6}(?![A-Za-z0-9])/g;
