@@ -395,8 +395,64 @@ impl AppSource {
     }
 }
 
+/// Device capture (loopback of a device, or the test tone). Windows ends a
+/// loopback capture when the device is removed, disabled or its format
+/// changes (AUDCLNT_E_DEVICE_INVALIDATED): it is opened again, until the
+/// device is back
+struct DeviceSource {
+    source: Source,
+    options: CaptureOptions,
+    running: Option<Running>,
+    /// Logged once per outage
+    failed: bool,
+}
+
+impl DeviceSource {
+    fn ended(&self) -> bool {
+        self.running.as_ref().is_some_and(Running::ended)
+    }
+
+    fn detach(&mut self) {
+        if let Some(r) = self.running.take() {
+            r.stop();
+        }
+    }
+
+    /// Opens the source again; the caller starts it (its format may differ)
+    fn reopen(&mut self) -> Option<Capture> {
+        match Capture::open(&self.source, &self.options) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                if !self.failed {
+                    tracing::warn!("audio capture: cannot open the device again yet: {e}");
+                }
+                self.failed = true;
+                None
+            }
+        }
+    }
+
+    fn start(&mut self, capture: Capture, input: &SharedInput) -> bool {
+        match capture.start(Box::new(input.clone())) {
+            Ok(r) => {
+                tracing::info!("audio capture: device opened again, capturing");
+                self.running = Some(r);
+                self.failed = false;
+                true
+            }
+            Err(e) => {
+                if !self.failed {
+                    tracing::warn!("audio capture: cannot start the device again yet: {e}");
+                }
+                self.failed = true;
+                false
+            }
+        }
+    }
+}
+
 enum ActiveSource {
-    Capture(Running),
+    Capture(DeviceSource),
     App(AppSource),
 }
 
@@ -408,7 +464,7 @@ impl ActiveSource {
 
     fn running(&self) -> Option<&Running> {
         match self {
-            ActiveSource::Capture(r) => Some(r),
+            ActiveSource::Capture(d) => d.running.as_ref(),
             ActiveSource::App(a) => a.running.as_ref(),
         }
     }
@@ -424,7 +480,7 @@ impl ActiveSource {
 
     fn stop(self) {
         match self {
-            ActiveSource::Capture(r) => r.stop(),
+            ActiveSource::Capture(mut d) => d.detach(),
             ActiveSource::App(mut a) => a.detach(),
         }
     }
@@ -1136,15 +1192,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     };
     let (pipeline, input) = start_pipeline(encoder, format, channels, mtu, sink, &host);
     let input = SharedInput(Arc::new(Mutex::new(input)));
-    let active = match (capture, &req.source) {
-        (Some(c), _) => match c.start(Box::new(input.clone())) {
-            Ok(r) => Some(ActiveSource::Capture(r)),
+    let active = match (capture, source, &req.source) {
+        (Some(c), Some(source), _) => match c.start(Box::new(input.clone())) {
+            Ok(r) => Some(ActiveSource::Capture(DeviceSource { source, options, running: Some(r), failed: false })),
             Err(e) => {
                 tracing::error!("audio capture start: {e}");
                 None
             }
         },
-        (None, SourceRequest::Application { exe }) => {
+        (None, _, SourceRequest::Application { exe }) => {
             let mut app =
                 AppSource { exe: exe.clone(), sample_rate: preferred, running: None, process_id: 0, failed_pid: 0 };
             if !app.attach(&input) {
@@ -1182,6 +1238,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     // ---- streaming ----
     let mut pipeline = Some(pipeline);
     let mut app_ticks = 0u32;
+    // What the capture delivers now: a device opened again may come back
+    // with other channels or samples (the rate is the stream's, converted
+    // by Windows)
+    let mut input_format = format;
+    let mut reopen_ticks = 0u32;
     let mut lost_for_good = false;
     let mut discontinuities = DiscontinuityLog::default();
     let mut health = StreamHealth::start(host.stats().clone(), format.sample_rate, active.health());
@@ -1204,6 +1265,67 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             app_ticks += 1;
             if app.running.is_none() && app_ticks.is_multiple_of(5) {
                 app.attach(&input);
+            }
+        }
+        // Device capture that Windows ended (device removed, disabled, its
+        // format changed or taken in exclusive mode) is opened again: at
+        // once, every second for ten tries, then every ten seconds
+        if let ActiveSource::Capture(dev) = &mut active {
+            if dev.ended() {
+                let why = dev.running.as_ref().and_then(Running::end_reason);
+                tracing::warn!("audio capture ended ({why:?}), opening the device again");
+                dev.detach();
+                reopen_ticks = 0;
+            }
+            if dev.running.is_none() {
+                reopen_ticks += 1;
+                let every = if reopen_ticks <= 50 { 5 } else { 50 };
+                if reopen_ticks % every == 1
+                    && let Some(capture) = dev.reopen()
+                {
+                    let new_format = capture.format();
+                    if new_format != input_format {
+                        tracing::info!(
+                            "audio capture: format {} Hz {} ch {:?} -> {} Hz {} ch {:?}, starting the pipeline anew",
+                            input_format.sample_rate,
+                            input_format.channels,
+                            input_format.sample_format,
+                            new_format.sample_rate,
+                            new_format.channels,
+                            new_format.sample_format
+                        );
+                        input_format = new_format;
+                        info.source_channels = new_format.channels as u32;
+                        info.source_bits = (new_format.sample_format.bytes_per_sample() * 8) as u32;
+                        // Without a pipeline (between reconnects) the next
+                        // one is started with the new format
+                        if let Some(p) = pipeline.take() {
+                            let Some(sink) = p.stop() else {
+                                inner.notify(StreamState::Error, Msg::new("error.encode_thread"));
+                                lost_for_good = true;
+                                break;
+                            };
+                            let encoder = match codec::create(kind, &encoder_config) {
+                                Ok(e) => e,
+                                Err(e) => {
+                                    tracing::error!("encoder: {e}");
+                                    host.return_media_sink(sink);
+                                    inner.notify(StreamState::Error, Msg::new("error.encoder_init"));
+                                    lost_for_good = true;
+                                    break;
+                                }
+                            };
+                            let (p, new_input) =
+                                start_pipeline(encoder, input_format, channels, encoder_config.mtu, sink, &host);
+                            if let Ok(mut i) = input.0.lock() {
+                                *i = new_input;
+                            }
+                            pipeline = Some(p);
+                        }
+                        inner.stream_info(info.clone());
+                    }
+                    dev.start(capture, &input);
+                }
             }
         }
         if active.waiting() != info.source.waiting {
@@ -1471,7 +1593,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             info.abr = encoder.abr_active() || vbr;
             info.details =
                 Some(Box::new(codec_details(kind, &config, &r.remote, &*encoder, r.mtu, format.sample_rate)));
-            let (p, new_input) = start_pipeline(encoder, format, channels, r.mtu, sink, &host);
+            let (p, new_input) = start_pipeline(encoder, input_format, channels, r.mtu, sink, &host);
             if let Ok(mut i) = input.0.lock() {
                 *i = new_input;
             }
