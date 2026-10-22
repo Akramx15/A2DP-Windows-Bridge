@@ -158,13 +158,17 @@ describe("every screen renders", () => {
     expect(await screen.findByText("A2DPWB v1 is running — exit it first")).toBeInTheDocument();
     mock!.setV1Running(false);
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    // Step 2: assigning WinUSB asks first
-    fireEvent.click(await screen.findByRole("button", { name: "Assign WinUSB" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("Windows' own Bluetooth no longer sees this adapter");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Assign WinUSB" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "adapter.assign_winusb")).toBe(true));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled());
+    // Step 2: one explanation and one button, which switches the driver and
+    // downloads the firmware (issue #86)
+    const setUp = await screen.findByRole("button", { name: "Set up this adapter" });
+    expect(screen.getByText(/Windows' own Bluetooth then no longer uses this adapter/)).toBeInTheDocument();
+    expect(screen.getByText("rtl8761bu_fw.bin, rtl8761bu_config.bin")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Assign WinUSB" })).toBeNull();
+    fireEvent.click(setUp);
+    await screen.findByText("The adapter is ready for A2DPWB", {}, { timeout: 5000 });
+    const order = calls.map((c) => c.method).filter((m) => m === "adapter.assign_winusb" || m === "adapter.download_firmware");
+    expect(order).toEqual(["adapter.assign_winusb", "adapter.download_firmware"]);
+    expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled();
   });
 
   it("the flyout", async () => {
