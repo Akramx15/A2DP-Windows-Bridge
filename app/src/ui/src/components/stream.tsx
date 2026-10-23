@@ -10,7 +10,7 @@ import { liveBitpool } from "../lib/codecdetails";
 import { copyText, khz, kbps, maskIdentifiers, percentToVolume, volumePercent } from "../lib/format";
 import { bugReportUrl, firmwareUrl, type BugReport } from "../lib/links";
 import { IpcError } from "../ipc/types";
-import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState } from "../ipc/types";
+import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState, StreamStatus } from "../ipc/types";
 import { Sparkline } from "./charts";
 import { Banner, Button, Dialog } from "./controls";
 import { Icon } from "./Icon";
@@ -24,6 +24,21 @@ export function currentProfile(snap: Snapshot): Profile | null {
 
 export function stateLabel(s: StreamState): string {
   return t(`status.${s}`);
+}
+
+// A reconnect reads as plain connecting, and its end as connected (issue
+// #86); the attempts stay in the log
+const PLAIN_STATUS: Record<string, string> = {
+  "status.reconnect_attempt": "status.connecting",
+  "status.reconnected": "status.connected",
+};
+
+/** The device's status line: the core's message, else the state; an error's
+ *  text is in its panel, with the fix */
+export function statusText(s: Pick<StreamStatus, "state" | "message">): string {
+  if (s.state === "error") return t("status.error");
+  const plain = PLAIN_STATUS[s.message.key];
+  return plain ? t(plain) : tm(s.message) || t(`status.${s.state}`);
 }
 
 /** The ring around the device: pulses while connecting, glows while streaming */

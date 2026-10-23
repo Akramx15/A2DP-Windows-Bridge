@@ -48,7 +48,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 実験的 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ Ubuntu のパッケージに含まれない | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC でデュアルチャネルと bitpool 43 以上を許すシンク） |
+| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC でデュアルチャネルと bitpool 29 以上を許すシンク） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 実験的（音楽のみ、明示的に選んだとき） |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |

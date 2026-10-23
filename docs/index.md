@@ -46,7 +46,7 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅ (sinks whose SBC allows dual channel, bitpool ≥ 43) |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (sinks whose SBC allows dual channel, bitpool ≥ 29) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 experimental (music only, chosen explicitly) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |

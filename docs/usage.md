@@ -96,7 +96,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 
 ### First-Run Setup
 
-The first start (no profile yet, or no adapter with WinUSB) opens **Set up A2DPWB**: choose the adapter, driver and firmware, find your headphones, test. See [Setup](setup#first-run). **Settings > Run setup** opens it again.
+The first start (no profile yet, or no adapter with WinUSB) opens **Set up A2DPWB**: choose the adapter, driver and firmware, find your audio devices (Connect creates the profile and connects). See [Setup](setup#first-run). **Settings > Run setup** opens it again.
 
 ## Tray and Flyout {#tray}
 

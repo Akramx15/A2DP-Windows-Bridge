@@ -19,9 +19,10 @@ import {
   openFirmwareFolder,
   QualityIndicator,
   Ring,
+  statusText,
   VolumeControl,
 } from "../components/stream";
-import { t, tm } from "../i18n";
+import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
 import { audioEntries, entryByKey, entryOf, type AudioEntry } from "../lib/profile";
 import { chooseCodec } from "./Codecs";
@@ -259,11 +260,7 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
               <span class="dot" aria-hidden="true" />
               <span>
                 {/* An error's text is in the panel above, with its fix */}
-                {!live()
-                  ? t("status.ready")
-                  : state() === "error"
-                    ? t("status.error")
-                    : tm(stream().message) || t(`status.${state()}`)}
+                {live() ? statusText({ state: state(), message: stream().message }) : t("status.ready")}
               </span>
             </div>
           </div>

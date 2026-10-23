@@ -82,6 +82,26 @@ const RTL: AdapterInfo = {
   bt_version: "5.1",
 };
 
+/** A chip A2DPWB has no firmware loader for (the first run lists it too) */
+const MEDIATEK: AdapterInfo = {
+  ...RTL,
+  instance_id: "USB\\VID_0E8D&PID_7925\\000000000",
+  vid: 0x0e8d,
+  pid: 0x7925,
+  display_name: "MediaTek (0x0E8D:0x7925) [unsupported]",
+  device_name: "Wireless_Device",
+  vendor: "MediaTek",
+  driver: "other",
+  driver_service: "mtkbtfilterx",
+  realtek_chip: null,
+  firmware_present: null,
+  firmware_files: [],
+  firmware_download: false,
+  vendor_note: { key: "firmware.vendor_unsupported", args: [] },
+  address: null,
+  bt_version: null,
+};
+
 export function sampleProfile(over: Partial<Profile> = {}): Profile {
   return {
     name: "WH-1000XM5 (LDAC)",
@@ -206,7 +226,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   return {
     adapter: {
       status: "stopped",
-      adapters: [fresh ? { ...RTL, driver: "bluetooth", driver_service: "BTHUSB", firmware_present: false } : RTL],
+      adapters: fresh ? [MEDIATEK, { ...RTL, driver: "bluetooth", driver_service: "BTHUSB", firmware_present: false }] : [RTL],
       error: null,
       le_audio: scenario === "le_unsupported" ? false : scenario === "le" ? true : null,
       rom_firmware: false,
@@ -1010,8 +1030,9 @@ export class MockCore implements Transport {
 
   private connect(t: StreamTarget) {
     const name = t.profile;
-    const adapter = this.snap.adapter.adapters[0];
-    if (!adapter || adapter.driver !== "winusb") {
+    // The core streams through the first adapter on WinUSB
+    const adapter = this.snap.adapter.adapters.find((a) => a.driver === "winusb");
+    if (!adapter) {
       const e = errorInfo("adapter.driver_missing", "error.btstack_init");
       this.snap.stream = { state: "error", message: e.message, profile: name, info: null, volume: null, battery: null };
       this.emit({ kind: "stream", value: this.snap.stream });

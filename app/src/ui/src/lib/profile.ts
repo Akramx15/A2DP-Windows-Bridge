@@ -9,7 +9,7 @@
 
 import type { CodecValues } from "../ipc/bindings/CodecValues";
 import type { AudioDevice, Device, ParamsOf, Profile, Snapshot } from "../ipc/types";
-import { abrCarries, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
+import { carryToCodec, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
 import { parseAddress } from "./format";
 
 /** What belongs to the audio device rather than the codec: the capture
@@ -177,16 +177,17 @@ export function codecValues(p: Profile): CodecValues {
 /**
  * The profile with `codec` chosen: the settings of the codec it used go to
  * its codec_settings, and `codec` gets `values` (its "..." dialog's), else
- * what it was set to before (issue #86: AAC's VBR came back off), else the
- * profile's own fitted to it
+ * what it was set to before (issue #86: AAC's VBR came back off), else what
+ * carries over from the codec it leaves (carryToCodec)
  */
 export function withCodec(p: Profile, codec: string, values?: CodecValues): Profile {
   const kept: Record<string, CodecValues> = { ...(p.codec_settings ?? {}) };
   if (p.codec !== codec) kept[p.codec] = codecValues(p);
   const back = values ?? kept[codec];
   delete kept[codec];
-  const own: Profile = { ...p, abr: abrCarries(p.codec, codec) ? p.abr : false };
-  return fitToCodec({ ...own, ...(back ?? {}), codec, codec_settings: kept });
+  const base: Profile = { ...p, codec_settings: kept };
+  // Values of its own come back as they were; else what carries over from the codec it leaves
+  return back ? fitToCodec({ ...base, ...back, codec }) : carryToCodec(base, codec);
 }
 
 /**

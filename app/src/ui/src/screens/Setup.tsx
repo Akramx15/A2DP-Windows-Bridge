@@ -1,31 +1,47 @@
-// First-run setup, shown when there is no profile or no adapter on WinUSB:
-// 1 choose the adapter, 2 driver and firmware (one button switches it to
-// WinUSB and downloads its firmware), 3 find the headphones and create a
-// profile, 4 choose what to send and connect (developer mode also offers the
-// core's test tone).
+// First-run setup, shown when there is no profile or no adapter on WinUSB.
+// Three steps (issue #86): 1 choose the adapter, 2 driver and firmware (one
+// button switches it to WinUSB and downloads its firmware), 3 find the audio
+// device: the scan starts by itself, and Connect on a device makes its
+// "<name> | Auto" profile and connects with it, so one click is enough.
 
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
-import { errorText, useApp } from "../app/context";
-import { Banner, Button, Field } from "../components/controls";
-import { DevicePicker } from "../components/DevicePicker";
+import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
+import { errorText, useApp, type AppContext } from "../app/context";
+import { Banner, Button } from "../components/controls";
+import { DevicePicker, saveWithProfile, SCAN_SECONDS } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
-import { CapturePicker } from "../components/CapturePicker";
-import { CodecBadge, ConnectButton, currentProfile, openFirmwareFolder, Ring } from "../components/stream";
-import { t, tm } from "../i18n";
+import { CodecBadge, openFirmwareFolder, Ring, statusText } from "../components/stream";
+import { t } from "../i18n";
 import { IpcError } from "../ipc/types";
-import type { AdapterInfo, Snapshot, StreamState } from "../ipc/types";
+import type { AdapterInfo, Snapshot } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
-import { defaultProfileName, newProfile, normalizeProfile, toneParams, validateProfile } from "../lib/profile";
-
-export { toneParams };
-import { driverText, usableFirst } from "./Adapter";
+import { adapterSupported, adapterTitle, driverText, usableFirst } from "./Adapter";
 import { V1Running } from "./Home";
 
 export function needsSetup(snap: Snapshot): boolean {
   return snap.profiles.length === 0 || !snap.adapter.adapters.some((a) => a.driver === "winusb");
 }
 
-const STEP_KEYS = ["ui.setup.step_adapter", "ui.setup.step_driver", "ui.setup.step_device", "ui.setup.step_test"];
+const STEP_KEYS = ["ui.setup.step_adapter", "ui.setup.step_driver", "ui.setup.step_device"];
+const LAST = STEP_KEYS.length - 1;
+
+/** The adapter's name and what A2DPWB can do with it (issue #86): the vendor
+ *  and chip as the title, Windows' name and the driver below, and a green
+ *  "Supported" or red "Not supported" tag */
+function AdapterLine(props: { adapter: AdapterInfo }) {
+  const ok = () => adapterSupported(props.adapter);
+  return (
+    <>
+      <Icon name="usb_stick" />
+      <span class="choice-text">
+        <strong>{adapterTitle(props.adapter, false)}</strong>
+        <span class="muted">
+          {[props.adapter.device_name, driverText(props.adapter.driver).text].filter((x) => x).join(" · ")}
+        </span>
+      </span>
+      <span class={`tag st-${ok() ? "good" : "bad"}`}>{t(ok() ? "ui.setup.supported" : "ui.adapter.firmware_unsupported")}</span>
+    </>
+  );
+}
 
 export function Setup() {
   const app = useApp();
@@ -35,7 +51,13 @@ export function Setup() {
   const [chosen, setChosen] = createSignal<string | null>(null);
   const adapter = createMemo<AdapterInfo | null>(() => {
     const list = snap().adapter.adapters;
-    return list.find((a) => a.instance_id === chosen()) ?? list.find((a) => a.driver === "winusb") ?? list[0] ?? null;
+    return (
+      list.find((a) => a.instance_id === chosen()) ??
+      list.find((a) => a.driver === "winusb" && adapterSupported(a)) ??
+      list.find(adapterSupported) ??
+      list[0] ??
+      null
+    );
   });
   const [profileName, setProfileName] = createSignal<string | null>(snap().active_profile);
 
@@ -50,10 +72,8 @@ export function Setup() {
         return adapter() !== null;
       case 1:
         return adapter()?.driver === "winusb";
-      case 2:
-        return profileName() !== null && snap().profiles.some((p) => p.name === profileName());
       default:
-        return true;
+        return profileName() !== null && snap().profiles.some((p) => p.name === profileName());
     }
   };
 
@@ -98,9 +118,6 @@ export function Setup() {
           <Match when={step() === 2}>
             <StepDevice profileName={profileName()} onCreated={setProfileName} />
           </Match>
-          <Match when={step() === 3}>
-            <StepTest profileName={profileName()} />
-          </Match>
         </Switch>
       </section>
       <footer class="setup-foot">
@@ -114,9 +131,9 @@ export function Setup() {
           </Button>
         </Show>
         <Show
-          when={step() < 3}
+          when={step() < LAST}
           fallback={
-            <Button kind="strong" icon="checkmark" onClick={finish}>
+            <Button kind="strong" icon="checkmark" disabled={!canNext()} onClick={finish}>
               {t("ui.setup.finish")}
             </Button>
           }
@@ -128,6 +145,12 @@ export function Setup() {
       </footer>
     </div>
   );
+}
+
+/** Usable first (the Adapters screen's order), the unsupported ones last */
+function supportedFirst(list: readonly AdapterInfo[]): AdapterInfo[] {
+  const usable = usableFirst(list);
+  return [...usable.filter(adapterSupported), ...usable.filter((a) => !adapterSupported(a))];
 }
 
 function StepAdapter(props: { chosen: AdapterInfo | null; onChoose: (id: string) => void }) {
@@ -151,7 +174,7 @@ function StepAdapter(props: { chosen: AdapterInfo | null; onChoose: (id: string)
         }
       >
         <div class="choice-list" role="radiogroup" aria-label={t("firmware.detected_adapters")}>
-          <For each={usableFirst(adapters())}>
+          <For each={supportedFirst(adapters())}>
             {(a) => (
               <label class="choice" classList={{ on: props.chosen?.instance_id === a.instance_id }}>
                 <input
@@ -160,14 +183,7 @@ function StepAdapter(props: { chosen: AdapterInfo | null; onChoose: (id: string)
                   checked={props.chosen?.instance_id === a.instance_id}
                   onChange={() => props.onChoose(a.instance_id)}
                 />
-                <Icon name="usb_stick" />
-                <span class="choice-text">
-                  <strong>{a.display_name}</strong>
-                  <span class="muted">
-                    {a.device_name} · {a.vendor}
-                  </span>
-                </span>
-                <span class={`tag st-${driverText(a.driver).status}`}>{driverText(a.driver).text}</span>
+                <AdapterLine adapter={a} />
               </label>
             )}
           </For>
@@ -233,14 +249,14 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
         return (
           <div class="stack">
             <div class="selected-device">
-              <Icon name="usb_stick" />
-              <span>
-                <strong>{a().display_name}</strong>{" "}
-                <span class="muted">
-                  {a().device_name} · {a().vendor}
-                </span>
-              </span>
+              <AdapterLine adapter={a()} />
             </div>
+            <Show when={!adapterSupported(a())}>
+              <p class="field-error">
+                <Icon name="warning" />
+                <span>{t("ui.setup.unsupported_note")}</span>
+              </p>
+            </Show>
             <Switch>
               <Match when={phase() !== "idle"}>
                 <div class="working" role="status">
@@ -325,174 +341,70 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
   );
 }
 
+/** Resolves once no scan runs: a connection waits for the scan to end */
+function scanEnded(app: AppContext): Promise<void> {
+  return new Promise((resolve) => {
+    const check = () => (app.core.state.snap?.scanning ? setTimeout(check, 200) : resolve());
+    check();
+  });
+}
+
 function StepDevice(props: { profileName: string | null; onCreated: (name: string) => void }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
-  const [address, setAddress] = createSignal("");
-  const [deviceName, setDeviceName] = createSignal("");
-  const [name, setName] = createSignal("");
-  const [busy, setBusy] = createSignal(false);
-  const [problem, setProblem] = createSignal<string | null>(null);
+  const stream = () => snap().stream;
+  // The device being connected: its button spins
+  const [connecting, setConnecting] = createSignal<string | null>(null);
   const existing = () => snap().profiles.find((p) => p.name === props.profileName) ?? null;
 
-  const create = async () => {
-    const p = { ...newProfile(), name: name() || deviceName() || address(), device_address: address(), device_name: deviceName() };
-    const found = validateProfile(p, snap().profiles.map((x) => x.name));
-    const first = found.device ?? found.name;
-    if (first) {
-      setProblem(t(first.key, ...(first.args ?? [])));
-      return;
-    }
-    setProblem(null);
-    setBusy(true);
-    try {
-      const saved = normalizeProfile(p);
-      await app.core.request("profile.save", { profile: saved, original_name: null });
-      await app.core.request("profile.set_active", { name: saved.name });
-      props.onCreated(saved.name);
-    } catch (e) {
-      setProblem(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div class="stack">
-      <Show when={existing()}>
-        {(p) => (
-          <Banner kind="good" title={t("ui.setup.profile_ready")}>
-            <strong>{p().name}</strong> <span class="mono muted">{p().device_address}</span>
-          </Banner>
-        )}
-      </Show>
-      <p>{t("ui.setup.device_intro")}</p>
-      <DevicePicker
-        address={address()}
-        classicOnly
-        onPick={(a, n) => {
-          setAddress(a);
-          setDeviceName(n);
-          setName(defaultProfileName(n, a, false, t("codec.auto")));
-        }}
-      />
-      <Field label={t("profile.name")} hint={t("profile.name_hint")} error={problem()}>
-        {(id, described) => (
-          <div class="inline">
-            <input id={id} class="input" value={name()} aria-describedby={described} onInput={(e) => setName(e.currentTarget.value)} />
-            <Button kind="strong" icon="add" busy={busy()} disabled={!address()} onClick={create}>
-              {t("ui.setup.create_profile")}
-            </Button>
-          </div>
-        )}
-      </Field>
-    </div>
-  );
-}
-
-
-const ACTIVE: StreamState[] = ["connecting", "reconnecting", "streaming"];
-
-function StepTest(props: { profileName: string | null }) {
-  const app = useApp();
-  const { core } = app;
-  const snap = () => core.state.snap!;
-  const stream = () => snap().stream;
-  const profile = () => snap().profiles.find((p) => p.name === props.profileName) ?? currentProfile(snap());
-  // The tone this step started (until stopped, failed or ended)
-  const [ours, setOurs] = createSignal(false);
-  const [busy, setBusy] = createSignal(false);
-  // Why the tone could not be played: the fallback message
-  const [failed, setFailed] = createSignal<string | null>(null);
-  const playing = () => ours() && ACTIVE.includes(stream().state);
-  const dev = () => snap().settings.developer_mode;
-
-  createEffect(
-    on(
-      () => stream().state,
-      (st) => {
-        if (!ours()) return;
-        if (st === "error") {
-          setFailed(tm(stream().message) || t("status.error"));
-          setOurs(false);
-        } else if (st === "idle") {
-          setOurs(false);
-        }
-      },
-      { defer: true },
-    ),
-  );
-
-  const play = async () => {
-    const p = profile();
-    if (!p) return;
-    setBusy(true);
-    setFailed(null);
-    try {
-      // The profile's own stream (or anything else) gives way to the tone
-      if (ACTIVE.includes(stream().state)) await core.request("stream.stop");
-      await core.request("stream.start_custom", toneParams(p));
-      setOurs(true);
-    } catch (e) {
-      setFailed(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const stop = async () => {
-    setBusy(true);
-    await app.run(() => core.request("stream.stop"));
-    setOurs(false);
-    setBusy(false);
-  };
-  // Leaving the step (Back, Finish, Skip) ends the tone
-  onCleanup(() => {
-    if (playing()) core.request("stream.stop").catch(() => {});
+  // Being on this step means looking for the device: no Scan press needed
+  onMount(() => {
+    if (!snap().scanning) void app.run(() => app.core.request("device.scan", { seconds: SCAN_SECONDS }));
   });
 
+  // One click: the device is saved, gets its "<name> | Auto" profile (the
+  // best codec it has) and is connected with it
+  const connect = async (address: string, name: string) => {
+    if (connecting()) return;
+    setConnecting(address);
+    try {
+      const profile = await saveWithProfile(app, address, name, false);
+      if (!profile) return;
+      props.onCreated(profile);
+      await app.run(async () => {
+        await app.core.request("profile.set_active", { name: profile });
+        await scanEnded(app);
+        const st = stream().state;
+        if (st === "connecting" || st === "reconnecting" || st === "streaming") await app.core.request("stream.stop");
+        await app.core.request("stream.start", { profile });
+      });
+    } finally {
+      setConnecting(null);
+    }
+  };
+
   return (
     <div class="stack">
-      <p>{t("ui.setup.test_intro")}</p>
-      <div class="test-row">
-        <Ring state={stream().state} volume={stream().volume} size="small">
-          <Icon name="headphones" />
-        </Ring>
-        <div class="stack-tight">
-          <span class={`status-line st-${stream().state}`} role="status" aria-live="polite">
-            <span class="dot" aria-hidden="true" />
-            {tm(stream().message) || t(`status.${stream().state}`)}
-          </span>
-          <CodecBadge />
-        </div>
-      </div>
-      <Show when={profile()}>{(p) => <CapturePicker profile={p()} />}</Show>
-      <ConnectButton onError={(e) => app.notify(errorText(e), "error")} />
-      <Show when={dev()}>
-        <div class="inline">
-          <Show
-            when={playing()}
-            fallback={
-              <Button icon="music_note_2" busy={busy()} disabled={!profile()} onClick={play}>
-                {t("ui.setup.play_tone")}
-              </Button>
-            }
-          >
-            <Button icon="stop" busy={busy()} onClick={stop}>
-              {t("receiver.stop")}
-            </Button>
-          </Show>
-          <Show when={playing() && stream().state === "streaming"}>
-            <span class="hint">{t("ui.setup.tone_playing_hint")}</span>
-          </Show>
-        </div>
-        <Show when={failed()}>
-          {(why) => (
-            <Banner kind="warn" title={t("status.error")}>
-              {t("ui.setup.tone_failed", why())}
-            </Banner>
-          )}
-        </Show>
+      <p>{t("ui.setup.device_intro")}</p>
+      <Show when={existing()}>
+        {(p) => (
+          <div class="test-row">
+            <Ring state={stream().state} volume={stream().volume} size="small">
+              <Icon name="headphones" />
+            </Ring>
+            <div class="stack-tight">
+              <strong>{p().device_name || p().device_address}</strong>
+              <span class={`status-line st-${stream().state}`} role="status" aria-live="polite">
+                <span class="dot" aria-hidden="true" />
+                {statusText(stream())}
+              </span>
+              <span class="muted">{t("ui.home.profile_line", p().name)}</span>
+              <CodecBadge />
+            </div>
+          </div>
+        )}
       </Show>
+      <DevicePicker address="" classicOnly onPick={() => {}} onConnect={(a, n) => void connect(a, n)} connecting={connecting()} />
     </div>
   );
 }

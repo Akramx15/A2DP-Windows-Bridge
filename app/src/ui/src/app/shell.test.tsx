@@ -1,17 +1,17 @@
 // The app shell's v1 leftovers: update check result, update notice, tray
 // hide, firmware bar, error copy, capture source, HCI capture sign, the
-// setup wizard's test tone.
+// setup wizard's adapter and device steps.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, hideToTray, isDiagnosticsShortcut } from "./App";
 import { captureRunningText } from "./indicators";
-import { errorCopyText, isAppFault, sourceText } from "../components/stream";
+import { errorCopyText, isAppFault, sourceText, statusText } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, sampleProfile, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 import { LINKS } from "../lib/links";
-import { toneParams } from "../screens/Setup";
+import { toneParams } from "../lib/profile";
 
 let mock: MockCore | null = null;
 
@@ -216,55 +216,84 @@ describe("flyout", () => {
   });
 });
 
-describe("setup test step", () => {
-  async function toTestStep() {
-    const r = start("#/setup");
+describe("setup device step", () => {
+  async function toDeviceStep(opts: MockOptions = {}) {
+    const r = start("#/setup", opts);
     await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const next = screen.getByRole("button", { name: "Next" });
       await waitFor(() => expect(next).not.toBeDisabled());
       fireEvent.click(next);
     }
-    await screen.findByRole("heading", { level: 2, name: "Test" });
+    await screen.findByRole("heading", { level: 2, name: "Find your audio devices" });
     return r;
   }
 
-  it("connects with the chosen capture source; no test tone outside developer mode", async () => {
-    const { calls } = await toTestStep();
-    expect(screen.queryByRole("button", { name: "Play test tone" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Capture Source" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  it("three steps, the last one ends with Finish", async () => {
+    await toDeviceStep();
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent?.replace(/^\d/, ""))).toEqual([
+      "Choose the adapter",
+      "Driver and firmware",
+      "Find your audio devices",
+    ]);
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Finish" })).toBeInTheDocument();
+    // No profile name to type: Connect makes it
+    expect(screen.queryByRole("textbox", { name: "Profile Name" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Create profile" })).toBeNull();
+  });
+
+  it("scans by itself; Connect makes the Auto profile and connects with it", async () => {
+    const { calls, core } = await toDeviceStep({ scenario: "normal" });
+    await waitFor(() => expect(calls.some((c) => c.method === "device.scan")).toBe(true));
+    const name = await screen.findByText("Galaxy Buds2 Pro");
+    const row = name.closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
-    expect(calls.some((c) => c.method === "stream.start_custom")).toBe(false);
+    expect(calls.find((c) => c.method === "stream.start")!.params).toEqual({ profile: "Galaxy Buds2 Pro | Auto" });
+    const saved = core.state.snap!.profiles.find((p) => p.name === "Galaxy Buds2 Pro | Auto")!;
+    expect(saved).toMatchObject({ device_address: "F4:4E:FD:00:11:22", codec: "auto" });
+    expect(core.state.snap!.active_profile).toBe("Galaxy Buds2 Pro | Auto");
+    expect(core.state.snap!.devices.find((d) => d.address === "F4:4E:FD:00:11:22")?.saved).toBe(true);
+    expect(screen.getByRole("button", { name: "Finish" })).not.toBeDisabled();
   });
 
-  async function devTestStep() {
-    const r = await toTestStep();
-    await r.core.request("settings.set", { settings: { ...r.core.state.snap!.settings, developer_mode: true } });
-    await screen.findByRole("button", { name: "Play test tone" });
-    return r;
-  }
-
-  it("developer mode plays the core's test tone on the headphones", async () => {
-    const { calls } = await devTestStep();
-    fireEvent.click(screen.getByRole("button", { name: "Play test tone" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "stream.start_custom")).toBe(true));
-    const params = calls.find((c) => c.method === "stream.start_custom")!.params;
-    expect(params).toMatchObject({ device: "AC:80:0A:12:34:56", codec: "ldac", quality: "hq", source: "tone" });
-    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "stream.stop")).toBe(true));
-    await screen.findByRole("button", { name: "Play test tone" });
+  it("a device with a profile connects with that one", async () => {
+    const { calls, core } = await toDeviceStep();
+    const before = core.state.snap!.profiles.length;
+    const row = (await screen.findAllByText("WH-1000XM5")).map((e) => e.closest(".device-row")).find((r) => r) as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    expect(calls.find((c) => c.method === "stream.start")!.params).toEqual({ profile: "WH-1000XM5 (LDAC)" });
+    expect(core.state.snap!.profiles.length).toBe(before);
   });
 
-  it("says so when the tone cannot be played", async () => {
-    const { mock } = await devTestStep();
-    // The mock refuses to stream without WinUSB
-    const m = mock as unknown as { snap: { adapter: { adapters: { driver: string }[] } } };
-    m.snap.adapter.adapters[0] = { ...m.snap.adapter.adapters[0], driver: "bluetooth" };
-    fireEvent.click(screen.getByRole("button", { name: "Play test tone" }));
-    const failed = await screen.findByText((text) => text.startsWith(t("ui.setup.tone_failed", "").slice(0, 12)));
-    expect(failed).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+  it("an address typed by hand connects with Use", async () => {
+    const { calls } = await toDeviceStep();
+    fireEvent.input(screen.getByRole("textbox", { name: "Manual:" }), { target: { value: "11:22:33:44:55:66" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    expect(calls.find((c) => c.method === "stream.start")!.params).toEqual({ profile: "11:22:33:44:55:66 | Auto" });
+  });
+});
+
+describe("setup adapter step", () => {
+  it("marks the adapters A2DPWB supports, and says so in red for one it does not", async () => {
+    start("#/setup", { scenario: "fresh" });
+    await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
+    const radios = screen.getAllByRole("radio");
+    // The supported one first, and chosen
+    const rtl = radios[0].closest(".choice") as HTMLElement;
+    const mtk = radios[1].closest(".choice") as HTMLElement;
+    expect(rtl).toHaveTextContent("Realtek RTL8761BU");
+    expect(within(rtl).getByText("Supported")).toHaveClass("st-good");
+    expect(radios[0]).toBeChecked();
+    expect(mtk).toHaveTextContent("MediaTek");
+    expect(mtk).not.toHaveTextContent("[unsupported]");
+    expect(within(mtk).getByText("Not supported")).toHaveClass("st-bad");
+    fireEvent.click(radios[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText(t("ui.setup.unsupported_note"))).toBeInTheDocument();
   });
 });
 
@@ -277,6 +306,15 @@ describe("helpers", () => {
     expect(sourceText({ kind: "app", name: "spotify.exe", waiting: false }, p).text).toBe("Spotify");
     const waiting = sourceText({ kind: "app", name: "foo.exe", waiting: true }, p);
     expect(waiting).toMatchObject({ waiting: true, text: t("ui.source.waiting", "foo.exe") });
+  });
+
+  it("a reconnect reads as connecting, and its end as connected (issue #86)", () => {
+    const msg = (key: string, ...args: string[]) => ({ key, args });
+    expect(statusText({ state: "reconnecting", message: msg("status.reconnect_attempt", "1", "3") })).toBe("Connecting...");
+    expect(statusText({ state: "streaming", message: msg("status.reconnected") })).toBe("Connected");
+    expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
+    expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
+    expect(statusText({ state: "idle", message: msg("") })).toBe("Idle");
   });
 
   it("error copy text", () => {

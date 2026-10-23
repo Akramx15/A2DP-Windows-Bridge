@@ -86,7 +86,7 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene además una p
 
 ### Configuración inicial
 
-El primer inicio (aún sin perfil, o sin ningún adaptador con WinUSB) abre **Configurar A2DPWB**: elegir el adaptador, controlador y firmware, encontrar los auriculares, prueba. Consulte [Instalación](setup#first-run). **Configuración > Ejecutar la configuración inicial** la vuelve a abrir.
+El primer inicio (aún sin perfil, o sin ningún adaptador con WinUSB) abre **Configurar A2DPWB**: elegir el adaptador, controlador y firmware, encontrar los dispositivos de audio («Conectar» crea el perfil y se conecta). Consulte [Instalación](setup#first-run). **Configuración > Ejecutar la configuración inicial** la vuelve a abrir.
 
 ## Bandeja y panel desplegable {#tray}
 

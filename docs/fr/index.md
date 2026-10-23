@@ -48,7 +48,7 @@ Diffuse l'audio du système en **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 expérimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ absent des paquets Ubuntu | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅ (récepteurs dont le SBC autorise le double canal et un bitpool ≥ 43) |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (récepteurs dont le SBC autorise le double canal et un bitpool ≥ 29) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 expérimental (musique uniquement, choisi explicitement) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |

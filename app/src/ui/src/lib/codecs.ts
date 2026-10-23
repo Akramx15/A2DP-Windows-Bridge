@@ -245,14 +245,32 @@ export function sampleRates(codec: string): number[] {
 }
 
 /**
- * The profile's ABR flag means AAC's VBR under AAC, SBC's adaptive bitpool
- * under SBC / SBC XQ, and LDAC's / LHDC V5's ABR elsewhere: switching
- * between those leaves it off rather than carrying it over (an LDAC profile
- * with ABR moved to SBC does not start adapting its bitpool unasked).
+ * The profile's ABR flag means AAC's VBR under AAC, the adaptive bitpool
+ * under SBC and under SBC XQ (each its own: issue #86, SBC's turned XQ's on),
+ * and LDAC's / LHDC V5's ABR elsewhere: switching between those leaves it
+ * off rather than carrying it over (an LDAC profile with ABR moved to SBC
+ * does not start adapting its bitpool unasked).
  */
 export function abrCarries(from: string, to: string): boolean {
-  const family = (c: string) => (c === "aac" ? "vbr" : c === "sbc" || c === "sbcxq" ? "bitpool" : "abr");
+  const family = (c: string) => (c === "aac" || c === "sbc" || c === "sbcxq" ? c : "abr");
   return family(from) === family(to);
+}
+
+/**
+ * A codec's starting values from another codec's (`p.codec`): what does
+ * not carry over (ABR across families, SBC's frame setup to SBC XQ and
+ * back) is left at the default, then the values are fitted to the codec
+ */
+export function carryToCodec<T extends CodecFields>(p: T, to: string): T {
+  const same = p.codec === to;
+  return fitToCodec({
+    ...p,
+    codec: to,
+    abr: abrCarries(p.codec, to) ? p.abr : false,
+    ...(same || p.sbc_blocks === undefined ? {} : { sbc_blocks: 0 }),
+    ...(same || p.sbc_subbands === undefined ? {} : { sbc_subbands: 0 }),
+    ...(same || p.sbc_allocation === undefined ? {} : { sbc_allocation: "" }),
+  });
 }
 
 /** LHDC V5 ABR runs at 400 kbps or below whatever the quality (as on

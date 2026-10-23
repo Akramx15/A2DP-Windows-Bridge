@@ -60,7 +60,8 @@ pub fn program_of(command: &str) -> Option<PathBuf> {
     (!program.trim().is_empty()).then(|| PathBuf::from(program))
 }
 
-fn get_in(subkey: &str, value_name: &str) -> windows::core::Result<Option<String>> {
+/// The REG_SZ value `value_name` of HKCU\`subkey`, or None if there is none
+pub(crate) fn get_in(subkey: &str, value_name: &str) -> windows::core::Result<Option<String>> {
     let Some(key) = RegKey::open_hkcu(subkey, KEY_QUERY_VALUE)? else {
         return Ok(None);
     };

@@ -40,12 +40,11 @@ En su primer inicio, la v2 copia la configuración de la v1 en `%APPDATA%\A2DPWB
 
 ## Paso 1: Configuración inicial {#first-run}
 
-Conecte el adaptador Bluetooth USB e inicie A2DPWB. Si aún no hay ningún perfil o ningún adaptador tiene WinUSB, A2DPWB abre **Configurar A2DPWB**, con cuatro pasos:
+Conecte el adaptador Bluetooth USB e inicie A2DPWB. Si aún no hay ningún perfil o ningún adaptador tiene WinUSB, A2DPWB abre **Configurar A2DPWB**, con tres pasos:
 
-1. **Elegir el adaptador**: los adaptadores Bluetooth USB encontrados. Si falta el suyo, conéctelo y pulse **Actualizar**
+1. **Elegir el adaptador**: los adaptadores Bluetooth USB encontrados. Si falta el suyo, conéctelo y pulse **Actualizar**. Un **Compatible** verde o un **No compatible** rojo indica si A2DPWB puede usarlo
 2. **Controlador y firmware**: **Asignar WinUSB** (consulte el [Paso 2](#winusb)) y, en los adaptadores Realtek, los archivos de firmware (consulte [Firmware](#firmware))
-3. **Encontrar los auriculares**: póngalos en modo de emparejamiento, pulse **Buscar dispositivos**, elíjalos y pulse **Crear perfil** (consulte el [Paso 3](#headphones)); el códec se puede cambiar después en **Códecs**
-4. **Prueba**: elija qué enviar (todo el audio del PC, un dispositivo virtual o una aplicación), pulse **Conectar** y reproduzca algo en el PC. Si lo oye en los auriculares, la configuración ha terminado
+3. **Encontrar los dispositivos de audio**: la búsqueda empieza sola. Ponga el dispositivo de audio en modo de emparejamiento y pulse **Conectar** junto a él (o escriba su dirección y pulse **Usar**): A2DPWB crea su perfil («*nombre* | Auto», el mejor códec del dispositivo) y se conecta. Después, **Finalizar** (consulte el [Paso 3](#headphones))
 
 **Configurar más tarde** omite el resto; **Configuración > Ejecutar la configuración inicial** la vuelve a abrir.
 

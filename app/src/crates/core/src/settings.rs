@@ -42,11 +42,14 @@ pub fn app_language_for(tag: &str) -> Option<&'static str> {
     LANGUAGES.iter().copied().find(|l| *l == primary)
 }
 
-/// A new settings file's language: the first of the user's Windows display
-/// languages the app has, else English (v1's installer wrote the setup's
-/// language; this also covers the portable copy)
+/// A new settings file's language: the one chosen in the installer, else
+/// the first of the user's Windows display languages the app has, else
+/// English (v1's installer wrote the setup's language into settings.json;
+/// the display languages also cover the portable copy)
 fn default_language() -> String {
-    pick_language(&win_sys::locale::preferred_ui_languages()).into()
+    let mut tags: Vec<String> = win_sys::locale::setup_language().into_iter().collect();
+    tags.extend(win_sys::locale::preferred_ui_languages());
+    pick_language(&tags).into()
 }
 
 fn pick_language(tags: &[String]) -> &'static str {
