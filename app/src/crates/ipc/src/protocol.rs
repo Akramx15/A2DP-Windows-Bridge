@@ -435,6 +435,44 @@ pub struct Profile {
     /// joint stereo; SBC XQ is always dual channel)
     #[serde(default)]
     pub sbc_channel_mode: String,
+    /// The settings of the codecs the profile is not using, by codec key,
+    /// as they were last chosen (the Codecs screen brings them back when
+    /// that codec is chosen again)
+    #[serde(default)]
+    pub codec_settings: std::collections::BTreeMap<String, CodecValues>,
+}
+
+/// One codec's settings in a profile (Profile.codec_settings)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(default)]
+pub struct CodecValues {
+    pub quality: String,
+    pub sample_rate: u32,
+    pub bit_depth: u32,
+    pub abr: bool,
+    pub sbc_bitpool: u8,
+    pub sbcxq_bitpool: u8,
+    pub sbc_blocks: u8,
+    pub sbc_subbands: u8,
+    pub sbc_allocation: String,
+    pub sbc_channel_mode: String,
+}
+
+impl Default for CodecValues {
+    fn default() -> Self {
+        CodecValues {
+            quality: "hq".into(),
+            sample_rate: 0,
+            bit_depth: 0,
+            abr: false,
+            sbc_bitpool: 0,
+            sbcxq_bitpool: 0,
+            sbc_blocks: 0,
+            sbc_subbands: 0,
+            sbc_allocation: String::new(),
+            sbc_channel_mode: String::new(),
+        }
+    }
 }
 
 fn yes() -> bool {

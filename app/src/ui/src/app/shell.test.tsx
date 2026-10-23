@@ -35,7 +35,7 @@ afterEach(async () => {
 describe("keyboard", () => {
   it("Ctrl+Shift+D opens the diagnostics", async () => {
     start("#/home");
-    await screen.findByRole("button", { name: "Connect" });
+    await screen.findAllByRole("button", { name: "Connect" });
     fireEvent.keyDown(window, { key: "D", code: "KeyD", ctrlKey: true, shiftKey: true });
     expect(await screen.findByRole("heading", { level: 1, name: "Diagnostics" })).toBeInTheDocument();
     expect(isDiagnosticsShortcut({ key: "d", code: "KeyD", ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })).toBe(false);

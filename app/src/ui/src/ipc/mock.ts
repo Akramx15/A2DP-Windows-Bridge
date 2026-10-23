@@ -112,6 +112,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     sbc_allocation: "",
     sbc_channel_mode: "",
     ...over,
+    codec_settings: over.codec_settings ?? {},
   };
 }
 

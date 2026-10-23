@@ -7,30 +7,25 @@ import type { Core } from "../ipc/store";
 import { IpcError } from "../ipc/types";
 import { t, tm } from "../i18n";
 
-export type RouteName = "home" | "profiles" | "devices" | "diagnostics" | "developer" | "adapter" | "settings" | "about" | "setup";
+export type RouteName = "home" | "codecs" | "devices" | "diagnostics" | "developer" | "adapter" | "settings" | "about" | "setup";
 
 export interface Route {
   name: RouteName;
-  /** profiles: "new" or the name of the profile being edited; adapter:
-   *  "afh" for its channel hopping section, "firmware" for the firmware */
+  /** adapter: "afh" for its channel hopping section, "firmware" for the
+   *  firmware */
   arg?: string;
 }
 
 export function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/");
-  const names: RouteName[] = ["home", "profiles", "devices", "diagnostics", "developer", "adapter", "settings", "about", "setup"];
-  const name = names.find((n) => n === parts[0]) ?? "home";
-  if (name === "profiles" && parts[1] === "new") return { name, arg: "new" };
-  if (name === "profiles" && parts[1] === "edit" && parts[2] !== undefined) {
-    return { name, arg: decodeURIComponent(parts.slice(2).join("/")) };
-  }
+  const names: RouteName[] = ["home", "codecs", "devices", "diagnostics", "developer", "adapter", "settings", "about", "setup"];
+  // Profiles became Codecs (issue #86): its links still lead there
+  const name = parts[0] === "profiles" ? "codecs" : (names.find((n) => n === parts[0]) ?? "home");
   if (name === "adapter" && (parts[1] === "afh" || parts[1] === "firmware")) return { name, arg: parts[1] };
   return { name };
 }
 
 export function routeHash(r: Route): string {
-  if (r.name === "profiles" && r.arg === "new") return "#/profiles/new";
-  if (r.name === "profiles" && r.arg) return `#/profiles/edit/${encodeURIComponent(r.arg)}`;
   if (r.name === "adapter" && (r.arg === "afh" || r.arg === "firmware")) return `#/adapter/${r.arg}`;
   return `#/${r.name}`;
 }

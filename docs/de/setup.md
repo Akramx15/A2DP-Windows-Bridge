@@ -44,7 +44,7 @@ Stecken Sie den USB-Bluetooth-Adapter ein und starten Sie A2DPWB. Solange es noc
 
 1. **Adapter auswählen**: die gefundenen USB-Bluetooth-Adapter. Fehlt Ihrer, stecken Sie ihn ein und klicken Sie auf **Aktualisieren**
 2. **Treiber und Firmware**: **WinUSB zuweisen** (siehe [Schritt 2](#winusb)) und bei Realtek-Adaptern die Firmwaredateien (siehe [Firmware](#firmware))
-3. **Kopfhörer finden**: Versetzen Sie die Kopfhörer in den Kopplungsmodus, klicken Sie auf **Geräte suchen**, wählen Sie sie aus und dann **Profil erstellen** (siehe [Schritt 3](#headphones))
+3. **Kopfhörer finden**: Versetzen Sie die Kopfhörer in den Kopplungsmodus, klicken Sie auf **Geräte suchen**, wählen Sie sie aus und dann **Profil erstellen** (siehe [Schritt 3](#headphones)); der Codec lässt sich später unter **Codecs** ändern
 4. **Test**: wählen Sie, was gesendet wird (gesamtes PC-Audio, ein virtuelles Gerät oder eine App), klicken Sie auf **Verbinden** und spielen Sie am PC etwas ab. Hören Sie es im Kopfhörer, ist die Einrichtung abgeschlossen
 
 **Später einrichten** überspringt den Rest; **Einstellungen > Einrichtung ausführen** öffnet die Einrichtung erneut.
@@ -92,7 +92,7 @@ Fehlt der Adapter in der Liste von A2DPWB, schlägt eine Schaltfläche auf der S
 
 ## Schritt 3: Kopfhörer finden {#headphones}
 
-**Geräte suchen** (in der Einrichtung und im Profileditor) sucht etwa 10 Sekunden lang mit dem USB-Adapter nach Geräten in der Nähe. Versetzen Sie die Kopfhörer vorher in den Kopplungsmodus. Geräte, mit denen A2DPWB schon einmal gekoppelt war, werden als **Gekoppelt** aufgeführt.
+**Geräte suchen** (in der Einrichtung und unter **Audiogeräte**) sucht etwa 10 Sekunden lang mit dem USB-Adapter nach Geräten in der Nähe. Versetzen Sie die Kopfhörer vorher in den Kopplungsmodus. Geräte, mit denen A2DPWB schon einmal gekoppelt war, werden als **Gekoppelt** aufgeführt.
 
 Findet die Suche die Kopfhörer nicht, geben Sie die Bluetooth-Adresse unter **Manuell:** ein und klicken Sie auf **Verwenden**. Eingegebene oder eingefügte Adressen werden bei der Eingabe formatiert: `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` und `AA BB CC DD EE FF` werden alle zu `AA:BB:CC:DD:EE:FF`.
 
@@ -107,7 +107,7 @@ Findet die Suche die Kopfhörer nicht, geben Sie die Bluetooth-Adresse unter **M
 a2dpwb-core.exe --cli --scan
 ```
 
-Das neue Profil beginnt mit **Automatisch** als Codec und dem Systemaudio als Aufnahmequelle; die Standardwerte liefern den besten Klang. Alles Weitere finden Sie unter [Verwendung](usage).
+Die Kopfhörer beginnen mit **Automatisch** als Codec (**Codecs**) und dem Systemaudio als Aufnahmequelle (**Audiogeräte**); die Standardwerte liefern den besten Klang. Alles Weitere finden Sie unter [Verwendung](usage).
 
 ---
 

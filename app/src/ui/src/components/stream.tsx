@@ -416,13 +416,12 @@ export function useFixes() {
       const p = currentProfile(snap);
       if (p) return { label: t("ui.fix.retry"), icon: "arrow_sync", run: () => core.request("stream.start", { profile: p.name }) };
     }
+    // The codec is chosen on Codecs, the capture source on Audio Devices
     if (PROFILE_KEYS.includes(key)) {
-      const p = currentProfile(snap);
-      return {
-        label: t("profile.edit"),
-        icon: "edit",
-        run: () => navigate(p ? { name: "profiles", arg: p.name } : { name: "profiles" }),
-      };
+      const codec = key.startsWith("error.codec") || key === "error.no_compatible_codec" || key === "error.aac_unavailable";
+      return codec
+        ? { label: t("ui.nav.codecs"), icon: "headphones", run: () => navigate({ name: "codecs" }) }
+        : { label: t("ui.nav.devices"), icon: "bluetooth", run: () => navigate({ name: "devices" }) };
     }
     return { label: t("ui.nav.diagnostics"), icon: "pulse", run: () => navigate({ name: "diagnostics" }) };
   };

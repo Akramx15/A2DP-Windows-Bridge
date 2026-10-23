@@ -887,6 +887,16 @@ option {
   white-space: nowrap;
 }
 
+/* One block per device (issue #86); many devices scroll */
+.status-pills {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-height: 50%;
+  overflow-y: auto;
+  min-height: 0;
+  flex: none;
+}
 .status-pill {
   display: flex;
   align-items: flex-start;
@@ -1304,6 +1314,25 @@ option {
   background: var(--st, var(--text-2));
 }
 
+/* A card per device, side by side (issue #86), each with its button */
+.home-devices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--s4);
+}
+.home-device {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+.home-device .device-card {
+  flex: 1;
+  min-width: 0;
+}
+.home-device:not(.live) .ring .icon {
+  color: var(--text-2);
+}
 .home-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
@@ -1357,67 +1386,44 @@ option {
 }
 
 /* ---------------------------------------------------------------- */
-/* Profiles                                                          */
+/* Codecs: a section per device with its codec cards (issue #86)     */
 /* ---------------------------------------------------------------- */
 
-.profile-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: var(--s4);
+.codecs-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
 }
-.profile-card {
+.device-codecs {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
   padding: var(--s4);
   min-width: 0;
 }
-.profile-card.active {
-  border-color: var(--border-strong);
-}
-.profile-card-head {
+.device-codecs-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--s3);
 }
-.profile-card-head > .icon {
+.device-codecs-head > .icon {
   width: 1.5rem;
   height: 1.5rem;
   color: var(--text-2);
-  margin-top: 2px;
+  flex: none;
 }
-.profile-card-title {
+.device-codecs-title {
   display: flex;
   flex-direction: column;
   min-width: 0;
   flex: 1;
 }
-.profile-card-device {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  min-width: 0;
-  margin-top: var(--s1);
+.device-codecs-title h2 {
+  font-size: var(--fs-16);
+  margin: 0;
 }
-/* The state keeps its width ("ストリーミング中"); the device name gives way */
-.profile-card-device > .tag {
-  flex: none;
-}
-.profile-card-meta {
-  display: flex;
-  gap: var(--s2);
-  flex-wrap: wrap;
-}
-.profile-card-actions {
-  display: flex;
-  gap: var(--s1);
-  align-items: center;
-}
-.profile-card-actions .btn:first-child {
-  flex: 1;
+.device-codecs-title .mono {
+  font-size: var(--fs-12);
 }
 
 .form {

@@ -44,7 +44,7 @@ Branchez l'adaptateur Bluetooth USB et lancez A2DPWB. S'il n'existe encore aucun
 
 1. **Choisir l'adaptateur** : les adaptateurs Bluetooth USB détectés. Si le vôtre n'apparaît pas, branchez-le et appuyez sur **Actualiser**
 2. **Pilote et firmware** : **Attribuer WinUSB** (voir [Étape 2](#winusb)) et, pour les adaptateurs Realtek, les fichiers de firmware (voir [Firmware](#firmware))
-3. **Trouver votre casque** : mettez-le en mode d'association, lancez **Rechercher**, choisissez-le, puis **Créer le profil** (voir [Étape 3](#headphones))
+3. **Trouver votre casque** : mettez-le en mode d'association, lancez **Rechercher**, choisissez-le, puis **Créer le profil** (voir [Étape 3](#headphones)) ; le codec peut être changé ensuite dans **Codecs**
 4. **Test** : choisissez ce qui est envoyé (tout l'audio du PC, un périphérique virtuel ou une application), cliquez sur **Connecter** et lancez une lecture sur le PC. Si vous l'entendez dans le casque, la configuration est terminée
 
 **Configurer plus tard** ignore la suite ; **Paramètres > Lancer la configuration** la rouvre.
@@ -92,7 +92,7 @@ Si l'adaptateur n'apparaît pas dans la liste d'A2DPWB, si un bouton de l'écran
 
 ## Étape 3 : trouver votre casque {#headphones}
 
-**Rechercher** (dans la configuration et dans l'éditeur de profil) recherche les appareils à proximité avec l'adaptateur USB pendant environ 10 secondes. Mettez d'abord le casque en mode d'association. Les appareils déjà associés à A2DPWB sont marqués **Associé**.
+**Rechercher** (dans la configuration et dans **Périphériques audio**) recherche les appareils à proximité avec l'adaptateur USB pendant environ 10 secondes. Mettez d'abord le casque en mode d'association. Les appareils déjà associés à A2DPWB sont marqués **Associé**.
 
 Si la recherche ne le trouve pas, saisissez l'adresse Bluetooth sous **Manuel :** et cliquez sur **Utiliser**. Les adresses tapées ou collées sont mises en forme au fur et à mesure : `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` et `AA BB CC DD EE FF` deviennent toutes `AA:BB:CC:DD:EE:FF`.
 
@@ -107,7 +107,7 @@ Si la recherche ne le trouve pas, saisissez l'adresse Bluetooth sous **Manuel :*
 a2dpwb-core.exe --cli --scan
 ```
 
-Le nouveau profil démarre avec **Auto** comme codec et l'audio du système comme source de capture ; les valeurs par défaut donnent le meilleur son. Voir [Utilisation](usage) pour tout le reste.
+Le casque démarre avec **Auto** comme codec (**Codecs**) et l'audio du système comme source de capture (**Périphériques audio**) ; les valeurs par défaut donnent le meilleur son. Voir [Utilisation](usage) pour tout le reste.
 
 ---
 

@@ -44,7 +44,7 @@ Conecte el adaptador Bluetooth USB e inicie A2DPWB. Si aún no hay ningún perfi
 
 1. **Elegir el adaptador**: los adaptadores Bluetooth USB encontrados. Si falta el suyo, conéctelo y pulse **Actualizar**
 2. **Controlador y firmware**: **Asignar WinUSB** (consulte el [Paso 2](#winusb)) y, en los adaptadores Realtek, los archivos de firmware (consulte [Firmware](#firmware))
-3. **Encontrar los auriculares**: póngalos en modo de emparejamiento, pulse **Buscar dispositivos**, elíjalos y pulse **Crear perfil** (consulte el [Paso 3](#headphones))
+3. **Encontrar los auriculares**: póngalos en modo de emparejamiento, pulse **Buscar dispositivos**, elíjalos y pulse **Crear perfil** (consulte el [Paso 3](#headphones)); el códec se puede cambiar después en **Códecs**
 4. **Prueba**: elija qué enviar (todo el audio del PC, un dispositivo virtual o una aplicación), pulse **Conectar** y reproduzca algo en el PC. Si lo oye en los auriculares, la configuración ha terminado
 
 **Configurar más tarde** omite el resto; **Configuración > Ejecutar la configuración inicial** la vuelve a abrir.
@@ -92,7 +92,7 @@ Si el adaptador no aparece en la lista de A2DPWB, falla un botón de la pantalla
 
 ## Paso 3: Encontrar los auriculares {#headphones}
 
-**Buscar dispositivos** (en la configuración inicial y en el editor de perfiles) busca dispositivos cercanos con el adaptador USB durante unos 10 segundos. Ponga antes los auriculares en modo de emparejamiento. Los dispositivos con los que A2DPWB ya se ha emparejado aparecen como **Emparejado**.
+**Buscar dispositivos** (en la configuración inicial y en **Dispositivos de audio**) busca dispositivos cercanos con el adaptador USB durante unos 10 segundos. Ponga antes los auriculares en modo de emparejamiento. Los dispositivos con los que A2DPWB ya se ha emparejado aparecen como **Emparejado**.
 
 Si la búsqueda no los encuentra, escriba la dirección Bluetooth en **Manual:** y haga clic en **Usar**. Las direcciones escritas o pegadas se formatean mientras escribe: `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` y `AA BB CC DD EE FF` se convierten todas en `AA:BB:CC:DD:EE:FF`.
 
@@ -107,7 +107,7 @@ Si la búsqueda no los encuentra, escriba la dirección Bluetooth en **Manual:**
 a2dpwb-core.exe --cli --scan
 ```
 
-El nuevo perfil empieza con **Automático** como códec y el audio del sistema como origen de captura; los valores predeterminados dan el mejor sonido. Consulte [Uso](usage) para todo lo demás.
+Los auriculares empiezan con **Automático** como códec (**Códecs**) y el audio del sistema como origen de captura (**Dispositivos de audio**); los valores predeterminados dan el mejor sonido. Consulte [Uso](usage) para todo lo demás.
 
 ---
 

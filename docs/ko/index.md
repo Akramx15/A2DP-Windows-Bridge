@@ -55,7 +55,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | Opus (Android의 A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2 이상 (`opus_g`); Ubuntu 24.04(PipeWire 1.0.5)에는 없음 | 🧪 실험적 |
 | Opus 05 (PipeWire 자체 Opus) | ❌ | ❌ | ✅ PipeWire 0.3.57 이상 (`opus_05`, PipeWire 기기로만) | 🧪 실험적 (직접 선택한 경우) |
 | aptX Adaptive | ❌ | ❌ | ❌ | 🧪 실험적 (직접 선택한 경우) |
-| LC3 (LE 오디오, BAP 유니캐스트) | ❌ | ✅ Bluetooth 하드웨어와 드라이버가 LE 오디오를 지원하는 PC에서만 | ✅ PipeWire BAP `lc3` (BlueZ LE 오디오) | 🧪 실험적 (LE 오디오 프로필, 게이밍 헤드셋에서는 GMAP 저지연, ISO를 지원하는 Bluetooth 5.2 어댑터 필요, [사용법](usage#le-audio)) |
+| LC3 (LE 오디오, BAP 유니캐스트) | ❌ | ✅ Bluetooth 하드웨어와 드라이버가 LE 오디오를 지원하는 PC에서만 | ✅ PipeWire BAP `lc3` (BlueZ LE 오디오) | 🧪 실험적 (장치의 LE 오디오 항목, 게이밍 헤드셋에서는 GMAP 저지연, ISO를 지원하는 Bluetooth 5.2 어댑터 필요, [사용법](usage#le-audio)) |
 
 ✅ 지원 · 🧪 실험적 · ❌ 미지원. 모든 열은 전송 측(PC → 헤드폰) 기준입니다. "기본"은 A2DPWB 없이 OS 자체 Bluetooth 오디오를 사용하는 경우이며, Ubuntu 열은 Ubuntu 26.04의 PipeWire 코덱 구성(`libspa-0.2-bluetooth`)입니다.
 
@@ -69,7 +69,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 **Opus는 실험적 기능입니다.** Android의 A2DP Opus 벤더 코덱(Android 13 이상, 벤더 ID 0x000000E0 Google)으로, 48 kHz, 20 ms 프레임이며 Android가 요청하는 대로 256 kbps 스테레오(표준 192, 모바일 128 kbps)로 libopus 1.5.2를 사용해 인코딩합니다. 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, 실제 Opus 헤드폰에서는 아직 검증되지 않았습니다. 자동 모드에서 Opus의 우선순위는 LHDC V5보다 낮고 AAC / SBC보다 높습니다.
 
 {: .warning }
-**Opus 05는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** PipeWire 고유의 A2DP Opus 벤더 코덱(벤더 ID 0x000005F1, 코덱 0x1005, PipeWire의 `opus_05`)으로, 구현한 곳이 PipeWire뿐이므로 수신 장치는 A2DP 싱크로 동작하는 PipeWire PC여야 합니다. A2DPWB는 스테레오 음악 방향만 보냅니다(5.1 / 7.1과 복귀 채널 없음). 48 kHz, 10 ms 프레임(싱크가 20 ms만 지원하면 20 ms), 인코더와 비트레이트는 Opus와 같으며 싱크의 상한으로 제한합니다. 자동 선택은 이를 고르지 않으므로 프로필에서 또는 `-c opus05`로 선택하십시오. PipeWire와 같은 기능을 제공하는 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, 실제 PipeWire 수신 장치로는 시험하지 않았습니다. A2DP 싱크로서의 PipeWire는 Opus 05를 0.3.57부터, Android의 Opus(`opus_g`)를 1.2.0부터 디코딩합니다. Ubuntu 24.04 LTS는 PipeWire 1.0.5(Opus 05만), Ubuntu 25.10(1.4.7)과 26.04 LTS(1.6.2)는 둘 다 제공합니다. 어느 쪽도 A2DPWB로는 아직 확인하지 않았습니다.
+**Opus 05는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** PipeWire 고유의 A2DP Opus 벤더 코덱(벤더 ID 0x000005F1, 코덱 0x1005, PipeWire의 `opus_05`)으로, 구현한 곳이 PipeWire뿐이므로 수신 장치는 A2DP 싱크로 동작하는 PipeWire PC여야 합니다. A2DPWB는 스테레오 음악 방향만 보냅니다(5.1 / 7.1과 복귀 채널 없음). 48 kHz, 10 ms 프레임(싱크가 20 ms만 지원하면 20 ms), 인코더와 비트레이트는 Opus와 같으며 싱크의 상한으로 제한합니다. 자동 선택은 이를 고르지 않으므로 **코덱** 화면에서 또는 `-c opus05`로 선택하십시오. PipeWire와 같은 기능을 제공하는 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, 실제 PipeWire 수신 장치로는 시험하지 않았습니다. A2DP 싱크로서의 PipeWire는 Opus 05를 0.3.57부터, Android의 Opus(`opus_g`)를 1.2.0부터 디코딩합니다. Ubuntu 24.04 LTS는 PipeWire 1.0.5(Opus 05만), Ubuntu 25.10(1.4.7)과 26.04 LTS(1.6.2)는 둘 다 제공합니다. 어느 쪽도 A2DPWB로는 아직 확인하지 않았습니다.
 
 {: .warning }
 **SBC XQ**는 Sony WH-1000XM4로 검증되었습니다(듀얼 채널, 48 kHz에서 bitpool 43, 552 kbps). 이 구성을 거부하는 싱크에는 일반 SBC로 다시 연결합니다. **FastStream은 실험적 기능입니다.** 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만 실제 FastStream 헤드폰으로는 시험하지 않았습니다. 음악 방향만 지원하며, 자동 선택은 이를 고르지 않습니다.
@@ -78,7 +78,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 **기본 aptX만 필요하십니까?** Windows 10의 기본 Bluetooth 스택은 이미 기본 aptX를 지원하므로(aptX HD, aptX LL, aptX Adaptive는 미지원) 이 경우 A2DPWB가 필요하지 않습니다. A2DPWB는 주로 LDAC, aptX HD, aptX Low Latency에 유용합니다.
 
 {: .warning }
-**aptX Adaptive는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 MIT 라이선스 순수 Rust 인코더로 인코딩하며, 이 인코더의 테이블은 개발자들이 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성한 것입니다. 48 kHz 스테레오만 지원하며(44.1 / 96 kHz를 요청하면 48 kHz로 캡처) 24비트입니다. R1 싱크에서는 높음 427 kbps, 표준 364, 모바일 318, 저지연 265 kbps이며(R2 싱크는 별도의 표), 높음에서는 ABR을 사용합니다. 자동 선택은 이를 고르지 않으므로 프로필에서 또는 `-c aptxad`로 선택하십시오. 단위 테스트, 업스트림의 비트 단위 일치 테스트, 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, A2DPWB에서는 아직 실제 헤드폰으로 시험하지 않았습니다. 업스트림은 Linux에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 동작한다고 보고합니다. 헤드폰이 기본 aptX도 함께 제공하면 자동은 그것을 사용합니다. [aptX 계열과 aptX Adaptive](usage#aptx-compatibility)를 참조하십시오.
+**aptX Adaptive는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 MIT 라이선스 순수 Rust 인코더로 인코딩하며, 이 인코더의 테이블은 개발자들이 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성한 것입니다. 48 kHz 스테레오만 지원하며(44.1 / 96 kHz를 요청하면 48 kHz로 캡처) 24비트입니다. R1 싱크에서는 높음 427 kbps, 표준 364, 모바일 318, 저지연 265 kbps이며(R2 싱크는 별도의 표), 높음에서는 ABR을 사용합니다. 자동 선택은 이를 고르지 않으므로 **코덱** 화면에서 또는 `-c aptxad`로 선택하십시오. 단위 테스트, 업스트림의 비트 단위 일치 테스트, 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, A2DPWB에서는 아직 실제 헤드폰으로 시험하지 않았습니다. 업스트림은 Linux에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 동작한다고 보고합니다. 헤드폰이 기본 aptX도 함께 제공하면 자동은 그것을 사용합니다. [aptX 계열과 aptX Adaptive](usage#aptx-compatibility)를 참조하십시오.
 
 ## 지원 플랫폼 {#platform-support}
 
@@ -145,7 +145,7 @@ A2DPWB는 Windows Bluetooth 스택을 완전히 우회합니다. [BTstack](https
 - **자동 다시 연결**: 연결이 끊기면 다시 연결 (최대 10회), PC가 절전 모드에서 복귀한 후에도 다시 연결
 - **연결 품질과 AFH**: 전송 내용, RSSI, 사용 중인 채널을 표시하고, 피해야 할 Wi-Fi 채널을 어댑터에 알립니다 ([사용법](usage#link-quality) 참조)
 - **헤드폰 제어 (AVRCP)**: 헤드폰 및 Windows 볼륨과 연동되는 볼륨 슬라이더, 헤드폰의 재생/일시 정지, 다음 곡, 이전 곡 버튼으로 PC 재생 제어 ([사용법](usage#headphone-buttons) 참조)
-- **프로필 관리**: 장치 + 코덱 + 캡처 구성을 저장하고 트레이에서 바로 연결
+- **장치별 설정**: 오디오 장치마다 코덱(고유 설정 포함)과 캡처 소스를 두며, 홈에 나란히 표시되고 트레이에서 바로 연결
 - **업데이트**: 설치된 버전은 스트리밍이 중지된 후 스스로 업데이트됩니다 ([사용법](usage#updates) 참조)
 - **다국어 지원**: 영어, 일본어, 중국어 간체, 중국어 번체, 한국어, 독일어, 프랑스어, 스페인어
 - **Realtek 펌웨어**: Realtek 어댑터용 안내형 펌웨어 다운로드
