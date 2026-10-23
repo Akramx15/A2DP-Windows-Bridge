@@ -48,7 +48,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ no está en los paquetes de Ubuntu | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅ (receptores cuyo SBC admite canal dual y bitpool ≥ 43) |
+| SBC XQ | ❌ | ❌ | ✅ | ✅ (receptores cuyo SBC admite canal dual y bitpool ≥ 29) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 experimental (solo música, si se elige expresamente) |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |

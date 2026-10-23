@@ -185,10 +185,13 @@ const SBC_CH_DUAL: u8 = 0x04;
 const SBC_BLOCKS_16: u8 = 0x01;
 const SBC_SUBBANDS_8: u8 = 0x01;
 const SBC_ALLOC_LOUDNESS: u8 = 0x01;
-/// SBC XQ needs the sink to take at least this bitpool per channel (the
-/// lowest High / the Standard 44.1 kHz bitpool, ~507 kbps); below it the
-/// sink gets plain SBC
-pub const SBC_XQ_MIN_MAX_BITPOOL: u8 = 43;
+/// SBC XQ needs the sink to take at least this bitpool per channel: the
+/// lowest XQ bitpool (Mobile at 48 kHz, PipeWire's dual channel default),
+/// ~353 kbps at 44.1 kHz, still above the best plain SBC (bitpool 53 joint
+/// stereo, ~328 kbps). Below it the sink gets plain SBC. PipeWire's SBC-XQ
+/// has no floor at all: it caps its bitpool (43 / 39) at the sink's maximum,
+/// so a sink taking up to 39 (Moto buds+, issue #86) streams XQ at 39.
+pub const SBC_XQ_MIN_MAX_BITPOOL: u8 = 29;
 /// The local SBC SEP's largest bitpool
 const SBC_MAX_BITPOOL: u8 = 53;
 
@@ -209,13 +212,29 @@ impl SbcCapabilities {
     /// Dual channel with 16 blocks, 8 subbands, loudness, 44.1 or 48 kHz and
     /// a bitpool up to at least [`SBC_XQ_MIN_MAX_BITPOOL`]
     pub fn allows_xq(&self) -> bool {
-        self.channel_mode & SBC_CH_DUAL != 0
-            && self.block_length & SBC_BLOCKS_16 != 0
-            && self.subbands & SBC_SUBBANDS_8 != 0
-            && self.allocation_method & SBC_ALLOC_LOUDNESS != 0
-            && self.sampling_frequency & (SBC_FREQ_44100 | SBC_FREQ_48000) != 0
-            && self.max_bitpool >= SBC_XQ_MIN_MAX_BITPOOL
-            && self.min_bitpool <= SBC_XQ_MIN_MAX_BITPOOL
+        self.xq_refusal().is_none()
+    }
+
+    /// Why these capabilities do not allow SBC XQ (English, for the log and
+    /// diagnostics); None when they do
+    pub fn xq_refusal(&self) -> Option<&'static str> {
+        if self.channel_mode & SBC_CH_DUAL == 0 {
+            Some("no dual channel")
+        } else if self.block_length & SBC_BLOCKS_16 == 0 {
+            Some("no 16 blocks")
+        } else if self.subbands & SBC_SUBBANDS_8 == 0 {
+            Some("no 8 subbands")
+        } else if self.allocation_method & SBC_ALLOC_LOUDNESS == 0 {
+            Some("no loudness allocation")
+        } else if self.sampling_frequency & (SBC_FREQ_44100 | SBC_FREQ_48000) == 0 {
+            Some("neither 44.1 nor 48 kHz")
+        } else if self.max_bitpool < SBC_XQ_MIN_MAX_BITPOOL {
+            Some("largest bitpool below 29")
+        } else if self.min_bitpool > SBC_XQ_MIN_MAX_BITPOOL {
+            Some("smallest bitpool above 29")
+        } else {
+            None
+        }
     }
 
     /// Sampling frequencies offered, in Hz
@@ -1591,6 +1610,23 @@ mod tests {
         caps.add_sbc_caps(1, SbcCapabilities { max_bitpool: 45, ..sbc_all() });
         let c = caps.configuration(CodecKind::SbcXq, 44100, 2, 16).unwrap();
         assert!(matches!(c.request, ConfigRequest::Sbc { max_bitpool: 45, .. }));
+
+        // Moto buds+ (issue #86): dual channel up to 39. PipeWire streams
+        // SBC-XQ at 39 per channel there (~463 kbps at 44.1 kHz), so do we
+        let moto = SbcCapabilities { min_bitpool: 2, max_bitpool: 39, ..sbc_all() };
+        assert_eq!(moto.xq_refusal(), None);
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, moto);
+        assert!(caps.has(CodecKind::SbcXq));
+        for rate in [44100, 48000] {
+            let c = caps.configuration(CodecKind::SbcXq, rate, 2, 16).unwrap();
+            let ConfigRequest::Sbc { min_bitpool, max_bitpool, channel_mode, .. } = c.request else { panic!() };
+            assert_eq!((min_bitpool, max_bitpool, channel_mode), (2, 39, ChannelMode::DualChannel), "{rate}");
+        }
+        // Below the lowest XQ bitpool: plain SBC, and the log says why
+        let low = SbcCapabilities { max_bitpool: 28, ..sbc_all() };
+        assert_eq!(low.xq_refusal(), Some("largest bitpool below 29"));
+        assert_eq!(SbcCapabilities { channel_mode: 0x0B, ..sbc_all() }.xq_refusal(), Some("no dual channel"));
     }
 
     #[test]
@@ -1726,7 +1762,7 @@ mod tests {
     fn sbc_xq_falls_back_to_sbc() {
         let no_xq = [
             SbcCapabilities { channel_mode: 0x0B, ..sbc_all() }, // no dual channel
-            SbcCapabilities { max_bitpool: 42, ..sbc_all() },    // bitpool too low
+            SbcCapabilities { max_bitpool: 28, ..sbc_all() },    // bitpool too low
             SbcCapabilities { block_length: 0x0E, ..sbc_all() }, // no 16 blocks
             SbcCapabilities { subbands: 0x02, ..sbc_all() },     // 4 subbands only
             SbcCapabilities { allocation_method: 0x02, ..sbc_all() }, // SNR only

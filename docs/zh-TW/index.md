@@ -48,7 +48,7 @@ has_toc: false
 | aptX Low Latency | ❌ | ❌ | ✅ | 🧪 實驗性 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
 | AAC | ❌ | ✅ | ❌ 不在 Ubuntu 的套件中 | ✅ |
-| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC 允許雙聲道且 bitpool ≥ 43 的接收端） |
+| SBC XQ | ❌ | ❌ | ✅ | ✅（SBC 允許雙聲道且 bitpool ≥ 29 的接收端） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 實驗性（僅限音樂，需明確選擇） |
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |

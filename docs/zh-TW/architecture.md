@@ -293,7 +293,7 @@ Windows 8 以上內建由 Microsoft 簽署的 WinUSB 驅動程式（`winusb.inf`
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16 位元立體聲、無 RTP 標頭 |
 | AAC | fdk-aac | 最高 256 kbps | AAC-LC、LATM 傳輸 |
 | SBC | Bluedroid 編碼器的 Rust 移植版 | 最高約 345 kbps | A2DP 必備的基本轉碼器；與 C 編碼器位元完全一致（已以所有設定組合測試） |
-| SBC XQ | 同一個 SBC 編碼器 | 約 385/505/552 kbps | 雙聲道（dual channel），44.1 / 48 kHz 時 bitpool 47 / 43（高）；僅在接收端的 SBC 允許雙聲道且 bitpool 至少為 43 時使用；與 SBC 共用串流端點、媒體酬載標頭與 RTP 標頭 |
+| SBC XQ | 同一個 SBC 編碼器 | 約 385/505/552 kbps | 雙聲道（dual channel），44.1 / 48 kHz 時 bitpool 47 / 43（高）；僅在接收端的 SBC 允許雙聲道且 bitpool 至少為 29 時使用（bitpool 隨後與 PipeWire 一樣限制在接收端的最大值）；與 SBC 共用串流端點、媒體酬載標頭與 RTP 標頭 |
 | FastStream | 同一個 SBC 編碼器 | 198/216 kbps (44.1/48 kHz) | CSR 廠商轉碼器，僅音樂方向（無語音回傳通道）：SBC joint stereo、bitpool 29，訊框補齊至 72 位元組，每個封包 3 個訊框，無媒體酬載標頭也無 RTP 標頭（與 PipeWire 相同）；「自動」永遠不會選用 |
 | LHDC V5 | lhdcv5-enc（AOSP 編碼器的 C 語言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 16/24 位元、5 ms 訊框、2 位元組媒體酬載標頭、RTP 標頭 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（立體聲；單聲道為一半） | 實驗性；Android 的 A2DP Opus：48 kHz、20 ms 訊框（接收端只支援 10 ms 時為 10 ms）、上限為媒體酬載大小的受限 VBR、每個封包一個訊框、1 位元組媒體酬載標頭、RTP 標頭 |

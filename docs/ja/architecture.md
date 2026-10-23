@@ -244,7 +244,7 @@ Windows Audio Session API でオーディオをリアルタイムに取り込み
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit ステレオ、RTP ヘッダーなし |
 | AAC | fdk-aac | 最大 256 kbps | AAC-LC、LATM トランスポート |
 | SBC | Bluedroid エンコーダーの Rust 移植 | 最大約 345 kbps | A2DP 必須ベースライン。C 版とビット単位で一致（全設定でテスト） |
-| SBC XQ | 同じ SBC エンコーダー | 約 385/505/552 kbps | デュアルチャネル、bitpool 47 / 43（44.1 / 48 kHz、High）。シンクの SBC がデュアルチャネルと 43 以上の bitpool を許すときだけ。SBC のストリームエンドポイント、メディアペイロードヘッダー、RTP ヘッダーを共用 |
+| SBC XQ | 同じ SBC エンコーダー | 約 385/505/552 kbps | デュアルチャネル、bitpool 47 / 43（44.1 / 48 kHz、High）。シンクの SBC がデュアルチャネルと 29 以上の bitpool を許すときだけ（bitpool は PipeWire と同じくシンクの最大に抑える）。SBC のストリームエンドポイント、メディアペイロードヘッダー、RTP ヘッダーを共用 |
 | FastStream | 同じ SBC エンコーダー | 198/216 kbps (44.1/48 kHz) | CSR のベンダーコーデック、音楽方向のみ（音声の逆方向チャネルなし）: SBC ジョイントステレオ bitpool 29、フレームを 72 バイトに詰め、1 パケット 3 フレーム、メディアペイロードヘッダーも RTP ヘッダーもなし（PipeWire と同じ）。自動では選ばれない |
 | LHDC V5 | lhdcv5-enc（AOSP エンコーダーの C 移植版） | 400/500/900/1000 kbps、ABR 160–400 kbps | 16/24 bit、5 ms フレーム、2 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（ステレオ。モノラルは半分） | 試験的。Android の A2DP Opus: 48 kHz、20 ms フレーム（シンクが 10 ms だけならそれ）、メディアペイロードに収まる上限付きの制約付き VBR、1 パケット 1 フレーム、1 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |

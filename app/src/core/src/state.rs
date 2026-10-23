@@ -1571,7 +1571,7 @@ impl CoreState {
             }
             Method::AdapterRestart => {
                 blocking(Box::new(|me| {
-                    me.service.release_adapter();
+                    let again = me.service.restart_adapter();
                     let (_, s) = me.snapshot();
                     me.publish(Event::Adapter(AdapterState {
                         status: AdapterStatus::Stopped,
@@ -1579,6 +1579,12 @@ impl CoreState {
                         rom_firmware: false,
                         ..s.adapter
                     }));
+                    // The device streamed before connects again on the new
+                    // stack, with the same profile (issue #86)
+                    if let Some(req) = again {
+                        let profile = me.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                        me.begin_stream(req, profile);
+                    }
                     Ok(Value::Null)
                 }))
                 .await

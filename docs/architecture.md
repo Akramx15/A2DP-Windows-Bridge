@@ -319,7 +319,7 @@ Captures audio in real time using the Windows Audio Session API.
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit stereo, no RTP header |
 | AAC | fdk-aac | up to 256 kbps | AAC-LC, LATM transport |
 | SBC | Rust port of the Bluedroid encoder | up to ~345 kbps | Mandatory A2DP baseline; bit-exact with the C encoder (tested over all configurations) |
-| SBC XQ | the same SBC encoder | ~385/505/552 kbps | Dual channel, bitpool 47 / 43 at 44.1 / 48 kHz (High); only when the sink's SBC allows dual channel and a bitpool of at least 43; shares SBC's stream endpoint, media payload header and RTP header |
+| SBC XQ | the same SBC encoder | ~385/505/552 kbps | Dual channel, bitpool 47 / 43 at 44.1 / 48 kHz (High); only when the sink's SBC allows dual channel and a bitpool of at least 29 (the bitpool is then capped at the sink's maximum, as PipeWire); shares SBC's stream endpoint, media payload header and RTP header |
 | FastStream | the same SBC encoder | 198/216 kbps (44.1/48 kHz) | CSR vendor codec, music direction only (no voice backchannel): SBC joint stereo bitpool 29, frames padded to 72 bytes, 3 per packet, no media payload header and no RTP header (as PipeWire); never chosen by Auto |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
