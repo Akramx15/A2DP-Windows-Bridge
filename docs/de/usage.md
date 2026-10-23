@@ -77,7 +77,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 
 ### Einrichtung beim ersten Start
 
-Der erste Start (noch kein Profil oder kein Adapter mit WinUSB) öffnet **A2DPWB einrichten**: Adapter auswählen, Treiber und Firmware, Kopfhörer finden, Test. Siehe [Einrichtung](setup#first-run). **Einstellungen > Einrichtung ausführen** öffnet die Einrichtung erneut.
+Der erste Start (noch kein Profil oder kein Adapter mit WinUSB) öffnet **A2DPWB einrichten**: Adapter auswählen, Treiber und Firmware, Audiogeräte finden („Verbinden“ legt das Profil an und verbindet). Siehe [Einrichtung](setup#first-run). **Einstellungen > Einrichtung ausführen** öffnet die Einrichtung erneut.
 
 ## Infobereich und Flyout {#tray}
 

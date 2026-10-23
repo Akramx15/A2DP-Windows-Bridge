@@ -1,13 +1,14 @@
 // Picking the headphones: the saved devices and the ones a scan found
 // (device.scan), or an address typed by hand; a saved device can be renamed
-// or removed from the list (v1 OnDeviceEditName / OnDeviceDelete). With LE
+// or removed from the list (v1 OnDeviceEditName / OnDeviceDelete). The
+// first-run setup connects one with a button on its row instead. With LE
 // Audio (experimental) on, the LE Audio entries too: a dual-mode device is
 // listed twice, its classic entry and its LE Audio one (address and kind
 // name an entry). Once one is picked, the others are folded away until asked
 // for or a new scan. Used by the profile editor and the first-run setup.
 
 import { createMemo, createSignal, createUniqueId, For, Show, type JSX } from "solid-js";
-import { useApp } from "../app/context";
+import { useApp, type AppContext } from "../app/context";
 import { t } from "../i18n";
 import type { Device } from "../ipc/types";
 import { parseAddress } from "../lib/format";
@@ -26,6 +27,35 @@ export function sortDevices(devices: readonly Device[]): Device[] {
   });
 }
 
+/**
+ * Saves a device found by a scan or typed (the list keeps its name; an
+ * unnamed one is saved under its address and can be renamed). A device
+ * without a profile gets one that picks the best codec ("<name> | Auto").
+ * The profile of the device, or null when saving failed.
+ */
+export async function saveWithProfile(app: AppContext, address: string, name: string, leAudio: boolean): Promise<string | null> {
+  const snap = () => app.core.state.snap!;
+  // A saved device typed by its address keeps its name
+  const known = snap().devices.find((d) => d.saved && d.le_audio === leAudio && d.address.toUpperCase() === address.toUpperCase());
+  const saved = name.trim() || known?.name || address;
+  const ok =
+    (known && known.name === saved) ||
+    (await app.run(() =>
+      app.core.request("device.rename", { address, name: saved, ...(leAudio ? { le_audio: true } : {}) }),
+    ));
+  // LE Audio profiles are made in the profile editor
+  if (!ok || leAudio) return null;
+  const own = snap().profiles.find((p) => p.device_address.toUpperCase() === address.toUpperCase());
+  if (own) return own.name;
+  const taken = snap().profiles.map((p) => p.name);
+  const base = defaultProfileName(saved, address, false, t("codec.auto"));
+  let profileName = base;
+  for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
+  const profile = normalizeProfile({ ...newProfile(), name: profileName, device_address: address, device_name: saved });
+  const made = await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
+  return made ? profileName : null;
+}
+
 export function DevicePicker(props: {
   address: string;
   /** The chosen entry is the LE Audio one */
@@ -41,6 +71,12 @@ export function DevicePicker(props: {
   savedOnly?: boolean;
   /** With manage: a saved device's own settings, below its row */
   settings?: (d: Device) => JSX.Element;
+  /** The first-run setup: no choosing; Connect on each row and Use on the
+   *  typed address */
+  onConnect?: (address: string, name: string) => void;
+  /** With onConnect: the address being connected (its button spins, the
+   *  others wait) */
+  connecting?: string | null;
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
@@ -107,30 +143,18 @@ export function DevicePicker(props: {
     // The profile shows the new name (v1 set the name field too)
     if (chosen(d)) props.onPick(d.address, n, d.le_audio);
   };
-  // Saves a device found by a scan or typed (the list keeps its name; an
-  // unnamed one is saved under its address and can be renamed)
+  // A device without a profile gets one and is connected with it right
+  // away (pairing it, as other systems do); the user makes more. A running
+  // stream and the first-run setup (it connects the device itself) are left
+  // alone.
   const add = async (address: string, name: string, leAudio: boolean) => {
     if (busy()) return;
     setBusy(true);
-    const saved = name.trim() || address;
-    const ok = await app.run(() =>
-      app.core.request("device.rename", { address, name: saved, ...(leAudio ? { le_audio: true } : {}) }),
-    );
-    // A device without a profile gets one that picks the best codec and is
-    // connected with it right away (pairing it, as other systems do); the
-    // user makes more. A running stream and the first-run setup (it tests
-    // the device itself) are left alone.
-    if (ok && !leAudio && !snap().profiles.some((p) => p.device_address.toUpperCase() === address.toUpperCase())) {
-      const taken = snap().profiles.map((p) => p.name);
-      const base = defaultProfileName(saved, address, false, t("codec.auto"));
-      let profileName = base;
-      for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
-      const profile = normalizeProfile({ ...newProfile(), name: profileName, device_address: address, device_name: saved });
-      const made = await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
-      const state = snap().stream.state;
-      if (made && !app.setupActive() && (state === "idle" || state === "error")) {
-        await app.run(() => app.core.request("stream.start", { profile: profileName }));
-      }
+    const had = snap().profiles.some((p) => p.device_address.toUpperCase() === address.toUpperCase());
+    const profileName = await saveWithProfile(app, address, name, leAudio);
+    const state = snap().stream.state;
+    if (profileName && !had && !app.setupActive() && (state === "idle" || state === "error")) {
+      await app.run(() => app.core.request("stream.start", { profile: profileName }));
     }
     setBusy(false);
   };
@@ -157,7 +181,7 @@ export function DevicePicker(props: {
         classList={{ on: chosen(d), dim: !d.audio }}
         data-key={deviceKey(d)}
       >
-        <Show when={!props.manage}>
+        <Show when={!props.manage && !props.onConnect}>
           <input
             type="radio"
             name={name}
@@ -196,6 +220,21 @@ export function DevicePicker(props: {
             <span class="tag num">{d.rssi} dBm</span>
           </Show>
         </span>
+        <Show when={props.onConnect}>
+          {(connect) => (
+            <span class="inline device-row-actions">
+              <Button
+                kind={d.audio ? "strong" : undefined}
+                icon="power"
+                busy={props.connecting === d.address}
+                disabled={!!props.connecting}
+                onClick={() => connect()(d.address, d.name)}
+              >
+                {t("connection.connect")}
+              </Button>
+            </span>
+          )}
+        </Show>
         <Show when={props.manage && !d.saved}>
           <span class="inline device-row-actions">
             <Button
@@ -210,7 +249,7 @@ export function DevicePicker(props: {
             </Button>
           </span>
         </Show>
-        <Show when={d.saved && !props.savedOnly}>
+        <Show when={d.saved && !props.savedOnly && !props.onConnect}>
           <span class="inline device-row-actions">
             <IconButton
               icon="edit"
@@ -283,11 +322,14 @@ export function DevicePicker(props: {
             onInput={(e) => setManual(e.currentTarget.value)}
           />
           <Button
-            disabled={!parseAddress(manual())}
+            disabled={!parseAddress(manual()) || !!props.connecting}
+            busy={!!props.connecting && props.connecting === parseAddress(manual())}
             onClick={() => {
               const a = parseAddress(manual());
               if (!a) return;
-              if (props.manage) {
+              if (props.onConnect) {
+                props.onConnect(a, "");
+              } else if (props.manage) {
                 void add(a, "", false).then(() => setManual(""));
               } else {
                 // A typed address keeps the kind chosen (the profile's check box)

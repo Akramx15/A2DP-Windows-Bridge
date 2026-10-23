@@ -77,7 +77,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 
 ### Configuration au premier lancement
 
-Au premier démarrage (aucun profil, ou aucun adaptateur avec WinUSB), A2DPWB ouvre **Configurer A2DPWB** : choisir l'adaptateur, pilote et firmware, trouver votre casque, test. Voir [Installation](setup#first-run). **Paramètres > Lancer la configuration** la rouvre.
+Au premier démarrage (aucun profil, ou aucun adaptateur avec WinUSB), A2DPWB ouvre **Configurer A2DPWB** : choisir l'adaptateur, pilote et firmware, trouver vos appareils audio (« Connecter » crée le profil et se connecte). Voir [Installation](setup#first-run). **Paramètres > Lancer la configuration** la rouvre.
 
 ## Zone de notification et volet {#tray}
 

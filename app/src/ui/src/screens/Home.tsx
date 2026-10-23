@@ -18,10 +18,11 @@ import {
   openFirmwareFolder,
   QualityIndicator,
   Ring,
+  statusText,
   VolumeControl,
 } from "../components/stream";
 import { ProfileSwitcher } from "../components/ProfileSwitcher";
-import { t, tm } from "../i18n";
+import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot } from "../ipc/types";
 
 /** Adapters whose firmware files are missing from the settings folder or
@@ -186,7 +187,7 @@ export function Home() {
                     <span class="dot" aria-hidden="true" />
                     <span>
                       {/* An error's text is in the panel above, with its fix */}
-                      {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
+                      {statusText(stream())}
                     </span>
                   </div>
                 </div>
