@@ -189,6 +189,9 @@ pub struct UsbSelector {
     /// VID:PID of controllers that are Bluetooth adapters even without the
     /// Bluetooth class code (vendor class FF/01/01, e.g. Realtek tables)
     pub known: Vec<(u16, u16)>,
+    /// Instance ID of the adapter tried first when several are on WinUSB:
+    /// the one the chipset setup (Realtek firmware) was made for
+    pub preferred: Option<String>,
 }
 
 impl UsbSelector {
@@ -388,6 +391,10 @@ impl UsbTransport {
             }
         }
         if !found.is_empty() {
+            if let Some(p) = &self.selector.preferred {
+                // Stable: the others keep their enumeration order
+                found.sort_by_key(|info| !info.instance_id().to_string_lossy().eq_ignore_ascii_case(p));
+            }
             return Ok(found);
         }
         Err(match wrong_driver {
