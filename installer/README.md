@@ -86,13 +86,14 @@ not secret; once it is final it may also be committed as `plugins.updater.pubkey
   AppId `{4D8EA889-…}`, for the user or for all users). `%APPDATA%\A2DPWB` stays; at its first
   start the core copies it to `backup-v1\` and adds `schema_version` to `settings.json`
   (`crates/core/src/migrate.rs`).
-- Takes over an installation of 2.0.0 – 2.0.2-beta.5 (Tauri's NSIS installer, registered as
-  `HKCU\…\Uninstall\A2DP Windows Bridge`) once the files are installed, so a failed or cancelled
-  installation leaves it working. It installs into that folder, replacing its files (the same
-  package), then deletes its `uninstall.exe` and registry keys. If another folder was chosen, it
-  runs `uninstall.exe /S /UPDATE` there instead. Either way the adapters stay on WinUSB, and the
-  shortcuts and the Run value stay. The core or, after an update, `a2dpwb.exe` is started after
-  this, not from `[Run]`, which comes first.
+- Uninstalls an installation of 2.0.0 – 2.0.2-beta.5 (Tauri's NSIS installer, registered as
+  `HKCU\…\Uninstall\A2DP Windows Bridge`) before installing the files: it runs that
+  installation's `uninstall.exe /S /UPDATE`, which removes its files and registration, and then
+  deletes what is left of its registry keys. In update mode the NSIS uninstaller keeps the
+  adapters on WinUSB, the settings, the shortcuts and the Run value. An installation that fails
+  or is cancelled after this leaves nothing installed; running the setup again installs it. The
+  core or, after an update, `a2dpwb.exe` is started after the WebView2 Runtime is installed, not
+  from `[Run]`, which comes first.
 - Points "start with Windows" (HKCU Run, value `A2DPWB`) at `a2dpwb-core.exe --background` when
   it was on; the uninstaller removes it when it points at that installation.
 - The uninstaller gives the adapters A2DPWB put on WinUSB back to Windows, after asking. The core

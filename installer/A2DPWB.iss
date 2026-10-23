@@ -14,11 +14,11 @@
 ;     (Inno Setup, AppId below) is uninstalled. Its uninstaller removes the
 ;     program files only: the settings folder %APPDATA%\A2DPWB (profiles,
 ;     pairings, firmware) stays, and v2 reads it as it is;
-;   - 2.0.0 to 2.0.2-beta.5 (Tauri's NSIS installer) is taken over after the
-;     files are installed, so a failed or cancelled installation leaves it
-;     working: its files in the folder are replaced, and its uninstaller and
-;     registration removed (in another folder, its uninstaller runs in update
-;     mode); the adapters stay on WinUSB, the shortcuts and the Run value stay;
+;   - 2.0.0 to 2.0.2-beta.5 (Tauri's NSIS installer) is uninstalled before the
+;     files are installed, with its uninstaller in update mode: the adapters
+;     stay on WinUSB, the settings, the shortcuts and the Run value stay. An
+;     installation that fails or is cancelled after this leaves nothing
+;     installed; running the setup again installs it;
 ;   - "start with Windows" (HKCU Run, value A2DPWB, shared with v1) is
 ;     pointed at `a2dpwb-core.exe --background` when it was on;
 ;   - the WebView2 Runtime is installed where it is missing.
@@ -195,8 +195,8 @@ zhtw.InstallingWebView2=正在安裝 Microsoft Edge WebView2 執行階段...
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Dirs]
-; Created by the NSIS installer when one was taken over: the uninstaller
-; removes only the folders Setup created, unless told otherwise
+; Left by the NSIS installer's uninstaller when it was not empty: the
+; uninstaller removes only the folders Setup created, unless told otherwise
 Name: "{app}"; Flags: uninsalwaysuninstall
 Name: "{app}\licenses"; Flags: uninsalwaysuninstall
 
@@ -207,12 +207,14 @@ Source: "{#WebView2Setup}"; Flags: dontcopy
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelId}"
-; The NSIS installer of 2.0.x always made one; it is kept when taken over
+; Kept where there is one: the NSIS installer of 2.0.x always made one, and
+; its uninstaller leaves it (also after a failed installation, when the
+; setup is run again)
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelId}"; Check: WantDesktopIcon
 
 [Run]
-; The core (or, after an update, the window) is started in CurStepChanged:
-; [Run] comes before ssPostInstall, where an NSIS installation is taken over
+; The core (or, after an update, the window) is started in CurStepChanged,
+; after InstallWebView2: [Run] comes before ssPostInstall
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent; Check: not IsUpdate
 
 [Code]
@@ -232,7 +234,7 @@ const
   WebView2Key = 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
 
 var
-  UpdateMode, PassiveMode, KeepV1, CoreWasRunning, RunWasSet, NsisHadDesktopIcon, DeleteData: Boolean;
+  UpdateMode, PassiveMode, KeepV1, CoreWasRunning, RunWasSet, HadDesktopIcon, DeleteData: Boolean;
 
 function HasParam(const Name: String): Boolean;
 var
@@ -253,7 +255,7 @@ end;
 
 function WantDesktopIcon: Boolean;
 begin
-  Result := WizardIsTaskSelected('desktopicon') or NsisHadDesktopIcon;
+  Result := WizardIsTaskSelected('desktopicon') or HadDesktopIcon;
 end;
 
 function DefaultDir(Param: String): String;
@@ -367,14 +369,13 @@ begin
   end;
 end;
 
-{ Takes over an installation of Tauri's NSIS installer once this one has
-  installed: an installation that fails or is cancelled leaves it as it was.
-  In this folder its files are this installation's now (2.0.x installed the
-  same package), so only its uninstaller and its registration go; running it
-  would delete them. In another folder (chosen on the first install), its
-  uninstaller in update mode (/UPDATE) removes it and keeps the shortcuts,
-  the Run value and the adapters' WinUSB driver (hooks.nsh of 2.0.x). }
-procedure TakeOverNsis;
+{ Uninstalls an installation of Tauri's NSIS installer before this one
+  installs, in this folder or another. Its uninstaller in update mode
+  (/UPDATE) removes its files and its registration and keeps the shortcuts,
+  the Run value, the settings and the adapters' WinUSB driver (installer.nsi
+  and hooks.nsh of 2.0.x). An installation that fails or is cancelled after
+  this leaves nothing installed: the setup is run again. }
+procedure UninstallNsis;
 var
   Uninstaller: String;
   Code: Integer;
@@ -382,15 +383,15 @@ begin
   if not RegQueryStringValue(HKCU, NsisUninstKey, 'UninstallString', Uninstaller) then
     Exit;
   Uninstaller := UnquotedPath(Uninstaller);
-  if CompareText(ExtractFileDir(Uninstaller), ExpandConstant('{app}')) = 0 then begin
-    Log('Taking over the NSIS installation in this folder');
-    DeleteFile(Uninstaller);
-  end else if FileExists(Uninstaller) then begin
+  if FileExists(Uninstaller) then begin
     Log('Uninstalling the NSIS installation: ' + Uninstaller);
     Exec(Uninstaller, '/S /UPDATE', '', SW_HIDE, ewWaitUntilTerminated, Code);
-    { NSIS's uninstaller also finishes in a copy of itself }
-    if not WaitForKeyGone(HKCU, NsisUninstKey, 30) then
+    { NSIS's uninstaller finishes in a copy of itself; it deletes its key
+      after the files }
+    if not WaitForKeyGone(HKCU, NsisUninstKey, 30) then begin
       Log('The NSIS uninstaller did not finish');
+      DeleteFile(Uninstaller);
+    end;
   end;
   { Nothing left to uninstall }
   RegDeleteKeyIncludingSubkeys(HKCU, NsisUninstKey);
@@ -458,8 +459,8 @@ var
 begin
   Result := '';
   CoreWasRunning := CloseCore(ExpandConstant('{app}'));
+  HadDesktopIcon := FileExists(ExpandConstant('{autodesktop}\{#AppName}.lnk'));
   if RegKeyExists(HKCU, NsisUninstKey) then begin
-    NsisHadDesktopIcon := FileExists(ExpandConstant('{autodesktop}\{#AppName}.lnk'));
     if RegQueryStringValue(HKCU, NsisProductKey, '', NsisDir) and (NsisDir <> '') and
        (CompareText(NsisDir, ExpandConstant('{app}')) <> 0) and CloseCore(NsisDir) then
       CoreWasRunning := True;
@@ -479,6 +480,12 @@ begin
       UninstallV1(HKLM);
     end;
   end;
+
+  { Last, once nothing above can stop the installation }
+  if RegKeyExists(HKCU, NsisUninstKey) then begin
+    WaitForAppExit;
+    UninstallNsis;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -487,12 +494,10 @@ var
 begin
   if CurStep <> ssPostInstall then
     Exit;
-  TakeOverNsis;
   if RunWasSet then
     RegWriteStringValue(HKCU, RunKey, RunValue, '"' + ExpandConstant('{app}\{#CoreExe}') + '" --background');
   InstallWebView2;
-  { After the takeover: NSIS's uninstaller closes the running core. An
-    update starts the window, which starts the core. }
+  { An update starts the window, which starts the core }
   if UpdateMode then
     Exec(ExpandConstant('{app}\{#AppExe}'), '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait, Code)
   else if CoreWasRunning then

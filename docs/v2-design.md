@@ -332,7 +332,7 @@ v1から上書きインストールするだけで、プロファイル、ペア
 
 **v1からの乗り換え**
 
-1. v2のインストーラは、Inno Setupで入ったv1をレジストリから見つけて、設定フォルダを残したままアンインストールします。v1が動いていれば、同じmutex（`A2DPWB_SingleInstance`）を見て終了を促します。動いているv2のコアは `a2dpwb-core.exe --quit` で終了させ（配信を止めてアダプタを放す）、インストール後に起動し直します（`installer/A2DPWB.iss`）。2.0.0〜2.0.2-beta.5 の NSIS でのインストールは、ファイルを入れ終えてから引き継ぎます（インストールが失敗・中止されても NSIS 版は動くまま残る）。同じフォルダなら中身は同じパッケージなので上書きし、`uninstall.exe` とレジストリキーだけ消します。別のフォルダを選んだときは、そこで NSIS の更新モード（`uninstall.exe /S /UPDATE`）を実行します。どちらでもアダプタの WinUSB、ショートカット、Runキーは残ります。
+1. v2のインストーラは、Inno Setupで入ったv1をレジストリから見つけて、設定フォルダを残したままアンインストールします。v1が動いていれば、同じmutex（`A2DPWB_SingleInstance`）を見て終了を促します。動いているv2のコアは `a2dpwb-core.exe --quit` で終了させ（配信を止めてアダプタを放す）、インストール後に起動し直します（`installer/A2DPWB.iss`）。2.0.0〜2.0.2-beta.5 の NSIS でのインストールは、ファイルを入れる前に NSIS の更新モード（`uninstall.exe /S /UPDATE`）でアンインストールし、残ったレジストリキーを消します。更新モードなので、アダプタの WinUSB、設定、ショートカット、Runキーは残ります。その後でインストールが失敗・中止されると何も入っていない状態になりますが、セットアップをもう一度実行すれば入ります。
 2. 自動起動のRunキー（値の名前は v1 と同じ `A2DPWB`）が有効だったときは、`a2dpwb-core.exe --background` に書き換えます。アンインストールでは、そのインストール先を指しているときだけ消します。
    - アンインストールでは、A2DPWB が WinUSB を割り当てたアダプターを Windows に戻すかを尋ねます（[ドライバ](#ドライバwinusb)の「アンインストール時の復元」）。v1 は Zadig に任せていたのでこの心配がありませんでしたが、v2 はアプリの中で割り当てるため、何もしないとアプリを消した後もドングルが Windows の Bluetooth から消えたままになり、デバイスマネージャーでしか戻せません。
 3. 初回起動時、コアは設定フォルダを `backup-v1\` に丸ごと（v2の `logs\` を除いて）コピーしてから読みます。コピーは一度だけで、`settings.json` に `schema_version` が付いた後はしません（`app/src/crates/core/src/migrate.rs`）。
@@ -522,6 +522,7 @@ v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動�
 
 ## 改訂履歴
 
+- 2026-10-23（NSIS 版は先にアンインストール）: 2.0.2-beta.5 までの NSIS でのインストールを引き継ぐのをやめ、ファイルを入れる前に NSIS のアンインストーラを更新モード（`/S /UPDATE`）で実行するようにした（issue #86）。古いインストーラの登録やファイルに手を入れないほうが、後で困らない。失敗・中止すると何も残らないが、まだ利用者が少なく、セットアップをもう一度実行すれば済むので受け入れる（リリースノートに書く）。
 - 2026-10-22（インストーラを Inno Setup に）: Tauri の NSIS バンドラから Inno Setup 6（`installer/A2DPWB.iss`）に移した（issue #86）。NSIS で困っていたことはないが、(1) 台本が人に読みやすい（NSIS のフックは Tauri の生成する `installer.nsi` の流れと `$0`〜`$9` のレジスタを追わないと読めず、`System::Call` で構造体を組んでいた）、(2) 開発が活発で将来性がある、(3) 利用者とインストール済みの環境が少ない今のうちに移すほうが楽、の3点で決めた。`tauri build --no-bundle` で `a2dpwb.exe` だけを作り、ポータブル版のフォルダをそのまま Inno Setup に渡す。更新は引き続き `tauri-plugin-updater`（署名は `tauri signer sign --app-version`）で、プラグインが付ける `/UPDATE` に `/SILENT /NORESTART` を足す（`installMode: basicUi`）。beta.5 以前の更新機能が付ける NSIS の `/P` では、ページをすべて飛ばして進行状況だけを出す（セットアップの .exe はローダーが開いたままなので、`/SILENT` で起動し直すことはできなかった）。NSIS でのインストールは、ファイルを入れ終えてからフォルダを引き継ぐ（先にアンインストールすると、失敗や中止で何も残らないため）。インストール済みの判定は `uninstall.exe` から `unins000.exe` に。v1 とは別の AppId。中国語（簡体・繁体）の翻訳は Inno Setup 6 に同梱されないので `installer/languages/` に置く。
 - 2026-10-22（aptX Adaptive）: AKS-Logic/aptx-adaptive-linux の Rust のエンコーダ（MIT、上流のコミット 25099004b2d3）を `app/src/crates/aptx-adaptive` に取り込み、aptX Adaptive を試験的に `aptxad` として追加した。R1 と R2 のシンク、48 kHz ステレオ、品質は高音質 / 標準 / モバイル / 低遅延（新しいキー `ll`）、高音質では ABR。Auto は選ばない。ストリームエンドポイントは 11 個になった。実機のヘッドホンでは未確認。[aptX Adaptive](#aptx-adaptive)を参照。
 - 2026-10-18（ブランチ名）: `develop-2.0` を `develop-v2.x`、v1 の `develop` を `develop-v1.x` に改名した。CI のプッシュ時のテストは `develop-v2.x` と `main` で動く。
