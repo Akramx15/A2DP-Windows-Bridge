@@ -21,7 +21,15 @@
 ;     installed; running the setup again installs it;
 ;   - "start with Windows" (HKCU Run, value A2DPWB, shared with v1) is
 ;     pointed at `a2dpwb-core.exe --background` when it was on;
-;   - the WebView2 Runtime is installed where it is missing.
+;   - the WebView2 Runtime is installed where it is missing;
+;   - a new installation asks for the language (AskLanguage, preselected from
+;     the Windows display language); an update of this installation uses the
+;     one chosen before without asking (UsePreviousLanguage), and so do
+;     /SILENT, /VERYSILENT, /P and /LANG=. Setup writes it to HKCU\Software\A2DPWB,
+;     value SetupLanguage, where the core takes its language from while the
+;     settings have none (settings.rs, default_language);
+;   - an update (of this installation, of the NSIS one or of v1) says so on
+;     the wizard's title and pages (UpdateWording).
 ; Uninstall: the core is closed; the user is asked whether the adapters
 ; A2DPWB put on WinUSB go back to Windows (one UAC prompt) and whether
 ; %APPDATA%\A2DPWB (settings, profiles, pairings, firmware) is deleted; the
@@ -69,12 +77,14 @@
 ; tauri.conf.json's identifier: the windows' notifications and taskbar
 ; button belong to the shortcut with this AppUserModelID
 #define AppUserModelId "io.github.seiyafunaokajp.a2dpwb"
+; AppId without its braces
+#define AppGuid "DE4C0AE2-6745-4C09-9478-7FA6C48527F4"
 #define RepoUrl "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge"
 
 [Setup]
 ; Never change AppId: it ties updates and the uninstaller to earlier installs.
 ; v1 has its own ({4D8EA889-0FE6-4753-A25F-2C1A3E4BF658}, see V1UninstKey).
-AppId={{DE4C0AE2-6745-4C09-9478-7FA6C48527F4}
+AppId={{{#AppGuid}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -90,7 +100,11 @@ VersionInfoProductTextVersion={#AppVersion}
 PrivilegesRequired=lowest
 ; Where the NSIS installer of 2.0.x put it, unless it was elsewhere
 DefaultDirName={code:DefaultDir}
-DisableProgramGroupPage=yes
+; A Start Menu folder, which the user may turn off ("Don't create a Start
+; Menu folder"); the page is shown to a new installation only
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=auto
+AllowNoIcons=yes
 #if Arch == "arm64"
 ArchitecturesAllowed=arm64
 ArchitecturesInstallIn64BitMode=arm64
@@ -108,7 +122,11 @@ SetupIconFile=..\app\src\ui\src-tauri\icons\icon.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 WizardStyle=modern
-ShowLanguageDialog=auto
+; Setup's own Select Language dialog would also ask at every update (it
+; comes before any script): AskLanguage asks a new installation instead. An
+; update takes the previous one's language (UsePreviousLanguage).
+ShowLanguageDialog=no
+UsePreviousLanguage=yes
 Compression=lzma2/max
 SolidCompression=yes
 ; %TEMP%\Setup Log <date> #<n>.txt, for reports of failed installs
@@ -191,8 +209,118 @@ ko.InstallingWebView2=Microsoft Edge WebView2 런타임을 설치하는 중...
 zhcn.InstallingWebView2=正在安装 Microsoft Edge WebView2 运行时...
 zhtw.InstallingWebView2=正在安裝 Microsoft Edge WebView2 執行階段...
 
+; The app's language code (app/lang, settings.rs LANGUAGES) of each one
+en.AppLanguage=en
+ja.AppLanguage=ja
+de.AppLanguage=de
+fr.AppLanguage=fr
+es.AppLanguage=es
+ko.AppLanguage=ko
+zhcn.AppLanguage=zh-CN
+zhtw.AppLanguage=zh-TW
+
+; An update's wording (UpdateWording), in place of Setup's installation messages
+en.UpdateTitle=Update - %1
+ja.UpdateTitle=アップデート - %1
+de.UpdateTitle=Update - %1
+fr.UpdateTitle=Mise à jour - %1
+es.UpdateTitle=Actualización - %1
+ko.UpdateTitle=업데이트 - %1
+zhcn.UpdateTitle=更新 - %1
+zhtw.UpdateTitle=更新 - %1
+
+en.UpdateButton=&Update
+ja.UpdateButton=アップデート(&U)
+de.UpdateButton=&Aktualisieren
+fr.UpdateButton=&Mettre à jour
+es.UpdateButton=&Actualizar
+ko.UpdateButton=업데이트(&U)
+zhcn.UpdateButton=更新(&U)
+zhtw.UpdateButton=更新(&U)
+
+en.UpdateReady=Ready to Update
+ja.UpdateReady=アップデート準備完了
+de.UpdateReady=Bereit zum Aktualisieren
+fr.UpdateReady=Prêt à mettre à jour
+es.UpdateReady=Listo para actualizar
+ko.UpdateReady=업데이트 준비 완료
+zhcn.UpdateReady=准备更新
+zhtw.UpdateReady=準備更新
+
+en.UpdateReadyLabel1=Setup is now ready to begin updating %1 on your computer.
+ja.UpdateReadyLabel1=%1 のアップデートを開始する準備ができました。
+de.UpdateReadyLabel1=Das Setup ist jetzt bereit, %1 auf Ihrem Computer zu aktualisieren.
+fr.UpdateReadyLabel1=L'assistant est prêt à mettre à jour %1 sur votre ordinateur.
+es.UpdateReadyLabel1=El programa de instalación está listo para actualizar %1 en su equipo.
+ko.UpdateReadyLabel1=이제 이 컴퓨터의 %1 업데이트를 시작할 준비가 되었습니다.
+zhcn.UpdateReadyLabel1=安装程序现在准备开始更新您电脑上的 %1。
+zhtw.UpdateReadyLabel1=安裝程式現在準備開始更新您電腦上的 %1。
+
+en.UpdateReadyLabel2=Click Update to continue with the update, or click Back if you want to review or change any settings.
+ja.UpdateReadyLabel2=アップデートを続行するには「アップデート」を、設定を確認または変更するには「戻る」をクリックしてください。
+de.UpdateReadyLabel2=Klicken Sie auf „Aktualisieren“, um mit der Aktualisierung fortzufahren, oder auf „Zurück“, um Ihre Einstellungen zu überprüfen oder zu ändern.
+fr.UpdateReadyLabel2=Cliquez sur Mettre à jour pour procéder à la mise à jour, ou sur Précédent pour revoir ou modifier une option.
+es.UpdateReadyLabel2=Haga clic en Actualizar para continuar con la actualización o en Atrás para revisar o cambiar alguna configuración.
+ko.UpdateReadyLabel2=업데이트를 계속하려면 [업데이트]를, 설정을 확인하거나 변경하려면 [뒤로]를 클릭하세요.
+zhcn.UpdateReadyLabel2=单击“更新”继续更新，或单击“上一步”查看或更改设置。
+zhtw.UpdateReadyLabel2=按一下「更新」繼續更新，或按一下「上一步」檢視或變更設定。
+
+en.UpdatePreparing=Preparing to Update
+ja.UpdatePreparing=アップデートの準備中
+de.UpdatePreparing=Vorbereitung der Aktualisierung
+fr.UpdatePreparing=Préparation de la mise à jour
+es.UpdatePreparing=Preparándose para actualizar
+ko.UpdatePreparing=업데이트 준비 중
+zhcn.UpdatePreparing=正在准备更新
+zhtw.UpdatePreparing=正在準備更新
+
+en.UpdatePreparingDesc=Setup is preparing to update %1 on your computer.
+ja.UpdatePreparingDesc=%1 をアップデートする準備をしています。
+de.UpdatePreparingDesc=Das Setup bereitet die Aktualisierung von %1 auf Ihrem Computer vor.
+fr.UpdatePreparingDesc=L'assistant prépare la mise à jour de %1 sur votre ordinateur.
+es.UpdatePreparingDesc=El programa de instalación se está preparando para actualizar %1 en su equipo.
+ko.UpdatePreparingDesc=이 컴퓨터의 %1을(를) 업데이트할 준비를 하고 있습니다.
+zhcn.UpdatePreparingDesc=安装程序正在准备更新您电脑上的 %1。
+zhtw.UpdatePreparingDesc=安裝程式正在準備更新您電腦上的 %1。
+
+en.UpdateInstalling=Updating
+ja.UpdateInstalling=アップデート中
+de.UpdateInstalling=Aktualisieren
+fr.UpdateInstalling=Mise à jour en cours
+es.UpdateInstalling=Actualizando
+ko.UpdateInstalling=업데이트 중
+zhcn.UpdateInstalling=正在更新
+zhtw.UpdateInstalling=正在更新
+
+en.UpdateInstallingLabel=Please wait while Setup updates %1 on your computer.
+ja.UpdateInstallingLabel=%1 をアップデートしています。しばらくお待ちください。
+de.UpdateInstallingLabel=Bitte warten Sie, während %1 auf Ihrem Computer aktualisiert wird.
+fr.UpdateInstallingLabel=Veuillez patienter pendant que l'assistant met à jour %1 sur votre ordinateur.
+es.UpdateInstallingLabel=Espere mientras se actualiza %1 en su equipo.
+ko.UpdateInstallingLabel=이 컴퓨터의 %1을(를) 업데이트하는 동안 잠시 기다려 주세요.
+zhcn.UpdateInstallingLabel=安装程序正在更新您电脑上的 %1，请稍候。
+zhtw.UpdateInstallingLabel=安裝程式正在更新您電腦上的 %1，請稍候。
+
+en.UpdateFinishedHeading=%1 has been updated
+ja.UpdateFinishedHeading=%1 のアップデートが完了しました
+de.UpdateFinishedHeading=%1 wurde aktualisiert
+fr.UpdateFinishedHeading=%1 a été mis à jour
+es.UpdateFinishedHeading=%1 se ha actualizado
+ko.UpdateFinishedHeading=%1 업데이트 완료
+zhcn.UpdateFinishedHeading=%1 已更新
+zhtw.UpdateFinishedHeading=%1 已更新
+
+en.UpdateFinishedLabel=Setup has finished updating %1 on your computer to version %2.
+ja.UpdateFinishedLabel=%1 をバージョン %2 にアップデートしました。
+de.UpdateFinishedLabel=Das Setup hat %1 auf Ihrem Computer auf Version %2 aktualisiert.
+fr.UpdateFinishedLabel=L'assistant a mis à jour %1 vers la version %2 sur votre ordinateur.
+es.UpdateFinishedLabel=El programa de instalación ha actualizado %1 a la versión %2 en su equipo.
+ko.UpdateFinishedLabel=이 컴퓨터의 %1을(를) 버전 %2(으)로 업데이트했습니다.
+zhcn.UpdateFinishedLabel=安装程序已将您电脑上的 %1 更新到版本 %2。
+zhtw.UpdateFinishedLabel=安裝程式已將您電腦上的 %1 更新至版本 %2。
+
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Dirs]
 ; Left by the NSIS installer's uninstaller when it was not empty: the
@@ -205,12 +333,23 @@ Source: "{#PkgDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 ; Run only where WebView2 is missing (InstallWebView2)
 Source: "{#WebView2Setup}"; Flags: dontcopy
 
+[InstallDelete]
+; The Start Menu shortcut of 2.0.x (NSIS) and 2.0.2-beta.6, outside a
+; folder: it is in {group} now
+Type: files; Name: "{autoprograms}\{#AppName}.lnk"
+
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelId}"
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelId}"
+Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 ; Kept where there is one: the NSIS installer of 2.0.x always made one, and
 ; its uninstaller leaves it (also after a failed installation, when the
 ; setup is run again)
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelId}"; Check: WantDesktopIcon
+
+[Registry]
+; The language chosen in Setup, for the core while the settings have none
+; (settings.rs, default_language)
+Root: HKCU; Subkey: "Software\A2DPWB"; ValueType: string; ValueName: "SetupLanguage"; ValueData: "{cm:AppLanguage}"; Flags: uninsdeletevalue uninsdeletekeyifempty
 
 [Run]
 ; The core (or, after an update, the window) is started in CurStepChanged,
@@ -221,6 +360,8 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 const
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
   RunValue = 'A2DPWB';
+  { This installation's registration (Setup's key for AppId) }
+  UninstKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{{#AppGuid}}_is1';
   V1UninstKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{4D8EA889-0FE6-4753-A25F-2C1A3E4BF658}_is1';
   V1Mutex = 'A2DPWB_SingleInstance';
   { Tauri's NSIS installer of 2.0.0 to 2.0.2-beta.5 (installer.nsi:
@@ -235,6 +376,8 @@ const
 
 var
   UpdateMode, PassiveMode, KeepV1, CoreWasRunning, RunWasSet, HadDesktopIcon, DeleteData: Boolean;
+  { Setup replaces an installation: this one, the NSIS one of 2.0.x or v1 }
+  IsUpgrade: Boolean;
 
 function HasParam(const Name: String): Boolean;
 var
@@ -246,6 +389,113 @@ begin
       Result := True;
       Exit;
     end;
+end;
+
+function HasParamPrefix(const Prefix: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(Copy(ParamStr(I), 1, Length(Prefix)), Prefix) = 0 then begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+{ Where AskLanguage puts the copy of Setup it starts }
+function RelaunchDir: String;
+begin
+  Result := AddBackslash(GetTempDir) + 'A2DPWB-setup';
+end;
+
+{ The Select Language dialog of a new installation, preselected with the
+  language Setup chose from the Windows display language. Another choice
+  starts Setup again with /LANG= (the language cannot change once Setup
+  runs): False then, and this Setup ends. Setup's loader keeps its .exe
+  locked until this Setup has ended (CreateProcess fails with error 5), so
+  a copy in RelaunchDir is started; the next Setup deletes it. }
+function AskLanguage: Boolean;
+var
+  Names, Captions: TArrayOfString;
+  Form: TSetupForm;
+  Lbl: TNewStaticText;
+  Combo: TNewComboBox;
+  OKButton, CancelButton: TNewButton;
+  Params, CopyExe: String;
+  Bytes: AnsiString;
+  I, W, Code: Integer;
+begin
+  { The [Languages] above, each in its own language }
+  Names := ['en', 'ja', 'de', 'fr', 'es', 'ko', 'zhcn', 'zhtw'];
+  Captions := ['English', '日本語', 'Deutsch', 'Français', 'Español', '한국어', '简体中文', '繁體中文'];
+  Form := CreateCustomForm(ScaleX(220), ScaleY(80), False, False);
+  try
+    Form.Caption := SetupMessage(msgSelectLanguageTitle);
+    Lbl := TNewStaticText.Create(Form);
+    Lbl.Parent := Form;
+    Lbl.Left := ScaleX(10);
+    Lbl.Top := ScaleY(10);
+    Lbl.Width := Form.ClientWidth - ScaleX(20);
+    Lbl.WordWrap := True;
+    Lbl.Caption := SetupMessage(msgSelectLanguageLabel);
+    Combo := TNewComboBox.Create(Form);
+    Combo.Parent := Form;
+    Combo.Style := csDropDownList;
+    Combo.Left := ScaleX(10);
+    Combo.Top := ScaleY(30);
+    Combo.Width := Form.ClientWidth - ScaleX(20);
+    for I := 0 to GetArrayLength(Names) - 1 do begin
+      Combo.Items.Add(Captions[I]);
+      if Names[I] = ActiveLanguage then
+        Combo.ItemIndex := I;
+    end;
+    OKButton := TNewButton.Create(Form);
+    OKButton.Parent := Form;
+    OKButton.Caption := SetupMessage(msgButtonOK);
+    OKButton.ModalResult := mrOk;
+    OKButton.Default := True;
+    CancelButton := TNewButton.Create(Form);
+    CancelButton.Parent := Form;
+    CancelButton.Caption := SetupMessage(msgButtonCancel);
+    CancelButton.ModalResult := mrCancel;
+    CancelButton.Cancel := True;
+    W := Form.CalculateButtonWidth([OKButton.Caption, CancelButton.Caption]);
+    OKButton.Width := W;
+    CancelButton.Width := W;
+    OKButton.Height := ScaleY(23);
+    CancelButton.Height := ScaleY(23);
+    CancelButton.Left := Form.ClientWidth - ScaleX(10) - W;
+    OKButton.Left := CancelButton.Left - ScaleX(6) - W;
+    OKButton.Top := Form.ClientHeight - ScaleY(23 + 10);
+    CancelButton.Top := OKButton.Top;
+    Form.ActiveControl := Combo;
+    if Form.ShowModal <> mrOk then begin
+      Result := False;
+      Exit;
+    end;
+    Result := (Combo.ItemIndex < 0) or (Names[Combo.ItemIndex] = ActiveLanguage);
+    if Result then
+      Exit;
+    { Setup's own arguments again, but /SL5= (the loader's) }
+    Params := '/LANG=' + Names[Combo.ItemIndex];
+    for I := 1 to ParamCount do
+      if CompareText(Copy(ParamStr(I), 1, 5), '/SL5=') <> 0 then
+        Params := Params + ' ' + AddQuotes(ParamStr(I));
+    Log('Language ' + Names[Combo.ItemIndex] + ' chosen: starting Setup again with ' + Params);
+    { FileCopy fails on it too; its bytes can be read }
+    CopyExe := RelaunchDir + '\' + ExtractFileName(ExpandConstant('{srcexe}'));
+    if not ForceDirectories(RelaunchDir) or not LoadStringFromFile(ExpandConstant('{srcexe}'), Bytes) or
+       not SaveStringToFile(CopyExe, Bytes, False) then begin
+      Log('Setup could not be copied to ' + CopyExe + ': staying in ' + ActiveLanguage);
+      Result := True;
+    end else if not Exec(CopyExe, Params, '', SW_SHOWNORMAL, ewNoWait, Code) then begin
+      Log(Format('Setup did not start again (%s): staying in %s', [SysErrorMessage(Code), ActiveLanguage]));
+      Result := True;
+    end;
+  finally
+    Form.Free;
+  end;
 end;
 
 function IsUpdate: Boolean;
@@ -428,11 +678,59 @@ begin
   Result := PassiveMode;
 end;
 
+{ An update's pages say "update" where Setup's own messages say "install" }
+procedure UpdateWording(CurPageID: Integer);
+begin
+  case CurPageID of
+    wpReady:
+      begin
+        WizardForm.PageNameLabel.Caption := CustomMessage('UpdateReady');
+        WizardForm.PageDescriptionLabel.Caption := FmtMessage(CustomMessage('UpdateReadyLabel1'), ['{#AppName}']);
+        WizardForm.ReadyLabel.Caption := CustomMessage('UpdateReadyLabel2');
+        WizardForm.NextButton.Caption := CustomMessage('UpdateButton');
+      end;
+    wpPreparing:
+      begin
+        WizardForm.PageNameLabel.Caption := CustomMessage('UpdatePreparing');
+        WizardForm.PageDescriptionLabel.Caption := FmtMessage(CustomMessage('UpdatePreparingDesc'), ['{#AppName}']);
+      end;
+    wpInstalling:
+      begin
+        WizardForm.PageNameLabel.Caption := CustomMessage('UpdateInstalling');
+        WizardForm.PageDescriptionLabel.Caption := FmtMessage(CustomMessage('UpdateInstallingLabel'), ['{#AppName}']);
+      end;
+    wpFinished:
+      { Not when it asks for a restart: Setup's text then }
+      if not WizardForm.YesRadio.Visible then begin
+        WizardForm.FinishedHeadingLabel.Caption := FmtMessage(CustomMessage('UpdateFinishedHeading'), ['{#AppName}']);
+        WizardForm.FinishedLabel.Caption :=
+          FmtMessage(CustomMessage('UpdateFinishedLabel'), ['{#AppName}', '{#AppVersion}']) + #13#10#13#10 +
+          SetupMessage(msgClickFinish);
+      end;
+  end;
+end;
+
+procedure InitializeWizard;
+begin
+  if not IsUpgrade then
+    Exit;
+  { As SetupWindowTitle, with AppVerName }
+  WizardForm.Caption := FmtMessage(CustomMessage('UpdateTitle'), ['{#AppName} {#AppVersion}']);
+  { The NSIS installer always made a desktop shortcut: one the user deleted
+    stays deleted (this installation's update keeps the previous choice
+    itself, UsePreviousTasks) }
+  if RegKeyExists(HKCU, NsisUninstKey) and not RegKeyExists(HKCU, UninstKey) and
+     not FileExists(ExpandConstant('{autodesktop}\{#AppName}.lnk')) then
+    WizardSelectTasks('!desktopicon');
+end;
+
 { ...except the pages Setup shows anyway: Ready, the list of programs to
   close (closed, the default) and Finished. Next is clicked once the page
   is up (BM_CLICK posted: a click during the page change is lost). }
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if IsUpgrade then
+    UpdateWording(CurPageID);
   if PassiveMode and ((CurPageID = wpReady) or (CurPageID = wpPreparing) or (CurPageID = wpFinished)) then
     PostMessage(WizardForm.NextButton.Handle, $00F5, 0, 0);
 end;
@@ -442,6 +740,9 @@ begin
   UpdateMode := HasParam('/UPDATE');
   KeepV1 := HasParam('/KEEPV1');
   Result := True;
+  { An earlier AskLanguage's copy (this Setup's own, if it is one, is
+    locked and stays) }
+  DelTree(RelaunchDir, True, True, True);
   { The updater of 2.0.2-beta.5 and earlier runs the new installer as an
     NSIS one: "/P /UPDATE /R /ARGS". Silent mode cannot be turned on here,
     and Setup's loader keeps its .exe locked, so it cannot start itself
@@ -450,6 +751,15 @@ begin
   PassiveMode := HasParam('/P') and not WizardSilent;
   if PassiveMode then
     Log('NSIS passive mode (/P): the pages are skipped');
+  IsUpgrade := RegKeyExists(HKCU, UninstKey) or RegKeyExists(HKCU, NsisUninstKey) or
+    (not KeepV1 and (RegKeyExists(HKCU, V1UninstKey) or RegKeyExists(HKLM, V1UninstKey)));
+  if IsUpgrade then
+    Log('Updating an earlier installation');
+  { Asked once: an update of this installation has its language. Nobody to
+    ask in silent and passive mode. }
+  if not RegKeyExists(HKCU, UninstKey) and not WizardSilent and not PassiveMode and
+     not HasParamPrefix('/LANG=') then
+    Result := AskLanguage;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
