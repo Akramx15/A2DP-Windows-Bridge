@@ -102,14 +102,14 @@ describe("Home", () => {
     expect(xb.querySelector(".status-pill-codec")).toBeNull();
   });
 
-  it("asks to exit v1 while it runs", async () => {
+  it("asks to exit the other A2DPWB (v1, or another v2) while it runs", async () => {
     start("#/home");
     await homeCard("WH-1000XM5");
-    expect(screen.queryByText("A2DPWB v1 is running — exit it first")).toBeNull();
+    expect(screen.queryByText("Another A2DPWB is running — exit it first")).toBeNull();
     mock!.setV1Running(true);
-    expect(await screen.findByText("A2DPWB v1 is running — exit it first")).toBeInTheDocument();
+    expect(await screen.findByText("Another A2DPWB is running — exit it first")).toBeInTheDocument();
     mock!.setV1Running(false);
-    await waitFor(() => expect(screen.queryByText("A2DPWB v1 is running — exit it first")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Another A2DPWB is running — exit it first")).toBeNull());
   });
 
   it("shows the cause of an error and a fix", async () => {
@@ -164,7 +164,7 @@ describe("every screen renders", () => {
     const { calls } = start("#/home", { scenario: "fresh" });
     expect(await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" })).toBeInTheDocument();
     mock!.setV1Running(true);
-    expect(await screen.findByText("A2DPWB v1 is running — exit it first")).toBeInTheDocument();
+    expect(await screen.findByText("Another A2DPWB is running — exit it first")).toBeInTheDocument();
     mock!.setV1Running(false);
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     // Step 2: one explanation and one button, which switches the driver and
