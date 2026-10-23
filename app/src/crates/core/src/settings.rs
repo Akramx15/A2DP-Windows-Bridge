@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use bt_host::media::{MEDIA_PAYLOAD_LIMIT_DEFAULT, clamp_media_payload_limit};
 
 /// settings.json's format: 1 is v1's (which wrote no schema_version), 2 is
-/// v2's, 3 has LE Audio on by default (see migrate.rs)
-pub const SCHEMA_VERSION: u32 = 3;
+/// v2's, 3 has LE Audio on by default, 4 remembers each device's volume by
+/// default (see migrate.rs)
+pub const SCHEMA_VERSION: u32 = 4;
 /// The first schema_version v2 wrote: a lower one is v1's folder
 pub const FIRST_V2_SCHEMA: u32 = 2;
 
@@ -122,7 +123,9 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub media_keys: bool,
     /// Remember the headphones' volume per device (address -> AVRCP volume
-    /// 0..127) and set it again when they connect
+    /// 0..127) and set it again when they connect; on by default (issue
+    /// #86: one device's volume must not carry over to another)
+    #[serde(default = "default_true")]
     pub remember_volume: bool,
     pub saved_volumes: BTreeMap<String, i32>,
     /// Per-device overrides of media_keys and remember_volume (address in
@@ -242,7 +245,7 @@ impl Default for Settings {
             last_update_check: String::new(),
             include_prereleases: default_prereleases(),
             media_keys: true,
-            remember_volume: false,
+            remember_volume: true,
             saved_volumes: BTreeMap::new(),
             device_options: BTreeMap::new(),
             debug_mode: false,

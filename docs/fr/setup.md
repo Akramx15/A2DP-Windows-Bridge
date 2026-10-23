@@ -44,7 +44,7 @@ Branchez l'adaptateur Bluetooth USB et lancez A2DPWB. S'il n'existe encore aucun
 
 1. **Choisir l'adaptateur** : les adaptateurs Bluetooth USB détectés. Si le vôtre n'apparaît pas, branchez-le et appuyez sur **Actualiser**. Un **Pris en charge** vert ou un **Non pris en charge** rouge indique si A2DPWB peut l'utiliser
 2. **Pilote et firmware** : **Attribuer WinUSB** (voir [Étape 2](#winusb)) et, pour les adaptateurs Realtek, les fichiers de firmware (voir [Firmware](#firmware))
-3. **Trouver vos appareils audio** : la recherche démarre d'elle-même. Mettez l'appareil audio en mode d'association et cliquez sur **Connecter** à côté (ou saisissez son adresse et cliquez sur **Utiliser**) : A2DPWB crée son profil (« *nom* | Auto », le meilleur codec de l'appareil) et se connecte. Puis **Terminer** (voir [Étape 3](#headphones))
+3. **Trouver vos appareils audio** : la recherche démarre d'elle-même. Mettez l'appareil audio en mode d'association et cliquez sur **Connecter** à côté (ou saisissez son adresse et cliquez sur **Utiliser**) : A2DPWB crée son profil (« *nom* | Auto », le meilleur codec de l'appareil) et se connecte. Puis **Terminer** (voir [Étape 3](#headphones)). Le bloc **Démarrage** de cette étape propose **Démarrer avec Windows** et **Démarrer dans la zone de notification**, les mêmes interrupteurs que dans les paramètres, enregistrés aussitôt
 
 **Configurer plus tard** ignore la suite ; **Paramètres > Lancer la configuration** la rouvre.
 

@@ -51,7 +51,7 @@ The headphones and speakers A2DPWB can stream to, each with its own settings: **
 
 - **Capture Source**: System Loopback, Virtual Device or Application (see [Capture Modes](#capture-modes))
 - **Windows Volume Sync** (see [Volume](#volume))
-- **Max media packet size (bytes)** (see [Max Media Packet Size](#max-packet))
+- **Max media packet size (bytes)**, in developer mode (see [Max Media Packet Size](#max-packet))
 - **Audio Device Buttons Control Playback** and **Remember Audio Device Volume**
 
 ### Diagnostics
@@ -89,14 +89,13 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 |:--------|:---------|
 | Appearance | Language, theme (System / Light / Dark) |
 | Startup | **Start with Windows** and **Start in the tray** (see [Start with Windows](#autostart)), **Minimize to System Tray** (see [Tray and Flyout](#tray)) |
-| Headphones | **Headphone Buttons Control Playback** (see [Headphone buttons](#headphone-buttons)), **Remember Headphone Volume** (see [Volume](#volume)) |
 | Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
-| Advanced | **Developer mode** (adds the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
+| Advanced | **Developer mode** (adds the receiver test to Diagnostics, **Max media packet size** to Audio Devices and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
 | About A2DPWB | Version, license, third-party licenses, **Quit A2DPWB** |
 
 ### First-Run Setup
 
-The first start (no profile yet, or no adapter with WinUSB) opens **Set up A2DPWB**: choose the adapter, driver and firmware, find your audio devices (Connect creates the profile and connects). See [Setup](setup#first-run). **Settings > Run setup** opens it again.
+The first start (no profile yet, or no adapter with WinUSB) opens **Set up A2DPWB**: choose the adapter, driver and firmware, find your audio devices (Connect creates the profile and connects; this step also has **Start with Windows** and **Start in the tray**). See [Setup](setup#first-run). **Settings > Run setup** opens it again.
 
 ## Tray and Flyout {#tray}
 
@@ -249,7 +248,7 @@ While streaming, Home and the tray flyout show a **Volume** slider when the head
 - With Auto, the audio is captured before the Windows volume is applied, so it is still lowered only once, on the headphones. If the synced volume also changes the captured audio, the volume applies twice: choose Off then (see [System-wide effects apps](#effects-apps)).
 - Mute is not synced: muting the output device keeps the PC silent and does not mute the headphones.
 
-**Settings > Remember Headphone Volume** (off by default) saves the headphones' volume for each device and sets it again as soon as they connect, before any audio is sent. Headphones otherwise start at their own last volume, which may be much louder than the volume used last time with A2DPWB (e.g., after using them with a phone).
+**Remember Audio Device Volume** (on **Audio Devices**, for each device; on by default) saves each audio device's own volume and sets it again as soon as it connects, before any audio is sent, so one device's volume does not carry over to another. Turn it off for a device to let it start at its own last volume, which may be much louder than the volume used last time with A2DPWB (e.g., after using it with a phone). Updating from an earlier version turns it on once; a device it was turned off for keeps it off.
 
 ### Headphone buttons {#headphone-buttons}
 
@@ -259,7 +258,7 @@ The play/pause, next and previous track controls on the headphones (buttons or t
 - A2DPWB tells the headphones whether audio is playing (from whether there is audio to capture), so headphones that pause when taken off send the right command.
 - Fast forward / rewind (holding a button) have no Windows media key and are ignored.
 - Volume gestures change the headphones' own volume; with **Windows Volume Sync** the synced Windows volume follows (see [Volume](#volume)).
-- Turn this off with **Settings > Headphone Buttons Control Playback**, e.g. if another program already reacts to the media keys twice.
+- Turn this off for a device with **Audio Devices > Audio Device Buttons Control Playback**, e.g. if another program already reacts to the media keys twice.
 
 This needs AVRCP on the headphones, which nearly all have. Without it, streaming works as usual, just without the buttons.
 
@@ -403,7 +402,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Max Media Packet Size (per Device) {#max-packet}
 
-**Max media packet size** of each device (**Audio Devices**; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so headphones that need a different value can have their own. The headphones' own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. It was a profile setting before (under **Advanced**): a device keeps the value of the profile it kept (see [Codecs](#codecs)); profiles saved by v1 before 1.1 take the value that was set globally then.
+**Max media packet size** of each device (**Audio Devices**; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so audio devices that need a different value can have their own. The field is shown in developer mode (**Settings > Developer mode**), or while a device has a value other than 1023, so it can be set back; most users never need it. The audio device's own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. It was a profile setting before (under **Advanced**): a device keeps the value of the profile it kept (see [Codecs](#codecs)); profiles saved by v1 before 1.1 take the value that was set globally then.
 
 **1023 (default) is recommended.** It fits one Bluetooth baseband packet (3-DH5). Larger values save only 1-2% overhead, and each lost packet then loses more audio. 679 fits one 2-DH5 packet and is the minimum LDAC accepts.
 

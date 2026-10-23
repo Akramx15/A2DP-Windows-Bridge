@@ -24,6 +24,10 @@
 //! Schema 3 (2.0.1): LE Audio is on by default, so a folder of schema 2 gets
 //! `le_audio_experimental` turned on once (2.0.0 wrote it off for everyone).
 //!
+//! Schema 4 (2.0.2): each device's volume is remembered by default (issue
+//! #86), so a folder of schema 3 or older gets `remember_volume` turned on
+//! once. A device the user turned it off for (`device_options`) keeps that.
+//!
 //! At every start, the profiles are folded into one per device
 //! ([`profiles::consolidate`]: the Codecs screen keeps one); the
 //! first time that changes anything, profiles.json is copied as it was to
@@ -264,6 +268,11 @@ fn upgrade_v2(dir: &Path, report: &mut Report) {
         settings.le_audio_experimental = true;
         tracing::info!("settings: LE Audio (experimental) turned on, as it now is by default");
     }
+    // 4: each device's volume remembered by default
+    if report.schema_before.is_some_and(|n| n < 4) && !settings.remember_volume {
+        settings.remember_volume = true;
+        tracing::info!("settings: remembering each device's volume, as it now is by default");
+    }
     match settings.save(dir) {
         Ok(()) => report.schema_written = true,
         Err(e) => tracing::error!("settings: cannot save {}: {e}", Settings::path(dir).display()),
@@ -383,6 +392,33 @@ mod tests {
         off.save(dir).unwrap();
         assert_eq!(prepare(dir), Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
         assert!(!Settings::load(dir).le_audio_experimental);
+    }
+
+    #[test]
+    fn v2_settings_remember_each_volume_once() {
+        let t = TempDir::new("schema4");
+        let dir = &t.0;
+        std::fs::write(
+            Settings::path(dir),
+            r#"{"schema_version":3,"remember_volume":false,"saved_volumes":{"AA:BB:CC:DD:EE:FF":40},
+                "device_options":{"11:22:33:44:55:66":{"remember_volume":false}}}"#,
+        )
+        .unwrap();
+        let r = prepare(dir);
+        assert_eq!(r, Report { schema_before: Some(3), schema_written: true, ..Report::default() });
+        let s = Settings::load(dir);
+        assert_eq!(s.schema_version, SCHEMA_VERSION);
+        assert!(s.remember_volume_for("AA:BB:CC:DD:EE:FF"));
+        assert_eq!(s.saved_volumes["AA:BB:CC:DD:EE:FF"], 40);
+        // A device the user turned it off for keeps that
+        assert!(!s.remember_volume_for("11:22:33:44:55:66"));
+
+        // Turned off again by the user: stays off
+        let mut off = s;
+        off.remember_volume = false;
+        off.save(dir).unwrap();
+        assert_eq!(prepare(dir), Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
+        assert!(!Settings::load(dir).remember_volume);
     }
 
     #[test]

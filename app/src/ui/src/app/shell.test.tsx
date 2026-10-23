@@ -275,6 +275,22 @@ describe("setup device step", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
     expect(calls.find((c) => c.method === "stream.start")!.params).toEqual({ profile: "11:22:33:44:55:66 | Auto" });
   });
+
+  it("asks whether A2DPWB starts with Windows, and then in the tray (issue #86)", async () => {
+    const { core } = await toDeviceStep();
+    await core.request("settings.set", {
+      settings: { ...core.state.snap!.settings, start_with_windows: false, start_minimized: false },
+    });
+    const withWindows = await screen.findByRole("switch", { name: t("settings.start_with_windows") });
+    const inTray = screen.getByRole("switch", { name: new RegExp(t("ui.settings.start_minimized")) });
+    await waitFor(() => expect(withWindows).not.toBeChecked());
+    expect(inTray).toBeDisabled();
+    fireEvent.click(withWindows);
+    await waitFor(() => expect(core.state.snap!.settings.start_with_windows).toBe(true));
+    await waitFor(() => expect(inTray).not.toBeDisabled());
+    fireEvent.click(inTray);
+    await waitFor(() => expect(core.state.snap!.settings.start_minimized).toBe(true));
+  });
 });
 
 describe("setup adapter step", () => {
@@ -311,6 +327,7 @@ describe("helpers", () => {
   it("a reconnect reads as connecting, and its end as connected (issue #86)", () => {
     const msg = (key: string, ...args: string[]) => ({ key, args });
     expect(statusText({ state: "reconnecting", message: msg("status.reconnect_attempt", "1", "3") })).toBe("Connecting...");
+    expect(statusText({ state: "connecting", message: msg("status.connecting_retry", "2", "3") })).toBe("Connecting...");
     expect(statusText({ state: "streaming", message: msg("status.reconnected") })).toBe("Connected");
     expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
     expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
