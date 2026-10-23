@@ -43,7 +43,7 @@ Windows 10 / 11 load only kernel drivers signed through Microsoft, which needs a
 
 1. **Install**: run `A2DPWB-<version>-win64-setup.exe` (per user, no administrator rights), or extract the portable zip and run `a2dpwb.exe`. Installing over v1 removes v1 and keeps its settings, pairings and firmware.
 2. **Plug in the adapter** (or use the built-in one, see the warning below).
-3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, pair the headphones, then choose what to send and connect.
+3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, then press **Connect** next to your audio device: A2DPWB creates its profile and connects.
 4. **Connect** from **Home**, or from the tray icon.
 
 > **Warning:** While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter. A built-in adapter can be used too, but **the PC then has no Windows Bluetooth at all** until the driver is restored, so a separate USB adapter is recommended. **Adapter > Restore driver** gives the adapter back to Windows at any time, and the uninstaller offers it too.

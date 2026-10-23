@@ -29,10 +29,18 @@ const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 
 /** "Realtek RTL8761BU": the vendor and chip, without the VID:PID the line
  *  below shows (issue #86); "MediaTek [unsupported]" keeps its mark */
-export function adapterTitle(a: Pick<AdapterInfo, "display_name" | "vendor">): string {
-  const name = a.display_name.replace(/\s*\(0x[0-9a-f]{4}:0x[0-9a-f]{4}\)/i, "").trim();
+export function adapterTitle(a: Pick<AdapterInfo, "display_name" | "vendor">, mark = true): string {
+  let name = a.display_name.replace(/\s*\(0x[0-9a-f]{4}:0x[0-9a-f]{4}\)/i, "").trim();
+  // The setup's own tag says it instead
+  if (!mark) name = name.replace(/\s*\[unsupported\]/i, "");
   if (!a.vendor || name.toLowerCase().startsWith(a.vendor.toLowerCase())) return name;
   return `${a.vendor} ${name}`;
+}
+
+/** A2DPWB can stream through it: not a chip whose firmware loader it lacks
+ *  (MediaTek, Qualcomm) */
+export function adapterSupported(a: Pick<AdapterInfo, "vendor_note">): boolean {
+  return a.vendor_note?.key !== "firmware.vendor_unsupported";
 }
 
 export function driverText(d: DriverKind): { text: string; status: "good" | "warn" | "bad" } {

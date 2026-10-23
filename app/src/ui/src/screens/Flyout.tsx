@@ -19,6 +19,7 @@ import {
   currentProfile,
   QualityIndicator,
   Ring,
+  statusText,
   useFixes,
   VolumeControl,
 } from "../components/stream";
@@ -58,17 +59,18 @@ export function Flyout() {
         </Ring>
         <div class="fly-title">
           <div class="device-name ellipsis">{profile()?.device_name || profile()?.name || t("profile.none_selected")}</div>
+          {/* As on Home and in the sidebar: battery | state (issue #86) */}
           <div class="fly-state">
-            <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
-              <span class="dot" aria-hidden="true" />
-              <span class="ellipsis">
-                {stream().state === "error" ? t("status.error") : tm(stream().message) || t(`status.${stream().state}`)}
-              </span>
-            </div>
-            {/* With the device it belongs to (issue #86) */}
             <Show when={stream().battery !== null}>
               <BatteryLevel class="fly-battery" percent={stream().battery!} />
+              <span class="muted" aria-hidden="true">
+                |
+              </span>
             </Show>
+            <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
+              <span class="dot" aria-hidden="true" />
+              <span class="ellipsis">{statusText(stream())}</span>
+            </div>
           </div>
         </div>
         <IconButton icon="dismiss" label={t("modal.close")} onClick={() => void core.transport.hideWindow()} />

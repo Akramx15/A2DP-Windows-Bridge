@@ -39,12 +39,11 @@ At its first start v2 copies the v1 settings to `%APPDATA%\A2DPWB\backup-v1\` be
 
 ## Step 1: First-Run Setup {#first-run}
 
-Plug in the USB Bluetooth adapter and start A2DPWB. When there is no profile yet, or no adapter has WinUSB, A2DPWB opens **Set up A2DPWB**, four steps:
+Plug in the USB Bluetooth adapter and start A2DPWB. When there is no profile yet, or no adapter has WinUSB, A2DPWB opens **Set up A2DPWB**, three steps:
 
-1. **Choose the adapter**: the USB Bluetooth adapters found. If yours is missing, plug it in and press **Refresh**
+1. **Choose the adapter**: the USB Bluetooth adapters found. If yours is missing, plug it in and press **Refresh**. A green **Supported** or a red **Not supported** says whether A2DPWB can use each one
 2. **Driver and firmware**: **Assign WinUSB** (see [Step 2](#winusb)), and for Realtek adapters the firmware files (see [Firmware](#firmware))
-3. **Find your headphones**: put them into pairing mode, **Scan Devices**, choose them, then **Create profile** (see [Step 3](#headphones))
-4. **Test**: choose what to send (all PC audio, a virtual device or one app), **Connect**, and play something on the PC. If you hear it in the headphones, setup is done
+3. **Find your audio devices**: the scan starts by itself. Put the audio device into pairing mode and press **Connect** next to it (or type its address and press **Use**): A2DPWB creates its profile ("*name* | Auto", the best codec it has) and connects. Then **Finish** (see [Step 3](#headphones))
 
 **Set up later** skips the rest; **Settings > Run setup** opens it again.
 

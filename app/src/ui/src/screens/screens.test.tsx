@@ -161,7 +161,7 @@ describe("every screen renders", () => {
     // Step 2: one explanation and one button, which switches the driver and
     // downloads the firmware (issue #86)
     const setUp = await screen.findByRole("button", { name: "Set up this adapter" });
-    expect(screen.getByText(/Windows' own Bluetooth then no longer uses this adapter/)).toBeInTheDocument();
+    expect(screen.getByText(/Windows then stops using this adapter/)).toBeInTheDocument();
     expect(screen.getByText("rtl8761bu_fw.bin, rtl8761bu_config.bin")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Assign WinUSB" })).toBeNull();
     fireEvent.click(setUp);
