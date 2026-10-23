@@ -288,8 +288,8 @@ const RULES: &[Rule] = &[
     rule(BT, Prefix, "HCI ACL connection established to ", Step::Connect, A::Detail, D::Whole),
     rule(BT, Prefix, "signaling connection established", Step::Connect, A::Done, D::Whole),
     rule(BT, Prefix, "connection attempt ", Step::Connect, A::Retry, D::Whole),
-    rule(BT, Prefix, "authentication failed, dropping the stored link key", Step::Connect, A::Detail, D::Whole),
-    rule(BT, Prefix, "authentication collided with the device's own", Step::Connect, A::Detail, D::Whole),
+    rule(BT, Prefix, "authentication failed, dropping the stored link key", Step::Connect, A::Retry, D::Whole),
+    rule(BT, Prefix, "authentication collided with the device's own", Step::Connect, A::Retry, D::Whole),
     rule(BT, Prefix, "pairing again failed: the dropped link key", Step::Connect, A::Detail, D::Whole),
     rule(BT, Prefix, "signaling connection failed", Step::Connect, A::Detail, D::Whole),
     rule(BT, Prefix, "connection timed out", Step::Connect, A::Detail, D::Whole),
@@ -492,6 +492,17 @@ impl ConnectionFlow {
             if matches!(r.action, Action::Failed | Action::Warning) {
                 self.set_detail(Step::Link, message.to_string());
             }
+            return;
+        }
+
+        // A connect that fails also fails the stream BTstack was asked to
+        // establish ("stream establishment failed (0x66)"): until signaling
+        // is up, that belongs to the connect step, which may still retry
+        if r.step.index() > Step::Connect.index()
+            && matches!(r.action, Action::Failed | Action::Warning)
+            && self.session.step(Step::Connect).status == StepStatus::Running
+        {
+            self.set_detail(Step::Connect, detail);
             return;
         }
 
@@ -1699,6 +1710,31 @@ mod tests {
         assert_eq!(status(&f, Step::Connect), StepStatus::Warning);
         assert!(f.session().step(Step::Connect).detail.ends_with("(after 1 failed attempt(s))"));
         assert_eq!(f.session().issues, 2);
+    }
+
+    #[test]
+    fn auth_collision_retry_does_not_fail_the_configuration() {
+        let mut f = ConnectionFlow::new();
+        f.feed(0, STREAM, Level::INFO, "stream: device AA:BB:CC:DD:EE:FF codec LDAC");
+        f.feed(10, "bt_host", Level::INFO, "connecting to AA:BB:CC:DD:EE:FF");
+        f.feed(20, APP, Level::WARN, "signaling connection failed (0x66)");
+        f.feed(20, APP, Level::WARN, "stream establishment failed (0x66)");
+        f.feed(20, APP, Level::WARN, "authentication failed (handle 0x0001): 0x0C (Command Disallowed)");
+        f.feed(
+            20,
+            "bt_host",
+            Level::WARN,
+            "authentication collided with the device's own (0x0C): trying again with the stored link key",
+        );
+        assert_eq!(status(&f, Step::Config), StepStatus::Pending);
+        assert_eq!(status(&f, Step::Connect), StepStatus::Running);
+        f.feed(30, "bt_host", Level::INFO, "connecting to AA:BB:CC:DD:EE:FF");
+        f.feed(40, APP, Level::INFO, "signaling connection established (cid 0x0002, handle 0x0002)");
+        f.feed(50, APP, Level::INFO, "codec configured (local 1, remote 6)");
+        f.feed(60, APP, Level::INFO, "stream established (local 1, remote 6, mtu 883, used 883, limit 1023)");
+        assert_eq!(status(&f, Step::Connect), StepStatus::Warning);
+        assert!(f.session().step(Step::Connect).detail.ends_with("(after 1 failed attempt(s))"));
+        assert_eq!(status(&f, Step::Config), StepStatus::Done);
     }
 
     #[test]
