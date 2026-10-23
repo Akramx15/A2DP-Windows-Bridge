@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
-import { abrCarries, bitrateNoteKey, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
+import { abrCarries, bitrateNoteKey, carryToCodec, codecLabelKey, fitToCodec, qualityIgnored, qualityTag, sampleRates } from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { knowAdapters, maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
-import { validateProfile } from "./profile";
+import { codecFitsDevice, validateProfile } from "./profile";
 
 const line = (time_ms: number, message: string, level: LogLine["level"] = "info"): LogLine => ({
   time_ms,
@@ -138,6 +138,11 @@ describe("profiles", () => {
   it("validates before saving", () => {
     const ok = sampleProfile();
     expect(validateProfile(ok, [])).toEqual({});
+    // A codec stays with another device only when that one listed it
+    expect(codecFitsDevice("lhdcv5", ["sbc", "aac", "lhdcv5"])).toBe(true);
+    expect(codecFitsDevice("lhdcv5", ["sbc", "aac"])).toBe(false);
+    expect(codecFitsDevice("lhdcv5", [])).toBe(false);
+    expect(codecFitsDevice("auto", [])).toBe(true);
     expect(validateProfile({ ...ok, name: "  " }, []).name?.key).toBe("ui.profile.err_name_empty");
     expect(validateProfile(ok, [ok.name]).name?.key).toBe("ui.profile.err_name_taken");
     expect(validateProfile({ ...ok, device_address: "" }, []).device?.key).toBe("ui.profile.err_device");
@@ -159,7 +164,14 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "faststream" })).toMatchObject({ abr: false });
     expect(abrCarries("ldac", "lhdcv5")).toBe(true);
     expect(abrCarries("auto", "ldac")).toBe(true);
-    expect(abrCarries("sbc", "sbcxq")).toBe(true);
+    // SBC's adaptive bitpool is not SBC XQ's (issue #86)
+    expect(abrCarries("sbc", "sbcxq")).toBe(false);
+    expect(abrCarries("sbcxq", "sbc")).toBe(false);
+    expect(abrCarries("sbc", "sbc")).toBe(true);
+    const sbcAbr = { ...p, codec: "sbc", abr: true, sbc_bitpool: 40, sbcxq_bitpool: 0, sbc_blocks: 8, sbc_subbands: 4, sbc_allocation: "snr", sbc_channel_mode: "stereo" };
+    expect(carryToCodec(sbcAbr, "sbcxq")).toMatchObject({ codec: "sbcxq", abr: false, sbc_bitpool: 0, sbc_blocks: 0, sbc_subbands: 0, sbc_allocation: "", sbc_channel_mode: "" });
+    expect(carryToCodec(sbcAbr, "sbc")).toMatchObject({ abr: true, sbc_bitpool: 40, sbc_blocks: 8, sbc_subbands: 4, sbc_allocation: "snr", sbc_channel_mode: "stereo" });
+    expect(carryToCodec({ ...p, codec: "ldac", abr: true }, "lhdcv5")).toMatchObject({ abr: true });
     expect(abrCarries("ldac", "sbc")).toBe(false);
     expect(abrCarries("sbcxq", "auto")).toBe(false);
     expect(abrCarries("aac", "sbc")).toBe(false);

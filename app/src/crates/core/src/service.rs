@@ -693,6 +693,9 @@ impl Inner {
 pub struct Service {
     inner: Arc<Inner>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    /// What the last session was started with: a Bluetooth restart
+    /// connects it again (issue #86)
+    last_request: Mutex<Option<StreamRequest>>,
     _power: Option<win_sys::power::PowerNotifier>,
 }
 
@@ -776,7 +779,7 @@ impl Service {
         pipeline::set_thread_priority_hook(|| pro_audio("encode thread"));
         hci_transport::set_acl_out_priority_hook(|| pro_audio("USB ACL writer"));
         bt_host::set_runloop_priority_hook(|| pro_audio("BTstack thread"));
-        Service { inner, worker: Mutex::new(None), _power: power }
+        Service { inner, worker: Mutex::new(None), last_request: Mutex::new(None), _power: power }
     }
 
     pub fn stats(&self) -> Arc<LinkStats> {
@@ -873,6 +876,32 @@ impl Service {
         self.shutdown();
     }
 
+    /// Restarts Bluetooth (the Adapters page): the stack is stopped, and
+    /// when a session was connecting to or streaming to a device, its
+    /// request is returned to be started again on a new stack (the same
+    /// device, profile and codec), as a session reconnects after the other
+    /// stack restarts (sleep, a stopped adapter). A session that waits for
+    /// headphones that were turned off just ends (issue #86).
+    pub fn restart_adapter(&self) -> Option<StreamRequest> {
+        let last = self.last_request.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let again = reconnect_after_restart(
+            self.is_running(),
+            self.inner.waiting.load(Ordering::Acquire),
+            self.inner.stop_requested(),
+            last,
+        );
+        tracing::info!(
+            "restarting Bluetooth (Adapters page): session running {}, {}",
+            self.is_running(),
+            match &again {
+                Some(r) => format!("reconnecting {} afterwards", bt_host::addr_str(&r.device)),
+                None => "nothing to reconnect".into(),
+            }
+        );
+        self.shutdown();
+        again
+    }
+
     /// The chip or firmware setting changed (v1 reset_btstack): an idle
     /// stack is released now, one in use is replaced at its next use (the
     /// next connection or scan), so the firmware is loaded again. `idle`:
@@ -932,6 +961,7 @@ impl Service {
             if req.le.is_some() { "LE Audio" } else { "A2DP" }
         );
         self.stop_streaming();
+        *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.stop.store(false, Ordering::Release);
         self.inner.running.store(true, Ordering::Release);
         self.inner.notify(StreamState::Connecting, Msg::new("status.initializing"));
@@ -1080,6 +1110,18 @@ impl Drop for Service {
     }
 }
 
+/// The request to start again after a Bluetooth restart: the session's,
+/// while one runs that is neither being stopped nor waiting for headphones
+/// that were turned off
+fn reconnect_after_restart(
+    running: bool,
+    waiting: bool,
+    stopping: bool,
+    last: Option<StreamRequest>,
+) -> Option<StreamRequest> {
+    last.filter(|_| running && !waiting && !stopping)
+}
+
 /// Marks a scan while it runs (also when it returns early)
 struct ScanningGuard<'a>(&'a AtomicBool);
 
@@ -1099,6 +1141,25 @@ impl Drop for ScanningGuard<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bluetooth_restart_reconnects_the_running_session() {
+        let req = crate::profiles::Profile {
+            device_address: "00:11:22:33:44:55".into(),
+            codec: "ldac".into(),
+            ..Default::default()
+        }
+        .to_request(1000)
+        .unwrap();
+        let last = || Some(req.clone());
+        // Streaming (or connecting): the same request again
+        assert_eq!(reconnect_after_restart(true, false, false, last()), last());
+        // Nothing runs, it is being stopped, or the headphones are off
+        assert_eq!(reconnect_after_restart(false, false, false, last()), None);
+        assert_eq!(reconnect_after_restart(true, false, true, last()), None);
+        assert_eq!(reconnect_after_restart(true, true, false, last()), None);
+        assert_eq!(reconnect_after_restart(true, false, false, None), None);
+    }
 
     #[test]
     fn sleep_marks_suspending_until_resume() {

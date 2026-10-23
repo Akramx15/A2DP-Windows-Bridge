@@ -1287,7 +1287,10 @@ impl HostApp {
                     sbc.allocation_method,
                     sbc.min_bitpool,
                     sbc.max_bitpool,
-                    if sbc.allows_xq() { " - SBC XQ possible" } else { "" }
+                    match sbc.xq_refusal() {
+                        None => " - SBC XQ possible".to_string(),
+                        Some(why) => format!(" - no SBC XQ: {why}"),
+                    }
                 );
             }
             Some(A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CAPABILITY) => {
