@@ -23,6 +23,11 @@
 //!
 //! Schema 3 (2.0.1): LE Audio is on by default, so a folder of schema 2 gets
 //! `le_audio_experimental` turned on once (2.0.0 wrote it off for everyone).
+//!
+//! At every start, the profiles are folded into one per device
+//! ([`profiles::consolidate`]: the Codecs screen keeps one); the
+//! first time that changes anything, profiles.json is copied as it was to
+//! `profiles-before-codecs.json`.
 
 use std::path::Path;
 
@@ -39,6 +44,8 @@ const BACKUP_TMP: &str = "backup-v1.tmp";
 const NOT_COPIED: [&str; 3] = [BACKUP_DIR, BACKUP_TMP, "logs"];
 /// v1's files that mean "v1 used this folder" even without settings.json
 const V1_FILES: [&str; 3] = ["profiles.json", "devices.txt", "link_keys.txt"];
+/// profiles.json as it was before profiles were first folded into one per device
+pub const PROFILES_BACKUP: &str = "profiles-before-codecs.json";
 
 const BACKUP_README: &str = "\
 This folder is a copy of the A2DPWB settings folder as A2DP Windows Bridge v1
@@ -67,6 +74,8 @@ pub struct Report {
     pub profiles_renamed: usize,
     /// settings.json was rewritten with the current schema_version
     pub schema_written: bool,
+    /// Profiles folded into another one of the same device
+    pub profiles_folded: usize,
 }
 
 /// schema_version of the settings file: None without a readable file, 1 for
@@ -124,10 +133,46 @@ fn backup(dir: &Path) -> std::io::Result<u64> {
 /// Never fails: problems are logged, and a failed backup leaves v1's files
 /// unchanged so that the next start tries again.
 pub fn prepare(dir: &Path) -> Report {
-    let report = prepare_settings(dir);
+    let mut report = prepare_settings(dir);
     // After v1's files were backed up as they were
     crate::paths::move_loose_firmware(dir);
+    report.profiles_folded = consolidate_profiles(dir);
     report
+}
+
+/// One profile per device (see the module documentation); how many were
+/// folded away. Nothing changes when the backup cannot be made.
+fn consolidate_profiles(dir: &Path) -> usize {
+    if !profiles::path(dir).is_file() {
+        return 0;
+    }
+    let mut list = profiles::load(dir);
+    let folded = profiles::consolidate(&mut list, &Settings::load(dir).last_profile);
+    if folded.is_empty() {
+        return 0;
+    }
+    let backup = dir.join(PROFILES_BACKUP);
+    if !backup.exists()
+        && let Err(e) = std::fs::copy(profiles::path(dir), &backup)
+    {
+        tracing::error!("profiles: cannot copy them to {}: {e}; not folded", backup.display());
+        return 0;
+    }
+    match profiles::save(dir, &list) {
+        Ok(()) => {
+            tracing::info!(
+                "profiles: {} folded into the profile of their device ({} kept), the file before in {}",
+                folded.len(),
+                list.len(),
+                backup.display()
+            );
+            folded.len()
+        }
+        Err(e) => {
+            tracing::error!("profiles: cannot save {}: {e}", profiles::path(dir).display());
+            0
+        }
+    }
 }
 
 fn prepare_settings(dir: &Path) -> Report {
@@ -278,7 +323,8 @@ mod tests {
                 backed_up: true,
                 profiles_seeded: 1,
                 profiles_renamed: 0,
-                schema_written: true
+                schema_written: true,
+                profiles_folded: 0
             }
         );
         // The backup has v1's files as they were, without v2's logs
@@ -355,12 +401,13 @@ mod tests {
 
     #[test]
     fn repeated_v1_profile_names_are_numbered() {
+        // Of three devices (the profiles of one device are folded into one)
         let t = TempDir::new("dup");
         let dir = &t.0;
         std::fs::write(Settings::path(dir), r#"{"language":"ja","last_profile":"WH LDAC"}"#).unwrap();
         let text = r#"{"profiles":[{"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:FF","codec":"ldac"},
-            {"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:FF","codec":"ldac","quality":"mq"},
-            {"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:FF","codec":"ldac","quality":"sq"}]}"#;
+            {"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:01","codec":"ldac","quality":"mq"},
+            {"name":"WH LDAC","device_address":"AA:BB:CC:DD:EE:02","codec":"ldac","quality":"sq"}]}"#;
         std::fs::write(profiles::path(dir), text).unwrap();
         let r = prepare(dir);
         assert_eq!(r.profiles_renamed, 2);
@@ -409,5 +456,29 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"language":"ja"}"#).unwrap();
         assert_eq!(s.schema_version, 1);
         assert_eq!(Settings::default().schema_version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn profiles_are_folded_once_with_a_backup() {
+        let t = TempDir::new("fold");
+        let dir = &t.0;
+        std::fs::write(Settings::path(dir), r#"{"schema_version":3,"last_profile":"WH | LDAC"}"#).unwrap();
+        let text = r#"{"profiles":[{"name":"WH | Auto","device_address":"00:A2:D0:00:00:02"},
+            {"name":"WH | LDAC","device_address":"00:A2:D0:00:00:02","codec":"ldac"},
+            {"name":"WH AAC","device_address":"00:A2:D0:00:00:02","codec":"aac","abr":true}]}"#;
+        std::fs::write(profiles::path(dir), text).unwrap();
+        let r = prepare(dir);
+        assert_eq!(r.profiles_folded, 2);
+        assert_eq!(std::fs::read_to_string(dir.join(PROFILES_BACKUP)).unwrap(), text);
+        let list = profiles::load(dir);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "WH | LDAC");
+        assert!(list[0].codec_settings["aac"].abr);
+        // Nothing left to fold; a later fold keeps the first backup
+        assert_eq!(prepare(dir).profiles_folded, 0);
+        let again = r#"{"profiles":[{"name":"A","device_address":"00:A2:D0:00:00:02"},{"name":"B","device_address":"00:A2:D0:00:00:02"}]}"#;
+        std::fs::write(profiles::path(dir), again).unwrap();
+        assert_eq!(prepare(dir).profiles_folded, 1);
+        assert_eq!(std::fs::read_to_string(dir.join(PROFILES_BACKUP)).unwrap(), text);
     }
 }

@@ -1,13 +1,21 @@
 // A new profile's defaults and the checks before profile.save. The values
 // are those of v1's profile dialog; the core checks again.
+//
+// Since the Codecs screen (issue #86) the UI keeps one profile per device
+// entry (its address, and whether it is the LE Audio entry): the codec card
+// chosen changes that profile, and the settings of the codecs it is not
+// using wait in its codec_settings. The core folds older extra profiles
+// into it at start (crates/core/src/profiles.rs consolidate).
 
-import type { AudioDevice, Device, ParamsOf, Profile } from "../ipc/types";
-import { PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
+import type { CodecValues } from "../ipc/bindings/CodecValues";
+import type { AudioDevice, Device, ParamsOf, Profile, Snapshot } from "../ipc/types";
+import { carryToCodec, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
 import { parseAddress } from "./format";
 
 /** What belongs to the audio device rather than the codec: the capture
- *  source and Windows Volume Sync. Set on the Audio Devices screen and kept
- *  the same in all the device's profiles (issue #86). */
+ *  source, Windows Volume Sync and the max media packet size. Set on the
+ *  Audio Devices screen and kept the same in all the device's profiles
+ *  (issue #86). */
 export const DEVICE_FIELDS = [
   "capture_mode",
   "audio_device_id",
@@ -18,6 +26,7 @@ export const DEVICE_FIELDS = [
   "volume_sync",
   "volume_device_id",
   "volume_device_name",
+  "max_media_payload",
 ] as const;
 
 export type DeviceFields = Pick<Profile, (typeof DEVICE_FIELDS)[number]>;
@@ -75,7 +84,124 @@ export function newProfile(): Profile {
     sbc_subbands: 0,
     sbc_allocation: "",
     sbc_channel_mode: "",
+    codec_settings: {},
   };
+}
+
+/** One saved audio device as the Codecs screen, Home and the sidebar list
+ *  it: its entry and its profile (None until a codec is chosen or it is
+ *  connected) */
+export interface AudioEntry {
+  key: string;
+  address: string;
+  name: string;
+  le_audio: boolean;
+  device: Device;
+  profile: Profile | null;
+}
+
+/** The profile of a device entry: the one streaming, else the active one,
+ *  else the first (the core keeps one per entry; more only until it starts
+ *  again) */
+export function deviceProfile(
+  snap: Pick<Snapshot, "profiles" | "active_profile" | "stream">,
+  address: string,
+  leAudio: boolean,
+): Profile | null {
+  const mine = profilesOf(snap.profiles, address).filter((p) => p.le_audio === leAudio);
+  const streaming = snap.stream.state !== "idle" ? snap.stream.profile : null;
+  return (
+    mine.find((p) => p.name === streaming) ?? mine.find((p) => p.name === snap.active_profile) ?? mine[0] ?? null
+  );
+}
+
+/** The saved devices with their profiles, in the saved list's order; LE
+ *  Audio entries only with LE Audio (experimental) on. A forgotten device's
+ *  profile (Audio Devices leaves it) gets no entry. */
+export function audioEntries(snap: Pick<Snapshot, "profiles" | "active_profile" | "stream" | "devices" | "settings">): AudioEntry[] {
+  return listedDevices(
+    snap.devices.filter((d) => d.saved),
+    snap.settings.le_audio_experimental,
+  ).map((d) => ({
+    key: deviceKey(d),
+    address: d.address.toUpperCase(),
+    name: d.name,
+    le_audio: d.le_audio,
+    device: d,
+    profile: deviceProfile(snap, d.address, d.le_audio),
+  }));
+}
+
+/** A list's entry by its key, kept for a moment after it left the list
+ *  (lists of devices are keyed: a device keeps its component across updates) */
+export function entryByKey(list: () => AudioEntry[], key: string): () => AudioEntry {
+  let last: AudioEntry | undefined;
+  return () => (last = list().find((e) => e.key === key) ?? last)!;
+}
+
+/** The profile a device entry starts from before it has its own: Auto,
+ *  and the capture source and volume sync of its other entry's profile */
+export function entryBase(entry: Pick<AudioEntry, "address" | "name" | "le_audio">, profiles: readonly Profile[]): Profile {
+  return {
+    ...newProfile(),
+    device_address: entry.address.toUpperCase(),
+    device_name: entry.name,
+    le_audio: entry.le_audio,
+    ...(deviceDefaults(profiles, entry.address) ?? {}),
+  };
+}
+
+/** The entry a profile belongs to */
+export function entryOf(entries: readonly AudioEntry[], p: Profile | null): AudioEntry | null {
+  if (!p) return null;
+  const key = deviceKey({ address: p.device_address, le_audio: p.le_audio });
+  return entries.find((e) => e.key === key) ?? null;
+}
+
+/** The settings of the codec a profile uses */
+export function codecValues(p: Profile): CodecValues {
+  return {
+    quality: p.quality,
+    sample_rate: p.sample_rate,
+    bit_depth: p.bit_depth,
+    abr: p.abr,
+    sbc_bitpool: p.sbc_bitpool,
+    sbcxq_bitpool: p.sbcxq_bitpool,
+    sbc_blocks: p.sbc_blocks,
+    sbc_subbands: p.sbc_subbands,
+    sbc_allocation: p.sbc_allocation,
+    sbc_channel_mode: p.sbc_channel_mode,
+  };
+}
+
+/**
+ * The profile with `codec` chosen: the settings of the codec it used go to
+ * its codec_settings, and `codec` gets `values` (its "..." dialog's), else
+ * what it was set to before (issue #86: AAC's VBR came back off), else what
+ * carries over from the codec it leaves (carryToCodec)
+ */
+export function withCodec(p: Profile, codec: string, values?: CodecValues): Profile {
+  const kept: Record<string, CodecValues> = { ...(p.codec_settings ?? {}) };
+  if (p.codec !== codec) kept[p.codec] = codecValues(p);
+  const back = values ?? kept[codec];
+  delete kept[codec];
+  const base: Profile = { ...p, codec_settings: kept };
+  // Values of its own come back as they were; else what carries over from the codec it leaves
+  return back ? fitToCodec({ ...base, ...back, codec }) : carryToCodec(base, codec);
+}
+
+/**
+ * A device profile's name: "<device> | <codec>" (v2's own, as the setup
+ * makes it; "<device> LE Audio" for LE Audio) while it has that form, the
+ * user's own otherwise. A name another profile has gets " (2)", " (3)"...
+ */
+export function followedName(p: Profile, codecLabel: string, taken: readonly string[]): string {
+  const base = p.device_name || p.device_address;
+  const own = p.name !== "" && p.name !== base && !p.name.startsWith(`${base} | `) && p.name !== `${base} LE Audio`;
+  if (own) return p.name;
+  const name = defaultProfileName(p.device_name, p.device_address, p.le_audio, codecLabel);
+  if (!taken.includes(name)) return name;
+  for (let n = 2; ; n++) if (!taken.includes(`${name} (${n})`)) return `${name} (${n})`;
 }
 
 /** A problem with a field: translation key and its arguments */

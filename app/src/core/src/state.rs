@@ -157,6 +157,37 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         sbc_subbands: p.sbc_subbands,
         sbc_allocation: p.sbc_allocation.clone(),
         sbc_channel_mode: p.sbc_channel_mode.clone(),
+        codec_settings: p.codec_settings.iter().map(|(c, v)| (c.clone(), to_ipc_codec_values(v))).collect(),
+    }
+}
+
+fn to_ipc_codec_values(v: &profiles::CodecValues) -> ipc::CodecValues {
+    ipc::CodecValues {
+        quality: v.quality.clone(),
+        sample_rate: v.sample_rate,
+        bit_depth: v.bit_depth,
+        abr: v.abr,
+        sbc_bitpool: v.sbc_bitpool,
+        sbcxq_bitpool: v.sbcxq_bitpool,
+        sbc_blocks: v.sbc_blocks,
+        sbc_subbands: v.sbc_subbands,
+        sbc_allocation: v.sbc_allocation.clone(),
+        sbc_channel_mode: v.sbc_channel_mode.clone(),
+    }
+}
+
+fn from_ipc_codec_values(v: &ipc::CodecValues) -> profiles::CodecValues {
+    profiles::CodecValues {
+        quality: v.quality.clone(),
+        sample_rate: v.sample_rate,
+        bit_depth: v.bit_depth,
+        abr: v.abr,
+        sbc_bitpool: v.sbc_bitpool,
+        sbcxq_bitpool: v.sbcxq_bitpool,
+        sbc_blocks: v.sbc_blocks,
+        sbc_subbands: v.sbc_subbands,
+        sbc_allocation: v.sbc_allocation.clone(),
+        sbc_channel_mode: v.sbc_channel_mode.clone(),
     }
 }
 
@@ -190,6 +221,13 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.sbc_subbands = p.sbc_subbands;
     c.sbc_allocation = p.sbc_allocation.clone();
     c.sbc_channel_mode = p.sbc_channel_mode.clone();
+    // The codec in use has its settings in the fields above
+    c.codec_settings = p
+        .codec_settings
+        .iter()
+        .filter(|(k, _)| **k != p.codec)
+        .map(|(k, v)| (k.clone(), from_ipc_codec_values(v)))
+        .collect();
     c
 }
 
@@ -1510,11 +1548,17 @@ impl CoreState {
                     None => list.push(merged),
                 }
                 let (_, s) = self.snapshot();
+                let renamed_active = s.active_profile.as_deref() == Some(key.as_str()) && key != profile.name;
                 let active = match s.active_profile {
                     Some(a) if a == key => Some(profile.name.clone()),
                     other => other.or(Some(profile.name.clone())),
                 };
                 self.save_profiles(&list, active)?;
+                // A renamed active profile (its name follows the codec chosen
+                // on the Codecs screen) stays the one remembered
+                if renamed_active {
+                    self.set_active_profile(Some(profile.name.clone()));
+                }
                 self.refresh_devices();
                 // The profile in use starts again with what was saved (v1)
                 if restart_after_save(&s.stream, &key) {

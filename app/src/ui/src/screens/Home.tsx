@@ -1,16 +1,17 @@
-// Home: the device, its connection ring and the biggest element on the
-// screen, Connect / Disconnect; volume right below; codec, capture source
-// (chosen right there) and link quality small but always there.
+// Home: a card per saved audio device, side by side (issue #86), each with
+// its connection ring, state and codec and its own Connect / Disconnect.
+// One device streams at a time: Connect on another one switches to it (the
+// core stops the running stream first). Volume, capture source (chosen
+// right there) and link quality below, for the device in use.
 
 import { createEffect, createSignal, For, on, Show } from "solid-js";
-import { useApp } from "../app/context";
+import { useApp, type AppContext } from "../app/context";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
 import {
   BatteryLevel,
   CodecBadge,
-  ConnectButton,
   currentProfile,
   ErrorPanel,
   FirmwareDownload,
@@ -21,9 +22,10 @@ import {
   statusText,
   VolumeControl,
 } from "../components/stream";
-import { ProfileSwitcher } from "../components/ProfileSwitcher";
 import { t } from "../i18n";
-import { IpcError, type AdapterInfo, type Snapshot } from "../ipc/types";
+import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
+import { audioEntries, entryByKey, entryOf, type AudioEntry } from "../lib/profile";
+import { chooseCodec } from "./Codecs";
 
 /** Adapters whose firmware files are missing from the settings folder or
  *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
@@ -111,10 +113,26 @@ export function V1Running() {
   );
 }
 
+/** The stream state a device's card shows: the stream's for the device of
+ *  the profile streaming (or that last failed), idle for the others */
+export function entryState(snap: Snapshot, entry: AudioEntry): StreamState {
+  const s = snap.stream;
+  if (s.state === "idle" || !s.profile) return "idle";
+  return entryOf([entry], snap.profiles.find((p) => p.name === s.profile) ?? null) ? s.state : "idle";
+}
+
+/** Connect for a device: its profile (Auto made for it if it has none);
+ *  another device streaming gives way (stream.start stops it first) */
+export async function connectEntry(app: AppContext, entry: AudioEntry): Promise<void> {
+  const name = entry.profile?.name ?? (await chooseCodec(app, entry, "auto"));
+  if (name) await app.core.request("stream.start", { profile: name });
+}
+
 export function Home() {
   const { core, navigate } = useApp();
   const snap = () => core.state.snap!;
   const stream = () => snap().stream;
+  const entries = () => audioEntries(snap());
   const profile = () => currentProfile(snap());
   // A failed request (Connect) until the state moves on
   const [reqError, setReqError] = createSignal<IpcError | null>(null);
@@ -133,9 +151,6 @@ export function Home() {
     <div class="page home">
       <header class="page-head">
         <h1>{t("ui.nav.home")}</h1>
-        <Show when={snap().profiles.length > 0}>
-          <ProfileSwitcher />
-        </Show>
       </header>
 
       <V1Running />
@@ -143,64 +158,29 @@ export function Home() {
       <FirmwareMissing />
 
       <Show
-        when={profile()}
+        when={entries().length > 0}
         fallback={
           <section class="card empty">
             <Icon name="headphones" class="empty-icon" />
-            <Show
-              when={snap().devices.some((d) => d.saved)}
-              fallback={
-                <>
-                  <p>{t("ui.home.no_device")}</p>
-                  <Button kind="strong" icon="add" onClick={() => navigate({ name: "devices" })}>
-                    {t("ui.home.add_device")}
-                  </Button>
-                </>
-              }
-            >
-              <p>{t("profile.empty")}</p>
-              <Button kind="strong" icon="add" onClick={() => navigate({ name: "profiles", arg: "new" })}>
-                {t("profile.new")}
-              </Button>
-            </Show>
+            <p>{t("ui.home.no_device")}</p>
+            <Button kind="strong" icon="add" onClick={() => navigate({ name: "devices" })}>
+              {t("ui.home.add_device")}
+            </Button>
           </section>
         }
       >
-        {(p) => (
-          <>
-            <section class="card device-card" aria-label={t("ui.home.device")}>
-              <Ring state={stream().state} volume={stream().volume}>
-                <Icon name="headphones" />
-              </Ring>
-              <div class="device-info">
-                {/* Four lines (issue #86): the device, battery and state,
-                    the profile, the codec; the sidebar shows the same */}
-                <div class="device-name">{p().device_name || p().device_address}</div>
-                <div class="device-state">
-                  <Show when={stream().battery !== null}>
-                    <BatteryLevel percent={stream().battery!} />
-                    <span class="muted" aria-hidden="true">
-                      |
-                    </span>
-                  </Show>
-                  <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
-                    <span class="dot" aria-hidden="true" />
-                    <span>
-                      {/* An error's text is in the panel above, with its fix */}
-                      {statusText(stream())}
-                    </span>
-                  </div>
-                </div>
-                <div class="muted device-sub">
-                  <span>{t("ui.home.profile_line", p().name)}</span>
-                </div>
-                <CodecBadge />
-              </div>
-            </section>
+        <div class="home-devices">
+          <For each={entries().map((e) => e.key)}>
+            {(key) => {
+              const entry = entryByKey(entries, key);
+              return <DeviceCard entry={entry()} onError={(err) => setReqError(IpcError.from(err))} />;
+            }}
+          </For>
+        </div>
+        <VolumeControl />
 
-            <ConnectButton onError={(e) => setReqError(IpcError.from(e))} />
-            <VolumeControl />
-
+        <Show when={profile()}>
+          {(p) => (
             <div class="home-grid">
               <section class="card mini" aria-labelledby="home-capture">
                 <h2 id="home-capture" class="mini-title">
@@ -223,9 +203,83 @@ export function Home() {
                 <LinkSparkline />
               </section>
             </div>
-          </>
-        )}
+          )}
+        </Show>
       </Show>
+    </div>
+  );
+}
+
+/** One device: ring, name, battery and state, codec, and its own button */
+function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void }) {
+  const app = useApp();
+  const snap = () => app.core.state.snap!;
+  const stream = () => snap().stream;
+  const state = () => entryState(snap(), props.entry);
+  const live = () => state() !== "idle";
+  const running = () => state() === "streaming" || state() === "connecting" || state() === "reconnecting";
+  const [busy, setBusy] = createSignal(false);
+  const press = async () => {
+    setBusy(true);
+    try {
+      if (running()) await app.core.request("stream.stop");
+      else await connectEntry(app, props.entry);
+    } catch (e) {
+      props.onError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const label = () =>
+    state() === "streaming"
+      ? t("connection.disconnect")
+      : state() === "connecting" || state() === "reconnecting"
+        ? t("modal.cancel")
+        : t("connection.connect");
+  const name = () => props.entry.name || props.entry.address;
+  return (
+    // The group names the device for its button ("Connect" on each card)
+    <div class="home-device" classList={{ live: live() }} role="group" aria-label={name()}>
+      <section class="card device-card">
+        <Ring state={state()} volume={live() ? stream().volume : null}>
+          <Icon name="headphones" />
+        </Ring>
+        <div class="device-info">
+          {/* The device, battery and state, the codec; the sidebar shows the same */}
+          <div class="device-name ellipsis" title={name()}>
+            {name()}
+          </div>
+          <div class="device-state">
+            <Show when={live() && stream().battery !== null}>
+              <BatteryLevel percent={stream().battery!} />
+              <span class="muted" aria-hidden="true">
+                |
+              </span>
+            </Show>
+            <div class={`status-line st-${state()}`} role="status" aria-live="polite">
+              <span class="dot" aria-hidden="true" />
+              <span>
+                {/* An error's text is in the panel above, with its fix */}
+                {live() ? statusText({ state: state(), message: stream().message }) : t("status.ready")}
+              </span>
+            </div>
+          </div>
+          <Show when={live()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
+            <CodecBadge />
+          </Show>
+        </div>
+      </section>
+      <button
+        type="button"
+        class="connect-btn"
+        classList={{ on: running() }}
+        disabled={busy()}
+        aria-busy={busy() ? "true" : undefined}
+        onClick={press}
+      >
+        <Icon name={running() ? "plug_disconnected" : "power"} />
+        <span>{label()}</span>
+      </button>
     </div>
   );
 }

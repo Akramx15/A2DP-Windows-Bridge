@@ -1,5 +1,11 @@
 //! profiles.json in v1's format: {"profiles": [ ... ]}. Unknown keys of a
 //! profile are kept.
+//!
+//! Since the Codecs screen (issue #86) the UI keeps one profile per device
+//! entry (address, and whether it is the LE Audio entry): choosing a codec
+//! card changes that profile. The settings of the codecs it is not using
+//! are kept in its `codec_settings`; [`consolidate`] folds the profiles of
+//! earlier versions into one per device.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -98,6 +104,11 @@ pub struct Profile {
     /// configuration either way.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub le_low_latency: bool,
+    /// The settings of the other codecs, by codec key, as they were last
+    /// chosen: choosing one of them again brings them back (the codec in
+    /// use has its own in the fields above)
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub codec_settings: BTreeMap<String, CodecValues>,
     #[serde(flatten)]
     pub other: BTreeMap<String, serde_json::Value>,
 }
@@ -132,7 +143,48 @@ impl Default for Profile {
             sbc_channel_mode: String::new(),
             le_audio: false,
             le_low_latency: true,
+            codec_settings: BTreeMap::new(),
             other: BTreeMap::new(),
+        }
+    }
+}
+
+/// One codec's settings in a profile (what its "..." on the Codecs screen
+/// sets)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct CodecValues {
+    pub quality: String,
+    pub sample_rate: u32,
+    pub bit_depth: u32,
+    pub abr: bool,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbc_bitpool: u8,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbcxq_bitpool: u8,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbc_blocks: u8,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbc_subbands: u8,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub sbc_allocation: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub sbc_channel_mode: String,
+}
+
+impl Default for CodecValues {
+    fn default() -> Self {
+        CodecValues {
+            quality: hq(),
+            sample_rate: 0,
+            bit_depth: 0,
+            abr: false,
+            sbc_bitpool: 0,
+            sbcxq_bitpool: 0,
+            sbc_blocks: 0,
+            sbc_subbands: 0,
+            sbc_allocation: String::new(),
+            sbc_channel_mode: String::new(),
         }
     }
 }
@@ -144,6 +196,22 @@ pub enum ProfileError {
 }
 
 impl Profile {
+    /// The settings of the codec in use
+    pub fn codec_values(&self) -> CodecValues {
+        CodecValues {
+            quality: self.quality.clone(),
+            sample_rate: self.sample_rate,
+            bit_depth: self.bit_depth,
+            abr: self.abr,
+            sbc_bitpool: self.sbc_bitpool,
+            sbcxq_bitpool: self.sbcxq_bitpool,
+            sbc_blocks: self.sbc_blocks,
+            sbc_subbands: self.sbc_subbands,
+            sbc_allocation: self.sbc_allocation.clone(),
+            sbc_channel_mode: self.sbc_channel_mode.clone(),
+        }
+    }
+
     /// What to stream for this profile. An LE Audio (experimental) profile
     /// gives an LE request (`le` Some: the le_stream session, which refuses
     /// with error.le_audio_disabled while the setting is off); its codec,
@@ -247,6 +315,73 @@ pub fn make_names_unique(list: &mut [Profile]) -> usize {
         renamed += 1;
     }
     renamed
+}
+
+/// Folds the profiles of a device entry (address, LE Audio or not) into
+/// one, as the Codecs screen keeps them: the one `last_profile` names if it
+/// is of that device, else the first. A profile folded away gives its codec
+/// settings to the kept one's `codec_settings` when the kept one has none
+/// for that codec yet (an Auto profile has none of its own); its name,
+/// capture source, volume sync and packet size go (the Audio Devices screen
+/// already kept those the same for all of a device's profiles). Profiles
+/// without a valid address are left as they are. Returns the names of the
+/// profiles folded away, in order.
+pub fn consolidate(list: &mut Vec<Profile>, last_profile: &str) -> Vec<String> {
+    let key = |p: &Profile| bt_host::parse_addr(&p.device_address).map(|a| (a, p.le_audio));
+    // The kept profile of each device
+    let mut keeper: std::collections::HashMap<_, usize> = std::collections::HashMap::new();
+    for (i, p) in list.iter().enumerate() {
+        if let Some(k) = key(p) {
+            match keeper.get(&k) {
+                None => {
+                    keeper.insert(k, i);
+                }
+                Some(&j) if p.name == last_profile && list[j].name != last_profile => {
+                    keeper.insert(k, i);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut folded = Vec::new();
+    let mut kept: Vec<Profile> = Vec::with_capacity(list.len());
+    // Where each device's profile is in `kept`: the place of its first one
+    let mut placed: std::collections::HashMap<_, usize> = std::collections::HashMap::new();
+    let old = std::mem::take(list);
+    let keepers: Vec<Profile> = old.clone();
+    for (i, p) in old.into_iter().enumerate() {
+        let Some(k) = key(&p) else {
+            kept.push(p);
+            continue;
+        };
+        let at = *placed.entry(k).or_insert_with(|| {
+            kept.push(keepers[keeper[&k]].clone());
+            kept.len() - 1
+        });
+        if i == keeper[&k] {
+            continue;
+        }
+        let into = &mut kept[at];
+        let gives =
+            !p.le_audio && p.codec != "auto" && p.codec != into.codec && !into.codec_settings.contains_key(&p.codec);
+        tracing::info!(
+            "profiles: \"{}\" folded into \"{}\" (same device){}",
+            p.name,
+            into.name,
+            if gives { format!(", its {} settings kept", p.codec) } else { String::new() }
+        );
+        if gives {
+            into.codec_settings.insert(p.codec.clone(), p.codec_values());
+        }
+        for (c, v) in p.codec_settings {
+            if c != into.codec {
+                into.codec_settings.entry(c).or_insert(v);
+            }
+        }
+        folded.push(p.name);
+    }
+    *list = kept;
+    folded
 }
 
 /// The saved profiles, names made unique in memory (see make_names_unique;
@@ -404,5 +539,56 @@ mod tests {
         // A bad address is refused as for A2DP
         let bad = Profile { device_address: "nope".into(), ..p.clone() };
         assert_eq!(bad.to_request(1023), Err(ProfileError::Address("nope".into())));
+    }
+
+    fn of(name: &str, address: &str, codec: &str) -> Profile {
+        Profile { name: name.into(), device_address: address.into(), codec: codec.into(), ..Profile::default() }
+    }
+
+    #[test]
+    fn consolidate_keeps_one_profile_per_device() {
+        const WH: &str = "00:A2:D0:00:00:02";
+        const BUDS: &str = "00:A2:D0:00:00:12";
+        let mut list = vec![
+            of("WH | Auto", WH, "auto"),
+            of("Buds | AAC", BUDS, "aac"),
+            Profile { quality: "sq".into(), sample_rate: 48000, ..of("WH | LDAC", WH, "ldac") },
+            Profile { abr: true, ..of("WH AAC", &WH.to_lowercase(), "aac") },
+            of("WH LDAC again", WH, "ldac"),
+            Profile { le_audio: true, ..of("Buds LE Audio", BUDS, "auto") },
+            of("No address", "", "sbc"),
+        ];
+        // The last used one is kept, at the place of the device's first
+        let folded = consolidate(&mut list, "WH AAC");
+        assert_eq!(folded, ["WH | Auto", "WH | LDAC", "WH LDAC again"]);
+        assert_eq!(names(&list), ["WH AAC", "Buds | AAC", "Buds LE Audio", "No address"]);
+        let wh = &list[0];
+        assert_eq!(wh.codec, "aac");
+        assert!(wh.abr);
+        // The first LDAC profile's settings; Auto has none of its own
+        assert_eq!(wh.codec_settings.keys().collect::<Vec<_>>(), ["ldac"]);
+        assert_eq!(wh.codec_settings["ldac"].quality, "sq");
+        assert_eq!(wh.codec_settings["ldac"].sample_rate, 48000);
+        // Nothing more to fold
+        assert!(consolidate(&mut list, "WH AAC").is_empty());
+        // Without a last profile of the device: the first
+        let mut list = vec![of("A", WH, "aac"), of("B", WH, "ldac")];
+        assert_eq!(consolidate(&mut list, "Buds | AAC"), ["B"]);
+        assert_eq!(names(&list), ["A"]);
+        assert!(list[0].codec_settings.contains_key("ldac"));
+    }
+
+    #[test]
+    fn codec_settings_written_only_when_there_are_some() {
+        let mut p = of("WH", "00:A2:D0:00:00:02", "aac");
+        assert!(serde_json::to_value(&p).unwrap().get("codec_settings").is_none());
+        p.codec_settings.insert("ldac".into(), CodecValues { quality: "mq".into(), ..CodecValues::default() });
+        let out = serde_json::to_value(&p).unwrap();
+        assert_eq!(
+            out["codec_settings"]["ldac"],
+            serde_json::json!({"quality": "mq", "sample_rate": 0, "bit_depth": 0, "abr": false})
+        );
+        let back: Profile = serde_json::from_value(out).unwrap();
+        assert_eq!(back, p);
     }
 }

@@ -18,33 +18,42 @@ nav_order: 2
 
 ## La ventana
 
-Inicie **A2DP Windows Bridge** desde el menú Inicio (o `a2dpwb.exe`). El menú de la izquierda tiene cinco pantallas; se reduce a iconos cuando la ventana es estrecha. La ventana solo muestra lo que hace el programa residente `a2dpwb-core.exe`: cerrarla no detiene la transmisión (consulte [Bandeja y panel desplegable](#tray)).
+Inicie **A2DP Windows Bridge** desde el menú Inicio (o `a2dpwb.exe`). El menú de la izquierda tiene las pantallas siguientes (Inicio, Códecs, Dispositivos de audio, Adaptador, Diagnóstico, Configuración, Acerca de); se reduce a iconos cuando la ventana es estrecha. La ventana solo muestra lo que hace el programa residente `a2dpwb-core.exe`: cerrarla no detiene la transmisión (consulte [Bandeja y panel desplegable](#tray)).
 
 ### Inicio
 
-- El dispositivo del perfil actual, su estado y el códec en uso con su tasa de bits. Cuando se usa un códec distinto del del perfil, la insignia del códec indica cuál y por qué
-- **Conectar** / **Desconectar**, el botón más grande de la pantalla
+- Una tarjeta para cada dispositivo de audio guardado, una junto a otra: su estado, la batería y, en el que transmite, el códec en uso con su tasa de bits. Cuando se usa un códec distinto del elegido, la insignia del códec indica cuál y por qué
+- **Conectar** / **Desconectar** bajo cada tarjeta. Solo transmite un dispositivo a la vez: **Conectar** en otro dispositivo detiene la transmisión en curso y conecta ese
 - **Volumen**: el volumen de los auriculares (consulte [Volumen](#volume))
-- El selector de perfiles, el origen de captura (con **Editar**) y la calidad del enlace con un pequeño gráfico
-- Un error aparece con su causa y, si lo hay, el botón que lo soluciona (**Asignar WinUSB**, **Abrir página de descarga**, **Reiniciar Bluetooth**, **Reintentar**, **Editar** el perfil, ...)
+- El origen de captura del dispositivo en uso (con **Más ajustes de captura**) y la calidad del enlace con un pequeño gráfico
+- Un error aparece con su causa y, si lo hay, el botón que lo soluciona (**Asignar WinUSB**, **Abrir página de descarga**, **Reiniciar Bluetooth**, **Reintentar**, **Códecs**, **Dispositivos de audio**, ...)
 
-### Perfiles
+La barra lateral muestra lo mismo para cada dispositivo en todas las pantallas.
 
-Un perfil es un dispositivo más sus ajustes de sonido. Las tarjetas muestran el dispositivo, el códec y el origen de captura, con **Conectar** (o **Desconectar** mientras transmite), editar y eliminar. **Nuevo perfil** y el botón de edición abren el editor:
+### Códecs {#codecs}
 
-- **Dispositivo**: **Buscar dispositivos** busca dispositivos cercanos con el adaptador USB (unos 10 segundos; ponga los auriculares en modo de emparejamiento). Los dispositivos con los que A2DPWB ya se ha emparejado llevan la etiqueta **Emparejado**. Si la búsqueda no los encuentra, escriba la dirección en **Manual:** y haga clic en **Usar**; las direcciones escritas o pegadas se formatean mientras escribe (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` y `AA BB CC DD EE FF` se convierten todas en `AA:BB:CC:DD:EE:FF`)
-- **Nombre del perfil**: sigue al dispositivo hasta que escriba uno
-- **Códec**: Automático o un códec concreto, como tarjetas con tres barras (calidad de sonido, baja latencia, estabilidad). **Usar otro códec si este no está disponible** (activado de forma predeterminada; consulte [El códec seleccionado no está disponible](#codec-fallback))
-- **Origen de captura**: Loopback del sistema, Dispositivo virtual o Aplicación (consulte [Modos de captura](#capture-modes))
-- **Sincronizar volumen de Windows** (consulte [Volumen](#volume))
-- **Avanzado** (calidad, frecuencia de muestreo, profundidad de bits, tamaño de paquete): ofrece solo lo que admite el códec elegido
-  - **Calidad**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps); LHDC V5 Alta (1000 kbps) / Media-alta (900 kbps) / Estándar (500 kbps) / Móvil (400 kbps), los cuatro niveles que ofrece Android; aptX Adaptive Alta / Estándar / Móvil / Baja latencia (consulte [aptX Adaptive](#aptx-adaptive)); AAC y SBC también tienen niveles de calidad, los demás códecs aptX una tasa de bits fija
-  - **ABR (tasa de bits adaptativa)**: para LDAC, LHDC V5 y aptX Adaptive (consulte [ABR](#abr))
+El códec de cada dispositivo de audio guardado, una sección por dispositivo (nombre, dirección, etiquetas **Emparejado** / **Audio**) con sus tarjetas de códec: **Automático** (el mejor códec que admite el dispositivo) y los códecs que el dispositivo ofreció en su última conexión, cada uno con tres barras (calidad de sonido, baja latencia, estabilidad). Al hacer clic en una tarjeta se elige el códec de ese dispositivo; se guarda al instante, y un dispositivo que está transmitiendo vuelve a conectarse con él.
+
+- **Ocultar los códecs que el dispositivo de audio no admite** (activado de forma predeterminada): se omiten los códecs que un dispositivo no ofreció (el número de ocultos aparece entre paréntesis). Antes de la primera conexión de un dispositivo se muestran todos
+- **Usar otro códec compatible si este no está disponible** (activado de forma predeterminada, para todos los dispositivos; consulte [El códec seleccionado no está disponible](#codec-fallback))
+- **...** en una tarjeta abre los ajustes de ese códec; **Aceptar** elige el códec con ellos. Cada códec conserva sus propios ajustes: si elige otro códec y vuelve, se recuperan. Solo se ofrece lo que ese códec admite:
+  - **Calidad**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps); LHDC V5 Alta (1000 kbps) / Media-alta (900 kbps) / Estándar (500 kbps) / Móvil (400 kbps), los cuatro niveles que ofrece Android; aptX Adaptive Alta / Estándar / Móvil / Baja latencia (consulte [aptX Adaptive](#aptx-adaptive)); AAC también tiene niveles de calidad, los demás códecs aptX una tasa de bits fija. SBC y SBC XQ muestran la tasa de bits que resulta de su bitpool y de la configuración de tramas
+  - **ABR (tasa de bits adaptativa)**: para LDAC, LHDC V5, aptX Adaptive, SBC y SBC XQ (consulte [ABR](#abr)); **VBR** para AAC
   - **Frecuencia de muestreo**: Automático sigue al dispositivo de captura
   - **Profundidad de bits**: 16 o 24 bits para LDAC y LHDC V5 (Automático: 24 bits); 16 bits para los demás
-  - **Tamaño máx. de paquete multimedia (bytes)** (consulte [Tamaño máximo del paquete multimedia](#max-packet))
 
-Los valores predeterminados dan el mejor sonido; la mayoría de los perfiles no necesitan nada en **Avanzado**.
+Los valores predeterminados dan el mejor sonido; la mayoría de los dispositivos no necesitan más que **Automático**. Un dispositivo LE Audio (experimental) tiene una tarjeta, LC3, y **Baja latencia para auriculares gaming (GMAP, experimental)** (consulte [LE Audio](#le-audio)).
+
+Por debajo, A2DPWB guarda un perfil por dispositivo («*dispositivo* | *códec*»), que es el que lista el menú de la bandeja. Las versiones anteriores permitían crear varios perfiles para un mismo dispositivo: en el primer inicio de una versión con la pantalla Códecs se conserva el último usado (si no, el primero) y los demás se integran en él, manteniendo sus ajustes de códec (calidad, frecuencia de muestreo, profundidad de bits, ABR, configuración SBC) para sus códecs. No se conservan sus nombres, orígenes de captura ni tamaños de paquete; el `profiles.json` tal como estaba se guarda una vez como `profiles-before-codecs.json` en la carpeta de configuración.
+
+### Dispositivos de audio
+
+Los auriculares y altavoces a los que A2DPWB puede transmitir, cada uno con sus propios ajustes: **Buscar dispositivos** busca dispositivos cercanos con el adaptador USB (unos 10 segundos; ponga los auriculares en modo de emparejamiento). Los dispositivos con los que A2DPWB ya se ha emparejado llevan la etiqueta **Emparejado**. Si la búsqueda no los encuentra, escriba la dirección en **Manual:** y haga clic en **Usar**; las direcciones escritas o pegadas se formatean mientras escribe (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` y `AA BB CC DD EE FF` se convierten todas en `AA:BB:CC:DD:EE:FF`). Un dispositivo guardado se puede renombrar o eliminar, y tiene:
+
+- **Origen de captura**: Loopback del sistema, Dispositivo virtual o Aplicación (consulte [Modos de captura](#capture-modes))
+- **Sincronizar volumen de Windows** (consulte [Volumen](#volume))
+- **Tamaño máx. de paquete multimedia (bytes)** (consulte [Tamaño máximo del paquete multimedia](#max-packet))
+- **Los botones del dispositivo de audio controlan la reproducción** y **Recordar el volumen del dispositivo de audio**
 
 ### Diagnóstico
 
@@ -83,8 +92,8 @@ El primer inicio (aún sin perfil, o sin ningún adaptador con WinUSB) abre **Co
 
 A2DPWB sigue ejecutándose en la bandeja del sistema, con o sin la ventana:
 
-- **Clic izquierdo** en el icono de la bandeja abre el panel desplegable: el dispositivo y su estado, **Conectar** / **Desconectar**, el volumen, el selector de perfiles, el códec, la calidad del enlace y **Abrir la aplicación**. Esc o un clic en otro sitio lo ocultan. Si un error requiere una pantalla de la ventana principal (un perfil, el adaptador), su botón abre la ventana en esa pantalla
-- **Clic derecho** abre el menú: **Abrir A2DPWB**, los 10 primeros perfiles (el activo marcado; haga clic en uno para conectar con él), **Desconectar** y **Salir**. El menú se abre al instante, sin iniciar la ventana
+- **Clic izquierdo** en el icono de la bandeja abre el panel desplegable: el dispositivo y su estado, **Conectar** / **Desconectar**, el volumen, el selector de dispositivos, el códec, la calidad del enlace y **Abrir la aplicación**. Esc o un clic en otro sitio lo ocultan. Si un error requiere una pantalla de la ventana principal (Códecs, Dispositivos de audio, el adaptador), su botón abre la ventana en esa pantalla
+- **Clic derecho** abre el menú: **Abrir A2DPWB**, los 10 primeros dispositivos por su perfil, «*dispositivo* | *códec*» (el que transmite, marcado; haga clic en uno para conectarlo), **Desconectar** y **Salir**. El menú se abre al instante, sin iniciar la ventana
 - La información sobre herramientas indica si A2DPWB está inactivo o transmitiendo
 
 Con **Configuración > Minimizar en la bandeja del sistema** activado (el valor predeterminado), minimizar o cerrar la ventana solo la oculta en la bandeja, y la transmisión continúa. Si está desactivado, la ventana se minimiza en la barra de tareas y cerrarla sale de A2DPWB. **Salir** en el menú de la bandeja o **Configuración > Salir de A2DPWB** detiene la transmisión, libera el adaptador y cierra A2DPWB por completo.
@@ -147,7 +156,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -a
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -a
 ```
 
-ABR reduce automáticamente la tasa de bits cuando la conexión Bluetooth es inestable y la vuelve a subir cuando las condiciones mejoran. LDAC cambia entre sus modos de calidad; LHDC V5 sigue la política de Android y se mantiene entre 160 y 400 kbps; aptX Adaptive pasa de un nivel a otro en Alta (consulte [aptX Adaptive](#aptx-adaptive)). En la ventana, ABR está en el editor de perfiles, en **Avanzado**.
+ABR reduce automáticamente la tasa de bits cuando la conexión Bluetooth es inestable y la vuelve a subir cuando las condiciones mejoran. LDAC cambia entre sus modos de calidad; LHDC V5 sigue la política de Android y se mantiene entre 160 y 400 kbps; aptX Adaptive pasa de un nivel a otro en Alta (consulte [aptX Adaptive](#aptx-adaptive)). En la ventana, ABR está en los ajustes de un códec (**...** en su tarjeta en **Códecs**).
 
 ### Detección de dispositivos
 
@@ -191,13 +200,13 @@ A2DPWB admite tres modos de captura de audio. Cada uno graba un punto distinto d
 | Dispositivo virtual | Lo que las aplicaciones reproducen en el dispositivo seleccionado (p. ej., VB-CABLE) |
 | Aplicación | Solo lo que reproduce una aplicación (y sus procesos secundarios), después del procesamiento propio de la aplicación. Requiere Windows 11 o Windows 10 versión 2004 (compilación 19041) o posterior |
 
-El editor de perfiles muestra la misma explicación en **Origen de captura**.
+**Dispositivos de audio** muestra la misma explicación en **Origen de captura**.
 
 El Loopback del sistema copia el audio; no se lo quita al dispositivo de salida predeterminado. El audio sigue sonando en ese dispositivo (altavoces, un televisor HDMI, ...) además de en los auriculares Bluetooth. Para oírlo solo en los auriculares, use el modo Dispositivo virtual con un dispositivo que no reproduzca en ningún sitio, como VB-CABLE.
 
 En el modo Dispositivo virtual, **Cambiar dispositivo predeterminado** convierte el dispositivo seleccionado en la salida predeterminada de Windows durante la transmisión, de modo que las aplicaciones reproducen en él sin cambiar la configuración de Windows. Al detener la transmisión, A2DPWB vuelve al dispositivo predeterminado anterior.
 
-- La lista **Dispositivo de audio** muestra solo los dispositivos que A2DPWB detecta como dispositivos de audio virtuales. Si no hay ninguno, el editor ofrece **Descargar VB-Cable**.
+- La lista **Dispositivo de audio** muestra solo los dispositivos que A2DPWB detecta como dispositivos de audio virtuales. Si no hay ninguno, la pantalla **Dispositivos de audio** ofrece **Descargar VB-Cable**.
 - El dispositivo de comunicación predeterminado (el que usan las aplicaciones de llamadas) no se cambia.
 - Algunas aplicaciones siguen reproduciendo en el dispositivo anterior hasta que se reinician.
 - Si A2DPWB se cierra inesperadamente, el dispositivo predeterminado no se restaura. Cámbielo en la configuración de Sonido de Windows.
@@ -208,15 +217,15 @@ El modo Aplicación envía el audio de una aplicación, por ejemplo un reproduct
 
 - No es necesario que la aplicación esté en ejecución. A2DPWB se conecta igualmente a los auriculares y empieza a enviar en cuanto la aplicación se inicia. Si la aplicación se cierra durante la transmisión, A2DPWB sigue conectado y la vuelve a captar cuando se reinicia.
 - La aplicación sigue sonando también en su propio dispositivo de salida. Para oírla solo en los auriculares, silencie ese dispositivo de salida (su volumen maestro): esto no afecta a lo que captura A2DPWB. Pero no silencie la aplicación en el Mezclador de volumen de Windows, porque los auriculares también recibirían silencio.
-- El control deslizante de la aplicación en el Mezclador de volumen de Windows cambia el nivel enviado a los auriculares (y el de su dispositivo de salida). El volumen maestro y las teclas de volumen no cambian el audio enviado; con **Sincronizar volumen de Windows** del perfil en Automático, cambian en su lugar el volumen de los auriculares (consulte [Volumen](#volume)).
+- El control deslizante de la aplicación en el Mezclador de volumen de Windows cambia el nivel enviado a los auriculares (y el de su dispositivo de salida). El volumen maestro y las teclas de volumen no cambian el audio enviado; con **Sincronizar volumen de Windows** del dispositivo en Automático, cambian en su lugar el volumen de los auriculares (consulte [Volumen](#volume)).
 - Windows convierte el audio a la frecuencia de muestreo que pide A2DPWB, así que el formato del dispositivo en la configuración de Sonido no lo limita.
-- En Windows 10 anterior a la versión 2004 (compilación 19041), Windows no permite capturar por aplicación. Al conectar con un perfil de Aplicación se muestra entonces un error que pide otro origen de captura.
+- En Windows 10 anterior a la versión 2004 (compilación 19041), Windows no permite capturar por aplicación. Al conectar un dispositivo configurado con captura de Aplicación se muestra entonces un error que pide otro origen de captura.
 
 ### Volumen {#volume}
 
 Durante la transmisión, Inicio y el panel desplegable de la bandeja muestran un control deslizante **Volumen** cuando los auriculares admiten el volumen absoluto de AVRCP. Ajusta el volumen en los propios auriculares, de modo que el audio enviado conserva toda su resolución. El control deslizante también sigue los botones de volumen y los controles táctiles de los auriculares.
 
-**Sincronizar volumen de Windows** en el perfil hace que un volumen de Windows y el volumen de los auriculares sean uno solo durante la transmisión:
+**Sincronizar volumen de Windows** (un ajuste del dispositivo en **Dispositivos de audio**) hace que un volumen de Windows y el volumen de los auriculares sean uno solo durante la transmisión:
 
 | Opción | Volumen de Windows sincronizado |
 |:-------|:----------------------|
@@ -256,7 +265,7 @@ Una aplicación de efectos para todo el sistema (un ecualizador, un potenciador 
 
 En el modo Aplicación, el dispositivo de salida de la aplicación de efectos puede ser cualquiera: A2DPWB toma lo que reproduce la aplicación, no lo que reproduce el dispositivo, así que el dispositivo solo es un destino para el audio. Para que el PC no reproduzca el audio al mismo tiempo, elija una salida que nadie escuche (p. ej., el audio HDMI de un monitor) o silencie el volumen maestro de ese dispositivo. Un dispositivo virtual como VB-CABLE también sirve como destino silencioso, pero no es necesario. El dispositivo debe estar habilitado y conectado.
 
-Si el dispositivo virtual propio de la aplicación de efectos es el dispositivo de salida predeterminado de Windows, su volumen también reduce lo que recibe la aplicación de efectos. Con **Sincronizar volumen de Windows** en Automático, un cambio de volumen se aplica entonces dos veces (en la entrada de la aplicación de efectos y en los auriculares). Póngalo en Desactivado en ese perfil y use el volumen de los auriculares o el control deslizante **Volumen**.
+Si el dispositivo virtual propio de la aplicación de efectos es el dispositivo de salida predeterminado de Windows, su volumen también reduce lo que recibe la aplicación de efectos. Con **Sincronizar volumen de Windows** en Automático, un cambio de volumen se aplica entonces dos veces (en la entrada de la aplicación de efectos y en los auriculares). Póngalo en Desactivado para ese dispositivo y use el volumen de los auriculares o el control deslizante **Volumen**.
 
 #### Por qué A2DPWB no tiene su propio dispositivo de salida virtual {#no-virtual-device}
 
@@ -285,7 +294,7 @@ Loopback del sistema y Dispositivo virtual usan el modo compartido de WASAPI, po
 | AAC | Dispositivos Apple, buena eficiencia | Calidad moderada |
 | SBC | Máxima compatibilidad | La menor calidad de audio |
 
-El editor de perfiles muestra la misma comparación como tres barras en cada tarjeta de códec.
+La pantalla **Códecs** muestra la misma comparación como tres barras en cada tarjeta de códec.
 
 ## Familia aptX y aptX Adaptive {#aptx-compatibility}
 
@@ -311,11 +320,11 @@ A2DPWB admite tres códecs aptX codificados con [libopenaptx](https://github.com
 
 El codificador es el codificador aptX Adaptive en Rust puro de [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). El proyecto original lo describe como una reimplementación en sala limpia cuyas tablas numéricas se reconstruyeron a partir de binarios de Qualcomm distribuidos y obtenidos legalmente y de capturas por aire; no incluye código, SDK ni binarios de Qualcomm (consulte [Licencias](licenses)).
 
-- **Cómo elegirlo**: Automático nunca lo elige. Elija **aptX Adaptive** en el perfil, o `-c aptxad`.
+- **Cómo elegirlo**: Automático nunca lo elige. Elija **aptX Adaptive** en **Códecs**, o `-c aptxad`.
 - **Formato**: solo 48 kHz estéreo, 24 bits; las solicitudes de 44.1 o 96 kHz se capturan a 48 kHz.
 - **Auriculares**: receptores R1 (sin extensión de capacidades, p. ej. B&W Px7 S2e) y receptores R2 (flujo de bits R2).
 
-| Calidad (perfil / `-q`) | Receptores R1 | Receptores R2 | Paquetes |
+| Calidad (**...** / `-q`) | Receptores R1 | Receptores R2 | Paquetes |
 |:-------------------------|:---------|:---------|:--------|
 | Alta (`hq`) | 427 kbps | 427 kbps | 12 ms, 656 bytes |
 | Estándar (`sq`; el valor predeterminado de la referencia) | 364 kbps | 270 kbps | 14 ms |
@@ -324,7 +333,7 @@ El codificador es el codificador aptX Adaptive en Rust puro de [AKS-Logic/aptx-a
 
 `ll` solo lo usa aptX Adaptive; los demás códecs lo tratan como Alta.
 
-**ABR** (**ABR** del perfil, CLI `-a`): en Alta, la tasa de bits baja un nivel (no por debajo de Móvil) mientras la cola de envío tiene 3 o más paquetes, como mucho cada ~0,5 s, y vuelve a subir un nivel (hasta la calidad elegida) tras ~3 s con como mucho un paquete en cola. Baja latencia no tiene ABR.
+**ABR** (ajuste **ABR** del códec, CLI `-a`): en Alta, la tasa de bits baja un nivel (no por debajo de Móvil) mientras la cola de envío tiene 3 o más paquetes, como mucho cada ~0,5 s, y vuelve a subir un nivel (hasta la calidad elegida) tras ~3 s con como mucho un paquete en cola. Baja latencia no tiene ABR.
 
 ### No hay «recurso» de aptX Adaptive a aptX
 
@@ -341,11 +350,11 @@ Cuando solicita un códec concreto que los auriculares no ofrecen:
 
 | Dónde | Comportamiento |
 |:------|:---------|
-| Perfil, **Usar otro códec si este no está disponible** activado (predeterminado) | Se conecta con el mejor códec que ofrecen los auriculares, en el orden de prioridad de Automático, y la insignia del códec indica qué códec se usa en su lugar y por qué. |
-| Perfil, opción desactivada | La conexión se detiene con un error («El dispositivo no admite ...»). Si solicitó aptX, aptX HD o aptX LL y los auriculares solo ofrecen aptX Adaptive, el mensaje lo indica y sugiere aptX Adaptive (experimental), Automático, AAC o SBC. |
+| **Usar otro códec compatible si este no está disponible** activado (predeterminado) | Se conecta con el mejor códec que ofrecen los auriculares, en el orden de prioridad de Automático, y la insignia del códec indica qué códec se usa en su lugar y por qué. |
+| Opción desactivada | La conexión se detiene con un error («El dispositivo no admite ...»). Si solicitó aptX, aptX HD o aptX LL y los auriculares solo ofrecen aptX Adaptive, el mensaje lo indica y sugiere aptX Adaptive (experimental), Automático, AAC o SBC. |
 | CLI (`-c <codec>`) | Se detiene con el mismo error. Use `-c auto` para conectar con el mejor códec ofrecido. |
 
-La opción está en el editor de perfiles, debajo de las tarjetas de códec (no se usa con Automático).
+La opción está en la parte superior de la pantalla **Códecs**, para todos los dispositivos (no se usa con Automático).
 
 ### Falta un códec mientras los auriculares están conectados a otro dispositivo {#sep-in-use}
 
@@ -382,9 +391,9 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 - `aptX Adaptive=true [not usable]` -- los auriculares ofrecen aptX Adaptive sin 48 kHz estéreo, que A2DPWB necesita.
 - `remote vendor codec ... - unsupported` -- otro códec de fabricante que A2DPWB no implementa.
 
-## Tamaño máximo del paquete multimedia (por perfil) {#max-packet}
+## Tamaño máximo del paquete multimedia (por dispositivo) {#max-packet}
 
-**Tamaño máx. de paquete multimedia** en cada perfil (editor de perfiles > **Avanzado**; CLI: `--max-packet <bytes>`) fija el límite superior de los datos de audio de cada paquete Bluetooth, de 679 a 1679 bytes, para que los auriculares que necesitan otro valor puedan tener el suyo. El límite propio de los auriculares (MTU) también se aplica siempre; A2DPWB usa el menor de los dos. El cambio se aplica a partir de la siguiente conexión. Los perfiles guardados por versiones anteriores toman el valor que antes se configuraba de forma global.
+**Tamaño máx. de paquete multimedia** de cada dispositivo (**Dispositivos de audio**; CLI: `--max-packet <bytes>`) fija el límite superior de los datos de audio de cada paquete Bluetooth, de 679 a 1679 bytes, para que los auriculares que necesitan otro valor puedan tener el suyo. El límite propio de los auriculares (MTU) también se aplica siempre; A2DPWB usa el menor de los dos. El cambio se aplica a partir de la siguiente conexión. Antes era un ajuste del perfil (en **Avanzado**): un dispositivo conserva el valor del perfil que se mantuvo (consulte [Códecs](#codecs)); los perfiles guardados por la v1 anterior a la 1.1 toman el valor que entonces se configuraba de forma global.
 
 **Se recomienda 1023 (predeterminado).** Cabe en un paquete de banda base Bluetooth (3-DH5). Los valores mayores solo ahorran un 1-2 % de sobrecarga, y cada paquete perdido supone entonces perder más audio. 679 cabe en un paquete 2-DH5 y es el mínimo que acepta LDAC.
 
@@ -456,7 +465,7 @@ Mientras la herramienta se ejecuta, la pila Bluetooth del propio receptor no pue
 
 ## LE Audio (experimental) {#le-audio}
 
-A2DPWB también puede transmitir a auriculares LE Audio (LC3 sobre flujos isócronos conectados, BAP unicast), con el volumen del auricular (VCP), los botones multimedia (MCP), los dos auriculares de un par (CSIP) y un modo de baja latencia para auriculares gaming (GMAP). Esta función es **experimental** y se elige por perfil: solo la usa un perfil para un dispositivo LE Audio. Solo se ha probado con un emulador de Bluetooth, **todavía no con auriculares LE Audio reales**, y puede que no funcione con los suyos; para el uso diario, use los perfiles A2DP clásicos.
+A2DPWB también puede transmitir a auriculares LE Audio (LC3 sobre flujos isócronos conectados, BAP unicast), con el volumen del auricular (VCP), los botones multimedia (MCP), los dos auriculares de un par (CSIP) y un modo de baja latencia para auriculares gaming (GMAP). Esta función es **experimental** y se elige por dispositivo: solo se usa para la entrada LE Audio de un dispositivo. Solo se ha probado con un emulador de Bluetooth, **todavía no con auriculares LE Audio reales**, y puede que no funcione con los suyos; para el uso diario, use el A2DP clásico.
 
 Qué se necesita:
 
@@ -465,8 +474,8 @@ Qué se necesita:
 
 Cómo usarlo:
 
-1. Ponga los auriculares en modo de emparejamiento y busque dispositivos en un perfil. Los dispositivos LE Audio llevan la etiqueta **LE Audio**, un par de auriculares **Conjunto LE Audio** (elija cualquiera de los dos: A2DPWB encuentra el otro). Unos auriculares que también admiten A2DP aparecen dos veces, una por tipo.
-2. Marque **Dispositivo LE Audio (experimental, LC3)** en el perfil. No se elige códec ni calidad (A2DPWB elige la mejor configuración LC3 que aceptan los auriculares) y solo están disponibles las capturas Loopback del sistema y Dispositivo virtual.
+1. Ponga los auriculares en modo de emparejamiento y busque dispositivos en **Dispositivos de audio**. Los dispositivos LE Audio llevan la etiqueta **LE Audio**, un par de auriculares **Conjunto LE Audio** (elija cualquiera de los dos: A2DPWB encuentra el otro). Unos auriculares que también admiten A2DP aparecen dos veces, una por tipo.
+2. En **Códecs**, elija la tarjeta LC3 de la entrada LE Audio. No se elige códec ni calidad (A2DPWB elige la mejor configuración LC3 que aceptan los auriculares) y solo están disponibles las capturas Loopback del sistema y Dispositivo virtual.
 3. Debajo, **Baja latencia para auriculares gaming (GMAP, experimental)** está activada por defecto: con los auriculares que admiten el rol de juego de GMAP usa tramas LC3 más cortas; los demás auriculares reciben la configuración multimedia en ambos casos.
 
 No hay ningún interruptor de LE Audio en Configuración. Si el lado LE llegara a perturbar un adaptador, `"le_audio_experimental": false` en `settings.json` (**Configuración > Carpeta de configuración**) lo desactiva por completo.

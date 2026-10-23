@@ -55,7 +55,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | Opus（Android の A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2 以降（`opus_g`）。Ubuntu 24.04（PipeWire 1.0.5）にはない | 🧪 実験的 |
 | Opus 05（PipeWire 独自の Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57 以降（`opus_05`、相手も PipeWire のときだけ） | 🧪 実験的（明示的に選んだとき） |
 | aptX Adaptive | ❌ | ❌ | ❌ | 🧪 実験的（明示的に選んだとき） |
-| LC3（LE Audio、BAP ユニキャスト） | ❌ | ✅ Bluetooth のハードウェアとドライバーが LE Audio に対応した PC のみ | ✅ PipeWire の BAP `lc3`（BlueZ の LE Audio） | 🧪 実験的（LE Audio のプロファイル、ゲーミングヘッドセットでは GMAP の低遅延、ISO 対応の Bluetooth 5.2 アダプターが必要、[使い方](usage#le-audio)） |
+| LC3（LE Audio、BAP ユニキャスト） | ❌ | ✅ Bluetooth のハードウェアとドライバーが LE Audio に対応した PC のみ | ✅ PipeWire の BAP `lc3`（BlueZ の LE Audio） | 🧪 実験的（デバイスの LE Audio の項目、ゲーミングヘッドセットでは GMAP の低遅延、ISO 対応の Bluetooth 5.2 アダプターが必要、[使い方](usage#le-audio)） |
 
 ✅ 対応 · 🧪 実験的 · ❌ 非対応。どの列も送信側（PC → ヘッドホン）です。「標準」は A2DPWB を使わない OS 自身の Bluetooth オーディオで、Ubuntu の列は Ubuntu 26.04 の PipeWire（`libspa-0.2-bluetooth`）が持つコーデックです。
 
@@ -69,7 +69,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 **Opus は実験的な対応です。** Android の A2DP Opus ベンダーコーデック（Android 13 以降、ベンダー ID 0x000000E0 Google）で、48 kHz・20 ms フレーム・ステレオ 256 kbps（Android が要求する値。標準 192、モバイル 128 kbps）を libopus 1.5.2 でエンコードします。仮想シンクとのエンドツーエンドテストには合格していますが、実際の Opus 対応ヘッドホンでは未確認です。自動選択では LHDC V5 の下、AAC / SBC の上です。
 
 {: .warning }
-**Opus 05 は実験的な対応で、実機では未確認です。** PipeWire 独自の A2DP Opus ベンダーコーデック（ベンダー ID 0x000005F1、コーデック ID 0x1005、PipeWire の `opus_05`）で、実装しているのは PipeWire だけなので、受け手は A2DP シンクとして動く PipeWire の PC に限られます。A2DPWB が送るのはステレオの音楽の方向だけ（5.1 / 7.1 や戻りの音声はなし）で、48 kHz・10 ms フレーム（シンクが 20 ms だけならそれ）、エンコーダーとビットレートは Opus と同じで、シンクの上限で頭打ちにします。自動選択では選ばないので、プロファイルか `-c opus05` で選んでください。PipeWire と同じ能力を出す仮想シンクとのエンドツーエンドテストには合格していますが、実際の PipeWire では試していません。A2DP シンクとしての PipeWire は、Opus 05 を 0.3.57 から、Android の Opus（`opus_g`）を 1.2.0 から受けられます。Ubuntu 24.04 LTS の PipeWire 1.0.5 は Opus 05 だけ、Ubuntu 25.10（1.4.7）と 26.04 LTS（1.6.2）は両方です。どちらも A2DPWB ではまだ確かめていません。
+**Opus 05 は実験的な対応で、実機では未確認です。** PipeWire 独自の A2DP Opus ベンダーコーデック（ベンダー ID 0x000005F1、コーデック ID 0x1005、PipeWire の `opus_05`）で、実装しているのは PipeWire だけなので、受け手は A2DP シンクとして動く PipeWire の PC に限られます。A2DPWB が送るのはステレオの音楽の方向だけ（5.1 / 7.1 や戻りの音声はなし）で、48 kHz・10 ms フレーム（シンクが 20 ms だけならそれ）、エンコーダーとビットレートは Opus と同じで、シンクの上限で頭打ちにします。自動選択では選ばないので、**コーデック** 画面か `-c opus05` で選んでください。PipeWire と同じ能力を出す仮想シンクとのエンドツーエンドテストには合格していますが、実際の PipeWire では試していません。A2DP シンクとしての PipeWire は、Opus 05 を 0.3.57 から、Android の Opus（`opus_g`）を 1.2.0 から受けられます。Ubuntu 24.04 LTS の PipeWire 1.0.5 は Opus 05 だけ、Ubuntu 25.10（1.4.7）と 26.04 LTS（1.6.2）は両方です。どちらも A2DPWB ではまだ確かめていません。
 
 {: .warning }
 **SBC XQ** は Sony WH-1000XM4 で確認済みです（デュアルチャネル、48 kHz で bitpool 43、552 kbps）。この設定を拒否するシンクには、通常の SBC でつなぎ直します。**FastStream は実験的な対応です。** 仮想シンクとのエンドツーエンドテストには合格していますが、実際の FastStream 対応ヘッドホンでは試していません。音楽の方向のみで、自動選択では選びません。
@@ -78,7 +78,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 **クラシック aptX だけが目的なら**、Windows 10 標準の Bluetooth スタックがクラシック aptX に対応しています（aptX HD・aptX LL・aptX Adaptive は非対応）。その場合 A2DPWB は不要です。A2DPWB が主に役立つのは LDAC・aptX HD・aptX Low Latency です。
 
 {: .warning }
-**aptX Adaptive は実験的な対応で、実機では未確認です。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオのみ（44.1 / 96 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。自動選択では選ばれないので、プロファイルか `-c aptxad` で選んでください。単体テスト、上流のビット単位で一致するテスト、仮想シンクとのエンドツーエンドテストには合格していますが、A2DPWB では実際のヘッドホンでまだ試していません。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。ヘッドホンがクラシック aptX も通知していれば、Auto はそちらを使います。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
+**aptX Adaptive は実験的な対応で、実機では未確認です。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオのみ（44.1 / 96 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。自動選択では選ばれないので、**コーデック** 画面か `-c aptxad` で選んでください。単体テスト、上流のビット単位で一致するテスト、仮想シンクとのエンドツーエンドテストには合格していますが、A2DPWB では実際のヘッドホンでまだ試していません。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。ヘッドホンがクラシック aptX も通知していれば、Auto はそちらを使います。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
 
 ## 対応プラットフォーム {#platform-support}
 
@@ -145,7 +145,7 @@ A2DPWB は Windows の Bluetooth スタックを完全にバイパスします�
 - **自動再接続**: 切断時に自動再接続（最大 10 回）。PC のスリープからの復帰後も再接続
 - **通信品質と AFH**: 送信内容・RSSI・使用中のチャネルを表示し、避けるべき Wi-Fi チャネルをアダプターに伝えます（[使い方](usage#link-quality)を参照）
 - **ヘッドホン操作（AVRCP）**: ヘッドホンや Windows の音量と連動する音量スライダー、ヘッドホンの再生/一時停止・曲送り・曲戻しで PC の再生を操作（[使い方](usage#headphone-buttons) を参照）
-- **プロファイル管理**: デバイス + コーデック + キャプチャの設定。トレイからも接続できます
+- **デバイスごとの設定**: オーディオデバイスごとにコーデック（その設定つき）とキャプチャソースを持ち、ホームに並んで表示され、トレイからも接続できます
 - **更新**: インストール版は配信を止めたときに自分で更新します（[使い方](usage#updates)を参照）
 - **多言語対応**: 英語、日本語、中国語（簡体字 / 繁体字）、韓国語、ドイツ語、フランス語、スペイン語
 - **Realtek ファームウェア**: Realtek アダプター向けガイド付きファームウェアダウンロード

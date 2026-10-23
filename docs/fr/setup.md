@@ -91,7 +91,7 @@ Si l'adaptateur n'apparaît pas dans la liste d'A2DPWB, si un bouton de l'écran
 
 ## Étape 3 : trouver votre casque {#headphones}
 
-**Rechercher** (dans la configuration et dans l'éditeur de profil) recherche les appareils à proximité avec l'adaptateur USB pendant environ 10 secondes. Mettez d'abord le casque en mode d'association. Les appareils déjà associés à A2DPWB sont marqués **Associé**.
+**Rechercher** (dans la configuration et dans **Périphériques audio**) recherche les appareils à proximité avec l'adaptateur USB pendant environ 10 secondes. Mettez d'abord le casque en mode d'association. Les appareils déjà associés à A2DPWB sont marqués **Associé**.
 
 Si la recherche ne le trouve pas, saisissez l'adresse Bluetooth sous **Manuel :** et cliquez sur **Utiliser**. Les adresses tapées ou collées sont mises en forme au fur et à mesure : `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` et `AA BB CC DD EE FF` deviennent toutes `AA:BB:CC:DD:EE:FF`.
 
@@ -106,7 +106,7 @@ Si la recherche ne le trouve pas, saisissez l'adresse Bluetooth sous **Manuel :*
 a2dpwb-core.exe --cli --scan
 ```
 
-Le nouveau profil démarre avec **Auto** comme codec et l'audio du système comme source de capture ; les valeurs par défaut donnent le meilleur son. Voir [Utilisation](usage) pour tout le reste.
+Le casque démarre avec **Auto** comme codec (**Codecs**) et l'audio du système comme source de capture (**Périphériques audio**) ; les valeurs par défaut donnent le meilleur son. Voir [Utilisation](usage) pour tout le reste.
 
 ---
 

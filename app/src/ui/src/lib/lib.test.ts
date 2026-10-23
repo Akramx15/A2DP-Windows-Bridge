@@ -6,7 +6,7 @@ import { abrCarries, bitrateNoteKey, carryToCodec, codecLabelKey, fitToCodec, qu
 import { FlowTracker, stepDetail } from "./flow";
 import { knowAdapters, maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
-import { validateProfile } from "./profile";
+import { deviceProfile, followedName, validateProfile, withCodec } from "./profile";
 
 const line = (time_ms: number, message: string, level: LogLine["level"] = "info"): LogLine => ({
   time_ms,
@@ -122,6 +122,44 @@ describe("connection flow", () => {
     } finally {
       await setLanguage("en");
     }
+  });
+});
+
+describe("a device's profile (Codecs screen, issue #86)", () => {
+  it("keeps the settings of the codec it leaves and brings back those of the one chosen", () => {
+    const aac = sampleProfile({ codec: "aac", abr: true, quality: "hq" });
+    const ldac = withCodec(aac, "ldac");
+    expect(ldac).toMatchObject({ codec: "ldac", abr: false });
+    expect(ldac.codec_settings.aac).toMatchObject({ abr: true, quality: "hq" });
+    const back = withCodec(ldac, "aac");
+    expect(back).toMatchObject({ codec: "aac", abr: true });
+    expect(back.codec_settings).not.toHaveProperty("aac");
+    expect(back.codec_settings.ldac).toBeDefined();
+    // The "..." dialog's values win over what was kept
+    const sq = withCodec(ldac, "aac", { ...ldac.codec_settings.aac, quality: "sq", abr: false });
+    expect(sq).toMatchObject({ codec: "aac", quality: "sq", abr: false });
+    // Fitted to the codec: SBC's bitpool does not reach AAC
+    expect(withCodec(sampleProfile({ codec: "sbc", sbc_bitpool: 40 }), "aac").sbc_bitpool).toBe(0);
+  });
+
+  it("names it after the device and codec unless the user named it", () => {
+    const p = sampleProfile({ name: "Buds | Auto", device_name: "Buds", codec: "aac" });
+    expect(followedName(p, "AAC", [])).toBe("Buds | AAC");
+    expect(followedName({ ...p, name: "" }, "AAC", ["Buds | AAC"])).toBe("Buds | AAC (2)");
+    expect(followedName({ ...p, name: "Gaming" }, "AAC", [])).toBe("Gaming");
+    expect(followedName({ ...p, le_audio: true, name: "" }, "", [])).toBe("Buds LE Audio");
+  });
+
+  it("is the one streaming, else the active one, else the first", () => {
+    const a = sampleProfile({ name: "A" });
+    const b = sampleProfile({ name: "B" });
+    const le = sampleProfile({ name: "LE", le_audio: true });
+    const idle = { state: "idle", profile: null } as never;
+    expect(deviceProfile({ profiles: [a, b, le], active_profile: null, stream: idle }, a.device_address, false)?.name).toBe("A");
+    expect(deviceProfile({ profiles: [a, b, le], active_profile: "B", stream: idle }, a.device_address, false)?.name).toBe("B");
+    const streaming = { state: "streaming", profile: "A" } as never;
+    expect(deviceProfile({ profiles: [a, b, le], active_profile: "B", stream: streaming }, a.device_address, false)?.name).toBe("A");
+    expect(deviceProfile({ profiles: [a, b, le], active_profile: "B", stream: idle }, a.device_address, true)?.name).toBe("LE");
   });
 });
 

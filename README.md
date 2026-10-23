@@ -26,7 +26,7 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 
 ✅ supported · 🧪 experimental: passes the encoder tests and the end-to-end test against a virtual Bluetooth sink, but not yet confirmed with real headphones that use it ([reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)) · ❌ not supported
 
-¹ Auto never picks it; choose it in a profile. ² Only PipeWire (Linux) receivers implement it. ³ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; not yet verified with headphones. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per profile with **LE Audio device**, and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
+¹ Auto never picks it; choose it on **Codecs**. ² Only PipeWire (Linux) receivers implement it. ³ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; not yet verified with headphones. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per device (its LE Audio entry on **Codecs**), and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
 
 Auto picks LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
 
@@ -52,7 +52,7 @@ Windows 10 / 11 load only kernel drivers signed through Microsoft, which needs a
 
 ## Usage
 
-The resident core streams and owns the tray icon; the window only shows its state, so closing it does not stop the audio. **Left-click** the tray icon for the flyout, **right-click** it for the menu (profiles, **Disconnect**, **Exit**).
+The resident core streams and owns the tray icon; the window only shows its state, so closing it does not stop the audio. **Left-click** the tray icon for the flyout, **right-click** it for the menu (your devices, **Disconnect**, **Exit**).
 
 The core also runs from the command line (quit A2DPWB first: only one program can use the adapter):
 
@@ -63,7 +63,7 @@ a2dpwb-core.exe --cli --scan                                  # Find nearby devi
 a2dpwb-core.exe --cli -h                                      # All options
 ```
 
-To stream LDAC at 96 kHz, set the playback device's format to 96 kHz in Windows Sound settings. Everything else — profiles, capture modes, volume sync, link quality and AFH, diagnostics, start with Windows, troubleshooting — is in the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage).
+To stream LDAC at 96 kHz, set the playback device's format to 96 kHz in Windows Sound settings. Everything else — codecs, capture modes, volume sync, link quality and AFH, diagnostics, start with Windows, troubleshooting — is in the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage).
 
 ## Features
 

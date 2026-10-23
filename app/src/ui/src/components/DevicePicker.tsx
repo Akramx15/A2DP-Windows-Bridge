@@ -12,7 +12,7 @@ import { useApp, type AppContext } from "../app/context";
 import { t } from "../i18n";
 import type { Device } from "../ipc/types";
 import { parseAddress } from "../lib/format";
-import { defaultProfileName, deviceKey, listedDevices, newProfile, normalizeProfile, validDeviceName } from "../lib/profile";
+import { defaultProfileName, deviceKey, deviceProfile, listedDevices, newProfile, normalizeProfile, validDeviceName } from "../lib/profile";
 import { Button, Dialog, Field, IconButton } from "./controls";
 import { Icon } from "./Icon";
 
@@ -43,9 +43,10 @@ export async function saveWithProfile(app: AppContext, address: string, name: st
     (await app.run(() =>
       app.core.request("device.rename", { address, name: saved, ...(leAudio ? { le_audio: true } : {}) }),
     ));
-  // LE Audio profiles are made in the profile editor
+  // LE Audio profiles are made on the Codecs screen (its LC3 card)
   if (!ok || leAudio) return null;
-  const own = snap().profiles.find((p) => p.device_address.toUpperCase() === address.toUpperCase());
+  // The device's own (classic) profile: one per device entry
+  const own = deviceProfile(snap(), address, false);
   if (own) return own.name;
   const taken = snap().profiles.map((p) => p.name);
   const base = defaultProfileName(saved, address, false, t("codec.auto"));

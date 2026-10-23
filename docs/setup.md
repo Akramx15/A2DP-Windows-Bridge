@@ -43,7 +43,7 @@ Plug in the USB Bluetooth adapter and start A2DPWB. When there is no profile yet
 
 1. **Choose the adapter**: the USB Bluetooth adapters found. If yours is missing, plug it in and press **Refresh**. A green **Supported** or a red **Not supported** says whether A2DPWB can use each one
 2. **Driver and firmware**: **Assign WinUSB** (see [Step 2](#winusb)), and for Realtek adapters the firmware files (see [Firmware](#firmware))
-3. **Find your audio devices**: the scan starts by itself. Put the audio device into pairing mode and press **Connect** next to it (or type its address and press **Use**): A2DPWB creates its profile ("*name* | Auto", the best codec it has) and connects. Then **Finish** (see [Step 3](#headphones))
+3. **Find your audio devices**: the scan starts by itself. Put the audio device into pairing mode and press **Connect** next to it (or type its address and press **Use**): A2DPWB creates its profile ("*name* | Auto", the best codec it has) and connects. Then **Finish** (see [Step 3](#headphones)). Its codec can be changed later on **Codecs**
 
 **Set up later** skips the rest; **Settings > Run setup** opens it again.
 
@@ -90,7 +90,7 @@ If the adapter is missing from A2DPWB's list, a button on the **Adapter** screen
 
 ## Step 3: Find Your Headphones {#headphones}
 
-**Scan Devices** (in the setup and in the profile editor) finds nearby devices with the USB adapter for about 10 seconds. Put the headphones into pairing mode first. Devices A2DPWB has paired with before are listed as **Paired**.
+**Scan Devices** (in the setup and on **Audio Devices**) finds nearby devices with the USB adapter for about 10 seconds. Put the headphones into pairing mode first. Devices A2DPWB has paired with before are listed as **Paired**.
 
 If the scan does not find them, enter the Bluetooth address under **Manual:** and click **Use**. Typed or pasted addresses are formatted as you go: `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`.
 
@@ -105,7 +105,7 @@ If the scan does not find them, enter the Bluetooth address under **Manual:** an
 a2dpwb-core.exe --cli --scan
 ```
 
-The new profile starts with **Auto** as the codec and the system audio as the capture source; the defaults give the best sound. See [Usage](usage) for everything else.
+The headphones start with **Auto** as the codec (**Codecs**) and the system audio as the capture source (**Audio Devices**); the defaults give the best sound. See [Usage](usage) for everything else.
 
 ---
 

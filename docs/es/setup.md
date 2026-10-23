@@ -91,7 +91,7 @@ Si el adaptador no aparece en la lista de A2DPWB, falla un botón de la pantalla
 
 ## Paso 3: Encontrar los auriculares {#headphones}
 
-**Buscar dispositivos** (en la configuración inicial y en el editor de perfiles) busca dispositivos cercanos con el adaptador USB durante unos 10 segundos. Ponga antes los auriculares en modo de emparejamiento. Los dispositivos con los que A2DPWB ya se ha emparejado aparecen como **Emparejado**.
+**Buscar dispositivos** (en la configuración inicial y en **Dispositivos de audio**) busca dispositivos cercanos con el adaptador USB durante unos 10 segundos. Ponga antes los auriculares en modo de emparejamiento. Los dispositivos con los que A2DPWB ya se ha emparejado aparecen como **Emparejado**.
 
 Si la búsqueda no los encuentra, escriba la dirección Bluetooth en **Manual:** y haga clic en **Usar**. Las direcciones escritas o pegadas se formatean mientras escribe: `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` y `AA BB CC DD EE FF` se convierten todas en `AA:BB:CC:DD:EE:FF`.
 
@@ -106,7 +106,7 @@ Si la búsqueda no los encuentra, escriba la dirección Bluetooth en **Manual:**
 a2dpwb-core.exe --cli --scan
 ```
 
-El nuevo perfil empieza con **Automático** como códec y el audio del sistema como origen de captura; los valores predeterminados dan el mejor sonido. Consulte [Uso](usage) para todo lo demás.
+Los auriculares empiezan con **Automático** como códec (**Códecs**) y el audio del sistema como origen de captura (**Dispositivos de audio**); los valores predeterminados dan el mejor sonido. Consulte [Uso](usage) para todo lo demás.
 
 ---
 
