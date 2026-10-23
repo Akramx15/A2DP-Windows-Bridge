@@ -52,7 +52,7 @@ Los auriculares y altavoces a los que A2DPWB puede transmitir, cada uno con sus 
 
 - **Origen de captura**: Loopback del sistema, Dispositivo virtual o Aplicación (consulte [Modos de captura](#capture-modes))
 - **Sincronizar volumen de Windows** (consulte [Volumen](#volume))
-- **Tamaño máx. de paquete multimedia (bytes)** (consulte [Tamaño máximo del paquete multimedia](#max-packet))
+- **Tamaño máx. de paquete multimedia (bytes)**, en modo de desarrollador (consulte [Tamaño máximo del paquete multimedia](#max-packet))
 - **Los botones del dispositivo de audio controlan la reproducción** y **Recordar el volumen del dispositivo de audio**
 
 ### Diagnóstico
@@ -79,14 +79,13 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene además una p
 |:--------|:---------|
 | Apariencia | Idioma, tema (Sistema / Claro / Oscuro) |
 | Inicio | **Iniciar con Windows** e **Iniciar en la bandeja** (consulte [Iniciar con Windows](#autostart)), **Minimizar en la bandeja del sistema** (consulte [Bandeja y panel desplegable](#tray)) |
-| Auriculares | **Botones de los auriculares controlan la reproducción** (consulte [Botones de los auriculares](#headphone-buttons)), **Recordar volumen de los auriculares** (consulte [Volumen](#volume)) |
 | Actualizaciones | **Buscar actualizaciones**, **Buscar actualizaciones al iniciar**, **Incluir versiones preliminares al buscar actualizaciones** (también ofrece versiones beta), **Actualizar ahora** (consulte [Actualizaciones](#updates)) |
-| Avanzado | **Modo de desarrollador** (añade la prueba con receptor a Diagnóstico y más detalles al registro; no requiere reiniciar), **Carpeta de configuración** con **Abrir carpeta de configuración**, **Ejecutar la configuración inicial** |
+| Avanzado | **Modo de desarrollador** (añade la prueba con receptor a Diagnóstico, el **Tamaño máx. de paquete multimedia** a Dispositivos de audio y más detalles al registro; no requiere reiniciar), **Carpeta de configuración** con **Abrir carpeta de configuración**, **Ejecutar la configuración inicial** |
 | Acerca de A2DPWB | Versión, licencia, licencias de terceros, **Salir de A2DPWB** |
 
 ### Configuración inicial
 
-El primer inicio (aún sin perfil, o sin ningún adaptador con WinUSB) abre **Configurar A2DPWB**: elegir el adaptador, controlador y firmware, encontrar los dispositivos de audio («Conectar» crea el perfil y se conecta). Consulte [Instalación](setup#first-run). **Configuración > Ejecutar la configuración inicial** la vuelve a abrir.
+El primer inicio (aún sin perfil, o sin ningún adaptador con WinUSB) abre **Configurar A2DPWB**: elegir el adaptador, controlador y firmware, encontrar los dispositivos de audio («Conectar» crea el perfil y se conecta; este paso también tiene **Iniciar con Windows** e **Iniciar en la bandeja**). Consulte [Instalación](setup#first-run). **Configuración > Ejecutar la configuración inicial** la vuelve a abrir.
 
 ## Bandeja y panel desplegable {#tray}
 
@@ -239,7 +238,7 @@ Durante la transmisión, Inicio y el panel desplegable de la bandeja muestran un
 - Con Automático, el audio se captura antes de aplicar el volumen de Windows, por lo que se reduce una sola vez, en los auriculares. Si el volumen sincronizado también cambia el audio capturado, el volumen se aplica dos veces: en ese caso elija Desactivado (consulte [Aplicaciones de efectos para todo el sistema](#effects-apps)).
 - El silencio no se sincroniza: silenciar el dispositivo de salida deja el PC en silencio, pero no silencia los auriculares.
 
-**Configuración > Recordar volumen de los auriculares** (desactivado de forma predeterminada) guarda el volumen de los auriculares para cada dispositivo y lo vuelve a aplicar en cuanto se conectan, antes de enviar audio. De lo contrario, los auriculares empiezan con su propio último volumen, que puede ser mucho más alto que el usado la última vez con A2DPWB (p. ej., después de usarlos con un teléfono).
+**Recordar el volumen del dispositivo de audio** (en **Dispositivos de audio**, para cada dispositivo; activado de forma predeterminada) guarda el volumen propio de cada dispositivo de audio y lo vuelve a aplicar en cuanto se conecta, antes de enviar audio, así que el volumen de un dispositivo no pasa a otro. Desactívelo para un dispositivo si quiere que empiece con su propio último volumen, que puede ser mucho más alto que el usado la última vez con A2DPWB (p. ej., después de usarlo con un teléfono). Al actualizar desde una versión anterior se activa una vez; un dispositivo para el que se había desactivado lo mantiene desactivado.
 
 ### Botones de los auriculares {#headphone-buttons}
 
@@ -249,7 +248,7 @@ Los controles de reproducir/pausar, pista siguiente y pista anterior de los auri
 - A2DPWB indica a los auriculares si se está reproduciendo audio (según haya o no audio que capturar), para que los auriculares que se pausan al quitárselos envíen el comando correcto.
 - Avance rápido / retroceso (mantener pulsado un botón) no tienen tecla multimedia en Windows y se ignoran.
 - Los gestos de volumen cambian el volumen propio de los auriculares; con **Sincronizar volumen de Windows**, el volumen de Windows sincronizado los sigue (consulte [Volumen](#volume)).
-- Desactívelo con **Configuración > Botones de los auriculares controlan la reproducción**, p. ej. si otro programa ya reacciona a las teclas multimedia y estas actúan dos veces.
+- Desactívelo para un dispositivo con **Dispositivos de audio > Los botones del dispositivo de audio controlan la reproducción**, p. ej. si otro programa ya reacciona a las teclas multimedia y estas actúan dos veces.
 
 Esto requiere AVRCP en los auriculares, que casi todos tienen. Sin él, la transmisión funciona como siempre, solo que sin los botones.
 
@@ -393,7 +392,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Tamaño máximo del paquete multimedia (por dispositivo) {#max-packet}
 
-**Tamaño máx. de paquete multimedia** de cada dispositivo (**Dispositivos de audio**; CLI: `--max-packet <bytes>`) fija el límite superior de los datos de audio de cada paquete Bluetooth, de 679 a 1679 bytes, para que los auriculares que necesitan otro valor puedan tener el suyo. El límite propio de los auriculares (MTU) también se aplica siempre; A2DPWB usa el menor de los dos. El cambio se aplica a partir de la siguiente conexión. Antes era un ajuste del perfil (en **Avanzado**): un dispositivo conserva el valor del perfil que se mantuvo (consulte [Códecs](#codecs)); los perfiles guardados por la v1 anterior a la 1.1 toman el valor que entonces se configuraba de forma global.
+**Tamaño máx. de paquete multimedia** de cada dispositivo (**Dispositivos de audio**; CLI: `--max-packet <bytes>`) fija el límite superior de los datos de audio de cada paquete Bluetooth, de 679 a 1679 bytes, para que los dispositivos de audio que necesitan otro valor puedan tener el suyo. El campo se muestra en modo de desarrollador (**Configuración > Modo de desarrollador**), o mientras un dispositivo tenga un valor distinto de 1023, para poder restablecerlo; la mayoría de los usuarios nunca lo necesita. El límite propio del dispositivo de audio (MTU) también se aplica siempre; A2DPWB usa el menor de los dos. El cambio se aplica a partir de la siguiente conexión. Antes era un ajuste del perfil (en **Avanzado**): un dispositivo conserva el valor del perfil que se mantuvo (consulte [Códecs](#codecs)); los perfiles guardados por la v1 anterior a la 1.1 toman el valor que entonces se configuraba de forma global.
 
 **Se recomienda 1023 (predeterminado).** Cabe en un paquete de banda base Bluetooth (3-DH5). Los valores mayores solo ahorran un 1-2 % de sobrecarga, y cada paquete perdido supone entonces perder más audio. 679 cabe en un paquete 2-DH5 y es el mínimo que acepta LDAC.
 

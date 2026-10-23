@@ -1,7 +1,8 @@
 // One audio device's own settings on the Audio Devices screen (issue #86):
-// what is captured for it, the Windows volume that follows it and the max
-// media packet size (kept in its profile: the core reads them from the
-// profile it streams; a device without one gets it with the first change),
+// what is captured for it, the Windows volume that follows it and, in
+// developer mode, the max media packet size (kept in its profile: the core
+// reads them from the profile it streams; a device without one gets it with
+// the first change),
 // whether its buttons control playback and whether its volume is
 // remembered (Settings.device_options; the global value until changed).
 
@@ -234,7 +235,9 @@ export function DeviceSettings(props: { device: Device }) {
           />
         )}
       </Field>
-      <Show when={!leOnly()}>
+      {/* Not one for end users (issue #86): developer mode, or a size
+          changed earlier, so it can be set back */}
+      <Show when={!leOnly() && (snap().settings.developer_mode || f.max_media_payload !== PACKET_DEFAULT)}>
         <PacketSize value={f.max_media_payload} onChange={(v) => void apply({ max_media_payload: v })} />
       </Show>
       <Toggle label={t("settings.media_keys")} checked={mediaKeys()} onChange={(v) => setOption({ media_keys: v })} />

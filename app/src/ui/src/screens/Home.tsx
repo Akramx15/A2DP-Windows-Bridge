@@ -1,8 +1,9 @@
 // Home: a card per saved audio device, side by side (issue #86), each with
 // its connection ring, state and codec and its own Connect / Disconnect.
 // One device streams at a time: Connect on another one switches to it (the
-// core stops the running stream first). Volume, capture source (chosen
-// right there) and link quality below, for the device in use.
+// core stops the running stream first). The volume is on the card of the
+// device in use, as each device keeps its own (issue #86); capture source
+// (chosen right there) and link quality below, for the device in use.
 
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
@@ -177,7 +178,6 @@ export function Home() {
             }}
           </For>
         </div>
-        <VolumeControl />
 
         <Show when={profile()}>
           {(p) => (
@@ -269,6 +269,10 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
           </Show>
         </div>
       </section>
+      {/* Its own volume, while it is the one in use */}
+      <Show when={live()}>
+        <VolumeControl />
+      </Show>
       <button
         type="button"
         class="connect-btn"

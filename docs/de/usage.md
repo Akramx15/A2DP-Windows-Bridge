@@ -52,7 +52,7 @@ Die Kopfhörer und Lautsprecher, an die A2DPWB streamen kann, jeweils mit eigene
 
 - **Aufnahmequelle**: System-Loopback, Virtuelles Gerät oder Anwendung (siehe [Aufnahmemodi](#capture-modes))
 - **Windows-Lautstärke-Sync** (siehe [Lautstärke](#volume))
-- **Max. Mediapaketgröße (Bytes)** (siehe [Max. Mediapaketgröße](#max-packet))
+- **Max. Mediapaketgröße (Bytes)**, im Entwicklermodus (siehe [Max. Mediapaketgröße](#max-packet))
 - **Tasten des Audiogeräts steuern die Wiedergabe** und **Lautstärke des Audiogeräts merken**
 
 ### Diagnose
@@ -79,14 +79,13 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 |:----------|:--------------|
 | Darstellung | Sprache, Design (System / Hell / Dunkel) |
 | Start | **Mit Windows starten** und **Im Infobereich starten** (siehe [Mit Windows starten](#autostart)), **In den Infobereich minimieren** (siehe [Infobereich und Flyout](#tray)) |
-| Kopfhörer | **Kopfhörertasten steuern die Wiedergabe** (siehe [Kopfhörertasten](#headphone-buttons)), **Kopfhörerlautstärke merken** (siehe [Lautstärke](#volume)) |
 | Updates | **Nach Updates suchen**, **Beim Start nach Updates suchen**, **Vorabversionen bei der Updatesuche einbeziehen** (bietet auch Betaversionen an), **Jetzt aktualisieren** (siehe [Updates](#updates)) |
-| Erweitert | **Entwicklermodus** (fügt der Diagnose den Empfängertest und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
+| Erweitert | **Entwicklermodus** (fügt der Diagnose den Empfängertest, den Audiogeräten die **Max. Mediapaketgröße** und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
 | Info über A2DPWB | Version, Lizenz, Lizenzen von Drittanbietern, **A2DPWB beenden** |
 
 ### Einrichtung beim ersten Start
 
-Der erste Start (noch kein Profil oder kein Adapter mit WinUSB) öffnet **A2DPWB einrichten**: Adapter auswählen, Treiber und Firmware, Audiogeräte finden („Verbinden“ legt das Profil an und verbindet). Siehe [Einrichtung](setup#first-run). **Einstellungen > Einrichtung ausführen** öffnet die Einrichtung erneut.
+Der erste Start (noch kein Profil oder kein Adapter mit WinUSB) öffnet **A2DPWB einrichten**: Adapter auswählen, Treiber und Firmware, Audiogeräte finden („Verbinden“ legt das Profil an und verbindet; dieser Schritt hat auch **Mit Windows starten** und **Im Infobereich starten**). Siehe [Einrichtung](setup#first-run). **Einstellungen > Einrichtung ausführen** öffnet die Einrichtung erneut.
 
 ## Infobereich und Flyout {#tray}
 
@@ -239,7 +238,7 @@ Während des Streamings zeigen die Seite Start und das Flyout im Infobereich ein
 - Bei Automatisch wird das Audio aufgenommen, bevor die Windows-Lautstärke angewendet wird, sodass es nur einmal abgesenkt wird, nämlich an den Kopfhörern. Verändert die synchronisierte Lautstärke auch das aufgenommene Audio, wirkt die Lautstärke doppelt: Wählen Sie dann Aus (siehe [Systemweite Effekt-Apps](#effects-apps)).
 - Stummschalten wird nicht synchronisiert: Das Stummschalten des Ausgabegeräts hält den PC stumm, schaltet aber die Kopfhörer nicht stumm.
 
-**Einstellungen > Kopfhörerlautstärke merken** (standardmäßig aus) speichert die Kopfhörerlautstärke für jedes Gerät und stellt sie beim Verbinden wieder ein, bevor Audio gesendet wird. Andernfalls starten Kopfhörer mit ihrer eigenen zuletzt verwendeten Lautstärke, die viel lauter sein kann als die zuletzt mit A2DPWB verwendete (z. B. nach der Nutzung mit einem Smartphone).
+**Lautstärke des Audiogeräts merken** (unter **Audiogeräte**, für jedes Gerät; standardmäßig an) speichert die eigene Lautstärke jedes Audiogeräts und stellt sie gleich beim Verbinden wieder ein, bevor Audio gesendet wird, sodass die Lautstärke eines Geräts nicht auf ein anderes übergeht. Schalten Sie es für ein Gerät aus, damit es mit seiner eigenen zuletzt verwendeten Lautstärke startet, die viel lauter sein kann als die zuletzt mit A2DPWB verwendete (z. B. nach der Nutzung mit einem Smartphone). Ein Update von einer früheren Version schaltet es einmal ein; ein Gerät, für das es ausgeschaltet wurde, behält das bei.
 
 ### Kopfhörertasten {#headphone-buttons}
 
@@ -249,7 +248,7 @@ Die Bedienelemente für Wiedergabe/Pause, nächsten und vorherigen Titel an den 
 - A2DPWB teilt den Kopfhörern mit, ob Audio wiedergegeben wird (anhand dessen, ob es Audio zum Aufnehmen gibt), sodass Kopfhörer, die beim Absetzen pausieren, den richtigen Befehl senden.
 - Vor- und Zurückspulen (Taste gedrückt halten) haben keine Windows-Medientaste und werden ignoriert.
 - Lautstärkegesten ändern die eigene Lautstärke der Kopfhörer; mit **Windows-Lautstärke-Sync** folgt die synchronisierte Windows-Lautstärke (siehe [Lautstärke](#volume)).
-- Schalten Sie dies mit **Einstellungen > Kopfhörertasten steuern die Wiedergabe** aus, z. B. wenn ein anderes Programm bereits auf die Medientasten reagiert und sie dadurch doppelt wirken.
+- Schalten Sie dies für ein Gerät mit **Audiogeräte > Tasten des Audiogeräts steuern die Wiedergabe** aus, z. B. wenn ein anderes Programm bereits auf die Medientasten reagiert und sie dadurch doppelt wirken.
 
 Dafür ist AVRCP an den Kopfhörern nötig, was fast alle haben. Ohne AVRCP funktioniert das Streaming wie gewohnt, nur ohne die Tasten.
 
@@ -393,7 +392,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Max. Mediapaketgröße (pro Gerät) {#max-packet}
 
-**Max. Mediapaketgröße** jedes Geräts (**Audiogeräte**; CLI: `--max-packet <bytes>`) legt die Obergrenze für die Audiodaten in jedem Bluetooth-Paket fest, von 679 bis 1679 Bytes, sodass Kopfhörer, die einen anderen Wert benötigen, ihren eigenen erhalten können. Die eigene Grenze der Kopfhörer (MTU) gilt immer zusätzlich; A2DPWB verwendet den kleineren Wert. Die Änderung gilt ab der nächsten Verbindung. Früher war es eine Profileinstellung (unter **Erweitert**): Ein Gerät behält den Wert des Profils, das erhalten blieb (siehe [Codecs](#codecs)); von v1 vor 1.1 gespeicherte Profile übernehmen den Wert, der damals global eingestellt war.
+**Max. Mediapaketgröße** jedes Geräts (**Audiogeräte**; CLI: `--max-packet <bytes>`) legt die Obergrenze für die Audiodaten in jedem Bluetooth-Paket fest, von 679 bis 1679 Bytes, sodass Audiogeräte, die einen anderen Wert benötigen, ihren eigenen erhalten können. Das Feld erscheint im Entwicklermodus (**Einstellungen > Entwicklermodus**) oder solange ein Gerät einen anderen Wert als 1023 hat, damit er zurückgesetzt werden kann; die meisten brauchen es nie. Die eigene Grenze des Audiogeräts (MTU) gilt immer zusätzlich; A2DPWB verwendet den kleineren Wert. Die Änderung gilt ab der nächsten Verbindung. Früher war es eine Profileinstellung (unter **Erweitert**): Ein Gerät behält den Wert des Profils, das erhalten blieb (siehe [Codecs](#codecs)); von v1 vor 1.1 gespeicherte Profile übernehmen den Wert, der damals global eingestellt war.
 
 **1023 (Standard) wird empfohlen.** Dieser Wert passt in ein Bluetooth-Basisbandpaket (3-DH5). Größere Werte sparen nur 1-2 % Overhead, und bei jedem verlorenen Paket geht dann mehr Audio verloren. 679 passt in ein 2-DH5-Paket und ist das Minimum, das LDAC akzeptiert.
 

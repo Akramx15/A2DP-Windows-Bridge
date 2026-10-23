@@ -52,7 +52,7 @@ Les casques et enceintes vers lesquels A2DPWB peut diffuser, chacun avec ses pro
 
 - **Source de capture** : Bouclage système, Périphérique virtuel ou Application (voir [Modes de capture](#capture-modes))
 - **Synchro du volume Windows** (voir [Volume](#volume))
-- **Taille max. des paquets média (octets)** (voir [Taille max. des paquets média](#max-packet))
+- **Taille max. des paquets média (octets)**, en mode développeur (voir [Taille max. des paquets média](#max-packet))
 - **Les boutons de l'appareil audio contrôlent la lecture** et **Mémoriser le volume de l'appareil audio**
 
 ### Diagnostic
@@ -79,14 +79,13 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 |:--------|:---------|
 | Apparence | Langue, thème (Système / Clair / Sombre) |
 | Démarrage | **Démarrer avec Windows** et **Démarrer dans la zone de notification** (voir [Démarrer avec Windows](#autostart)), **Réduire dans la zone de notification** (voir [Zone de notification et volet](#tray)) |
-| Casque | **Boutons du casque contrôlent la lecture** (voir [Boutons du casque](#headphone-buttons)), **Mémoriser le volume du casque** (voir [Volume](#volume)) |
 | Mises à jour | **Rechercher des mises à jour**, **Rechercher les mises à jour au démarrage**, **Inclure les préversions dans les mises à jour** (propose aussi les versions bêta), **Mettre à jour maintenant** (voir [Mises à jour](#updates)) |
-| Avancé | **Mode développeur** (ajoute le test du récepteur au diagnostic et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
+| Avancé | **Mode développeur** (ajoute le test du récepteur au diagnostic, la **Taille max. des paquets média** aux périphériques audio et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
 | À propos d'A2DPWB | Version, licence, licences tierces, **Quitter A2DPWB** |
 
 ### Configuration au premier lancement
 
-Au premier démarrage (aucun profil, ou aucun adaptateur avec WinUSB), A2DPWB ouvre **Configurer A2DPWB** : choisir l'adaptateur, pilote et firmware, trouver vos appareils audio (« Connecter » crée le profil et se connecte). Voir [Installation](setup#first-run). **Paramètres > Lancer la configuration** la rouvre.
+Au premier démarrage (aucun profil, ou aucun adaptateur avec WinUSB), A2DPWB ouvre **Configurer A2DPWB** : choisir l'adaptateur, pilote et firmware, trouver vos appareils audio (« Connecter » crée le profil et se connecte ; cette étape propose aussi **Démarrer avec Windows** et **Démarrer dans la zone de notification**). Voir [Installation](setup#first-run). **Paramètres > Lancer la configuration** la rouvre.
 
 ## Zone de notification et volet {#tray}
 
@@ -239,7 +238,7 @@ Pendant la diffusion, Accueil et le volet de la zone de notification affichent u
 - Avec Auto, l'audio est capturé avant l'application du volume Windows : il n'est donc atténué qu'une seule fois, sur le casque. Si le volume synchronisé modifie aussi l'audio capturé, le volume s'applique deux fois : choisissez alors Désactivé (voir [Applications d'effets à l'échelle du système](#effects-apps)).
 - La coupure du son n'est pas synchronisée : couper le son du périphérique de sortie rend le PC silencieux sans couper le son du casque.
 
-**Paramètres > Mémoriser le volume du casque** (désactivé par défaut) enregistre le volume du casque pour chaque appareil et le réapplique dès la connexion, avant tout envoi d'audio. Sinon, le casque démarre à son propre dernier volume, qui peut être bien plus fort que celui utilisé la dernière fois avec A2DPWB (p. ex. après une utilisation avec un téléphone).
+**Mémoriser le volume de l'appareil audio** (dans **Périphériques audio**, pour chaque appareil ; activé par défaut) enregistre le volume propre à chaque appareil audio et le réapplique dès la connexion, avant tout envoi d'audio : le volume d'un appareil ne se reporte donc pas sur un autre. Désactivez-le pour un appareil pour qu'il démarre à son propre dernier volume, qui peut être bien plus fort que celui utilisé la dernière fois avec A2DPWB (p. ex. après une utilisation avec un téléphone). La mise à jour depuis une version antérieure l'active une fois ; un appareil pour lequel il avait été désactivé le reste.
 
 ### Boutons du casque {#headphone-buttons}
 
@@ -249,7 +248,7 @@ Les commandes lecture/pause, piste suivante et piste précédente du casque (bou
 - A2DPWB indique au casque si de l'audio est en cours de lecture (selon qu'il y a de l'audio à capturer), si bien que les casques qui se mettent en pause quand on les retire envoient la bonne commande.
 - L'avance et le retour rapides (bouton maintenu) n'ont pas de touche multimédia Windows et sont ignorés.
 - Les gestes de volume modifient le volume propre du casque ; avec **Synchro du volume Windows**, le volume Windows synchronisé suit (voir [Volume](#volume)).
-- Désactivez cette fonction avec **Paramètres > Boutons du casque contrôlent la lecture**, p. ex. si un autre programme réagit déjà aux touches multimédias, ce qui les ferait agir deux fois.
+- Désactivez cette fonction pour un appareil avec **Périphériques audio > Les boutons de l'appareil audio contrôlent la lecture**, p. ex. si un autre programme réagit déjà aux touches multimédias, ce qui les ferait agir deux fois.
 
 Cela nécessite que le casque prenne en charge AVRCP, ce qui est le cas de presque tous. Sinon, la diffusion fonctionne normalement, simplement sans les boutons.
 
@@ -393,7 +392,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Taille max. des paquets média (par appareil) {#max-packet}
 
-**Taille max. des paquets média** de chaque appareil (**Périphériques audio** ; CLI : `--max-packet <bytes>`) fixe la limite haute des données audio dans chaque paquet Bluetooth, de 679 à 1679 octets, afin que les casques qui nécessitent une autre valeur puissent avoir la leur. La limite propre au casque (MTU) s'applique toujours aussi ; A2DPWB utilise la plus petite des deux. La modification s'applique à partir de la connexion suivante. C'était auparavant un réglage du profil (sous **Avancé**) : un appareil garde la valeur du profil conservé (voir [Codecs](#codecs)) ; les profils enregistrés par la v1 antérieure à la 1.1 reprennent la valeur qui était alors définie globalement.
+**Taille max. des paquets média** de chaque appareil (**Périphériques audio** ; CLI : `--max-packet <bytes>`) fixe la limite haute des données audio dans chaque paquet Bluetooth, de 679 à 1679 octets, afin que les appareils audio qui nécessitent une autre valeur puissent avoir la leur. Le champ s'affiche en mode développeur (**Paramètres > Mode développeur**), ou tant qu'un appareil a une valeur autre que 1023, pour pouvoir la rétablir ; la plupart des utilisateurs n'en ont jamais besoin. La limite propre à l'appareil audio (MTU) s'applique toujours aussi ; A2DPWB utilise la plus petite des deux. La modification s'applique à partir de la connexion suivante. C'était auparavant un réglage du profil (sous **Avancé**) : un appareil garde la valeur du profil conservé (voir [Codecs](#codecs)) ; les profils enregistrés par la v1 antérieure à la 1.1 reprennent la valeur qui était alors définie globalement.
 
 **1023 (par défaut) est recommandé.** Cette valeur tient dans un paquet de bande de base Bluetooth (3-DH5). Des valeurs plus grandes n'économisent que 1 à 2 % de surcharge, et chaque paquet perdu fait alors perdre davantage d'audio. 679 tient dans un paquet 2-DH5 et est le minimum accepté par LDAC.
 

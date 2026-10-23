@@ -18,7 +18,7 @@ function start(hash: string) {
   mock = new MockCore({ speed: 0, onCall: (method, params) => calls.push({ method, params }) });
   const core = createCore(mock);
   render(() => <App core={core} />);
-  return { calls };
+  return { calls, core };
 }
 
 /** A device's section on the Codecs screen */
@@ -465,10 +465,19 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
 });
 
 describe("the max media packet size (the device's since issue #86)", () => {
-  it("is checked, then saved into the device's profile", async () => {
-    const { calls } = start("#/devices");
+  it("is shown only in developer mode while it has the recommended size", async () => {
+    const { core } = start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
-    const packet = within(entry).getByLabelText(t("advanced.max_packet"));
+    expect(within(entry).queryByLabelText(t("advanced.max_packet"))).toBeNull();
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    expect(await within(entry).findByLabelText(t("advanced.max_packet"))).toHaveValue(1023);
+  });
+
+  it("is checked, then saved into the device's profile", async () => {
+    const { calls, core } = start("#/devices");
+    const entry = await deviceEntry(/WH-1000XM5/);
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    const packet = await within(entry).findByLabelText(t("advanced.max_packet"));
     expect(packet).toHaveValue(1023);
     fireEvent.input(packet, { target: { value: "2000" } });
     fireEvent.change(packet, { target: { value: "2000" } });
@@ -478,6 +487,9 @@ describe("the max media packet size (the device's since issue #86)", () => {
     fireEvent.change(packet, { target: { value: "800" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0].profile).toMatchObject({ name: "WH-1000XM5 (LDAC)", max_media_payload: 800 });
+    // A size changed earlier stays in sight without developer mode, so it can be set back
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: false } });
+    expect(await within(entry).findByLabelText(t("advanced.max_packet"))).toHaveValue(800);
     // Not on the Codecs screen any more
     location.hash = "#/codecs";
     await screen.findByRole("heading", { level: 1, name: t("ui.nav.codecs") });

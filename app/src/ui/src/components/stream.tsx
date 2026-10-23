@@ -26,10 +26,11 @@ export function stateLabel(s: StreamState): string {
   return t(`status.${s}`);
 }
 
-// A reconnect reads as plain connecting, and its end as connected (issue
-// #86); the attempts stay in the log
+// A reconnect or a retry reads as plain connecting, and its end as connected
+// (issue #86): no "1/3" counts; the attempts stay in the log
 const PLAIN_STATUS: Record<string, string> = {
   "status.reconnect_attempt": "status.connecting",
+  "status.connecting_retry": "status.connecting",
   "status.reconnected": "status.connected",
 };
 

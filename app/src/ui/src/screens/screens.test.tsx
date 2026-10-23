@@ -42,7 +42,10 @@ describe("Home", () => {
     expect(xb).toHaveTextContent("Ready");
     expect(xb).toHaveTextContent("Not streaming");
     expect(within(xb).getByRole("button", { name: "Connect" })).toBeInTheDocument();
-    expect(screen.getByRole("slider", { name: "Volume" })).not.toBeDisabled();
+    // The volume is the device's own: on its card only (issue #86)
+    expect(within(wh).getByRole("slider", { name: "Volume" })).not.toBeDisabled();
+    expect(within(xb).queryByRole("slider")).toBeNull();
+    expect(screen.getAllByRole("slider", { name: "Volume" })).toHaveLength(1);
     fireEvent.click(disconnect);
     await within(wh).findByRole("button", { name: "Connect" });
     expect(calls.some((c) => c.method === "stream.stop")).toBe(true);

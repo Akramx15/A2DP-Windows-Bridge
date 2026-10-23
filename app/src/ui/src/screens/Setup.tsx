@@ -3,10 +3,12 @@
 // button switches it to WinUSB and downloads its firmware), 3 find the audio
 // device: the scan starts by itself, and Connect on a device makes its
 // "<name> | Auto" profile and connects with it, so one click is enough.
+// The last step also asks whether A2DPWB starts with Windows.
 
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
 import { errorText, useApp, type AppContext } from "../app/context";
-import { Banner, Button } from "../components/controls";
+import { saveSettings } from "../app/settings";
+import { Banner, Button, Toggle } from "../components/controls";
 import { DevicePicker, saveWithProfile, SCAN_SECONDS } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { CodecBadge, openFirmwareFolder, Ring, statusText } from "../components/stream";
@@ -398,13 +400,37 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
                 <span class="dot" aria-hidden="true" />
                 {statusText(stream())}
               </span>
-              <span class="muted">{t("ui.home.profile_line", p().name)}</span>
               <CodecBadge />
             </div>
           </div>
         )}
       </Show>
       <DevicePicker address="" classicOnly onPick={() => {}} onConnect={(a, n) => void connect(a, n)} connecting={connecting()} />
+      <Startup />
     </div>
+  );
+}
+
+/** Asked during the setup (issue #86): start with Windows, and then only in
+ *  the tray; the same switches as on Settings, saved at once */
+function Startup() {
+  const app = useApp();
+  const s = () => app.core.state.snap!.settings;
+  return (
+    <section class="stack-tight" aria-labelledby="setup-startup">
+      <h3 id="setup-startup">{t("ui.settings.startup")}</h3>
+      <Toggle
+        label={t("settings.start_with_windows")}
+        checked={s().start_with_windows}
+        onChange={(v) => void saveSettings(app, { start_with_windows: v })}
+      />
+      <Toggle
+        label={t("ui.settings.start_minimized")}
+        hint={t("ui.settings.start_minimized_logon")}
+        checked={s().start_minimized}
+        disabled={!s().start_with_windows}
+        onChange={(v) => void saveSettings(app, { start_minimized: v })}
+      />
+    </section>
   );
 }
