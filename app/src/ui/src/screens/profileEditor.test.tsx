@@ -402,37 +402,4 @@ describe("SBC ABR", () => {
     const dialog = await codecSettings("codec.sbc_xq");
     expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).not.toBeChecked();
   });
-  it("SBC's does not turn SBC XQ's on (issue #86)", async () => {
-    start(edit("WH-1000XM5 (LDAC)"));
-    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) }));
-    let dialog = await codecSettings("codec.sbc");
-    fireEvent.change(within(dialog).getByLabelText(t("ui.diag.cd_blocks")), { target: { value: "8" } });
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
-    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    // SBC is chosen with ABR on and 8 blocks; SBC XQ starts from its own
-    dialog = await codecSettings("codec.sbc_xq");
-    expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).not.toBeChecked();
-    expect(within(dialog).getByLabelText(t("ui.diag.cd_blocks"))).toHaveValue("0");
-  });
-});
-
-describe("another device for a profile (issue #86)", () => {
-  const save = async (calls: { method: string; params: unknown }[]) => {
-    fireEvent.click(screen.getByRole("button", { name: t("modal.save") }));
-    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
-    return (calls.find((c) => c.method === "profile.save")!.params as { profile: Record<string, unknown> }).profile;
-  };
-  const otherDevice = async () => {
-    const others = screen.queryByRole("button", { name: t("ui.devices.show_others", 1) });
-    if (others) fireEvent.click(others);
-    fireEvent.click(await screen.findByRole("radio", { name: /SRS-XB13/ }));
-  };
-
-  it("drops a codec the new device did not list: Auto", async () => {
-    const { calls } = start(edit("WH-1000XM5 (LDAC)"));
-    await screen.findByRole("radiogroup", { name: t("connection.codec") });
-    await otherDevice();
-    expect(await save(calls)).toMatchObject({ device_address: "00:1A:7D:DA:71:13", codec: "auto", abr: false });
-  });
 });

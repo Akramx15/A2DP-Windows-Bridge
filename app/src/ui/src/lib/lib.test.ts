@@ -6,7 +6,7 @@ import { abrCarries, bitrateNoteKey, carryToCodec, codecLabelKey, fitToCodec, qu
 import { FlowTracker, stepDetail } from "./flow";
 import { knowAdapters, maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
-import { codecFitsDevice, validateProfile } from "./profile";
+import { validateProfile } from "./profile";
 
 const line = (time_ms: number, message: string, level: LogLine["level"] = "info"): LogLine => ({
   time_ms,
@@ -138,11 +138,6 @@ describe("profiles", () => {
   it("validates before saving", () => {
     const ok = sampleProfile();
     expect(validateProfile(ok, [])).toEqual({});
-    // A codec stays with another device only when that one listed it
-    expect(codecFitsDevice("lhdcv5", ["sbc", "aac", "lhdcv5"])).toBe(true);
-    expect(codecFitsDevice("lhdcv5", ["sbc", "aac"])).toBe(false);
-    expect(codecFitsDevice("lhdcv5", [])).toBe(false);
-    expect(codecFitsDevice("auto", [])).toBe(true);
     expect(validateProfile({ ...ok, name: "  " }, []).name?.key).toBe("ui.profile.err_name_empty");
     expect(validateProfile(ok, [ok.name]).name?.key).toBe("ui.profile.err_name_taken");
     expect(validateProfile({ ...ok, device_address: "" }, []).device?.key).toBe("ui.profile.err_device");

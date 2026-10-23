@@ -20,8 +20,8 @@ import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
 import {
+  abrCarries,
   bitDepths,
-  carryToCodec,
   CODECS,
   codecSpec,
   codecSupport,
@@ -38,9 +38,7 @@ import {
   type CodecSupport,
 } from "../lib/codecs";
 import { knownSbcCaps, SBC_ALLOCATIONS, SBC_BLOCKS, SBC_CHANNEL_MODES, SBC_SUBBANDS, sbcOffered, sbcRate, sbcSetup, type SbcCaps } from "../lib/sbc";
-import { parseAddress } from "../lib/format";
 import {
-  codecFitsDevice,
   defaultProfileName,
   deviceDefaults,
   knownCodecs,
@@ -84,15 +82,7 @@ export function ProfileEditor(props: { original: string | null }) {
     }
   };
   const pickDevice = (address: string, name: string, leAudio: boolean) => {
-    const before = parseAddress(p.device_address);
     setP({ device_address: address, device_name: name });
-    // Another device: the codec chosen for the one before stays only when
-    // this one listed it at its last connection, else Auto (issue #86: an
-    // LHDC profile moved to headphones without LHDC asked them for LHDC)
-    const cur = unwrap(p);
-    if (before !== parseAddress(address) && !codecFitsDevice(cur.codec, knownCodecs(snap().devices, address))) {
-      setP(carryToCodec(cur, "auto"));
-    }
     // The capture source and volume sync are the device's (Audio Devices):
     // a new profile takes them from its other profiles
     const own = deviceDefaults(snap().profiles.filter((x) => x.name !== props.original), address);
@@ -119,9 +109,10 @@ export function ProfileEditor(props: { original: string | null }) {
     if (before) {
       setP(fitToCodec({ ...cur, ...before }));
     } else {
-      // The flag is VBR under AAC, the adaptive bitpool under SBC and SBC
-      // XQ each, ABR elsewhere: not carried across, nor SBC's frame setup
-      setP(carryToCodec(cur, c.id));
+      // The flag is VBR under AAC, the adaptive bitpool under SBC and ABR
+      // elsewhere: not carried across
+      const abr = abrCarries(cur.codec, c.id) ? cur.abr : false;
+      setP(fitToCodec({ ...cur, abr, codec: c.id }));
     }
     followName();
   };
@@ -491,23 +482,20 @@ function CodecSettings(props: {
         if (!s) return;
         const p = s.id === props.profile.codec ? props.profile : (props.kept(s.id) ?? props.profile);
         setV(
-          carryToCodec(
-            {
-              codec: p.codec,
-              // SBC / SBC XQ: no quality to choose, Auto is the highest bitpool
-              quality: s.bitpool ? "hq" : p.quality,
-              sample_rate: p.sample_rate,
-              bit_depth: p.bit_depth,
-              abr: p.abr,
-              sbc_bitpool: p.sbc_bitpool,
-              sbcxq_bitpool: p.sbcxq_bitpool,
-              sbc_blocks: p.sbc_blocks,
-              sbc_subbands: p.sbc_subbands,
-              sbc_allocation: p.sbc_allocation,
-              sbc_channel_mode: p.sbc_channel_mode,
-            },
-            s.id,
-          ),
+          fitToCodec({
+            codec: s.id,
+            // SBC / SBC XQ: no quality to choose, Auto is the highest bitpool
+            quality: s.bitpool ? "hq" : p.quality,
+            sample_rate: p.sample_rate,
+            bit_depth: p.bit_depth,
+            abr: abrCarries(p.codec, s.id) ? p.abr : false,
+            sbc_bitpool: p.sbc_bitpool,
+            sbcxq_bitpool: p.sbcxq_bitpool,
+            sbc_blocks: p.sbc_blocks,
+            sbc_subbands: p.sbc_subbands,
+            sbc_allocation: p.sbc_allocation,
+            sbc_channel_mode: p.sbc_channel_mode,
+          }),
         );
       },
     ),

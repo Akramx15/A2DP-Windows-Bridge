@@ -121,14 +121,6 @@ export function knownCodecs(devices: readonly Device[], address: string): string
 }
 
 /**
- * A codec that a profile can keep for a device: Auto, or one the device
- * listed when it last connected (`known`; empty: not known, so only Auto)
- */
-export function codecFitsDevice(codec: string, known: readonly string[]): boolean {
-  return codec === "auto" || known.includes(codec);
-}
-
-/**
  * A device entry's identity: a dual-mode device has a classic entry and an
  * LE Audio one with the same address
  */
