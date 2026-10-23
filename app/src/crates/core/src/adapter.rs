@@ -151,6 +151,22 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
             );
         }
         config.realtek_pid = pid;
+        // The transport opens the first WinUSB adapter it can: with another
+        // one on WinUSB too (a built-in Intel chosen by mistake), BTstack
+        // would bring that one up with this chip's setup, and its quick init
+        // read as "firmware not loaded". The adapter of this chip goes first.
+        if let TransportConfig::Usb(sel) = &mut config.transport
+            && winusb.len() > 1
+            && let Some(a) = winusb.iter().find(|a| a.realtek_pid == Some(pid) && !a.device.in_use())
+        {
+            tracing::info!(
+                "{} adapters on WinUSB: {:04X}:{:04X} (the Realtek chip's) is opened first",
+                winusb.len(),
+                a.device.vid,
+                a.device.pid
+            );
+            sel.preferred = Some(a.device.instance_id.clone());
+        }
     } else {
         tracing::info!(
             "no Realtek chip {}, skipping the Realtek chipset init",

@@ -112,6 +112,8 @@ pub(crate) struct HostApp {
 
     // ---- init / chipset ----
     init_started: Instant,
+    /// Manufacturer the controller reported in this init (Read Local Version)
+    controller_company: Option<u16>,
     rtk_version_seen: bool,
     rtk_lmp_first: u16,
     rtk_verify_pending: bool,
@@ -177,6 +179,7 @@ impl HostApp {
             sep_sinks_in_use: 0,
             caps: Default::default(),
             init_started: Instant::now(),
+            controller_company: None,
             rtk_version_seen: false,
             rtk_lmp_first: 0,
             rtk_verify_pending: false,
@@ -279,6 +282,7 @@ impl HostApp {
         if pid != 0 {
             stack.enable_custom_pre_init();
         }
+        self.controller_company = None;
         self.rtk_version_seen = false;
         self.rtk_lmp_first = 0;
         self.rtk_verify_pending = false;
@@ -1039,6 +1043,14 @@ impl HostApp {
                     self.rtk_verify_tries = RTK_VERIFY_TRIES;
                     self.verify_realtek_download(stack);
                 }
+            } else if let Some(company) = self.controller_company.filter(|&c| c != COMPANY_ID_REALTEK) {
+                // Another adapter on WinUSB opened instead of the Realtek
+                // one: its quick init says nothing about Realtek firmware
+                tracing::warn!(
+                    "the opened controller is {} (company 0x{company:04X}), not the Realtek chip 0x{:04X} the setup is for: no Realtek firmware check",
+                    crate::chips::company_name(company).unwrap_or("unknown"),
+                    self.setup.realtek_pid
+                );
             } else if elapsed < 500 {
                 tracing::warn!("HCI init took < 500 ms: Realtek firmware likely NOT loaded");
                 self.shared.update(|s| s.realtek_rom = true);
@@ -1085,6 +1097,7 @@ impl HostApp {
             "controller: company 0x{manufacturer:04X} ({}), HCI version {hci_ver}, LMP subversion 0x{lmp_subver:04X}",
             crate::chips::company_name(manufacturer).unwrap_or("unknown")
         );
+        self.controller_company = Some(manufacturer);
         if manufacturer == COMPANY_ID_REALTEK && self.setup.realtek_pid != 0 {
             // The first read of an init comes before the firmware download
             if !self.rtk_version_seen {

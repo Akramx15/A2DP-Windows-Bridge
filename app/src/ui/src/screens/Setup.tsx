@@ -52,7 +52,7 @@ export function Setup() {
   const [step, setStep] = createSignal(0);
   const [chosen, setChosen] = createSignal<string | null>(null);
   const adapter = createMemo<AdapterInfo | null>(() => {
-    const list = snap().adapter.adapters;
+    const list = supportedFirst(snap().adapter.adapters);
     return (
       list.find((a) => a.instance_id === chosen()) ??
       list.find((a) => a.driver === "winusb" && adapterSupported(a)) ??
@@ -149,10 +149,17 @@ export function Setup() {
   );
 }
 
-/** Usable first (the Adapters screen's order), the unsupported ones last */
-function supportedFirst(list: readonly AdapterInfo[]): AdapterInfo[] {
+/** Usable first (the Adapters screen's order), the unsupported ones last;
+ *  with the same driver a Realtek chip goes before the others, so that a
+ *  PC's built-in adapter (often Intel) is not the one chosen by default */
+export function supportedFirst(list: readonly AdapterInfo[]): AdapterInfo[] {
   const usable = usableFirst(list);
-  return [...usable.filter(adapterSupported), ...usable.filter((a) => !adapterSupported(a))];
+  // Stable sort: within usableFirst's driver rank, Realtek first, else as listed
+  const rank = (a: AdapterInfo) => (a.driver === "winusb" ? 0 : a.driver === "none" ? 2 : 1);
+  const supported = usable
+    .filter(adapterSupported)
+    .sort((a, b) => rank(a) - rank(b) || Number(!a.realtek_chip) - Number(!b.realtek_chip));
+  return [...supported, ...usable.filter((a) => !adapterSupported(a))];
 }
 
 function StepAdapter(props: { chosen: AdapterInfo | null; onChoose: (id: string) => void }) {
