@@ -3,6 +3,8 @@
 
 import {
   createEffect,
+  createMemo,
+  createSignal,
   createUniqueId,
   For,
   onCleanup,
@@ -12,6 +14,7 @@ import {
   type JSX,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { t } from "../i18n";
 import { Icon } from "./Icon";
 import type { IconName } from "./icons";
 
@@ -102,6 +105,9 @@ export interface Option<T extends string | number> {
   label: string;
   icon?: IconName;
   disabled?: boolean;
+  /** A Select's options with the same group (next to each other) go under
+   *  one heading */
+  group?: string;
 }
 
 export function Segmented<T extends string | number>(props: {
@@ -133,23 +139,42 @@ export function Segmented<T extends string | number>(props: {
   );
 }
 
-/** A labelled control with an optional hint and error */
+/** A labelled control with an optional hint and error, and the details
+ *  behind an info button (the long explanations, issue #86) */
 export function Field(props: {
   label: string;
   hint?: string;
   error?: string | null;
+  more?: () => JSX.Element;
   children: (id: string, describedBy: string | undefined) => JSX.Element;
 }) {
   const id = createUniqueId();
+  const [open, setOpen] = createSignal(false);
   // Built once: a reactive call would make a new input (and lose the focus
   // and the typed text) whenever the error comes or goes. References to an
   // absent hint or error are ignored by assistive technology.
   const control = untrack(() => props.children(id, `${id}-hint ${id}-err`));
   return (
     <div class="field" classList={{ invalid: !!props.error }}>
-      <label class="field-label" for={id}>
-        {props.label}
-      </label>
+      <div class="field-head">
+        <label class="field-label" for={id}>
+          {props.label}
+        </label>
+        <Show when={props.more}>
+          <button
+            type="button"
+            class="btn btn-icon field-more-btn"
+            classList={{ on: open() }}
+            aria-label={t("ui.more_info", props.label)}
+            title={t("ui.more_info", props.label)}
+            aria-expanded={open()}
+            aria-controls={`${id}-more`}
+            onClick={() => setOpen(!open())}
+          >
+            <Icon name="info" />
+          </button>
+        </Show>
+      </div>
       {control}
       <Show when={props.hint}>
         <span class="hint" id={`${id}-hint`}>
@@ -161,6 +186,11 @@ export function Field(props: {
           <Icon name="error_circle" />
           {props.error}
         </span>
+      </Show>
+      <Show when={props.more && open()}>
+        <div class="field-more" id={`${id}-more`}>
+          {props.more!()}
+        </div>
       </Show>
     </div>
   );
@@ -175,6 +205,22 @@ export function Select<T extends string | number>(props: {
   describedBy?: string;
   onChange: (v: T) => void;
 }) {
+  // Runs of options with the same group: the options stay in order, so the
+  // selected index still finds the option
+  const groups = createMemo(() => {
+    const list: { label?: string; options: Option<T>[] }[] = [];
+    for (const o of props.options) {
+      const last = list[list.length - 1];
+      if (last && last.label === o.group) last.options.push(o);
+      else list.push({ label: o.group, options: [o] });
+    }
+    return list;
+  });
+  const option = (o: Option<T>) => (
+    <option value={String(o.value)} selected={o.value === props.value} disabled={o.disabled}>
+      {o.label}
+    </option>
+  );
   return (
     <div class="select">
       <select
@@ -187,12 +233,16 @@ export function Select<T extends string | number>(props: {
           if (o) props.onChange(o.value);
         }}
       >
-        <For each={props.options}>
-          {(o) => (
-            <option value={String(o.value)} selected={o.value === props.value} disabled={o.disabled}>
-              {o.label}
-            </option>
-          )}
+        <For each={groups()}>
+          {(g) =>
+            g.label === undefined ? (
+              <For each={g.options}>{option}</For>
+            ) : (
+              <optgroup label={g.label}>
+                <For each={g.options}>{option}</For>
+              </optgroup>
+            )
+          }
         </For>
       </select>
       <Icon name="chevron_down" class="select-chevron" />

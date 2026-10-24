@@ -1,12 +1,15 @@
 // One audio device's own settings on the Audio Devices screen (issue #86):
-// what is captured for it, the Windows volume that follows it and, in
+// what is captured for it (one list, as on Home), the Windows volume that
+// follows it and, in
 // developer mode, the max media packet size (kept in its profile: the core
 // reads them from the profile it streams; a device without one gets it with
 // the first change),
 // whether its buttons control playback and whether its volume is
 // remembered (Settings.device_options; the global value until changed).
+// Only what matters is spelled out: the long explanations are behind the
+// info buttons.
 
-import { createEffect, createMemo, createResource, createSignal, on, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
@@ -27,7 +30,8 @@ import {
   profilesOf,
   type DeviceFields,
 } from "../lib/profile";
-import { Banner, Button, Field, IconButton, Segmented, Select, Toggle } from "./controls";
+import { captureChoices, captureText, captureValue, withCapture } from "./CapturePicker";
+import { Banner, Button, Field, IconButton, Select, Toggle, type Option } from "./controls";
 import { Icon } from "./Icon";
 
 export function DeviceSettings(props: { device: Device }) {
@@ -55,19 +59,22 @@ export function DeviceSettings(props: { device: Device }) {
       .request("audio.apps")
       .then(setApps)
       .catch(() => setApps([]));
-  createEffect(
-    on(
-      () => [f.capture_mode, f.volume_sync] as const,
-      ([mode, sync]) => {
-        // Loopback and virtual device: the capture device's format line
-        if ((mode !== "app" || sync === "device") && devices() === null) void loadDevices();
-        if (mode === "app" && apps() === null) void loadApps();
-      },
-    ),
-  );
+  // Both are in the capture source's list; asked again whenever the window
+  // comes back (apps start and stop playing)
+  const load = () => {
+    void loadDevices();
+    void loadApps();
+  };
+  onMount(() => {
+    load();
+    window.addEventListener("focus", load);
+  });
+  onCleanup(() => window.removeEventListener("focus", load));
   const virtualDevices = createMemo(() => (devices() ?? []).filter((d) => d.is_virtual));
   const [appSupport] = createResource(appCaptureSupport);
   const leOnly = () => leEntry() || (profiles().length > 0 && profiles().every((p) => p.le_audio));
+  /** The shown settings as a profile (what Home's capture source list takes) */
+  const shown = (): Profile => ({ ...newestBase(profiles()), ...f, le_audio: leOnly() });
 
   /** Changes the device's settings: into each of its profiles once complete
    *  (a virtual device or an app chosen); a profile in use starts again with
@@ -105,63 +112,76 @@ export function DeviceSettings(props: { device: Device }) {
     void saveSettings(app, { device_options: all });
   };
 
+  /** System Loopback, the virtual devices and the playing apps in one list */
+  const sources = createMemo((): Option<string>[] => {
+    const p = shown();
+    const c = captureChoices(p, devices() ?? [], apps() ?? [], appSupport() !== "no");
+    const virtual: Option<string>[] = c.virtual.map((o) => ({ ...o, group: t("capture.virtual") }));
+    if (virtual.length === 0 && devices() !== null) {
+      virtual.push({ value: "virtual:", label: t("capture.no_virtual_device"), group: t("capture.virtual"), disabled: true });
+    }
+    const list: Option<string>[] = c.apps.map((o) => ({ ...o, group: t("capture.app") }));
+    if (list.length === 0 && apps() !== null && !p.le_audio && appSupport() !== "no") {
+      list.push({ value: "app:", label: t("capture.no_app_playing"), group: t("capture.app"), disabled: true });
+    }
+    return [{ value: "loopback", label: t("capture.loopback") }, ...virtual, ...list];
+  });
+  const chooseSource = (value: string) => {
+    const p = shown();
+    if (value === captureValue(p)) return;
+    const next = withCapture(p, value, devices() ?? [], apps() ?? []);
+    void apply({
+      capture_mode: next.capture_mode,
+      audio_device_id: next.audio_device_id,
+      audio_device_name: next.audio_device_name,
+      app_exe: next.app_exe,
+      app_name: next.app_name,
+    });
+  };
+
   return (
     <div class="device-settings" aria-busy={saving() ? "true" : undefined}>
-      <div class="field">
-        <span class="field-label">{t("capture.mode")}</span>
-        <Segmented
-          label={t("capture.mode")}
-          value={f.capture_mode}
-          options={[
-            { value: "loopback", label: t("capture.loopback"), icon: "speaker_2" },
-            { value: "virtual", label: t("capture.virtual"), icon: "desktop_speaker" },
-            { value: "app", label: t("capture.app"), icon: "window_apps", disabled: leOnly() },
-          ]}
-          onChange={(v) => void apply({ capture_mode: v })}
-        />
-        <p class="hint">
-          {f.capture_mode === "virtual"
-            ? t("capture.hint_virtual")
-            : f.capture_mode === "app"
-              ? t("capture.hint_app")
-              : t("capture.hint_loopback")}
-        </p>
-      </div>
-      <CaptureFormat fields={f} profiles={profiles()} devices={devices()} />
-      <Show when={f.capture_mode === "virtual"}>
-        <Field
-          label={t("capture.audio_device")}
-          hint={t("tooltip.audio_device")}
-          error={f.audio_device_id === "" && devices() !== null ? t("ui.devices.pick_virtual") : null}
-        >
-          {(id, described) => (
-            <Show
-              when={virtualDevices().length > 0 || devices() === null}
-              fallback={
-                <div class="inline">
-                  <span class="muted">{t("capture.no_virtual_device")}</span>
-                  <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
-                    {t("vbcable.download")}
-                  </Button>
-                </div>
-              }
-            >
-              <Select
-                id={id}
-                describedBy={described}
-                value={f.audio_device_id}
-                options={[
-                  { value: "", label: "—", disabled: true },
-                  ...virtualDevices().map((d) => ({ value: d.id, label: d.name })),
-                ]}
-                onChange={(v) => {
-                  const d = virtualDevices().find((x) => x.id === v);
-                  void apply({ audio_device_id: v, audio_device_name: d?.name ?? "" });
-                }}
-              />
+      <Field
+        label={t("capture.mode")}
+        more={() => (
+          <>
+            <p class="hint">
+              {f.capture_mode === "virtual"
+                ? t("capture.hint_virtual")
+                : f.capture_mode === "app"
+                  ? `${t("capture.hint_app")}\n${t("capture.app_hint")}`
+                  : t("capture.hint_loopback")}
+            </p>
+            <Show when={f.capture_mode === "app" && appSupport() !== "yes" && appSupport() !== "no"}>
+              <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
             </Show>
-          )}
-        </Field>
+            <Show when={devices() !== null && virtualDevices().length === 0}>
+              <div class="inline">
+                <span class="hint">{t("capture.no_virtual_device")}</span>
+                <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
+                  {t("vbcable.download")}
+                </Button>
+              </div>
+            </Show>
+          </>
+        )}
+      >
+        {(id, described) => (
+          <div class="inline capture-source">
+            <Icon name={captureText(shown()).icon} />
+            <Select id={id} describedBy={described} value={captureValue(shown())} options={sources()} onChange={chooseSource} />
+            <IconButton icon="arrow_sync" label={t("capture.app_refresh")} onClick={load} />
+          </div>
+        )}
+      </Field>
+      <CaptureFormat fields={f} profiles={profiles()} devices={devices()} />
+      {/* Whether this Windows can capture one app: only the core knows the
+          build for sure (it refuses the stream on an older Windows); the UI
+          asks the WebView's client hints */}
+      <Show when={f.capture_mode === "app" && appSupport() === "no"}>
+        <Banner kind="warn">{t("ui.profile.app_capture_unsupported")}</Banner>
+      </Show>
+      <Show when={f.capture_mode === "virtual"}>
         <Toggle
           label={t("capture.auto_switch")}
           hint={t("tooltip.auto_switch")}
@@ -169,49 +189,11 @@ export function DeviceSettings(props: { device: Device }) {
           onChange={(v) => void apply({ auto_switch_device: v })}
         />
       </Show>
-      <Show when={f.capture_mode === "app"}>
-        {/* Whether this Windows can capture one app: only the core knows
-            the build for sure (it refuses the stream on an older Windows); the UI asks
-            the WebView's client hints and shows a hint without them */}
-        <Show
-          when={appSupport() === "no"}
-          fallback={
-            <Show when={appSupport() !== "yes"}>
-              <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
-            </Show>
-          }
-        >
-          <Banner kind="warn">{t("ui.profile.app_capture_unsupported")}</Banner>
-        </Show>
-        <Field
-          label={t("capture.app_select")}
-          hint={t("capture.app_hint")}
-          error={f.app_exe === "" && apps() !== null ? t("ui.devices.pick_app") : null}
-        >
-          {(id, described) => (
-            <div class="inline">
-              <Select
-                id={id}
-                describedBy={described}
-                value={f.app_exe}
-                disabled={appSupport() === "no"}
-                options={appOptions(apps(), f)}
-                onChange={(v) => {
-                  const a = (apps() ?? []).find((x) => x.exe === v);
-                  void apply({ app_exe: v, app_name: a?.name ?? v });
-                }}
-              />
-              <IconButton
-                icon="arrow_sync"
-                label={t("capture.app_refresh")}
-                disabled={appSupport() === "no"}
-                onClick={() => void loadApps()}
-              />
-            </div>
-          )}
-        </Field>
-      </Show>
-      <Field label={t("capture.volume_sync")} hint={t("tooltip.volume_sync")}>
+      <Field
+        label={t("capture.volume_sync")}
+        hint={t("capture.volume_sync_hint")}
+        more={() => <p class="hint">{t("tooltip.volume_sync")}</p>}
+      >
         {(id, described) => (
           <Select
             id={id}
@@ -220,7 +202,11 @@ export function DeviceSettings(props: { device: Device }) {
             options={[
               { value: "auto", label: t("capture.volume_sync_auto") },
               { value: "off", label: t("capture.volume_sync_off") },
-              ...volumeDevices(devices(), f).map((d) => ({ value: `device:${d.id}`, label: d.name })),
+              ...volumeDevices(devices(), f).map((d) => ({
+                value: `device:${d.id}`,
+                label: d.name,
+                group: t("capture.volume_sync_other"),
+              })),
             ]}
             onChange={(v) => {
               if (v.startsWith("device:")) {
@@ -229,7 +215,6 @@ export function DeviceSettings(props: { device: Device }) {
                 void apply({ volume_sync: "device", volume_device_id: did, volume_device_name: d?.name ?? f.volume_device_name });
               } else {
                 void apply({ volume_sync: v });
-                if (devices() === null) void loadDevices();
               }
             }}
           />
@@ -240,12 +225,19 @@ export function DeviceSettings(props: { device: Device }) {
       <Show when={!leOnly() && (snap().settings.developer_mode || f.max_media_payload !== PACKET_DEFAULT)}>
         <PacketSize value={f.max_media_payload} onChange={(v) => void apply({ max_media_payload: v })} />
       </Show>
-      <Toggle label={t("settings.media_keys")} checked={mediaKeys()} onChange={(v) => setOption({ media_keys: v })} />
-      <Toggle
-        label={t("settings.remember_volume")}
-        checked={rememberVolume()}
-        onChange={(v) => setOption({ remember_volume: v })}
-      />
+      <div>
+        <Toggle
+          label={t("settings.media_keys")}
+          hint={t("tooltip.media_keys")}
+          checked={mediaKeys()}
+          onChange={(v) => setOption({ media_keys: v })}
+        />
+        <Toggle
+          label={t("settings.remember_volume")}
+          checked={rememberVolume()}
+          onChange={(v) => setOption({ remember_volume: v })}
+        />
+      </div>
     </div>
   );
 }
@@ -317,15 +309,6 @@ function PacketSize(props: { value: number; onChange: (v: number) => void }) {
       )}
     </Field>
   );
-}
-
-function appOptions(apps: AudioApp[] | null, f: DeviceFields) {
-  const list = (apps ?? []).map((a) => ({ value: a.exe, label: `${a.name} (${a.exe})` }));
-  // The saved app, also when it is not playing now
-  if (f.app_exe && !list.some((o) => o.value === f.app_exe)) {
-    list.unshift({ value: f.app_exe, label: t("capture.app_not_playing", f.app_name || f.app_exe) });
-  }
-  return [{ value: "", label: "—", disabled: true }, ...list];
 }
 
 function volumeDevices(devices: AudioDevice[] | null, f: DeviceFields): { id: string; name: string }[] {

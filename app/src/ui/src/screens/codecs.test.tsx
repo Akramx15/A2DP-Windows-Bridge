@@ -385,21 +385,35 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(warning).toHaveTextContent(t("ui.profile.format_differs", t("connection.sample_rate")));
   });
 
-  it("is saved into all the device's profiles once complete", async () => {
+  it("lists System Loopback, the virtual devices and the playing apps in one list", async () => {
+    start("#/devices");
+    const entry = await deviceEntry(/WH-1000XM5/);
+    const select = within(entry).getByLabelText(t("capture.mode"));
+    const virtual = await within(select).findByRole("group", { name: t("capture.virtual") });
+    expect(within(virtual).getByRole("option", { name: "CABLE Input (VB-Audio Virtual Cable)" })).toBeInTheDocument();
+    const apps = await within(select).findByRole("group", { name: t("capture.app") });
+    expect(within(apps).getByRole("option", { name: "Spotify" })).toBeInTheDocument();
+    expect(within(select).getByRole("option", { name: t("capture.loopback") })).toBeInTheDocument();
+    // The long explanation is behind the info button
+    expect(within(entry).queryByText(t("capture.hint_loopback"))).toBeNull();
+    fireEvent.click(within(entry).getByRole("button", { name: t("ui.more_info", t("capture.mode")) }));
+    expect(within(entry).getByText(t("capture.hint_loopback"))).toBeInTheDocument();
+  });
+
+  it("is saved into all the device's profiles when chosen", async () => {
     const { calls } = start("#/devices");
     const snap = (await mock!.call("state.snapshot")) as { profiles: { name: string }[] };
     const p = snap.profiles.find((x) => x.name === "WH-1000XM5 (LDAC)")!;
     await mock!.call("profile.save", { profile: { ...p, name: "XM5 AAC", codec: "aac" }, original_name: null });
     const entry = await deviceEntry(/WH-1000XM5/);
     calls.length = 0;
-    fireEvent.click(within(entry).getByRole("radio", { name: t("capture.virtual") }));
-    // Not saved until a virtual device is chosen
-    expect(await within(entry).findByRole("switch", { name: (n) => n.startsWith(t("capture.auto_switch")) })).toBeInTheDocument();
-    expect(calls.some((c) => c.method === "profile.save")).toBe(false);
-    const select = await within(entry).findByLabelText(t("capture.audio_device"));
-    await waitFor(() => expect(within(select).getAllByRole("option").length).toBeGreaterThan(1));
-    fireEvent.change(select, { target: { value: "{0.0.0.00000000}.{cable}" } });
+    expect(within(entry).queryByRole("switch", { name: (n) => n.startsWith(t("capture.auto_switch")) })).toBeNull();
+    const select = within(entry).getByLabelText(t("capture.mode"));
+    await within(select).findByRole("option", { name: "CABLE Input (VB-Audio Virtual Cable)" });
+    fireEvent.change(select, { target: { value: "virtual:{0.0.0.00000000}.{cable}" } });
     await waitFor(() => expect(calls.filter((c) => c.method === "profile.save")).toHaveLength(2));
+    // A virtual device can become the Windows default output
+    expect(await within(entry).findByRole("switch", { name: (n) => n.startsWith(t("capture.auto_switch")) })).toBeInTheDocument();
     for (const c of calls.filter((x) => x.method === "profile.save")) {
       expect((c.params as { profile: Record<string, unknown> }).profile).toMatchObject({
         capture_mode: "virtual",
@@ -412,12 +426,21 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const { calls } = start("#/devices");
     await mock!.call("device.rename", { address: "54:2F:04:4B:29:DC", name: "moto buds+" });
     const entry = await deviceEntry(/moto buds\+/);
-    fireEvent.click(within(entry).getByRole("radio", { name: t("capture.app") }));
+    const select = within(entry).getByLabelText(t("capture.mode"));
+    await within(select).findByRole("option", { name: "Spotify" });
+    // The source it has already: nothing to save
+    fireEvent.change(select, { target: { value: "loopback" } });
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
-    fireEvent.click(within(entry).getByRole("radio", { name: t("capture.loopback") }));
+    fireEvent.change(select, { target: { value: "app:spotify.exe" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0]).toMatchObject({
-      profile: { name: "moto buds+ | Auto", codec: "auto", capture_mode: "loopback", device_address: "54:2F:04:4B:29:DC" },
+      profile: {
+        name: "moto buds+ | Auto",
+        codec: "auto",
+        capture_mode: "app",
+        app_exe: "Spotify.exe",
+        device_address: "54:2F:04:4B:29:DC",
+      },
       original_name: null,
     });
   });
@@ -443,6 +466,7 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
   it("says what application capture needs when the Windows build is not known", async () => {
     start("#/devices");
     const entry = await deviceEntry(/SRS-XB13/);
+    fireEvent.click(within(entry).getByRole("button", { name: t("ui.more_info", t("capture.mode")) }));
     expect(await within(entry).findByText(t("ui.profile.app_capture_requirement"))).toBeInTheDocument();
     expect(within(entry).queryByText(t("ui.profile.app_capture_unsupported"))).toBeNull();
   });
@@ -457,7 +481,9 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
       start("#/devices");
       const entry = await deviceEntry(/SRS-XB13/);
       expect(await within(entry).findByText(t("ui.profile.app_capture_unsupported"))).toBeInTheDocument();
-      expect(within(entry).getByLabelText(t("capture.app_select"))).toBeDisabled();
+      // Only the app it has: no playing app to choose
+      const apps = within(within(entry).getByLabelText(t("capture.mode"))).getByRole("group", { name: t("capture.app") });
+      expect(within(apps).getAllByRole("option")).toHaveLength(1);
     } finally {
       delete (navigator as { userAgentData?: unknown }).userAgentData;
     }
