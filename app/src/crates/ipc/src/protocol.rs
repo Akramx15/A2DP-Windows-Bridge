@@ -602,6 +602,10 @@ pub struct Settings {
     /// each with the codec chosen for it (read when the next stream starts)
     #[serde(default = "yes")]
     pub auto_codec: bool,
+    /// Codecs > Auto's order: codec keys, first picked first (also the way
+    /// a chosen codec falls back). Empty: highest sound quality first.
+    #[serde(default)]
+    pub auto_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]

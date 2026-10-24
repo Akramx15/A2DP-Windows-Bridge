@@ -501,6 +501,7 @@ pub fn run(args: &[String]) -> i32 {
         codec: a.codec,
         codec_fallback: a.fallback,
         experimental_codecs: !a.no_experimental,
+        auto_order: codec::AutoOrder::default(),
         quality: a.quality,
         abr: a.abr,
         sbc_bitpool: a.sbc_bitpool,

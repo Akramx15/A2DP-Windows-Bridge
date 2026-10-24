@@ -273,6 +273,9 @@ result. Listing adapters and their driver needs no elevation.
   the `auto_codec` setting is on (Codecs > Auto-select the codec with the
   highest quality, one setting for every device since schema 5); the codec
   chosen for the device stays in its profile for when it is off
+- Follows Auto's order as the user set it (`auto_order`, Codecs > Auto's
+  order; `codec::AutoOrder`, empty for highest sound quality first), for
+  Auto's pick and for the fallback of a chosen codec
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
   advertises; WASAPI resamples the capture); aptX Adaptive uses 48 kHz, or
   96 kHz when the profile asks for it in High / Standard / Mobile and the sink
