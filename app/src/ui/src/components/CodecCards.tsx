@@ -1,6 +1,7 @@
 // The codec cards of the Codecs screen: one codec with its three
 // comparison bars and whether the device supported it when it last
-// connected, and behind "..." that codec's quality, sample rate, bit depth
+// connected (green / red, issue #86), and behind "..." that codec's
+// quality, sample rate, bit depth
 // and ABR (SBC and SBC XQ: bitpool and frame setup). The codecs offered
 // and what they can be set to come from lib/codecs.ts.
 
@@ -32,6 +33,9 @@ export function CodecCard(props: {
   group: string;
   selected: boolean;
   disabled?: boolean;
+  /** Auto chooses (issue #86): the card only shows whether Auto picked it,
+   *  without its settings */
+  readOnly?: boolean;
   support: CodecSupport | null;
   onPick: () => void;
   onSettings: () => void;
@@ -48,13 +52,13 @@ export function CodecCard(props: {
   return (
     // The button is beside the label, not in it: the radio's name stays the codec's
     <div class="codec-cell">
-      <label class="codec-card" classList={{ on: props.selected }}>
+      <label class="codec-card" classList={{ on: props.selected, ro: props.readOnly }}>
         <input
           type="radio"
           name={props.group}
           value={props.spec.id}
           checked={props.selected}
-          disabled={props.disabled}
+          disabled={props.disabled || props.readOnly}
           onChange={() => props.onPick()}
         />
         <span class="codec-card-name">{name()}</span>
@@ -62,14 +66,14 @@ export function CodecCard(props: {
         <Show when={props.support !== "unknown" && props.support}>
           {(s) => (
             <span>
-              <span class="tag">
+              <span class={`tag ${s() === "offered" ? "st-good" : "st-bad"}`}>
                 <Icon name={s() === "offered" ? "checkmark" : "dismiss"} />
                 {s() === "offered" ? t("ui.profile.codec_supported") : t("ui.profile.codec_not_supported")}
               </span>
             </span>
           )}
         </Show>
-        <Show when={props.spec.bars} fallback={<span class="muted codec-card-desc">{t("ui.codec.auto_desc")}</span>}>
+        <Show when={props.spec.bars}>
           {(b) => (
             <>
               {bar(t("ui.codec.bar_quality"), b().quality)}
@@ -79,13 +83,15 @@ export function CodecCard(props: {
           )}
         </Show>
       </label>
-      <IconButton
-        icon="more_horizontal"
-        class="codec-more"
-        label={t("ui.profile.codec_settings", name())}
-        aria-haspopup="dialog"
-        onClick={() => props.onSettings()}
-      />
+      <Show when={!props.readOnly}>
+        <IconButton
+          icon="more_horizontal"
+          class="codec-more"
+          label={t("ui.profile.codec_settings", name())}
+          aria-haspopup="dialog"
+          onClick={() => props.onSettings()}
+        />
+      </Show>
     </div>
   );
 }

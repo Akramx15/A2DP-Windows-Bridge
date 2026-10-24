@@ -57,8 +57,8 @@ pub enum CodecKind {
     /// choice
     Opus05,
     /// aptX Adaptive (vendor 0x000000D7 / codec 0x00AD), 48 kHz stereo, HQ
-    /// or low latency ([`Quality::LowLatency`]); experimental, never Auto's
-    /// choice
+    /// or low latency ([`Quality::LowLatency`]); experimental, Auto's choice
+    /// after LHDC V5 and LDAC (issue #86)
     AptxAdaptive,
 }
 
@@ -78,31 +78,41 @@ impl CodecKind {
         CodecKind::AptxAdaptive,
     ];
 
-    /// The choice of "Auto", best first. LHDC V5 stays below the aptX family
-    /// and above AAC / SBC, as in v1. Opus (Android's A2DP Opus, 256 kbps
-    /// stereo) comes next: above AAC, which it matches or beats at the same
-    /// bit rate with less codec delay (26.5 ms: a 20 ms frame and 6.5 ms
-    /// look-ahead, against AAC-LC's ~43 ms), but below the codecs sinks have
-    /// shipped for years (sink-side Opus implementations are new and few).
-    /// SBC XQ goes just above SBC: it carries more bits than AAC at 256 kbps,
-    /// but AAC sounds better per bit and sinks that offer AAC are tuned for
-    /// it. FastStream is not here: it sounds worse than SBC, so it is used
-    /// only when chosen. Neither is Opus 05: only PipeWire implements it
-    /// (as a sink too), it is not verified with one, and a PipeWire sink
-    /// offers Android's Opus as well from PipeWire 1.2 on. Nor is aptX
-    /// Adaptive: its encoder is new and not yet heard on a headset, and
-    /// headphones that have it offer classic aptX (or better) too.
-    pub const AUTO_PRIORITY: [CodecKind; 9] = [
-        CodecKind::Ldac,
-        CodecKind::AptxHd,
-        CodecKind::AptxLl,
-        CodecKind::Aptx,
+    /// The choice of "Auto", highest sound quality first (issue #86): LHDC
+    /// V5, LDAC, aptX Adaptive, Opus (Android's A2DP Opus, 256 kbps stereo),
+    /// aptX HD, aptX, then aptX Low Latency (aptX's bit rate, for latency),
+    /// AAC, SBC XQ and SBC. SBC XQ stays below AAC: it carries more bits,
+    /// but AAC sounds better per bit and SBC XQ has trouble with some
+    /// frequencies. A chosen codec the device does not offer falls back
+    /// down this list ([`caps::choose`]). FastStream is not here: it sounds
+    /// worse than SBC, so it is used only when chosen. Neither is Opus 05:
+    /// only PipeWire implements it (as a sink too), it is not verified with
+    /// one, and a PipeWire sink offers Android's Opus as well from PipeWire
+    /// 1.2 on.
+    pub const AUTO_PRIORITY: [CodecKind; 10] = [
         CodecKind::LhdcV5,
+        CodecKind::Ldac,
+        CodecKind::AptxAdaptive,
         CodecKind::Opus,
+        CodecKind::AptxHd,
+        CodecKind::Aptx,
+        CodecKind::AptxLl,
         CodecKind::Aac,
         CodecKind::SbcXq,
         CodecKind::Sbc,
     ];
+
+    /// Where the codec stands in [`CodecKind::AUTO_PRIORITY`] (0 = best).
+    /// Opus 05 stands with Opus and FastStream below SBC, so a fallback from
+    /// them still goes down the list.
+    pub fn quality_rank(self) -> usize {
+        let at = |k: CodecKind| CodecKind::AUTO_PRIORITY.iter().position(|&c| c == k).unwrap_or(0);
+        match self {
+            CodecKind::Opus05 => at(CodecKind::Opus),
+            CodecKind::FastStream => CodecKind::AUTO_PRIORITY.len(),
+            k => at(k),
+        }
+    }
 
     /// Display name (as v1 shows it)
     pub fn name(self) -> &'static str {

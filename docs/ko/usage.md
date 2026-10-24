@@ -128,7 +128,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz)
 ```
 
-자동 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (실험적) > AAC > SBC XQ > SBC (FastStream, Opus 05, aptX Adaptive는 모두 실험적이며 직접 선택한 경우에만)
+자동 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 모두 실험적이며 직접 선택한 경우에만)
 
 요청한 코덱을 헤드폰이 제공하지 않으면 CLI는 그 이유를 알려 주는 오류와 함께 중지합니다. 헤드폰이 제공하는 최적의 코덱을 사용하려면 `-c auto`(기본값)를 사용하십시오. 자동은 aptX Adaptive를 선택하지 않으므로 `-c aptxad`를 사용하십시오. [aptX 계열과 aptX Adaptive](#aptx-compatibility)를 참조하십시오.
 
@@ -340,7 +340,7 @@ A2DPWB가 연결하면 헤드폰은 **코덱 목록**(AVDTP 스트림 엔드포�
 - **헤드폰이 기본 aptX도 제공하는 경우** -- Qualcomm이 aptX Adaptive를 aptX / aptX HD와 하위 호환된다고 홍보하기 때문에 많은 aptX Adaptive 헤드폰이 그렇습니다. 이 경우 A2DPWB는 기본 aptX를 직접 선택합니다. 이는 헤드폰 목록에 있는 별도 코덱이며, aptX Adaptive의 축소 모드가 아닙니다.
 - **헤드폰이 aptX Adaptive만 제공하는 경우** (기본 aptX, aptX HD, aptX LL 없음) -- aptX Adaptive(실험적)를 직접 선택하십시오. 자동은 우선순위에서 다음 코덱, 보통 AAC 또는 SBC를 선택합니다.
 
-자동 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (실험적) > AAC > SBC XQ > SBC (FastStream, Opus 05, aptX Adaptive는 모두 실험적이며 직접 선택한 경우에만)
+자동 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 모두 실험적이며 직접 선택한 경우에만)
 
 ### 명시적으로 선택한 코덱을 제공하지 않는 경우 {#codec-fallback}
 

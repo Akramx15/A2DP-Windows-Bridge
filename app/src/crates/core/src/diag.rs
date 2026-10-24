@@ -1412,11 +1412,10 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
             let auto_or = |v: u32| if v == 0 { "auto".to_string() } else { v.to_string() };
             let _ = writeln!(
                 out,
-                "  Codec: {}, quality {}, ABR {}, fallback {}, sample rate {}, bit depth {}",
+                "  Codec: {}, quality {}, ABR {}, sample rate {}, bit depth {}",
                 p.codec,
                 p.quality,
                 on_off(p.abr),
-                on_off(p.codec_fallback),
                 auto_or(p.sample_rate),
                 auto_or(p.bit_depth)
             );
@@ -2188,7 +2187,7 @@ mod tests {
         assert!(text.contains("  Device: <device-1> [<addr-1>]\n"), "{text}");
         assert!(!text.contains("00:1A:7D"), "{text}");
         assert!(!text.contains("WH-1000XM4"), "{text}");
-        assert!(text.contains("  Codec: ldac, quality hq, ABR off, fallback on, sample rate auto, bit depth auto\n"));
+        assert!(text.contains("  Codec: ldac, quality hq, ABR off, sample rate auto, bit depth auto\n"));
         assert!(text.contains("  LDAC 48000 Hz 2 ch, 990 kbps; source 48000 Hz 2 ch 32 bit\n"));
         assert!(text.contains("  Source: app 'Spotify.exe' (waiting for the app to start)\n"));
         assert!(text.contains(

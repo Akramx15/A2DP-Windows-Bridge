@@ -102,7 +102,7 @@ export const CODECS: CodecSpec[] = [
   { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
   { id: "aptxll", label: "codec.aptx_ll", bars: { quality: 2, latency: 5, stability: 4 }, qualities: [], abr: false, hiRes: false },
   {
-    // aptX Adaptive (experimental, never picked by Auto): the levels with an
+    // aptX Adaptive (experimental): the levels with an
     // R1 sink (an R2 sink: 427 / 364 -> 340 / 270), 48 kHz; ABR steps between
     // Mobile and the quality chosen; Low Latency has a fixed bit rate
     id: "aptxad",
@@ -237,6 +237,51 @@ export function codecSupport(codec: string, known: readonly string[]): CodecSupp
   if (codec === "auto") return "offered";
   const id = codec.toLowerCase();
   return known.some((k) => k.toLowerCase() === id) ? "offered" : "not_offered";
+}
+
+/**
+ * Auto's choice, highest sound quality first (core: CodecKind::AUTO_PRIORITY,
+ * issue #86). FastStream and Opus 05 are used only when chosen.
+ */
+export const AUTO_ORDER: readonly CodecId[] = [
+  "lhdcv5",
+  "ldac",
+  "aptxad",
+  "opus",
+  "aptxhd",
+  "aptx",
+  "aptxll",
+  "aac",
+  "sbcxq",
+  "sbc",
+];
+
+/** Where a codec stands in AUTO_ORDER; Opus 05 stands with Opus, FastStream below SBC */
+export function qualityRank(codec: string): number {
+  if (codec === "opus05") return AUTO_ORDER.indexOf("opus");
+  const i = AUTO_ORDER.indexOf(codec as CodecId);
+  return i < 0 ? AUTO_ORDER.length : i;
+}
+
+/** The codec Auto picks among those a device offers (`known`, as Device.codecs); null when not known */
+export function autoPick(known: readonly string[]): CodecId | null {
+  return AUTO_ORDER.find((c) => codecSupport(c, known) === "offered") ?? null;
+}
+
+/**
+ * The codec a connection uses for `codec` chosen on a device that offers
+ * `known` (core: caps::choose with the fallback every profile has): the
+ * codec itself when offered, else the next one below it in AUTO_ORDER the
+ * device offers, else the best it offers. Auto: what Auto picks. Null when
+ * the device's codecs are not known yet.
+ */
+export function effectiveCodec(codec: string, known: readonly string[]): CodecId | null {
+  if (known.length === 0) return null;
+  if (codec === "auto") return autoPick(known);
+  if (codecSupport(codec, known) === "offered") return codec as CodecId;
+  const listed = AUTO_ORDER.includes(codec as CodecId);
+  const below = AUTO_ORDER.slice(qualityRank(codec) + (listed ? 1 : 0)).find((c) => codecSupport(c, known) === "offered");
+  return below ?? autoPick(known);
 }
 
 export function sampleRates(codec: string): number[] {

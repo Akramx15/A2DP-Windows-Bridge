@@ -345,6 +345,7 @@ export function toneParams(p: Profile): ParamsOf<"stream.start_custom"> {
     source: "tone",
     max_media_payload: p.max_media_payload || null,
     abr: p.abr,
-    codec_fallback: p.codec_fallback,
+    // As a profile: a codec the device does not offer falls back (issue #86)
+    codec_fallback: true,
   };
 }

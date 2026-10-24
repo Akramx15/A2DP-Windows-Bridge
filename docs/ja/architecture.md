@@ -317,4 +317,4 @@ AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用�
 - **セカンドアダプター推奨**: Windows には内蔵 Bluetooth、A2DPWB には専用 USB アダプターを使用
 - 一部の Bluetooth アダプターのファームウェアは達成可能なビットレートを制限する場合がある
 - USB Bluetooth 5.0 以上のアダプターは LDAC に適している
-- 自動コーデック選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream、Opus 05、aptX Adaptive は明示的に選んだときだけ）
+- 自動コーデック選択の優先順位: LHDC V5 > LDAC > aptX Adaptive > Opus（試験的） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream、Opus 05 は明示的に選んだときだけ）

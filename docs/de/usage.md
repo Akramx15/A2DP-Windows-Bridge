@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 von PipeWire (
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimentell; 48 kHz)
 ```
 
-Priorität bei automatischer Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimentell) > AAC > SBC XQ > SBC (FastStream, Opus 05 und aptX Adaptive, alle experimentell, nur wenn ausdrücklich gewählt)
+Priorität bei automatischer Auswahl: LHDC V5 > LDAC > aptX Adaptive > Opus (experimentell) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream und Opus 05, beide experimentell, nur wenn ausdrücklich gewählt)
 
 Bieten die Kopfhörer den angeforderten Codec nicht an, bricht die CLI mit einem Fehler ab, der den Grund nennt; verwenden Sie `-c auto` (Standard), um den besten angebotenen Codec zu nehmen. Automatisch wählt aptX Adaptive nie; verwenden Sie `-c aptxad` -- siehe [aptX-Familie und aptX Adaptive](#aptx-compatibility).
 
@@ -341,7 +341,7 @@ Beim Verbinden melden die Kopfhörer eine **Liste von Codecs** (AVDTP-Stream-End
 - **Die Kopfhörer führen zusätzlich klassisches aptX auf** -- Viele aptX-Adaptive-Kopfhörer tun das, weil Qualcomm aptX Adaptive als abwärtskompatibel zu aptX / aptX HD bewirbt. In diesem Fall wählt A2DPWB direkt klassisches aptX; es ist ein eigener Codec in der Liste der Kopfhörer, kein reduzierter Modus von aptX Adaptive.
 - **Die Kopfhörer führen nur aptX Adaptive auf** (kein klassisches aptX, aptX HD oder aptX LL) -- wählen Sie aptX Adaptive ausdrücklich (experimentell). Automatisch wählt den nächsten Codec in der Prioritätsreihenfolge, meist AAC oder SBC.
 
-Priorität bei automatischer Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimentell) > AAC > SBC XQ > SBC (FastStream, Opus 05 und aptX Adaptive, alle experimentell, nur wenn ausdrücklich gewählt)
+Priorität bei automatischer Auswahl: LHDC V5 > LDAC > aptX Adaptive > Opus (experimentell) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream und Opus 05, beide experimentell, nur wenn ausdrücklich gewählt)
 
 ### Ausdrücklich gewählter Codec wird nicht angeboten {#codec-fallback}
 
