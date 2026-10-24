@@ -317,4 +317,4 @@ AAC 和 SBC 使用 A2DP 规范中定义的标准 A2DP 编解码器 ID。
 - **建议使用第二个适配器**：内置 Bluetooth 留给 Windows 使用，专用 USB 适配器用于 A2DPWB
 - 某些 Bluetooth 适配器的固件会限制可达到的比特率
 - USB Bluetooth 5.0+ 适配器通常能很好地支持 LDAC
-- 自动选择编解码器的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream、Opus 05 和 aptX Adaptive 仅在明确选择时使用）
+- 自动选择编解码器的优先级：LHDC V5 > LDAC > aptX Adaptive > Opus（实验性）> aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 和 Opus 05 仅在明确选择时使用）

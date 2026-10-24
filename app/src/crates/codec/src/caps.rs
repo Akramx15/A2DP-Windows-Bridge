@@ -951,6 +951,16 @@ impl RemoteCaps {
         CodecKind::AUTO_PRIORITY.into_iter().find(|&k| k.available() && self.has(k))
     }
 
+    /// The best codec both sides have below `kind` in Auto's order (a
+    /// fallback for it; Opus 05's is Opus or below)
+    pub fn below(&self, kind: CodecKind) -> Option<CodecKind> {
+        let listed = CodecKind::AUTO_PRIORITY.contains(&kind);
+        CodecKind::AUTO_PRIORITY
+            .into_iter()
+            .skip(kind.quality_rank() + usize::from(listed))
+            .find(|&k| k.available() && self.has(k))
+    }
+
     /// Capture rate for the aptX family: 44.1 or 48 kHz as the remote lists
     /// them, preferring `wanted` (other rates: 48k, then 44.1k)
     pub fn pick_aptx_sample_rate(&self, kind: CodecKind, wanted: u32) -> u32 {
@@ -1335,8 +1345,10 @@ pub struct Choice {
     pub replaced: Option<(CodecKind, Unavailable)>,
 }
 
-/// Picks the codec for `requested` (None = Auto). Without `fallback`, a
-/// requested codec the device does not offer is an error.
+/// Picks the codec for `requested` (None = Auto). A requested codec the
+/// device does not offer is replaced, with `fallback`, by the next one below
+/// it in [`CodecKind::AUTO_PRIORITY`] the device offers (else the best it
+/// offers); without, it is an error.
 pub fn choose(
     caps: &RemoteCaps,
     requested: Option<CodecKind>,
@@ -1355,7 +1367,7 @@ pub fn choose(
     } else {
         Unavailable::NotSupported
     };
-    if fallback && let Some(kind) = caps.best() {
+    if fallback && let Some(kind) = caps.below(wanted).or_else(|| caps.best()) {
         return Ok(Choice { kind, replaced: Some((wanted, why)) });
     }
     Err(Some((wanted, why)))
@@ -1407,6 +1419,51 @@ mod tests {
         assert_eq!(u16::from_le_bytes([v[11], v[12]]), 1000);
         assert_eq!(v[13], APTXLL_SRA_MAX_RATE);
         assert_eq!(u16::from_le_bytes([v[15], v[16]]), APTXLL_GOOD_LEVEL);
+    }
+
+    #[test]
+    fn auto_order_is_by_sound_quality() {
+        use CodecKind::*;
+        assert_eq!(CodecKind::AUTO_PRIORITY, [LhdcV5, Ldac, AptxAdaptive, Opus, AptxHd, Aptx, AptxLl, Aac, SbcXq, Sbc]);
+        assert!(LhdcV5.quality_rank() < Ldac.quality_rank());
+        assert_eq!(Opus05.quality_rank(), Opus.quality_rank());
+        assert_eq!(FastStream.quality_rank(), CodecKind::AUTO_PRIORITY.len());
+    }
+
+    #[test]
+    fn fallback_goes_to_the_next_lower_codec() {
+        use CodecKind::*;
+        // SBC, AAC, aptX and LDAC (no aptX HD, no LHDC)
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        caps.add_aac(2);
+        caps.add_vendor(3, &[0x4F, 0, 0, 0, 0x01, 0x00, 0x22]);
+        caps.add_vendor(4, &[0x2D, 0x01, 0, 0, 0xAA, 0x00, 0x3C, 0x07]);
+        let fell = |want| choose(&caps, Some(want), true).unwrap().kind;
+        if Ldac.available() {
+            // LHDC missing: LDAC, the next one down (not "the best" by chance)
+            assert_eq!(fell(LhdcV5), Ldac);
+        }
+        if Aptx.available() {
+            // aptX HD missing: aptX, below it; LDAC above is not taken
+            assert_eq!(fell(AptxHd), Aptx);
+            // Opus missing: aptX (aptX HD is missing too)
+            assert_eq!(fell(Opus), Aptx);
+        }
+        // An offered codec is taken as it is
+        assert_eq!(fell(Sbc), Sbc);
+        // Nothing offered below the codec: the best there is (FastStream
+        // stands below SBC)
+        assert_eq!(fell(FastStream), caps.best().unwrap());
+        let r = choose(&caps, Some(SbcXq), true).unwrap();
+        assert_eq!(r.kind, Sbc);
+        assert_eq!(r.replaced, Some((SbcXq, Unavailable::NotSupported)));
+        // Only SBC: whatever was asked for ends there
+        let mut sbc = RemoteCaps::default();
+        sbc.add_sbc(1);
+        for k in CodecKind::ALL {
+            assert_eq!(choose(&sbc, Some(k), true).unwrap().kind, Sbc, "{k}");
+        }
     }
 
     #[test]
@@ -1892,10 +1949,10 @@ mod tests {
             caps.configuration(CodecKind::Opus, 44100, 2, 16),
             Err(ConfigError::SampleRate(CodecKind::Opus, 44100))
         );
-        // LDAC and the aptX family still win Auto
+        // Opus is above the aptX family in Auto's order (issue #86)
         caps.add_vendor(3, &[0x4F, 0, 0, 0, 0x01, 0x00, 0x22]);
-        if CodecKind::Aptx.available() {
-            assert_eq!(caps.best(), Some(CodecKind::Aptx));
+        if CodecKind::Opus.available() {
+            assert_eq!(caps.best(), Some(CodecKind::Opus));
         }
 
         // PipeWire's capabilities: 10 + 20 ms, mono / stereo / dual mono
@@ -2085,8 +2142,8 @@ mod tests {
             assert_eq!(caps.add_vendor(9, info), VendorCapability::Taken(CodecKind::AptxAdaptive));
             assert!(caps.aptx_adaptive && caps.has(CodecKind::AptxAdaptive));
             assert!(!caps.aptxad_r2());
-            // Not Auto's choice
-            assert_eq!(caps.best(), Some(CodecKind::Sbc));
+            // Auto's choice above SBC (issue #86)
+            assert_eq!(caps.best(), Some(CodecKind::AptxAdaptive));
             // Upstream's verified configuration for the Px7 S2e: 48 kHz from
             // a host encoder (0x12), stereo, the sink's latencies with LL0
             // raised to 80 ms and the zero HQ byte to 200 ms

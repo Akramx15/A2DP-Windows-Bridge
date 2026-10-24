@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 de PipeWire (e
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (expérimental ; 48 kHz)
 ```
 
-Priorité du choix automatique : LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (expérimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 et aptX Adaptive, tous expérimentaux, uniquement s'ils sont choisis)
+Priorité du choix automatique : LHDC V5 > LDAC > aptX Adaptive > Opus (expérimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream et Opus 05, tous deux expérimentaux, uniquement s'ils sont choisis)
 
 Si le casque ne propose pas le codec demandé, la CLI s'arrête sur une erreur qui en indique la raison ; utilisez `-c auto` (par défaut) pour prendre le meilleur codec qu'il propose. Auto ne choisit jamais aptX Adaptive ; utilisez `-c aptxad` -- voir [Famille aptX et aptX Adaptive](#aptx-compatibility).
 
@@ -341,7 +341,7 @@ Lorsque A2DPWB se connecte, le casque annonce une **liste de codecs** (stream en
 - **Le casque propose aussi l'aptX classique** -- C'est le cas de nombreux casques aptX Adaptive, car Qualcomm présente l'aptX Adaptive comme rétrocompatible avec l'aptX / aptX HD. A2DPWB choisit alors directement l'aptX classique ; c'est un codec distinct dans la liste du casque, et non un mode réduit de l'aptX Adaptive.
 - **Le casque ne propose que l'aptX Adaptive** (ni aptX classique, ni aptX HD, ni aptX LL) -- choisissez explicitement l'aptX Adaptive (expérimental). Auto choisit le codec suivant dans l'ordre de priorité, généralement AAC ou SBC.
 
-Priorité du choix automatique : LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (expérimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 et aptX Adaptive, tous expérimentaux, uniquement s'ils sont choisis)
+Priorité du choix automatique : LHDC V5 > LDAC > aptX Adaptive > Opus (expérimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream et Opus 05, tous deux expérimentaux, uniquement s'ils sont choisis)
 
 ### Codec choisi explicitement mais non proposé {#codec-fallback}
 

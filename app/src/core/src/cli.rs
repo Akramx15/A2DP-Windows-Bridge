@@ -37,6 +37,9 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   -c <codec>           ldac, aptxhd, aptxll, aptx, aptxad, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream, auto (default)
   -q <quality>          hq (default), sq, mq; mhq for LHDC V5; ll (low latency) for aptX Adaptive
   -a                    adaptive bit rate (LDAC, LHDC V5, aptX Adaptive; SBC / SBC XQ: bitpool)
+  --fallback            a codec -c the device does not offer falls back to the
+                        next one below it in quality (as a profile), instead of
+                        an error
   -m <mode>             capture: loopback (default), virtual, app
   --audio-device <id>   render device for -m virtual
   --app <exe>           executable for -m app
@@ -92,6 +95,8 @@ struct Args {
     codec: Option<CodecKind>,
     quality: Quality,
     abr: bool,
+    /// --fallback: a codec the device does not offer falls back, as a profile's
+    fallback: bool,
     mode: String,
     audio_device: String,
     app: String,
@@ -161,6 +166,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         codec: None,
         quality: Quality::High,
         abr: false,
+        fallback: false,
         mode: "loopback".into(),
         audio_device: String::new(),
         app: String::new(),
@@ -206,6 +212,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
             "-q" => a.quality = Quality::from_key(&value(&mut it, "-q")?.to_lowercase()),
             "-a" => a.abr = true,
+            "--fallback" => a.fallback = true,
             "-m" => a.mode = value(&mut it, "-m")?.to_lowercase(),
             "--audio-device" => a.audio_device = value(&mut it, "--audio-device")?,
             "--app" => a.app = value(&mut it, "--app")?,
@@ -485,7 +492,7 @@ pub fn run(args: &[String]) -> i32 {
         device,
         device_name,
         codec: a.codec,
-        codec_fallback: false,
+        codec_fallback: a.fallback,
         quality: a.quality,
         abr: a.abr,
         sbc_bitpool: a.sbc_bitpool,

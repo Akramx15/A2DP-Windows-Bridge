@@ -1,7 +1,11 @@
 // Codecs (issue #86, it replaced Profiles): each saved audio device with
-// its codec cards, Auto and the codecs it offered when it last connected
-// (the others hidden unless asked for), each with its settings behind
-// "...". Choosing a card is choosing that device's codec: it changes the
+// its codec cards, the codecs it offered when it last connected in green
+// and the others in red (hidden unless asked for), each with its settings
+// behind "...". Each device has "Auto select the highest supported codec in
+// quality" (its profile's codec "auto"): on, the cards only show what Auto
+// picks; off, choosing a card is choosing that device's codec, and a codec
+// the device does not offer falls back to the next one below it in
+// quality (lib/codecs.ts AUTO_ORDER, as the core). Either changes the
 // device's profile (made when first needed; the core keeps one per device
 // and starts a stream in use again with it). What belongs to the device
 // rather than the codec (capture source, volume sync, packet size) is on
@@ -11,17 +15,19 @@ import { createSignal, For, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
-import { Banner, Button, Check } from "../components/controls";
+import { Banner, Button, Check, Toggle } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
-import { CODECS, codecSpec, codecSupport, type CodecSpec } from "../lib/codecs";
+import { CODECS, codecLabelKey, codecSpec, codecSupport, effectiveCodec, qualityRank, type CodecSpec } from "../lib/codecs";
 import {
   audioEntries,
   entryBase,
   entryByKey,
   followedName,
   knownCodecs,
+  codecValues,
+  newProfile,
   normalizeProfile,
   withCodec,
   type AudioEntry,
@@ -78,44 +84,17 @@ export function Codecs() {
     if (e.le_audio) return 0;
     const known = knownCodecs(snap().devices, e.address);
     const chosen = e.profile?.codec ?? "auto";
-    return CODECS.filter((c) => c.id !== chosen && codecSupport(c.id, known) === "not_offered").length;
+    return CODECS.filter((c) => c.id !== "auto" && c.id !== chosen && codecSupport(c.id, known) === "not_offered").length;
   };
   const hidden = () => entries().reduce((n, e) => n + hiddenOf(e), 0);
-  // The fallback is each profile's; the check box sets it in all of them
-  const classic = () => snap().profiles.filter((p) => !p.le_audio);
-  const fallback = () => classic().length === 0 || classic().every((p) => p.codec_fallback);
-  const [savingAll, setSavingAll] = createSignal(false);
-  const setFallback = async (v: boolean) => {
-    setSavingAll(true);
-    for (const p of classic()) {
-      if (p.codec_fallback === v) continue;
-      const ok = await app.run(() =>
-        core.request("profile.save", { profile: { ...structuredClone(unwrap(p)), codec_fallback: v }, original_name: p.name }),
-      );
-      if (!ok) break;
-    }
-    setSavingAll(false);
-  };
 
   return (
     <div class="page codecs">
       <header class="page-head">
         <h1>{t("ui.nav.codecs")}</h1>
       </header>
-      <div class="codecs-options" aria-busy={savingAll() ? "true" : undefined}>
-        <Check
-          label={t("ui.profile.codecs_hide", hidden())}
-          title={t("ui.profile.codecs_force_hint")}
-          checked={hide()}
-          onChange={setHide}
-        />
-        <Check
-          label={t("connection.codec_fallback")}
-          title={t("tooltip.codec_fallback")}
-          checked={fallback()}
-          disabled={classic().length === 0 || savingAll()}
-          onChange={(v) => void setFallback(v)}
-        />
+      <div class="codecs-options">
+        <Check label={t("ui.profile.codecs_hide", hidden())} title={t("ui.codecs.hide_hint")} checked={hide()} onChange={setHide} />
       </div>
       <p class="hint">
         {t("ui.codecs.page_hint")}{" "}
@@ -156,14 +135,39 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean }) {
   // The profile shown: the device's, or what it would start from
   const shown = (): Profile => e().profile ?? entryBase(e(), snap().profiles);
   const codec = () => shown().codec;
+  const auto = () => codec() === "auto";
   const known = () => knownCodecs(snap().devices, e().address);
   const support = (id: string) => codecSupport(id, known());
-  const cards = () => CODECS.filter((c) => !props.hide || c.id === codec() || support(c.id) !== "not_offered");
+  // The codec the device streams with now, when its profile streams
+  const streaming = () => {
+    const st = snap().stream;
+    const p = e().profile;
+    if (st.state !== "streaming" || !st.info || !p || st.profile !== p.name) return null;
+    const key = codecLabelKey(st.info.codec);
+    return CODECS.find((c) => c.id !== "auto" && c.label === key)?.id ?? null;
+  };
+  // Auto: the codec it streams with, else the one it would pick (null when
+  // the device's codecs are not known); else the codec chosen
+  const picked = () => (auto() ? (streaming() ?? effectiveCodec("auto", known())) : codec());
+  // A chosen codec the device did not offer: the one used instead
+  const instead = () => (!auto() && support(codec()) === "not_offered" ? effectiveCodec(codec(), known()) : null);
+  // Highest quality first, as Auto goes
+  const cards = () =>
+    CODECS.filter(
+      (c) => c.id !== "auto" && (!props.hide || c.id === codec() || c.id === picked() || support(c.id) !== "not_offered"),
+    ).sort((a, b) => qualityRank(a.id) - qualityRank(b.id));
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
   const choose = async (id: string, values?: Omit<CodecChoice, "codec">) => {
     setBusy(true);
     await chooseCodec(app, e(), id, values);
     setBusy(false);
+  };
+  // On: Auto with its own defaults (the codec left keeps its settings in
+  // codec_settings). Off: the codec Auto picked (else SBC, which every
+  // device has), with the settings it was last given.
+  const setAuto = (on: boolean) => {
+    if (on) void choose("auto", codecValues(newProfile()));
+    else void choose(picked() ?? "sbc");
   };
   const titleId = () => `codecs-${e().key.replace(/[^0-9A-Za-z]/g, "")}`;
   const leSupport = () => snap().adapter.le_audio;
@@ -235,16 +239,30 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean }) {
           </>
         }
       >
-        <div class="codec-grid" role="radiogroup" aria-labelledby={titleId()}>
+        {/* Nothing chosen yet: Auto, which Connect uses */}
+        <Toggle
+          label={t("ui.codecs.auto_select")}
+          hint={
+            auto()
+              ? picked()
+                ? t("ui.codecs.auto_uses", t(codecSpec(picked()!).label))
+                : t("ui.codecs.auto_on")
+              : t("ui.codecs.auto_off")
+          }
+          checked={auto()}
+          disabled={busy()}
+          onChange={setAuto}
+        />
+        <div class="codec-grid" role="radiogroup" aria-labelledby={titleId()} aria-disabled={auto() ? "true" : undefined}>
           <For each={cards()}>
             {(c) => (
               <CodecCard
                 spec={c}
                 group={`codec-${e().key}`}
-                // Nothing chosen yet: Auto is what Connect uses
-                selected={codec() === c.id}
+                selected={picked() === c.id}
                 disabled={busy()}
-                support={c.id === "auto" ? null : support(c.id)}
+                readOnly={auto()}
+                support={support(c.id)}
                 onPick={() => void choose(c.id)}
                 onSettings={() => setSettingsOf(c)}
               />
@@ -254,10 +272,12 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean }) {
         <Show when={known().length === 0}>
           <p class="hint">{t("ui.profile.codecs_unknown")}</p>
         </Show>
-        <Show when={support(codec()) === "not_offered"}>
-          <Banner kind="warn" title={t("error.codec_not_supported", t(codecSpec(codec()).label))}>
-            {shown().codec_fallback ? t("ui.profile.codec_fallback_on") : t("ui.profile.codec_fallback_off")}
-          </Banner>
+        <Show when={instead()}>
+          {(c) => (
+            <Banner kind="warn" title={t("error.codec_not_supported", t(codecSpec(codec()).label))}>
+              {t("ui.codecs.fallback_to", t(codecSpec(c()).label))}
+            </Banner>
+          )}
         </Show>
         <CodecSettings
           spec={settingsOf()}

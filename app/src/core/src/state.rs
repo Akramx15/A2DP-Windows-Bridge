@@ -671,6 +671,8 @@ pub fn custom_request(c: &CustomStream, legacy_max_media_payload: u16) -> Result
     let mut req = p
         .to_request(legacy_max_media_payload)
         .map_err(|_| err("profile.invalid_address", "error.invalid_address_format"))?;
+    // A profile always falls back; a custom stream only when asked
+    req.codec_fallback = c.codec_fallback.unwrap_or(false);
     if tone {
         req.source = SourceRequest::TestTone;
     }

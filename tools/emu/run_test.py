@@ -125,24 +125,31 @@ NEGOTIATION = {
     # Auto never takes FastStream, even over SBC
     'auto-not-faststream': ('auto', ['--codecs', 'sbc', 'faststream', '--sbc-no-dual'], 'sbc', []),
     # Opus: 48 kHz whatever the capture rate asked for; Auto takes it over
-    # AAC and SBC, and LHDC V5 over it
+    # AAC and SBC, and LHDC V5 over it (and over LDAC: issue #86's order)
     'opus-from-44k': ('opus', [], 'opus', ['--rate', '44100']),
     'auto-opus': ('auto', ['--codecs', 'sbc', 'aac', 'opus'], 'opus', []),
     'auto-lhdcv5-over-opus': ('auto', ['--codecs', 'sbc', 'aac', 'opus', 'lhdcv5'], 'lhdcv5', []),
+    'auto-lhdcv5-over-ldac': ('auto', ['--codecs', 'sbc', 'aac', 'ldac', 'lhdcv5'], 'lhdcv5', []),
+    # A codec the sink does not offer, with a profile's fallback: the next
+    # one below it in quality, not the best (issue #86: LHDC V5 asked of
+    # headphones without it); aptX HD missing: AAC, not LDAC above it
+    'fallback-lhdcv5-to-ldac': ('lhdcv5', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac', ['--fallback']),
+    'fallback-aptxhd-to-aac': ('aptxhd', ['--codecs', 'sbc', 'aac', 'ldac'], 'aac', ['--fallback']),
     # Opus 05: 48 kHz from a 44.1 kHz request; Auto never takes it (AAC here)
     'opus05-from-44k': ('opus05', [], 'opus05', ['--rate', '44100']),
     'auto-not-opus05': ('auto', ['--codecs', 'sbc', 'aac', 'opus05'], 'aac', []),
     # aptX Adaptive (offered by the sink only when named, with SBC, AAC and
     # aptX as aptX Adaptive headsets list them: emu_sink.py): HQ, low latency
     # (SSRC 0xA1, 348-byte packets), an R2 sink in HQ and LL (frame types 3 /
-    # 4), ABR, 48 kHz from a 44.1 kHz request; Auto never takes it (AAC here)
+    # 4), ABR, 48 kHz from a 44.1 kHz request; Auto takes it over aptX and
+    # AAC (issue #86)
     'aptxad': ('aptxad', APTXAD_SINK, 'aptxad', []),
     'aptxad-ll': ('aptxad', APTXAD_SINK, 'aptxad', ['-q', 'll']),
     'aptxad-r2': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
     'aptxad-r2-ll': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['-q', 'll']),
     'aptxad-abr': ('aptxad', APTXAD_SINK, 'aptxad', ['-a']),
     'aptxad-from-44k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '44100']),
-    'auto-not-aptxad': ('auto', ['--codecs', 'sbc', 'aac', 'aptxad'], 'aac', []),
+    'auto-aptxad': ('auto', APTXAD_SINK, 'aptxad', []),
     # 18 free sink SEPs, LDAC the 14th: BTstack 1.8.1 overflowed its 10-entry
     # SEP discovery array (crash); none may be dropped either
     'many-seps-ldac': ('ldac', ['--extra-seps', '8'], 'ldac', []),

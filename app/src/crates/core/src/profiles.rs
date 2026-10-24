@@ -50,7 +50,11 @@ pub struct Profile {
     #[serde(default = "hq")]
     pub quality: String,
     pub abr: bool,
-    /// Use the best codec the device offers when the profile's is missing
+    /// Legacy (v1, and v2 before issue #86's Codecs redesign): whether a
+    /// codec the device does not offer falls back to another. Kept in the
+    /// file but no longer used: a profile always falls back, to the next
+    /// codec below its own in Auto's order (an unsupported codec is never
+    /// tried)
     #[serde(default = "yes")]
     pub codec_fallback: bool,
     /// 0 = auto
@@ -251,7 +255,7 @@ impl Profile {
             device,
             device_name: self.device_name.clone(),
             codec: CodecKind::from_key(&self.codec),
-            codec_fallback: self.codec_fallback,
+            codec_fallback: true,
             quality: Quality::from_key(&self.quality),
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,
@@ -482,6 +486,22 @@ mod tests {
         legacy.max_media_payload = None;
         assert_eq!(legacy.to_request(1500).unwrap().max_media_payload, 1500);
         assert_eq!(r.le, None);
+    }
+
+    #[test]
+    fn a_profile_always_falls_back() {
+        // Saved with the old option off (issue #86: e.g. LHDC chosen for
+        // headphones without it): the request still falls back, so the
+        // codec is never tried on a device that does not offer it
+        let text = r#"{"name":"EarFun | LHDC V5","device_address":"00:A2:D0:00:00:02","codec":"lhdcv5","codec_fallback":false}"#;
+        let p: Profile = serde_json::from_str(text).unwrap();
+        assert!(!p.codec_fallback);
+        let r = p.to_request(1023).unwrap();
+        assert_eq!(r.codec, Some(CodecKind::LhdcV5));
+        assert!(r.codec_fallback);
+        // Auto (switch on) is no codec of its own
+        let auto = Profile { codec: "auto".into(), ..p };
+        assert_eq!(auto.to_request(1023).unwrap().codec, None);
     }
 
     #[test]

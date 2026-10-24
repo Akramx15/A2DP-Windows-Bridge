@@ -1609,6 +1609,20 @@ option {
   border-color: var(--text);
   background: var(--surface-2);
 }
+/* Auto chooses: the cards only show its pick */
+.codec-card.ro,
+.codec-card.ro input {
+  cursor: default;
+}
+.codec-card.ro:not(.on) {
+  opacity: 0.75;
+}
+.codec-card.ro:hover:not(.on) {
+  border-color: var(--border);
+}
+.device-codecs .toggle-row {
+  padding: 0;
+}
 .codec-card-name {
   font-weight: 600;
   /* Room for the settings button in the corner */

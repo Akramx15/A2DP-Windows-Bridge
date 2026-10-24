@@ -28,6 +28,9 @@ const settled = (where: HTMLElement) =>
   waitFor(() => expect(within(where).getAllByRole("radio").every((r) => !(r as HTMLInputElement).disabled)).toBe(true));
 /** The screen itself (the sidebar names the devices too) */
 const main = () => within(screen.getByRole("main"));
+/** A device's "Auto select the highest supported codec in quality" switch */
+const autoSwitch = (where: HTMLElement) =>
+  within(where).getByRole("switch", { name: (n) => n.startsWith(t("ui.codecs.auto_select")) });
 /** The profiles saved, in order */
 const saves = (calls: { method: string; params: unknown }[]) =>
   calls
@@ -50,6 +53,9 @@ describe("the Codecs screen", () => {
     expect(wh).toHaveTextContent("AC:80:0A:12:34:56");
     expect(wh).toHaveTextContent(t("device.tag_saved"));
     expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked();
+    // No Auto card: Auto is the device's switch (issue #86), off here
+    expect(within(wh).queryByRole("radio", { name: /Auto/ })).toBeNull();
+    expect(autoSwitch(wh)).not.toBeChecked();
     const xb = await section("SRS-XB13");
     expect(within(xb).getByRole("radio", { name: /AAC/ })).toBeChecked();
     // What is the device's own is on Audio Devices
@@ -59,20 +65,32 @@ describe("the Codecs screen", () => {
 
   it("saves the device's profile when a card is chosen, its name following the codec", async () => {
     const { calls } = start("#/codecs");
-    // A device without a profile yet: Auto until one is chosen
+    // A device without a profile yet: Auto until one is chosen, its cards
+    // read-only
     await mock!.call("device.rename", { address: "54:2F:04:4B:29:DC", name: "moto buds+" });
     const moto = await section("moto buds+");
-    expect(within(moto).getByRole("radio", { name: /Auto/ })).toBeChecked();
-    fireEvent.click(within(moto).getByRole("radio", { name: /AAC/ }));
+    expect(autoSwitch(moto)).toBeChecked();
+    expect(within(moto).getByRole("radio", { name: /AAC/ })).toBeDisabled();
+    expect(within(moto).queryByRole("button", { name: t("ui.profile.codec_settings", t("codec.aac")) })).toBeNull();
+    // Off: its codecs are not known yet, so SBC, which every device has
+    fireEvent.click(autoSwitch(moto));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0]).toMatchObject({
-      profile: { name: "moto buds+ | AAC", device_address: "54:2F:04:4B:29:DC", codec: "aac" },
+      profile: { name: "moto buds+ | SBC", device_address: "54:2F:04:4B:29:DC", codec: "sbc" },
       original_name: null,
     });
     await settled(moto);
-    fireEvent.click(within(moto).getByRole("radio", { name: /LDAC/ }));
+    // One click on a card chooses it
+    fireEvent.click(within(moto).getByRole("radio", { name: /AAC/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(2));
     expect(saves(calls)[1]).toMatchObject({
+      profile: { name: "moto buds+ | AAC", codec: "aac" },
+      original_name: "moto buds+ | SBC",
+    });
+    await settled(moto);
+    fireEvent.click(within(moto).getByRole("radio", { name: /LDAC/ }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(3));
+    expect(saves(calls)[2]).toMatchObject({
       profile: { name: "moto buds+ | LDAC", codec: "ldac" },
       original_name: "moto buds+ | AAC",
     });
@@ -80,18 +98,21 @@ describe("the Codecs screen", () => {
     await settled(moto);
     const wh = await section("WH-1000XM5");
     fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
-    await waitFor(() => expect(saves(calls)).toHaveLength(3));
-    expect(saves(calls)[2]).toMatchObject({ profile: { name: "WH-1000XM5 (LDAC)", codec: "aac" } });
+    await waitFor(() => expect(saves(calls)).toHaveLength(4));
+    expect(saves(calls)[3]).toMatchObject({ profile: { name: "WH-1000XM5 (LDAC)", codec: "aac" } });
   });
 
   it("keeps each device's codec to that device (issue #86: LHDC asked of the EarFun after the moto buds+)", async () => {
     const { calls } = start("#/codecs");
     await mock!.call("device.rename", { address: "54:2F:04:4B:29:DC", name: "moto buds+" });
     const moto = await section("moto buds+");
+    fireEvent.click(autoSwitch(moto));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    await settled(moto);
     // Its codecs are not known yet: LHDC V5 is offered
     fireEvent.click(within(moto).getByRole("radio", { name: /LHDC V5/ }));
-    await waitFor(() => expect(saves(calls)).toHaveLength(1));
-    expect(saves(calls)[0].profile).toMatchObject({ device_address: "54:2F:04:4B:29:DC", codec: "lhdcv5" });
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1].profile).toMatchObject({ device_address: "54:2F:04:4B:29:DC", codec: "lhdcv5" });
     await settled(moto);
     // The other devices keep theirs, on screen and in what Connect streams
     const wh = await section("WH-1000XM5");
@@ -106,13 +127,13 @@ describe("the Codecs screen", () => {
     // A new device starts from Auto, not from the codec chosen last
     await mock!.call("device.rename", { address: "70:5A:6F:6D:ED:1F", name: "EarFun Air Pro 4+" });
     const earfun = await section("EarFun Air Pro 4+");
-    expect(within(earfun).getByRole("radio", { name: /Auto/ })).toBeChecked();
+    expect(autoSwitch(earfun)).toBeChecked();
     expect(within(earfun).getByRole("radio", { name: /LHDC V5/ })).not.toBeChecked();
     location.hash = "#/home";
     const card = await screen.findByRole("group", { name: "EarFun Air Pro 4+" });
     fireEvent.click(within(card).getByRole("button", { name: "Connect" }));
-    await waitFor(() => expect(saves(calls)).toHaveLength(2));
-    expect(saves(calls)[1].profile).toMatchObject({ device_address: "70:5A:6F:6D:ED:1F", codec: "auto" });
+    await waitFor(() => expect(saves(calls)).toHaveLength(3));
+    expect(saves(calls)[2].profile).toMatchObject({ device_address: "70:5A:6F:6D:ED:1F", codec: "auto" });
   });
 
   it("brings a codec's settings back when it is chosen again (issue #86: AAC's VBR came back off)", async () => {
@@ -134,14 +155,55 @@ describe("the Codecs screen", () => {
     expect(saves(calls)[2].profile.codec_settings).not.toHaveProperty("aac");
   });
 
-  it("sets the fallback to another codec in every device's profile", async () => {
+  it("turns Auto on and off for one device, the cards then showing its pick (issue #86)", async () => {
     const { calls } = start("#/codecs");
-    const fallback = await screen.findByRole("checkbox", { name: t("connection.codec_fallback") });
-    expect(fallback).toBeChecked();
-    fireEvent.click(fallback);
+    // No page-wide fallback option any more: a codec always falls back
+    expect(screen.queryByRole("checkbox", { name: /another supported codec/ })).toBeNull();
+    const wh = await section("WH-1000XM5");
+    const ldacSettings = await codecSettings(wh, "codec.ldac");
+    fireEvent.change(within(ldacSettings).getByLabelText(t("connection.quality")), { target: { value: "sq" } });
+    fireEvent.click(within(ldacSettings).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    await settled(wh);
+    fireEvent.click(autoSwitch(wh));
     await waitFor(() => expect(saves(calls)).toHaveLength(2));
-    for (const s of saves(calls)) expect(s.profile.codec_fallback).toBe(false);
-    await waitFor(() => expect(fallback).not.toBeChecked());
+    // Auto with its defaults; LDAC keeps its own settings for later
+    expect(saves(calls)[1].profile).toMatchObject({
+      name: "WH-1000XM5 (LDAC)",
+      codec: "auto",
+      quality: "hq",
+      abr: false,
+      codec_settings: { ldac: { quality: "sq" } },
+    });
+    // The WH-1000XM5 supported SBC, AAC and LDAC: Auto picks LDAC, shown
+    // on the read-only cards
+    await waitFor(() => expect(wh.querySelector(".codec-more")).toBeNull());
+    const ldac = within(wh).getByRole("radio", { name: /LDAC/ });
+    expect(ldac).toBeDisabled();
+    expect(ldac).toBeChecked();
+    expect(autoSwitch(wh)).toBeChecked();
+    expect(wh).toHaveTextContent(t("ui.codecs.auto_uses", t("codec.ldac")));
+    // The other device is left alone
+    const xb = await section("SRS-XB13");
+    expect(autoSwitch(xb)).not.toBeChecked();
+    expect(within(xb).getByRole("radio", { name: /AAC/ })).not.toBeDisabled();
+    // Off: Auto's pick, with the settings it had
+    fireEvent.click(autoSwitch(wh));
+    await waitFor(() => expect(saves(calls)).toHaveLength(3));
+    expect(saves(calls)[2].profile).toMatchObject({ codec: "ldac", quality: "sq" });
+    await settled(wh);
+  });
+
+  it("falls back to the next supported codec below the chosen one", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    fireEvent.click(screen.getByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) }));
+    // aptX HD: not offered by the WH-1000XM5 (SBC, AAC, LDAC); aptX and
+    // aptX LL are not either, so AAC, not LDAC above it
+    fireEvent.click(await within(wh).findByRole("radio", { name: /aptX HD/ }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(await within(wh).findByText(t("error.codec_not_supported", "aptX HD"))).toBeInTheDocument();
+    expect(within(wh).getByText(t("ui.codecs.fallback_to", t("codec.aac")))).toBeInTheDocument();
   });
 });
 
@@ -231,23 +293,27 @@ describe("codec cards", () => {
     expect(ldac.closest("label")).toHaveTextContent(t("ui.profile.codec_supported"));
     expect(within(wh).queryByText(t("ui.profile.codecs_unknown"))).toBeNull();
 
+    // In green
+    expect(within(ldac.closest("label")!).getByText(t("ui.profile.codec_supported")).closest(".tag")).toHaveClass("st-good");
     // The ones it did not support hidden (on by default, issue #86): SBC,
-    // AAC and LDAC are supported, Auto is always there
+    // AAC and LDAC are supported
     expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull();
-    expect(within(wh).getAllByRole("radio")).toHaveLength(4);
+    expect(within(wh).getAllByRole("radio")).toHaveLength(3);
     const hide = screen.getByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) });
     expect(hide).toBeChecked();
     // Shown: with their "Not supported" tag
     fireEvent.click(hide);
     const hd = await within(wh).findByRole("radio", { name: /aptX HD/ });
     expect(hd.closest("label")).toHaveTextContent(t("ui.profile.codec_not_supported"));
+    // In red
+    expect(within(hd.closest("label")!).getByText(t("ui.profile.codec_not_supported")).closest(".tag")).toHaveClass("st-bad");
     expect(hide).not.toBeChecked();
 
     // A codec it does not offer: said plainly, with what happens instead
     fireEvent.click(hd);
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
     expect(await within(wh).findByText(t("error.codec_not_supported", "aptX HD"))).toBeInTheDocument();
-    expect(within(wh).getByText(t("ui.profile.codec_fallback_on"))).toBeInTheDocument();
+    expect(within(wh).getByText(t("ui.codecs.fallback_to", t("codec.aac")))).toBeInTheDocument();
   });
 
   it("say it is not known before the first connection", async () => {
