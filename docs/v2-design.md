@@ -430,7 +430,7 @@ Auto は Opus 05 を選びません（FastStream と同じく、明示的に選�
 
 ## aptX Adaptive
 
-aptX Adaptive（ベンダー ID 0x000000D7 Qualcomm、コーデック ID 0x00AD）を、試験的に `aptxad`（表示名 "aptX Adaptive"）として加えます。エンコーダは [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の Rust だけで書かれたエンコーダ（MIT、Copyright (c) 2026 Prateek Mittal (AKS-Logic)）で、上流のコミット 25099004b2d3（2026-10-22）を `app/src/crates/aptx-adaptive` に取り込みました。上流はこれをクリーンルームでの再実装とし、数値テーブルは合法に入手した Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したと説明しています（クレートの横に写した上流の `LEGAL.md`）。Qualcomm のコード、SDK、バイナリは含みません。aptX / aptX Adaptive は Qualcomm の商標で、国や地域によっては特許の対象になりえます。使ってよいかどうかは利用者の責任です（上流の注意書き）。
+aptX Adaptive（ベンダー ID 0x000000D7 Qualcomm、コーデック ID 0x00AD）を `aptxad`（表示名 "aptX Adaptive"）として加えます。エンコーダは [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の Rust だけで書かれたエンコーダ（MIT、Copyright (c) 2026 Prateek Mittal (AKS-Logic)）で、上流のコミット 25099004b2d3（2026-10-22）を `app/src/crates/aptx-adaptive` に取り込みました。上流はこれをクリーンルームでの再実装とし、数値テーブルは合法に入手した Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したと説明しています（クレートの横に写した上流の `LEGAL.md`）。Qualcomm のコード、SDK、バイナリは含みません。aptX / aptX Adaptive は Qualcomm の商標で、国や地域によっては特許の対象になりえます。使ってよいかどうかは利用者の責任です（上流の注意書き）。
 
 | 項目 | 値 |
 | --- | --- |
@@ -442,11 +442,11 @@ aptX Adaptive（ベンダー ID 0x000000D7 Qualcomm、コーデック ID 0x00AD�
 | 設定 | SET_CONFIGURATION は 48 kHz（または 96 kHz、レートのビット 0x20）、ソースタイプ 2（ホストのエンコーダ: 再生のタイミングはシンクが決める）、ステレオ。R1 のシンクにはシンク自身の目標遅延のバイトを返し、LL0 は 80 ms 以上に上げ、HQ の遅延が 0 なら 200 ms にする。R2 のシンクにはソース側の R2 ブロックを送る |
 | 能力 | Codec Information は 40 バイト。BTstack の能力のイベントでは 30 バイトに切られるが、使う値はすべてその中にある |
 
-Auto は aptX Adaptive を選びません（FastStream、Opus 05 と同じく、明示的に選んだときだけ）。Auto の優先順位は変えていません。シンクが aptX / aptX HD / aptX LL を出していれば Auto はそちらを選びます。プロファイルで aptX / aptX HD / aptX LL を選んだのにシンクが aptX Adaptive しか出していないときのエラーは、aptX Adaptive（試験的）、Auto、AAC、SBC を選ぶように案内します。
+Auto は LHDC V5、LDAC の次に aptX Adaptive を選びます（issue #86 の順位。加えた当初は FastStream、Opus 05 と同じく、明示的に選んだときだけでした）。aptX / aptX HD / aptX LL を選んだのにシンクが aptX Adaptive しか出していないときのエラーは、aptX Adaptive、Auto、AAC、SBC を選ぶように案内します。
 
 ストリームエンドポイントが 1 つ増えるので、BTstack の `MAX_NR_AVDTP_STREAM_ENDPOINTS` を 11 にしました。シムのバッファは 40 バイトにしました。
 
-検証: 単体テスト、上流のビット単位で一致するテスト（Windows でも通る）、`tools/emu` の仮想シンクとの end-to-end テスト（RTP ヘッダー、パケットの大きさ、フレームの種類を確かめる。公開されたデコーダがないので音は復号しない）。A2DPWB では実機のヘッドホンで未確認です。上流は Linux / PipeWire で Bose QuietComfort Ultra（第1世代）と B&W Px7 S2e での 48 kHz の HQ と LL の動作を報告しています。
+検証: 単体テスト、上流のビット単位で一致するテスト（Windows でも通る）、`tools/emu` の仮想シンクとの end-to-end テスト（RTP ヘッダー、パケットの大きさ、フレームの種類を確かめる。公開されたデコーダがないので音は復号しない）。実機では、EarFun Air Pro 4+ で 48 kHz が途切れずに動くと報告がありました（2.0.2-beta.6、issue #86）。96 kHz はエミュレーターだけで確認しています。上流は Linux / PipeWire で Bose QuietComfort Ultra（第1世代）と B&W Px7 S2e での 48 kHz の HQ と LL の動作を報告しています。
 
 ## ARM64
 
@@ -522,6 +522,7 @@ v1 の `feat/le-audio`（b819893）にあった実験的な LE Audio を、動�
 
 ## 改訂履歴
 
+- 2026-10-25（実験的コーデックの設定）: 「コーデック」画面に「実験的コーデックを有効にする」（settings.json の `experimental_codecs`、既定はオン。CLI では `--no-experimental` でオフ）を加えた（issue #86）。実験的コーデックは aptX HD、aptX LL、Opus、Opus 05、FastStream で、カードに「実験的」のタグを付ける。オフのときはそのカードを隠し、Auto もフォールバックもそれらを選ばず、それらを選んでいたデバイスは Auto の順位で次に低い、デバイスが出しているコーデックを使う（画面にその旨を出す）。使用中のストリームのコーデックが変わるときは接続し直す。あわせて、EarFun Air Pro 4+ での 48 kHz の動作報告を受けて aptX Adaptive を試験的な扱いから外した（96 kHz はエミュレーターでだけ確認）。
 - 2026-10-23（NSIS 版は先にアンインストール）: 2.0.2-beta.5 までの NSIS でのインストールを引き継ぐのをやめ、ファイルを入れる前に NSIS のアンインストーラを更新モード（`/S /UPDATE`）で実行するようにした（issue #86）。古いインストーラの登録やファイルに手を入れないほうが、後で困らない。失敗・中止すると何も残らないが、まだ利用者が少なく、セットアップをもう一度実行すれば済むので受け入れる（リリースノートに書く）。
 - 2026-10-22（インストーラを Inno Setup に）: Tauri の NSIS バンドラから Inno Setup 6（`installer/A2DPWB.iss`）に移した（issue #86）。NSIS で困っていたことはないが、(1) 台本が人に読みやすい（NSIS のフックは Tauri の生成する `installer.nsi` の流れと `$0`〜`$9` のレジスタを追わないと読めず、`System::Call` で構造体を組んでいた）、(2) 開発が活発で将来性がある、(3) 利用者とインストール済みの環境が少ない今のうちに移すほうが楽、の3点で決めた。`tauri build --no-bundle` で `a2dpwb.exe` だけを作り、ポータブル版のフォルダをそのまま Inno Setup に渡す。更新は引き続き `tauri-plugin-updater`（署名は `tauri signer sign --app-version`）で、プラグインが付ける `/UPDATE` に `/SILENT /NORESTART` を足す（`installMode: basicUi`）。beta.5 以前の更新機能が付ける NSIS の `/P` では、ページをすべて飛ばして進行状況だけを出す（セットアップの .exe はローダーが開いたままなので、`/SILENT` で起動し直すことはできなかった）。NSIS でのインストールは、ファイルを入れ終えてからフォルダを引き継ぐ（先にアンインストールすると、失敗や中止で何も残らないため）。インストール済みの判定は `uninstall.exe` から `unins000.exe` に。v1 とは別の AppId。中国語（簡体・繁体）の翻訳は Inno Setup 6 に同梱されないので `installer/languages/` に置く。
 - 2026-10-24（aptX Adaptive の 96 kHz）: プロファイルで 96 kHz を選び、シンクが R2 で 96 kHz を出しているとき、高音質 / 標準 / モバイルを 96 kHz で送るようにした（issue #86）。R1 のシンクと低遅延は 48 kHz のまま。エンコーダの呼び出しは 2 ms（96 kHz では 192 フレーム）。Codecs の設定でサンプリングレートに 96 kHz を加え、ビット深度は aptX Adaptive と aptX HD で 24 ビットと表示する（常に 24 ビットで送っているのに 16 ビットと出ていた）。上流（f8a0908、2026-10-23）を見直したが、エンコーダのクレートは変わっていない。上流のプラグインでの変更のうち、ソースタイプ 0（シンクのリンクの時計に合わせたタイムスタンプ。ヘッドホンによってはこちらでないと切れる）はリンクの時計の値が要るので移していない。仮想シンクでのみ確認、実機では未確認。

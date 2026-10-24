@@ -53,12 +53,11 @@ pub enum CodecKind {
     FastStream,
     Opus,
     /// PipeWire's own A2DP Opus ("Opus 05", vendor 0x000005F1 / codec
-    /// 0x1005), stereo music direction only; experimental, never Auto's
-    /// choice
+    /// 0x1005), stereo music direction only; never Auto's choice
     Opus05,
-    /// aptX Adaptive (vendor 0x000000D7 / codec 0x00AD), 48 kHz stereo, HQ
-    /// or low latency ([`Quality::LowLatency`]); experimental, Auto's choice
-    /// after LHDC V5 and LDAC (issue #86)
+    /// aptX Adaptive (vendor 0x000000D7 / codec 0x00AD), 48 / 96 kHz
+    /// stereo, HQ or low latency ([`Quality::LowLatency`]); Auto's choice
+    /// after LHDC V5 and LDAC (issue #86, confirmed on an EarFun Air Pro 4+)
     AptxAdaptive,
 }
 
@@ -187,6 +186,18 @@ impl CodecKind {
             CodecKind::LhdcV5 => 192000,
             _ => 48000,
         }
+    }
+
+    /// Experimental: passes the encoder and emulator tests but is not yet
+    /// confirmed with real headphones (the README's 🧪). Codecs > "Enable
+    /// experimental codecs" (settings `experimental_codecs`, on by default)
+    /// turns them off: hidden there and never used, by Auto or as a
+    /// fallback (issue #86).
+    pub fn experimental(self) -> bool {
+        matches!(
+            self,
+            CodecKind::AptxHd | CodecKind::AptxLl | CodecKind::FastStream | CodecKind::Opus | CodecKind::Opus05
+        )
     }
 
     /// Whether the encoder for this codec is built in

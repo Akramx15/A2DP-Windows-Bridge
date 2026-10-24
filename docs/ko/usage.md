@@ -35,6 +35,7 @@ nav_order: 2
 저장된 각 오디오 장치의 코덱을 장치마다 한 구역(이름, 주소, **페어링됨** / **오디오** 태그)으로 나누고 코덱 카드를 보여 줍니다. **자동**(장치가 지원하는 최적의 코덱)과 장치가 마지막으로 연결했을 때 제공한 코덱이 있으며, 각각 세 개의 막대(음질, 낮은 지연, 안정성)가 있습니다. 카드를 클릭하면 그 장치의 코덱이 선택되고 즉시 저장되며, 스트리밍 중인 장치는 그 코덱으로 다시 연결합니다.
 
 - **오디오 장치가 지원하지 않는 코덱 숨기기**(기본적으로 켜짐): 장치가 제공하지 않은 코덱을 숨깁니다(숨겨진 개수는 괄호 안에 표시). 장치를 처음 연결하기 전에는 모두 표시됩니다
+- **실험적 코덱 사용**(기본적으로 켜짐): 실험적 코덱(aptX HD, aptX Low Latency, Opus, Opus 05, FastStream)의 카드에는 **실험적** 태그가 표시됩니다. 끄면 이 코덱들의 카드가 숨겨지고 자동은 이 코덱들을 선택하지 않으며, 선택한 코덱이 이 중 하나인 장치는 자동 우선순위에서 그다음으로 낮은, 장치가 제공하는 코덱을 사용합니다(화면에도 그렇게 표시됨). 이 설정으로 사용 중인 스트림의 코덱이 바뀌면 다시 연결합니다. CLI: `--no-experimental`
 - **이 코덱을 사용할 수 없으면 지원되는 다른 코덱 사용**(기본적으로 켜짐, 모든 장치에 적용, [명시적으로 선택한 코덱을 제공하지 않는 경우](#codec-fallback) 참조)
 - 카드의 **...**는 그 코덱의 설정을 엽니다. **확인**을 누르면 그 설정으로 코덱이 선택됩니다. 코덱마다 설정을 따로 기억하므로, 다른 코덱을 선택했다가 돌아오면 설정이 그대로 돌아옵니다. 그 코덱이 지원하는 항목만 표시합니다.
   - **음질**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps). LHDC V5 높음 (1000 kbps) / 중상 (900 kbps) / 표준 (500 kbps) / 모바일 (400 kbps)은 Android가 제공하는 네 단계입니다. aptX Adaptive 높음 / 표준 / 모바일 / 저지연([aptX Adaptive](#aptx-adaptive) 참조). AAC에도 음질 단계가 있으며, 그 밖의 aptX 코덱은 비트레이트가 고정되어 있습니다. SBC와 SBC XQ는 비트풀과 프레임 설정으로 정해지는 비트레이트를 표시합니다
@@ -125,12 +126,12 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 for 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 for 96 kHz)
 ```
 
 자동 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 모두 실험적이며 직접 선택한 경우에만)
 
-요청한 코덱을 헤드폰이 제공하지 않으면 CLI는 그 이유를 알려 주는 오류와 함께 중지합니다. 헤드폰이 제공하는 최적의 코덱을 사용하려면 `-c auto`(기본값)를 사용하십시오. 자동은 aptX Adaptive를 선택하지 않으므로 `-c aptxad`를 사용하십시오. [aptX 계열과 aptX Adaptive](#aptx-compatibility)를 참조하십시오.
+요청한 코덱을 헤드폰이 제공하지 않으면 CLI는 그 이유를 알려 주는 오류와 함께 중지합니다. 헤드폰이 제공하는 최적의 코덱을 사용하려면 `-c auto`(기본값)를 사용하십시오. [aptX 계열과 aptX Adaptive](#aptx-compatibility)를 참조하십시오.
 
 ### 음질
 
@@ -173,6 +174,7 @@ a2dpwb-core.exe --cli --scan
 | `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `aptxad`, `auto` (기본값: `auto`) |
 | `-q <mode>` | 음질: `hq` (기본값), `sq`, `mq`; LHDC V5는 `mhq` (900 kbps)도 가능; aptX Adaptive는 `ll` (저지연, 다른 코덱은 `hq`로 처리)도 가능 |
 | `-a` | ABR (LDAC, LHDC V5, aptX Adaptive) |
+| `--no-experimental` | 실험적 코덱(aptX HD, aptX LL, Opus, Opus 05, FastStream)을 사용하지 않음. **코덱 > 실험적 코덱 사용**을 끈 것과 같음 |
 | `-m <mode>` | 캡처 모드: `loopback` (기본값), `virtual`, `app` |
 | `--audio-device <id>` | `-m virtual`에 사용할 렌더링 장치 |
 | `--app <exe>` | `-m app`에 사용할 실행 파일 (예: `spotify.exe`) |
@@ -296,7 +298,7 @@ A2DPWB는 세 가지 오디오 캡처 모드를 지원합니다. 각 모드는 �
 
 ## aptX 계열과 aptX Adaptive {#aptx-compatibility}
 
-A2DPWB는 [libopenaptx](https://github.com/pali/libopenaptx)로 인코딩하는 세 가지 aptX 코덱과, [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 인코더로 인코딩하는 aptX Adaptive(실험적)를 지원합니다.
+A2DPWB는 [libopenaptx](https://github.com/pali/libopenaptx)로 인코딩하는 세 가지 aptX 코덱과, [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 인코더로 인코딩하는 aptX Adaptive를 지원합니다.
 
 {: .warning }
 **aptX HD와 aptX Low Latency는 실험적 기능입니다.** Android / PipeWire 구현을 따르며 인코딩/디코딩 왕복 테스트를 통과했지만, 실제 헤드폰에서는 아직 검증되지 않았습니다.
@@ -309,16 +311,16 @@ A2DPWB는 [libopenaptx](https://github.com/pali/libopenaptx)로 인코딩하는 
 | aptX | 0x0000004F / 0x0001 | 없음 | 지원 (44.1/48 kHz에서 352/384 kbps) |
 | aptX HD | 0x000000D7 / 0x0024 | 있음 | 지원 (576 kbps, 24비트 입력) |
 | aptX Low Latency | 0x0000000A 또는 0x000000D7 / 0x0002 | 없음 | 지원 (352 kbps) |
-| aptX Adaptive | 0x000000D7 / 0x00AD | 있음 | 실험적 (265-427 kbps, 48 / 96 kHz, 24비트, 직접 선택한 경우) |
+| aptX Adaptive | 0x000000D7 / 0x00AD | 있음 | 지원 (265-427 kbps, 48 / 96 kHz, 24비트) |
 
-### aptX Adaptive (실험적) {#aptx-adaptive}
+### aptX Adaptive {#aptx-adaptive}
 
-{: .warning }
-**aptX Adaptive는 실험적 기능이며 아직 실제 헤드폰으로 시험하지 않았습니다.** 단위 테스트, 업스트림의 비트 단위 일치 테스트 모음, 가상 Bluetooth 싱크를 상대로 한 엔드투엔드 테스트(`tools/emu`: RTP 헤더, 패킷 크기, 프레임 종류를 확인하며, 공개된 디코더가 없으므로 오디오는 디코딩하지 않음)를 통과했습니다. 업스트림은 Linux / PipeWire에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 48 kHz 높음과 저지연에서 동작한다고 보고합니다. 96 kHz(높음 646 kbps, 표준 340, 모바일 255)는 설정에서(또는 `--rate 96000`으로) 선택하고 헤드폰이 이를 알리는 R2 싱크일 때만 사용하며, 저지연에서는 사용하지 않습니다. A2DPWB에서도 업스트림에서도 가상 싱크로만 확인했습니다. [보고를 환영합니다](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+{: .note }
+**aptX Adaptive는 48 kHz에서 실제 헤드폰으로 확인되었습니다.** 한 사용자가 2.0.2-beta.6에서 EarFun Air Pro 4+로 스트리밍하여, 끊김이나 버벅임 없이 기본 aptX만큼 안정적으로 동작함을 확인했습니다([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). 또한 단위 테스트, 업스트림의 비트 단위 일치 테스트 모음, 가상 Bluetooth 싱크를 상대로 한 엔드투엔드 테스트(`tools/emu`: RTP 헤더, 패킷 크기, 프레임 종류를 확인하며, 공개된 디코더가 없으므로 오디오는 디코딩하지 않음)를 통과했습니다. 업스트림은 Linux / PipeWire에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 48 kHz 높음과 저지연에서 동작한다고 보고합니다. 96 kHz(높음 646 kbps, 표준 340, 모바일 255)는 설정에서(또는 `--rate 96000`으로) 선택하고 헤드폰이 이를 알리는 R2 싱크일 때만 사용하며, 저지연에서는 사용하지 않습니다. A2DPWB에서도 업스트림에서도 가상 싱크로만 확인했습니다. [보고를 환영합니다](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 인코더는 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 순수 Rust aptX Adaptive 인코더(MIT)입니다. 업스트림은 이를 클린룸 재구현으로 설명하며, 숫자 테이블은 합법적으로 입수한 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성했습니다. Qualcomm의 코드, SDK, 바이너리는 포함되어 있지 않습니다([라이선스](licenses) 참조).
 
-- **선택 방법**: 자동은 이를 선택하지 않습니다. **코덱** 화면에서 **aptX Adaptive**를 선택하거나 `-c aptxad`를 사용하십시오.
+- **선택 방법**: 헤드폰이 LHDC V5도 LDAC도 제공하지 않으면 자동이 이를 선택합니다. **코덱** 화면에서 **aptX Adaptive**를 선택하거나 `-c aptxad`를 사용할 수도 있습니다.
 - **형식**: 48 kHz 스테레오, 24비트만 지원. 44.1 또는 96 kHz를 요청하면 48 kHz로 캡처합니다.
 - **헤드폰**: R1 싱크(기능 확장 없음, 예: B&W Px7 S2e)와 R2 싱크(R2 비트스트림).
 
@@ -335,10 +337,10 @@ A2DPWB는 [libopenaptx](https://github.com/pali/libopenaptx)로 인코딩하는 
 
 ### aptX Adaptive에서 aptX로의 "대체"는 없습니다
 
-A2DPWB가 연결하면 헤드폰은 **코덱 목록**(AVDTP 스트림 엔드포인트)을 알립니다. A2DPWB는 그 목록에서 코덱 하나를 선택합니다. aptX Adaptive와 기본 aptX는 목록에서 별도의 항목이고, 자동은 aptX Adaptive를 선택하지 않으므로, 그로부터 "대체"되는 일도 없습니다.
+A2DPWB가 연결하면 헤드폰은 **코덱 목록**(AVDTP 스트림 엔드포인트)을 알립니다. A2DPWB는 그 목록에서 코덱 하나를 선택합니다. aptX Adaptive와 기본 aptX는 목록에서 별도의 항목이므로, 코덱 안에서 한쪽에서 다른 쪽으로 "대체"되는 일은 없습니다.
 
-- **헤드폰이 기본 aptX도 제공하는 경우** -- Qualcomm이 aptX Adaptive를 aptX / aptX HD와 하위 호환된다고 홍보하기 때문에 많은 aptX Adaptive 헤드폰이 그렇습니다. 이 경우 A2DPWB는 기본 aptX를 직접 선택합니다. 이는 헤드폰 목록에 있는 별도 코덱이며, aptX Adaptive의 축소 모드가 아닙니다.
-- **헤드폰이 aptX Adaptive만 제공하는 경우** (기본 aptX, aptX HD, aptX LL 없음) -- aptX Adaptive(실험적)를 직접 선택하십시오. 자동은 우선순위에서 다음 코덱, 보통 AAC 또는 SBC를 선택합니다.
+- **헤드폰이 기본 aptX도 제공하는 경우** -- Qualcomm이 aptX Adaptive를 aptX / aptX HD와 하위 호환된다고 홍보하기 때문에 많은 aptX Adaptive 헤드폰이 그렇습니다. 자동은 aptX Adaptive를 선택합니다(aptX HD와 aptX보다 위). 기본 aptX는 직접 선택했을 때 사용되며, 헤드폰 목록에 있는 별도 코덱이지 aptX Adaptive의 축소 모드가 아닙니다.
+- **헤드폰이 aptX Adaptive만 제공하는 경우** (기본 aptX, aptX HD, aptX LL 없음) -- aptX를 선택하면 헤드폰이 제공하는 그다음 하위 코덱, 보통 AAC 또는 SBC로 대체됩니다. aptX Adaptive를 사용하려면 aptX Adaptive(또는 자동)를 선택하십시오.
 
 자동 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 모두 실험적이며 직접 선택한 경우에만)
 
@@ -349,7 +351,7 @@ A2DPWB가 연결하면 헤드폰은 **코덱 목록**(AVDTP 스트림 엔드포�
 | 위치 | 동작 |
 |:-----|:-----|
 | **이 코덱을 사용할 수 없으면 지원되는 다른 코덱 사용** 켜짐 (기본값) | 헤드폰이 제공하는 최적의 코덱으로 자동 우선순위에 따라 연결하며, 코덱 배지에 대신 사용한 코덱과 그 이유가 표시됩니다. |
-| 옵션 꺼짐 | 오류("장치가 ...을(를) 지원하지 않습니다")와 함께 연결이 중지됩니다. aptX, aptX HD 또는 aptX LL을 요청했는데 헤드폰이 aptX Adaptive만 제공하면, 메시지에 그 사실이 표시되고 aptX Adaptive(실험적), 자동, AAC 또는 SBC를 권장합니다. |
+| 옵션 꺼짐 | 오류("장치가 ...을(를) 지원하지 않습니다")와 함께 연결이 중지됩니다. aptX, aptX HD 또는 aptX LL을 요청했는데 헤드폰이 aptX Adaptive만 제공하면, 메시지에 그 사실이 표시되고 aptX Adaptive, 자동, AAC 또는 SBC를 권장합니다. |
 | CLI (`-c <codec>`) | 같은 오류와 함께 중지합니다. 제공되는 최적의 코덱으로 연결하려면 `-c auto`를 사용하십시오. |
 
 이 옵션은 **코덱** 화면 맨 위에 있으며 모든 장치에 적용됩니다(자동에서는 사용되지 않음).
@@ -385,7 +387,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 ```
 
 - `aptX=true` -- 기본 aptX를 사용할 수 있습니다(`aptX Adaptive=true`이어도 마찬가지). 자동은 이를 사용합니다.
-- `aptX Adaptive=true`이면서 `aptX=false`, `aptX HD=false`, `aptX LL=false` -- 헤드폰이 aptX Adaptive만 제공합니다. aptX Adaptive(실험적)를 선택하거나 자동, AAC 또는 SBC를 사용하십시오.
+- `aptX Adaptive=true`이면서 `aptX=false`, `aptX HD=false`, `aptX LL=false` -- 헤드폰이 aptX Adaptive만 제공합니다. aptX Adaptive를 선택하거나 자동, AAC 또는 SBC를 사용하십시오.
 - `aptX Adaptive=true [not usable]` -- 헤드폰이 aptX Adaptive를 제공하지만 A2DPWB에 필요한 48 kHz 스테레오가 없습니다.
 - `remote vendor codec ... - unsupported` -- A2DPWB가 구현하지 않은 다른 벤더 코덱입니다.
 

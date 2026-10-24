@@ -38,7 +38,7 @@ Der Quellcode von A2DPWB ist unter Apache-2.0 oder MIT doppelt lizenziert. Die v
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC-Encoder |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (C-Portierung des AOSP-Encoders) | Commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC-V5-Encoder |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus-Encoder |
-| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (Rust-Encoder, übernommen) | Commit 25099004b2d3 | MIT | aptX-Adaptive-Encoder (experimentell) |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (Rust-Encoder, übernommen) | Commit 25099004b2d3 | MIT | aptX-Adaptive-Encoder |
 | Rust-Crates: [Tauri](https://tauri.app/) 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ... | `Cargo.lock` | Überwiegend Apache-2.0 / MIT; außerdem BSD, ISC, Zlib, Unicode-3.0, CDLA-Permissive-2.0 und MPL-2.0 | Fenster, Infobereich, IPC, USB, Audio, Updates |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | UI-Bibliothek des Fensters |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | JavaScript-Seite von Tauri |

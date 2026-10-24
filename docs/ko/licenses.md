@@ -38,7 +38,7 @@ A2DPWB 소스 코드는 Apache-2.0 또는 MIT 이중 라이선스입니다. 배�
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC 인코더 |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder) (AOSP 인코더의 C 포팅) | commit 3f9d198 | Apache-2.0 (FFT: BSD-3-Clause, KISS FFT) | LHDC V5 인코더 |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus 인코더 |
-| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (Rust 인코더, 내장 사본) | commit 25099004b2d3 | MIT | aptX Adaptive 인코더 (실험적) |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (Rust 인코더, 내장 사본) | commit 25099004b2d3 | MIT | aptX Adaptive 인코더 |
 | Rust 크레이트: [Tauri](https://tauri.app/) 2.12, tokio, serde, windows, nusb, wasapi, tray-icon, ... | `Cargo.lock` | 대부분 Apache-2.0 / MIT, 그 밖에 BSD, ISC, Zlib, Unicode-3.0, CDLA-Permissive-2.0, MPL-2.0 | 창, 트레이, IPC, USB, 오디오, 업데이트 |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | 창의 UI 라이브러리 |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Tauri의 JavaScript 쪽 |

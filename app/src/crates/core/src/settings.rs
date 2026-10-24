@@ -163,6 +163,11 @@ pub struct Settings {
     /// profile option (`le_low_latency`); kept only so the file round-trips.
     pub le_audio_low_latency: bool,
 
+    /// Codecs > "Enable experimental codecs" (on by default, issue #86):
+    /// off, the experimental codecs ([`codec::CodecKind::experimental`])
+    /// are hidden there and never used, by Auto or as a fallback
+    pub experimental_codecs: bool,
+
     /// Before v1.1 the max media packet size was a setting; it now seeds
     /// profiles saved without one. Read, not written.
     #[serde(skip_serializing)]
@@ -258,6 +263,7 @@ impl Default for Settings {
             last_profile: String::new(),
             le_audio_experimental: true,
             le_audio_low_latency: false,
+            experimental_codecs: true,
             max_media_payload: None,
             other: BTreeMap::new(),
         }

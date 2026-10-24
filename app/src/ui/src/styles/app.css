@@ -1665,6 +1665,12 @@ option {
   /* Room for the settings button in the corner */
   padding-right: 1.75rem;
 }
+/* Supported / Not supported, and Experimental */
+.codec-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
 .codec-cell {
   position: relative;
   display: flex;

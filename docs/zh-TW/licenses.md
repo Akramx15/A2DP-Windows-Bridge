@@ -38,7 +38,7 @@ A2DPWB 原始碼採用 Apache-2.0 或 MIT 雙重授權。發佈的 `a2dpwb-core.
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC 編碼器 |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder)（AOSP 編碼器的 C 語言移植版） | commit 3f9d198 | Apache-2.0（FFT：BSD-3-Clause，KISS FFT） | LHDC V5 編碼器 |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus 編碼器 |
-| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)（Rust 編碼器，內含於專案） | commit 25099004b2d3 | MIT | aptX Adaptive 編碼器（實驗性） |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)（Rust 編碼器，內含於專案） | commit 25099004b2d3 | MIT | aptX Adaptive 編碼器 |
 | Rust crate：[Tauri](https://tauri.app/) 2.12、tokio、serde、windows、nusb、wasapi、tray-icon 等 | `Cargo.lock` | 大多為 Apache-2.0 / MIT；另有 BSD、ISC、Zlib、Unicode-3.0、CDLA-Permissive-2.0 與 MPL-2.0 | 視窗、系統匣、IPC、USB、音訊、更新 |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | 視窗的 UI 程式庫 |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Tauri 的 JavaScript 端 |

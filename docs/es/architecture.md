@@ -324,7 +324,7 @@ Captura el audio en tiempo real mediante Windows Audio Session API.
 | FastStream | el mismo codificador SBC | 198/216 kbps (44.1/48 kHz) | Códec de fabricante de CSR, solo en la dirección de música (sin canal de retorno de voz): SBC joint stereo con bitpool 29, tramas rellenadas hasta 72 bytes, 3 por paquete, sin encabezado de carga útil multimedia ni encabezado RTP (como PipeWire); Automático nunca lo elige |
 | LHDC V5 | lhdcv5-enc (port en C del codificador de AOSP) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24 bits, tramas de 5 ms, encabezado de carga útil multimedia de 2 bytes, encabezado RTP |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (estéreo; mono la mitad) | Experimental; Opus A2DP de Android: 48 kHz, tramas de 20 ms (10 ms si el receptor solo admite eso), VBR restringida limitada a la carga útil multimedia, una trama por paquete, encabezado de carga útil multimedia de 1 byte, encabezado RTP |
-| aptX Adaptive | aptx-adaptive (codificador en Rust puro de AKS-Logic/aptx-adaptive-linux, MIT) | Receptores R1: 427/364/318 kbps (Alta/Estándar/Móvil), 265 kbps Baja latencia; receptores R2: 427/270/204, 270 kbps | Experimental; 48 kHz estéreo (96 kHz en HQ a un receptor R2 que lo anuncia, cuando se pide: 646/340/255 kbps), 24 bits; un paquete del códec por paquete multimedia tras el encabezado RTP propio de A2DPWB; ABR en Alta; Automático nunca lo elige |
+| aptX Adaptive | aptx-adaptive (codificador en Rust puro de AKS-Logic/aptx-adaptive-linux, MIT) | Receptores R1: 427/364/318 kbps (Alta/Estándar/Móvil), 265 kbps Baja latencia; receptores R2: 427/270/204, 270 kbps | 48 kHz estéreo (96 kHz en HQ a un receptor R2 que lo anuncia, cuando se pide: 646/340/255 kbps), 24 bits; un paquete del códec por paquete multimedia tras el encabezado RTP propio de A2DPWB; ABR en Alta; Automático nunca lo elige |
 
 Todos los codificadores implementan el trait `codec::Encoder`: indican el formato PCM
 y el número de tramas que consume una llamada, y devuelven tramas del códec.
@@ -388,7 +388,7 @@ Tamaños de los elementos de información de códec (incluidos los 6 bytes de Ve
 encabezado RTP de 12 bytes. aptX, aptX LL y FastStream se envían **sin** encabezado RTP (como hacen Android y
 PipeWire), de modo que toda la MTU de L2CAP queda disponible para las tramas aptX.
 
-**aptX Adaptive** (experimental) envía un paquete del códec por paquete multimedia
+**aptX Adaptive** envía un paquete del códec por paquete multimedia
 tras el encabezado RTP de 12 bytes propio de A2DPWB (BTstack no añade ninguno): tipo de carga útil 96,
 número de secuencia +1 por paquete, marca de tiempo = las muestras por canal del
 paquete (no un reloj), SSRC = el modo de latencia del receptor (0x000000A3 HQ,

@@ -59,4 +59,11 @@ le_audio_experimental: boolean,
  * LE Audio: GMAP low latency for gaming headsets (read when the next
  * LE Audio stream is set up); only with le_audio_experimental
  */
-le_audio_low_latency: boolean, };
+le_audio_low_latency: boolean, 
+/**
+ * Codecs > "Enable experimental codecs" (on by default): off, the
+ * codecs not yet confirmed with real headphones (aptX HD, aptX LL,
+ * Opus, Opus 05, FastStream) are never used (read when the next
+ * stream is set up)
+ */
+experimental_codecs: boolean, };

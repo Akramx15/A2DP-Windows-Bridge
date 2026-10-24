@@ -275,6 +275,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         remote_sink: s.remote_sink.clone(),
         le_audio_experimental: s.le_audio_experimental,
         le_audio_low_latency: s.le_audio_low_latency,
+        experimental_codecs: s.experimental_codecs,
     }
 }
 
@@ -332,6 +333,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.remote_sink = s.remote_sink.clone();
     c.le_audio_experimental = s.le_audio_experimental;
     c.le_audio_low_latency = s.le_audio_low_latency;
+    c.experimental_codecs = s.experimental_codecs;
     c
 }
 
@@ -788,6 +790,19 @@ fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
         && stream.profile.as_deref() == Some(saved)
 }
 
+/// Whether turning experimental codecs on or off may change the codec of
+/// the profile in use: it streams with one, asks for one, is Auto or fell
+/// back (either may pick one now). Not LE Audio (LC3).
+fn restart_for_experimental(stream: &StreamStatus, p: &CoreProfile) -> bool {
+    let experimental = |key: &str| codec::CodecKind::from_key(key).is_some_and(codec::CodecKind::experimental);
+    let (streams_one, fell_back) = stream.info.as_ref().map_or((false, false), |i| {
+        (codec::CodecKind::ALL.iter().any(|k| k.experimental() && k.name() == i.codec), i.requested_codec.is_some())
+    });
+    restart_after_save(stream, &p.name)
+        && !p.le_audio
+        && (p.codec == "auto" || experimental(&p.codec) || streams_one || fell_back)
+}
+
 fn unix_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -1190,9 +1205,10 @@ impl CoreState {
         let list = profiles::load(&dir);
         let p =
             list.iter().find(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
-        let req = p
+        let mut req = p
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
+        req.experimental_codecs = settings.experimental_codecs;
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -1200,7 +1216,9 @@ impl CoreState {
 
     /// Starts streaming without a profile (stream.start_custom)
     pub fn start_custom(&self, c: &CustomStream) -> Result<(), ErrorInfo> {
-        let req = custom_request(c, self.service.settings().legacy_max_media_payload())?;
+        let settings = self.service.settings();
+        let mut req = custom_request(c, settings.legacy_max_media_payload())?;
+        req.experimental_codecs = settings.experimental_codecs;
         tracing::info!("custom stream to {}: codec {}, source {}", c.device, c.codec, req.source);
         self.begin_stream(req, None);
         Ok(())
@@ -1615,9 +1633,25 @@ impl CoreState {
                     }
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
+                    let experimental_toggled = base.experimental_codecs != merged.experimental_codecs;
                     me.save_settings(merged)?;
                     if chip {
                         me.reload_adapter();
+                    }
+                    // Experimental codecs on / off: a profile in use whose
+                    // codec it changes starts again (as a profile save does)
+                    if experimental_toggled {
+                        let (_, s) = me.snapshot();
+                        let list = profiles::load(&me.config_dir());
+                        let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
+                        if let Some(p) = in_use.filter(|p| restart_for_experimental(&s.stream, p)) {
+                            tracing::info!(
+                                "experimental codecs turned {}: profile {} starts again",
+                                if settings.experimental_codecs { "on" } else { "off" },
+                                a2dpwb_core::diag::quoted(&p.name)
+                            );
+                            me.start_profile(&p.name.clone())?;
+                        }
                     }
                     // LE Audio on / off waits for the next scan or connection
                     // while the stack is in use (v1's deferred text)
@@ -1645,7 +1679,8 @@ impl CoreState {
                     }));
                     // The device streamed before connects again on the new
                     // stack, with the same profile (issue #86)
-                    if let Some(req) = again {
+                    if let Some(mut req) = again {
+                        req.experimental_codecs = me.service.settings().experimental_codecs;
                         let profile = me.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         me.begin_stream(req, profile);
                     }
@@ -2005,6 +2040,49 @@ mod tests {
         for state in [StreamState::Idle, StreamState::Error] {
             assert!(!restart_after_save(&status(state, Some("WH LDAC")), "WH LDAC"));
         }
+    }
+
+    #[test]
+    fn experimental_codecs_on_or_off_restart_the_profile_they_change() {
+        let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
+        let streaming = |codec: &str, requested: Option<&str>| StreamStatus {
+            state: StreamState::Streaming,
+            profile: Some("WH".into()),
+            info: Some(ipc::StreamInfo {
+                codec: codec.into(),
+                bitrate_kbps: 0,
+                sample_rate: 48000,
+                channels: 2,
+                bits: 16,
+                source_sample_rate: 48000,
+                source_channels: 2,
+                source_bits: 32,
+                requested_codec: requested.map(str::to_owned),
+                requested_in_use: false,
+                abr: false,
+                bitrate_capped: false,
+                source: None,
+                le: None,
+                details: None,
+            }),
+            ..StreamStatus::default()
+        };
+        // Auto, an experimental codec chosen or in use, a fallback: again
+        assert!(restart_for_experimental(&streaming("LDAC", None), &profile("auto")));
+        assert!(restart_for_experimental(&streaming("aptX HD", None), &profile("aptxhd")));
+        assert!(restart_for_experimental(&streaming("AAC", None), &profile("opus")));
+        assert!(restart_for_experimental(&streaming("Opus", Some("LDAC")), &profile("ldac")));
+        assert!(restart_for_experimental(&streaming("AAC", Some("LDAC")), &profile("ldac")));
+        // A codec of its own, not experimental: left alone
+        assert!(!restart_for_experimental(&streaming("LDAC", None), &profile("ldac")));
+        assert!(!restart_for_experimental(&streaming("aptX Adaptive", None), &profile("aptxad")));
+        // Another profile, nothing running, LE Audio
+        assert!(!restart_for_experimental(
+            &streaming("LDAC", None),
+            &CoreProfile { name: "Buds".into(), ..profile("auto") }
+        ));
+        assert!(!restart_for_experimental(&StreamStatus::default(), &profile("auto")));
+        assert!(!restart_for_experimental(&streaming("LC3", None), &CoreProfile { le_audio: true, ..profile("auto") }));
     }
 
     #[test]

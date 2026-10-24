@@ -38,7 +38,7 @@ A2DPWB のソースコードは Apache-2.0 / MIT のデュアルライセンス�
 | [fdk-aac](https://github.com/mstorsjo/fdk-aac) | v2.0.3-158-gd8e6b1a | FDK AAC License | AAC-LC エンコーダー |
 | [LHDC-V5-Encoder](https://github.com/WillyBilly06/LHDC-V5-Encoder)（AOSP エンコーダーの C 移植版） | commit 3f9d198 | Apache-2.0（FFT 部分は BSD-3-Clause、KISS FFT） | LHDC V5 エンコーダー |
 | [libopus](https://opus-codec.org/) | 1.5.2 | BSD-3-Clause | Opus エンコーダー |
-| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)（Rust 製エンコーダー、取り込み） | commit 25099004b2d3 | MIT | aptX Adaptive エンコーダー（試験的） |
+| [aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)（Rust 製エンコーダー、取り込み） | commit 25099004b2d3 | MIT | aptX Adaptive エンコーダー |
 | Rust のクレート: [Tauri](https://tauri.app/) 2.12、tokio、serde、windows、nusb、wasapi、tray-icon など | `Cargo.lock` | ほとんどが Apache-2.0 / MIT。ほかに BSD、ISC、Zlib、Unicode-3.0、CDLA-Permissive-2.0、MPL-2.0 | ウィンドウ、トレイ、IPC、USB、音声、更新 |
 | [SolidJS](https://www.solidjs.com/) | 1.9.17 | MIT | ウィンドウの UI ライブラリ |
 | [`@tauri-apps/api`](https://github.com/tauri-apps/tauri) | 2.12.4 | Apache-2.0 OR MIT | Tauri の JavaScript 側 |

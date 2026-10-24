@@ -266,6 +266,9 @@ result. Listing adapters and their driver needs no elevation.
   the next one below it in that order the remote offers (always for a
   profile, since issue #86; the command line only with `--fallback`), and is
   an error otherwise
+- Leaves the experimental codecs (aptX HD, aptX LL, Opus, Opus 05,
+  FastStream) out of Auto and the fallback when the `experimental_codecs`
+  setting is off (Codecs > Enable experimental codecs; `--no-experimental`)
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
   advertises; WASAPI resamples the capture); aptX Adaptive uses 48 kHz, or
   96 kHz when the profile asks for it in High / Standard / Mobile and the sink
@@ -326,7 +329,7 @@ Captures audio in real time using the Windows Audio Session API.
 | FastStream | the same SBC encoder | 198/216 kbps (44.1/48 kHz) | CSR vendor codec, music direction only (no voice backchannel): SBC joint stereo bitpool 29, frames padded to 72 bytes, 3 per packet, no media payload header and no RTP header (as PipeWire); never chosen by Auto |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
-| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | R1 sinks: 427/364/318 kbps (High/Standard/Mobile), 265 kbps Low Latency; R2 sinks: 427/270/204, 270 kbps | Experimental; 48 kHz stereo (96 kHz in HQ to an R2 sink that lists it, when asked for: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; Auto takes it after LHDC V5 and LDAC |
+| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | R1 sinks: 427/364/318 kbps (High/Standard/Mobile), 265 kbps Low Latency; R2 sinks: 427/270/204, 270 kbps | 48 kHz stereo (96 kHz in HQ to an R2 sink that lists it, when asked for: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; Auto takes it after LHDC V5 and LDAC |
 
 All encoders implement the `codec::Encoder` trait: they state the PCM
 format and the number of frames one call consumes, and return codec frames.
@@ -391,7 +394,7 @@ Codec information element sizes (including the 6-byte vendor/codec ID):
 12-byte RTP header. aptX, aptX LL and FastStream are sent **without** an RTP header (as Android and
 PipeWire do), so the whole L2CAP MTU is available for aptX frames.
 
-**aptX Adaptive** (experimental) sends one codec packet per media packet
+**aptX Adaptive** sends one codec packet per media packet
 behind A2DPWB's own 12-byte RTP header (BTstack adds none): payload type 96,
 sequence number +1 per packet, timestamp = the samples per channel in the
 packet (not a clock), SSRC = the sink's latency mode (0x000000A3 HQ,

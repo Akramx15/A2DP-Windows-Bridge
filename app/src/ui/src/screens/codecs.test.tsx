@@ -206,6 +206,41 @@ describe("the Codecs screen", () => {
     expect(await within(wh).findByText(t("error.codec_not_supported", "aptX HD"))).toBeInTheDocument();
     expect(within(wh).getByText(t("ui.codecs.fallback_to", t("codec.aac")))).toBeInTheDocument();
   });
+
+  it("hides the experimental codecs and falls back from them when they are turned off (issue #86)", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    fireEvent.click(screen.getByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) }));
+    // On by default: aptX HD shown, tagged Experimental; aptX Adaptive is not
+    const hd = await within(wh).findByRole("radio", { name: /aptX HD/ });
+    expect(hd.closest("label")).toHaveTextContent(t("ui.codecs.experimental_tag"));
+    expect(within(wh).getByRole("radio", { name: /aptX Adaptive/ }).closest("label")).not.toHaveTextContent(
+      t("ui.codecs.experimental_tag"),
+    );
+    fireEvent.click(hd);
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    await settled(wh);
+
+    const box = screen.getByRole("checkbox", { name: t("ui.codecs.experimental") });
+    expect(box).toBeChecked();
+    fireEvent.click(box);
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "settings.set")?.params).toMatchObject({
+        settings: { experimental_codecs: false },
+      }),
+    );
+    // aptX HD, aptX LL, Opus, Opus 05 and FastStream are gone
+    await waitFor(() => expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull());
+    for (const name of [/aptX Low Latency/, /^Opus$/, /Opus 05/, /FastStream/]) {
+      expect(within(wh).queryByRole("radio", { name })).toBeNull();
+    }
+    expect(within(wh).getByRole("radio", { name: /aptX Adaptive/ })).toBeInTheDocument();
+    // The chosen aptX HD: said so, with what is used instead (aptX LL below
+    // it is experimental too, so AAC)
+    expect(within(wh).getByText(t("error.codec_experimental_off", "aptX HD"))).toBeInTheDocument();
+    expect(within(wh).getByText(t("ui.codecs.experimental_fallback_to", t("codec.aac")))).toBeInTheDocument();
+    expect(box).not.toBeChecked();
+  });
 });
 
 describe("saved devices on the Audio Devices screen", () => {

@@ -315,7 +315,7 @@ Windows Audio Session API를 사용하여 오디오를 실시간으로 캡처합
 | FastStream | 같은 SBC 인코더 | 198/216 kbps (44.1/48 kHz) | CSR 벤더 코덱, 음악 방향만 (음성 백채널 없음): SBC joint stereo bitpool 29, 프레임을 72바이트로 패딩, 패킷당 3개, 미디어 페이로드 헤더와 RTP 헤더 없음 (PipeWire와 동일). 자동에서는 선택되지 않음 |
 | LHDC V5 | lhdcv5-enc (AOSP 인코더의 C 포팅) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24비트, 5 ms 프레임, 2바이트 미디어 페이로드 헤더, RTP 헤더 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (스테레오, 모노는 절반) | 실험적. Android의 A2DP Opus: 48 kHz, 20 ms 프레임(싱크가 10 ms만 지원하면 10 ms), 미디어 페이로드에 맞춘 상한이 있는 constrained VBR, 패킷당 프레임 하나, 1바이트 미디어 페이로드 헤더, RTP 헤더 |
-| aptX Adaptive | aptx-adaptive (AKS-Logic/aptx-adaptive-linux의 순수 Rust 인코더, MIT) | R1 싱크: 427/364/318 kbps (높음/표준/모바일), 저지연 265 kbps. R2 싱크: 427/270/204, 270 kbps | 실험적. 48 kHz 스테레오(요청 시 96 kHz를 알리는 R2 싱크에는 HQ에서 96 kHz: 646/340/255 kbps), 24비트. 미디어 패킷당 코덱 패킷 하나, A2DPWB 자체 RTP 헤더. 높음에서 ABR. 자동에서는 선택되지 않음 |
+| aptX Adaptive | aptx-adaptive (AKS-Logic/aptx-adaptive-linux의 순수 Rust 인코더, MIT) | R1 싱크: 427/364/318 kbps (높음/표준/모바일), 저지연 265 kbps. R2 싱크: 427/270/204, 270 kbps | 48 kHz 스테레오(요청 시 96 kHz를 알리는 R2 싱크에는 HQ에서 96 kHz: 646/340/255 kbps), 24비트. 미디어 패킷당 코덱 패킷 하나, A2DPWB 자체 RTP 헤더. 높음에서 ABR. 자동에서는 선택되지 않음 |
 
 모든 인코더는 `codec::Encoder` 트레이트를 구현합니다. 각 인코더는 PCM 형식과
 한 번의 호출에서 소비하는 프레임 수를 명시하고, 코덱 프레임을 반환합니다.
@@ -378,7 +378,7 @@ AAC와 SBC는 A2DP 사양에 정의된 표준 A2DP 코덱 ID를 사용합니다.
 12바이트 RTP 헤더가 붙습니다. aptX, aptX LL, FastStream은 (Android 및
 PipeWire와 마찬가지로) RTP 헤더 **없이** 전송되므로, L2CAP MTU 전체를 aptX 프레임에 사용할 수 있습니다.
 
-**aptX Adaptive**(실험적)는 미디어 패킷 하나에 코덱 패킷 하나를 A2DPWB 자체의
+**aptX Adaptive**는 미디어 패킷 하나에 코덱 패킷 하나를 A2DPWB 자체의
 12바이트 RTP 헤더 뒤에 담아 보냅니다(BTstack은 RTP 헤더를 붙이지 않음).
 페이로드 타입 96, 시퀀스 번호는 패킷마다 +1, 타임스탬프는 패킷의 채널당 샘플
 수(시계 값이 아님), SSRC는 싱크의 지연 모드(HQ 0x000000A3, LL 0x000000A1)입니다.

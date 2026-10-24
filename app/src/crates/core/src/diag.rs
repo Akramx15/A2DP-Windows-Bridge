@@ -1354,13 +1354,14 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
     let _ = writeln!(out, "Language     : {}, theme {}", s.language, s.theme);
     let _ = writeln!(
         out,
-        "Settings     : media keys {}, remember volume {}{}, AFH {}, updates {}{}",
+        "Settings     : media keys {}, remember volume {}{}, experimental codecs {}, AFH {}, updates {}{}",
         on_off(s.media_keys),
         on_off(s.remember_volume),
         match s.device_options.len() {
             0 => String::new(),
             n => format!(" ({n} device override(s))"),
         },
+        on_off(s.experimental_codecs),
         s.afh,
         on_off(s.check_updates_on_startup),
         if s.include_prereleases { " (pre-releases too)" } else { "" }
