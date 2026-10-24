@@ -47,7 +47,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   --sbc-subbands <n>    SBC / SBC XQ subbands: 4, 8 (default)
   --sbc-alloc <method>  SBC / SBC XQ allocation: loudness (default), snr
   --sbc-mode <mode>     SBC channel mode: joint_stereo (default), stereo,
-                        dual_channel, mono
+                        mono (dual channel: -c sbcxq)
   --sbc-bitpool <n>     SBC / SBC XQ bitpool (default: by quality)
   --afh <policy>        auto, off or Wi-Fi channels to avoid such as 6,11
   --remote-sink <host[:port]|auto>
@@ -231,9 +231,11 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
             "--sbc-mode" => {
                 let v = value(&mut it, "--sbc-mode")?.to_lowercase();
+                // Dual channel is SBC XQ's (issue #86)
                 a.sbc.channel_mode = Some(
                     codec::sbc::ChannelMode::from_key(&v)
-                        .ok_or("--sbc-mode takes joint_stereo, stereo, dual_channel or mono")?,
+                        .filter(|m| *m != codec::sbc::ChannelMode::DualChannel)
+                        .ok_or("--sbc-mode takes joint_stereo, stereo or mono (dual channel: -c sbcxq)")?,
                 );
             }
             "--sbc-bitpool" => {
@@ -985,7 +987,14 @@ mod tests {
             }
         );
         assert_eq!(a.sbc_bitpool, 40);
-        for bad in ["--sbc-blocks 6", "--sbc-subbands 2", "--sbc-alloc max", "--sbc-mode auto", "--sbc-bitpool 60"] {
+        for bad in [
+            "--sbc-blocks 6",
+            "--sbc-subbands 2",
+            "--sbc-alloc max",
+            "--sbc-mode auto",
+            "--sbc-mode dual_channel",
+            "--sbc-bitpool 60",
+        ] {
             assert!(parse(&args(&format!("--cli {bad}"))).is_err(), "{bad}");
         }
     }

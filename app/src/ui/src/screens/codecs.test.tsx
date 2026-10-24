@@ -360,6 +360,42 @@ describe("SBC settings", () => {
     // Bitpool 43 per channel at 48 kHz
     expect(within(dialog).getByRole("status")).toHaveTextContent(t("ui.profile.sbc_bitrate", 552, "48"));
   });
+
+  it("plain SBC offers no dual channel: that is SBC XQ (issue #86)", async () => {
+    start("#/codecs");
+    const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc");
+    const mode = within(dialog).getByLabelText(t("ui.diag.cd_channel_mode"));
+    expect(within(mode).getAllByRole("option").map((o) => o.textContent)).toEqual(
+      [t("codec.auto"), ...["joint_stereo", "stereo", "mono"].map((m) => t(`ui.diag.cd_mode.${m}`))],
+    );
+  });
+
+  it("SBC's ABR and frame setup do not carry to SBC XQ, nor back (issue #86)", async () => {
+    const { calls } = start("#/codecs");
+    fireEvent.click(await screen.findByRole("checkbox", { name: t("ui.profile.codecs_hide", 9) }));
+    const wh = await section("WH-1000XM5");
+    let dialog = await codecSettings(wh, "codec.sbc");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.change(within(dialog).getByLabelText(t("ui.diag.cd_blocks")), { target: { value: "8" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0].profile).toMatchObject({ codec: "sbc", abr: true, sbc_blocks: 8 });
+    await settled(wh);
+
+    dialog = await codecSettings(wh, "codec.sbc_xq");
+    expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).not.toBeChecked();
+    expect(within(dialog).getByLabelText(t("ui.diag.cd_blocks"))).toHaveValue("0");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1].profile).toMatchObject({ codec: "sbcxq", abr: false, sbc_blocks: 0 });
+    expect(saves(calls)[1].profile.codec_settings).toMatchObject({ sbc: { abr: true, sbc_blocks: 8 } });
+    await settled(wh);
+
+    // SBC's own come back as they were
+    dialog = await codecSettings(wh, "codec.sbc");
+    expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).toBeChecked();
+    expect(within(dialog).getByLabelText(t("ui.diag.cd_blocks"))).toHaveValue("8");
+  });
 });
 
 /** A saved device's entry on the Audio Devices screen (its row and settings) */

@@ -9,10 +9,9 @@ import { createStore } from "solid-js/store";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
 import {
-  abrCarries,
   bitDepths,
+  carryToCodec,
   codecSpec,
-  fitToCodec,
   BITPOOL_MAX,
   BITPOOL_MAX_XQ,
   BITPOOL_MIN,
@@ -158,22 +157,11 @@ export function CodecSettings(props: {
         if (!s) return;
         const kept = props.kept(s.id);
         const p = s.id === props.profile.codec || !kept ? props.profile : { ...kept, codec: s.id };
-        setV(
-          fitToCodec({
-            codec: s.id,
-            // SBC / SBC XQ: no quality to choose, Auto is the highest bitpool
-            quality: s.bitpool ? "hq" : p.quality,
-            sample_rate: p.sample_rate,
-            bit_depth: p.bit_depth,
-            abr: abrCarries(p.codec, s.id) ? p.abr : false,
-            sbc_bitpool: p.sbc_bitpool,
-            sbcxq_bitpool: p.sbcxq_bitpool,
-            sbc_blocks: p.sbc_blocks,
-            sbc_subbands: p.sbc_subbands,
-            sbc_allocation: p.sbc_allocation,
-            sbc_channel_mode: p.sbc_channel_mode,
-          }),
-        );
+        // From another codec's values: without its ABR or SBC frame setup
+        // (SBC and SBC XQ apart, issue #86)
+        const from = carryToCodec(codecChoice(p), s.id);
+        // SBC / SBC XQ: no quality to choose, Auto is the highest bitpool
+        setV(s.bitpool ? { ...from, quality: "hq" } : from);
       },
     ),
   );

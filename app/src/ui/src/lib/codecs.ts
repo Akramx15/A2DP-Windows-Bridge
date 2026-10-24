@@ -340,7 +340,7 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
   const spec = codecSpec(p.codec);
   const quality = spec.qualities.length === 0 || spec.qualities.some((m) => m.id === p.quality) ? p.quality : "hq";
   // The frame setup is SBC's and SBC XQ's; the channel mode SBC's only (XQ
-  // is dual channel)
+  // is dual channel, and plain SBC has no dual channel: issue #86)
   const sbc = p.codec === "sbc" || p.codec === "sbcxq";
   return {
     ...p,
@@ -353,7 +353,7 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
     ...(p.sbc_blocks === undefined ? {} : { sbc_blocks: sbc ? p.sbc_blocks : 0 }),
     ...(p.sbc_subbands === undefined ? {} : { sbc_subbands: sbc ? p.sbc_subbands : 0 }),
     ...(p.sbc_allocation === undefined ? {} : { sbc_allocation: sbc ? p.sbc_allocation : "" }),
-    ...(p.sbc_channel_mode === undefined ? {} : { sbc_channel_mode: p.codec === "sbc" ? p.sbc_channel_mode : "" }),
+    ...(p.sbc_channel_mode === undefined ? {} : { sbc_channel_mode: p.codec === "sbc" && p.sbc_channel_mode !== "dual_channel" ? p.sbc_channel_mode : "" }),
   };
 }
 
