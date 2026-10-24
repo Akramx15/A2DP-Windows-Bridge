@@ -702,6 +702,8 @@
   "ui.devices.manage": "管理设备",
   "ui.devices.saved_empty": "还没有已保存的设备。请在“音频设备”中添加。",
   "ui.home.battery": "电量 %d%%",
+  "ui.home.battery_unknown": "电量未知",
+  "ui.home.battery_refused_tip": "耳机拒绝报告电量。可能有其他设备（如手机）同时连接着耳机；断开该设备后重新连接即可显示电量。",
   "ui.nav.about": "关于",
   "ui.home.no_device": "还没有音频设备。添加一个即可开始。",
   "ui.home.add_device": "添加设备",

@@ -19,6 +19,7 @@ import {
   currentProfile,
   QualityIndicator,
   Ring,
+  showsBattery,
   statusText,
   useFixes,
   VolumeControl,
@@ -61,8 +62,8 @@ export function Flyout() {
           <div class="device-name ellipsis">{profile()?.device_name || profile()?.name || t("profile.none_selected")}</div>
           {/* As on Home and in the sidebar: battery | state (issue #86) */}
           <div class="fly-state">
-            <Show when={stream().battery !== null}>
-              <BatteryLevel class="fly-battery" percent={stream().battery!} />
+            <Show when={showsBattery(stream())}>
+              <BatteryLevel class="fly-battery" percent={stream().battery} />
               <span class="muted" aria-hidden="true">
                 |
               </span>

@@ -20,6 +20,7 @@ import {
   openFirmwareFolder,
   QualityIndicator,
   Ring,
+  showsBattery,
   statusText,
   VolumeControl,
 } from "../components/stream";
@@ -250,8 +251,8 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
             {name()}
           </div>
           <div class="device-state">
-            <Show when={live() && stream().battery !== null}>
-              <BatteryLevel percent={stream().battery!} />
+            <Show when={live() && showsBattery(stream())}>
+              <BatteryLevel percent={stream().battery} />
               <span class="muted" aria-hidden="true">
                 |
               </span>

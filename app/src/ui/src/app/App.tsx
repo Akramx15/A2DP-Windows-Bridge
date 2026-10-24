@@ -6,7 +6,7 @@ import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch } f
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import type { IconName } from "../components/icons";
-import { BatteryLevel, codecDetails, codecName, stateLabel } from "../components/stream";
+import { BatteryLevel, codecDetails, codecName, showsBattery, stateLabel } from "../components/stream";
 import { lang, setLanguage, t } from "../i18n";
 import type { Core } from "../ipc/store";
 import { About } from "../screens/About";
@@ -298,8 +298,8 @@ function DevicePill(props: { entry: AudioEntry | null }) {
           <span class="status-pill-device ellipsis">{device()}</span>
         </Show>
         <span class="status-pill-line">
-          <Show when={live() && stream().battery !== null}>
-            <BatteryLevel class="status-pill-sub" percent={stream().battery!} />
+          <Show when={live() && showsBattery(stream())}>
+            <BatteryLevel class="status-pill-sub" percent={stream().battery} />
             <span class="status-pill-sub" aria-hidden="true">
               |
             </span>

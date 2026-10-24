@@ -1550,6 +1550,13 @@ impl HostApp {
                     tracing::info!("HFP: service level connection established");
                 } else {
                     tracing::info!("HFP: service level connection failed (0x{status:02x})");
+                    // RFCOMM DM: the headphones have HFP but refuse it to us,
+                    // seen while a phone held it (multipoint)
+                    if status == ERROR_CODE_CONNECTION_REJECTED_DUE_TO_LIMITED_RESOURCES {
+                        tracing::info!("HFP: refused by the headphones (another device may hold HFP): battery unknown");
+                        self.shared.update(|s| s.battery = None);
+                        let _ = self.events.send(HostEvent::BatteryRefused);
+                    }
                 }
             }
             Some(HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_RELEASED) => {

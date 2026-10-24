@@ -702,6 +702,8 @@
   "ui.devices.manage": "Administrar dispositivos",
   "ui.devices.saved_empty": "Aún no hay dispositivos guardados. Añade uno en Dispositivos de audio.",
   "ui.home.battery": "Batería %d%%",
+  "ui.home.battery_unknown": "Batería desconocida",
+  "ui.home.battery_refused_tip": "Los auriculares se negaron a informar de su batería. Puede que otro dispositivo (como un teléfono) esté conectado a la vez; desconéctalo y vuelve a conectar para ver la batería.",
   "ui.nav.about": "Acerca de",
   "ui.home.no_device": "Aún no hay ningún dispositivo de audio. Añade uno para empezar.",
   "ui.home.add_device": "Añadir un dispositivo",

@@ -702,6 +702,8 @@
   "ui.devices.manage": "デバイスの管理",
   "ui.devices.saved_empty": "保存されたデバイスがありません。「オーディオデバイス」で追加してください。",
   "ui.home.battery": "バッテリー %d%%",
+  "ui.home.battery_unknown": "バッテリー 不明",
+  "ui.home.battery_refused_tip": "ヘッドホンがバッテリー残量の通知を拒否しました。スマホなど別の機器が同時に接続されている可能性があります。その機器を切断して再接続すると表示されます。",
   "ui.nav.about": "このソフトについて",
   "ui.home.no_device": "オーディオデバイスがまだありません。追加してください。",
   "ui.home.add_device": "デバイスを追加",

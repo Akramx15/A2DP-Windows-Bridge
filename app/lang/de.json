@@ -702,6 +702,8 @@
   "ui.devices.manage": "Geräte verwalten",
   "ui.devices.saved_empty": "Noch keine gespeicherten Geräte. Fügen Sie eines unter Audiogeräte hinzu.",
   "ui.home.battery": "Akku %d%%",
+  "ui.home.battery_unknown": "Akku unbekannt",
+  "ui.home.battery_refused_tip": "Der Kopfhörer hat die Akkuanzeige verweigert. Möglicherweise ist gleichzeitig ein anderes Gerät (z. B. ein Smartphone) verbunden; trenne es und verbinde neu, um den Akkustand zu sehen.",
   "ui.nav.about": "Info",
   "ui.home.no_device": "Noch kein Audiogerät. Fügen Sie eines hinzu, um zu beginnen.",
   "ui.home.add_device": "Gerät hinzufügen",

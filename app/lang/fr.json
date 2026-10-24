@@ -702,6 +702,8 @@
   "ui.devices.manage": "Gérer les appareils",
   "ui.devices.saved_empty": "Aucun appareil enregistré. Ajoutez-en un dans Périphériques audio.",
   "ui.home.battery": "Batterie %d%%",
+  "ui.home.battery_unknown": "Batterie inconnue",
+  "ui.home.battery_refused_tip": "Le casque a refusé d'indiquer sa batterie. Un autre appareil (un téléphone, par exemple) y est peut-être connecté en même temps ; déconnectez-le puis reconnectez pour voir la batterie.",
   "ui.nav.about": "À propos",
   "ui.home.no_device": "Aucun appareil audio pour l'instant. Ajoutez-en un pour commencer.",
   "ui.home.add_device": "Ajouter un appareil",
