@@ -93,8 +93,8 @@ pub struct Profile {
     /// SBC / SBC XQ: loudness, snr ("" = loudness)
     #[serde(skip_serializing_if = "String::is_empty")]
     pub sbc_allocation: String,
-    /// SBC: joint_stereo, stereo, dual_channel, mono ("" = joint stereo;
-    /// SBC XQ is always dual channel)
+    /// SBC: joint_stereo, stereo, mono ("" = joint stereo; dual channel is
+    /// SBC XQ's, which is always dual channel)
     #[serde(skip_serializing_if = "String::is_empty")]
     pub sbc_channel_mode: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -384,34 +384,69 @@ pub fn consolidate(list: &mut Vec<Profile>, last_profile: &str) -> Vec<String> {
     folded
 }
 
-/// The saved profiles, names made unique in memory (see make_names_unique;
-/// written at the next save)
+/// Plain SBC no longer offers dual channel (issue #86: SBC XQ is SBC's dual
+/// channel): a profile that chose it, for the codec in use or kept in
+/// `codec_settings`, gets joint stereo (""). Returns how many profiles
+/// changed.
+pub fn drop_sbc_dual_channel(list: &mut [Profile]) -> usize {
+    let dual = |m: &mut String| {
+        let was = m == "dual_channel";
+        if was {
+            m.clear();
+        }
+        was
+    };
+    let mut changed = 0;
+    for p in list {
+        let mut any = dual(&mut p.sbc_channel_mode);
+        for v in p.codec_settings.values_mut() {
+            any |= dual(&mut v.sbc_channel_mode);
+        }
+        if any {
+            tracing::info!("profiles: \"{}\": SBC dual channel is now SBC XQ's, joint stereo instead", p.name);
+            changed += 1;
+        }
+    }
+    changed
+}
+
+/// The saved profiles, names made unique and SBC's dual channel dropped in
+/// memory (see make_names_unique, drop_sbc_dual_channel; written at the next
+/// save)
 pub fn load(dir: &Path) -> Vec<Profile> {
     load_counted(dir).0
 }
 
 /// [`load`], and how many profiles it renamed
 pub fn load_counted(dir: &Path) -> (Vec<Profile>, usize) {
+    let (list, renamed, _) = load_fixed(dir);
+    (list, renamed)
+}
+
+/// [`load`], how many profiles it renamed and how many lost SBC's dual
+/// channel
+pub fn load_fixed(dir: &Path) -> (Vec<Profile>, usize, usize) {
     let text = match std::fs::read_to_string(path(dir)) {
         Ok(t) => t,
         Err(e) => {
             tracing::debug!("profiles: {} not read ({e}), no profiles", path(dir).display());
-            return (Vec::new(), 0);
+            return (Vec::new(), 0, 0);
         }
     };
     match serde_json::from_str::<ProfilesFile>(&text) {
         Ok(mut f) => {
             let renamed = make_names_unique(&mut f.profiles);
+            let dual = drop_sbc_dual_channel(&mut f.profiles);
             tracing::debug!(
-                "profiles: loaded {} profile(s) from {}, {renamed} renamed",
+                "profiles: loaded {} profile(s) from {}, {renamed} renamed, {dual} off SBC dual channel",
                 f.profiles.len(),
                 path(dir).display()
             );
-            (f.profiles, renamed)
+            (f.profiles, renamed, dual)
         }
         Err(e) => {
             tracing::warn!("profiles: {} is not valid ({e})", path(dir).display());
-            (Vec::new(), 0)
+            (Vec::new(), 0, 0)
         }
     }
 }

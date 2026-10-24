@@ -656,11 +656,15 @@ impl RemoteCaps {
     /// profile asks for: a value the sink does not list falls back to the
     /// default (the SET_CONFIGURATION would be refused), said in the notes
     /// returned (English, for the log). Unknown capabilities take every
-    /// value. SBC XQ has no channel mode of its own choice (dual channel).
+    /// value. SBC XQ has no channel mode of its own choice (dual channel);
+    /// plain SBC no dual channel (that is SBC XQ, issue #86).
     pub fn sbc_params(&self, kind: CodecKind, wanted: sbc::SbcParams) -> (sbc::SbcParams, Vec<String>) {
         let mut p = wanted;
         let mut notes = Vec::new();
         if kind == CodecKind::SbcXq {
+            p.channel_mode = None;
+        } else if p.channel_mode == Some(sbc::ChannelMode::DualChannel) {
+            notes.push("SBC: dual channel is SBC XQ's, using JointStereo".to_string());
             p.channel_mode = None;
         }
         if !matches!(p.blocks, 0 | 4 | 8 | 12 | 16) {
@@ -1721,6 +1725,18 @@ mod tests {
             sbc::SbcParams { channel_mode: Some(ChannelMode::Stereo), ..Default::default() },
         );
         assert!(p.is_default() && notes.is_empty());
+        // Plain SBC has no dual channel (SBC XQ is that, issue #86), even
+        // from a sink that lists it
+        let mut all = RemoteCaps::default();
+        all.add_sbc_caps(1, sbc_all());
+        let dual = sbc::SbcParams { channel_mode: Some(ChannelMode::DualChannel), ..Default::default() };
+        let (p, notes) = all.sbc_params(CodecKind::Sbc, dual);
+        assert!(p.is_default() && notes.len() == 1, "{p:?} {notes:?}");
+        let c = all.configuration_with(CodecKind::Sbc, 44100, 2, 16, false, dual).unwrap();
+        assert!(matches!(
+            c.request,
+            ConfigRequest::Sbc { channel_mode: ChannelMode::JointStereo, max_bitpool: 53, .. }
+        ));
     }
 
     #[test]

@@ -10,8 +10,8 @@ import { parseAddress } from "./format";
 export const SBC_BLOCKS = [4, 8, 12, 16];
 export const SBC_SUBBANDS = [4, 8];
 export const SBC_ALLOCATIONS = ["loudness", "snr"];
-/** SBC only: SBC XQ is always dual channel */
-export const SBC_CHANNEL_MODES = ["joint_stereo", "stereo", "dual_channel", "mono"];
+/** SBC only: dual channel is SBC XQ's, which is always that (issue #86) */
+export const SBC_CHANNEL_MODES = ["joint_stereo", "stereo", "mono"];
 
 /** What a device's SBC endpoint offers (Device.sbc, CodecDetails' SbcDeviceCaps) */
 export type SbcCaps = NonNullable<Device["sbc"]>;
@@ -90,12 +90,12 @@ export function sbcSetup(p: SbcFields, rate: number, caps: SbcCaps | null): SbcS
   const allocation = p.sbc_allocation && sbcOffered(caps, "allocations", p.sbc_allocation) ? p.sbc_allocation : "loudness";
   const mode = xq
     ? "dual_channel"
-    : p.sbc_channel_mode && sbcOffered(caps, "channel_modes", p.sbc_channel_mode)
+    : SBC_CHANNEL_MODES.includes(p.sbc_channel_mode) && sbcOffered(caps, "channel_modes", p.sbc_channel_mode)
       ? p.sbc_channel_mode
       : "joint_stereo";
   const max = xq ? xqBitpool("hq", rate) : 53;
   const asked = xq ? p.sbcxq_bitpool : p.sbc_bitpool;
-  const auto = xq ? xqBitpool(p.quality, rate) : mode === "dual_channel" ? Math.ceil(qualityBitpool(p.quality) / 2) : qualityBitpool(p.quality);
+  const auto = xq ? xqBitpool(p.quality, rate) : qualityBitpool(p.quality);
   let bitpool = Math.min(asked || auto, max);
   if (caps && caps.max_bitpool >= 2) bitpool = Math.max(Math.min(bitpool, caps.max_bitpool), Math.min(caps.min_bitpool, caps.max_bitpool), 2);
   const frameBytes = sbcFrameLength(mode, blocks, subbands, bitpool);
