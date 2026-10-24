@@ -10,6 +10,8 @@
 ; Install:
 ;   - a running v2 core is closed cleanly (`a2dpwb-core.exe --quit`: the
 ;     stream stops and the adapter is released) and started again after;
+;     with no installed copy to ask (a new installation beside a portable or
+;     development build), Setup's own copy from {tmp} asks it;
 ;   - a running v1 (its mutex A2DPWB_SingleInstance) is asked to exit, and v1
 ;     (Inno Setup, AppId below) is uninstalled. Its uninstaller removes the
 ;     program files only: the settings folder %APPDATA%\A2DPWB (profiles,
@@ -146,14 +148,14 @@ Name: "zhcn"; MessagesFile: "languages\ChineseSimplified.isl"
 Name: "zhtw"; MessagesFile: "languages\ChineseTraditional.isl"
 
 [CustomMessages]
-en.V1Running=A2DP Windows Bridge v1 is running. Exit it (right-click its tray icon > Exit), then click Retry.%n%nCancel stops the installation.
-ja.V1Running=A2DP Windows Bridge v1 が起動しています。タスクトレイのアイコンを右クリックして「終了」を選んでから、「再試行」を押してください。%n%n「キャンセル」でインストールを中止します。
-de.V1Running=A2DP Windows Bridge v1 läuft noch. Beenden Sie es (Rechtsklick auf das Taskleistensymbol > Beenden) und klicken Sie dann auf Wiederholen.%n%nAbbrechen beendet die Installation.
-fr.V1Running=A2DP Windows Bridge v1 est en cours d'exécution. Quittez-le (clic droit sur son icône dans la zone de notification > Quitter), puis cliquez sur Réessayer.%n%nAnnuler arrête l'installation.
-es.V1Running=A2DP Windows Bridge v1 se está ejecutando. Ciérrelo (clic derecho en su icono de la bandeja > Salir) y pulse Reintentar.%n%nCancelar detiene la instalación.
-ko.V1Running=A2DP Windows Bridge v1이 실행 중입니다. 트레이 아이콘을 마우스 오른쪽 버튼으로 클릭하고 [종료]를 선택한 다음 [다시 시도]를 누르세요.%n%n[취소]를 누르면 설치를 중단합니다.
-zhcn.V1Running=A2DP Windows Bridge v1 正在运行。请右键单击其托盘图标并选择“退出”，然后单击“重试”。%n%n单击“取消”将停止安装。
-zhtw.V1Running=A2DP Windows Bridge v1 正在執行。請以滑鼠右鍵按一下其系統匣圖示並選擇「結束」，然後按一下「重試」。%n%n按一下「取消」將停止安裝。
+en.OtherRunning=Another A2DP Windows Bridge is running (v1, or a v2 that Setup could not close). Exit it (right-click its tray icon > Exit), then click Retry.%n%nCancel stops the installation.
+ja.OtherRunning=別の A2DP Windows Bridge（v1、またはセットアップが終了できなかった v2）が起動しています。タスクトレイのアイコンを右クリックして「終了」を選んでから、「再試行」を押してください。%n%n「キャンセル」でインストールを中止します。
+de.OtherRunning=Ein anderes A2DP Windows Bridge läuft noch (v1 oder ein v2, das Setup nicht beenden konnte). Beenden Sie es (Rechtsklick auf das Taskleistensymbol > Beenden) und klicken Sie dann auf Wiederholen.%n%nAbbrechen beendet die Installation.
+fr.OtherRunning=Un autre A2DP Windows Bridge est en cours d'exécution (v1, ou une v2 que l'installation n'a pas pu fermer). Quittez-le (clic droit sur son icône dans la zone de notification > Quitter), puis cliquez sur Réessayer.%n%nAnnuler arrête l'installation.
+es.OtherRunning=Hay otro A2DP Windows Bridge en ejecución (v1, o una v2 que el instalador no pudo cerrar). Ciérrelo (clic derecho en su icono de la bandeja > Salir) y pulse Reintentar.%n%nCancelar detiene la instalación.
+ko.OtherRunning=다른 A2DP Windows Bridge(v1 또는 설치 프로그램이 종료하지 못한 v2)가 실행 중입니다. 트레이 아이콘을 마우스 오른쪽 버튼으로 클릭하고 [종료]를 선택한 다음 [다시 시도]를 누르세요.%n%n[취소]를 누르면 설치를 중단합니다.
+zhcn.OtherRunning=另一个 A2DP Windows Bridge 正在运行（v1，或安装程序无法关闭的 v2）。请右键单击其托盘图标并选择“退出”，然后单击“重试”。%n%n单击“取消”将停止安装。
+zhtw.OtherRunning=另一個 A2DP Windows Bridge 正在執行（v1，或安裝程式無法關閉的 v2）。請以滑鼠右鍵按一下其系統匣圖示並選擇「結束」，然後按一下「重試」。%n%n按一下「取消」將停止安裝。
 
 en.V1Left=A2DP Windows Bridge v1 could not be uninstalled. You can remove it later in Settings > Apps; your settings, pairings and firmware stay in either case.
 ja.V1Left=A2DP Windows Bridge v1 をアンインストールできませんでした。あとで「設定」>「アプリ」から削除できます。設定、ペアリング、ファームウェアはどちらの場合も残ります。
@@ -371,6 +373,7 @@ const
   NsisProductKey = 'Software\Seiya Funaoka\{#AppName}';
   { The core's (ipc::core_mutex_name) and the window's
     (tauri-plugin-single-instance: <identifier>-sim) }
+  CoreMutex = 'Local\A2DPWB_v2_Core';
   AppMutexes = 'Local\A2DPWB_v2_Core,{#AppUserModelId}-sim';
   WebView2Key = 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
 
@@ -581,8 +584,11 @@ begin
   Log('A2DPWB still runs');
 end;
 
-{ '' when v1 does not run (any more). Otherwise the message the installation
-  stops with; in silent mode (nobody to ask) V1Running is set instead. }
+{ '' when v1's mutex is free (any more). Otherwise the message the
+  installation stops with; in silent mode (nobody to ask) V1Running is set
+  instead. A v2 core holds that mutex too (so that v1 cannot start beside
+  it): one Setup could not close (an A2DPWB_INSTANCE test copy, elevated)
+  keeps it held, hence the message names both. }
 function WaitForV1Exit(var V1Running: Boolean): String;
 begin
   Result := '';
@@ -592,8 +598,8 @@ begin
       V1Running := True;
       Exit;
     end;
-    if MsgBox(CustomMessage('V1Running'), mbError, MB_RETRYCANCEL) = IDCANCEL then begin
-      Result := CustomMessage('V1Running');
+    if MsgBox(CustomMessage('OtherRunning'), mbError, MB_RETRYCANCEL) = IDCANCEL then begin
+      Result := CustomMessage('OtherRunning');
       Exit;
     end;
   end;
@@ -774,6 +780,18 @@ begin
     if RegQueryStringValue(HKCU, NsisProductKey, '', NsisDir) and (NsisDir <> '') and
        (CompareText(NsisDir, ExpandConstant('{app}')) <> 0) and CloseCore(NsisDir) then
       CoreWasRunning := True;
+  end;
+  { A core still runs with no installed copy to ask (a new installation
+    beside a portable or development build): this Setup's own copy asks it.
+    It holds v1's mutex as well, which read as "v1 is running" below. }
+  if CheckForMutexes(CoreMutex) then begin
+    try
+      ExtractTemporaryFile('{#CoreExe}');
+      if CloseCore(ExpandConstant('{tmp}')) then
+        CoreWasRunning := True;
+    except
+      Log('Extracting the core to close the running one failed: ' + GetExceptionMessage);
+    end;
   end;
 
   RunWasSet := False;
