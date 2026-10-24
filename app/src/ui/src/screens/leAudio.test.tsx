@@ -103,8 +103,10 @@ describe("Codecs screen", () => {
     const entry = (await screen.findAllByText(/Galaxy Buds2 Pro/))
       .map((e) => e.closest(".device-entry"))
       .find((e) => e) as HTMLElement;
-    expect(within(entry).getByRole("radio", { name: t("capture.app") })).toBeDisabled();
-    expect(within(entry).getByRole("radio", { name: t("capture.loopback") })).not.toBeDisabled();
+    const select = within(entry).getByLabelText(t("capture.mode"));
+    await within(select).findByRole("option", { name: "CABLE Input (VB-Audio Virtual Cable)" });
+    expect(within(select).getByRole("option", { name: t("capture.loopback") })).not.toBeDisabled();
+    expect(within(select).queryByRole("group", { name: t("capture.app") })).toBeNull();
     // Nor an A2DP packet size
     expect(within(entry).queryByLabelText(t("advanced.max_packet"))).toBeNull();
   });
