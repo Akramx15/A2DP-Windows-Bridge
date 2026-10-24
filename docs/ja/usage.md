@@ -303,8 +303,8 @@ Windows の出力デバイス一覧に Bluetooth ヘッドホンを出し、エ�
 | LDAC (HQ) | 最高音質 | レイテンシーが高い、安定した接続が必要 |
 | LDAC (ABR) | 音質 + 安定性 | 接続状況に応じてビットレートが変動 |
 | aptX HD | 高音質、幅広いデバイス対応 | 固定 576 kbps |
-| aptX LL | ゲーム、動画（低レイテンシー） | 音質が低い (16-bit) |
 | aptX | aptX 対応機器が最も多い | 16-bit、352/384 kbps |
+| aptX LL | ゲーム、動画（低レイテンシー） | 音質が低い (16-bit) |
 | AAC | Apple デバイス、良い効率 | 中程度の音質 |
 | SBC | 最大の互換性 | 最低の音質 |
 
@@ -322,10 +322,10 @@ A2DPWB は [libopenaptx](https://github.com/pali/libopenaptx) でエンコード
 
 | コーデック | Vendor ID / Codec ID | RTP ヘッダー | 対応状況 |
 |:-----------|:---------------------|:-------------|:---------|
-| aptX | 0x0000004F / 0x0001 | なし | 対応（44.1/48 kHz で 352/384 kbps） |
-| aptX HD | 0x000000D7 / 0x0024 | あり | 対応（576 kbps、24-bit 入力） |
-| aptX Low Latency | 0x0000000A または 0x000000D7 / 0x0002 | なし | 対応（352 kbps） |
 | aptX Adaptive | 0x000000D7 / 0x00AD | あり | 対応（265-427 kbps、48 / 96 kHz、24-bit） |
+| aptX HD | 0x000000D7 / 0x0024 | あり | 対応（576 kbps、24-bit 入力） |
+| aptX | 0x0000004F / 0x0001 | なし | 対応（44.1/48 kHz で 352/384 kbps） |
+| aptX Low Latency | 0x0000000A または 0x000000D7 / 0x0002 | なし | 対応（352 kbps） |
 
 ### aptX Adaptive {#aptx-adaptive}
 

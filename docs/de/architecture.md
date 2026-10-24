@@ -314,17 +314,17 @@ Nimmt Audio in Echtzeit über die Windows Audio Session API auf.
 
 | Encoder | Bibliothek | Bitrate | Merkmale |
 |---------|------------|---------|----------|
-| LDAC | libldac (AOSP) | 330/660/990 kbps | Modi HQ/SQ/MQ, ABR |
-| aptX HD | libopenaptx | 576 kbps | 24-Bit-Eingang, feste Rate, RTP-Header |
-| aptX LL | libopenaptx | 352 kbps | ca. 32 ms Latenz, kein RTP-Header, Pakete ≤ ca. 7,5 ms |
-| aptX | libopenaptx | 352/384 kbps (44,1/48 kHz) | 16 Bit Stereo, kein RTP-Header |
-| AAC | fdk-aac | bis 256 kbps | AAC-LC, LATM-Transport |
-| SBC | Rust-Portierung des Bluedroid-Encoders | bis ca. 345 kbps | Verpflichtende A2DP-Grundlage; bitgenau zum C-Encoder (über alle Konfigurationen getestet) |
-| SBC XQ | derselbe SBC-Encoder | ca. 385/505/552 kbps | Dual Channel, Bitpool 47 / 43 bei 44,1 / 48 kHz (Hoch); nur wenn das SBC der Senke Dual Channel und einen Bitpool von mindestens 29 erlaubt (der Bitpool wird dann wie bei PipeWire auf das Maximum der Senke begrenzt); teilt sich mit SBC den Stream-Endpunkt, den Header der Mediennutzdaten und den RTP-Header |
-| FastStream | derselbe SBC-Encoder | 198/216 kbps (44,1/48 kHz) | CSR-Hersteller-Codec, nur Musikrichtung (kein Sprachrückkanal): SBC Joint Stereo Bitpool 29, Frames auf 72 Byte aufgefüllt, 3 pro Paket, kein Header der Mediennutzdaten und kein RTP-Header (wie bei PipeWire); wird von Automatisch nie gewählt |
 | LHDC V5 | lhdcv5-enc (C-Portierung des AOSP-Encoders) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24 Bit, 5-ms-Frames, 2 Byte Header der Mediennutzdaten, RTP-Header |
-| Opus | libopus 1.5.2 | 128/192/256 kbps (Stereo; Mono die Hälfte) | Experimentell; A2DP Opus von Android: 48 kHz, 20-ms-Frames (10 ms, falls die Senke nur diese hat), Constrained VBR, begrenzt auf die Mediennutzdaten, ein Frame pro Paket, 1 Byte Header der Mediennutzdaten, RTP-Header |
+| LDAC | libldac (AOSP) | 330/660/990 kbps | Modi HQ/SQ/MQ, ABR |
 | aptX Adaptive | aptx-adaptive (reiner Rust-Encoder von AKS-Logic/aptx-adaptive-linux, MIT) | R1-Senken: 427/364/318 kbps (Hoch/Standard/Mobil), 265 kbps Niedrige Latenz; R2-Senken: 427/270/204, 270 kbps | 48 kHz Stereo (96 kHz in HQ zu einer R2-Senke, die es meldet, wenn verlangt: 646/340/255 kbps), 24 Bit; ein Codec-Paket pro Medienpaket hinter dem eigenen RTP-Header von A2DPWB; ABR in Hoch; wird von Automatisch nie gewählt |
+| Opus | libopus 1.5.2 | 128/192/256 kbps (Stereo; Mono die Hälfte) | Experimentell; A2DP Opus von Android: 48 kHz, 20-ms-Frames (10 ms, falls die Senke nur diese hat), Constrained VBR, begrenzt auf die Mediennutzdaten, ein Frame pro Paket, 1 Byte Header der Mediennutzdaten, RTP-Header |
+| aptX HD | libopenaptx | 576 kbps | 24-Bit-Eingang, feste Rate, RTP-Header |
+| aptX | libopenaptx | 352/384 kbps (44,1/48 kHz) | 16 Bit Stereo, kein RTP-Header |
+| aptX LL | libopenaptx | 352 kbps | ca. 32 ms Latenz, kein RTP-Header, Pakete ≤ ca. 7,5 ms |
+| AAC | fdk-aac | bis 256 kbps | AAC-LC, LATM-Transport |
+| SBC XQ | derselbe SBC-Encoder | ca. 385/505/552 kbps | Dual Channel, Bitpool 47 / 43 bei 44,1 / 48 kHz (Hoch); nur wenn das SBC der Senke Dual Channel und einen Bitpool von mindestens 29 erlaubt (der Bitpool wird dann wie bei PipeWire auf das Maximum der Senke begrenzt); teilt sich mit SBC den Stream-Endpunkt, den Header der Mediennutzdaten und den RTP-Header |
+| SBC | Rust-Portierung des Bluedroid-Encoders | bis ca. 345 kbps | Verpflichtende A2DP-Grundlage; bitgenau zum C-Encoder (über alle Konfigurationen getestet) |
+| FastStream | derselbe SBC-Encoder | 198/216 kbps (44,1/48 kHz) | CSR-Hersteller-Codec, nur Musikrichtung (kein Sprachrückkanal): SBC Joint Stereo Bitpool 29, Frames auf 72 Byte aufgefüllt, 3 pro Paket, kein Header der Mediennutzdaten und kein RTP-Header (wie bei PipeWire); wird von Automatisch nie gewählt |
 
 Alle Encoder implementieren den Trait `codec::Encoder`: Sie geben das PCM-Format
 und die Anzahl der Frames an, die ein Aufruf verbraucht, und liefern Codec-Frames zurück.
@@ -339,14 +339,14 @@ Nicht standardisierte Codecs werden in AVDTP als Vendor Specific registriert:
 
 | Codec | Vendor ID | Codec ID |
 |-------|-----------|----------|
-| LDAC | Sony (0x0000012D) | 0x00AA |
-| aptX | APT (0x0000004F) | 0x0001 |
-| aptX HD | Qualcomm (0x000000D7) | 0x0024 |
-| aptX Low Latency | CSR (0x0000000A) oder Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
-| FastStream | CSR (0x0000000A) | 0x0001 |
+| LDAC | Sony (0x0000012D) | 0x00AA |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | Opus | Google (0x000000E0) | 0x0001 |
+| aptX HD | Qualcomm (0x000000D7) | 0x0024 |
+| aptX | APT (0x0000004F) | 0x0001 |
+| aptX Low Latency | CSR (0x0000000A) oder Qualcomm (0x000000D7) | 0x0002 |
+| FastStream | CSR (0x0000000A) | 0x0001 |
 
 AAC und SBC verwenden die in der A2DP-Spezifikation definierten Standard-Codec-IDs.
 

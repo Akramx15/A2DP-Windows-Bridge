@@ -11,7 +11,7 @@ has_toc: false
 Transmisión de audio Bluetooth A2DP para Windows con compatibilidad completa de códecs.
 {: .fs-6 .fw-300 }
 
-Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive** y (de forma experimental) **Opus** y el **Opus 05** de PipeWire con un adaptador Bluetooth USB en modo WinUSB, sin controlador de kernel ni firma de prueba.
+Transmite el audio del sistema mediante **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC** y (de forma experimental) **Opus** y el **Opus 05** de PipeWire con un adaptador Bluetooth USB en modo WinUSB, sin controlador de kernel ni firma de prueba.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -24,18 +24,18 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 
 | Códec | Tasa de bits | Frecuencia de muestreo | Profundidad de bits | Latencia |
 |:------|:--------|:------------|:----------|:--------|
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bits | ~200 ms |
+| aptX Adaptive | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bits | -- |
+| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
 | aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bits | ~150 ms |
-| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bits | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bits | -- |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bits | ~32 ms |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | SBC | hasta ~345 kbps | 44.1/48 kHz | 16 bits | ~150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bits | -- |
-| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
-| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
-| aptX Adaptive | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bits | -- |
 | LC3 (LE Audio) 🧪 | 32--124 kbps por canal | 16/24/32/48 kHz | 16 bits | ~140 ms |
 | LC3 baja latencia (LE Audio GMAP) 🧪 | 64--96 kbps por canal | 32/48 kHz | 16 bits | ~30 ms |
 
@@ -43,18 +43,18 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 
 | Códec | Windows 10 integrado | Windows 11 integrado | Ubuntu integrado (PipeWire) | **A2DPWB** (Windows 10 / 11) |
 |:------|:-------------------:|:-------------------:|:--------------------------:|:----------------------------:|
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | LDAC | ❌ | ❌ | ✅ | ✅ |
+| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
+| Opus (Opus A2DP de Android) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); no está en Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimental |
 | aptX HD | ❌ | ❌ | ✅ | 🧪 experimental |
-| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
+| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | AAC | ❌ | ✅ | ❌ no está en los paquetes de Ubuntu | ✅ |
 | SBC XQ | ❌ | ❌ | ✅ | ✅ (receptores cuyo SBC admite canal dual y bitpool ≥ 29) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 experimental (solo música, si se elige expresamente) |
-| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
-| Opus (Opus A2DP de Android) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); no está en Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimental |
 | Opus 05 (Opus propio de PipeWire) | ❌ | ❌ | ✅ PipeWire 0.3.57+ (`opus_05`, solo hacia dispositivos PipeWire) | 🧪 experimental (si se elige expresamente) |
-| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
 | LC3 (LE Audio, BAP unicast) | ❌ | ✅ en PC cuyo hardware y controlador Bluetooth admiten LE Audio | ✅ PipeWire BAP `lc3` (LE Audio de BlueZ) | 🧪 experimental (la entrada LE Audio de un dispositivo; baja latencia GMAP con auriculares gaming; adaptador Bluetooth 5.2 con ISO, [Uso](usage#le-audio)) |
 
 ✅ compatible · 🧪 experimental · ❌ no compatible. Todas las columnas corresponden al lado emisor (PC → auriculares). «Integrado» es el audio Bluetooth propio del sistema operativo, sin A2DPWB; la columna de Ubuntu es el conjunto de códecs de PipeWire en Ubuntu 26.04 (`libspa-0.2-bluetooth`).
@@ -135,7 +135,7 @@ A2DPWB omite por completo la pila Bluetooth de Windows. Se comunica directamente
 
 ## Funciones
 
-- **Varios códecs**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive y (de forma experimental) Opus / Opus 05 con negociación automática
+- **Varios códecs**: LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC y (de forma experimental) Opus / Opus 05 con negociación automática
 - **LE Audio (experimental)**: LC3 hacia auriculares LE Audio (BAP unicast, los dos auriculares de un par, volumen del auricular, botones multimedia, baja latencia GMAP). Necesita un adaptador con canales isócronos de Bluetooth 5.2; solo probado con el emulador de Bluetooth, todavía no con auriculares LE Audio reales ([Uso](usage#le-audio))
 - **Tres modos de captura**: loopback del sistema, enrutamiento a través de un dispositivo de audio virtual o la salida de una sola aplicación
 - **Ventana, bandeja y CLI**: una ventana para la configuración y el diagnóstico, un panel desplegable y un menú en la bandeja para conectarse en el día a día, y una línea de comandos (consulte [Uso](usage))

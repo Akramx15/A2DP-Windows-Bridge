@@ -302,8 +302,8 @@ System Loopback and Virtual Device use WASAPI shared mode, so the capture sample
 | LDAC (HQ) | Highest audio quality | Higher latency, needs stable connection |
 | LDAC (ABR) | Quality + stability | Bitrate fluctuates with connection |
 | aptX HD | High quality, wider device support | Fixed 576 kbps |
-| aptX LL | Gaming, video (low latency) | Lower audio quality (16-bit) |
 | aptX | Widest aptX device support | 16-bit, 352/384 kbps |
+| aptX LL | Gaming, video (low latency) | Lower audio quality (16-bit) |
 | AAC | Apple devices, good efficiency | Moderate quality |
 | SBC | Maximum compatibility | Lowest audio quality |
 
@@ -321,10 +321,10 @@ A2DPWB supports three aptX codecs encoded with [libopenaptx](https://github.com/
 
 | Codec | Vendor ID / Codec ID | RTP header | Status |
 |:------|:---------------------|:-----------|:-------|
-| aptX | 0x0000004F / 0x0001 | No | Supported (352/384 kbps at 44.1/48 kHz) |
-| aptX HD | 0x000000D7 / 0x0024 | Yes | Supported (576 kbps, 24-bit input) |
-| aptX Low Latency | 0x0000000A or 0x000000D7 / 0x0002 | No | Supported (352 kbps) |
 | aptX Adaptive | 0x000000D7 / 0x00AD | Yes | Supported (265-427 kbps, 48 / 96 kHz, 24-bit) |
+| aptX HD | 0x000000D7 / 0x0024 | Yes | Supported (576 kbps, 24-bit input) |
+| aptX | 0x0000004F / 0x0001 | No | Supported (352/384 kbps at 44.1/48 kHz) |
+| aptX Low Latency | 0x0000000A or 0x000000D7 / 0x0002 | No | Supported (352 kbps) |
 
 ### aptX Adaptive {#aptx-adaptive}
 

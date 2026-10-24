@@ -291,8 +291,8 @@ A2DPWB는 세 가지 오디오 캡처 모드를 지원합니다. 각 모드는 �
 | LDAC (HQ) | 최고 음질 | 지연 시간이 길고 안정적인 연결 필요 |
 | LDAC (ABR) | 음질 + 안정성 | 연결 상태에 따라 비트레이트 변동 |
 | aptX HD | 고음질, 더 넓은 장치 지원 | 576 kbps 고정 |
-| aptX LL | 게임, 동영상 (저지연) | 음질이 낮음 (16비트) |
 | aptX | 가장 넓은 aptX 장치 지원 | 16비트, 352/384 kbps |
+| aptX LL | 게임, 동영상 (저지연) | 음질이 낮음 (16비트) |
 | AAC | Apple 장치, 높은 효율 | 보통 음질 |
 | SBC | 최대 호환성 | 가장 낮은 음질 |
 
@@ -310,10 +310,10 @@ A2DPWB는 [libopenaptx](https://github.com/pali/libopenaptx)로 인코딩하는 
 
 | 코덱 | Vendor ID / Codec ID | RTP 헤더 | 상태 |
 |:-----|:---------------------|:---------|:-----|
-| aptX | 0x0000004F / 0x0001 | 없음 | 지원 (44.1/48 kHz에서 352/384 kbps) |
-| aptX HD | 0x000000D7 / 0x0024 | 있음 | 지원 (576 kbps, 24비트 입력) |
-| aptX Low Latency | 0x0000000A 또는 0x000000D7 / 0x0002 | 없음 | 지원 (352 kbps) |
 | aptX Adaptive | 0x000000D7 / 0x00AD | 있음 | 지원 (265-427 kbps, 48 / 96 kHz, 24비트) |
+| aptX HD | 0x000000D7 / 0x0024 | 있음 | 지원 (576 kbps, 24비트 입력) |
+| aptX | 0x0000004F / 0x0001 | 없음 | 지원 (44.1/48 kHz에서 352/384 kbps) |
+| aptX Low Latency | 0x0000000A 또는 0x000000D7 / 0x0002 | 없음 | 지원 (352 kbps) |
 
 ### aptX Adaptive {#aptx-adaptive}
 

@@ -292,8 +292,8 @@ Le bouclage système et le périphérique virtuel utilisent le mode partagé de 
 | LDAC (HQ) | La meilleure qualité audio | Latence plus élevée, nécessite une connexion stable |
 | LDAC (ABR) | Qualité + stabilité | Le débit varie selon la connexion |
 | aptX HD | Haute qualité, plus large compatibilité | 576 kbps fixe |
-| aptX LL | Jeux, vidéo (faible latence) | Qualité audio moindre (16 bits) |
 | aptX | La plus large compatibilité aptX | 16 bits, 352/384 kbps |
+| aptX LL | Jeux, vidéo (faible latence) | Qualité audio moindre (16 bits) |
 | AAC | Appareils Apple, bonne efficacité | Qualité moyenne |
 | SBC | Compatibilité maximale | Qualité audio la plus faible |
 
@@ -311,10 +311,10 @@ A2DPWB prend en charge trois codecs aptX encodés avec [libopenaptx](https://git
 
 | Codec | Vendor ID / Codec ID | En-tête RTP | État |
 |:------|:---------------------|:-----------|:-------|
-| aptX | 0x0000004F / 0x0001 | Non | Pris en charge (352/384 kbps à 44.1/48 kHz) |
-| aptX HD | 0x000000D7 / 0x0024 | Oui | Pris en charge (576 kbps, entrée 24 bits) |
-| aptX Low Latency | 0x0000000A ou 0x000000D7 / 0x0002 | Non | Pris en charge (352 kbps) |
 | aptX Adaptive | 0x000000D7 / 0x00AD | Oui | Pris en charge (265-427 kbps, 48 / 96 kHz, 24 bits) |
+| aptX HD | 0x000000D7 / 0x0024 | Oui | Pris en charge (576 kbps, entrée 24 bits) |
+| aptX | 0x0000004F / 0x0001 | Non | Pris en charge (352/384 kbps à 44.1/48 kHz) |
+| aptX Low Latency | 0x0000000A ou 0x000000D7 / 0x0002 | Non | Pris en charge (352 kbps) |
 
 ### aptX Adaptive {#aptx-adaptive}
 

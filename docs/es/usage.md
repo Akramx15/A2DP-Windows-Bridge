@@ -292,8 +292,8 @@ Loopback del sistema y Dispositivo virtual usan el modo compartido de WASAPI, po
 | LDAC (HQ) | Máxima calidad de audio | Mayor latencia, necesita una conexión estable |
 | LDAC (ABR) | Calidad + estabilidad | La tasa de bits varía con la conexión |
 | aptX HD | Alta calidad, mayor compatibilidad de dispositivos | 576 kbps fijos |
-| aptX LL | Juegos, vídeo (baja latencia) | Menor calidad de audio (16 bits) |
 | aptX | La mayor compatibilidad entre dispositivos aptX | 16 bits, 352/384 kbps |
+| aptX LL | Juegos, vídeo (baja latencia) | Menor calidad de audio (16 bits) |
 | AAC | Dispositivos Apple, buena eficiencia | Calidad moderada |
 | SBC | Máxima compatibilidad | La menor calidad de audio |
 
@@ -311,10 +311,10 @@ A2DPWB admite tres códecs aptX codificados con [libopenaptx](https://github.com
 
 | Códec | Vendor ID / Codec ID | Encabezado RTP | Estado |
 |:------|:---------------------|:-----------|:-------|
-| aptX | 0x0000004F / 0x0001 | No | Compatible (352/384 kbps a 44.1/48 kHz) |
-| aptX HD | 0x000000D7 / 0x0024 | Sí | Compatible (576 kbps, entrada de 24 bits) |
-| aptX Low Latency | 0x0000000A o 0x000000D7 / 0x0002 | No | Compatible (352 kbps) |
 | aptX Adaptive | 0x000000D7 / 0x00AD | Sí | Compatible (265-427 kbps, 48 / 96 kHz, 24 bits) |
+| aptX HD | 0x000000D7 / 0x0024 | Sí | Compatible (576 kbps, entrada de 24 bits) |
+| aptX | 0x0000004F / 0x0001 | No | Compatible (352/384 kbps a 44.1/48 kHz) |
+| aptX Low Latency | 0x0000000A o 0x000000D7 / 0x0002 | No | Compatible (352 kbps) |
 
 ### aptX Adaptive {#aptx-adaptive}
 

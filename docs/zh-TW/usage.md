@@ -292,8 +292,8 @@ A2DPWB 支援三種音訊擷取模式，各自錄製音訊路徑中的不同位�
 | LDAC (HQ) | 最高音質 | 延遲較高，需要穩定的連線 |
 | LDAC (ABR) | 音質 + 穩定性 | 位元率隨連線狀況變動 |
 | aptX HD | 高音質，支援的裝置較多 | 固定 576 kbps |
-| aptX LL | 遊戲、影片（低延遲） | 音質較低（16 位元） |
 | aptX | 支援的 aptX 裝置最多 | 16 位元，352/384 kbps |
+| aptX LL | 遊戲、影片（低延遲） | 音質較低（16 位元） |
 | AAC | Apple 裝置，效率佳 | 音質中等 |
 | SBC | 相容性最高 | 音質最低 |
 
@@ -311,10 +311,10 @@ A2DPWB 支援三種使用 [libopenaptx](https://github.com/pali/libopenaptx) 編
 
 | 轉碼器 | Vendor ID / Codec ID | RTP 標頭 | 狀態 |
 |:------|:---------------------|:-----------|:-------|
-| aptX | 0x0000004F / 0x0001 | 無 | 支援（44.1/48 kHz 時 352/384 kbps） |
-| aptX HD | 0x000000D7 / 0x0024 | 有 | 支援（576 kbps，24 位元輸入） |
-| aptX Low Latency | 0x0000000A 或 0x000000D7 / 0x0002 | 無 | 支援（352 kbps） |
 | aptX Adaptive | 0x000000D7 / 0x00AD | 有 | 支援（265-427 kbps、48 / 96 kHz、24 位元） |
+| aptX HD | 0x000000D7 / 0x0024 | 有 | 支援（576 kbps，24 位元輸入） |
+| aptX | 0x0000004F / 0x0001 | 無 | 支援（44.1/48 kHz 時 352/384 kbps） |
+| aptX Low Latency | 0x0000000A 或 0x000000D7 / 0x0002 | 無 | 支援（352 kbps） |
 
 ### aptX Adaptive {#aptx-adaptive}
 
