@@ -69,6 +69,8 @@ Development / testing:
   --duration <seconds>  stop after this time (default: Ctrl+C)
   --sessions <n>        stream n times in a row with --duration each, as
                         Disconnect / Connect in the app (A2DP)
+  --restart             with --sessions: between sessions restart Bluetooth
+                        as the Adapters page does, which connects again
   --le-sim-volume <level>[,<s>:<level>...]
                         LE Audio: VolumeSync with a simulated Windows volume
                         0-127 (changed at <s> seconds); the real volume is not
@@ -109,6 +111,9 @@ struct Args {
     /// --sessions: streams one after the other in this process (Connect,
     /// --duration, Disconnect), as the UI's Disconnect / Connect (issue #84)
     sessions: u32,
+    /// --restart: between sessions Bluetooth is restarted instead, as on
+    /// the Adapters page, and the session connects again (issue #86)
+    restart: bool,
     le: LeArgs,
 }
 
@@ -172,6 +177,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         test_tone: false,
         duration: None,
         sessions: 1,
+        restart: false,
         le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
@@ -261,6 +267,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
                     return Err("--sessions needs at least 1".into());
                 }
             }
+            "--restart" => a.restart = true,
             "--le-audio" => a.le.on = true,
             "--le-device" => {
                 a.le.on = true;
@@ -491,11 +498,27 @@ pub fn run(args: &[String]) -> i32 {
     };
 
     let mut code = 0;
+    let mut request = request;
     for session in 1..=a.sessions {
-        if session > 1 {
+        if session > 1 && a.restart {
+            // Restart Bluetooth, as the Adapters page does: the session
+            // connects again on the new stack
+            println!("\nRestarting Bluetooth (session {} of {})...", session - 1, a.sessions);
+            let Some(again) = service.restart_adapter() else {
+                println!("Bluetooth restarted, but nothing to connect again");
+                code = 1;
+                break;
+            };
+            request = again;
+            std::thread::sleep(SESSION_PAUSE);
+            if !running.load(Ordering::Acquire) {
+                break;
+            }
+            println!("Connecting again after the restart (session {session} of {})", a.sessions);
+        } else if session > 1 {
             // Disconnect, as the app's button does, and connect again
             println!("\nDisconnecting (session {} of {})...", session - 1, a.sessions);
-            service.stop_streaming();
+            service.disconnect();
             while let Ok(e) = rx.try_recv() {
                 if let ServiceEvent::State(state, msg) = e {
                     println!("[{state:?}] {msg}");

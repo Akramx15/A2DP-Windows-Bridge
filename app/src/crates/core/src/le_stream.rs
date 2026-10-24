@@ -511,7 +511,7 @@ fn device_turned_off(inner: &Inner, host: &BtHost, devices: &[[u8; 6]]) -> bool 
 /// The headphones were turned off: waits until they advertise again (true).
 /// False when the session ends instead (stopped, sleep, a stopped adapter).
 fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6]) -> bool {
-    inner.waiting_for_device(true);
+    inner.waiting_for_device();
     let t = Instant::now();
     let back = loop {
         if inner.stop_requested() || inner.power.suspending() || inner.power.stale() || host.stalled() {
@@ -523,7 +523,7 @@ fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6]) -> bool {
         inner.wait_tick(Duration::from_millis(200));
     };
     tracing::debug!("le device off: waited {} s, back {back}", t.elapsed().as_secs());
-    inner.waiting_for_device(false);
+    inner.done_waiting_for_device(back);
     back
 }
 
