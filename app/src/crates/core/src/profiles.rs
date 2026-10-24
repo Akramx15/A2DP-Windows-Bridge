@@ -216,6 +216,32 @@ impl Profile {
         }
     }
 
+    /// The profile as Auto streams it while "Auto-select" is on for every
+    /// device (settings `auto_codec`): codec "auto" with Auto's default
+    /// settings, as turning Auto on for one device gave before. The codec
+    /// chosen and its settings stay in the saved profile. An LE Audio
+    /// profile (LC3) is returned as it is.
+    pub fn as_auto(&self) -> Profile {
+        if self.le_audio {
+            return self.clone();
+        }
+        let d = CodecValues::default();
+        Profile {
+            codec: auto(),
+            quality: d.quality,
+            sample_rate: d.sample_rate,
+            bit_depth: d.bit_depth,
+            abr: d.abr,
+            sbc_bitpool: d.sbc_bitpool,
+            sbcxq_bitpool: d.sbcxq_bitpool,
+            sbc_blocks: d.sbc_blocks,
+            sbc_subbands: d.sbc_subbands,
+            sbc_allocation: d.sbc_allocation,
+            sbc_channel_mode: d.sbc_channel_mode,
+            ..self.clone()
+        }
+    }
+
     /// What to stream for this profile. An LE Audio (experimental) profile
     /// gives an LE request (`le` Some: the le_stream session, which refuses
     /// with error.le_audio_disabled while the setting is off); its codec,
@@ -504,6 +530,28 @@ mod tests {
         // Auto (switch on) is no codec of its own
         let auto = Profile { codec: "auto".into(), ..p };
         assert_eq!(auto.to_request(1023).unwrap().codec, None);
+    }
+
+    #[test]
+    fn as_auto_streams_auto_with_its_defaults() {
+        let p = Profile {
+            device_address: "AA:BB:CC:DD:EE:FF".into(),
+            codec: "ldac".into(),
+            quality: "mq".into(),
+            sample_rate: 96000,
+            bit_depth: 24,
+            sbc_bitpool: 40,
+            volume_sync: "off".into(),
+            ..Profile::default()
+        };
+        let a = p.as_auto();
+        assert_eq!(a.codec, "auto");
+        assert_eq!(a.codec_values(), CodecValues::default());
+        // What belongs to the device stays
+        assert_eq!(a.volume_sync, "off");
+        assert_eq!(a.to_request(1023).unwrap().codec, None);
+        let le = Profile { le_audio: true, ..p };
+        assert_eq!(le.as_auto(), le);
     }
 
     #[test]

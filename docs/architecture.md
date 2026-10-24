@@ -269,6 +269,10 @@ result. Listing adapters and their driver needs no elevation.
 - Leaves the experimental codecs (aptX HD, aptX LL, Opus, Opus 05,
   FastStream) out of Auto and the fallback when the `experimental_codecs`
   setting is off (Codecs > Enable experimental codecs; `--no-experimental`)
+- Streams every A2DP profile as Auto, with Auto's default settings, while
+  the `auto_codec` setting is on (Codecs > Auto-select the codec with the
+  highest quality, one setting for every device since schema 5); the codec
+  chosen for the device stays in its profile for when it is off
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
   advertises; WASAPI resamples the capture); aptX Adaptive uses 48 kHz, or
   96 kHz when the profile asks for it in High / Standard / Mobile and the sink

@@ -1,11 +1,14 @@
 // Codecs (issue #86, it replaced Profiles): each saved audio device with
 // its codec cards, the codecs it offered when it last connected in green
 // and the others in red (hidden unless asked for), each with its settings
-// behind "...". Each device has "Auto-select the codec with the highest
-// quality" (its profile's codec "auto"): on, the cards only show what Auto
-// picks; off, choosing a card is choosing that device's codec, and a codec
-// the device does not offer falls back to the next one below it in
-// quality (lib/codecs.ts AUTO_ORDER, as the core). Either changes the
+// behind "...". "Auto-select the codec with the highest quality" is one
+// setting for every device (settings.auto_codec, on by default; each
+// device had its own before): on, the cards only show what Auto picks;
+// off, choosing a card is choosing that device's codec (a device with none
+// chosen yet, its profile's codec "auto", goes on with Auto's pick), and a
+// codec the device does not offer falls back to the next one below it in
+// quality (lib/codecs.ts AUTO_ORDER, as the core). The codec chosen stays
+// in the device's profile while Auto-select is on. Choosing changes the
 // device's profile (made when first needed; the core keeps one per device
 // and starts a stream in use again with it). What belongs to the device
 // rather than the codec (capture source, volume sync, packet size) is on
@@ -40,8 +43,6 @@ import {
   entryByKey,
   followedName,
   knownCodecs,
-  codecValues,
-  newProfile,
   normalizeProfile,
   withCodec,
   type AudioEntry,
@@ -94,6 +95,7 @@ export function Codecs() {
     }
   };
   const experimental = () => snap().settings.experimental_codecs;
+  const autoAll = () => snap().settings.auto_codec;
   // What the codec of each entry is not offered by: counted for the check box
   const hiddenOf = (e: AudioEntry) => {
     if (e.le_audio) return 0;
@@ -115,6 +117,22 @@ export function Codecs() {
         <h1>{t("ui.nav.codecs")}</h1>
       </header>
       <div class="codecs-options">
+        <Toggle
+          label={t("ui.codecs.auto_select")}
+          help={() => (
+            <HelpTip label={t("ui.codecs.auto_order")}>
+              {t("ui.codecs.auto_order")}
+              <ol>
+                <For each={AUTO_ORDER.filter((id) => experimental() || !isExperimental(id))}>
+                  {(id) => <li>{t(codecSpec(id).label)}</li>}
+                </For>
+              </ol>
+            </HelpTip>
+          )}
+          hint={autoAll() ? t("ui.codecs.auto_all") : t("ui.codecs.auto_off")}
+          checked={autoAll()}
+          onChange={(v) => void saveSettings(app, { auto_codec: v })}
+        />
         <Check label={t("ui.profile.codecs_hide", hidden())} title={t("ui.codecs.hide_hint")} checked={hide()} onChange={setHide} />
         <Check
           label={t("ui.codecs.experimental")}
@@ -145,7 +163,7 @@ export function Codecs() {
         <For each={entries().map((e) => e.key)}>
           {(key) => {
             const entry = entryByKey(entries, key);
-            return <DeviceCodecs entry={entry()} hide={hide()} experimental={experimental()} />;
+            return <DeviceCodecs entry={entry()} hide={hide()} experimental={experimental()} auto={autoAll()} />;
           }}
         </For>
       </Show>
@@ -154,7 +172,7 @@ export function Codecs() {
 }
 
 /** One device: its name, address and tags, then its codec cards */
-function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; experimental: boolean }) {
+function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; experimental: boolean; auto: boolean }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const e = () => props.entry;
@@ -162,7 +180,8 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; experimental: b
   // The profile shown: the device's, or what it would start from
   const shown = (): Profile => e().profile ?? entryBase(e(), snap().profiles);
   const codec = () => shown().codec;
-  const auto = () => codec() === "auto";
+  // Auto-select (for every device) on, or no codec chosen for the device yet
+  const auto = () => props.auto || codec() === "auto";
   const known = () => knownCodecs(snap().devices, e().address);
   const support = (id: string) => codecSupport(id, known());
   // The codec the device streams with now, when its profile streams
@@ -198,13 +217,6 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; experimental: b
     setBusy(true);
     await chooseCodec(app, e(), id, values);
     setBusy(false);
-  };
-  // On: Auto with its own defaults (the codec left keeps its settings in
-  // codec_settings). Off: the codec Auto picked (else SBC, which every
-  // device has), with the settings it was last given.
-  const setAuto = (on: boolean) => {
-    if (on) void choose("auto", codecValues(newProfile()));
-    else void choose(picked() ?? "sbc");
   };
   const titleId = () => `codecs-${e().key.replace(/[^0-9A-Za-z]/g, "")}`;
   const leSupport = () => snap().adapter.le_audio;
@@ -276,31 +288,10 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; experimental: b
           </>
         }
       >
-        {/* Nothing chosen yet: Auto, which Connect uses */}
-        <Toggle
-          label={t("ui.codecs.auto_select")}
-          help={() => (
-            <HelpTip label={t("ui.codecs.auto_order")}>
-              {t("ui.codecs.auto_order")}
-              <ol>
-                <For each={AUTO_ORDER.filter((id) => props.experimental || !isExperimental(id))}>
-                  {(id) => <li>{t(codecSpec(id).label)}</li>}
-                </For>
-              </ol>
-            </HelpTip>
-          )}
-          hint={
-            auto()
-              ? picked()
-                ? t("ui.codecs.auto_uses", t(codecSpec(picked()!).label))
-                : undefined
-              : t("ui.codecs.auto_off")
-          }
-          checked={auto()}
-          disabled={busy()}
-          onChange={setAuto}
-        />
-        <div class="codec-grid" role="radiogroup" aria-labelledby={titleId()} aria-disabled={auto() ? "true" : undefined}>
+        <Show when={props.auto && picked()}>
+          {(c) => <p class="hint">{t("ui.codecs.auto_uses", t(codecSpec(c()).label))}</p>}
+        </Show>
+        <div class="codec-grid" role="radiogroup" aria-labelledby={titleId()} aria-disabled={props.auto ? "true" : undefined}>
           <For each={cards()}>
             {(c) => (
               <CodecCard
@@ -308,7 +299,7 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; experimental: b
                 group={`codec-${e().key}`}
                 selected={picked() === c.id}
                 disabled={busy()}
-                readOnly={auto()}
+                readOnly={props.auto}
                 support={support(c.id)}
                 onPick={() => void choose(c.id)}
                 onSettings={() => setSettingsOf(c)}

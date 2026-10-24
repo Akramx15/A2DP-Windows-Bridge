@@ -66,4 +66,10 @@ le_audio_low_latency: boolean,
  * Opus, Opus 05, FastStream) are never used (read when the next
  * stream is set up)
  */
-experimental_codecs: boolean, };
+experimental_codecs: boolean, 
+/**
+ * Codecs > "Auto-select the codec with the highest quality", for every
+ * device (on by default): on, every A2DP profile streams as Auto; off,
+ * each with the codec chosen for it (read when the next stream starts)
+ */
+auto_codec: boolean, };

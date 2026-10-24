@@ -276,6 +276,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         le_audio_experimental: s.le_audio_experimental,
         le_audio_low_latency: s.le_audio_low_latency,
         experimental_codecs: s.experimental_codecs,
+        auto_codec: s.auto_codec,
     }
 }
 
@@ -334,6 +335,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.le_audio_experimental = s.le_audio_experimental;
     c.le_audio_low_latency = s.le_audio_low_latency;
     c.experimental_codecs = s.experimental_codecs;
+    c.auto_codec = s.auto_codec;
     c
 }
 
@@ -817,6 +819,13 @@ fn restart_for_experimental(stream: &StreamStatus, p: &CoreProfile) -> bool {
         && (p.codec == "auto" || experimental(&p.codec) || streams_one || fell_back)
 }
 
+/// Whether turning Auto-select (for every device) on or off may change the
+/// codec of the profile in use: it chose one (a profile left on "auto"
+/// streams as Auto either way). Not LE Audio (LC3).
+fn restart_for_auto(stream: &StreamStatus, p: &CoreProfile) -> bool {
+    restart_after_save(stream, &p.name) && !p.le_audio && p.codec != "auto"
+}
+
 fn unix_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -1219,7 +1228,18 @@ impl CoreState {
         let list = profiles::load(&dir);
         let p =
             list.iter().find(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
-        let mut req = p
+        // Auto-select for every device: Auto, whatever codec the profile chose
+        let auto = (settings.auto_codec && !p.le_audio && p.codec != "auto").then(|| p.as_auto());
+        if auto.is_some() {
+            tracing::debug!(
+                "profile {}: codec {} chosen, Auto-select streams Auto",
+                a2dpwb_core::diag::quoted(&p.name),
+                p.codec
+            );
+        }
+        let mut req = auto
+            .as_ref()
+            .unwrap_or(p)
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
@@ -1648,20 +1668,29 @@ impl CoreState {
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
                     let experimental_toggled = base.experimental_codecs != merged.experimental_codecs;
+                    let auto_toggled = base.auto_codec != merged.auto_codec;
                     me.save_settings(merged)?;
                     if chip {
                         me.reload_adapter();
                     }
-                    // Experimental codecs on / off: a profile in use whose
-                    // codec it changes starts again (as a profile save does)
-                    if experimental_toggled {
+                    // Experimental codecs or Auto-select on / off: a profile
+                    // in use whose codec it changes starts again (as a
+                    // profile save does)
+                    if experimental_toggled || auto_toggled {
                         let (_, s) = me.snapshot();
                         let list = profiles::load(&me.config_dir());
                         let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
-                        if let Some(p) = in_use.filter(|p| restart_for_experimental(&s.stream, p)) {
+                        let restart = |p: &&CoreProfile| {
+                            // As it streams under Auto-select (for every device)
+                            let effective = if settings.auto_codec { p.as_auto() } else { (*p).clone() };
+                            (experimental_toggled && restart_for_experimental(&s.stream, &effective))
+                                || (auto_toggled && restart_for_auto(&s.stream, p))
+                        };
+                        if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
-                                "experimental codecs turned {}: profile {} starts again",
+                                "experimental codecs {}, Auto-select {}: profile {} starts again",
                                 if settings.experimental_codecs { "on" } else { "off" },
+                                if settings.auto_codec { "on" } else { "off" },
                                 a2dpwb_core::diag::quoted(&p.name)
                             );
                             me.start_profile(&p.name.clone())?;
@@ -2098,6 +2127,19 @@ mod tests {
         ));
         assert!(!restart_for_experimental(&StreamStatus::default(), &profile("auto")));
         assert!(!restart_for_experimental(&streaming("LC3", None), &CoreProfile { le_audio: true, ..profile("auto") }));
+    }
+
+    #[test]
+    fn auto_select_on_or_off_restarts_a_profile_that_chose_its_codec() {
+        let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
+        let streaming =
+            StreamStatus { state: StreamState::Streaming, profile: Some("WH".into()), ..StreamStatus::default() };
+        assert!(restart_for_auto(&streaming, &profile("aac")));
+        // Auto either way, another profile, nothing running, LE Audio
+        assert!(!restart_for_auto(&streaming, &profile("auto")));
+        assert!(!restart_for_auto(&streaming, &CoreProfile { name: "Buds".into(), ..profile("aac") }));
+        assert!(!restart_for_auto(&StreamStatus::default(), &profile("aac")));
+        assert!(!restart_for_auto(&streaming, &CoreProfile { le_audio: true, ..profile("aac") }));
     }
 
     #[test]
