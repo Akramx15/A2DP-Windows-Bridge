@@ -477,6 +477,43 @@ option {
 .field-more-btn.on {
   color: var(--accent-1);
 }
+/* "?" with its text on hover or focus */
+.help-tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: var(--s1);
+}
+.help-tip-btn {
+  width: 1.5rem;
+  min-height: 1.5rem;
+  color: var(--text-3);
+}
+.help-tip-body {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--s1));
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: 18rem;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+}
+.help-tip:hover .help-tip-body,
+.help-tip-btn:focus-visible + .help-tip-body {
+  display: block;
+}
+.help-tip-body ol {
+  margin: var(--s1) 0 0;
+  padding-left: 1.5em;
+}
 .field-more {
   display: flex;
   flex-direction: column;

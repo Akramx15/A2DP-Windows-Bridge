@@ -9,6 +9,7 @@ import { App } from "../app/App";
 import { setLanguage, t } from "../i18n";
 import { MockCore } from "../ipc/mock";
 import { createCore } from "../ipc/store";
+import { codecSpec } from "../lib/codecs";
 
 let mock: MockCore | null = null;
 
@@ -322,6 +323,23 @@ describe("codec cards", () => {
     expect(within(xb).getByText(t("ui.profile.codecs_unknown"))).toBeInTheDocument();
     expect(within(xb).queryByText(t("ui.profile.codec_supported"))).toBeNull();
     expect(within(xb).queryByText(t("ui.profile.codec_not_supported"))).toBeNull();
+    // Each card says so, in neither green nor red
+    const aac = within(xb).getByRole("radio", { name: /AAC/ }).closest("label")!;
+    const tag = within(aac).getByText(t("ui.profile.codec_support_unknown")).closest(".tag")!;
+    expect(tag).not.toHaveClass("st-good");
+    expect(tag).not.toHaveClass("st-bad");
+  });
+
+  it("show Auto's order behind the ? beside the switch", async () => {
+    start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    const help = within(wh).getByRole("button", { name: t("ui.codecs.auto_order") });
+    const tip = document.getElementById(help.getAttribute("aria-describedby")!)!;
+    expect(tip).toHaveAttribute("role", "tooltip");
+    const items = within(tip).getAllByRole("listitem").map((li) => li.textContent);
+    expect(items[0]).toBe(t(codecSpec("lhdcv5").label));
+    expect(items.at(-1)).toBe(t(codecSpec("sbc").label));
+    expect(items).toHaveLength(10);
   });
 });
 

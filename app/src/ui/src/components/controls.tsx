@@ -54,9 +54,27 @@ export function IconButton(props: JSX.ButtonHTMLAttributes<HTMLButtonElement> & 
   );
 }
 
+/** A "?" that shows `children` while hovered or focused (short reference
+ *  text such as an order; longer explanations go behind Field's info button) */
+export function HelpTip(props: { label: string; children: JSX.Element }) {
+  const id = createUniqueId();
+  return (
+    <span class="help-tip">
+      <button type="button" class="btn btn-icon help-tip-btn" aria-label={props.label} aria-describedby={id}>
+        <Icon name="question_circle" />
+      </button>
+      <span class="help-tip-body" role="tooltip" id={id}>
+        {props.children}
+      </span>
+    </span>
+  );
+}
+
 export function Toggle(props: {
   label: string;
   hint?: string;
+  /** A HelpTip beside the label */
+  help?: () => JSX.Element;
   checked: boolean;
   disabled?: boolean;
   onChange: (v: boolean) => void;
@@ -65,7 +83,10 @@ export function Toggle(props: {
   return (
     <div class="row toggle-row">
       <label class="row-text" for={id}>
-        <span class="row-label">{props.label}</span>
+        <span class="row-label">
+          {props.label}
+          {props.help?.()}
+        </span>
         <Show when={props.hint}>
           <span class="hint" id={`${id}-hint`}>
             {props.hint}

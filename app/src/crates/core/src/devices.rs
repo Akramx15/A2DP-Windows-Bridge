@@ -9,7 +9,10 @@
 //! they are read as LE Audio entries and moved to le_audio_devices.txt the
 //! next time the files are written (as v1 did).
 
+use std::collections::BTreeMap;
 use std::path::Path;
+
+use crate::stream::KnownCodecs;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SavedDevice {
@@ -143,6 +146,19 @@ pub fn remove_le(dir: &Path, address: &str) -> std::io::Result<()> {
     remove_kind(dir, address, true)
 }
 
+/// What each classic device offered when it last connected, by upper-case
+/// address: kept so the Codecs screen knows it after a restart (issue #86)
+const CODECS_FILE: &str = "device_codecs.json";
+
+pub fn load_codecs(dir: &Path) -> BTreeMap<String, KnownCodecs> {
+    std::fs::read_to_string(dir.join(CODECS_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+pub fn save_codecs(dir: &Path, codecs: &BTreeMap<String, KnownCodecs>) -> std::io::Result<()> {
+    let text = serde_json::to_string_pretty(codecs).map_err(std::io::Error::other)?;
+    std::fs::write(dir.join(CODECS_FILE), text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,6 +185,20 @@ mod tests {
         assert_eq!(load(&dir).len(), 1);
         // No LE Audio device: no file of them
         assert!(!dir.join(LE_FILE).exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn codecs_survive_a_restart() {
+        let dir = temp_dir("codecs");
+        assert!(load_codecs(&dir).is_empty());
+        let mut map = BTreeMap::new();
+        map.insert("AA:BB:CC:DD:EE:FF".to_string(), KnownCodecs { keys: vec!["sbc".into(), "aac".into()], sbc: None });
+        save_codecs(&dir, &map).unwrap();
+        assert_eq!(load_codecs(&dir), map);
+        // A damaged file is as none
+        std::fs::write(dir.join(CODECS_FILE), "{ not json").unwrap();
+        assert!(load_codecs(&dir).is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
