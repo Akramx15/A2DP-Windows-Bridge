@@ -719,7 +719,7 @@
   "ui.profile.codec_not_supported": "Not supported",
   "ui.profile.codec_support_unknown": "Unknown",
   "ui.profile.codecs_hide": "Hide the codecs the audio device does not support (%d)",
-  "ui.codecs.auto_select": "Auto select the highest supported codec in quality",
+  "ui.codecs.auto_select": "Auto-select the codec with the highest quality",
   "ui.codecs.auto_uses": "In use: %s",
   "ui.codecs.auto_off": "The codec chosen below is used. If the audio device does not support it, the next one down in Auto's order.",
   "ui.codecs.auto_order": "Auto's order, highest sound quality first",
