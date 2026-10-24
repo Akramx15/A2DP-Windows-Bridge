@@ -35,6 +35,7 @@ Die Seitenleiste zeigt dasselbe für jedes Gerät auf jeder Seite.
 Der Codec jedes gespeicherten Audiogeräts, ein Abschnitt pro Gerät (Name, Adresse, Markierungen **Gekoppelt** / **Audio**) mit seinen Codec-Karten: **Automatisch** (der beste Codec, den das Gerät unterstützt) und die Codecs, die das Gerät bei seiner letzten Verbindung angeboten hat, jeweils mit drei Balken (Klangqualität, niedrige Latenz, Stabilität). Ein Klick auf eine Karte wählt den Codec dieses Geräts; er wird sofort gespeichert, und ein streamendes Gerät verbindet sich damit erneut.
 
 - **Codecs ausblenden, die das Audiogerät nicht unterstützt** (standardmäßig aktiviert): Codecs, die ein Gerät nicht angeboten hat, werden weggelassen (die Anzahl der ausgeblendeten steht in Klammern). Vor der ersten Verbindung eines Geräts werden alle angezeigt
+- **Experimentelle Codecs aktivieren** (standardmäßig aktiviert): Die experimentellen Codecs (aptX HD, aptX Low Latency, Opus, Opus 05, FastStream) tragen auf ihren Karten die Markierung **Experimentell**. Ist die Option deaktiviert, werden ihre Karten ausgeblendet, Automatisch wählt sie nie, und ein Gerät, dessen gewählter Codec einer davon ist, verwendet den nächstniedrigeren Codec in der Reihenfolge von Automatisch, den das Gerät anbietet; die Seite weist darauf hin. Ändert sich dadurch der Codec eines laufenden Streams, verbindet sich das Gerät erneut. CLI: `--no-experimental`
 - **Einen anderen unterstützten Codec verwenden, wenn dieser nicht verfügbar ist** (standardmäßig aktiviert, für alle Geräte; siehe [Ausdrücklich gewählter Codec wird nicht angeboten](#codec-fallback))
 - **...** auf einer Karte öffnet die Einstellungen dieses Codecs; **OK** wählt den Codec mit diesen. Jeder Codec behält seine eigenen Einstellungen: Wählen Sie einen anderen Codec und kehren Sie zurück, sind sie wieder da. Angeboten wird nur, was dieser Codec beherrscht:
   - **Qualität**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps); LHDC V5 Hoch (1000 kbps) / Mittel-hoch (900 kbps) / Standard (500 kbps) / Mobil (400 kbps), die vier Stufen, die Android anbietet; aptX Adaptive Hoch / Standard / Mobil / Niedrige Latenz (siehe [aptX Adaptive](#aptx-adaptive)); AAC hat ebenfalls Qualitätsstufen, die übrigen aptX-Codecs eine feste Bitrate. SBC und SBC XQ zeigen die Bitrate, die sich aus ihrem Bitpool und ihrer Frame-Einstellung ergibt
@@ -126,12 +127,12 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimentell; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 von PipeWire (experimentell; zu PipeWire-Senken)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimentell; 48 kHz, --rate 96000 für 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 für 96 kHz)
 ```
 
 Priorität bei automatischer Auswahl: LHDC V5 > LDAC > aptX Adaptive > Opus (experimentell) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream und Opus 05, beide experimentell, nur wenn ausdrücklich gewählt)
 
-Bieten die Kopfhörer den angeforderten Codec nicht an, bricht die CLI mit einem Fehler ab, der den Grund nennt; verwenden Sie `-c auto` (Standard), um den besten angebotenen Codec zu nehmen. Automatisch wählt aptX Adaptive nie; verwenden Sie `-c aptxad` -- siehe [aptX-Familie und aptX Adaptive](#aptx-compatibility).
+Bieten die Kopfhörer den angeforderten Codec nicht an, bricht die CLI mit einem Fehler ab, der den Grund nennt; verwenden Sie `-c auto` (Standard), um den besten angebotenen Codec zu nehmen -- siehe [aptX-Familie und aptX Adaptive](#aptx-compatibility).
 
 ### Qualität
 
@@ -174,6 +175,7 @@ Versetzen Sie die Kopfhörer vorher in den Kopplungsmodus.
 | `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `opus05`, `aptxad`, `auto` (Standard: `auto`) |
 | `-q <mode>` | Qualität: `hq` (Standard), `sq`, `mq`; bei LHDC V5 zusätzlich `mhq` (900 kbps); bei aptX Adaptive zusätzlich `ll` (Niedrige Latenz; andere Codecs behandeln es wie `hq`) |
 | `-a` | ABR (LDAC, LHDC V5 und aptX Adaptive) |
+| `--no-experimental` | Die experimentellen Codecs (aptX HD, aptX LL, Opus, Opus 05, FastStream) nie verwenden, wie bei deaktiviertem **Codecs > Experimentelle Codecs aktivieren** |
 | `-m <mode>` | Aufnahmemodus: `loopback` (Standard), `virtual`, `app` |
 | `--audio-device <id>` | Wiedergabegerät für `-m virtual` |
 | `--app <exe>` | Ausführbare Datei für `-m app` (z. B. `spotify.exe`) |
@@ -297,7 +299,7 @@ Die Seite **Codecs** zeigt denselben Vergleich als drei Balken auf jeder Codec-K
 
 ## aptX-Familie und aptX Adaptive {#aptx-compatibility}
 
-A2DPWB unterstützt drei aptX-Codecs, kodiert mit [libopenaptx](https://github.com/pali/libopenaptx), sowie aptX Adaptive (experimentell), kodiert mit dem Encoder von [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux).
+A2DPWB unterstützt drei aptX-Codecs, kodiert mit [libopenaptx](https://github.com/pali/libopenaptx), sowie aptX Adaptive, kodiert mit dem Encoder von [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux).
 
 {: .warning }
 **aptX HD und aptX Low Latency sind experimentell.** Sie folgen den Implementierungen von Android / PipeWire und bestehen Round-Trip-Tests (Kodieren/Dekodieren), wurden aber noch nicht mit echten Kopfhörern geprüft.
@@ -310,16 +312,16 @@ A2DPWB unterstützt drei aptX-Codecs, kodiert mit [libopenaptx](https://github.c
 | aptX | 0x0000004F / 0x0001 | Nein | Unterstützt (352/384 kbps bei 44,1/48 kHz) |
 | aptX HD | 0x000000D7 / 0x0024 | Ja | Unterstützt (576 kbps, 24-Bit-Eingang) |
 | aptX Low Latency | 0x0000000A oder 0x000000D7 / 0x0002 | Nein | Unterstützt (352 kbps) |
-| aptX Adaptive | 0x000000D7 / 0x00AD | Ja | Experimentell (265-427 kbps, 48 / 96 kHz, 24 Bit; nur bei ausdrücklicher Wahl) |
+| aptX Adaptive | 0x000000D7 / 0x00AD | Ja | Unterstützt (265-427 kbps, 48 / 96 kHz, 24 Bit) |
 
-### aptX Adaptive (experimentell) {#aptx-adaptive}
+### aptX Adaptive {#aptx-adaptive}
 
-{: .warning }
-**aptX Adaptive ist experimentell und noch nicht mit echten Kopfhörern ausprobiert.** Es besteht die Unit-Tests, die bitgenaue Testsuite des Originalprojekts und den End-to-End-Test gegen die virtuelle Bluetooth-Senke (`tools/emu`, die den RTP-Header, die Paketgrößen und die Frame-Typen prüft; das Audio wird nicht dekodiert, da es keinen offenen Decoder gibt). Das Originalprojekt meldet, dass es unter Linux / PipeWire mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e bei 48 kHz in Hoch und Niedrige Latenz funktioniert. 96 kHz (Hoch 646 kbps, Standard 340, Mobil 255) wird nur verwendet, wenn es in seinen Einstellungen (oder mit `--rate 96000`) gewählt ist und die Kopfhörer eine R2-Senke sind, die es meldet, nie in Niedrige Latenz; es ist nur gegen die virtuelle Senke geprüft, hier wie im Originalprojekt. [Rückmeldungen willkommen](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+{: .note }
+**aptX Adaptive ist bei 48 kHz mit echten Kopfhörern bestätigt:** Ein Nutzer hat es unter 2.0.2-beta.6 ohne Aussetzer oder Stottern an einen EarFun Air Pro 4+ gestreamt, so stabil wie klassisches aptX ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). Es besteht außerdem die Unit-Tests, die bitgenaue Testsuite des Originalprojekts und den End-to-End-Test gegen die virtuelle Bluetooth-Senke (`tools/emu`, die den RTP-Header, die Paketgrößen und die Frame-Typen prüft; das Audio wird nicht dekodiert, da es keinen offenen Decoder gibt). Das Originalprojekt meldet, dass es unter Linux / PipeWire mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e bei 48 kHz in Hoch und Niedrige Latenz funktioniert. 96 kHz (Hoch 646 kbps, Standard 340, Mobil 255) wird nur verwendet, wenn es in seinen Einstellungen (oder mit `--rate 96000`) gewählt ist und die Kopfhörer eine R2-Senke sind, die es meldet, nie in Niedrige Latenz; es ist nur gegen die virtuelle Senke geprüft, hier wie im Originalprojekt. [Rückmeldungen willkommen](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 Der Encoder ist der rein in Rust geschriebene aptX-Adaptive-Encoder von [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). Das Originalprojekt beschreibt ihn als Clean-Room-Neuimplementierung, deren Zahlentabellen aus rechtmäßig erworbenen, ausgelieferten Qualcomm-Binärdateien und Funkmitschnitten rekonstruiert wurden; Code, SDK oder Binärdateien von Qualcomm sind nicht enthalten (siehe [Lizenzen](licenses)).
 
-- **Auswahl**: Automatisch wählt es nie. Wählen Sie **aptX Adaptive** unter **Codecs** oder `-c aptxad`.
+- **Auswahl**: Automatisch wählt es, wenn die Kopfhörer weder LHDC V5 noch LDAC anbieten. Oder wählen Sie **aptX Adaptive** unter **Codecs** oder `-c aptxad`.
 - **Format**: nur 48 kHz Stereo, 24 Bit; Anforderungen von 44,1 oder 96 kHz werden mit 48 kHz aufgenommen.
 - **Kopfhörer**: R1-Senken (ohne Fähigkeitserweiterung, z. B. B&W Px7 S2e) und R2-Senken (R2-Bitstrom).
 
@@ -336,10 +338,10 @@ Der Encoder ist der rein in Rust geschriebene aptX-Adaptive-Encoder von [AKS-Log
 
 ### Es gibt keinen „Fallback“ von aptX Adaptive auf aptX
 
-Beim Verbinden melden die Kopfhörer eine **Liste von Codecs** (AVDTP-Stream-Endpunkte). A2DPWB wählt aus dieser Liste einen Codec. aptX Adaptive und klassisches aptX sind darin getrennte Einträge, und Automatisch wählt aptX Adaptive nie, daher „fällt“ auch nichts davon „zurück“:
+Beim Verbinden melden die Kopfhörer eine **Liste von Codecs** (AVDTP-Stream-Endpunkte). A2DPWB wählt aus dieser Liste einen Codec. aptX Adaptive und klassisches aptX sind darin getrennte Einträge, daher „fällt“ innerhalb des Codecs nichts vom einen auf das andere „zurück“:
 
-- **Die Kopfhörer führen zusätzlich klassisches aptX auf** -- Viele aptX-Adaptive-Kopfhörer tun das, weil Qualcomm aptX Adaptive als abwärtskompatibel zu aptX / aptX HD bewirbt. In diesem Fall wählt A2DPWB direkt klassisches aptX; es ist ein eigener Codec in der Liste der Kopfhörer, kein reduzierter Modus von aptX Adaptive.
-- **Die Kopfhörer führen nur aptX Adaptive auf** (kein klassisches aptX, aptX HD oder aptX LL) -- wählen Sie aptX Adaptive ausdrücklich (experimentell). Automatisch wählt den nächsten Codec in der Prioritätsreihenfolge, meist AAC oder SBC.
+- **Die Kopfhörer führen zusätzlich klassisches aptX auf** -- Viele aptX-Adaptive-Kopfhörer tun das, weil Qualcomm aptX Adaptive als abwärtskompatibel zu aptX / aptX HD bewirbt. Automatisch wählt aptX Adaptive (vor aptX HD und aptX); klassisches aptX wird verwendet, wenn Sie es wählen, als eigener Codec in der Liste der Kopfhörer, kein reduzierter Modus von aptX Adaptive.
+- **Die Kopfhörer führen nur aptX Adaptive auf** (kein klassisches aptX, aptX HD oder aptX LL) -- ein gewähltes aptX fällt auf den nächstniedrigeren Codec zurück, den sie anbieten, meist AAC oder SBC; wählen Sie aptX Adaptive (oder Automatisch), um es zu verwenden.
 
 Priorität bei automatischer Auswahl: LHDC V5 > LDAC > aptX Adaptive > Opus (experimentell) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream und Opus 05, beide experimentell, nur wenn ausdrücklich gewählt)
 
@@ -350,7 +352,7 @@ Wenn Sie einen bestimmten Codec anfordern, den die Kopfhörer nicht aufführen:
 | Wo | Verhalten |
 |:---|:----------|
 | **Einen anderen unterstützten Codec verwenden, wenn dieser nicht verfügbar ist** aktiviert (Standard) | Verbindet mit dem besten Codec, den die Kopfhörer anbieten, in der Prioritätsreihenfolge von Automatisch, und das Codec-Abzeichen zeigt, welcher Codec stattdessen verwendet wird und warum. |
-| Option deaktiviert | Die Verbindung bricht mit einem Fehler ab („Das Gerät unterstützt ... nicht“). Haben Sie aptX, aptX HD oder aptX LL angefordert und bieten die Kopfhörer nur aptX Adaptive an, sagt die Meldung dies und schlägt aptX Adaptive (experimentell), Automatisch, AAC oder SBC vor. |
+| Option deaktiviert | Die Verbindung bricht mit einem Fehler ab („Das Gerät unterstützt ... nicht“). Haben Sie aptX, aptX HD oder aptX LL angefordert und bieten die Kopfhörer nur aptX Adaptive an, sagt die Meldung dies und schlägt aptX Adaptive, Automatisch, AAC oder SBC vor. |
 | CLI (`-c <codec>`) | Bricht mit demselben Fehler ab. Verwenden Sie `-c auto`, um mit dem besten angebotenen Codec zu verbinden. |
 
 Die Option befindet sich oben auf der Seite **Codecs**, für alle Geräte (wird bei Automatisch nicht verwendet).
@@ -386,7 +388,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 ```
 
 - `aptX=true` -- klassisches aptX ist verfügbar (auch wenn zusätzlich `aptX Adaptive=true` gilt); Automatisch verwendet es.
-- `aptX=false`, `aptX HD=false`, `aptX LL=false` mit `aptX Adaptive=true` -- die Kopfhörer bieten nur aptX Adaptive an; wählen Sie aptX Adaptive (experimentell) oder Automatisch, AAC oder SBC.
+- `aptX=false`, `aptX HD=false`, `aptX LL=false` mit `aptX Adaptive=true` -- die Kopfhörer bieten nur aptX Adaptive an; wählen Sie aptX Adaptive oder Automatisch, AAC oder SBC.
 - `aptX Adaptive=true [not usable]` -- die Kopfhörer bieten aptX Adaptive ohne 48 kHz Stereo an, das A2DPWB benötigt.
 - `remote vendor codec ... - unsupported` -- ein anderer Hersteller-Codec, den A2DPWB nicht implementiert.
 

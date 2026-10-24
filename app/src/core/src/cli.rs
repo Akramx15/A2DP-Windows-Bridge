@@ -40,6 +40,9 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   --fallback            a codec -c the device does not offer falls back to the
                         next one below it in quality (as a profile), instead of
                         an error
+  --no-experimental     never use the experimental codecs (aptX HD, aptX LL, Opus,
+                        Opus 05, FastStream), as with Codecs > Enable
+                        experimental codecs off
   -m <mode>             capture: loopback (default), virtual, app
   --audio-device <id>   render device for -m virtual
   --app <exe>           executable for -m app
@@ -97,6 +100,8 @@ struct Args {
     abr: bool,
     /// --fallback: a codec the device does not offer falls back, as a profile's
     fallback: bool,
+    /// --no-experimental: settings experimental_codecs off
+    no_experimental: bool,
     mode: String,
     audio_device: String,
     app: String,
@@ -167,6 +172,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         quality: Quality::High,
         abr: false,
         fallback: false,
+        no_experimental: false,
         mode: "loopback".into(),
         audio_device: String::new(),
         app: String::new(),
@@ -213,6 +219,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "-q" => a.quality = Quality::from_key(&value(&mut it, "-q")?.to_lowercase()),
             "-a" => a.abr = true,
             "--fallback" => a.fallback = true,
+            "--no-experimental" => a.no_experimental = true,
             "-m" => a.mode = value(&mut it, "-m")?.to_lowercase(),
             "--audio-device" => a.audio_device = value(&mut it, "--audio-device")?,
             "--app" => a.app = value(&mut it, "--app")?,
@@ -493,6 +500,7 @@ pub fn run(args: &[String]) -> i32 {
         device_name,
         codec: a.codec,
         codec_fallback: a.fallback,
+        experimental_codecs: !a.no_experimental,
         quality: a.quality,
         abr: a.abr,
         sbc_bitpool: a.sbc_bitpool,

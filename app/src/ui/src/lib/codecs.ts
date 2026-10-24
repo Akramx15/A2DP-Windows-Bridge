@@ -48,6 +48,10 @@ export interface CodecSpec {
   vbr?: boolean;
   /** The SBC bitpool and frame setup (blocks, subbands, allocation) can be chosen */
   bitpool?: boolean;
+  /** Not yet confirmed with real headphones (the README's 🧪; core:
+   *  CodecKind::experimental): hidden and never used while Codecs >
+   *  "Enable experimental codecs" (settings.experimental_codecs) is off */
+  experimental?: boolean;
 }
 
 /** SBC's largest bitpool (the local SEP's) */
@@ -101,11 +105,28 @@ export const CODECS: CodecSpec[] = [
     hiRes: true,
     rates: [0, 44100, 48000, 88200, 96000, 192000],
   },
-  { id: "aptxhd", label: "codec.aptx_hd", bars: { quality: 4, latency: 3, stability: 3 }, qualities: [], abr: false, hiRes: false, bits: 24 },
-  { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
-  { id: "aptxll", label: "codec.aptx_ll", bars: { quality: 2, latency: 5, stability: 4 }, qualities: [], abr: false, hiRes: false },
   {
-    // aptX Adaptive (experimental): the levels with an
+    id: "aptxhd",
+    label: "codec.aptx_hd",
+    bars: { quality: 4, latency: 3, stability: 3 },
+    qualities: [],
+    abr: false,
+    hiRes: false,
+    bits: 24,
+    experimental: true,
+  },
+  { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
+  {
+    id: "aptxll",
+    label: "codec.aptx_ll",
+    bars: { quality: 2, latency: 5, stability: 4 },
+    qualities: [],
+    abr: false,
+    hiRes: false,
+    experimental: true,
+  },
+  {
+    // aptX Adaptive: the levels with an
     // R1 sink (an R2 sink: 427 / 364 -> 340 / 270), 48 kHz; ABR steps between
     // Mobile and the quality chosen; Low Latency has a fixed bit rate. 96 kHz
     // only when chosen, to a device that lists it (an R2 one), not in Low
@@ -137,6 +158,7 @@ export const CODECS: CodecSpec[] = [
     abr: false,
     hiRes: false,
     rates: [0, 48000],
+    experimental: true,
   },
   {
     id: "aac",
@@ -183,9 +205,17 @@ export const CODECS: CodecSpec[] = [
   },
   // CSR FastStream: fixed SBC (bitpool 29, ~200 kbps), music only; never
   // picked by Auto
-  { id: "faststream", label: "codec.faststream", bars: { quality: 1, latency: 4, stability: 4 }, qualities: [], abr: false, hiRes: false },
   {
-    // PipeWire's own Opus ("Opus 05"; experimental, never picked by Auto):
+    id: "faststream",
+    label: "codec.faststream",
+    bars: { quality: 1, latency: 4, stability: 4 },
+    qualities: [],
+    abr: false,
+    hiRes: false,
+    experimental: true,
+  },
+  {
+    // PipeWire's own Opus ("Opus 05"; never picked by Auto):
     // Android Opus' levels, stereo, 48 kHz, 10 ms frames when offered
     id: "opus05",
     label: "codec.opus05",
@@ -198,6 +228,7 @@ export const CODECS: CodecSpec[] = [
     abr: false,
     hiRes: false,
     rates: [0, 48000],
+    experimental: true,
   },
 ];
 
@@ -269,9 +300,21 @@ export function qualityRank(codec: string): number {
   return i < 0 ? AUTO_ORDER.length : i;
 }
 
-/** The codec Auto picks among those a device offers (`known`, as Device.codecs); null when not known */
-export function autoPick(known: readonly string[]): CodecId | null {
-  return AUTO_ORDER.find((c) => codecSupport(c, known) === "offered") ?? null;
+/** Not yet confirmed with real headphones (CodecSpec.experimental) */
+export function isExperimental(codec: string): boolean {
+  return codecSpec(codec).experimental === true;
+}
+
+/** Offered by the device and allowed (an experimental codec only with `experimental`) */
+function usable(codec: string, known: readonly string[], experimental: boolean): boolean {
+  return codecSupport(codec, known) === "offered" && (experimental || !isExperimental(codec));
+}
+
+/** The codec Auto picks among those a device offers (`known`, as
+ *  Device.codecs), leaving out the experimental ones unless `experimental`;
+ *  null when not known */
+export function autoPick(known: readonly string[], experimental = true): CodecId | null {
+  return AUTO_ORDER.find((c) => usable(c, known, experimental)) ?? null;
 }
 
 /**
@@ -279,15 +322,16 @@ export function autoPick(known: readonly string[]): CodecId | null {
  * `known` (core: caps::choose with the fallback every profile has): the
  * codec itself when offered, else the next one below it in AUTO_ORDER the
  * device offers, else the best it offers. Auto: what Auto picks. Null when
- * the device's codecs are not known yet.
+ * the device's codecs are not known yet. Unless `experimental`, the
+ * experimental codecs are never used (a chosen one falls back the same way).
  */
-export function effectiveCodec(codec: string, known: readonly string[]): CodecId | null {
+export function effectiveCodec(codec: string, known: readonly string[], experimental = true): CodecId | null {
   if (known.length === 0) return null;
-  if (codec === "auto") return autoPick(known);
-  if (codecSupport(codec, known) === "offered") return codec as CodecId;
+  if (codec === "auto") return autoPick(known, experimental);
+  if (usable(codec, known, experimental)) return codec as CodecId;
   const listed = AUTO_ORDER.includes(codec as CodecId);
-  const below = AUTO_ORDER.slice(qualityRank(codec) + (listed ? 1 : 0)).find((c) => codecSupport(c, known) === "offered");
-  return below ?? autoPick(known);
+  const below = AUTO_ORDER.slice(qualityRank(codec) + (listed ? 1 : 0)).find((c) => usable(c, known, experimental));
+  return below ?? autoPick(known, experimental);
 }
 
 export function sampleRates(codec: string): number[] {

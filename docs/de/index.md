@@ -11,7 +11,7 @@ has_toc: false
 Bluetooth-A2DP-Audiostreaming für Windows mit voller Codec-Unterstützung.
 {: .fs-6 .fw-300 }
 
-Streamt das Systemaudio über **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5** und (experimentell) **Opus**, PipeWires **Opus 05** sowie **aptX Adaptive** mit einem USB-Bluetooth-Adapter im WinUSB-Modus -- ohne Kerneltreiber und ohne Testsignatur.
+Streamt das Systemaudio über **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive** und (experimentell) **Opus** sowie PipeWires **Opus 05** mit einem USB-Bluetooth-Adapter im WinUSB-Modus -- ohne Kerneltreiber und ohne Testsignatur.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -35,7 +35,7 @@ Streamt das Systemaudio über **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC,
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44,1/48/96/192 kHz | 16/24 Bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 Bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 Bit | -- |
-| aptX Adaptive 🧪 | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 Bit | -- |
+| aptX Adaptive | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 Bit | -- |
 | LC3 (LE Audio) 🧪 | 32--124 kbps pro Kanal | 16/24/32/48 kHz | 16 Bit | ~140 ms |
 | LC3 Low Latency (LE Audio GMAP) 🧪 | 64--96 kbps pro Kanal | 32/48 kHz | 16 Bit | ~30 ms |
 
@@ -54,7 +54,7 @@ Streamt das Systemaudio über **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC,
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus (A2DP Opus von Android) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); nicht in Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimentell |
 | Opus 05 (PipeWires eigenes Opus) | ❌ | ❌ | ✅ PipeWire 0.3.57+ (`opus_05`, nur zu PipeWire-Geräten) | 🧪 experimentell (nur bei ausdrücklicher Wahl) |
-| aptX Adaptive | ❌ | ❌ | ❌ | 🧪 experimentell (nur bei ausdrücklicher Wahl) |
+| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
 | LC3 (LE Audio, BAP Unicast) | ❌ | ✅ auf PCs, deren Bluetooth-Hardware und -Treiber LE Audio unterstützen | ✅ PipeWire BAP `lc3` (LE Audio von BlueZ) | 🧪 experimentell (LE-Audio-Eintrag eines Geräts; GMAP mit niedriger Latenz bei Gaming-Headsets; Adapter mit Bluetooth 5.2 und ISO, [Verwendung](usage#le-audio)) |
 
 ✅ unterstützt · 🧪 experimentell · ❌ nicht unterstützt. Alle Spalten beziehen sich auf die Sendeseite (PC → Kopfhörer). „Integriert“ ist das Bluetooth-Audio des Betriebssystems selbst, ohne A2DPWB; die Ubuntu-Spalte ist der PipeWire-Codec-Umfang von Ubuntu 26.04 (`libspa-0.2-bluetooth`).
@@ -77,8 +77,8 @@ Streamt das Systemaudio über **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC,
 {: .note }
 **Nur klassisches aptX nötig?** Windows 10 unterstützt klassisches aptX bereits im integrierten Bluetooth-Stack (nicht aptX HD, aptX LL oder aptX Adaptive), dafür wird A2DPWB also nicht benötigt. A2DPWB ist vor allem für LDAC, aptX HD und aptX Low Latency nützlich.
 
-{: .warning }
-**aptX Adaptive ist experimentell und nicht an echter Hardware geprüft.** Kodiert wird mit dem MIT-lizenzierten, rein in Rust geschriebenen Encoder von [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), dessen Tabellen seine Autoren aus ausgelieferten Qualcomm-Binärdateien und Funkmitschnitten rekonstruiert haben. 48 kHz Stereo (Anforderungen von 44,1 kHz werden mit 48 kHz aufgenommen), 24 Bit: Hoch 427 kbps, Standard 364, Mobil 318 und Niedrige Latenz 265 kbps bei R1-Senken (R2-Senken haben eine eigene Tabelle), ABR in Hoch. 96 kHz (Hoch 646 kbps, Standard 340, Mobil 255), wenn Sie in seinen Einstellungen 96 kHz wählen und die Kopfhörer eine R2-Senke sind, die 96 kHz meldet; nicht in Niedrige Latenz, sonst 48 kHz. 96 kHz ist mit echten Kopfhörern noch nicht ausprobiert, weder hier noch im Originalprojekt. Automatisch wählt es nie; wählen Sie es unter **Codecs** oder mit `-c aptxad`. Es besteht die Unit-Tests, die bitgenauen Tests des Originalprojekts und den End-to-End-Test gegen eine virtuelle Senke, A2DPWB hat es aber noch nicht mit echten Kopfhörern ausprobiert; das Originalprojekt meldet, dass es unter Linux mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e funktioniert. Bieten Ihre Kopfhörer zusätzlich klassisches aptX an, verwendet Automatisch dieses. Siehe [aptX-Familie und aptX Adaptive](usage#aptx-compatibility).
+{: .note }
+**Zu aptX Adaptive.** Kodiert wird mit dem MIT-lizenzierten, rein in Rust geschriebenen Encoder von [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), dessen Tabellen seine Autoren aus ausgelieferten Qualcomm-Binärdateien und Funkmitschnitten rekonstruiert haben. 48 kHz Stereo (Anforderungen von 44,1 kHz werden mit 48 kHz aufgenommen), 24 Bit: Hoch 427 kbps, Standard 364, Mobil 318 und Niedrige Latenz 265 kbps bei R1-Senken (R2-Senken haben eine eigene Tabelle), ABR in Hoch. 96 kHz (Hoch 646 kbps, Standard 340, Mobil 255), wenn Sie in seinen Einstellungen 96 kHz wählen und die Kopfhörer eine R2-Senke sind, die 96 kHz meldet; nicht in Niedrige Latenz, sonst 48 kHz. 96 kHz ist nur im Emulator getestet, hier wie im Originalprojekt. Automatisch wählt es nach LHDC V5 und LDAC; oder wählen Sie es unter **Codecs** oder mit `-c aptxad`. Ein Nutzer hat es mit einem EarFun Air Pro 4+ bei 48 kHz unter 2.0.2-beta.6 bestätigt, so stabil wie klassisches aptX ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)); das Originalprojekt meldet, dass es unter Linux mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e funktioniert. Siehe [aptX-Familie und aptX Adaptive](usage#aptx-compatibility).
 
 ## Plattformunterstützung {#platform-support}
 
@@ -135,7 +135,7 @@ A2DPWB umgeht den Bluetooth-Stack von Windows vollständig. Es kommuniziert übe
 
 ## Funktionen
 
-- **Mehrere Codecs**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5 und (experimentell) Opus / Opus 05 / aptX Adaptive mit automatischer Aushandlung
+- **Mehrere Codecs**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive und (experimentell) Opus / Opus 05 mit automatischer Aushandlung
 - **LE Audio (experimentell)**: LC3 an LE-Audio-Kopfhörer und -Ohrhörer (BAP Unicast, beide Ohrhörer eines Paars, Headset-Lautstärke, Medientasten, GMAP mit niedriger Latenz). Benötigt einen Adapter mit isochronen Bluetooth-5.2-Kanälen; nur mit dem Bluetooth-Emulator getestet, noch nicht mit echten LE-Audio-Kopfhörern ([Verwendung](usage#le-audio))
 - **Drei Aufnahmemodi**: System-Loopback, Umleitung über ein virtuelles Audiogerät oder die Ausgabe einer einzelnen Anwendung
 - **Fenster, Infobereich und CLI**: ein Fenster für Einrichtung und Diagnose, ein Flyout und ein Menü im Infobereich für das alltägliche Verbinden sowie eine Kommandozeile (siehe [Verwendung](usage))

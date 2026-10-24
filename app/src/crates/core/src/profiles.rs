@@ -256,6 +256,8 @@ impl Profile {
             device_name: self.device_name.clone(),
             codec: CodecKind::from_key(&self.codec),
             codec_fallback: true,
+            // The setting's, filled in by whoever starts the stream
+            experimental_codecs: true,
             quality: Quality::from_key(&self.quality),
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,

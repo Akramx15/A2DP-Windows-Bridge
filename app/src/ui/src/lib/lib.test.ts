@@ -10,8 +10,10 @@ import {
   bitrateNoteKey,
   carryToCodec,
   codecLabelKey,
+  CODECS,
   effectiveCodec,
   fitToCodec,
+  isExperimental,
   fixedBitDepth,
   qualityIgnored,
   qualityTag,
@@ -499,5 +501,22 @@ describe("Auto's order and the fallback (issue #86)", () => {
     expect(effectiveCodec("faststream", ["sbc", "aac"])).toBe("aac");
     // Not known yet
     expect(effectiveCodec("ldac", [])).toBeNull();
+  });
+
+  it("leaves the experimental codecs out while they are off (issue #86)", () => {
+    expect(CODECS.filter((c) => c.experimental).map((c) => c.id).sort()).toEqual(
+      ["aptxhd", "aptxll", "faststream", "opus", "opus05"],
+    );
+    expect(isExperimental("aptxad")).toBe(false);
+    const pw = ["sbc", "aac", "opus", "aptxhd"];
+    expect(autoPick(pw)).toBe("opus");
+    expect(autoPick(pw, false)).toBe("aac");
+    // Chosen while off: the next one down that is not experimental
+    expect(effectiveCodec("opus", pw, false)).toBe("aac");
+    expect(effectiveCodec("aptxhd", pw, false)).toBe("aac");
+    // Nor a fallback for another codec
+    expect(effectiveCodec("ldac", pw)).toBe("opus");
+    expect(effectiveCodec("ldac", pw, false)).toBe("aac");
+    expect(effectiveCodec("auto", ["sbc", "faststream"], false)).toBe("sbc");
   });
 });

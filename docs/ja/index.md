@@ -11,7 +11,7 @@ has_toc: false
 Windows 向け Bluetooth A2DP オーディオストリーミングツール（全コーデック対応）
 {: .fs-6 .fw-300 }
 
-USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5**（および試験的に **Opus**、PipeWire の **Opus 05**、**aptX Adaptive**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
+USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、aptX Adaptive**（および試験的に **Opus**、PipeWire の **Opus 05**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -35,7 +35,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | LHDC V5 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive 🧪 | 265--427 kbps（96 kHz: 255--646） | 48/96 kHz | 24 bit | -- |
+| aptX Adaptive | 265--427 kbps（96 kHz: 255--646） | 48/96 kHz | 24 bit | -- |
 | LC3（LE Audio） 🧪 | 1 チャネルあたり 32--124 kbps | 16/24/32/48 kHz | 16 bit | 約 140 ms |
 | LC3 低遅延（LE Audio GMAP） 🧪 | 1 チャネルあたり 64--96 kbps | 32/48 kHz | 16 bit | 約 30 ms |
 
@@ -54,7 +54,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | Opus（Android の A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2 以降（`opus_g`）。Ubuntu 24.04（PipeWire 1.0.5）にはない | 🧪 実験的 |
 | Opus 05（PipeWire 独自の Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57 以降（`opus_05`、相手も PipeWire のときだけ） | 🧪 実験的（明示的に選んだとき） |
-| aptX Adaptive | ❌ | ❌ | ❌ | 🧪 実験的（明示的に選んだとき） |
+| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
 | LC3（LE Audio、BAP ユニキャスト） | ❌ | ✅ Bluetooth のハードウェアとドライバーが LE Audio に対応した PC のみ | ✅ PipeWire の BAP `lc3`（BlueZ の LE Audio） | 🧪 実験的（デバイスの LE Audio の項目、ゲーミングヘッドセットでは GMAP の低遅延、ISO 対応の Bluetooth 5.2 アダプターが必要、[使い方](usage#le-audio)） |
 
 ✅ 対応 · 🧪 実験的 · ❌ 非対応。どの列も送信側（PC → ヘッドホン）です。「標準」は A2DPWB を使わない OS 自身の Bluetooth オーディオで、Ubuntu の列は Ubuntu 26.04 の PipeWire（`libspa-0.2-bluetooth`）が持つコーデックです。
@@ -77,8 +77,8 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 {: .note }
 **クラシック aptX だけが目的なら**、Windows 10 標準の Bluetooth スタックがクラシック aptX に対応しています（aptX HD・aptX LL・aptX Adaptive は非対応）。その場合 A2DPWB は不要です。A2DPWB が主に役立つのは LDAC・aptX HD・aptX Low Latency です。
 
-{: .warning }
-**aptX Adaptive は実験的な対応で、実機では未確認です。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオ（44.1 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。コーデックの設定で 96 kHz を選び、ヘッドホンが 96 kHz を通知する R2 のシンクであれば 96 kHz（高音質 646 kbps、標準 340、モバイル 255）になります。低遅延では使えず、それ以外は 48 kHz です。96 kHz は A2DPWB でも上流でも実際のヘッドホンでは試していません。自動選択では選ばれないので、**コーデック** 画面か `-c aptxad` で選んでください。単体テスト、上流のビット単位で一致するテスト、仮想シンクとのエンドツーエンドテストには合格していますが、A2DPWB では実際のヘッドホンでまだ試していません。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。ヘッドホンがクラシック aptX も通知していれば、Auto はそちらを使います。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
+{: .note }
+**aptX Adaptive について。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオ（44.1 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。コーデックの設定で 96 kHz を選び、ヘッドホンが 96 kHz を通知する R2 のシンクであれば 96 kHz（高音質 646 kbps、標準 340、モバイル 255）になります。低遅延では使えず、それ以外は 48 kHz です。96 kHz は A2DPWB でも上流でもエミュレーターでしか試していません。自動選択では LHDC V5、LDAC の次に選ばれます。**コーデック** 画面か `-c aptxad` で選ぶこともできます。2.0.2-beta.6 で EarFun Air Pro 4+ を使った 48 kHz での動作が利用者から報告されており、クラシック aptX と同じくらい安定しています（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
 
 ## 対応プラットフォーム {#platform-support}
 
@@ -135,7 +135,7 @@ A2DPWB は Windows の Bluetooth スタックを完全にバイパスします�
 
 ## 主な機能
 
-- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、Opus / Opus 05 / aptX Adaptive（試験的）（自動ネゴシエーション対応）
+- **マルチコーデック**: LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、aptX Adaptive、Opus / Opus 05（試験的）（自動ネゴシエーション対応）
 - **LE Audio（実験的）**: LE Audio のヘッドホン・イヤホンへ LC3 で送信（BAP ユニキャスト、左右一組のイヤホン、ヘッドセットの音量、メディアボタン、GMAP の低遅延）。Bluetooth 5.2 のアイソクロナスチャネルに対応したアダプターが必要です。確かめたのは Bluetooth のエミュレータだけで、実機の LE Audio ヘッドホンではまだ試していません（[使い方](usage#le-audio)を参照）
 - **3 つのキャプチャモード**: システムループバック、仮想オーディオデバイスルーティング、または 1 つのアプリの出力
 - **ウィンドウ・トレイ・CLI**: セットアップと診断はウィンドウ、毎日の接続はトレイのフライアウトとメニュー、ほかにコマンドライン（[使い方](usage)を参照）

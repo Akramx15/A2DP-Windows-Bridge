@@ -24,6 +24,9 @@ pub struct StreamRequest {
     /// None = Auto
     pub codec: Option<CodecKind>,
     pub codec_fallback: bool,
+    /// Experimental codecs may be used (settings `experimental_codecs`):
+    /// off, Auto and a fallback never pick them and a chosen one falls back
+    pub experimental_codecs: bool,
     pub quality: Quality,
     pub abr: bool,
     /// SBC / SBC XQ: the bitpool wanted (0 = by quality)
@@ -909,13 +912,14 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     // ---- codec ----
-    let choice = match caps::choose(&remote, req.codec, req.codec_fallback) {
+    let choice = match caps::choose(&remote, req.codec, req.codec_fallback, req.experimental_codecs) {
         Ok(c) => c,
         Err(why) => {
             tracing::debug!(
-                "codec: no codec for request {:?} (fallback {}): {why:?}",
+                "codec: no codec for request {:?} (fallback {}, experimental {}): {why:?}",
                 req.codec.map(CodecKind::name),
-                req.codec_fallback
+                req.codec_fallback,
+                req.experimental_codecs
             );
             host.disconnect();
             let msg = match why {
@@ -925,6 +929,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 }
                 Some((codec, Unavailable::AdaptiveOnly)) => Msg::with("error.codec_adaptive_only", &[&codec.name()]),
                 Some((codec, Unavailable::NotSupported)) => Msg::with("error.codec_not_supported", &[&codec.name()]),
+                Some((codec, Unavailable::Experimental)) => Msg::with("error.codec_experimental_off", &[&codec.name()]),
             };
             return inner.notify(StreamState::Error, msg);
         }
@@ -1123,10 +1128,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     };
     let kind = kind;
     let fallback_text = replaced.as_ref().map(|(wanted, why)| {
-        let key = if matches!(why, Unavailable::SepInUse { .. }) {
-            "status.connected_fallback_in_use"
-        } else {
-            "status.connected_fallback"
+        let key = match why {
+            Unavailable::SepInUse { .. } => "status.connected_fallback_in_use",
+            Unavailable::Experimental => "status.connected_fallback_experimental",
+            _ => "status.connected_fallback",
         };
         Msg::with(key, &[&wanted.name(), &kind.name()])
     });
