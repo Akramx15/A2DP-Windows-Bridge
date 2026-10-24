@@ -165,7 +165,10 @@ describe("every screen renders", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" })).toBeInTheDocument();
     mock!.setV1Running(true);
     expect(await screen.findByText("Another A2DPWB is running — exit it first")).toBeInTheDocument();
+    // The setup waits while the other one holds the adapter
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
     mock!.setV1Running(false);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Next" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     // Step 2: one explanation and one button, which switches the driver and
     // downloads the firmware (issue #86)
@@ -173,11 +176,23 @@ describe("every screen renders", () => {
     expect(screen.getByText(/Windows then stops using this adapter/)).toBeInTheDocument();
     expect(screen.getByText("rtl8761bu_fw.bin, rtl8761bu_config.bin")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Assign WinUSB" })).toBeNull();
+    // Another A2DPWB started meanwhile: no driver change until it exits
+    mock!.setV1Running(true);
+    await waitFor(() => expect(setUp).toBeDisabled());
+    mock!.setV1Running(false);
+    await waitFor(() => expect(setUp).toBeEnabled());
     fireEvent.click(setUp);
     await screen.findByText("The adapter is ready for A2DPWB", {}, { timeout: 5000 });
     const order = calls.map((c) => c.method).filter((m) => m === "adapter.assign_winusb" || m === "adapter.download_firmware");
     expect(order).toEqual(["adapter.assign_winusb", "adapter.download_firmware"]);
     expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled();
+    // Step 3: no connection while another A2DPWB holds the adapter
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    const connect = (await screen.findAllByRole("button", { name: "Connect" }, { timeout: 5000 }))[0];
+    mock!.setV1Running(true);
+    await waitFor(() => expect(connect).toBeDisabled());
+    mock!.setV1Running(false);
+    await waitFor(() => expect(connect).toBeEnabled());
   });
 
   it("the flyout", async () => {

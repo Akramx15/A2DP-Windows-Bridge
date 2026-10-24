@@ -69,6 +69,9 @@ export function Setup() {
   };
 
   const canNext = () => {
+    // Another A2DPWB (v1, or another v2) holds the adapter: the banner asks
+    // to exit it first, the setup waits (Skip stays)
+    if (snap().v1_running) return false;
     switch (step()) {
       case 0:
         return adapter() !== null;
@@ -292,7 +295,12 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
                   <p class="hint">{t("ui.adapter.uac_note")}</p>
                 </Show>
                 <div>
-                  <Button kind="strong" icon="checkmark" onClick={() => setUp(a())}>
+                  <Button
+                    kind="strong"
+                    icon="checkmark"
+                    disabled={!!core.state.snap?.v1_running}
+                    onClick={() => setUp(a())}
+                  >
                     {t("ui.setup.auto_button")}
                   </Button>
                 </div>
@@ -374,7 +382,7 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
   // One click: the device is saved, gets its "<name> | Auto" profile (the
   // best codec it has) and is connected with it
   const connect = async (address: string, name: string) => {
-    if (connecting()) return;
+    if (connecting() || snap().v1_running) return;
     setConnecting(address);
     try {
       const profile = await saveWithProfile(app, address, name, false);
@@ -412,7 +420,14 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
           </div>
         )}
       </Show>
-      <DevicePicker address="" classicOnly onPick={() => {}} onConnect={(a, n) => void connect(a, n)} connecting={connecting()} />
+      <DevicePicker
+        address=""
+        classicOnly
+        onPick={() => {}}
+        onConnect={(a, n) => void connect(a, n)}
+        connecting={connecting()}
+        connectDisabled={snap().v1_running}
+      />
       <Startup />
     </div>
   );

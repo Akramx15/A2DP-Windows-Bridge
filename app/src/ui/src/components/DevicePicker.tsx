@@ -78,6 +78,8 @@ export function DevicePicker(props: {
   /** With onConnect: the address being connected (its button spins, the
    *  others wait) */
   connecting?: string | null;
+  /** With onConnect: no connection now (another A2DPWB holds the adapter) */
+  connectDisabled?: boolean;
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
@@ -228,7 +230,7 @@ export function DevicePicker(props: {
                 kind={d.audio ? "strong" : undefined}
                 icon="power"
                 busy={props.connecting === d.address}
-                disabled={!!props.connecting}
+                disabled={!!props.connecting || props.connectDisabled}
                 onClick={() => connect()(d.address, d.name)}
               >
                 {t("connection.connect")}
@@ -323,7 +325,7 @@ export function DevicePicker(props: {
             onInput={(e) => setManual(e.currentTarget.value)}
           />
           <Button
-            disabled={!parseAddress(manual()) || !!props.connecting}
+            disabled={!parseAddress(manual()) || !!props.connecting || (!!props.onConnect && props.connectDisabled)}
             busy={!!props.connecting && props.connecting === parseAddress(manual())}
             onClick={() => {
               const a = parseAddress(manual());
