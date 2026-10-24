@@ -6,11 +6,13 @@ import {
   abrCarries,
   AUTO_ORDER,
   autoPick,
+  bitDepths,
   bitrateNoteKey,
   carryToCodec,
   codecLabelKey,
   effectiveCodec,
   fitToCodec,
+  fixedBitDepth,
   qualityIgnored,
   qualityTag,
   sampleRates,
@@ -242,11 +244,15 @@ describe("profiles", () => {
     expect(sampleRates("opus")).toEqual([0, 48000]);
     expect(fitToCodec({ ...p, codec: "opus05", sample_rate: 44100 })).toMatchObject({ quality: "hq", abr: false, sample_rate: 0, bit_depth: 0 });
     expect(sampleRates("opus05")).toEqual([0, 48000]);
-    // aptX Adaptive: 48 kHz, ABR, and its low latency mode as a quality
+    // aptX Adaptive: 48 / 96 kHz, ABR, and its low latency mode as a quality
     expect(fitToCodec({ ...p, codec: "aptxad", sample_rate: 44100 })).toMatchObject({ quality: "hq", abr: true, sample_rate: 0, bit_depth: 0 });
     expect(fitToCodec({ ...p, codec: "aptxad", quality: "ll" }).quality).toBe("ll");
     expect(fitToCodec({ ...p, codec: "ldac", quality: "ll" }).quality).toBe("hq");
-    expect(sampleRates("aptxad")).toEqual([0, 48000]);
+    expect(sampleRates("aptxad")).toEqual([0, 48000, 96000]);
+    expect(fitToCodec({ ...p, codec: "aptxad", sample_rate: 96000 }).sample_rate).toBe(96000);
+    // Always 24-bit, no choice (aptX HD too); the others without a choice 16
+    expect(bitDepths("aptxad")).toEqual([0]);
+    expect([fixedBitDepth("aptxad"), fixedBitDepth("aptxhd"), fixedBitDepth("aptx"), fixedBitDepth("opus")]).toEqual([24, 24, 16, 16]);
   });
 
   it("offers 192 kHz for LHDC V5 only, and no quality under its ABR", () => {
@@ -455,6 +461,9 @@ describe("profile list", () => {
     expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 88200 })).toBe("Standard (500 kbps)");
     expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("Medium-High (900 kbps)");
     expect(tag({ codec: "aptxad", quality: "ll" })).toBe("Low Latency (265 kbps)");
+    expect(tag({ codec: "aptxad", quality: "hq", sample_rate: 96000 })).toBe("High (646 kbps)");
+    expect(tag({ codec: "aptxad", quality: "mq", sample_rate: 96000 })).toBe("Mobile (255 kbps)");
+    expect(tag({ codec: "aptxad", quality: "ll", sample_rate: 96000 })).toBe("Low Latency (265 kbps)");
     expect(tag({ codec: "lhdcv5", quality: "hq", abr: true })).toBe("ABR (≤400 kbps)");
     expect(tag({ codec: "sbc", quality: "sq" })).toBe("Standard (~240 kbps)");
     expect(tag({ codec: "auto", quality: "hq" })).toBe("High");

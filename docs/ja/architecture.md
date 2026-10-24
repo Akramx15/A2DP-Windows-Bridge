@@ -203,7 +203,7 @@ Windows 8 以降には、Microsoft 署名済みの WinUSB ドライバー（`win
 
 - リモートの能力を解析: 標準の SBC と AAC の要素、ベンダーコーデック（aptX LL は両方の Vendor ID、aptX Adaptive は R1 と R2 のシンク。48 kHz ステレオがあるときだけ使える）
 - コーデックを選択: Auto はリモートが提示する一番良いコーデックを選ぶ。リモートが提示しないコーデックを指定した場合、プロファイルで **このコーデックが使えないときは別のコーデックで接続** がオンなら Auto の選択に置き換え、オフならエラー
-- aptX 系のサンプルレートを選択（リモートが通知するレートから 44.1 / 48 kHz を選び、キャプチャのリサンプリングは WASAPI に任せる）。aptX Adaptive は常に 48 kHz
+- aptX 系のサンプルレートを選択（リモートが通知するレートから 44.1 / 48 kHz を選び、キャプチャのリサンプリングは WASAPI に任せる）。aptX Adaptive は 48 kHz。プロファイルが高音質 / 標準 / モバイルで 96 kHz を求め、シンクが R2 で 96 kHz を通知していれば 96 kHz
 
 ### Bluetooth ホスト（`bt-host`）
 
@@ -248,7 +248,7 @@ Windows Audio Session API でオーディオをリアルタイムに取り込み
 | FastStream | 同じ SBC エンコーダー | 198/216 kbps (44.1/48 kHz) | CSR のベンダーコーデック、音楽方向のみ（音声の逆方向チャネルなし）: SBC ジョイントステレオ bitpool 29、フレームを 72 バイトに詰め、1 パケット 3 フレーム、メディアペイロードヘッダーも RTP ヘッダーもなし（PipeWire と同じ）。自動では選ばれない |
 | LHDC V5 | lhdcv5-enc（AOSP エンコーダーの C 移植版） | 400/500/900/1000 kbps、ABR 160–400 kbps | 16/24 bit、5 ms フレーム、2 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（ステレオ。モノラルは半分） | 試験的。Android の A2DP Opus: 48 kHz、20 ms フレーム（シンクが 10 ms だけならそれ）、メディアペイロードに収まる上限付きの制約付き VBR、1 パケット 1 フレーム、1 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
-| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux の Rust 製エンコーダー、MIT） | R1 のシンク: 427/364/318 kbps（高音質/標準/モバイル）、低遅延 265 kbps。R2 のシンク: 427/270/204、270 kbps | 試験的。48 kHz ステレオ、24 bit。メディアパケット 1 つにコーデックのパケット 1 つ、A2DPWB 自身の RTP ヘッダー付き。高音質で ABR。Auto では選ばない |
+| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux の Rust 製エンコーダー、MIT） | R1 のシンク: 427/364/318 kbps（高音質/標準/モバイル）、低遅延 265 kbps。R2 のシンク: 427/270/204、270 kbps | 試験的。48 kHz ステレオ（求められたときは、96 kHz を通知する R2 のシンクへ HQ で 96 kHz: 646/340/255 kbps）、24 bit。メディアパケット 1 つにコーデックのパケット 1 つ、A2DPWB 自身の RTP ヘッダー付き。高音質で ABR。Auto では選ばない |
 
 すべてのエンコーダーは `codec::Encoder` トレイトを実装しています。入力の PCM 形式と 1 回に使うフレーム数を示し、コーデックのフレームを返します。
 

@@ -6,8 +6,10 @@
 //! high quality (HQ) and low latency (LL), with the reference's per-packet
 //! loop, mode tables and bit rate levels (`aptx_adaptive::Stream`). A2DPWB
 //! streams 48 kHz stereo, the rate every aptX Adaptive sink takes and the only
-//! one an R1 sink is ever streamed at (the encoder also has 44.1 / 96 kHz
-//! for R2 sinks, untried on hardware).
+//! one an R1 sink is ever streamed at, or 96 kHz in HQ to an R2 sink that
+//! lists it when the profile asks for 96 kHz (as upstream's plugin: config 3,
+//! the 96 kHz table row; untried on hardware there and here). The encoder
+//! also has 44.1 kHz for R2 sinks, not used.
 //!
 //! Framing as upstream's spec (`a2dp-integration.md` §7D, §7F, §7H), which
 //! matches a Snapdragon phone's stream: one codec packet per media packet,
@@ -27,7 +29,9 @@
 //! the start) once it stays empty, as PipeWire's reduce / increase_bitpool
 //! drive upstream's plugin. Quality::LowLatency streams LL: 265 kbps / 10 ms
 //! / 348-byte packets with an R1 sink (the HQ bitstream on the LL row), 270 /
-//! 10 / 348 with an R2 sink, at every level (no ABR).
+//! 10 / 348 with an R2 sink, at every level (no ABR). At 96 kHz (R2, HQ):
+//! 2 = 255 kbps / 20 ms, 3 = 340 / 15, 4 = 420 / 12, 5 = 646 / 8, all
+//! 656-byte packets.
 //!
 //! aptX is a Qualcomm trademark. The encoder and its numeric tables were
 //! reconstructed by its authors from shipped binaries and on-air captures
@@ -49,13 +53,16 @@ const RTP_PAYLOAD_TYPE: u8 = 0x60;
 pub const SSRC_HQ: u32 = 0x0000_00A3;
 pub const SSRC_LL: u32 = 0x0000_00A1;
 
-/// The only rate A2DPWB streams
+/// The rate A2DPWB streams by default, to every sink
 pub const SAMPLE_RATE: u32 = 48000;
+/// HQ to an R2 sink that lists it
+pub const SAMPLE_RATE_96K: u32 = 96000;
 
-/// PCM frames per encode call: 2 ms, a divisor of every packet period at
-/// 48 kHz (8..50 ms in whole ms, all even but 13 / 15 / 19 ms rows of R2
-/// sinks, which only shift when within a call a packet goes out)
-const FRAMES_PER_ENCODE: usize = 96;
+/// PCM frames per encode call: 2 ms (96 at 48 kHz, 192 at 96 kHz), a
+/// divisor of every packet period (8..50 ms in whole ms, all even but 13 /
+/// 15 / 19 ms rows of R2 sinks, which only shift when within a call a packet
+/// goes out)
+const ENCODE_MS: u32 = 2;
 
 /// The reference's level at the start of a stream (and LL's only one)
 const START_LEVEL: u8 = 3;
@@ -77,6 +84,8 @@ const ABR_UP_DEPTH: u32 = 1;
 pub struct AptxAdaptiveEncoder {
     stream: Stream<aptx_adaptive::Encoder>,
     channels: usize,
+    /// PCM frames per encode call ([`ENCODE_MS`] at the stream's rate)
+    frames_per_encode: usize,
     /// 24-bit right-justified stereo input of one call (allocated once:
     /// encode() must not allocate)
     pcm: Vec<i32>,
@@ -110,22 +119,28 @@ fn top_level(level: DecoderLevel) -> u8 {
 }
 
 impl AptxAdaptiveEncoder {
-    /// Takes 48 kHz, 1 or 2 channels (mono is duplicated: the stream is
-    /// stereo) of 32-bit MSB-aligned PCM, of which the top 24 bits are
-    /// encoded. The sink's decoder level comes from
-    /// [`crate::PeerParams::aptxad_r2`]; the packet size from the MTU.
+    /// Takes 48 kHz (or 96 kHz in HQ to an R2 sink), 1 or 2 channels (mono
+    /// is duplicated: the stream is stereo) of 32-bit MSB-aligned PCM, of
+    /// which the top 24 bits are encoded. The sink's decoder level comes
+    /// from [`crate::PeerParams::aptxad_r2`]; the packet size from the MTU.
     pub fn new(config: &EncoderConfig) -> Result<AptxAdaptiveEncoder, EncoderError> {
         let kind = CodecKind::AptxAdaptive;
         let unsupported = |what: String| Err(EncoderError::Unsupported { codec: kind, what });
-        if config.sample_rate != SAMPLE_RATE {
-            return unsupported(format!("sample rate {} ({SAMPLE_RATE})", config.sample_rate));
+        let level = decoder_level(config.peer.aptxad_r2);
+        let profile = if config.quality == Quality::LowLatency { Profile::Ll } else { Profile::Hq };
+        match config.sample_rate {
+            SAMPLE_RATE => {}
+            SAMPLE_RATE_96K if level == DecoderLevel::R2 && profile == Profile::Hq => {}
+            SAMPLE_RATE_96K => {
+                return unsupported(format!("{SAMPLE_RATE_96K} Hz in {profile:?} to an {level:?} sink (R2, HQ)"));
+            }
+            rate => return unsupported(format!("sample rate {rate} ({SAMPLE_RATE} or {SAMPLE_RATE_96K})")),
         }
         if config.channels != 1 && config.channels != 2 {
             return unsupported(format!("{} channels (1 or 2)", config.channels));
         }
-        let level = decoder_level(config.peer.aptxad_r2);
-        let profile = if config.quality == Quality::LowLatency { Profile::Ll } else { Profile::Hq };
-        let stream_config = Config { profile, sample_rate: SAMPLE_RATE, channels: 2, level };
+        let sample_rate = config.sample_rate;
+        let stream_config = Config { profile, sample_rate, channels: 2, level };
         let budget = packet_budget(usize::from(config.mtu));
         let mut stream = Stream::new(stream_config, budget).map_err(|e| EncoderError::Init {
             codec: kind,
@@ -143,19 +158,21 @@ impl AptxAdaptiveEncoder {
             stream.apply_level_now();
         }
         let abr = (config.abr && profile == Profile::Hq).then(Abr::default);
+        let frames_per_encode = (sample_rate * ENCODE_MS / 1000) as usize;
         let encoder = AptxAdaptiveEncoder {
             ssrc: if profile == Profile::Ll { SSRC_LL } else { SSRC_HQ },
             stream,
             channels: config.channels as usize,
-            pcm: vec![0; FRAMES_PER_ENCODE * 2],
+            frames_per_encode,
+            pcm: vec![0; frames_per_encode * 2],
             seq: 0,
             level: wanted,
             abr,
         };
         let row = encoder.stream.row();
         tracing::info!(
-            "aptX Adaptive: {profile:?}, sink {level:?}, in_ch={} mtu={} budget={budget}: level {} = {} kbps, {} ms, \
-             {}-byte packets, abr {}",
+            "aptX Adaptive: {profile:?}, sink {level:?}, {sample_rate} Hz, in_ch={} mtu={} budget={budget}: level {} = \
+             {} kbps, {} ms, {}-byte packets, abr {}",
             config.channels,
             config.mtu,
             encoder.stream.level(),
@@ -195,7 +212,7 @@ impl Encoder for AptxAdaptiveEncoder {
     }
 
     fn pcm_frames_per_encode(&self) -> usize {
-        FRAMES_PER_ENCODE
+        self.frames_per_encode
     }
 
     /// [`Encoded::frames`] counts packets; a packet's audio depends on the
@@ -211,7 +228,7 @@ impl Encoder for AptxAdaptiveEncoder {
 
     fn encode(&mut self, pcm: Pcm<'_>, out: &mut [u8]) -> Result<Encoded, EncoderError> {
         let kind = CodecKind::AptxAdaptive;
-        let expected = FRAMES_PER_ENCODE * self.channels;
+        let expected = self.frames_per_encode * self.channels;
         let Pcm::I32(samples) = pcm else {
             return Err(EncoderError::Encode { codec: kind, what: "PCM is not I32".into() });
         };
@@ -318,11 +335,16 @@ mod tests {
         }
     }
 
-    /// A 1 kHz tone, MSB-aligned like the capture's 24-bit samples
+    /// A 1 kHz tone at 48 kHz, MSB-aligned like the capture's 24-bit samples
     fn tone(frames: usize, channels: usize) -> Vec<i32> {
+        tone_at(48000, frames, channels)
+    }
+
+    fn tone_at(rate: u32, frames: usize, channels: usize) -> Vec<i32> {
         (0..frames)
             .flat_map(|i| {
-                let v = ((i as f64 * 2.0 * std::f64::consts::PI * 1000.0 / 48000.0).sin() * 0.5 * 8_388_607.0) as i32;
+                let v = ((i as f64 * 2.0 * std::f64::consts::PI * 1000.0 / f64::from(rate)).sin() * 0.5 * 8_388_607.0)
+                    as i32;
                 std::iter::repeat_n(v << 8, channels)
             })
             .collect()
@@ -408,6 +430,41 @@ mod tests {
     }
 
     #[test]
+    fn r2_hq_at_96k() {
+        // R2 HQ at 96 kHz (the 96 kHz table row, config 3): 2 ms = 192
+        // frames per call. High: level 5 = 646 kbps, 8 ms (768 samples per
+        // channel), 656-byte packets, 125 in one second
+        let at96 = |quality, abr| EncoderConfig { sample_rate: 96000, ..config(quality, true, abr, 2) };
+        let mut enc = AptxAdaptiveEncoder::new(&at96(Quality::High, false)).unwrap();
+        assert_eq!(enc.pcm_frames_per_encode(), 192);
+        assert_eq!(enc.bitrate_kbps(), 646);
+        let packets = run(&mut enc, &tone_at(96000, 96000, 2));
+        assert!((124..=125).contains(&packets.len()), "{}", packets.len());
+        for p in &packets {
+            assert_eq!(p.len(), 12 + 656);
+            assert_eq!(p[4..12], [0, 0, 0x03, 0x00, 0, 0, 0, 0xA3]);
+        }
+        assert_eq!(enc.pcm_frames_per_codec_frame(), 768);
+        // Not the 48 kHz bitstream
+        let mut at48 = AptxAdaptiveEncoder::new(&config(Quality::High, true, false, 2)).unwrap();
+        assert_ne!(packets[1][12..], run(&mut at48, &tone(9600, 2))[1][12..]);
+        // Standard: level 3 = 340 kbps, 15 ms (1440 samples); Mobile: 255
+        let mut sq = AptxAdaptiveEncoder::new(&at96(Quality::Standard, false)).unwrap();
+        assert_eq!(sq.bitrate_kbps(), 340);
+        let packets = run(&mut sq, &tone_at(96000, 19200, 2));
+        assert!(!packets.is_empty() && packets.iter().all(|p| ts(p) == 1440));
+        assert_eq!(AptxAdaptiveEncoder::new(&at96(Quality::Mobile, false)).unwrap().bitrate_kbps(), 255);
+        // ABR down from 646 kbps, mono input
+        let mut abr = AptxAdaptiveEncoder::new(&EncoderConfig { channels: 1, ..at96(Quality::High, true) }).unwrap();
+        assert!(abr.abr_active());
+        for _ in 0..ABR_DOWN_CALLS {
+            abr.abr_adjust(8);
+        }
+        run(&mut abr, &tone_at(96000, 4800, 1));
+        assert_eq!(abr.bitrate_kbps(), 420);
+    }
+
+    #[test]
     fn mono_input_is_sent_as_stereo() {
         let mut mono = AptxAdaptiveEncoder::new(&config(Quality::Standard, false, false, 1)).unwrap();
         let mut stereo = AptxAdaptiveEncoder::new(&config(Quality::Standard, false, false, 2)).unwrap();
@@ -418,6 +475,11 @@ mod tests {
     fn rejects_what_it_cannot_send() {
         let at = |rate| EncoderConfig { sample_rate: rate, ..config(Quality::High, false, false, 2) };
         assert!(AptxAdaptiveEncoder::new(&at(44100)).is_err());
+        // 96 kHz: R2 HQ only
+        assert!(AptxAdaptiveEncoder::new(&at(96000)).is_err());
+        let r2_ll = EncoderConfig { sample_rate: 96000, ..config(Quality::LowLatency, true, false, 2) };
+        assert!(AptxAdaptiveEncoder::new(&r2_ll).is_err());
+        assert!(AptxAdaptiveEncoder::new(&EncoderConfig { sample_rate: 88200, ..r2_ll }).is_err());
         assert!(AptxAdaptiveEncoder::new(&EncoderConfig { channels: 6, ..at(48000) }).is_err());
         // An MTU whose packets cannot carry the lowest bit rate
         assert!(AptxAdaptiveEncoder::new(&EncoderConfig { mtu: 200, ..at(48000) }).is_err());

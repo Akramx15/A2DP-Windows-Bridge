@@ -12,11 +12,13 @@ import type { Profile } from "../ipc/types";
 import {
   bitDepths,
   carryToCodec,
+  fixedBitDepth,
   codecSpec,
   BITPOOL_MAX,
   BITPOOL_MAX_XQ,
   BITPOOL_MIN,
   qualityIgnored,
+  qualityKbps,
   sampleRates,
   type CodecSpec,
   type CodecSupport,
@@ -240,7 +242,10 @@ export function CodecSettings(props: {
                 disabled={spec().qualities.length === 0 || qualityIgnored(v.codec, v.abr)}
                 options={
                   spec().qualities.length
-                    ? spec().qualities.map((q) => ({ value: q.id, label: q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label) }))
+                    ? spec().qualities.map((q) => {
+                        const kbps = qualityKbps(v.codec, q.id, v.sample_rate);
+                        return { value: q.id, label: kbps ? `${t(q.label)} (${kbps} kbps)` : t(q.label) };
+                      })
                     : [{ value: v.quality, label: t("ui.profile.fixed_bitrate") }]
                 }
                 onChange={(x) => setV("quality", x)}
@@ -268,7 +273,12 @@ export function CodecSettings(props: {
               disabled={bitDepths(v.codec).length === 1}
               options={bitDepths(v.codec).map((b) => ({
                 value: b,
-                label: b === 0 ? (bitDepths(v.codec).length > 1 ? t("codec.auto") : t("bitdepth.16")) : t(`bitdepth.${b}`),
+                label:
+                  b === 0
+                    ? bitDepths(v.codec).length > 1
+                      ? t("codec.auto")
+                      : t(`bitdepth.${fixedBitDepth(v.codec)}`)
+                    : t(`bitdepth.${b}`),
               }))}
               onChange={(x) => setV("bit_depth", x)}
             />

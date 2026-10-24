@@ -126,7 +126,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 de PipeWire (experimental; hacia receptores PipeWire)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 para 96 kHz)
 ```
 
 Prioridad de la selección automática: LHDC V5 > LDAC > aptX Adaptive > Opus (experimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream y Opus 05, ambos experimentales, solo si se eligen)
@@ -310,12 +310,12 @@ A2DPWB admite tres códecs aptX codificados con [libopenaptx](https://github.com
 | aptX | 0x0000004F / 0x0001 | No | Compatible (352/384 kbps a 44.1/48 kHz) |
 | aptX HD | 0x000000D7 / 0x0024 | Sí | Compatible (576 kbps, entrada de 24 bits) |
 | aptX Low Latency | 0x0000000A o 0x000000D7 / 0x0002 | No | Compatible (352 kbps) |
-| aptX Adaptive | 0x000000D7 / 0x00AD | Sí | Experimental (265-427 kbps, 48 kHz, 24 bits; si se elige expresamente) |
+| aptX Adaptive | 0x000000D7 / 0x00AD | Sí | Experimental (265-427 kbps, 48 / 96 kHz, 24 bits; si se elige expresamente) |
 
 ### aptX Adaptive (experimental) {#aptx-adaptive}
 
 {: .warning }
-**aptX Adaptive es experimental y aún no se ha probado con auriculares reales.** Supera las pruebas unitarias, el conjunto de pruebas bit a bit del proyecto original y la prueba de extremo a extremo contra el receptor Bluetooth virtual (`tools/emu`, que comprueba el encabezado RTP, el tamaño de los paquetes y los tipos de trama; el audio no se decodifica, ya que no existe un decodificador abierto). El proyecto original informa de que funciona en Linux / PipeWire con Bose QuietComfort Ultra (1.ª generación) y B&W Px7 S2e a 48 kHz en Alta y Baja latencia. [Se agradecen los informes](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**aptX Adaptive es experimental y aún no se ha probado con auriculares reales.** Supera las pruebas unitarias, el conjunto de pruebas bit a bit del proyecto original y la prueba de extremo a extremo contra el receptor Bluetooth virtual (`tools/emu`, que comprueba el encabezado RTP, el tamaño de los paquetes y los tipos de trama; el audio no se decodifica, ya que no existe un decodificador abierto). El proyecto original informa de que funciona en Linux / PipeWire con Bose QuietComfort Ultra (1.ª generación) y B&W Px7 S2e a 48 kHz en Alta y Baja latencia. 96 kHz (Alta 646 kbps, Estándar 340, Móvil 255) solo se usa cuando se elige en su configuración (o con `--rate 96000`) y los auriculares son un receptor R2 que lo anuncia, nunca en Baja latencia; solo se ha comprobado contra el receptor virtual, aquí y en el proyecto original. [Se agradecen los informes](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 El codificador es el codificador aptX Adaptive en Rust puro de [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). El proyecto original lo describe como una reimplementación en sala limpia cuyas tablas numéricas se reconstruyeron a partir de binarios de Qualcomm distribuidos y obtenidos legalmente y de capturas por aire; no incluye código, SDK ni binarios de Qualcomm (consulte [Licencias](licenses)).
 
@@ -369,7 +369,7 @@ y el error indica que hay extremos en uso por otro dispositivo. Desconecte los a
 
 ### Frecuencia de muestreo
 
-aptX, aptX HD y aptX LL solo admiten 44.1 kHz y 48 kHz (aptX Adaptive solo 48 kHz). A2DPWB elige una de las frecuencias que anuncian los auriculares (con preferencia por la frecuencia actual del dispositivo de Windows; si no, 48 kHz) y deja que WASAPI remuestree la captura. No es necesario cambiar la configuración de Sonido de Windows para aptX.
+aptX, aptX HD y aptX LL solo admiten 44.1 kHz y 48 kHz (aptX Adaptive 48 kHz, o 96 kHz si se elige y los auriculares lo anuncian). A2DPWB elige una de las frecuencias que anuncian los auriculares (con preferencia por la frecuencia actual del dispositivo de Windows; si no, 48 kHz) y deja que WASAPI remuestree la captura. No es necesario cambiar la configuración de Sonido de Windows para aptX.
 
 ### Comprobar qué ofrecen sus auriculares
 

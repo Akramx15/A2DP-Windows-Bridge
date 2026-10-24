@@ -35,7 +35,7 @@ has_toc: false
 | LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps（96 kHz：255--646） | 48/96 kHz | 24 bit | -- |
 | LC3（LE Audio） 🧪 | 每声道 32--124 kbps | 16/24/32/48 kHz | 16 bit | 约 140 ms |
 | LC3 低延迟（LE Audio GMAP） 🧪 | 每声道 64--96 kbps | 32/48 kHz | 16 bit | 约 30 ms |
 
@@ -78,7 +78,7 @@ has_toc: false
 **只需要经典 aptX？** Windows 10 的内置 Bluetooth 堆栈已经支持经典 aptX（不含 aptX HD、aptX LL 和 aptX Adaptive），因此无需 A2DPWB。A2DPWB 主要用于 LDAC、aptX HD 和 aptX Low Latency。
 
 {: .warning }
-**aptX Adaptive 为实验性功能，尚未在真实设备上验证。** 它使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust 编码器（MIT 许可）编码，其中的表由该项目作者根据 Qualcomm 已出货的二进制文件和空中抓包重建。仅支持 48 kHz 立体声（请求 44.1 / 96 kHz 时以 48 kHz 捕获），24-bit：对 R1 接收端为高 427 kbps、标准 364、移动 318、低延迟 265 kbps（R2 接收端有各自的表），高音质下支持 ABR。“自动”从不选择它；请在**编解码器**页面或用 `-c aptxad` 选择。它已通过单元测试、上游的逐位一致性测试以及针对虚拟接收端的端到端测试，但 A2DPWB 尚未在真实耳机上试用；上游报告它在 Linux 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e。如果耳机同时列出了经典 aptX，“自动”会使用经典 aptX。请参阅 [aptX 系列与 aptX Adaptive](usage#aptx-compatibility)。
+**aptX Adaptive 为实验性功能，尚未在真实设备上验证。** 它使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust 编码器（MIT 许可）编码，其中的表由该项目作者根据 Qualcomm 已出货的二进制文件和空中抓包重建。48 kHz 立体声（请求 44.1 kHz 时以 48 kHz 捕获），24-bit：对 R1 接收端为高 427 kbps、标准 364、移动 318、低延迟 265 kbps（R2 接收端有各自的表），高音质下支持 ABR。在其设置中选择 96 kHz 且耳机是列出 96 kHz 的 R2 接收端时使用 96 kHz（高 646 kbps、标准 340、移动 255）；低延迟下不使用，其他情况为 48 kHz。96 kHz 无论在本项目还是上游都尚未在真实耳机上试用。“自动”从不选择它；请在**编解码器**页面或用 `-c aptxad` 选择。它已通过单元测试、上游的逐位一致性测试以及针对虚拟接收端的端到端测试，但 A2DPWB 尚未在真实耳机上试用；上游报告它在 Linux 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e。如果耳机同时列出了经典 aptX，“自动”会使用经典 aptX。请参阅 [aptX 系列与 aptX Adaptive](usage#aptx-compatibility)。
 
 ## 平台支持 {#platform-support}
 

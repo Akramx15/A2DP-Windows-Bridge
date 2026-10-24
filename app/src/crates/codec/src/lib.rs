@@ -183,7 +183,7 @@ impl CodecKind {
     /// Highest capture sample rate the codec takes
     pub fn max_sample_rate(self) -> u32 {
         match self {
-            CodecKind::Ldac => 96000,
+            CodecKind::Ldac | CodecKind::AptxAdaptive => 96000,
             CodecKind::LhdcV5 => 192000,
             _ => 48000,
         }

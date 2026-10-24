@@ -137,7 +137,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (experimental; to PipeWire sinks)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 for 96 kHz)
 ```
 
 Auto-select priority: LHDC V5 > LDAC > aptX Adaptive > Opus (experimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream and Opus 05, both experimental, only when chosen)
@@ -321,12 +321,12 @@ A2DPWB supports three aptX codecs encoded with [libopenaptx](https://github.com/
 | aptX | 0x0000004F / 0x0001 | No | Supported (352/384 kbps at 44.1/48 kHz) |
 | aptX HD | 0x000000D7 / 0x0024 | Yes | Supported (576 kbps, 24-bit input) |
 | aptX Low Latency | 0x0000000A or 0x000000D7 / 0x0002 | No | Supported (352 kbps) |
-| aptX Adaptive | 0x000000D7 / 0x00AD | Yes | Experimental (265-427 kbps, 48 kHz, 24-bit; chosen explicitly) |
+| aptX Adaptive | 0x000000D7 / 0x00AD | Yes | Experimental (265-427 kbps, 48 / 96 kHz, 24-bit; chosen explicitly) |
 
 ### aptX Adaptive (experimental) {#aptx-adaptive}
 
 {: .warning }
-**aptX Adaptive is experimental and not yet tried with real headphones.** It passes the unit tests, upstream's bit-exact test suite and the end-to-end test against the virtual Bluetooth sink (`tools/emu`, which checks the RTP header, the packet sizes and the frame types; the audio is not decoded, as there is no open decoder). Upstream reports it working on Linux / PipeWire with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e at 48 kHz in High and Low Latency. [Reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**aptX Adaptive is experimental and not yet tried with real headphones.** It passes the unit tests, upstream's bit-exact test suite and the end-to-end test against the virtual Bluetooth sink (`tools/emu`, which checks the RTP header, the packet sizes and the frame types; the audio is not decoded, as there is no open decoder). Upstream reports it working on Linux / PipeWire with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e at 48 kHz in High and Low Latency. 96 kHz (High 646 kbps, Standard 340, Mobile 255) is used only when chosen in its settings (or `--rate 96000`) and the headphones are an R2 sink that lists it, never in Low Latency; it is checked against the virtual sink only, here and upstream. [Reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 The encoder is the pure-Rust aptX Adaptive encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). Upstream describes it as a clean-room reimplementation whose numeric tables were reconstructed from lawfully obtained shipped Qualcomm binaries and on-air captures; no Qualcomm code, SDK or binary is included (see [Licenses](licenses)).
 
@@ -379,7 +379,7 @@ and the error says that endpoints are in use by another device. Disconnect the h
 
 ### Sample Rate
 
-aptX, aptX HD and aptX LL support only 44.1 kHz and 48 kHz (aptX Adaptive only 48 kHz). A2DPWB picks one of the rates the headphones advertise (preferring the current Windows device rate, otherwise 48 kHz) and lets WASAPI resample the capture. You do not need to change the Windows Sound settings for aptX.
+aptX, aptX HD and aptX LL support only 44.1 kHz and 48 kHz (aptX Adaptive 48 kHz, or 96 kHz when chosen and the headphones list it). A2DPWB picks one of the rates the headphones advertise (preferring the current Windows device rate, otherwise 48 kHz) and lets WASAPI resample the capture. You do not need to change the Windows Sound settings for aptX.
 
 ### Checking What Your Headphones Offer
 

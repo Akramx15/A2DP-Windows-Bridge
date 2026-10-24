@@ -267,7 +267,8 @@ Lister les adaptateurs et leur pilote ne nécessite aucune élévation.
   provoque une erreur sinon
 - Choisit la fréquence d'échantillonnage de la famille aptX (44,1 / 48 kHz parmi les
   fréquences annoncées par l'appareil distant ; WASAPI rééchantillonne la capture) ;
-  l'aptX Adaptive utilise toujours 48 kHz
+  l'aptX Adaptive utilise 48 kHz, ou 96 kHz si le profil le demande en
+  Haute / Standard / Mobile et que le récepteur est R2 et annonce 96 kHz
 
 ### Hôte Bluetooth (`bt-host`)
 
@@ -324,7 +325,7 @@ Capture l'audio en temps réel via Windows Audio Session API.
 | FastStream | le même encodeur SBC | 198/216 kbps (44.1/48 kHz) | Codec constructeur CSR, sens musique uniquement (pas de voie retour vocale) : SBC joint stereo bitpool 29, trames complétées à 72 octets, 3 par paquet, sans en-tête de charge utile média ni en-tête RTP (comme PipeWire) ; jamais choisi par Auto |
 | LHDC V5 | lhdcv5-enc (portage en C de l'encodeur AOSP) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24 bits, trames de 5 ms, en-tête de charge utile média de 2 octets, en-tête RTP |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (stéréo ; mono : moitié) | Expérimental ; Opus A2DP d'Android : 48 kHz, trames de 20 ms (10 ms si le récepteur ne propose que cela), VBR contraint plafonné à la charge utile média, une trame par paquet, en-tête de charge utile média de 1 octet, en-tête RTP |
-| aptX Adaptive | aptx-adaptive (encodeur en Rust pur d'AKS-Logic/aptx-adaptive-linux, MIT) | Récepteurs R1 : 427/364/318 kbps (Haute/Standard/Mobile), 265 kbps Faible latence ; récepteurs R2 : 427/270/204, 270 kbps | Expérimental ; 48 kHz stéréo, 24 bits ; un paquet codec par paquet média derrière l'en-tête RTP propre à A2DPWB ; ABR en Haute ; jamais choisi par Auto |
+| aptX Adaptive | aptx-adaptive (encodeur en Rust pur d'AKS-Logic/aptx-adaptive-linux, MIT) | Récepteurs R1 : 427/364/318 kbps (Haute/Standard/Mobile), 265 kbps Faible latence ; récepteurs R2 : 427/270/204, 270 kbps | Expérimental ; 48 kHz stéréo (96 kHz en HQ vers un récepteur R2 qui l'annonce, sur demande : 646/340/255 kbps), 24 bits ; un paquet codec par paquet média derrière l'en-tête RTP propre à A2DPWB ; ABR en Haute ; jamais choisi par Auto |
 
 Tous les encodeurs implémentent le trait `codec::Encoder` : ils indiquent le format PCM
 et le nombre de trames consommées par appel, et renvoient des trames codec.

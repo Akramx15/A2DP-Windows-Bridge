@@ -125,7 +125,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 for 96 kHz)
 ```
 
 자동 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 모두 실험적이며 직접 선택한 경우에만)
@@ -309,12 +309,12 @@ A2DPWB는 [libopenaptx](https://github.com/pali/libopenaptx)로 인코딩하는 
 | aptX | 0x0000004F / 0x0001 | 없음 | 지원 (44.1/48 kHz에서 352/384 kbps) |
 | aptX HD | 0x000000D7 / 0x0024 | 있음 | 지원 (576 kbps, 24비트 입력) |
 | aptX Low Latency | 0x0000000A 또는 0x000000D7 / 0x0002 | 없음 | 지원 (352 kbps) |
-| aptX Adaptive | 0x000000D7 / 0x00AD | 있음 | 실험적 (265-427 kbps, 48 kHz, 24비트, 직접 선택한 경우) |
+| aptX Adaptive | 0x000000D7 / 0x00AD | 있음 | 실험적 (265-427 kbps, 48 / 96 kHz, 24비트, 직접 선택한 경우) |
 
 ### aptX Adaptive (실험적) {#aptx-adaptive}
 
 {: .warning }
-**aptX Adaptive는 실험적 기능이며 아직 실제 헤드폰으로 시험하지 않았습니다.** 단위 테스트, 업스트림의 비트 단위 일치 테스트 모음, 가상 Bluetooth 싱크를 상대로 한 엔드투엔드 테스트(`tools/emu`: RTP 헤더, 패킷 크기, 프레임 종류를 확인하며, 공개된 디코더가 없으므로 오디오는 디코딩하지 않음)를 통과했습니다. 업스트림은 Linux / PipeWire에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 48 kHz 높음과 저지연에서 동작한다고 보고합니다. [보고를 환영합니다](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**aptX Adaptive는 실험적 기능이며 아직 실제 헤드폰으로 시험하지 않았습니다.** 단위 테스트, 업스트림의 비트 단위 일치 테스트 모음, 가상 Bluetooth 싱크를 상대로 한 엔드투엔드 테스트(`tools/emu`: RTP 헤더, 패킷 크기, 프레임 종류를 확인하며, 공개된 디코더가 없으므로 오디오는 디코딩하지 않음)를 통과했습니다. 업스트림은 Linux / PipeWire에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 48 kHz 높음과 저지연에서 동작한다고 보고합니다. 96 kHz(높음 646 kbps, 표준 340, 모바일 255)는 설정에서(또는 `--rate 96000`으로) 선택하고 헤드폰이 이를 알리는 R2 싱크일 때만 사용하며, 저지연에서는 사용하지 않습니다. A2DPWB에서도 업스트림에서도 가상 싱크로만 확인했습니다. [보고를 환영합니다](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 인코더는 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 순수 Rust aptX Adaptive 인코더(MIT)입니다. 업스트림은 이를 클린룸 재구현으로 설명하며, 숫자 테이블은 합법적으로 입수한 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성했습니다. Qualcomm의 코드, SDK, 바이너리는 포함되어 있지 않습니다([라이선스](licenses) 참조).
 
@@ -368,7 +368,7 @@ capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 
 ### 샘플링 속도
 
-aptX, aptX HD, aptX LL은 44.1 kHz와 48 kHz만 지원합니다(aptX Adaptive는 48 kHz만). A2DPWB는 헤드폰이 알리는 속도 중 하나를 선택하고(현재 Windows 장치 속도를 우선하며, 없으면 48 kHz), 캡처는 WASAPI가 리샘플링하도록 합니다. aptX를 위해 Windows 소리 설정을 변경할 필요는 없습니다.
+aptX, aptX HD, aptX LL은 44.1 kHz와 48 kHz만 지원합니다(aptX Adaptive는 48 kHz, 선택했고 헤드폰이 알리면 96 kHz). A2DPWB는 헤드폰이 알리는 속도 중 하나를 선택하고(현재 Windows 장치 속도를 우선하며, 없으면 48 kHz), 캡처는 WASAPI가 리샘플링하도록 합니다. aptX를 위해 Windows 소리 설정을 변경할 필요는 없습니다.
 
 ### 헤드폰이 제공하는 코덱 확인
 

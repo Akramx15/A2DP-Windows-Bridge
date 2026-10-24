@@ -137,7 +137,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus（試験的。48 kHz、256 kbps）
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire の Opus 05（試験的。相手が PipeWire のとき）
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive（試験的。48 kHz）
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive（試験的。48 kHz、96 kHz は --rate 96000）
 ```
 
 自動選択の優先順位: LHDC V5 > LDAC > aptX Adaptive > Opus（試験的） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream、Opus 05 はいずれも試験的で、明示的に選んだときだけ）
@@ -321,12 +321,12 @@ A2DPWB は [libopenaptx](https://github.com/pali/libopenaptx) でエンコード
 | aptX | 0x0000004F / 0x0001 | なし | 対応（44.1/48 kHz で 352/384 kbps） |
 | aptX HD | 0x000000D7 / 0x0024 | あり | 対応（576 kbps、24-bit 入力） |
 | aptX Low Latency | 0x0000000A または 0x000000D7 / 0x0002 | なし | 対応（352 kbps） |
-| aptX Adaptive | 0x000000D7 / 0x00AD | あり | 試験的（265-427 kbps、48 kHz、24-bit。明示的に選んだとき） |
+| aptX Adaptive | 0x000000D7 / 0x00AD | あり | 試験的（265-427 kbps、48 / 96 kHz、24-bit。明示的に選んだとき） |
 
 ### aptX Adaptive（試験的） {#aptx-adaptive}
 
 {: .warning }
-**aptX Adaptive は試験的な対応で、実際のヘッドホンではまだ試していません。** 単体テスト、上流のビット単位で一致するテスト一式、仮想 Bluetooth シンク（`tools/emu`。RTP ヘッダー、パケットの大きさ、フレームの種類を確かめます。公開されたデコーダーがないため音声は復号しません）とのエンドツーエンドテストには合格しています。上流は Linux / PipeWire で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での 48 kHz・高音質と低遅延の動作を報告しています。[報告を歓迎します](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)。
+**aptX Adaptive は試験的な対応で、実際のヘッドホンではまだ試していません。** 単体テスト、上流のビット単位で一致するテスト一式、仮想 Bluetooth シンク（`tools/emu`。RTP ヘッダー、パケットの大きさ、フレームの種類を確かめます。公開されたデコーダーがないため音声は復号しません）とのエンドツーエンドテストには合格しています。上流は Linux / PipeWire で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での 48 kHz・高音質と低遅延の動作を報告しています。96 kHz（高音質 646 kbps、標準 340、モバイル 255）は、設定で選んだとき（または `--rate 96000`）で、ヘッドホンがそれを通知する R2 のシンクのときだけ使い、低遅延では使いません。A2DPWB でも上流でも、確認は仮想シンクとだけです。[報告を歓迎します](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)。
 
 エンコーダーは [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の Rust だけで書かれた aptX Adaptive エンコーダー（MIT）です。上流はこれをクリーンルームでの再実装とし、数値テーブルは合法に入手した Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したと説明しています。Qualcomm のコード、SDK、バイナリは含みません（[ライセンス](licenses)を参照）。
 
@@ -380,7 +380,7 @@ capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 
 ### サンプルレート
 
-aptX・aptX HD・aptX LL が対応するのは 44.1 kHz と 48 kHz のみです（aptX Adaptive は 48 kHz のみ）。A2DPWB はヘッドホンが通知したサンプルレートから 1 つを選び（現在の Windows デバイスのレートを優先し、使えなければ 48 kHz）、WASAPI にリサンプリングさせます。aptX のために Windows のサウンド設定を変更する必要はありません。
+aptX・aptX HD・aptX LL が対応するのは 44.1 kHz と 48 kHz のみです（aptX Adaptive は 48 kHz。選んだうえでヘッドホンが通知していれば 96 kHz）。A2DPWB はヘッドホンが通知したサンプルレートから 1 つを選び（現在の Windows デバイスのレートを優先し、使えなければ 48 kHz）、WASAPI にリサンプリングさせます。aptX のために Windows のサウンド設定を変更する必要はありません。
 
 ### ヘッドホンが提供するコーデックの確認方法
 

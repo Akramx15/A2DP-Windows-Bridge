@@ -259,7 +259,8 @@ Windows 8 이상에는 Microsoft가 서명한 WinUSB 드라이버(`winusb.inf`)�
   (**이 코덱을 사용할 수 없으면 다른 코덱 사용**) 자동의 선택으로 대체되고,
   그렇지 않으면 오류가 됩니다
 - aptX 계열 샘플링 속도를 선택합니다(원격 장치가 알리는 속도 중 44.1 / 48 kHz,
-  캡처는 WASAPI가 리샘플링). aptX Adaptive는 항상 48 kHz
+  캡처는 WASAPI가 리샘플링). aptX Adaptive는 48 kHz, 또는 프로필이 높음 / 표준 /
+  모바일에서 96 kHz를 요청하고 싱크가 R2이며 96 kHz를 알리면 96 kHz
 
 ### Bluetooth 호스트 (`bt-host`)
 
@@ -314,7 +315,7 @@ Windows Audio Session API를 사용하여 오디오를 실시간으로 캡처합
 | FastStream | 같은 SBC 인코더 | 198/216 kbps (44.1/48 kHz) | CSR 벤더 코덱, 음악 방향만 (음성 백채널 없음): SBC joint stereo bitpool 29, 프레임을 72바이트로 패딩, 패킷당 3개, 미디어 페이로드 헤더와 RTP 헤더 없음 (PipeWire와 동일). 자동에서는 선택되지 않음 |
 | LHDC V5 | lhdcv5-enc (AOSP 인코더의 C 포팅) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24비트, 5 ms 프레임, 2바이트 미디어 페이로드 헤더, RTP 헤더 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (스테레오, 모노는 절반) | 실험적. Android의 A2DP Opus: 48 kHz, 20 ms 프레임(싱크가 10 ms만 지원하면 10 ms), 미디어 페이로드에 맞춘 상한이 있는 constrained VBR, 패킷당 프레임 하나, 1바이트 미디어 페이로드 헤더, RTP 헤더 |
-| aptX Adaptive | aptx-adaptive (AKS-Logic/aptx-adaptive-linux의 순수 Rust 인코더, MIT) | R1 싱크: 427/364/318 kbps (높음/표준/모바일), 저지연 265 kbps. R2 싱크: 427/270/204, 270 kbps | 실험적. 48 kHz 스테레오, 24비트. 미디어 패킷당 코덱 패킷 하나, A2DPWB 자체 RTP 헤더. 높음에서 ABR. 자동에서는 선택되지 않음 |
+| aptX Adaptive | aptx-adaptive (AKS-Logic/aptx-adaptive-linux의 순수 Rust 인코더, MIT) | R1 싱크: 427/364/318 kbps (높음/표준/모바일), 저지연 265 kbps. R2 싱크: 427/270/204, 270 kbps | 실험적. 48 kHz 스테레오(요청 시 96 kHz를 알리는 R2 싱크에는 HQ에서 96 kHz: 646/340/255 kbps), 24비트. 미디어 패킷당 코덱 패킷 하나, A2DPWB 자체 RTP 헤더. 높음에서 ABR. 자동에서는 선택되지 않음 |
 
 모든 인코더는 `codec::Encoder` 트레이트를 구현합니다. 각 인코더는 PCM 형식과
 한 번의 호출에서 소비하는 프레임 수를 명시하고, 코덱 프레임을 반환합니다.

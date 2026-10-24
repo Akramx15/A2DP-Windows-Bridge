@@ -7,7 +7,10 @@ The pure-Rust aptX Adaptive encoder (R1 / R2 bitstreams, HQ and low latency,
 project's statement on how the codec and its numeric tables were obtained.
 Checked against upstream `42ae0e2` (2026-10-22): no changes to the crate,
 `LEGAL.md` or `LICENSE` since (later commits touch only its PipeWire plugin,
-the source type 0 path and its PipeWire / BlueZ patches).
+the source type 0 path and its PipeWire / BlueZ patches). Checked again
+against `f8a0908` (2026-10-23): still none; the plugin's changes since
+(three card profiles, a source type chosen per headset, quieter logging) are
+outside the crate.
 
 Changes from upstream:
 

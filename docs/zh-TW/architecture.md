@@ -245,7 +245,8 @@ Windows 8 以上內建由 Microsoft 簽署的 WinUSB 驅動程式（`winusb.inf`
   提供的清單中，在設定檔允許時（**無法使用此轉碼器時改用其他轉碼器**）會改用
   「自動」的選擇，否則視為錯誤
 - 選擇 aptX 系列的取樣率（從遠端公布的取樣率中選擇 44.1 / 48 kHz；
-  由 WASAPI 對擷取的音訊重新取樣）；aptX Adaptive 一律使用 48 kHz
+  由 WASAPI 對擷取的音訊重新取樣）；aptX Adaptive 使用 48 kHz，當設定檔在
+  高 / 標準 / 行動模式下要求 96 kHz 且接收端為 R2 並列出 96 kHz 時使用 96 kHz
 
 ### 藍牙主機 (`bt-host`)
 
@@ -297,7 +298,7 @@ Windows 8 以上內建由 Microsoft 簽署的 WinUSB 驅動程式（`winusb.inf`
 | FastStream | 同一個 SBC 編碼器 | 198/216 kbps (44.1/48 kHz) | CSR 廠商轉碼器，僅音樂方向（無語音回傳通道）：SBC joint stereo、bitpool 29，訊框補齊至 72 位元組，每個封包 3 個訊框，無媒體酬載標頭也無 RTP 標頭（與 PipeWire 相同）；「自動」永遠不會選用 |
 | LHDC V5 | lhdcv5-enc（AOSP 編碼器的 C 語言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 16/24 位元、5 ms 訊框、2 位元組媒體酬載標頭、RTP 標頭 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（立體聲；單聲道為一半） | 實驗性；Android 的 A2DP Opus：48 kHz、20 ms 訊框（接收端只支援 10 ms 時為 10 ms）、上限為媒體酬載大小的受限 VBR、每個封包一個訊框、1 位元組媒體酬載標頭、RTP 標頭 |
-| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux 的純 Rust 編碼器，MIT） | R1 接收端：427/364/318 kbps（高/標準/行動）、低延遲 265 kbps；R2 接收端：427/270/204、270 kbps | 實驗性；48 kHz 立體聲、24 位元；每個媒體封包一個轉碼器封包，前面為 A2DPWB 自己的 RTP 標頭；高品質時 ABR；「自動」永遠不會選用 |
+| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux 的純 Rust 編碼器，MIT） | R1 接收端：427/364/318 kbps（高/標準/行動）、低延遲 265 kbps；R2 接收端：427/270/204、270 kbps | 實驗性；48 kHz 立體聲（有要求時，對列出 96 kHz 的 R2 接收端以 HQ 使用 96 kHz：646/340/255 kbps）、24 位元；每個媒體封包一個轉碼器封包，前面為 A2DPWB 自己的 RTP 標頭；高品質時 ABR；「自動」永遠不會選用 |
 
 所有編碼器都實作 `codec::Encoder` trait：它們會說明 PCM 格式與每次呼叫
 消耗的訊框數，並回傳轉碼器訊框。

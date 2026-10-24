@@ -35,7 +35,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bits | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bits | -- |
-| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bits | -- |
+| aptX Adaptive 🧪 | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bits | -- |
 | LC3 (LE Audio) 🧪 | 32--124 kbps por canal | 16/24/32/48 kHz | 16 bits | ~140 ms |
 | LC3 baja latencia (LE Audio GMAP) 🧪 | 64--96 kbps por canal | 32/48 kHz | 16 bits | ~30 ms |
 
@@ -78,7 +78,7 @@ Transmite el audio del sistema mediante **LDAC, aptX HD, aptX Low Latency, aptX,
 **¿Solo necesita aptX clásico?** Windows 10 ya admite aptX clásico en su pila Bluetooth integrada (no aptX HD, aptX LL ni aptX Adaptive), así que A2DPWB no es necesario para ese códec. A2DPWB es útil sobre todo para LDAC, aptX HD y aptX Low Latency.
 
 {: .warning }
-**aptX Adaptive es experimental y no está verificado en hardware real.** Se codifica con el codificador en Rust puro, con licencia MIT, de [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), cuyas tablas reconstruyeron sus autores a partir de binarios de Qualcomm distribuidos y de capturas por aire. Solo 48 kHz estéreo (las solicitudes de 44.1 / 96 kHz se capturan a 48 kHz), 24 bits: Alta 427 kbps, Estándar 364, Móvil 318 y Baja latencia 265 kbps con receptores R1 (los receptores R2 tienen su propia tabla), ABR en Alta. El modo Automático nunca lo elige; elíjalo en **Códecs** o con `-c aptxad`. Supera las pruebas unitarias, las pruebas bit a bit del proyecto original y la prueba de extremo a extremo contra un receptor virtual, pero A2DPWB aún no lo ha probado con auriculares reales; el proyecto original informa de que funciona en Linux con Bose QuietComfort Ultra (1.ª generación) y B&W Px7 S2e. Si sus auriculares también ofrecen aptX clásico, Automático usa ese. Consulte [Familia aptX y aptX Adaptive](usage#aptx-compatibility).
+**aptX Adaptive es experimental y no está verificado en hardware real.** Se codifica con el codificador en Rust puro, con licencia MIT, de [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), cuyas tablas reconstruyeron sus autores a partir de binarios de Qualcomm distribuidos y de capturas por aire. 48 kHz estéreo (las solicitudes de 44.1 kHz se capturan a 48 kHz), 24 bits: Alta 427 kbps, Estándar 364, Móvil 318 y Baja latencia 265 kbps con receptores R1 (los receptores R2 tienen su propia tabla), ABR en Alta. 96 kHz (Alta 646 kbps, Estándar 340, Móvil 255) cuando elige 96 kHz en su configuración y los auriculares son un receptor R2 que anuncia 96 kHz; no en Baja latencia, y en otro caso 48 kHz. 96 kHz no se ha probado con auriculares reales, ni aquí ni en el proyecto original. El modo Automático nunca lo elige; elíjalo en **Códecs** o con `-c aptxad`. Supera las pruebas unitarias, las pruebas bit a bit del proyecto original y la prueba de extremo a extremo contra un receptor virtual, pero A2DPWB aún no lo ha probado con auriculares reales; el proyecto original informa de que funciona en Linux con Bose QuietComfort Ultra (1.ª generación) y B&W Px7 S2e. Si sus auriculares también ofrecen aptX clásico, Automático usa ese. Consulte [Familia aptX y aptX Adaptive](usage#aptx-compatibility).
 
 ## Compatibilidad de plataformas {#platform-support}
 

@@ -126,7 +126,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (experimental; to PipeWire sinks)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 for 96 kHz)
 ```
 
 自动选择的优先级：LHDC V5 > LDAC > aptX Adaptive > Opus（实验性）> aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 和 Opus 05 均为实验性，仅在明确选择时使用）
@@ -310,12 +310,12 @@ A2DPWB 支持三种使用 [libopenaptx](https://github.com/pali/libopenaptx) 编
 | aptX | 0x0000004F / 0x0001 | 无 | 支持（44.1/48 kHz 下 352/384 kbps） |
 | aptX HD | 0x000000D7 / 0x0024 | 有 | 支持（576 kbps，24-bit 输入） |
 | aptX Low Latency | 0x0000000A 或 0x000000D7 / 0x0002 | 无 | 支持（352 kbps） |
-| aptX Adaptive | 0x000000D7 / 0x00AD | 有 | 实验性（265-427 kbps，48 kHz，24-bit；需明确选择） |
+| aptX Adaptive | 0x000000D7 / 0x00AD | 有 | 实验性（265-427 kbps，48 / 96 kHz，24-bit；需明确选择） |
 
 ### aptX Adaptive（实验性） {#aptx-adaptive}
 
 {: .warning }
-**aptX Adaptive 为实验性功能，尚未在真实耳机上试用。** 它已通过单元测试、上游的逐位一致性测试套件，以及针对虚拟 Bluetooth 接收端的端到端测试（`tools/emu`，检查 RTP 标头、数据包大小和帧类型；由于没有开源解码器，不对音频进行解码）。上游报告它在 Linux / PipeWire 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e，48 kHz，高音质和低延迟均可。[欢迎反馈](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)。
+**aptX Adaptive 为实验性功能，尚未在真实耳机上试用。** 它已通过单元测试、上游的逐位一致性测试套件，以及针对虚拟 Bluetooth 接收端的端到端测试（`tools/emu`，检查 RTP 标头、数据包大小和帧类型；由于没有开源解码器，不对音频进行解码）。上游报告它在 Linux / PipeWire 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e，48 kHz，高音质和低延迟均可。96 kHz（高 646 kbps、标准 340、移动 255）仅在其设置中选择（或使用 `--rate 96000`）且耳机是列出 96 kHz 的 R2 接收端时使用，低延迟下从不使用；无论在本项目还是上游，都只针对虚拟接收端检查过。[欢迎反馈](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)。
 
 编码器是 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust aptX Adaptive 编码器（MIT）。上游称其为净室重新实现，其中的数值表是根据合法获得的 Qualcomm 已出货二进制文件和空中抓包重建的；不包含任何 Qualcomm 代码、SDK 或二进制文件（请参阅[许可证](licenses)）。
 
@@ -369,7 +369,7 @@ capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 
 ### 采样率
 
-aptX、aptX HD 和 aptX LL 只支持 44.1 kHz 和 48 kHz（aptX Adaptive 只支持 48 kHz）。A2DPWB 会从耳机通告的采样率中选择一个（优先使用当前 Windows 设备的采样率，否则使用 48 kHz），并由 WASAPI 对捕获的音频进行重采样。使用 aptX 时无需更改 Windows 声音设置。
+aptX、aptX HD 和 aptX LL 只支持 44.1 kHz 和 48 kHz（aptX Adaptive 为 48 kHz，选择后且耳机列出时为 96 kHz）。A2DPWB 会从耳机通告的采样率中选择一个（优先使用当前 Windows 设备的采样率，否则使用 48 kHz），并由 WASAPI 对捕获的音频进行重采样。使用 aptX 时无需更改 Windows 声音设置。
 
 ### 查看耳机提供的编解码器
 

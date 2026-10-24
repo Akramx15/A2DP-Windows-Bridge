@@ -136,6 +136,7 @@ const APTXAD_INFO_LEN: usize = 40;
 /// The R1 layout's end (its end marker), the least a usable SEP reports
 const APTXAD_R1_LEN: usize = 17;
 const APTXAD_RATE_48000: u8 = 0x10;
+const APTXAD_RATE_96000: u8 = 0x20;
 const APTXAD_SOURCE_TYPE_HOST: u8 = 0x02;
 const APTXAD_CH_STEREO: u8 = 0x02;
 const APTXAD_CH_JOINT_STEREO: u8 = 0x08;
@@ -946,6 +947,27 @@ impl RemoteCaps {
         self.aptxad_info.get(APTXAD_EXT_VERSION) == Some(&1)
     }
 
+    /// aptX Adaptive at 96 kHz: an R2 sink that lists the rate (upstream
+    /// offers 96 kHz to R2 sinks only; an R1 sink is always 48 kHz)
+    pub fn aptxad_96k(&self) -> bool {
+        self.aptxad_r2() && self.aptxad_info.get(6).is_some_and(|&b| b & APTXAD_RATE_96000 != 0)
+    }
+
+    /// Capture rate for aptX Adaptive: 96 kHz when the profile asks for it
+    /// (`wanted`), the stream is high quality (96 kHz has no low latency
+    /// bitstream) and the sink can take it ([`Self::aptxad_96k`]); else 48
+    /// kHz, the rate every sink takes
+    pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality) -> u32 {
+        let rate =
+            if wanted == 96000 && quality != crate::Quality::LowLatency && self.aptxad_96k() { 96000 } else { 48000 };
+        tracing::debug!(
+            "caps: aptX Adaptive rate {wanted} -> {rate} ({quality:?}, r2 {}, rates 0x{:02x})",
+            self.aptxad_r2(),
+            self.aptxad_info.get(6).copied().unwrap_or(0) & 0xF8
+        );
+        rate
+    }
+
     /// The best codec both sides have (Auto)
     pub fn best(&self) -> Option<CodecKind> {
         CodecKind::AUTO_PRIORITY.into_iter().find(|&k| k.available() && self.has(k))
@@ -1214,10 +1236,12 @@ impl RemoteCaps {
                 ConfigRequest::Vendor(info)
             }
             CodecKind::AptxAdaptive => {
-                if sample_rate != 48000 {
-                    return Err(ConfigError::SampleRate(kind, sample_rate));
-                }
-                // As upstream's select_config: 48 kHz from a host encoder,
+                let freq = match sample_rate {
+                    48000 => APTXAD_RATE_48000,
+                    96000 if self.aptxad_96k() => APTXAD_RATE_96000,
+                    _ => return Err(ConfigError::SampleRate(kind, sample_rate)),
+                };
+                // As upstream's select_config: 48 (or 96) kHz from a host encoder,
                 // stereo (joint stereo if the sink lists only that; the
                 // encoder runs stereo either way). An R2 sink gets the
                 // source's own R2 block, an R1 sink its own bytes 8..25 back
@@ -1226,7 +1250,7 @@ impl RemoteCaps {
                 let rc = &self.aptxad_info;
                 let byte = |i: usize| rc.get(i).copied().unwrap_or(0);
                 let mode = if byte(7) & APTXAD_CH_STEREO != 0 { APTXAD_CH_STEREO } else { APTXAD_CH_JOINT_STEREO };
-                let rate = APTXAD_RATE_48000 | APTXAD_SOURCE_TYPE_HOST;
+                let rate = freq | APTXAD_SOURCE_TYPE_HOST;
                 let info = if self.aptxad_r2() {
                     aptxad_element(rate, mode, &APTXAD_R2_DATA)
                 } else {
@@ -1376,6 +1400,7 @@ pub fn choose(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Quality;
 
     #[test]
     fn auto_prefers_ldac_then_aptx_family() {
@@ -2172,6 +2197,39 @@ mod tests {
             assert_eq!(info[6..8], [0x12, 0x02]);
             assert_eq!(info[8..26], APTXAD_R2_DATA);
             assert!(info[26..].iter().all(|&b| b == 0));
+        }
+
+        // 96 kHz: an R2 sink that lists it, asked for by the profile, high
+        // quality; 0x22 in the configuration. Else 48 kHz.
+        let mut r2 = RemoteCaps::default();
+        r2.add_vendor(4, &r2_aptxad(0x0F00_0000)[..30]);
+        assert!(r2.aptxad_96k());
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::Mobile), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::LowLatency), 48000);
+        for wanted in [44100, 48000, 88200, 192000] {
+            assert_eq!(r2.pick_aptxad_sample_rate(wanted, Quality::High), 48000, "{wanted}");
+        }
+        let ConfigRequest::Vendor(info) = r2.configuration(CodecKind::AptxAdaptive, 96000, 2, 24).unwrap().request
+        else {
+            panic!("not a vendor configuration")
+        };
+        assert_eq!(info[6..8], [0x22, 0x02]);
+        assert_eq!(info[8..26], APTXAD_R2_DATA);
+        // An R2 sink without 96 kHz, an R1 sink that lists it anyway: 48 kHz
+        let mut no96 = r2_aptxad(0x0F00_0000);
+        no96[6] = 0x18;
+        let mut r1_96 = PX7_S2E_APTXAD;
+        r1_96[6] |= 0x20;
+        for info in [&no96[..30], &r1_96[..]] {
+            let mut caps = RemoteCaps::default();
+            caps.add_vendor(4, info);
+            assert!(!caps.aptxad_96k());
+            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High), 48000);
+            assert_eq!(
+                caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24),
+                Err(ConfigError::SampleRate(CodecKind::AptxAdaptive, 96000))
+            );
         }
 
         // Joint stereo only: configured as such

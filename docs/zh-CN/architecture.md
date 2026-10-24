@@ -204,7 +204,7 @@ Windows 8 及更高版本自带 Microsoft 签名的 WinUSB 驱动程序（`winus
 
 - 解析远端的能力：标准的 SBC 和 AAC 元素以及厂商编解码器，包括两种厂商 ID 下的 aptX LL 以及 aptX Adaptive（R1 和 R2 接收端；仅在支持 48 kHz 立体声时可用）
 - 选择编解码器：“自动”会选择远端提供的最佳编解码器；如果请求的编解码器远端不提供，在配置文件允许时（**此编解码器不可用时使用其他编解码器**）会改用“自动”选择的编解码器，否则视为错误
-- 选择 aptX 系列的采样率（从远端通告的采样率中选择 44.1 / 48 kHz；由 WASAPI 对捕获的音频重采样）；aptX Adaptive 始终使用 48 kHz
+- 选择 aptX 系列的采样率（从远端通告的采样率中选择 44.1 / 48 kHz；由 WASAPI 对捕获的音频重采样）；aptX Adaptive 使用 48 kHz，当配置文件在高 / 标准 / 移动模式下要求 96 kHz 且接收端为 R2 并列出 96 kHz 时使用 96 kHz
 
 ### Bluetooth 主机（`bt-host`）
 
@@ -249,7 +249,7 @@ Windows 8 及更高版本自带 Microsoft 签名的 WinUSB 驱动程序（`winus
 | FastStream | 同一 SBC 编码器 | 198/216 kbps（44.1/48 kHz） | CSR 厂商编解码器，仅音乐方向（无语音回传）：SBC 联合立体声、bitpool 29，帧填充到 72 字节，每个数据包 3 帧，无媒体负载标头也无 RTP 标头（与 PipeWire 相同）；“自动”从不选择 |
 | LHDC V5 | lhdcv5-enc（AOSP 编码器的 C 语言移植版） | 400/500/900/1000 kbps，ABR 160–400 kbps | 16/24-bit，5 ms 帧，2 字节媒体负载标头，RTP 标头 |
 | Opus | libopus 1.5.2 | 128/192/256 kbps（立体声；单声道减半） | 实验性；Android 的 A2DP Opus：48 kHz，20 ms 帧（接收端只支持 10 ms 时为 10 ms），以媒体负载为上限的受约束 VBR，每个数据包一帧，1 字节媒体负载标头，RTP 标头 |
-| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux 的纯 Rust 编码器，MIT） | R1 接收端：427/364/318 kbps（高/标准/移动），低延迟 265 kbps；R2 接收端：427/270/204，270 kbps | 实验性；48 kHz 立体声，24-bit；每个媒体数据包一个编解码器数据包，位于 A2DPWB 自己的 RTP 标头之后；高音质下支持 ABR；“自动”从不选择 |
+| aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux 的纯 Rust 编码器，MIT） | R1 接收端：427/364/318 kbps（高/标准/移动），低延迟 265 kbps；R2 接收端：427/270/204，270 kbps | 实验性；48 kHz 立体声（有要求时，对列出 96 kHz 的 R2 接收端在 HQ 下使用 96 kHz：646/340/255 kbps），24-bit；每个媒体数据包一个编解码器数据包，位于 A2DPWB 自己的 RTP 标头之后；高音质下支持 ABR；“自动”从不选择 |
 
 所有编码器都实现了 `codec::Encoder` trait：它们声明 PCM 格式以及每次调用消耗的帧数，并返回编解码器帧。
 

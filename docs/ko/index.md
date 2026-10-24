@@ -35,7 +35,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bit | -- |
 | LC3 (LE 오디오) 🧪 | 채널당 32--124 kbps | 16/24/32/48 kHz | 16 bit | 약 140 ms |
 | LC3 저지연 (LE 오디오 GMAP) 🧪 | 채널당 64--96 kbps | 32/48 kHz | 16 bit | 약 30 ms |
 
@@ -78,7 +78,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 **기본 aptX만 필요하십니까?** Windows 10의 기본 Bluetooth 스택은 이미 기본 aptX를 지원하므로(aptX HD, aptX LL, aptX Adaptive는 미지원) 이 경우 A2DPWB가 필요하지 않습니다. A2DPWB는 주로 LDAC, aptX HD, aptX Low Latency에 유용합니다.
 
 {: .warning }
-**aptX Adaptive는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 MIT 라이선스 순수 Rust 인코더로 인코딩하며, 이 인코더의 테이블은 개발자들이 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성한 것입니다. 48 kHz 스테레오만 지원하며(44.1 / 96 kHz를 요청하면 48 kHz로 캡처) 24비트입니다. R1 싱크에서는 높음 427 kbps, 표준 364, 모바일 318, 저지연 265 kbps이며(R2 싱크는 별도의 표), 높음에서는 ABR을 사용합니다. 자동 선택은 이를 고르지 않으므로 **코덱** 화면에서 또는 `-c aptxad`로 선택하십시오. 단위 테스트, 업스트림의 비트 단위 일치 테스트, 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, A2DPWB에서는 아직 실제 헤드폰으로 시험하지 않았습니다. 업스트림은 Linux에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 동작한다고 보고합니다. 헤드폰이 기본 aptX도 함께 제공하면 자동은 그것을 사용합니다. [aptX 계열과 aptX Adaptive](usage#aptx-compatibility)를 참조하십시오.
+**aptX Adaptive는 실험적 기능이며 실제 기기에서는 확인하지 않았습니다.** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 MIT 라이선스 순수 Rust 인코더로 인코딩하며, 이 인코더의 테이블은 개발자들이 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성한 것입니다. 48 kHz 스테레오(44.1 kHz를 요청하면 48 kHz로 캡처), 24비트입니다. R1 싱크에서는 높음 427 kbps, 표준 364, 모바일 318, 저지연 265 kbps이며(R2 싱크는 별도의 표), 높음에서는 ABR을 사용합니다. 설정에서 96 kHz를 선택하고 헤드폰이 96 kHz를 알리는 R2 싱크이면 96 kHz(높음 646 kbps, 표준 340, 모바일 255)를 사용하며, 저지연에서는 사용하지 않고 그 밖의 경우에는 48 kHz입니다. 96 kHz는 A2DPWB에서도 업스트림에서도 실제 헤드폰으로 시험하지 않았습니다. 자동 선택은 이를 고르지 않으므로 **코덱** 화면에서 또는 `-c aptxad`로 선택하십시오. 단위 테스트, 업스트림의 비트 단위 일치 테스트, 가상 싱크를 상대로 한 엔드투엔드 테스트는 통과했지만, A2DPWB에서는 아직 실제 헤드폰으로 시험하지 않았습니다. 업스트림은 Linux에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 동작한다고 보고합니다. 헤드폰이 기본 aptX도 함께 제공하면 자동은 그것을 사용합니다. [aptX 계열과 aptX Adaptive](usage#aptx-compatibility)를 참조하십시오.
 
 ## 지원 플랫폼 {#platform-support}
 
