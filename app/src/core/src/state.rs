@@ -356,6 +356,17 @@ fn le_audio_now(running: Option<bool>, adapters: &[AdapterInfo]) -> Option<bool>
     running.or_else(|| adapters.iter().find(|a| a.driver == DriverKind::Winusb).and_then(|a| a.le_audio))
 }
 
+/// The Realtek chip (PID, firmware stem) whose files an adapter's card
+/// reports on. The chip setting is one for all adapters, so an adapter of
+/// another known vendor (MediaTek, Intel, ...) gets none, else it showed the
+/// Realtek adapter's "Firmware OK" (issue #86)
+fn adapter_chip(vendor: ChipVendor, realtek_pid: Option<u16>, settings: &CoreSettings) -> (u16, &str) {
+    if vendor_note(vendor).is_some() {
+        return (0, "");
+    }
+    (chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, [realtek_pid]), &settings.bt_chip_fw_stem)
+}
+
 fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo> {
     a2dpwb_core::adapter::adapters(false)
         .into_iter()
@@ -366,9 +377,9 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 win_sys::driver::DriverKind::Other => DriverKind::Other,
                 win_sys::driver::DriverKind::None => DriverKind::None,
             };
-            let chip_pid = chips::resolve_chip_pid(settings.bt_chip_pid, &settings.bt_chip_fw_stem, [a.realtek_pid]);
-            let files = chips::firmware_files(chip_pid, &settings.bt_chip_fw_stem);
-            let check = chips::firmware_check(&paths::firmware_dir(config_dir), chip_pid, &settings.bt_chip_fw_stem);
+            let (chip_pid, fw_stem) = adapter_chip(a.vendor, a.realtek_pid, settings);
+            let files = chips::firmware_files(chip_pid, fw_stem);
+            let check = chips::firmware_check(&paths::firmware_dir(config_dir), chip_pid, fw_stem);
             AdapterInfo {
                 instance_id: a.device.instance_id.clone(),
                 vid: a.device.vid,
@@ -1915,6 +1926,19 @@ mod tests {
             address: None,
             bt_version: None,
         }
+    }
+
+    #[test]
+    fn a_chosen_realtek_chip_is_not_checked_on_other_vendors_adapters() {
+        // RTL8761BU chosen by hand, a Realtek and a MediaTek adapter (issue #86)
+        let s = CoreSettings { bt_chip_pid: 0x8771, ..CoreSettings::default() };
+        assert_eq!(adapter_chip(ChipVendor::Realtek, Some(0x8771), &s), (0x8771, ""));
+        assert_eq!(adapter_chip(ChipVendor::MediaTek, None, &s), (0, ""));
+        assert_eq!(adapter_chip(ChipVendor::Intel, None, &s), (0, ""));
+        // A chip known only by its files, on an adapter not recognised as another vendor's
+        let stem = CoreSettings { bt_chip_fw_stem: "rtl8723bu".into(), ..s.clone() };
+        assert_eq!(adapter_chip(ChipVendor::Unknown, None, &stem).1, "rtl8723bu");
+        assert_eq!(adapter_chip(ChipVendor::Qualcomm, None, &stem), (0, ""));
     }
 
     #[test]
