@@ -99,7 +99,7 @@ user-mode.
 
 **How it works**:
 1. WinUSB is assigned to a USB Bluetooth adapter, in the app (**Adapter >
-   Assign WinUSB**, see [Driver Assignment](#driver-assignment)) or with Zadig
+   Replace with WinUSB driver**, see [Driver Assignment](#driver-assignment)) or with Zadig
 2. The `hci-transport` crate opens the adapter through WinUSB with `nusb`
    and connects it to BTstack as its HCI transport
 3. BTstack sends HCI commands to initialize the Bluetooth controller

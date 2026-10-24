@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
-import { MockCore, type MockScenario } from "../ipc/mock";
+import { MockCore, type MockScenario, sampleSnapshot } from "../ipc/mock";
 import { createCore } from "../ipc/store";
+import { adapterIds, adapterName } from "./Adapter";
 
 let mock: MockCore | null = null;
 
@@ -29,11 +30,13 @@ describe("Adapter firmware", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "adapter.firmware_files")).toBe(true));
     const chip = screen.getByLabelText("Bluetooth Chip") as HTMLSelectElement;
     expect(chip.options[chip.selectedIndex].text).toBe("Auto (RTL8761BU)");
-    // In the card of the adapter it applies to, not a section of its own
+    // In the firmware box of the adapter it applies to, not a section of its own
     expect(chip.closest(".adapter-card")).not.toBeNull();
-    expect(within(chip.closest(".adapter-card") as HTMLElement).getByRole("group", { name: "Bluetooth Firmware Selection" })).toContainElement(chip);
-    // The section lists the files the detected chip needs
-    expect(await screen.findByText("rtl8761bu_config.bin")).toBeInTheDocument();
+    const box = screen.getByRole("group", { name: "Firmware: Firmware OK" });
+    expect(box).toContainElement(chip);
+    // The tag says the files are there; the box can fetch them again
+    expect(screen.queryByText("rtl8761bu_config.bin")).toBeNull();
+    expect(within(box).getByRole("button", { name: "Download Firmware" })).toBeInTheDocument();
 
     fireEvent.change(chip, { target: { selectedIndex: 1 } });
     await waitFor(() => expect(calls.some((c) => c.method === "settings.set")).toBe(true));
@@ -46,6 +49,43 @@ describe("Adapter firmware", () => {
     expect(await screen.findByText("No Realtek files needed")).toBeInTheDocument();
     // The folder is scanned again after the change
     await waitFor(() => expect(calls.filter((c) => c.method === "adapter.firmware_files").length).toBeGreaterThan(1));
+  });
+
+  it("names the adapter as Device Manager does, with its driver and firmware side by side (issue #86)", async () => {
+    // The first run's adapters (that scenario opens the setup instead)
+    const { mock } = start();
+    await screen.findByRole("heading", { level: 1, name: "Adapters" });
+    const m = mock as any;
+    m.snap.adapter = { ...m.snap.adapter, adapters: sampleSnapshot("fresh").adapter.adapters };
+    m.emit({ kind: "adapter", value: m.snap.adapter });
+    const rtl = await screen.findByRole("region", { name: "TP-Link Bluetooth USB Adapter (RTL8761BU)" });
+    expect(rtl).toHaveTextContent("00:1A:7D:DA:71:13 | 2357:0604 | v5.1");
+    expect(within(rtl).getByRole("group", { name: "Driver: Windows Bluetooth" })).toContainElement(
+      within(rtl).getByRole("button", { name: "Replace with WinUSB driver" }),
+    );
+    // Windows' Bluetooth runs it: its name, address and version from there
+    const mtk = screen.getByRole("region", { name: "MediaTek Bluetooth Adapter" });
+    expect(mtk).toHaveTextContent("C0:E3:50:2E:00:09 | 0E8D:7925 | v5.4");
+    expect(mtk).not.toHaveTextContent("[unsupported]");
+    const fw = within(mtk).getByRole("group", { name: "Firmware: Not supported" });
+    expect(within(fw).getByText("Not supported")).toHaveClass("st-bad");
+    expect(within(fw).getByRole("button", { name: "Download not available" })).toBeDisabled();
+    // The chip choice goes with the Realtek adapter only
+    expect(within(mtk).queryByLabelText("Bluetooth Chip")).toBeNull();
+    expect(within(rtl).getByLabelText("Bluetooth Chip")).toBeInTheDocument();
+  });
+
+  it("adapter names", () => {
+    const a = { display_name: "RTL8761BU (0x0BDA:0xA729)", vendor: "Realtek", windows_name: null, realtek_chip: "RTL8761BU" };
+    // Windows' Bluetooth never ran it: vendor and chip
+    expect(adapterName(a)).toBe("Realtek RTL8761BU");
+    expect(adapterName({ ...a, display_name: "MediaTek (0x0E8D:0x7925) [unsupported]", vendor: "MediaTek", realtek_chip: null })).toBe(
+      "MediaTek",
+    );
+    expect(adapterName({ ...a, windows_name: "Realtek Bluetooth 5.3 Adapter" })).toBe("Realtek Bluetooth 5.3 Adapter (RTL8761BU)");
+    // The chip once only
+    expect(adapterName({ ...a, windows_name: "Realtek RTL8761BU Bluetooth" })).toBe("Realtek RTL8761BU Bluetooth");
+    expect(adapterIds({ address: null, vid: 0x0bda, pid: 0xa729, bt_version: null })).toBe("0BDA:A729");
   });
 
   it("opens the firmware folder", async () => {

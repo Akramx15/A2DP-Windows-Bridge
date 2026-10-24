@@ -79,7 +79,7 @@ Windows の Bluetooth スタックを完全にバイパスし、WinUSB（Microso
 - デバイスアドレスは手動入力、または USB アダプターでの検索（GAP inquiry）で指定
 
 **動作の流れ**:
-1. USB Bluetooth アダプターに WinUSB を割り当てる（アプリの **アダプタ > WinUSB を割り当てる**、[ドライバーの割り当て](#driver-assignment)を参照。Zadig でも可）
+1. USB Bluetooth アダプターに WinUSB を割り当てる（アプリの **アダプタ > WinUSB ドライバに置き換える**、[ドライバーの割り当て](#driver-assignment)を参照。Zadig でも可）
 2. `hci-transport` クレートが `nusb` で WinUSB 経由でアダプターを開き、BTstack の HCI トランスポートとしてつなぐ
 3. BTstack が HCI コマンドで Bluetooth コントローラーを初期化
 4. (Realtek、Intel、Broadcom アダプター) 必要に応じてファームウェアをアップロード

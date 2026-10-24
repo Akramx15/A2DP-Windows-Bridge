@@ -334,6 +334,7 @@ mod tests {
             le_audio: None,
             address: None,
             bt_version: None,
+            windows_name: None,
         };
         let csr = ipc::AdapterInfo { display_name: "CSR8510".into(), firmware_present: None, ..a.clone() };
         let page = ipc::AdapterInfo { firmware_invalid: Some("rtl8761bu_fw.bin".into()), ..a.clone() };

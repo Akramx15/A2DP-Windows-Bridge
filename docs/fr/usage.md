@@ -26,7 +26,7 @@ Lancez **A2DP Windows Bridge** depuis le menu Démarrer (ou `a2dpwb.exe`). Le me
 - **Connecter** / **Déconnecter** sous chaque carte. Un seul appareil diffuse à la fois : **Connecter** sur un autre appareil arrête la diffusion en cours et connecte celui-là
 - **Volume** : le volume du casque (voir [Volume](#volume))
 - La source de capture de l'appareil utilisé (avec **Plus de réglages de capture**) et la qualité de liaison avec un petit graphique
-- Une erreur s'affiche avec sa cause et, s'il y en a un, le bouton qui la corrige (**Attribuer WinUSB**, **Ouvrir la page de téléchargement**, **Redémarrer le Bluetooth**, **Réessayer**, **Codecs**, **Périphériques audio**, ...)
+- Une erreur s'affiche avec sa cause et, s'il y en a un, le bouton qui la corrige (**Remplacer par le pilote WinUSB**, **Ouvrir la page de téléchargement**, **Redémarrer le Bluetooth**, **Réessayer**, **Codecs**, **Périphériques audio**, ...)
 
 La barre latérale affiche la même chose pour chaque appareil, sur chaque écran.
 
@@ -69,7 +69,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 ### Adaptateur
 
 - Les adaptateurs Bluetooth USB détectés, avec leur puce, leur **Pilote** et leur **Firmware**. **Actualiser** relance la détection
-- **Attribuer WinUSB** / **Restaurer le pilote** (voir [Installation](setup#winusb)) ; Windows demande à chaque fois l'autorisation de l'administrateur
+- **Remplacer par le pilote WinUSB** / **Restaurer le pilote d'origine** (voir [Installation](setup#winusb)) ; Windows demande à chaque fois l'autorisation de l'administrateur
 - **Puce Bluetooth** pour le firmware, avec **Télécharger le firmware**, **Ouvrir la page de téléchargement** et **Ouvrir le dossier de configuration** (voir [Firmware](setup#firmware))
 - **AFH** : Auto, Désactivé ou canaux Wi-Fi en Manuel (voir [Qualité de liaison et AFH](#link-quality))
 - **Pile Bluetooth** : arrêtée (elle démarre à la première recherche ou connexion), en démarrage, prête ou en erreur, et **Redémarrer le Bluetooth**

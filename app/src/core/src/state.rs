@@ -370,9 +370,22 @@ fn adapter_chip(vendor: ChipVendor, realtek_pid: Option<u16>, settings: &CoreSet
 }
 
 fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo> {
+    let radios = win_sys::bt_radios::radios();
     a2dpwb_core::adapter::adapters(false)
         .into_iter()
         .map(|a| {
+            // Windows' Bluetooth runs it: what Device Manager shows, kept
+            // for when it is on WinUSB (issue #86)
+            if let Some(r) = radios.iter().find(|r| r.on_device(&a.device.instance_id)) {
+                a2dpwb_core::adapter::save_windows_radio(
+                    config_dir,
+                    a.device.vid,
+                    a.device.pid,
+                    &r.name,
+                    r.address.as_deref(),
+                    r.hci_version,
+                );
+            }
             let driver = match a.device.driver_kind {
                 win_sys::driver::DriverKind::WinUsb => DriverKind::Winusb,
                 win_sys::driver::DriverKind::Bluetooth => DriverKind::Bluetooth,
@@ -403,6 +416,7 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 bt_version: a2dpwb_core::adapter::hci_version(config_dir, a.device.vid, a.device.pid)
                     .and_then(a2dpwb_core::adapter::bt_core_version)
                     .map(str::to_owned),
+                windows_name: a2dpwb_core::adapter::windows_name(config_dir, a.device.vid, a.device.pid),
             }
         })
         .collect()
@@ -1967,6 +1981,7 @@ mod tests {
             le_audio: None,
             address: None,
             bt_version: None,
+            windows_name: None,
         }
     }
 

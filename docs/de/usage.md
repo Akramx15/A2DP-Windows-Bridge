@@ -26,7 +26,7 @@ Starten Sie **A2DP Windows Bridge** über das Startmenü (oder `a2dpwb.exe`). Da
 - **Verbinden** / **Trennen** unter jeder Karte. Es streamt jeweils ein Gerät: **Verbinden** bei einem anderen Gerät beendet den laufenden Stream und verbindet dieses
 - **Lautstärke**: die Lautstärke der Kopfhörer (siehe [Lautstärke](#volume))
 - Die Aufnahmequelle des verwendeten Geräts (mit **Weitere Aufnahmeeinstellungen**) und die Verbindungsqualität mit einem kleinen Diagramm
-- Ein Fehler wird mit seiner Ursache angezeigt und, sofern vorhanden, mit der Schaltfläche, die ihn behebt (**WinUSB zuweisen**, **Downloadseite öffnen**, **Bluetooth neu starten**, **Erneut versuchen**, **Codecs**, **Audiogeräte**, ...)
+- Ein Fehler wird mit seiner Ursache angezeigt und, sofern vorhanden, mit der Schaltfläche, die ihn behebt (**Durch WinUSB-Treiber ersetzen**, **Downloadseite öffnen**, **Bluetooth neu starten**, **Erneut versuchen**, **Codecs**, **Audiogeräte**, ...)
 
 Die Seitenleiste zeigt dasselbe für jedes Gerät auf jeder Seite.
 
@@ -69,7 +69,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 ### Adapter
 
 - Die erkannten USB-Bluetooth-Adapter mit ihrem Chip, **Treiber** und **Firmware**. **Aktualisieren** sucht erneut
-- **WinUSB zuweisen** / **Treiber wiederherstellen** (siehe [Einrichtung](setup#winusb)); Windows fragt jedes Mal nach Administratorrechten
+- **Durch WinUSB-Treiber ersetzen** / **Originaltreiber wiederherstellen** (siehe [Einrichtung](setup#winusb)); Windows fragt jedes Mal nach Administratorrechten
 - **Bluetooth-Chip** für die Firmware, mit **Firmware herunterladen**, **Downloadseite öffnen** und **Konfigurationsordner öffnen** (siehe [Firmware](setup#firmware))
 - **AFH**: Automatisch, Aus oder Manuell (Wi-Fi-Kanäle) (siehe [Verbindungsqualität und AFH](#link-quality))
 - **Bluetooth-Stack**: angehalten (startet mit der ersten Suche oder Verbindung), wird gestartet, bereit oder Fehler, sowie **Bluetooth neu starten**

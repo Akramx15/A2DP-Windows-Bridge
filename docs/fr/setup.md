@@ -43,7 +43,7 @@ Lancez le programme d'installation de la v2 par-dessus la v1. Il vous demande de
 Branchez l'adaptateur Bluetooth USB et lancez A2DPWB. S'il n'existe encore aucun profil, ou si aucun adaptateur n'a WinUSB, A2DPWB ouvre **Configurer A2DPWB**, en trois étapes :
 
 1. **Choisir l'adaptateur** : les adaptateurs Bluetooth USB détectés. Si le vôtre n'apparaît pas, branchez-le et appuyez sur **Actualiser**. Un **Pris en charge** vert ou un **Non pris en charge** rouge indique si A2DPWB peut l'utiliser
-2. **Pilote et firmware** : **Attribuer WinUSB** (voir [Étape 2](#winusb)) et, pour les adaptateurs Realtek, les fichiers de firmware (voir [Firmware](#firmware))
+2. **Pilote et firmware** : **Remplacer par le pilote WinUSB** (voir [Étape 2](#winusb)) et, pour les adaptateurs Realtek, les fichiers de firmware (voir [Firmware](#firmware))
 3. **Trouver vos appareils audio** : la recherche démarre d'elle-même. Mettez l'appareil audio en mode d'association et cliquez sur **Connecter** à côté (ou saisissez son adresse et cliquez sur **Utiliser**) : A2DPWB crée son profil (« *nom* | Auto », le meilleur codec de l'appareil) et se connecte. Puis **Terminer** (voir [Étape 3](#headphones)). Le bloc **Démarrage** de cette étape propose **Démarrer avec Windows** et **Démarrer dans la zone de notification**, les mêmes interrupteurs que dans les paramètres, enregistrés aussitôt
 
 **Configurer plus tard** ignore la suite ; **Paramètres > Lancer la configuration** la rouvre.
@@ -53,7 +53,7 @@ Branchez l'adaptateur Bluetooth USB et lancez A2DPWB. S'il n'existe encore aucun
 A2DPWB communique directement avec un adaptateur Bluetooth USB via WinUSB, le pilote USB générique inclus dans Windows. Un **adaptateur dédié** est recommandé -- votre Bluetooth intégré continue alors de fonctionner normalement pour le Bluetooth habituel de Windows.
 
 1. Ouvrez l'écran **Adaptateur** (ou l'étape **Pilote et firmware** de la configuration)
-2. Le **Pilote** de l'adaptateur indique **Bluetooth de Windows** (ou **Autre pilote** / **Aucun pilote**). Cliquez sur **Attribuer WinUSB**
+2. Le **Pilote** de l'adaptateur indique **Bluetooth de Windows** (ou **Autre pilote** / **Aucun pilote**). Cliquez sur **Remplacer par le pilote WinUSB**
 3. Lisez la confirmation et continuez : Windows demande l'autorisation de l'administrateur (UAC)
 4. Le pilote indique désormais **WinUSB (utilisé par A2DPWB)**
 
@@ -62,7 +62,7 @@ Si Windows n'a pas pu charger WinUSB tout de suite (l'adaptateur était utilisé
 {: .warning }
 Tant que WinUSB est attribué, le Bluetooth de Windows ne voit plus l'adaptateur : les appareils associés à Windows par son intermédiaire ne fonctionnent plus tant que le pilote n'est pas restauré. Utilisez votre Bluetooth intégré pour les périphériques courants (clavier, souris, etc.). Un adaptateur intégré qui est un périphérique USB (un Realtek sur de nombreux portables) peut aussi être confié à A2DPWB, mais le PC n'a alors **plus du tout de Bluetooth Windows** (paramètres Bluetooth, souris, claviers, autres appareils audio) tant que son pilote n'est pas restauré.
 
-**Restaurer le pilote**, sur le même écran, rend l'adaptateur à Windows : Windows choisit de nouveau son propre pilote (normalement son pilote Bluetooth) et l'adaptateur fonctionne avec le Bluetooth de Windows. A2DPWB ne peut plus diffuser par son intermédiaire tant que WinUSB n'est pas attribué de nouveau. Le programme de désinstallation propose la même chose : si A2DPWB a attribué WinUSB à des adaptateurs, il demande s'il faut les rendre à Windows (une seule demande de droits d'administrateur). Les mises à jour conservent WinUSB, de même qu'une désinstallation silencieuse (`/S`).
+**Restaurer le pilote d'origine**, sur le même écran, rend l'adaptateur à Windows : Windows choisit de nouveau son propre pilote (normalement son pilote Bluetooth) et l'adaptateur fonctionne avec le Bluetooth de Windows. A2DPWB ne peut plus diffuser par son intermédiaire tant que WinUSB n'est pas attribué de nouveau. Le programme de désinstallation propose la même chose : si A2DPWB a attribué WinUSB à des adaptateurs, il demande s'il faut les rendre à Windows (une seule demande de droits d'administrateur). Les mises à jour conservent WinUSB, de même qu'une désinstallation silencieuse (`/S`).
 
 ### Utiliser Zadig à la place {#zadig}
 
@@ -76,7 +76,7 @@ Un pilote WinUSB installé avec [Zadig](https://zadig.akeo.ie/) fonctionne tout 
 
 Si l'adaptateur n'apparaît pas dans la liste d'A2DPWB, si un bouton de l'écran **Adaptateur** échoue ou si votre adaptateur se comporte autrement que les autres de son type, le Gestionnaire de périphériques de Windows (clic droit sur **Démarrer** > **Gestionnaire de périphériques**) fait la même chose à la main. Les deux demandent des droits d'administrateur. Les noms des menus peuvent varier légèrement selon la version de Windows.
 
-**Attribuer WinUSB**
+**Remplacer par le pilote WinUSB**
 
 1. Trouvez l'adaptateur : normalement sous **Bluetooth** avec son propre nom (par exemple « TP-Link Bluetooth USB Adapter »), ou avec une marque jaune quand son pilote n'a pas pu démarrer. **Affichage > Périphériques par connexion** aide à le distinguer du Bluetooth intégré du PC, auquel il ne faut pas toucher, sauf pour le confier à A2DPWB
 2. Clic droit > **Mettre à jour le pilote** > **Parcourir mon poste de travail pour rechercher des pilotes** > **Choisir parmi une liste de pilotes disponibles sur mon ordinateur**

@@ -79,7 +79,7 @@ flowchart TB
 - 设备地址需手动输入，或通过 USB 适配器扫描（GAP inquiry）查找
 
 **工作原理**：
-1. 在应用中（**适配器 > 分配 WinUSB**，请参阅[驱动程序分配](#driver-assignment)）或使用 Zadig 为 USB Bluetooth 适配器分配 WinUSB
+1. 在应用中（**适配器 > 替换为 WinUSB 驱动程序**，请参阅[驱动程序分配](#driver-assignment)）或使用 Zadig 为 USB Bluetooth 适配器分配 WinUSB
 2. `hci-transport` crate 通过 WinUSB 使用 `nusb` 打开适配器，并将其作为 HCI 传输连接到 BTstack
 3. BTstack 发送 HCI 命令初始化 Bluetooth 控制器
 4. （Realtek、Intel 和 Broadcom 适配器）根据需要上传固件

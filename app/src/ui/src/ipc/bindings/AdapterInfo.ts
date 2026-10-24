@@ -58,12 +58,19 @@ restart_needed: boolean,
  */
 le_audio: boolean | null, 
 /**
- * The adapter's own Bluetooth address, as a stack running on it read
- * it (remembered); None if none ran on it yet
+ * The adapter's own Bluetooth address, as a stack running on it or
+ * Windows' Bluetooth read it (remembered); None if neither ran on it yet
  */
 address: string | null, 
 /**
  * Bluetooth core version the controller reports (HCI version: "5.3"),
- * remembered; None if no stack ran on it yet
+ * remembered; None if neither a stack nor Windows' Bluetooth ran on it
+ * yet
  */
-bt_version: string | null, };
+bt_version: string | null, 
+/**
+ * Device Manager's name for the radio while Windows' Bluetooth runs it
+ * ("Realtek Bluetooth 5.3 Adapter"), remembered for when A2DPWB has it
+ * on WinUSB; None if Windows never ran it
+ */
+windows_name: string | null, };

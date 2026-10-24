@@ -95,7 +95,7 @@ BTstack이 HCI, L2CAP, AVDTP, A2DP를 사용자 모드에서 구현합니다.
 - 장치 주소는 직접 입력하거나 USB 어댑터로 검색(GAP inquiry)하여 찾음
 
 **작동 방식**:
-1. 앱(**어댑터 > WinUSB 할당**, [드라이버 할당](#driver-assignment) 참조) 또는 Zadig로
+1. 앱(**어댑터 > WinUSB 드라이버로 교체**, [드라이버 할당](#driver-assignment) 참조) 또는 Zadig로
    USB Bluetooth 어댑터에 WinUSB를 할당
 2. `hci-transport` 크레이트가 `nusb`로 WinUSB를 통해 어댑터를 열고,
    BTstack의 HCI 전송으로 연결

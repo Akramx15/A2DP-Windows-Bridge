@@ -2404,42 +2404,35 @@ option {
   color: var(--text-2);
   margin-top: 2px;
 }
-.kv {
+/* The driver and the firmware side by side, one under the other when
+   narrow (issue #86) */
+.adapter-boxes {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: var(--s3);
-  margin: 0;
 }
-.kv div {
+.adapter-box {
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
-}
-.kv dt {
-  font-size: var(--fs-12);
-  color: var(--text-2);
-}
-.kv dd {
-  margin: 0;
-}
-.adapter-actions {
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--s3);
-  flex-wrap: wrap;
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  min-width: 0;
 }
-/* The chip choice inside the card of the adapter it applies to */
-.adapter-firmware {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  padding-top: var(--s3);
-  border-top: 1px solid var(--border);
-}
-.adapter-firmware > h3 {
+.adapter-box > h3 {
   margin: 0;
   font-size: var(--fs-14);
   font-weight: 600;
+}
+.adapter-box > .hint {
+  margin: 0;
+}
+/* The chip choice and its status take the box's width */
+.adapter-box > .field,
+.adapter-box > [aria-live] {
+  align-self: stretch;
 }
 
 .about {

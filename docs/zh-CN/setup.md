@@ -43,7 +43,7 @@ v2 首次启动时，会先将 v1 的设置复制到 `%APPDATA%\A2DPWB\backup-v1
 插入 USB Bluetooth 适配器并启动 A2DPWB。如果还没有任何配置文件，或者没有任何适配器使用 WinUSB，A2DPWB 会打开**设置 A2DPWB**，共三步：
 
 1. **选择适配器**：列出找到的 USB Bluetooth 适配器。如果没有你的适配器，请插入后单击**刷新**。绿色的**支持**或红色的**不支持**表示 A2DPWB 能否使用该适配器
-2. **驱动程序和固件**：**分配 WinUSB**（请参阅[第 2 步](#winusb)），Realtek 适配器还需要固件文件（请参阅[固件](#firmware)）
+2. **驱动程序和固件**：**替换为 WinUSB 驱动程序**（请参阅[第 2 步](#winusb)），Realtek 适配器还需要固件文件（请参阅[固件](#firmware)）
 3. **查找音频设备**：扫描会自动开始。让音频设备进入配对模式，然后单击旁边的**连接**（或输入其地址后单击**使用**）：A2DPWB 会创建它的配置文件（“*名称* | Auto”，设备支持的最佳编解码器）并连接。然后单击**完成**（请参阅[第 3 步](#headphones)）。此步骤的**启动**区域有**随 Windows 启动**和**在托盘中启动**，与“设置”中的开关相同，会立即保存
 
 **稍后设置**会跳过剩余步骤；**设置 > 运行设置向导**可再次打开它。
@@ -53,7 +53,7 @@ v2 首次启动时，会先将 v1 的设置复制到 `%APPDATA%\A2DPWB\backup-v1
 A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB Bluetooth 适配器通信。建议使用**专用适配器**——这样内置 Bluetooth 仍可照常用于 Windows 的普通 Bluetooth 功能。
 
 1. 打开**适配器**页面（或设置向导中的**驱动程序和固件**步骤）
-2. 适配器的**驱动程序**显示为 **Windows Bluetooth**（或**其他驱动程序** / **无驱动程序**）。单击**分配 WinUSB**
+2. 适配器的**驱动程序**显示为 **Windows Bluetooth**（或**其他驱动程序** / **无驱动程序**）。单击**替换为 WinUSB 驱动程序**
 3. 阅读确认信息后继续：Windows 会请求管理员权限（UAC）
 4. 驱动程序现在显示为 **WinUSB（由 A2DPWB 使用）**
 
@@ -62,7 +62,7 @@ A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB 
 {: .warning }
 分配 WinUSB 期间，Windows 自带的 Bluetooth 将不再识别该适配器：通过它与 Windows 配对的设备在恢复驱动程序之前都无法使用。键盘、鼠标等普通外设请使用内置 Bluetooth。属于 USB 设备的内置适配器（许多笔记本电脑上的 Realtek 适配器）也可以交给 A2DPWB 使用，但在恢复其驱动程序之前，**PC 将完全无法使用 Windows Bluetooth**（Bluetooth 设置、鼠标、键盘、其他音频设备）。
 
-同一页面上的**恢复驱动程序**会将适配器交还给 Windows：Windows 会重新为其选择自己的驱动程序（通常是其 Bluetooth 驱动程序），适配器即可配合 Windows 的 Bluetooth 使用。在重新分配 WinUSB 之前，A2DPWB 无法通过它串流。卸载程序也会提供同样的操作：如果 A2DPWB 为适配器分配了 WinUSB，它会询问是否将其交还给 Windows（只请求一次管理员权限）。更新时以及静默卸载（`/S`）时会保留 WinUSB。
+同一页面上的**恢复原始驱动程序**会将适配器交还给 Windows：Windows 会重新为其选择自己的驱动程序（通常是其 Bluetooth 驱动程序），适配器即可配合 Windows 的 Bluetooth 使用。在重新分配 WinUSB 之前，A2DPWB 无法通过它串流。卸载程序也会提供同样的操作：如果 A2DPWB 为适配器分配了 WinUSB，它会询问是否将其交还给 Windows（只请求一次管理员权限）。更新时以及静默卸载（`/S`）时会保留 WinUSB。
 
 ### 改用 Zadig {#zadig}
 
@@ -76,7 +76,7 @@ A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB 
 
 如果 A2DPWB 的列表中没有该适配器、**适配器**页面上的按钮失败，或者你的适配器与同类适配器表现不同，可以在 Windows 的设备管理器（右键单击**开始** > **设备管理器**）中手动完成同样的操作。两者都需要管理员权限。菜单名称可能因 Windows 版本而略有不同。
 
-**分配 WinUSB**
+**替换为 WinUSB 驱动程序**
 
 1. 找到适配器：通常在 **Bluetooth** 下，显示其自身名称（例如“TP-Link Bluetooth USB Adapter”）；如果其驱动程序启动失败，会带有黄色标记。**查看 > 依连接排序设备**有助于将它与电脑内置的 Bluetooth 区分开（除非要交给 A2DPWB 使用，否则请勿改动内置的 Bluetooth）
 2. 右键单击 > **更新驱动程序** > **浏览我的电脑以查找驱动程序** > **让我从计算机上的可用驱动程序列表中选取**

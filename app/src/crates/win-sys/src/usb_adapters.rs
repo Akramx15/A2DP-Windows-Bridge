@@ -386,7 +386,7 @@ pub(crate) fn parse_multi_sz(data: &[u16]) -> Vec<String> {
     data.split(|&c| c == 0).take_while(|s| !s.is_empty()).map(String::from_utf16_lossy).collect()
 }
 
-struct OwnedHandle(HANDLE);
+pub(crate) struct OwnedHandle(pub(crate) HANDLE);
 
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
@@ -418,7 +418,7 @@ impl DevInfoSet {
         Ok((set, data))
     }
 
-    fn interface_detail(&self, intf: &SP_DEVICE_INTERFACE_DATA) -> Option<(String, SP_DEVINFO_DATA)> {
+    pub(crate) fn interface_detail(&self, intf: &SP_DEVICE_INTERFACE_DATA) -> Option<(String, SP_DEVINFO_DATA)> {
         let mut size = 0u32;
         // SAFETY: size query (no buffer); fails with INSUFFICIENT_BUFFER.
         let _ = unsafe { SetupDiGetDeviceInterfaceDetailW(self.0, intf, None, 0, Some(&mut size), None) };
