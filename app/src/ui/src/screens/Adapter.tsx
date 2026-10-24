@@ -31,8 +31,9 @@ const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 
 /** "Realtek Bluetooth 5.3 Adapter (RTL8761BU)": the name Device Manager
  *  gives it with the chip (issue #86); before Windows' Bluetooth ever ran
- *  it, the vendor and chip ("Realtek RTL8761BU"), without the VID:PID the
- *  line below shows and the "[unsupported]" its firmware tag says */
+ *  it and with no product name of its own, the vendor and chip ("Realtek
+ *  RTL8761BU"), without the VID:PID the line below shows and the
+ *  "[unsupported]" / "[experimental]" tags say */
 export function adapterName(
   a: Pick<AdapterInfo, "display_name" | "vendor" | "windows_name" | "realtek_chip">,
 ): string {
@@ -40,7 +41,7 @@ export function adapterName(
   if (!name) {
     const chip = a.display_name
       .replace(/\s*\(0x[0-9a-f]{4}:0x[0-9a-f]{4}\)/i, "")
-      .replace(/\s*\[unsupported\]/i, "")
+      .replace(/\s*\[(unsupported|experimental)\]/i, "")
       .trim();
     if (!a.vendor || chip.toLowerCase().startsWith(a.vendor.toLowerCase())) return chip;
     return `${a.vendor} ${chip}`;
@@ -52,6 +53,12 @@ export function adapterName(
 /** "8C:88:4B:46:DD:AE | 0BDA:A729 | v5.1": what is known of it */
 export function adapterIds(a: Pick<AdapterInfo, "address" | "vid" | "pid" | "bt_version">): string {
   return [a.address, `${hex4(a.vid)}:${hex4(a.pid)}`, a.bt_version && `v${a.bt_version}`].filter(Boolean).join(" | ");
+}
+
+/** A vendor whose loader is experimental (Intel, Broadcom): the core marks
+ *  the chip "[experimental]" */
+export function adapterExperimental(a: Pick<AdapterInfo, "display_name">): boolean {
+  return /\[experimental\]/i.test(a.display_name);
 }
 
 /** A2DPWB can stream through it: not a chip whose firmware loader it lacks
@@ -164,7 +171,15 @@ export function Adapter() {
                   <Icon name="usb_stick" />
                   <div>
                     {/* Device Manager's name; the USB device's own on hover */}
-                    <h2 title={a.device_name}>{adapterName(a)}</h2>
+                    <h2 title={a.device_name}>
+                      {adapterName(a)}
+                      <Show when={adapterExperimental(a)}>
+                        {" "}
+                        <span class="tag st-warn" title={t("ui.adapter.experimental_hint")}>
+                          {t("ui.adapter.experimental")}
+                        </span>
+                      </Show>
+                    </h2>
                     <span class="muted mono">{adapterIds(a)}</span>
                   </div>
                 </div>

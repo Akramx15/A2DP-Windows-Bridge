@@ -416,7 +416,20 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 bt_version: a2dpwb_core::adapter::hci_version(config_dir, a.device.vid, a.device.pid)
                     .and_then(a2dpwb_core::adapter::bt_core_version)
                     .map(str::to_owned),
-                windows_name: a2dpwb_core::adapter::windows_name(config_dir, a.device.vid, a.device.pid),
+                // An adapter already on WinUSB when A2DPWB came to know
+                // radios: the device's own product string, as Device
+                // Manager shows it (the WinUSB INF only names it "WinUSB
+                // Device", in Windows' language)
+                windows_name: a2dpwb_core::adapter::windows_name(config_dir, a.device.vid, a.device.pid).or_else(
+                    || {
+                        a.device
+                            .bus_reported_name
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|n| !n.is_empty())
+                            .map(str::to_owned)
+                    },
+                ),
             }
         })
         .collect()

@@ -593,6 +593,8 @@
   "ui.adapter.firmware_not_realtek": "Realtek 파일이 필요 없습니다",
   "ui.adapter.firmware_unsupported": "지원되지 않음",
   "ui.adapter.firmware_download_unavailable": "다운로드할 수 없음",
+  "ui.adapter.experimental": "실험적",
+  "ui.adapter.experimental_hint": "이 제조사 어댑터 지원은 실험적입니다. 아직 일부 어댑터에서만 시험했습니다.",
   "ui.adapter.firmware_choose_chip": "아래에서 칩을 선택하십시오",
   "ui.adapter.assign_winusb": "WinUSB 드라이버로 교체",
   "ui.adapter.assign_title": "A2DPWB에서 이 어댑터를 사용하도록 설정",
