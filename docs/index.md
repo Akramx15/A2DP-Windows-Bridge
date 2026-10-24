@@ -33,7 +33,7 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 | LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bit | -- |
 | LC3 (LE Audio) 🧪 | 32--124 kbps per channel | 16/24/32/48 kHz | 16 bit | ~140 ms |
 | LC3 low latency (LE Audio GMAP) 🧪 | 64--96 kbps per channel | 32/48 kHz | 16 bit | ~30 ms |
 
@@ -76,7 +76,7 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 **Only need classic aptX?** Windows 10 already supports classic aptX in its built-in Bluetooth stack (not aptX HD, aptX LL or aptX Adaptive), so A2DPWB is not required for it. A2DPWB is mainly useful for LDAC, aptX HD and aptX Low Latency.
 
 {: .warning }
-**aptX Adaptive is experimental and unverified.** It is encoded with the MIT-licensed pure-Rust encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped Qualcomm binaries and on-air captures. 48 kHz stereo only (44.1 / 96 kHz requests are captured at 48 kHz), 24-bit: High 427 kbps, Standard 364, Mobile 318 and Low Latency 265 kbps with R1 sinks (R2 sinks have their own table), ABR in High. Auto never picks it; choose it on **Codecs** or with `-c aptxad`. It passes the unit tests, upstream's bit-exact tests and the end-to-end test against a virtual sink, but A2DPWB has not yet tried it with real headphones; upstream reports it working on Linux with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e. If your headphones also list classic aptX, Auto uses that. See [aptX Family and aptX Adaptive](usage#aptx-compatibility).
+**aptX Adaptive is experimental and unverified.** It is encoded with the MIT-licensed pure-Rust encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped Qualcomm binaries and on-air captures. 48 kHz stereo (44.1 kHz requests are captured at 48 kHz), 24-bit: High 427 kbps, Standard 364, Mobile 318 and Low Latency 265 kbps with R1 sinks (R2 sinks have their own table), ABR in High. 96 kHz (High 646 kbps, Standard 340, Mobile 255) when you choose 96 kHz in its settings and the headphones are an R2 sink that lists 96 kHz; not in Low Latency, and otherwise 48 kHz. 96 kHz is untried on real headphones, here and upstream. Auto never picks it; choose it on **Codecs** or with `-c aptxad`. It passes the unit tests, upstream's bit-exact tests and the end-to-end test against a virtual sink, but A2DPWB has not yet tried it with real headphones; upstream reports it working on Linux with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e. If your headphones also list classic aptX, Auto uses that. See [aptX Family and aptX Adaptive](usage#aptx-compatibility).
 
 ## Platform Support
 

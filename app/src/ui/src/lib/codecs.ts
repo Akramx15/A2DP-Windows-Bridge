@@ -3,8 +3,9 @@
 // modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them; v2 adds SBC / SBC XQ's adaptive bitpool), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
 // "mhq" only for LHDC V5, no quality choice for the aptX family (but aptX
-// Adaptive) or under LHDC V5 ABR, 48 kHz only for Opus, Opus 05 and aptX
-// Adaptive, whose "ll" quality is its low latency mode.
+// Adaptive) or under LHDC V5 ABR, 48 kHz only for Opus and Opus 05, 48 / 96
+// kHz for aptX Adaptive, whose "ll" quality is its low latency mode.
+// aptX HD and aptX Adaptive always carry 24-bit (no choice).
 
 export type CodecId =
   | "auto"
@@ -41,6 +42,8 @@ export interface CodecSpec {
   hiRes: boolean;
   /** The only capture rates it takes (0 = auto), when not the usual ones */
   rates?: number[];
+  /** The bit depth it always carries when there is no choice (16 if not set) */
+  bits?: number;
   /** Variable bit rate (where the headphones list it), on the "abr" setting */
   vbr?: boolean;
   /** The SBC bitpool and frame setup (blocks, subbands, allocation) can be chosen */
@@ -98,13 +101,15 @@ export const CODECS: CodecSpec[] = [
     hiRes: true,
     rates: [0, 44100, 48000, 88200, 96000, 192000],
   },
-  { id: "aptxhd", label: "codec.aptx_hd", bars: { quality: 4, latency: 3, stability: 3 }, qualities: [], abr: false, hiRes: false },
+  { id: "aptxhd", label: "codec.aptx_hd", bars: { quality: 4, latency: 3, stability: 3 }, qualities: [], abr: false, hiRes: false, bits: 24 },
   { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
   { id: "aptxll", label: "codec.aptx_ll", bars: { quality: 2, latency: 5, stability: 4 }, qualities: [], abr: false, hiRes: false },
   {
     // aptX Adaptive (experimental, never picked by Auto): the levels with an
     // R1 sink (an R2 sink: 427 / 364 -> 340 / 270), 48 kHz; ABR steps between
-    // Mobile and the quality chosen; Low Latency has a fixed bit rate
+    // Mobile and the quality chosen; Low Latency has a fixed bit rate. 96 kHz
+    // only when chosen, to a device that lists it (an R2 one), not in Low
+    // Latency (48 kHz otherwise; 646 / 340 / 255 kbps). Always 24-bit.
     id: "aptxad",
     label: "codec.aptx_adaptive",
     bars: { quality: 4, latency: 3, stability: 4 },
@@ -116,7 +121,8 @@ export const CODECS: CodecSpec[] = [
     ],
     abr: true,
     hiRes: false,
-    rates: [0, 48000],
+    rates: [0, 48000, 96000],
+    bits: 24,
   },
   {
     id: "opus",
@@ -285,6 +291,21 @@ const RATE_44K: Partial<Record<CodecId, Record<string, string>>> = {
   ldac: { hq: "909", sq: "606", mq: "303" },
   lhdcv5: { sq: "480" },
 };
+/** aptX Adaptive at 96 kHz (an R2 device's 96 kHz levels; Low Latency runs
+ *  at 48 kHz) */
+const RATE_96K: Partial<Record<CodecId, Record<string, string>>> = {
+  aptxad: { hq: "646", sq: "340", mq: "255" },
+};
+
+/** A quality's bit rate at the profile's sample rate (0 = auto) */
+export function qualityKbps(codec: string, quality: string, sampleRate: number): string | undefined {
+  const spec = codecSpec(codec);
+  const q = spec.qualities.find((x) => x.id === quality) ?? spec.qualities[0];
+  if (!q) return undefined;
+  const is441 = codec === "lhdcv5" ? sampleRate === 44100 : sampleRate === 44100 || sampleRate === 88200;
+  const table = is441 ? RATE_44K : sampleRate === 96000 ? RATE_96K : {};
+  return table[spec.id]?.[q.id] ?? q.kbps;
+}
 
 /**
  * The quality of a profile as the profile list shows it (v1's
@@ -301,8 +322,7 @@ export function qualityTag(
   if (spec.qualities.length === 0) return null;
   if (qualityIgnored(p.codec, p.abr)) return "ABR (≤400 kbps)";
   const q = spec.qualities.find((x) => x.id === p.quality) ?? spec.qualities[0];
-  const is441 = p.codec === "lhdcv5" ? p.sample_rate === 44100 : p.sample_rate === 44100 || p.sample_rate === 88200;
-  const kbps = (is441 ? RATE_44K[spec.id]?.[q.id] : undefined) ?? q.kbps;
+  const kbps = qualityKbps(p.codec, q.id, p.sample_rate);
   return kbps ? `${label(q.label)} (${kbps} kbps)` : label(q.label);
 }
 
@@ -319,6 +339,12 @@ export function bitrateNoteKey(info: { abr: boolean; bitrate_capped: boolean }):
 export function bitDepths(codec: string): number[] {
   const spec = codecSpec(codec);
   return spec.hiRes || spec.id === "auto" ? [0, 16, 24] : [0];
+}
+
+/** The bit depth a codec without a choice carries (aptX HD and aptX
+ *  Adaptive 24, the others 16) */
+export function fixedBitDepth(codec: string): number {
+  return codecSpec(codec).bits ?? 16;
 }
 
 interface CodecFields {

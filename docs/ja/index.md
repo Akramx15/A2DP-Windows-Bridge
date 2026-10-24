@@ -35,7 +35,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 | LHDC V5 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive 🧪 | 265--427 kbps | 48 kHz | 24 bit | -- |
+| aptX Adaptive 🧪 | 265--427 kbps（96 kHz: 255--646） | 48/96 kHz | 24 bit | -- |
 | LC3（LE Audio） 🧪 | 1 チャネルあたり 32--124 kbps | 16/24/32/48 kHz | 16 bit | 約 140 ms |
 | LC3 低遅延（LE Audio GMAP） 🧪 | 1 チャネルあたり 64--96 kbps | 32/48 kHz | 16 bit | 約 30 ms |
 
@@ -78,7 +78,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LDAC、aptX HD
 **クラシック aptX だけが目的なら**、Windows 10 標準の Bluetooth スタックがクラシック aptX に対応しています（aptX HD・aptX LL・aptX Adaptive は非対応）。その場合 A2DPWB は不要です。A2DPWB が主に役立つのは LDAC・aptX HD・aptX Low Latency です。
 
 {: .warning }
-**aptX Adaptive は実験的な対応で、実機では未確認です。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオのみ（44.1 / 96 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。自動選択では選ばれないので、**コーデック** 画面か `-c aptxad` で選んでください。単体テスト、上流のビット単位で一致するテスト、仮想シンクとのエンドツーエンドテストには合格していますが、A2DPWB では実際のヘッドホンでまだ試していません。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。ヘッドホンがクラシック aptX も通知していれば、Auto はそちらを使います。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
+**aptX Adaptive は実験的な対応で、実機では未確認です。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオ（44.1 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。コーデックの設定で 96 kHz を選び、ヘッドホンが 96 kHz を通知する R2 のシンクであれば 96 kHz（高音質 646 kbps、標準 340、モバイル 255）になります。低遅延では使えず、それ以外は 48 kHz です。96 kHz は A2DPWB でも上流でも実際のヘッドホンでは試していません。自動選択では選ばれないので、**コーデック** 画面か `-c aptxad` で選んでください。単体テスト、上流のビット単位で一致するテスト、仮想シンクとのエンドツーエンドテストには合格していますが、A2DPWB では実際のヘッドホンでまだ試していません。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。ヘッドホンがクラシック aptX も通知していれば、Auto はそちらを使います。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
 
 ## 対応プラットフォーム {#platform-support}
 

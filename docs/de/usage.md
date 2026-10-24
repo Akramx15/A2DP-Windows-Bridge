@@ -126,7 +126,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimentell; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 von PipeWire (experimentell; zu PipeWire-Senken)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimentell; 48 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimentell; 48 kHz, --rate 96000 für 96 kHz)
 ```
 
 Priorität bei automatischer Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimentell) > AAC > SBC XQ > SBC (FastStream, Opus 05 und aptX Adaptive, alle experimentell, nur wenn ausdrücklich gewählt)
@@ -310,12 +310,12 @@ A2DPWB unterstützt drei aptX-Codecs, kodiert mit [libopenaptx](https://github.c
 | aptX | 0x0000004F / 0x0001 | Nein | Unterstützt (352/384 kbps bei 44,1/48 kHz) |
 | aptX HD | 0x000000D7 / 0x0024 | Ja | Unterstützt (576 kbps, 24-Bit-Eingang) |
 | aptX Low Latency | 0x0000000A oder 0x000000D7 / 0x0002 | Nein | Unterstützt (352 kbps) |
-| aptX Adaptive | 0x000000D7 / 0x00AD | Ja | Experimentell (265-427 kbps, 48 kHz, 24 Bit; nur bei ausdrücklicher Wahl) |
+| aptX Adaptive | 0x000000D7 / 0x00AD | Ja | Experimentell (265-427 kbps, 48 / 96 kHz, 24 Bit; nur bei ausdrücklicher Wahl) |
 
 ### aptX Adaptive (experimentell) {#aptx-adaptive}
 
 {: .warning }
-**aptX Adaptive ist experimentell und noch nicht mit echten Kopfhörern ausprobiert.** Es besteht die Unit-Tests, die bitgenaue Testsuite des Originalprojekts und den End-to-End-Test gegen die virtuelle Bluetooth-Senke (`tools/emu`, die den RTP-Header, die Paketgrößen und die Frame-Typen prüft; das Audio wird nicht dekodiert, da es keinen offenen Decoder gibt). Das Originalprojekt meldet, dass es unter Linux / PipeWire mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e bei 48 kHz in Hoch und Niedrige Latenz funktioniert. [Rückmeldungen willkommen](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**aptX Adaptive ist experimentell und noch nicht mit echten Kopfhörern ausprobiert.** Es besteht die Unit-Tests, die bitgenaue Testsuite des Originalprojekts und den End-to-End-Test gegen die virtuelle Bluetooth-Senke (`tools/emu`, die den RTP-Header, die Paketgrößen und die Frame-Typen prüft; das Audio wird nicht dekodiert, da es keinen offenen Decoder gibt). Das Originalprojekt meldet, dass es unter Linux / PipeWire mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e bei 48 kHz in Hoch und Niedrige Latenz funktioniert. 96 kHz (Hoch 646 kbps, Standard 340, Mobil 255) wird nur verwendet, wenn es in seinen Einstellungen (oder mit `--rate 96000`) gewählt ist und die Kopfhörer eine R2-Senke sind, die es meldet, nie in Niedrige Latenz; es ist nur gegen die virtuelle Senke geprüft, hier wie im Originalprojekt. [Rückmeldungen willkommen](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 Der Encoder ist der rein in Rust geschriebene aptX-Adaptive-Encoder von [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). Das Originalprojekt beschreibt ihn als Clean-Room-Neuimplementierung, deren Zahlentabellen aus rechtmäßig erworbenen, ausgelieferten Qualcomm-Binärdateien und Funkmitschnitten rekonstruiert wurden; Code, SDK oder Binärdateien von Qualcomm sind nicht enthalten (siehe [Lizenzen](licenses)).
 
@@ -369,7 +369,7 @@ und der Fehler besagt, dass Endpunkte von einem anderen Gerät genutzt werden. T
 
 ### Abtastrate
 
-aptX, aptX HD und aptX LL unterstützen nur 44,1 kHz und 48 kHz (aptX Adaptive nur 48 kHz). A2DPWB wählt eine der Raten, die die Kopfhörer melden (bevorzugt die aktuelle Rate des Windows-Geräts, sonst 48 kHz), und lässt WASAPI die Aufnahme umrechnen. Für aptX müssen Sie die Windows-Soundeinstellungen nicht ändern.
+aptX, aptX HD und aptX LL unterstützen nur 44,1 kHz und 48 kHz (aptX Adaptive 48 kHz, oder 96 kHz, wenn gewählt und von den Kopfhörern gemeldet). A2DPWB wählt eine der Raten, die die Kopfhörer melden (bevorzugt die aktuelle Rate des Windows-Geräts, sonst 48 kHz), und lässt WASAPI die Aufnahme umrechnen. Für aptX müssen Sie die Windows-Soundeinstellungen nicht ändern.
 
 ### Prüfen, was Ihre Kopfhörer anbieten
 

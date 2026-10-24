@@ -969,13 +969,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         preferred = kind.max_sample_rate();
     }
     // aptX family, AAC: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates;
-    // Opus, Opus 05, aptX Adaptive: 48 kHz only. WASAPI resamples to the
-    // requested rate.
+    // Opus, Opus 05: 48 kHz only; aptX Adaptive: 48 kHz, 96 kHz only when the
+    // profile asks for it (HQ, an R2 sink that lists it), not from the
+    // source's mix rate. WASAPI resamples to the requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
-        CodecKind::Opus | CodecKind::Opus05 | CodecKind::AptxAdaptive => 48000,
+        CodecKind::AptxAdaptive => remote.pick_aptxad_sample_rate(req.sample_rate.unwrap_or(48000), req.quality),
+        CodecKind::Opus | CodecKind::Opus05 => 48000,
         CodecKind::Aac => remote.pick_aac_sample_rate(preferred),
         CodecKind::Sbc | CodecKind::SbcXq if preferred != 44100 => 48000,
         _ => preferred,

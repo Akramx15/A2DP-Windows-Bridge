@@ -21,7 +21,7 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 ¹ |
 | Opus (Android) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
 | Opus 05 (PipeWire) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 ¹ ² |
-| aptX Adaptive | 265–427 kbps | 48 kHz | 24 bit | ❌ | 🧪 ¹ ³ |
+| aptX Adaptive | 265–427 kbps (96 kHz: up to 646) | 48/96 kHz | 24 bit | ❌ | 🧪 ¹ ³ |
 | LC3 (LE Audio) | 32–124 kbps per channel | 16–48 kHz | 16 bit | Windows 11 ⁴ | 🧪 ⁵ |
 
 ✅ supported · 🧪 experimental: passes the encoder tests and the end-to-end test against a virtual Bluetooth sink, but not yet confirmed with real headphones that use it ([reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)) · ❌ not supported

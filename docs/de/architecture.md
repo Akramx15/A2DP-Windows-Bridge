@@ -265,7 +265,9 @@ JSON-Ergebnis. Das Auflisten der Adapter und ihrer Treiber benötigt keine Admin
   Profil es erlaubt (**Anderen Codec verwenden, falls dieser nicht verfügbar ist**), und
   ist andernfalls ein Fehler
 - Wählt die Abtastrate für die aptX-Familie (44,1 / 48 kHz aus den Raten, die die Gegenseite
-  meldet; WASAPI rechnet die Aufnahme um); aptX Adaptive verwendet immer 48 kHz
+  meldet; WASAPI rechnet die Aufnahme um); aptX Adaptive verwendet 48 kHz, oder
+  96 kHz, wenn das Profil es in Hoch / Standard / Mobil verlangt und die Senke
+  R2 ist und 96 kHz meldet
 
 ### Bluetooth-Host (`bt-host`)
 
@@ -322,7 +324,7 @@ Nimmt Audio in Echtzeit über die Windows Audio Session API auf.
 | FastStream | derselbe SBC-Encoder | 198/216 kbps (44,1/48 kHz) | CSR-Hersteller-Codec, nur Musikrichtung (kein Sprachrückkanal): SBC Joint Stereo Bitpool 29, Frames auf 72 Byte aufgefüllt, 3 pro Paket, kein Header der Mediennutzdaten und kein RTP-Header (wie bei PipeWire); wird von Automatisch nie gewählt |
 | LHDC V5 | lhdcv5-enc (C-Portierung des AOSP-Encoders) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24 Bit, 5-ms-Frames, 2 Byte Header der Mediennutzdaten, RTP-Header |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (Stereo; Mono die Hälfte) | Experimentell; A2DP Opus von Android: 48 kHz, 20-ms-Frames (10 ms, falls die Senke nur diese hat), Constrained VBR, begrenzt auf die Mediennutzdaten, ein Frame pro Paket, 1 Byte Header der Mediennutzdaten, RTP-Header |
-| aptX Adaptive | aptx-adaptive (reiner Rust-Encoder von AKS-Logic/aptx-adaptive-linux, MIT) | R1-Senken: 427/364/318 kbps (Hoch/Standard/Mobil), 265 kbps Niedrige Latenz; R2-Senken: 427/270/204, 270 kbps | Experimentell; 48 kHz Stereo, 24 Bit; ein Codec-Paket pro Medienpaket hinter dem eigenen RTP-Header von A2DPWB; ABR in Hoch; wird von Automatisch nie gewählt |
+| aptX Adaptive | aptx-adaptive (reiner Rust-Encoder von AKS-Logic/aptx-adaptive-linux, MIT) | R1-Senken: 427/364/318 kbps (Hoch/Standard/Mobil), 265 kbps Niedrige Latenz; R2-Senken: 427/270/204, 270 kbps | Experimentell; 48 kHz Stereo (96 kHz in HQ zu einer R2-Senke, die es meldet, wenn verlangt: 646/340/255 kbps), 24 Bit; ein Codec-Paket pro Medienpaket hinter dem eigenen RTP-Header von A2DPWB; ABR in Hoch; wird von Automatisch nie gewählt |
 
 Alle Encoder implementieren den Trait `codec::Encoder`: Sie geben das PCM-Format
 und die Anzahl der Frames an, die ein Aufruf verbraucht, und liefern Codec-Frames zurück.

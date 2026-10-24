@@ -265,7 +265,9 @@ JSON. Enumerar los adaptadores y su controlador no requiere elevación.
   perfil lo permite (**Usar otro códec si este no está disponible**), y
   en caso contrario es un error
 - Elige la frecuencia de muestreo de la familia aptX (44.1 / 48 kHz entre las que
-  anuncia el remoto; WASAPI remuestrea la captura); aptX Adaptive usa siempre 48 kHz
+  anuncia el remoto; WASAPI remuestrea la captura); aptX Adaptive usa 48 kHz, o
+  96 kHz cuando el perfil lo pide en Alta / Estándar / Móvil y el receptor
+  es R2 y anuncia 96 kHz
 
 ### Host Bluetooth (`bt-host`)
 
@@ -322,7 +324,7 @@ Captura el audio en tiempo real mediante Windows Audio Session API.
 | FastStream | el mismo codificador SBC | 198/216 kbps (44.1/48 kHz) | Códec de fabricante de CSR, solo en la dirección de música (sin canal de retorno de voz): SBC joint stereo con bitpool 29, tramas rellenadas hasta 72 bytes, 3 por paquete, sin encabezado de carga útil multimedia ni encabezado RTP (como PipeWire); Automático nunca lo elige |
 | LHDC V5 | lhdcv5-enc (port en C del codificador de AOSP) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24 bits, tramas de 5 ms, encabezado de carga útil multimedia de 2 bytes, encabezado RTP |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (estéreo; mono la mitad) | Experimental; Opus A2DP de Android: 48 kHz, tramas de 20 ms (10 ms si el receptor solo admite eso), VBR restringida limitada a la carga útil multimedia, una trama por paquete, encabezado de carga útil multimedia de 1 byte, encabezado RTP |
-| aptX Adaptive | aptx-adaptive (codificador en Rust puro de AKS-Logic/aptx-adaptive-linux, MIT) | Receptores R1: 427/364/318 kbps (Alta/Estándar/Móvil), 265 kbps Baja latencia; receptores R2: 427/270/204, 270 kbps | Experimental; 48 kHz estéreo, 24 bits; un paquete del códec por paquete multimedia tras el encabezado RTP propio de A2DPWB; ABR en Alta; Automático nunca lo elige |
+| aptX Adaptive | aptx-adaptive (codificador en Rust puro de AKS-Logic/aptx-adaptive-linux, MIT) | Receptores R1: 427/364/318 kbps (Alta/Estándar/Móvil), 265 kbps Baja latencia; receptores R2: 427/270/204, 270 kbps | Experimental; 48 kHz estéreo (96 kHz en HQ a un receptor R2 que lo anuncia, cuando se pide: 646/340/255 kbps), 24 bits; un paquete del códec por paquete multimedia tras el encabezado RTP propio de A2DPWB; ABR en Alta; Automático nunca lo elige |
 
 Todos los codificadores implementan el trait `codec::Encoder`: indican el formato PCM
 y el número de tramas que consume una llamada, y devuelven tramas del códec.
