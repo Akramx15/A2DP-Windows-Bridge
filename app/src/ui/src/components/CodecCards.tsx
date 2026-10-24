@@ -64,13 +64,24 @@ export function CodecCard(props: {
         />
         <span class="codec-card-name">{name()}</span>
         {/* The wrapper keeps the tag its own size in the card's column */}
-        <Show when={props.support !== "unknown" && props.support}>
+        {/* Unknown until the device's first connection */}
+        <Show when={props.support}>
           {(s) => (
             <span>
-              <span class={`tag ${s() === "offered" ? "st-good" : "st-bad"}`}>
-                <Icon name={s() === "offered" ? "checkmark" : "dismiss"} />
-                {s() === "offered" ? t("ui.profile.codec_supported") : t("ui.profile.codec_not_supported")}
-              </span>
+              <Show
+                when={s() !== "unknown"}
+                fallback={
+                  <span class="tag">
+                    <Icon name="question_circle" />
+                    {t("ui.profile.codec_support_unknown")}
+                  </span>
+                }
+              >
+                <span class={`tag ${s() === "offered" ? "st-good" : "st-bad"}`}>
+                  <Icon name={s() === "offered" ? "checkmark" : "dismiss"} />
+                  {s() === "offered" ? t("ui.profile.codec_supported") : t("ui.profile.codec_not_supported")}
+                </span>
+              </Show>
             </span>
           )}
         </Show>

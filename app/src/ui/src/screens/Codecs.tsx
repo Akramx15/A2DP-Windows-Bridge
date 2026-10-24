@@ -15,11 +15,11 @@ import { createSignal, For, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
-import { Banner, Button, Check, Toggle } from "../components/controls";
+import { Banner, Button, Check, HelpTip, Toggle } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
-import { CODECS, codecLabelKey, codecSpec, codecSupport, effectiveCodec, qualityRank, type CodecSpec } from "../lib/codecs";
+import { AUTO_ORDER, CODECS, codecLabelKey, codecSpec, codecSupport, effectiveCodec, qualityRank, type CodecSpec } from "../lib/codecs";
 import {
   audioEntries,
   entryBase,
@@ -242,11 +242,19 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean }) {
         {/* Nothing chosen yet: Auto, which Connect uses */}
         <Toggle
           label={t("ui.codecs.auto_select")}
+          help={() => (
+            <HelpTip label={t("ui.codecs.auto_order")}>
+              {t("ui.codecs.auto_order")}
+              <ol>
+                <For each={AUTO_ORDER}>{(id) => <li>{t(codecSpec(id).label)}</li>}</For>
+              </ol>
+            </HelpTip>
+          )}
           hint={
             auto()
               ? picked()
                 ? t("ui.codecs.auto_uses", t(codecSpec(picked()!).label))
-                : t("ui.codecs.auto_on")
+                : undefined
               : t("ui.codecs.auto_off")
           }
           checked={auto()}

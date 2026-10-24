@@ -158,7 +158,7 @@ pub struct SbcDetails {
     pub abr_bitpool: Option<(u32, u32)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SbcDeviceCaps {
     pub sample_rates: Vec<u32>,
     pub channel_modes: Vec<String>,
@@ -289,12 +289,14 @@ pub struct SourceInfo {
     pub waiting: bool,
 }
 
-/// What a device offered at its last connection
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// What a device offered at its last connection (kept in
+/// device_codecs.json, [`crate::devices::load_codecs`])
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct KnownCodecs {
     /// Codec keys ([`codec_keys`])
     pub keys: Vec<String>,
     /// Its SBC endpoint's capabilities, when it said
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sbc: Option<SbcDeviceCaps>,
 }
 

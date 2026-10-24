@@ -247,7 +247,8 @@ pub(crate) struct Inner {
     pub power: PowerState,
     tick: (Mutex<()>, Condvar),
     state: Mutex<StreamState>,
-    /// What each device (address) offered at its last connection
+    /// What each device (address) offered at its last connection, also
+    /// in device_codecs.json
     codecs: Mutex<BTreeMap<String, stream::KnownCodecs>>,
     /// The chip or firmware setting changed while the stack was in use:
     /// the next use starts a new stack (which loads the firmware again)
@@ -682,7 +683,14 @@ impl Inner {
     /// What a device offered (after capability discovery)
     pub fn record_codecs(&self, addr: &str, codecs: stream::KnownCodecs) {
         tracing::debug!("codecs of {addr}: {:?}, sbc {:?}", codecs.keys, codecs.sbc);
-        self.codecs.lock().unwrap_or_else(|e| e.into_inner()).insert(addr.to_uppercase(), codecs);
+        let mut known = self.codecs.lock().unwrap_or_else(|e| e.into_inner());
+        if known.get(&addr.to_uppercase()) == Some(&codecs) {
+            return;
+        }
+        known.insert(addr.to_uppercase(), codecs);
+        if let Err(e) = crate::devices::save_codecs(&self.opts.config_dir, &known) {
+            tracing::warn!("cannot save the devices' codecs: {e}");
+        }
     }
 
     pub fn save_device(&self, addr: &str, name: &str) {
@@ -736,6 +744,7 @@ impl Service {
             tracing::debug!("service: developer overrides {:?}", settings.dev_overrides);
         }
         apply_dev_overrides(&settings);
+        let codecs = crate::devices::load_codecs(&opts.config_dir);
         let inner = Arc::new(Inner {
             opts,
             settings: Mutex::new(settings),
@@ -747,7 +756,7 @@ impl Service {
             power: PowerState::default(),
             tick: (Mutex::new(()), Condvar::new()),
             state: Mutex::new(StreamState::Idle),
-            codecs: Mutex::new(BTreeMap::new()),
+            codecs: Mutex::new(codecs),
             reload: AtomicBool::new(false),
             le_cli: Mutex::new(None),
             le_active: AtomicBool::new(false),
