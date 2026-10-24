@@ -1,7 +1,7 @@
 // Codecs (issue #86, it replaced Profiles): each saved audio device with
 // its codec cards, the codecs it offered when it last connected in green
 // and the others in red (hidden unless asked for), each with its settings
-// behind "...". Each device has "Auto select the highest supported codec in
+// behind "...". Each device has "Auto-select the codec with the highest
 // quality" (its profile's codec "auto"): on, the cards only show what Auto
 // picks; off, choosing a card is choosing that device's codec, and a codec
 // the device does not offer falls back to the next one below it in

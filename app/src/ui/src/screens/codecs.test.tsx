@@ -29,7 +29,7 @@ const settled = (where: HTMLElement) =>
   waitFor(() => expect(within(where).getAllByRole("radio").every((r) => !(r as HTMLInputElement).disabled)).toBe(true));
 /** The screen itself (the sidebar names the devices too) */
 const main = () => within(screen.getByRole("main"));
-/** A device's "Auto select the highest supported codec in quality" switch */
+/** A device's "Auto-select the codec with the highest quality" switch */
 const autoSwitch = (where: HTMLElement) =>
   within(where).getByRole("switch", { name: (n) => n.startsWith(t("ui.codecs.auto_select")) });
 /** The profiles saved, in order */
