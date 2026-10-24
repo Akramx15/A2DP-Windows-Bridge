@@ -593,6 +593,8 @@
   "ui.adapter.firmware_not_realtek": "Aucun fichier Realtek requis",
   "ui.adapter.firmware_unsupported": "Non pris en charge",
   "ui.adapter.firmware_download_unavailable": "Téléchargement indisponible",
+  "ui.adapter.experimental": "Expérimental",
+  "ui.adapter.experimental_hint": "La prise en charge des adaptateurs de ce fabricant est expérimentale : elle n'a été essayée que sur peu d'adaptateurs.",
   "ui.adapter.firmware_choose_chip": "Choisissez la puce ci-dessous",
   "ui.adapter.assign_winusb": "Remplacer par le pilote WinUSB",
   "ui.adapter.assign_title": "Laisser A2DPWB utiliser cet adaptateur",

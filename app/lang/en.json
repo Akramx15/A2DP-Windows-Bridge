@@ -593,6 +593,8 @@
   "ui.adapter.firmware_not_realtek": "No Realtek files needed",
   "ui.adapter.firmware_unsupported": "Not supported",
   "ui.adapter.firmware_download_unavailable": "Download not available",
+  "ui.adapter.experimental": "Experimental",
+  "ui.adapter.experimental_hint": "Support for this vendor's adapters is experimental: it has been tried on only a few adapters so far.",
   "ui.adapter.firmware_choose_chip": "Choose the chip below",
   "ui.adapter.assign_winusb": "Replace with WinUSB driver",
   "ui.adapter.assign_title": "Let A2DPWB use this adapter",

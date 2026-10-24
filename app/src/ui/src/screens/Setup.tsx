@@ -16,7 +16,7 @@ import { t } from "../i18n";
 import { IpcError } from "../ipc/types";
 import type { AdapterInfo, Snapshot } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
-import { adapterIds, adapterName, adapterSupported, driverText, usableFirst } from "./Adapter";
+import { adapterExperimental, adapterIds, adapterName, adapterSupported, driverText, usableFirst } from "./Adapter";
 import { V1Running } from "./Home";
 
 export function needsSetup(snap: Snapshot): boolean {
@@ -40,7 +40,16 @@ function AdapterLine(props: { adapter: AdapterInfo }) {
           {adapterIds(props.adapter)} · {driverText(props.adapter.driver).text}
         </span>
       </span>
-      <span class={`tag st-${ok() ? "good" : "bad"}`}>{t(ok() ? "ui.setup.supported" : "ui.adapter.firmware_unsupported")}</span>
+      <Show
+        when={!ok() || !adapterExperimental(props.adapter)}
+        fallback={
+          <span class="tag st-warn" title={t("ui.adapter.experimental_hint")}>
+            {t("ui.adapter.experimental")}
+          </span>
+        }
+      >
+        <span class={`tag st-${ok() ? "good" : "bad"}`}>{t(ok() ? "ui.setup.supported" : "ui.adapter.firmware_unsupported")}</span>
+      </Show>
     </>
   );
 }

@@ -71,6 +71,8 @@ bt_version: string | null,
 /**
  * Device Manager's name for the radio while Windows' Bluetooth runs it
  * ("Realtek Bluetooth 5.3 Adapter"), remembered for when A2DPWB has it
- * on WinUSB; None if Windows never ran it
+ * on WinUSB; else the product name the device itself reports ("TP-Link
+ * UB500 Adapter"), not the driver's generic "WinUSB Device"; None if
+ * neither is known
  */
 windows_name: string | null, };

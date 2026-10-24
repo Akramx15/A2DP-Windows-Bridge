@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
 import { MockCore, type MockScenario, sampleSnapshot } from "../ipc/mock";
 import { createCore } from "../ipc/store";
-import { adapterIds, adapterName } from "./Adapter";
+import { adapterExperimental, adapterIds, adapterName } from "./Adapter";
 
 let mock: MockCore | null = null;
 
@@ -56,7 +56,22 @@ describe("Adapter firmware", () => {
     const { mock } = start();
     await screen.findByRole("heading", { level: 1, name: "Adapters" });
     const m = mock as any;
-    m.snap.adapter = { ...m.snap.adapter, adapters: sampleSnapshot("fresh").adapter.adapters };
+    const [mediatek, realtek] = sampleSnapshot("fresh").adapter.adapters;
+    // An Intel adapter on WinUSB that reports no product name
+    const intel = {
+      ...realtek,
+      instance_id: "USB\\VID_8087&PID_0033\\5&1",
+      vid: 0x8087,
+      pid: 0x0033,
+      display_name: "Intel (0x8087:0x0033) [experimental]",
+      vendor: "Intel",
+      driver: "winusb",
+      realtek_chip: null,
+      firmware_present: null,
+      vendor_note: { key: "firmware.vendor_intel", args: [] },
+      windows_name: null,
+    };
+    m.snap.adapter = { ...m.snap.adapter, adapters: [mediatek, realtek, intel] };
     m.emit({ kind: "adapter", value: m.snap.adapter });
     const rtl = await screen.findByRole("region", { name: "TP-Link Bluetooth USB Adapter (RTL8761BU)" });
     expect(rtl).toHaveTextContent("00:1A:7D:DA:71:13 | 2357:0604 | v5.1");
@@ -73,6 +88,10 @@ describe("Adapter firmware", () => {
     // The chip choice goes with the Realtek adapter only
     expect(within(mtk).queryByLabelText("Bluetooth Chip")).toBeNull();
     expect(within(rtl).getByLabelText("Bluetooth Chip")).toBeInTheDocument();
+    // "[experimental]" is a tag beside the name, not part of it
+    const intelCard = screen.getByRole("region", { name: "Intel" });
+    expect(intelCard).not.toHaveTextContent("[experimental]");
+    expect(within(intelCard).getByText("Experimental")).toHaveClass("st-warn");
   });
 
   it("adapter names", () => {
@@ -86,6 +105,11 @@ describe("Adapter firmware", () => {
     // The chip once only
     expect(adapterName({ ...a, windows_name: "Realtek RTL8761BU Bluetooth" })).toBe("Realtek RTL8761BU Bluetooth");
     expect(adapterIds({ address: null, vid: 0x0bda, pid: 0xa729, bt_version: null })).toBe("0BDA:A729");
+    // An Intel adapter on WinUSB without a product string: the mark is a tag
+    const intel = { ...a, display_name: "Intel (0x8087:0x0033) [experimental]", vendor: "Intel", realtek_chip: null };
+    expect(adapterName(intel)).toBe("Intel");
+    expect(adapterExperimental(intel)).toBe(true);
+    expect(adapterExperimental(a)).toBe(false);
   });
 
   it("opens the firmware folder", async () => {
