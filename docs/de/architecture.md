@@ -438,4 +438,4 @@ Formaten wie bei v1:
   einen eigenen USB-Adapter für A2DPWB verwenden
 - Die Firmware mancher Bluetooth-Adapter begrenzt die erreichbare Bitrate
 - USB-Bluetooth-Adapter ab Version 5.0 eignen sich im Allgemeinen gut für LDAC
-- Priorität der automatischen Codec-Auswahl: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimentell) > AAC > SBC XQ > SBC (FastStream, Opus 05 und aptX Adaptive, alle experimentell, nur wenn ausdrücklich gewählt)
+- Priorität der automatischen Codec-Auswahl: LHDC V5 > LDAC > aptX Adaptive > Opus (experimentell) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream und Opus 05, beide experimentell, nur wenn ausdrücklich gewählt)

@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 de PipeWire (e
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 para 96 kHz)
 ```
 
-Prioridad de la selección automática: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 y aptX Adaptive, todos experimentales, solo si se eligen)
+Prioridad de la selección automática: LHDC V5 > LDAC > aptX Adaptive > Opus (experimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream y Opus 05, ambos experimentales, solo si se eligen)
 
 Si los auriculares no ofrecen el códec solicitado, la CLI se detiene con un error que explica el motivo; use `-c auto` (el valor predeterminado) para tomar el mejor códec que ofrezcan. Automático nunca selecciona aptX Adaptive; use `-c aptxad`: consulte [Familia aptX y aptX Adaptive](#aptx-compatibility).
 
@@ -341,7 +341,7 @@ Cuando A2DPWB se conecta, los auriculares anuncian una **lista de códecs** (ext
 - **Los auriculares también ofrecen aptX clásico** -- Muchos auriculares aptX Adaptive lo hacen, porque Qualcomm promociona aptX Adaptive como retrocompatible con aptX / aptX HD. En ese caso A2DPWB selecciona directamente aptX clásico; es un códec independiente en la lista de los auriculares, no un modo reducido de aptX Adaptive.
 - **Los auriculares solo ofrecen aptX Adaptive** (sin aptX clásico, aptX HD ni aptX LL) -- elija aptX Adaptive expresamente (experimental). Automático elige el siguiente códec en el orden de prioridad, normalmente AAC o SBC.
 
-Prioridad de la selección automática: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 y aptX Adaptive, todos experimentales, solo si se eligen)
+Prioridad de la selección automática: LHDC V5 > LDAC > aptX Adaptive > Opus (experimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream y Opus 05, ambos experimentales, solo si se eligen)
 
 ### El códec seleccionado no está disponible {#codec-fallback}
 

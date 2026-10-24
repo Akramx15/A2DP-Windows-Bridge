@@ -261,10 +261,11 @@ result. Listing adapters and their driver needs no elevation.
 - Parses the remote's capabilities: the standard SBC and AAC elements and the
   vendor codecs, including aptX LL under both vendor IDs and aptX Adaptive
   (R1 and R2 sinks; usable only with 48 kHz stereo)
-- Picks the codec: Auto takes the best codec the remote offers; a requested
-  codec the remote does not offer is replaced by Auto's choice when the
-  profile allows it (**Use another codec if this one is not available**), and
-  is an error otherwise
+- Picks the codec: Auto takes the codec with the highest sound quality the
+  remote offers; a requested codec the remote does not offer is replaced by
+  the next one below it in that order the remote offers (always for a
+  profile, since issue #86; the command line only with `--fallback`), and is
+  an error otherwise
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
   advertises; WASAPI resamples the capture); aptX Adaptive uses 48 kHz, or
   96 kHz when the profile asks for it in High / Standard / Mobile and the sink
@@ -325,7 +326,7 @@ Captures audio in real time using the Windows Audio Session API.
 | FastStream | the same SBC encoder | 198/216 kbps (44.1/48 kHz) | CSR vendor codec, music direction only (no voice backchannel): SBC joint stereo bitpool 29, frames padded to 72 bytes, 3 per packet, no media payload header and no RTP header (as PipeWire); never chosen by Auto |
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 | Opus | libopus 1.5.2 | 128/192/256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
-| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | R1 sinks: 427/364/318 kbps (High/Standard/Mobile), 265 kbps Low Latency; R2 sinks: 427/270/204, 270 kbps | Experimental; 48 kHz stereo (96 kHz in HQ to an R2 sink that lists it, when asked for: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; never chosen by Auto |
+| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | R1 sinks: 427/364/318 kbps (High/Standard/Mobile), 265 kbps Low Latency; R2 sinks: 427/270/204, 270 kbps | Experimental; 48 kHz stereo (96 kHz in HQ to an R2 sink that lists it, when asked for: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; Auto takes it after LHDC V5 and LDAC |
 
 All encoders implement the `codec::Encoder` trait: they state the PCM
 format and the number of frames one call consumes, and return codec frames.
@@ -395,8 +396,8 @@ behind A2DPWB's own 12-byte RTP header (BTstack adds none): payload type 96,
 sequence number +1 per packet, timestamp = the samples per channel in the
 packet (not a clock), SSRC = the sink's latency mode (0x000000A3 HQ,
 0x000000A1 LL). The payload is byte-swapped in 16-bit words. HQ packets are
-656 bytes (12 ms), LL packets 348 bytes (10 ms). Auto never selects it; a
-sink that also lists classic aptX gets classic aptX from Auto.
+656 bytes (12 ms), LL packets 348 bytes (10 ms). Auto selects it over
+classic aptX, Opus and AAC (issue #86's order), below LHDC V5 and LDAC.
 
 ## Settings and Files
 
@@ -440,4 +441,4 @@ formats as v1:
   dedicated USB adapter for A2DPWB
 - Some Bluetooth adapters' firmware limits achievable bitrate
 - USB Bluetooth 5.0+ adapters generally work well for LDAC
-- Auto codec selection priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 and aptX Adaptive only when chosen)
+- Auto codec selection priority (by sound quality, issue #86): LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream and Opus 05 only when chosen); a chosen codec the device does not offer falls back down this list

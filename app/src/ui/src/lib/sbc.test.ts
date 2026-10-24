@@ -32,8 +32,8 @@ describe("SBC frame length and bit rate", () => {
     // Auto: joint stereo, 16 blocks, 8 subbands, the quality's bitpool
     expect(sbcSetup(sbc(), 44100, null)).toMatchObject({ blocks: 16, subbands: 8, mode: "joint_stereo", bitpool: 53, kbps: 327 });
     expect(sbcSetup(sbc({ quality: "sq" }), 48000, null)).toMatchObject({ bitpool: 35, kbps: 249 });
-    // Dual channel halves the auto bitpool per channel; a bitpool asked for wins
-    expect(sbcSetup(sbc({ sbc_channel_mode: "dual_channel" }), 44100, null)).toMatchObject({ bitpool: 27, kbps: 330 });
+    // Plain SBC has no dual channel (SBC XQ is that, issue #86): joint stereo; a bitpool asked for wins
+    expect(sbcSetup(sbc({ sbc_channel_mode: "dual_channel" }), 44100, null)).toMatchObject({ mode: "joint_stereo", bitpool: 53 });
     expect(sbcSetup(sbc({ sbc_bitpool: 40, sbc_blocks: 8, sbc_subbands: 4 }), 44100, null)).toMatchObject({ frameBytes: 49, kbps: 540 });
     // SBC XQ: dual channel whatever was asked, its own bitpools
     const xq = sampleProfile({ codec: "sbcxq", sbc_channel_mode: "stereo" });

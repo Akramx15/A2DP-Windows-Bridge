@@ -2,7 +2,21 @@ import { describe, expect, it } from "vitest";
 import { setLanguage, t } from "../i18n";
 import { sampleProfile } from "../ipc/mock";
 import type { LogLine } from "../ipc/types";
-import { abrCarries, bitDepths, bitrateNoteKey, carryToCodec, codecLabelKey, fitToCodec, fixedBitDepth, qualityIgnored, qualityTag, sampleRates } from "./codecs";
+import {
+  abrCarries,
+  AUTO_ORDER,
+  autoPick,
+  bitDepths,
+  bitrateNoteKey,
+  carryToCodec,
+  codecLabelKey,
+  effectiveCodec,
+  fitToCodec,
+  fixedBitDepth,
+  qualityIgnored,
+  qualityTag,
+  sampleRates,
+} from "./codecs";
 import { FlowTracker, stepDetail } from "./flow";
 import { knowAdapters, maskIdentifiers, parseAddress } from "./format";
 import { bugReportUrl, thirdPartyUrl } from "./links";
@@ -457,5 +471,33 @@ describe("profile list", () => {
     expect(tag({ codec: "aptxhd" })).toBeNull();
     expect(tag({ codec: "faststream" })).toBeNull();
     expect(tag({ codec: "auto", le_audio: true })).toBeNull();
+  });
+});
+
+describe("Auto's order and the fallback (issue #86)", () => {
+  it("goes by sound quality, as the core", () => {
+    expect(AUTO_ORDER).toEqual(["lhdcv5", "ldac", "aptxad", "opus", "aptxhd", "aptx", "aptxll", "aac", "sbcxq", "sbc"]);
+    expect(autoPick(["sbc", "aac", "aptx", "aptxad"])).toBe("aptxad");
+    expect(autoPick(["sbc", "aac", "ldac", "lhdcv5"])).toBe("lhdcv5");
+    expect(autoPick(["sbc", "faststream", "opus05"])).toBe("sbc");
+    expect(autoPick([])).toBeNull();
+  });
+
+  it("falls back to the next codec below the chosen one the device offers", () => {
+    // The EarFun (no LHDC): LHDC V5 chosen gives aptX Adaptive, the next one it has
+    const earfun = ["sbc", "aac", "aptx", "aptxad"];
+    expect(effectiveCodec("lhdcv5", earfun)).toBe("aptxad");
+    expect(effectiveCodec("aptxhd", earfun)).toBe("aptx");
+    // Not "the best": LDAC above aptX HD is not taken
+    expect(effectiveCodec("aptxhd", ["sbc", "aac", "ldac"])).toBe("aac");
+    expect(effectiveCodec("sbcxq", ["sbc", "aac"])).toBe("sbc");
+    // Offered: itself; Auto: its pick
+    expect(effectiveCodec("aac", earfun)).toBe("aac");
+    expect(effectiveCodec("auto", earfun)).toBe("aptxad");
+    // Opus 05 stands with Opus, FastStream below SBC (then the best there is)
+    expect(effectiveCodec("opus05", ["sbc", "opus"])).toBe("opus");
+    expect(effectiveCodec("faststream", ["sbc", "aac"])).toBe("aac");
+    // Not known yet
+    expect(effectiveCodec("ldac", [])).toBeNull();
   });
 });

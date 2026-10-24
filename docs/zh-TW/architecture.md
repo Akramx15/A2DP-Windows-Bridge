@@ -406,4 +406,4 @@ A2DPWB 自己的 12 位元組 RTP 標頭（BTstack 不另加）：酬載類型 9
   A2DPWB 使用專用的 USB 介面卡
 - 部分藍牙介面卡的韌體會限制可達到的位元率
 - USB 藍牙 5.0 以上的介面卡通常很適合 LDAC
-- 自動轉碼器選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（實驗性） > AAC > SBC XQ > SBC（FastStream、Opus 05 與 aptX Adaptive 僅在明確選擇時使用）
+- 自動轉碼器選擇的優先順序：LHDC V5 > LDAC > aptX Adaptive > Opus（實驗性） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 與 Opus 05 僅在明確選擇時使用）

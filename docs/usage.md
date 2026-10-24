@@ -31,10 +31,11 @@ The sidebar shows the same for every device on every screen.
 
 ### Codecs {#codecs}
 
-The codec of each saved audio device, one section per device (name, address, **Paired** / **Audio** tags) with its codec cards: **Auto** (the best codec the device supports) and the codecs the device offered when it last connected, each with three bars (sound quality, low latency, stability). Click a card to choose that device's codec; it is saved at once, and a device streaming connects again with it.
+The codec of each saved audio device, one section per device (name, address, **Paired** / **Audio** tags) with its codec cards, highest sound quality first, each with three bars (sound quality, low latency, stability) and whether the device offered it when it last connected: **Supported** in green, **Not supported** in red.
 
+- **Auto select the highest supported codec in quality** (each device; on for a new device): A2DPWB uses the codec with the highest sound quality the device supports, in this order: LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. The cards are read-only and show the codec in use (or the one Auto will pick). Turn it off to choose the codec and its settings yourself
+- With it off, click a card to choose that device's codec; it is saved at once, and a device streaming connects again with it. If the device does not support the codec, the next supported codec below it in quality is used (see [Explicitly Selected Codec Not Offered](#codec-fallback))
 - **Hide the codecs the audio device does not support** (on by default): the codecs a device did not offer are left out (the number hidden is in brackets). Before a device's first connection, all of them are shown
-- **Use another supported codec if this one is not available** (on by default, for all devices; see [Explicitly Selected Codec Not Offered](#codec-fallback))
 - **...** on a card opens that codec's settings; **OK** chooses the codec with them. Each codec keeps its own settings: choosing another codec and coming back brings them back. Only what that codec can do is offered:
   - **Quality**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps); LHDC V5 High (1000 kbps) / Medium-High (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), the four levels Android offers; aptX Adaptive High / Standard / Mobile / Low Latency (see [aptX Adaptive](#aptx-adaptive)); AAC has quality levels too, the other aptX codecs a fixed bitrate. SBC and SBC XQ show the bit rate their bitpool and frame setup give
   - **ABR (Adaptive Bit Rate)**: for LDAC, LHDC V5, aptX Adaptive, SBC and SBC XQ (see [ABR](#abr)); **VBR** for AAC
@@ -139,9 +140,9 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (ex
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 for 96 kHz)
 ```
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 and aptX Adaptive, all experimental, only when chosen)
+Auto-select priority: LHDC V5 > LDAC > aptX Adaptive > Opus (experimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream and Opus 05, both experimental, only when chosen)
 
-If the requested codec is not offered by the headphones, the CLI stops with an error that says why; use `-c auto` (the default) to take the best codec they offer. Auto never selects aptX Adaptive; use `-c aptxad` -- see [aptX Family and aptX Adaptive](#aptx-compatibility).
+If the requested codec is not offered by the headphones, the CLI stops with an error that says why; use `-c auto` (the default) to take the best codec they offer, or `--fallback` to take the next codec below the requested one, as the app does -- see [aptX Family and aptX Adaptive](#aptx-compatibility).
 
 ### Quality
 
@@ -329,7 +330,7 @@ A2DPWB supports three aptX codecs encoded with [libopenaptx](https://github.com/
 
 The encoder is the pure-Rust aptX Adaptive encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). Upstream describes it as a clean-room reimplementation whose numeric tables were reconstructed from lawfully obtained shipped Qualcomm binaries and on-air captures; no Qualcomm code, SDK or binary is included (see [Licenses](licenses)).
 
-- **Choosing it**: Auto never picks it. Choose **aptX Adaptive** on **Codecs**, or `-c aptxad`.
+- **Choosing it**: Auto picks it when the headphones offer neither LHDC V5 nor LDAC. Or choose **aptX Adaptive** on **Codecs**, or `-c aptxad`.
 - **Format**: 48 kHz stereo, 24-bit only; 44.1 or 96 kHz requests are captured at 48 kHz.
 - **Headphones**: R1 sinks (no capability extension, e.g. B&W Px7 S2e) and R2 sinks (R2 bitstream).
 
@@ -346,12 +347,12 @@ The encoder is the pure-Rust aptX Adaptive encoder of [AKS-Logic/aptx-adaptive-l
 
 ### There is no "fallback" from aptX Adaptive to aptX
 
-When A2DPWB connects, the headphones advertise a **list of codecs** (AVDTP stream endpoints). A2DPWB chooses one codec from that list. aptX Adaptive and classic aptX are separate entries in it, and Auto never picks aptX Adaptive, so nothing "falls back" from it:
+When A2DPWB connects, the headphones advertise a **list of codecs** (AVDTP stream endpoints). A2DPWB chooses one codec from that list. aptX Adaptive and classic aptX are separate entries in it, so nothing "falls back" from one to the other inside the codec:
 
-- **The headphones also list classic aptX** -- Many aptX Adaptive headphones do, because Qualcomm markets aptX Adaptive as backward compatible with aptX / aptX HD. In that case A2DPWB selects classic aptX directly; it is a separate codec in the headphones' list, not a reduced mode of aptX Adaptive.
-- **The headphones list only aptX Adaptive** (no classic aptX, aptX HD or aptX LL) -- choose aptX Adaptive explicitly (experimental). Auto picks the next codec in the priority order, typically AAC or SBC.
+- **The headphones also list classic aptX** -- Many aptX Adaptive headphones do, because Qualcomm markets aptX Adaptive as backward compatible with aptX / aptX HD. Auto picks aptX Adaptive (above aptX HD and aptX); classic aptX is used when you choose it, as a separate codec in the headphones' list, not a reduced mode of aptX Adaptive.
+- **The headphones list only aptX Adaptive** (no classic aptX, aptX HD or aptX LL) -- choosing aptX falls back to the next codec below it they offer, typically AAC or SBC; choose aptX Adaptive (or Auto) to use it.
 
-Auto-select priority: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (experimental) > AAC > SBC XQ > SBC (FastStream, Opus 05 and aptX Adaptive, all experimental, only when chosen)
+Auto-select priority: LHDC V5 > LDAC > aptX Adaptive > Opus (experimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream and Opus 05, both experimental, only when chosen)
 
 ### Explicitly Selected Codec Not Offered {#codec-fallback}
 
@@ -359,11 +360,10 @@ When you request a specific codec that the headphones do not list:
 
 | Where | Behavior |
 |:------|:---------|
-| **Use another supported codec if this one is not available** on (default) | Connects with the best codec the headphones offer, in the Auto priority order, and the codec badge says which codec is used instead and why. |
-| Option off | The connection stops with an error ("Device does not support ..."). If you requested aptX, aptX HD or aptX LL and the headphones offer only aptX Adaptive, the message says so and suggests aptX Adaptive (experimental), Auto, AAC or SBC. |
-| CLI (`-c <codec>`) | Stops with the same error. Use `-c auto` to connect with the best codec offered. |
+| App (**Codecs**, Auto off) | Connects with the next codec below the chosen one in the Auto priority order that the headphones offer (LHDC V5 chosen, headphones with LDAC: LDAC; with aptX Adaptive but no LDAC: aptX Adaptive), and the codec badge says which codec is used instead and why. A codec the headphones do not offer is never tried. The **Codecs** screen says so beforehand when the headphones did not offer it at their last connection. |
+| CLI (`-c <codec>`) | Stops with an error ("Device does not support ..."); if you requested aptX, aptX HD or aptX LL and the headphones offer only aptX Adaptive, the message says so. Add `--fallback` to fall back as the app does, or use `-c auto`. |
 
-The option is at the top of the **Codecs** screen, for all devices (not used with Auto).
+Earlier versions had the option **Use another supported codec if this one is not available** instead, which took Auto's choice rather than the next codec down; the fallback is now always on.
 
 ### Codec Missing While the Headphones Are Connected to Another Device {#sep-in-use}
 

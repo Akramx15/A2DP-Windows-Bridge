@@ -463,6 +463,30 @@ option {
   font-weight: 600;
   font-size: var(--fs-14);
 }
+/* The label, and an info button that shows the details (issue #86) */
+.field-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+.field-more-btn {
+  width: 1.5rem;
+  min-height: 1.5rem;
+  color: var(--text-3);
+}
+.field-more-btn.on {
+  color: var(--accent-1);
+}
+.field-more {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--border-strong);
+}
+.capture-source > .select {
+  flex: 1;
+}
 .field-error {
   display: inline-flex;
   align-items: center;
@@ -1584,6 +1608,20 @@ option {
 .codec-card.on {
   border-color: var(--text);
   background: var(--surface-2);
+}
+/* Auto chooses: the cards only show its pick */
+.codec-card.ro,
+.codec-card.ro input {
+  cursor: default;
+}
+.codec-card.ro:not(.on) {
+  opacity: 0.75;
+}
+.codec-card.ro:hover:not(.on) {
+  border-color: var(--border);
+}
+.device-codecs .toggle-row {
+  padding: 0;
 }
 .codec-card-name {
   font-weight: 600;

@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (ex
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 for 96 kHz)
 ```
 
-自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream、Opus 05 和 aptX Adaptive 均为实验性，仅在明确选择时使用）
+自动选择的优先级：LHDC V5 > LDAC > aptX Adaptive > Opus（实验性）> aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 和 Opus 05 均为实验性，仅在明确选择时使用）
 
 如果耳机不提供所请求的编解码器，CLI 会停止并显示说明原因的错误；使用 `-c auto`（默认）即可采用耳机提供的最佳编解码器。“自动”永远不会选择 aptX Adaptive；请使用 `-c aptxad`——请参阅 [aptX 系列与 aptX Adaptive](#aptx-compatibility)。
 
@@ -341,7 +341,7 @@ A2DPWB 连接时，耳机会通告一个**编解码器列表**（AVDTP 流端点
 - **耳机同时列出了经典 aptX**——许多 aptX Adaptive 耳机都是如此，因为 Qualcomm 宣传 aptX Adaptive 向下兼容 aptX / aptX HD。这种情况下 A2DPWB 会直接选择经典 aptX；它是耳机列表中独立的一种编解码器，而不是 aptX Adaptive 的降级模式。
 - **耳机只列出了 aptX Adaptive**（没有经典 aptX、aptX HD 或 aptX LL）——请明确选择 aptX Adaptive（实验性）。“自动”会按优先级顺序选择下一个编解码器，通常是 AAC 或 SBC。
 
-自动选择的优先级：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（实验性）> AAC > SBC XQ > SBC（FastStream、Opus 05 和 aptX Adaptive 均为实验性，仅在明确选择时使用）
+自动选择的优先级：LHDC V5 > LDAC > aptX Adaptive > Opus（实验性）> aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 和 Opus 05 均为实验性，仅在明确选择时使用）
 
 ### 明确指定的编解码器不可用 {#codec-fallback}
 

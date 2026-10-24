@@ -140,7 +140,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire の Opus 05�
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive（試験的。48 kHz、96 kHz は --rate 96000）
 ```
 
-自動選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream、Opus 05、aptX Adaptive はいずれも試験的で、明示的に選んだときだけ）
+自動選択の優先順位: LHDC V5 > LDAC > aptX Adaptive > Opus（試験的） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream、Opus 05 はいずれも試験的で、明示的に選んだときだけ）
 
 指定したコーデックをヘッドホンが提供していない場合、CLI は理由を表示してエラーで止まります。ヘッドホンが提供する一番良いコーデックを使うには `-c auto`（既定）にしてください。Auto は aptX Adaptive を選びません。`-c aptxad` を指定してください -- [aptX ファミリーと aptX Adaptive](#aptx-compatibility)を参照してください。
 
@@ -352,7 +352,7 @@ A2DPWB は [libopenaptx](https://github.com/pali/libopenaptx) でエンコード
 - **ヘッドホンがクラシック aptX も通知している場合** -- Qualcomm は aptX Adaptive を aptX / aptX HD と下位互換があると案内しているため、多くの aptX Adaptive 対応ヘッドホンがこれに該当します。この場合 A2DPWB はクラシック aptX を直接選択します。aptX はヘッドホンの一覧にある独立したコーデックであり、aptX Adaptive の縮退モードではありません。
 - **ヘッドホンが aptX Adaptive のみを通知している場合**（クラシック aptX・aptX HD・aptX LL がない） -- aptX Adaptive（試験的）を明示的に選んでください。Auto は優先順位に従って次のコーデック（通常は AAC か SBC）を選びます。
 
-自動選択の優先順位: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（試験的） > AAC > SBC XQ > SBC（FastStream、Opus 05、aptX Adaptive はいずれも試験的で、明示的に選んだときだけ）
+自動選択の優先順位: LHDC V5 > LDAC > aptX Adaptive > Opus（試験的） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream、Opus 05 はいずれも試験的で、明示的に選んだときだけ）
 
 ### 指定したコーデックがない場合 {#codec-fallback}
 

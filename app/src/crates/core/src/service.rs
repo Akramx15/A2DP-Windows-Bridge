@@ -268,6 +268,10 @@ pub(crate) struct Inner {
     /// The session waits for headphones that were turned off: a scan may
     /// end it
     waiting: AtomicBool,
+    /// The headphones of the last session were turned off and did not come
+    /// back while it ran: a Bluetooth restart does not reconnect them
+    /// (issues #86, #117)
+    turned_off: AtomicBool,
     /// The device (address in capitals) of the A2DP session, while one
     /// runs: its own options (Settings::device_options) are in force
     device: Mutex<Option<String>>,
@@ -278,8 +282,18 @@ impl Inner {
         self.stop.load(Ordering::Acquire)
     }
 
-    pub fn waiting_for_device(&self, on: bool) {
-        self.waiting.store(on, Ordering::Release);
+    /// The session waits for headphones that were turned off
+    pub fn waiting_for_device(&self) {
+        self.turned_off.store(true, Ordering::Release);
+        self.waiting.store(true, Ordering::Release);
+    }
+
+    /// The wait ended: `back`, the headphones connected again
+    pub fn done_waiting_for_device(&self, back: bool) {
+        if back {
+            self.turned_off.store(false, Ordering::Release);
+        }
+        self.waiting.store(false, Ordering::Release);
     }
 
     pub fn notify(&self, state: StreamState, msg: Msg) {
@@ -742,6 +756,7 @@ impl Service {
             le_support: Mutex::new(None),
             streamed: AtomicBool::new(false),
             waiting: AtomicBool::new(false),
+            turned_off: AtomicBool::new(false),
             device: Mutex::new(None),
         });
         // Without a window, also while only the tray runs
@@ -873,21 +888,34 @@ impl Service {
     /// Stops the stack, releasing the adapter (e.g. before its driver is
     /// changed); the next use starts a new one
     pub fn release_adapter(&self) {
+        self.forget_session();
         self.shutdown();
     }
 
+    /// Disconnect (the window, the tray): the session stops, and a
+    /// Bluetooth restart does not connect it again (issue #86)
+    pub fn disconnect(&self) {
+        self.forget_session();
+        self.stop_streaming();
+    }
+
+    fn forget_session(&self) {
+        *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
     /// Restarts Bluetooth (the Adapters page): the stack is stopped, and
-    /// when a session was connecting to or streaming to a device, its
-    /// request is returned to be started again on a new stack (the same
-    /// device, profile and codec), as a session reconnects after the other
-    /// stack restarts (sleep, a stopped adapter). A session that waits for
-    /// headphones that were turned off just ends (issue #86).
+    /// the last session's request is returned to be started again on a new
+    /// stack (the same device, profile and codec), as a session reconnects
+    /// after the other stack restarts (sleep, a stopped adapter): while it
+    /// connects or streams, and also after it ended on its own (an error, a
+    /// lost link), which a restart is often meant to fix. Not after
+    /// Disconnect, and not when the headphones were turned off: a session
+    /// that waits for them just ends (issue #86).
     pub fn restart_adapter(&self) -> Option<StreamRequest> {
         let last = self.last_request.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let again = reconnect_after_restart(
-            self.is_running(),
-            self.inner.waiting.load(Ordering::Acquire),
-            self.inner.stop_requested(),
+            self.is_running() && self.inner.stop_requested(),
+            self.inner.turned_off.load(Ordering::Acquire),
             last,
         );
         tracing::info!(
@@ -962,6 +990,7 @@ impl Service {
         );
         self.stop_streaming();
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
+        self.inner.turned_off.store(false, Ordering::Release);
         self.inner.stop.store(false, Ordering::Release);
         self.inner.running.store(true, Ordering::Release);
         self.inner.notify(StreamState::Connecting, Msg::new("status.initializing"));
@@ -1110,16 +1139,11 @@ impl Drop for Service {
     }
 }
 
-/// The request to start again after a Bluetooth restart: the session's,
-/// while one runs that is neither being stopped nor waiting for headphones
-/// that were turned off
-fn reconnect_after_restart(
-    running: bool,
-    waiting: bool,
-    stopping: bool,
-    last: Option<StreamRequest>,
-) -> Option<StreamRequest> {
-    last.filter(|_| running && !waiting && !stopping)
+/// The request to start again after a Bluetooth restart: the last
+/// session's (None after Disconnect), unless it is being stopped or its
+/// headphones were turned off
+fn reconnect_after_restart(stopping: bool, turned_off: bool, last: Option<StreamRequest>) -> Option<StreamRequest> {
+    last.filter(|_| !stopping && !turned_off)
 }
 
 /// Marks a scan while it runs (also when it returns early)
@@ -1152,13 +1176,59 @@ mod tests {
         .to_request(1000)
         .unwrap();
         let last = || Some(req.clone());
-        // Streaming (or connecting): the same request again
-        assert_eq!(reconnect_after_restart(true, false, false, last()), last());
-        // Nothing runs, it is being stopped, or the headphones are off
-        assert_eq!(reconnect_after_restart(false, false, false, last()), None);
-        assert_eq!(reconnect_after_restart(true, false, true, last()), None);
-        assert_eq!(reconnect_after_restart(true, true, false, last()), None);
-        assert_eq!(reconnect_after_restart(true, false, false, None), None);
+        // Streaming, connecting, or ended on its own: the same request again
+        assert_eq!(reconnect_after_restart(false, false, last()), last());
+        // Being stopped, the headphones are off, or nothing to reconnect
+        // (none ran, or Disconnect forgot it)
+        assert_eq!(reconnect_after_restart(true, false, last()), None);
+        assert_eq!(reconnect_after_restart(false, true, last()), None);
+        assert_eq!(reconnect_after_restart(false, false, None), None);
+    }
+
+    fn service() -> Service {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-service-restart-{}", std::process::id()));
+        let opts = ServiceOptions {
+            config_dir: dir,
+            hci_tcp: None,
+            capture: bt_host::HciCapture::new(),
+            afh: None,
+            usb: Default::default(),
+        };
+        let (tx, _rx) = std::sync::mpsc::channel();
+        Service::new(opts, tx)
+    }
+
+    fn request() -> StreamRequest {
+        crate::profiles::Profile {
+            device_address: "00:11:22:33:44:55".into(),
+            codec: "sbc".into(),
+            ..Default::default()
+        }
+        .to_request(1000)
+        .unwrap()
+    }
+
+    #[test]
+    fn a_bluetooth_restart_follows_disconnect_and_turned_off_headphones() {
+        let s = service();
+        // Nothing ran yet
+        assert_eq!(s.restart_adapter(), None);
+        // A session that ended on its own (an error): connected again, also
+        // after a second restart that found nothing running
+        *s.last_request.lock().unwrap() = Some(request());
+        assert_eq!(s.restart_adapter(), Some(request()));
+        assert_eq!(s.restart_adapter(), Some(request()));
+        // Its headphones were turned off and did not come back
+        s.inner.waiting_for_device();
+        s.inner.done_waiting_for_device(false);
+        assert_eq!(s.restart_adapter(), None);
+        // ... or did
+        s.inner.waiting_for_device();
+        s.inner.done_waiting_for_device(true);
+        assert_eq!(s.restart_adapter(), Some(request()));
+        // Disconnect
+        s.disconnect();
+        assert_eq!(s.restart_adapter(), None);
     }
 
     #[test]

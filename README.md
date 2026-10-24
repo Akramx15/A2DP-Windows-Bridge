@@ -21,14 +21,14 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 ¹ |
 | Opus (Android) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
 | Opus 05 (PipeWire) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 ¹ ² |
-| aptX Adaptive | 265–427 kbps (96 kHz: up to 646) | 48/96 kHz | 24 bit | ❌ | 🧪 ¹ ³ |
+| aptX Adaptive | 265–427 kbps (96 kHz: up to 646) | 48/96 kHz | 24 bit | ❌ | 🧪 ³ |
 | LC3 (LE Audio) | 32–124 kbps per channel | 16–48 kHz | 16 bit | Windows 11 ⁴ | 🧪 ⁵ |
 
 ✅ supported · 🧪 experimental: passes the encoder tests and the end-to-end test against a virtual Bluetooth sink, but not yet confirmed with real headphones that use it ([reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)) · ❌ not supported
 
 ¹ Auto never picks it; choose it on **Codecs**. ² Only PipeWire (Linux) receivers implement it. ³ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; not yet verified with headphones. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per device (its LE Audio entry on **Codecs**), and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
 
-Auto picks LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
+Auto picks LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
 
 ## Requirements
 

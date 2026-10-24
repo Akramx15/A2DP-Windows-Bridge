@@ -37,6 +37,9 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   -c <codec>           ldac, aptxhd, aptxll, aptx, aptxad, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream, auto (default)
   -q <quality>          hq (default), sq, mq; mhq for LHDC V5; ll (low latency) for aptX Adaptive
   -a                    adaptive bit rate (LDAC, LHDC V5, aptX Adaptive; SBC / SBC XQ: bitpool)
+  --fallback            a codec -c the device does not offer falls back to the
+                        next one below it in quality (as a profile), instead of
+                        an error
   -m <mode>             capture: loopback (default), virtual, app
   --audio-device <id>   render device for -m virtual
   --app <exe>           executable for -m app
@@ -47,7 +50,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   --sbc-subbands <n>    SBC / SBC XQ subbands: 4, 8 (default)
   --sbc-alloc <method>  SBC / SBC XQ allocation: loudness (default), snr
   --sbc-mode <mode>     SBC channel mode: joint_stereo (default), stereo,
-                        dual_channel, mono
+                        mono (dual channel: -c sbcxq)
   --sbc-bitpool <n>     SBC / SBC XQ bitpool (default: by quality)
   --afh <policy>        auto, off or Wi-Fi channels to avoid such as 6,11
   --remote-sink <host[:port]|auto>
@@ -69,6 +72,8 @@ Development / testing:
   --duration <seconds>  stop after this time (default: Ctrl+C)
   --sessions <n>        stream n times in a row with --duration each, as
                         Disconnect / Connect in the app (A2DP)
+  --restart             with --sessions: between sessions restart Bluetooth
+                        as the Adapters page does, which connects again
   --le-sim-volume <level>[,<s>:<level>...]
                         LE Audio: VolumeSync with a simulated Windows volume
                         0-127 (changed at <s> seconds); the real volume is not
@@ -90,6 +95,8 @@ struct Args {
     codec: Option<CodecKind>,
     quality: Quality,
     abr: bool,
+    /// --fallback: a codec the device does not offer falls back, as a profile's
+    fallback: bool,
     mode: String,
     audio_device: String,
     app: String,
@@ -109,6 +116,9 @@ struct Args {
     /// --sessions: streams one after the other in this process (Connect,
     /// --duration, Disconnect), as the UI's Disconnect / Connect (issue #84)
     sessions: u32,
+    /// --restart: between sessions Bluetooth is restarted instead, as on
+    /// the Adapters page, and the session connects again (issue #86)
+    restart: bool,
     le: LeArgs,
 }
 
@@ -156,6 +166,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         codec: None,
         quality: Quality::High,
         abr: false,
+        fallback: false,
         mode: "loopback".into(),
         audio_device: String::new(),
         app: String::new(),
@@ -172,6 +183,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         test_tone: false,
         duration: None,
         sessions: 1,
+        restart: false,
         le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
@@ -200,6 +212,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
             "-q" => a.quality = Quality::from_key(&value(&mut it, "-q")?.to_lowercase()),
             "-a" => a.abr = true,
+            "--fallback" => a.fallback = true,
             "-m" => a.mode = value(&mut it, "-m")?.to_lowercase(),
             "--audio-device" => a.audio_device = value(&mut it, "--audio-device")?,
             "--app" => a.app = value(&mut it, "--app")?,
@@ -231,9 +244,11 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
             "--sbc-mode" => {
                 let v = value(&mut it, "--sbc-mode")?.to_lowercase();
+                // Dual channel is SBC XQ's (issue #86)
                 a.sbc.channel_mode = Some(
                     codec::sbc::ChannelMode::from_key(&v)
-                        .ok_or("--sbc-mode takes joint_stereo, stereo, dual_channel or mono")?,
+                        .filter(|m| *m != codec::sbc::ChannelMode::DualChannel)
+                        .ok_or("--sbc-mode takes joint_stereo, stereo or mono (dual channel: -c sbcxq)")?,
                 );
             }
             "--sbc-bitpool" => {
@@ -261,6 +276,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
                     return Err("--sessions needs at least 1".into());
                 }
             }
+            "--restart" => a.restart = true,
             "--le-audio" => a.le.on = true,
             "--le-device" => {
                 a.le.on = true;
@@ -476,7 +492,7 @@ pub fn run(args: &[String]) -> i32 {
         device,
         device_name,
         codec: a.codec,
-        codec_fallback: false,
+        codec_fallback: a.fallback,
         quality: a.quality,
         abr: a.abr,
         sbc_bitpool: a.sbc_bitpool,
@@ -491,11 +507,27 @@ pub fn run(args: &[String]) -> i32 {
     };
 
     let mut code = 0;
+    let mut request = request;
     for session in 1..=a.sessions {
-        if session > 1 {
+        if session > 1 && a.restart {
+            // Restart Bluetooth, as the Adapters page does: the session
+            // connects again on the new stack
+            println!("\nRestarting Bluetooth (session {} of {})...", session - 1, a.sessions);
+            let Some(again) = service.restart_adapter() else {
+                println!("Bluetooth restarted, but nothing to connect again");
+                code = 1;
+                break;
+            };
+            request = again;
+            std::thread::sleep(SESSION_PAUSE);
+            if !running.load(Ordering::Acquire) {
+                break;
+            }
+            println!("Connecting again after the restart (session {session} of {})", a.sessions);
+        } else if session > 1 {
             // Disconnect, as the app's button does, and connect again
             println!("\nDisconnecting (session {} of {})...", session - 1, a.sessions);
-            service.stop_streaming();
+            service.disconnect();
             while let Ok(e) = rx.try_recv() {
                 if let ServiceEvent::State(state, msg) = e {
                     println!("[{state:?}] {msg}");
@@ -985,7 +1017,14 @@ mod tests {
             }
         );
         assert_eq!(a.sbc_bitpool, 40);
-        for bad in ["--sbc-blocks 6", "--sbc-subbands 2", "--sbc-alloc max", "--sbc-mode auto", "--sbc-bitpool 60"] {
+        for bad in [
+            "--sbc-blocks 6",
+            "--sbc-subbands 2",
+            "--sbc-alloc max",
+            "--sbc-mode auto",
+            "--sbc-mode dual_channel",
+            "--sbc-bitpool 60",
+        ] {
             assert!(parse(&args(&format!("--cli {bad}"))).is_err(), "{bad}");
         }
     }

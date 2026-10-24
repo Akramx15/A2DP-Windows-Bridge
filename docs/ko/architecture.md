@@ -426,4 +426,4 @@ LL 패킷은 348바이트(10 ms)입니다. 자동은 이를 선택하지 않으�
   A2DPWB에는 전용 USB 어댑터 사용
 - 일부 Bluetooth 어댑터는 펌웨어 때문에 달성 가능한 비트레이트가 제한됨
 - USB Bluetooth 5.0 이상 어댑터는 일반적으로 LDAC에서 잘 작동함
-- 자동 코덱 선택 우선순위: LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus (실험적) > AAC > SBC XQ > SBC (FastStream, Opus 05, aptX Adaptive는 직접 선택한 경우에만)
+- 자동 코덱 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 직접 선택한 경우에만)

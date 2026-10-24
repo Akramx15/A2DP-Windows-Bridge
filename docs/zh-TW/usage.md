@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (ex
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (experimental; 48 kHz, --rate 96000 for 96 kHz)
 ```
 
-自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（實驗性） > AAC > SBC XQ > SBC（FastStream、Opus 05 與 aptX Adaptive 皆為實驗性，僅在明確選擇時使用）
+自動選擇的優先順序：LHDC V5 > LDAC > aptX Adaptive > Opus（實驗性） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 與 Opus 05 皆為實驗性，僅在明確選擇時使用）
 
 如果耳機不提供所要求的轉碼器，CLI 會以說明原因的錯誤停止；請使用 `-c auto`（預設）來選用耳機提供的最佳轉碼器。「自動」永遠不會選用 aptX Adaptive；請使用 `-c aptxad` -- 請參閱 [aptX 系列與 aptX Adaptive](#aptx-compatibility)。
 
@@ -341,7 +341,7 @@ A2DPWB 連線時，耳機會公布一份 **轉碼器清單**（AVDTP 串流端�
 - **耳機同時列出傳統 aptX** -- 許多 aptX Adaptive 耳機都會如此，因為 Qualcomm 宣傳 aptX Adaptive 向下相容 aptX / aptX HD。此時 A2DPWB 會直接選擇傳統 aptX；它是耳機清單中的另一個轉碼器，而不是 aptX Adaptive 的降級模式。
 - **耳機只列出 aptX Adaptive**（沒有傳統 aptX、aptX HD 或 aptX LL）-- 請明確選擇 aptX Adaptive（實驗性）。「自動」會依優先順序選擇下一個轉碼器，通常是 AAC 或 SBC。
 
-自動選擇的優先順序：LDAC > aptX HD > aptX LL > aptX > LHDC V5 > Opus（實驗性） > AAC > SBC XQ > SBC（FastStream、Opus 05 與 aptX Adaptive 皆為實驗性，僅在明確選擇時使用）
+自動選擇的優先順序：LHDC V5 > LDAC > aptX Adaptive > Opus（實驗性） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 與 Opus 05 皆為實驗性，僅在明確選擇時使用）
 
 ### 明確指定的轉碼器不在清單中 {#codec-fallback}
 
