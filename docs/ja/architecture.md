@@ -238,17 +238,17 @@ Windows Audio Session API でオーディオをリアルタイムに取り込み
 
 | エンコーダー | ライブラリ | ビットレート | 機能 |
 |:-------------|:-----------|:-------------|:-----|
-| LDAC | libldac (AOSP) | 330/660/990 kbps | HQ/SQ/MQ モード、ABR |
-| aptX HD | libopenaptx | 576 kbps | 24-bit 入力、固定レート、RTP ヘッダーあり |
-| aptX LL | libopenaptx | 352 kbps | 約 32 ms レイテンシー、RTP ヘッダーなし、パケットは約 7.5 ms 以下 |
-| aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit ステレオ、RTP ヘッダーなし |
-| AAC | fdk-aac | 最大 256 kbps | AAC-LC、LATM トランスポート |
-| SBC | Bluedroid エンコーダーの Rust 移植 | 最大約 345 kbps | A2DP 必須ベースライン。C 版とビット単位で一致（全設定でテスト） |
-| SBC XQ | 同じ SBC エンコーダー | 約 385/505/552 kbps | デュアルチャネル、bitpool 47 / 43（44.1 / 48 kHz、High）。シンクの SBC がデュアルチャネルと 29 以上の bitpool を許すときだけ（bitpool は PipeWire と同じくシンクの最大に抑える）。SBC のストリームエンドポイント、メディアペイロードヘッダー、RTP ヘッダーを共用 |
-| FastStream | 同じ SBC エンコーダー | 198/216 kbps (44.1/48 kHz) | CSR のベンダーコーデック、音楽方向のみ（音声の逆方向チャネルなし）: SBC ジョイントステレオ bitpool 29、フレームを 72 バイトに詰め、1 パケット 3 フレーム、メディアペイロードヘッダーも RTP ヘッダーもなし（PipeWire と同じ）。自動では選ばれない |
 | LHDC V5 | lhdcv5-enc（AOSP エンコーダーの C 移植版） | 400/500/900/1000 kbps、ABR 160–400 kbps | 16/24 bit、5 ms フレーム、2 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
-| Opus | libopus 1.5.2 | 128/192/256 kbps（ステレオ。モノラルは半分） | 試験的。Android の A2DP Opus: 48 kHz、20 ms フレーム（シンクが 10 ms だけならそれ）、メディアペイロードに収まる上限付きの制約付き VBR、1 パケット 1 フレーム、1 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
+| LDAC | libldac (AOSP) | 330/660/990 kbps | HQ/SQ/MQ モード、ABR |
 | aptX Adaptive | aptx-adaptive（AKS-Logic/aptx-adaptive-linux の Rust 製エンコーダー、MIT） | R1 のシンク: 427/364/318 kbps（高音質/標準/モバイル）、低遅延 265 kbps。R2 のシンク: 427/270/204、270 kbps | 48 kHz ステレオ（求められたときは、96 kHz を通知する R2 のシンクへ HQ で 96 kHz: 646/340/255 kbps）、24 bit。メディアパケット 1 つにコーデックのパケット 1 つ、A2DPWB 自身の RTP ヘッダー付き。高音質で ABR。Auto では選ばない |
+| Opus | libopus 1.5.2 | 128/192/256 kbps（ステレオ。モノラルは半分） | 試験的。Android の A2DP Opus: 48 kHz、20 ms フレーム（シンクが 10 ms だけならそれ）、メディアペイロードに収まる上限付きの制約付き VBR、1 パケット 1 フレーム、1 バイトのメディアペイロードヘッダー、RTP ヘッダーあり |
+| aptX HD | libopenaptx | 576 kbps | 24-bit 入力、固定レート、RTP ヘッダーあり |
+| aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit ステレオ、RTP ヘッダーなし |
+| aptX LL | libopenaptx | 352 kbps | 約 32 ms レイテンシー、RTP ヘッダーなし、パケットは約 7.5 ms 以下 |
+| AAC | fdk-aac | 最大 256 kbps | AAC-LC、LATM トランスポート |
+| SBC XQ | 同じ SBC エンコーダー | 約 385/505/552 kbps | デュアルチャネル、bitpool 47 / 43（44.1 / 48 kHz、High）。シンクの SBC がデュアルチャネルと 29 以上の bitpool を許すときだけ（bitpool は PipeWire と同じくシンクの最大に抑える）。SBC のストリームエンドポイント、メディアペイロードヘッダー、RTP ヘッダーを共用 |
+| SBC | Bluedroid エンコーダーの Rust 移植 | 最大約 345 kbps | A2DP 必須ベースライン。C 版とビット単位で一致（全設定でテスト） |
+| FastStream | 同じ SBC エンコーダー | 198/216 kbps (44.1/48 kHz) | CSR のベンダーコーデック、音楽方向のみ（音声の逆方向チャネルなし）: SBC ジョイントステレオ bitpool 29、フレームを 72 バイトに詰め、1 パケット 3 フレーム、メディアペイロードヘッダーも RTP ヘッダーもなし（PipeWire と同じ）。自動では選ばれない |
 
 すべてのエンコーダーは `codec::Encoder` トレイトを実装しています。入力の PCM 形式と 1 回に使うフレーム数を示し、コーデックのフレームを返します。
 
@@ -260,14 +260,14 @@ libopenaptx は 4 ステレオサンプル単位のパック済み 24-bit リト
 
 | コーデック | Vendor ID | Codec ID |
 |:-----------|:----------|:---------|
-| LDAC | Sony (0x0000012D) | 0x00AA |
-| aptX | APT (0x0000004F) | 0x0001 |
-| aptX HD | Qualcomm (0x000000D7) | 0x0024 |
-| aptX Low Latency | CSR (0x0000000A) または Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
-| FastStream | CSR (0x0000000A) | 0x0001 |
+| LDAC | Sony (0x0000012D) | 0x00AA |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | Opus | Google (0x000000E0) | 0x0001 |
+| aptX HD | Qualcomm (0x000000D7) | 0x0024 |
+| aptX | APT (0x0000004F) | 0x0001 |
+| aptX Low Latency | CSR (0x0000000A) または Qualcomm (0x000000D7) | 0x0002 |
+| FastStream | CSR (0x0000000A) | 0x0001 |
 | Opus 05 | The Linux Foundation（0x000005F1、PipeWire） | 0x1005 |
 
 AAC と SBC は A2DP 仕様で定義された標準コーデック ID を使用します。

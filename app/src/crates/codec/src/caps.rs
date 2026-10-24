@@ -7,8 +7,8 @@
 //! codec-specific bytes. The values follow v1 (btstack_transport.cpp), which
 //! follows Android and PipeWire.
 
-use crate::CodecKind;
 use crate::sbc::{self, Allocation, ChannelMode};
+use crate::{AutoOrder, CodecKind};
 
 pub const LDAC_VENDOR_ID: u32 = 0x0000_012D; // Sony
 pub const LDAC_CODEC_ID: u16 = 0x00AA;
@@ -976,18 +976,26 @@ impl RemoteCaps {
     /// The best codec both sides have, leaving out the experimental ones
     /// unless `experimental`
     pub fn best_of(&self, experimental: bool) -> Option<CodecKind> {
-        CodecKind::AUTO_PRIORITY.into_iter().find(|&k| self.usable(k, experimental))
+        self.best_in(&AutoOrder::default(), experimental)
+    }
+
+    /// The first codec in `order` both sides have, leaving out the
+    /// experimental ones unless `experimental`
+    pub fn best_in(&self, order: &AutoOrder, experimental: bool) -> Option<CodecKind> {
+        order.codecs().into_iter().find(|&k| self.usable(k, experimental))
     }
 
     /// The best codec both sides have below `kind` in Auto's order (a
     /// fallback for it; Opus 05's is Opus or below), leaving out the
     /// experimental ones unless `experimental`
     pub fn below(&self, kind: CodecKind, experimental: bool) -> Option<CodecKind> {
-        let listed = CodecKind::AUTO_PRIORITY.contains(&kind);
-        CodecKind::AUTO_PRIORITY
-            .into_iter()
-            .skip(kind.quality_rank() + usize::from(listed))
-            .find(|&k| self.usable(k, experimental))
+        self.below_in(&AutoOrder::default(), kind, experimental)
+    }
+
+    /// [`Self::below`] in `order`
+    pub fn below_in(&self, order: &AutoOrder, kind: CodecKind, experimental: bool) -> Option<CodecKind> {
+        let listed = order.codecs().contains(&kind);
+        order.codecs().into_iter().skip(order.rank(kind) + usize::from(listed)).find(|&k| self.usable(k, experimental))
     }
 
     fn usable(&self, kind: CodecKind, experimental: bool) -> bool {
@@ -1394,8 +1402,20 @@ pub fn choose(
     fallback: bool,
     experimental: bool,
 ) -> Result<Choice, Option<(CodecKind, Unavailable)>> {
+    choose_in(caps, requested, fallback, experimental, &AutoOrder::default())
+}
+
+/// [`choose`] with Auto's order as the user set it: Auto takes the first
+/// codec in `order` the device offers, and a fallback goes down `order`
+pub fn choose_in(
+    caps: &RemoteCaps,
+    requested: Option<CodecKind>,
+    fallback: bool,
+    experimental: bool,
+    order: &AutoOrder,
+) -> Result<Choice, Option<(CodecKind, Unavailable)>> {
     let Some(wanted) = requested else {
-        return caps.best_of(experimental).map(|kind| Choice { kind, replaced: None }).ok_or(None);
+        return caps.best_in(order, experimental).map(|kind| Choice { kind, replaced: None }).ok_or(None);
     };
     if caps.usable(wanted, experimental) {
         return Ok(Choice { kind: wanted, replaced: None });
@@ -1409,7 +1429,9 @@ pub fn choose(
     } else {
         Unavailable::NotSupported
     };
-    if fallback && let Some(kind) = caps.below(wanted, experimental).or_else(|| caps.best_of(experimental)) {
+    if fallback
+        && let Some(kind) = caps.below_in(order, wanted, experimental).or_else(|| caps.best_in(order, experimental))
+    {
         return Ok(Choice { kind, replaced: Some((wanted, why)) });
     }
     Err(Some((wanted, why)))
@@ -1471,6 +1493,39 @@ mod tests {
         assert!(LhdcV5.quality_rank() < Ldac.quality_rank());
         assert_eq!(Opus05.quality_rank(), Opus.quality_rank());
         assert_eq!(FastStream.quality_rank(), CodecKind::AUTO_PRIORITY.len());
+    }
+
+    #[test]
+    fn auto_order_from_keys_keeps_every_codec_once() {
+        use CodecKind::*;
+        assert!(AutoOrder::from_keys::<&str>(&[]).is_default());
+        let o = AutoOrder::from_keys(&["aac", "nope", "ldac", "aac", "fs"]);
+        let c = o.codecs();
+        assert_eq!(&c[..3], &[Aac, Ldac, LhdcV5]);
+        assert_eq!(c.len(), CodecKind::AUTO_PRIORITY.len());
+        assert_eq!(o.rank(Aac), 0);
+        assert_eq!(o.rank(FastStream), c.len());
+        assert_eq!(o.rank(Opus05), o.rank(Opus));
+    }
+
+    #[test]
+    fn auto_and_the_fallback_follow_the_order_set() {
+        use CodecKind::*;
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        caps.add_aac(2);
+        caps.add_vendor(4, &[0x2D, 0x01, 0, 0, 0xAA, 0x00, 0x3C, 0x07]);
+        if !Aac.available() || !Ldac.available() {
+            return;
+        }
+        let aac_first = AutoOrder::from_keys(&["aac"]);
+        assert_eq!(choose_in(&caps, None, true, true, &aac_first).unwrap().kind, Aac);
+        assert_eq!(choose(&caps, None, true, true).unwrap().kind, Ldac);
+        // aptX HD not offered: the next one below it in the order set
+        let order = AutoOrder::from_keys(&["aptxhd", "sbc", "ldac"]);
+        let c = choose_in(&caps, Some(AptxHd), true, true, &order).unwrap();
+        assert_eq!(c.kind, Sbc);
+        assert_eq!(c.replaced.map(|r| r.0), Some(AptxHd));
     }
 
     #[test]

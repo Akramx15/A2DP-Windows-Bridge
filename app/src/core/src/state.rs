@@ -277,6 +277,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         le_audio_low_latency: s.le_audio_low_latency,
         experimental_codecs: s.experimental_codecs,
         auto_codec: s.auto_codec,
+        auto_order: s.auto_order.clone(),
     }
 }
 
@@ -336,6 +337,10 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.le_audio_low_latency = s.le_audio_low_latency;
     c.experimental_codecs = s.experimental_codecs;
     c.auto_codec = s.auto_codec;
+    // Kept only when it is not the default order
+    let order = codec::AutoOrder::from_keys(&s.auto_order);
+    c.auto_order =
+        if order.is_default() { Vec::new() } else { order.codecs().iter().map(|k| k.key().to_string()).collect() };
     c
 }
 
@@ -839,6 +844,13 @@ fn restart_for_auto(stream: &StreamStatus, p: &CoreProfile) -> bool {
     restart_after_save(stream, &p.name) && !p.le_audio && p.codec != "auto"
 }
 
+/// Whether a new Auto's order may change the codec of the profile in use:
+/// it is Auto or fell back (the fallback goes down the order). Not LE Audio.
+fn restart_for_order(stream: &StreamStatus, p: &CoreProfile) -> bool {
+    let fell_back = stream.info.as_ref().is_some_and(|i| i.requested_codec.is_some());
+    restart_after_save(stream, &p.name) && !p.le_audio && (p.codec == "auto" || fell_back)
+}
+
 fn unix_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -1256,6 +1268,7 @@ impl CoreState {
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
+        req.auto_order = settings.auto_order();
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -1266,6 +1279,7 @@ impl CoreState {
         let settings = self.service.settings();
         let mut req = custom_request(c, settings.legacy_max_media_payload())?;
         req.experimental_codecs = settings.experimental_codecs;
+        req.auto_order = settings.auto_order();
         tracing::info!("custom stream to {}: codec {}, source {}", c.device, c.codec, req.source);
         self.begin_stream(req, None);
         Ok(())
@@ -1682,6 +1696,8 @@ impl CoreState {
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
                     let experimental_toggled = base.experimental_codecs != merged.experimental_codecs;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
+                    let order_changed = base.auto_order != merged.auto_order;
+                    let order_names = merged.auto_order().names();
                     me.save_settings(merged)?;
                     if chip {
                         me.reload_adapter();
@@ -1689,7 +1705,7 @@ impl CoreState {
                     // Experimental codecs or Auto-select on / off: a profile
                     // in use whose codec it changes starts again (as a
                     // profile save does)
-                    if experimental_toggled || auto_toggled {
+                    if experimental_toggled || auto_toggled || order_changed {
                         let (_, s) = me.snapshot();
                         let list = profiles::load(&me.config_dir());
                         let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
@@ -1697,13 +1713,15 @@ impl CoreState {
                             // As it streams under Auto-select (for every device)
                             let effective = if settings.auto_codec { p.as_auto() } else { (*p).clone() };
                             (experimental_toggled && restart_for_experimental(&s.stream, &effective))
+                                || (order_changed && restart_for_order(&s.stream, &effective))
                                 || (auto_toggled && restart_for_auto(&s.stream, p))
                         };
                         if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
-                                "experimental codecs {}, Auto-select {}: profile {} starts again",
+                                "experimental codecs {}, Auto-select {}, order {}: profile {} starts again",
                                 if settings.experimental_codecs { "on" } else { "off" },
                                 if settings.auto_codec { "on" } else { "off" },
+                                order_names,
                                 a2dpwb_core::diag::quoted(&p.name)
                             );
                             me.start_profile(&p.name.clone())?;
@@ -1737,6 +1755,7 @@ impl CoreState {
                     // stack, with the same profile (issue #86)
                     if let Some(mut req) = again {
                         req.experimental_codecs = me.service.settings().experimental_codecs;
+                        req.auto_order = me.service.settings().auto_order();
                         let profile = me.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         me.begin_stream(req, profile);
                     }
@@ -2140,6 +2159,38 @@ mod tests {
         ));
         assert!(!restart_for_experimental(&StreamStatus::default(), &profile("auto")));
         assert!(!restart_for_experimental(&streaming("LC3", None), &CoreProfile { le_audio: true, ..profile("auto") }));
+    }
+
+    #[test]
+    fn a_new_auto_order_restarts_a_profile_on_auto_or_fallen_back() {
+        let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
+        let streaming = |requested: Option<&str>| StreamStatus {
+            state: StreamState::Streaming,
+            profile: Some("WH".into()),
+            info: Some(ipc::StreamInfo {
+                codec: "AAC".into(),
+                bitrate_kbps: 0,
+                sample_rate: 48000,
+                channels: 2,
+                bits: 16,
+                source_sample_rate: 48000,
+                source_channels: 2,
+                source_bits: 32,
+                requested_codec: requested.map(str::to_owned),
+                requested_in_use: false,
+                abr: false,
+                bitrate_capped: false,
+                source: None,
+                le: None,
+                details: None,
+            }),
+            ..StreamStatus::default()
+        };
+        assert!(restart_for_order(&streaming(None), &profile("auto")));
+        assert!(restart_for_order(&streaming(Some("aptX HD")), &profile("aptxhd")));
+        // Its own codec in use, LE Audio
+        assert!(!restart_for_order(&streaming(None), &profile("aac")));
+        assert!(!restart_for_order(&streaming(None), &CoreProfile { le_audio: true, ..profile("auto") }));
     }
 
     #[test]

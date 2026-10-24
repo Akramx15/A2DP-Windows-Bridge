@@ -11,7 +11,7 @@ has_toc: false
 모든 코덱을 지원하는 Windows용 Bluetooth A2DP 오디오 스트리밍 도구
 {: .fs-6 .fw-300 }
 
-WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive** 및 (실험적) **Opus**, PipeWire의 **Opus 05**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
+WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC** 및 (실험적) **Opus**, PipeWire의 **Opus 05**로 스트리밍합니다. 커널 드라이버나 테스트 서명이 필요 없습니다.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -24,18 +24,18 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 
 | 코덱 | 비트레이트 | 샘플링 속도 | 비트 심도 | 지연 시간 |
 |:-----|:-----------|:------------|:----------|:----------|
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | 약 200 ms |
+| aptX Adaptive | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bit | -- |
+| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | 약 150 ms |
-| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 약 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 약 32 ms |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | SBC XQ | 약 385/505/552 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | SBC | 최대 약 345 kbps | 44.1/48 kHz | 16 bit | 약 150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
-| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
-| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bit | -- |
 | LC3 (LE 오디오) 🧪 | 채널당 32--124 kbps | 16/24/32/48 kHz | 16 bit | 약 140 ms |
 | LC3 저지연 (LE 오디오 GMAP) 🧪 | 채널당 64--96 kbps | 32/48 kHz | 16 bit | 약 30 ms |
 
@@ -43,18 +43,18 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 
 | 코덱 | Windows 10 기본 | Windows 11 기본 | Ubuntu 기본 (PipeWire) | **A2DPWB** (Windows 10 / 11) |
 |:-----|:---------------:|:---------------:|:----------------------:|:----------------------------:|
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | LDAC | ❌ | ❌ | ✅ | ✅ |
+| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
+| Opus (Android의 A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2 이상 (`opus_g`); Ubuntu 24.04(PipeWire 1.0.5)에는 없음 | 🧪 실험적 |
 | aptX HD | ❌ | ❌ | ✅ | 🧪 실험적 |
-| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 실험적 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
+| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 실험적 |
 | AAC | ❌ | ✅ | ❌ Ubuntu 패키지에 포함되지 않음 | ✅ |
 | SBC XQ | ❌ | ❌ | ✅ | ✅ (SBC에서 듀얼 채널과 bitpool 43 이상을 허용하는 수신 장치) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 실험적 (음악 전용, 직접 선택한 경우) |
-| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
-| Opus (Android의 A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2 이상 (`opus_g`); Ubuntu 24.04(PipeWire 1.0.5)에는 없음 | 🧪 실험적 |
 | Opus 05 (PipeWire 자체 Opus) | ❌ | ❌ | ✅ PipeWire 0.3.57 이상 (`opus_05`, PipeWire 기기로만) | 🧪 실험적 (직접 선택한 경우) |
-| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
 | LC3 (LE 오디오, BAP 유니캐스트) | ❌ | ✅ Bluetooth 하드웨어와 드라이버가 LE 오디오를 지원하는 PC에서만 | ✅ PipeWire BAP `lc3` (BlueZ LE 오디오) | 🧪 실험적 (장치의 LE 오디오 항목, 게이밍 헤드셋에서는 GMAP 저지연, ISO를 지원하는 Bluetooth 5.2 어댑터 필요, [사용법](usage#le-audio)) |
 
 ✅ 지원 · 🧪 실험적 · ❌ 미지원. 모든 열은 전송 측(PC → 헤드폰) 기준입니다. "기본"은 A2DPWB 없이 OS 자체 Bluetooth 오디오를 사용하는 경우이며, Ubuntu 열은 Ubuntu 26.04의 PipeWire 코덱 구성(`libspa-0.2-bluetooth`)입니다.
@@ -135,7 +135,7 @@ A2DPWB는 Windows Bluetooth 스택을 완전히 우회합니다. [BTstack](https
 
 ## 주요 기능
 
-- **다중 코덱**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive 및 (실험적) Opus / Opus 05, 자동 협상
+- **다중 코덱**: LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC 및 (실험적) Opus / Opus 05, 자동 협상
 - **LE 오디오 (실험적)**: LE 오디오 헤드폰과 이어폰으로 LC3 전송(BAP 유니캐스트, 한 쌍의 양쪽 이어폰, 헤드셋 음량, 미디어 버튼, GMAP 저지연). Bluetooth 5.2의 등시성 채널을 지원하는 어댑터가 필요합니다. Bluetooth 에뮬레이터로만 시험했고 실제 LE 오디오 헤드폰으로는 아직 확인하지 않았습니다([사용법](usage#le-audio) 참조)
 - **세 가지 캡처 모드**: 시스템 루프백, 가상 오디오 장치 라우팅, 또는 한 응용 프로그램의 출력
 - **창, 트레이, CLI**: 설정과 진단을 위한 창, 평소 연결에 쓰는 트레이 플라이아웃과 메뉴, 그리고 명령줄 ([사용법](usage) 참조)

@@ -72,4 +72,9 @@ experimental_codecs: boolean,
  * device (on by default): on, every A2DP profile streams as Auto; off,
  * each with the codec chosen for it (read when the next stream starts)
  */
-auto_codec: boolean, };
+auto_codec: boolean, 
+/**
+ * Codecs > Auto's order: codec keys, first picked first (also the way
+ * a chosen codec falls back). Empty: highest sound quality first.
+ */
+auto_order: Array<string>, };

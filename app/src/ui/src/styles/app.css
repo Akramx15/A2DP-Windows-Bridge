@@ -1455,6 +1455,60 @@ option {
   flex-direction: column;
   gap: var(--s1);
 }
+.codecs-order {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+/* Auto's order dialog: rows dragged into place, or moved with ↑ / ↓ */
+.auto-order {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.auto-order-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  cursor: grab;
+  user-select: none;
+}
+.auto-order-row.dragging {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.auto-order-row.off .auto-order-name {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.auto-order-grip {
+  color: var(--text-3);
+  flex: none;
+}
+.auto-order-rank {
+  width: 1.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.auto-order-name {
+  flex: 1;
+}
+.auto-order-moves {
+  display: flex;
+  gap: 2px;
+}
+.auto-order-up svg {
+  transform: rotate(180deg);
+}
 .device-codecs {
   display: flex;
   flex-direction: column;

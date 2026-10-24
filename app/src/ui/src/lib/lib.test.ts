@@ -5,6 +5,7 @@ import type { LogLine } from "../ipc/types";
 import {
   abrCarries,
   AUTO_ORDER,
+  autoOrder,
   autoPick,
   bitDepths,
   bitrateNoteKey,
@@ -13,9 +14,11 @@ import {
   CODECS,
   effectiveCodec,
   fitToCodec,
+  isDefaultOrder,
   isExperimental,
   fixedBitDepth,
   qualityIgnored,
+  qualityRank,
   qualityTag,
   sampleRates,
 } from "./codecs";
@@ -518,5 +521,26 @@ describe("Auto's order and the fallback (issue #86)", () => {
     expect(effectiveCodec("ldac", pw)).toBe("opus");
     expect(effectiveCodec("ldac", pw, false)).toBe("aac");
     expect(effectiveCodec("auto", ["sbc", "faststream"], false)).toBe("sbc");
+  });
+});
+
+describe("Auto's order", () => {
+  it("keeps every codec of AUTO_ORDER once, the ones given first", () => {
+    expect(autoOrder([])).toEqual([...AUTO_ORDER]);
+    const o = autoOrder(["AAC", "nope", "ldac", "aac", "faststream"]);
+    expect(o.slice(0, 3)).toEqual(["aac", "ldac", "lhdcv5"]);
+    expect(o).toHaveLength(AUTO_ORDER.length);
+    expect(isDefaultOrder([])).toBe(true);
+    expect(isDefaultOrder(o)).toBe(false);
+  });
+
+  it("is what Auto and a fallback follow", () => {
+    const known = ["sbc", "aac", "ldac"];
+    const aacFirst = autoOrder(["aac"]);
+    expect(effectiveCodec("auto", known)).toBe("ldac");
+    expect(effectiveCodec("auto", known, true, aacFirst)).toBe("aac");
+    // aptX HD not offered: the next one below it in the order set
+    expect(effectiveCodec("aptxhd", known, true, autoOrder(["aptxhd", "sbc", "ldac"]))).toBe("sbc");
+    expect(qualityRank("opus05", aacFirst)).toBe(aacFirst.indexOf("opus"));
   });
 });

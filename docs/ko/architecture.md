@@ -305,17 +305,17 @@ Windows Audio Session API를 사용하여 오디오를 실시간으로 캡처합
 
 | 인코더 | 라이브러리 | 비트레이트 | 특징 |
 |---------|---------|---------|----------|
-| LDAC | libldac (AOSP) | 330/660/990 kbps | HQ/SQ/MQ 모드, ABR |
-| aptX HD | libopenaptx | 576 kbps | 24비트 입력, 고정 비트레이트, RTP 헤더 |
-| aptX LL | libopenaptx | 352 kbps | 약 32 ms 지연, RTP 헤더 없음, 패킷 ≤ 약 7.5 ms |
-| aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16비트 스테레오, RTP 헤더 없음 |
-| AAC | fdk-aac | 최대 256 kbps | AAC-LC, LATM 전송 |
-| SBC | Bluedroid 인코더의 Rust 포팅 | 최대 약 345 kbps | A2DP 필수 기본 코덱. C 인코더와 비트 단위로 일치 (모든 구성에서 테스트) |
-| SBC XQ | 같은 SBC 인코더 | 약 385/505/552 kbps | 듀얼 채널, 44.1 / 48 kHz에서 bitpool 47 / 43 (높음). 싱크의 SBC가 듀얼 채널과 bitpool 43 이상을 허용할 때만 사용. SBC의 스트림 엔드포인트, 미디어 페이로드 헤더, RTP 헤더를 공유 |
-| FastStream | 같은 SBC 인코더 | 198/216 kbps (44.1/48 kHz) | CSR 벤더 코덱, 음악 방향만 (음성 백채널 없음): SBC joint stereo bitpool 29, 프레임을 72바이트로 패딩, 패킷당 3개, 미디어 페이로드 헤더와 RTP 헤더 없음 (PipeWire와 동일). 자동에서는 선택되지 않음 |
 | LHDC V5 | lhdcv5-enc (AOSP 인코더의 C 포팅) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24비트, 5 ms 프레임, 2바이트 미디어 페이로드 헤더, RTP 헤더 |
-| Opus | libopus 1.5.2 | 128/192/256 kbps (스테레오, 모노는 절반) | 실험적. Android의 A2DP Opus: 48 kHz, 20 ms 프레임(싱크가 10 ms만 지원하면 10 ms), 미디어 페이로드에 맞춘 상한이 있는 constrained VBR, 패킷당 프레임 하나, 1바이트 미디어 페이로드 헤더, RTP 헤더 |
+| LDAC | libldac (AOSP) | 330/660/990 kbps | HQ/SQ/MQ 모드, ABR |
 | aptX Adaptive | aptx-adaptive (AKS-Logic/aptx-adaptive-linux의 순수 Rust 인코더, MIT) | R1 싱크: 427/364/318 kbps (높음/표준/모바일), 저지연 265 kbps. R2 싱크: 427/270/204, 270 kbps | 48 kHz 스테레오(요청 시 96 kHz를 알리는 R2 싱크에는 HQ에서 96 kHz: 646/340/255 kbps), 24비트. 미디어 패킷당 코덱 패킷 하나, A2DPWB 자체 RTP 헤더. 높음에서 ABR. 자동에서는 선택되지 않음 |
+| Opus | libopus 1.5.2 | 128/192/256 kbps (스테레오, 모노는 절반) | 실험적. Android의 A2DP Opus: 48 kHz, 20 ms 프레임(싱크가 10 ms만 지원하면 10 ms), 미디어 페이로드에 맞춘 상한이 있는 constrained VBR, 패킷당 프레임 하나, 1바이트 미디어 페이로드 헤더, RTP 헤더 |
+| aptX HD | libopenaptx | 576 kbps | 24비트 입력, 고정 비트레이트, RTP 헤더 |
+| aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16비트 스테레오, RTP 헤더 없음 |
+| aptX LL | libopenaptx | 352 kbps | 약 32 ms 지연, RTP 헤더 없음, 패킷 ≤ 약 7.5 ms |
+| AAC | fdk-aac | 최대 256 kbps | AAC-LC, LATM 전송 |
+| SBC XQ | 같은 SBC 인코더 | 약 385/505/552 kbps | 듀얼 채널, 44.1 / 48 kHz에서 bitpool 47 / 43 (높음). 싱크의 SBC가 듀얼 채널과 bitpool 43 이상을 허용할 때만 사용. SBC의 스트림 엔드포인트, 미디어 페이로드 헤더, RTP 헤더를 공유 |
+| SBC | Bluedroid 인코더의 Rust 포팅 | 최대 약 345 kbps | A2DP 필수 기본 코덱. C 인코더와 비트 단위로 일치 (모든 구성에서 테스트) |
+| FastStream | 같은 SBC 인코더 | 198/216 kbps (44.1/48 kHz) | CSR 벤더 코덱, 음악 방향만 (음성 백채널 없음): SBC joint stereo bitpool 29, 프레임을 72바이트로 패딩, 패킷당 3개, 미디어 페이로드 헤더와 RTP 헤더 없음 (PipeWire와 동일). 자동에서는 선택되지 않음 |
 
 모든 인코더는 `codec::Encoder` 트레이트를 구현합니다. 각 인코더는 PCM 형식과
 한 번의 호출에서 소비하는 프레임 수를 명시하고, 코덱 프레임을 반환합니다.
@@ -330,14 +330,14 @@ PCM을 입력으로 받습니다. aptX 래퍼는 16비트 또는 32비트 샘플
 
 | 코덱 | Vendor ID | Codec ID |
 |-------|-----------|----------|
-| LDAC | Sony (0x0000012D) | 0x00AA |
-| aptX | APT (0x0000004F) | 0x0001 |
-| aptX HD | Qualcomm (0x000000D7) | 0x0024 |
-| aptX Low Latency | CSR (0x0000000A) 또는 Qualcomm (0x000000D7) | 0x0002 |
-| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | LHDC V5 | Savitech (0x0000053A) | 0x4C35 |
-| FastStream | CSR (0x0000000A) | 0x0001 |
+| LDAC | Sony (0x0000012D) | 0x00AA |
+| aptX Adaptive | Qualcomm (0x000000D7) | 0x00AD |
 | Opus | Google (0x000000E0) | 0x0001 |
+| aptX HD | Qualcomm (0x000000D7) | 0x0024 |
+| aptX | APT (0x0000004F) | 0x0001 |
+| aptX Low Latency | CSR (0x0000000A) 또는 Qualcomm (0x000000D7) | 0x0002 |
+| FastStream | CSR (0x0000000A) | 0x0001 |
 
 AAC와 SBC는 A2DP 사양에 정의된 표준 A2DP 코덱 ID를 사용합니다.
 

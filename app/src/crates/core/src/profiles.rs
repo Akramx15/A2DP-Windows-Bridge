@@ -284,6 +284,8 @@ impl Profile {
             codec_fallback: true,
             // The setting's, filled in by whoever starts the stream
             experimental_codecs: true,
+            // The setting's too
+            auto_order: codec::AutoOrder::default(),
             quality: Quality::from_key(&self.quality),
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,

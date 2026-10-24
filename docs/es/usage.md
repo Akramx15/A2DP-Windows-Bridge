@@ -36,6 +36,7 @@ El códec de cada dispositivo de audio guardado, una sección por dispositivo (n
 
 - **Ocultar los códecs que el dispositivo de audio no admite** (activado de forma predeterminada): se omiten los códecs que un dispositivo no ofreció (el número de ocultos aparece entre paréntesis). Antes de la primera conexión de un dispositivo se muestran todos
 - **Seleccionar automáticamente el códec compatible de mayor calidad** (un ajuste para todos los dispositivos, arriba en la página; activado de forma predeterminada): cada dispositivo usa el códec compatible de mayor calidad de sonido; las tarjetas son de solo lectura y muestran el códec en uso (o el que elegirá la selección automática). Desactívelo para elegir el códec de cada dispositivo y sus ajustes (un dispositivo sin elección conserva el de la selección automática). El códec elegido para un dispositivo se conserva mientras está activado. Si la configuración anterior a 2.0.2 elegía un códec para algún dispositivo, empieza desactivado
+- **Orden de la selección automática…** (debajo del interruptor): abre la lista de códecs en el orden en que los elige la selección automática (de forma predeterminada, mayor calidad de sonido primero). Arrastre un códec, o use sus flechas, para ordenarlos; **Volver al orden por calidad de sonido** lo restablece. La selección automática usa el primer códec de la lista que admita el dispositivo, y un códec elegido no admitido pasa al siguiente por debajo en este orden. Las tarjetas siguen este orden. Si cambia el códec de una transmisión en curso, se vuelve a conectar
 - **Activar códecs experimentales** (activado de forma predeterminada): los códecs experimentales (aptX HD, aptX Low Latency, Opus, Opus 05, FastStream) llevan la etiqueta **Experimental** en sus tarjetas. Si se desactiva, sus tarjetas se ocultan, Automático nunca los elige y un dispositivo cuyo códec elegido sea uno de ellos usa el siguiente códec inferior en el orden de Automático que ofrezca el dispositivo; la página lo indica. Si esto cambia el códec de una transmisión en curso, el dispositivo vuelve a conectarse. CLI: `--no-experimental`
 - **Usar otro códec compatible si este no está disponible** (activado de forma predeterminada, para todos los dispositivos; consulte [El códec seleccionado no está disponible](#codec-fallback))
 - **...** en una tarjeta abre los ajustes de ese códec; **Aceptar** elige el códec con ellos. Cada códec conserva sus propios ajustes: si elige otro códec y vuelve, se recuperan. Solo se ofrece lo que ese códec admite:
@@ -291,8 +292,8 @@ Loopback del sistema y Dispositivo virtual usan el modo compartido de WASAPI, po
 | LDAC (HQ) | Máxima calidad de audio | Mayor latencia, necesita una conexión estable |
 | LDAC (ABR) | Calidad + estabilidad | La tasa de bits varía con la conexión |
 | aptX HD | Alta calidad, mayor compatibilidad de dispositivos | 576 kbps fijos |
-| aptX LL | Juegos, vídeo (baja latencia) | Menor calidad de audio (16 bits) |
 | aptX | La mayor compatibilidad entre dispositivos aptX | 16 bits, 352/384 kbps |
+| aptX LL | Juegos, vídeo (baja latencia) | Menor calidad de audio (16 bits) |
 | AAC | Dispositivos Apple, buena eficiencia | Calidad moderada |
 | SBC | Máxima compatibilidad | La menor calidad de audio |
 
@@ -310,10 +311,10 @@ A2DPWB admite tres códecs aptX codificados con [libopenaptx](https://github.com
 
 | Códec | Vendor ID / Codec ID | Encabezado RTP | Estado |
 |:------|:---------------------|:-----------|:-------|
-| aptX | 0x0000004F / 0x0001 | No | Compatible (352/384 kbps a 44.1/48 kHz) |
-| aptX HD | 0x000000D7 / 0x0024 | Sí | Compatible (576 kbps, entrada de 24 bits) |
-| aptX Low Latency | 0x0000000A o 0x000000D7 / 0x0002 | No | Compatible (352 kbps) |
 | aptX Adaptive | 0x000000D7 / 0x00AD | Sí | Compatible (265-427 kbps, 48 / 96 kHz, 24 bits) |
+| aptX HD | 0x000000D7 / 0x0024 | Sí | Compatible (576 kbps, entrada de 24 bits) |
+| aptX | 0x0000004F / 0x0001 | No | Compatible (352/384 kbps a 44.1/48 kHz) |
+| aptX Low Latency | 0x0000000A o 0x000000D7 / 0x0002 | No | Compatible (352 kbps) |
 
 ### aptX Adaptive {#aptx-adaptive}
 

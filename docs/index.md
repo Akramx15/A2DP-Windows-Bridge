@@ -9,7 +9,7 @@ nav_order: 1
 Bluetooth A2DP audio streaming for Windows with full codec support.
 {: .fs-6 .fw-300 }
 
-Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive** and (experimental) **Opus** and PipeWire's **Opus 05** using a USB Bluetooth adapter in WinUSB mode -- no kernel driver or test signing required.
+Streams system audio via **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC** and (experimental) **Opus** and PipeWire's **Opus 05** using a USB Bluetooth adapter in WinUSB mode -- no kernel driver or test signing required.
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](images/app_sample.png)
 
@@ -22,18 +22,18 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 
 | Codec | Bitrate | Sample Rate | Bit Depth | Latency |
 |:------|:--------|:------------|:----------|:--------|
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | ~200 ms |
+| aptX Adaptive | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bit | -- |
+| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | ~150 ms |
-| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | ~32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | ~32 ms |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC XQ | ~385/505/552 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ~150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
-| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
-| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive | 265--427 kbps (96 kHz: 255--646) | 48/96 kHz | 24 bit | -- |
 | LC3 (LE Audio) 🧪 | 32--124 kbps per channel | 16/24/32/48 kHz | 16 bit | ~140 ms |
 | LC3 low latency (LE Audio GMAP) 🧪 | 64--96 kbps per channel | 32/48 kHz | 16 bit | ~30 ms |
 
@@ -41,18 +41,18 @@ Streams system audio via **LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC
 
 | Codec | Windows 10 built-in | Windows 11 built-in | Ubuntu built-in (PipeWire) | **A2DPWB** (Windows 10 / 11) |
 |:------|:-------------------:|:-------------------:|:--------------------------:|:----------------------------:|
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | LDAC | ❌ | ❌ | ✅ | ✅ |
+| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
+| Opus (Android's A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); not in Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimental |
 | aptX HD | ❌ | ❌ | ✅ | 🧪 experimental |
-| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | aptX | ✅ | ✅ | ✅ | ✅ |
+| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 experimental |
 | AAC | ❌ | ✅ | ❌ not in Ubuntu's packages | ✅ |
 | SBC XQ | ❌ | ❌ | ✅ | ✅ (sinks whose SBC allows dual channel, bitpool ≥ 29) |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 experimental (music only, chosen explicitly) |
-| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
-| Opus (Android's A2DP Opus) | ❌ | ❌ | ✅ PipeWire 1.2+ (`opus_g`); not in Ubuntu 24.04 (PipeWire 1.0.5) | 🧪 experimental |
 | Opus 05 (PipeWire's own Opus) | ❌ | ❌ | ✅ PipeWire 0.3.57+ (`opus_05`, to PipeWire devices only) | 🧪 experimental (chosen explicitly) |
-| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
 | LC3 (LE Audio, BAP unicast) | ❌ | ✅ on PCs whose Bluetooth hardware and driver support LE Audio | ✅ PipeWire BAP `lc3` (BlueZ LE Audio) | 🧪 experimental (a device's LE Audio entry; GMAP low latency with gaming headsets; Bluetooth 5.2 adapter with ISO, [Usage](usage#le-audio)) |
 
 ✅ supported · 🧪 experimental · ❌ not supported. All columns are the sending side (PC → headphones). "Built-in" is the OS's own Bluetooth audio, without A2DPWB; the Ubuntu column is the PipeWire codec set of Ubuntu 26.04 (`libspa-0.2-bluetooth`).
@@ -133,7 +133,7 @@ A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly w
 
 ## Features
 
-- **Multi-codec**: LDAC, aptX HD, aptX Low Latency, aptX, AAC, SBC, LHDC V5, aptX Adaptive and (experimental) Opus / Opus 05 with automatic negotiation
+- **Multi-codec**: LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC and (experimental) Opus / Opus 05 with automatic negotiation
 - **LE Audio (experimental)**: LC3 to LE Audio headphones and earbuds (BAP unicast, both earbuds of a pair, headset volume, media buttons, GMAP low latency). Needs an adapter with Bluetooth 5.2 isochronous channels; tested only against the Bluetooth emulator, not yet with real LE Audio headphones ([Usage](usage#le-audio))
 - **Three capture modes**: System loopback, virtual audio device routing, or one application's output
 - **Window, tray and CLI**: a window for setup and diagnostics, a tray flyout and menu for everyday connecting, and a command line (see [Usage](usage))
