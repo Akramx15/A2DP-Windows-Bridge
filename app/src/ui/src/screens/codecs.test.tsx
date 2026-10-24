@@ -343,10 +343,64 @@ describe("codec cards", () => {
     expect(tag).not.toHaveClass("st-bad");
   });
 
+  it("sets Auto's order in its dialog, back to sound quality order too (issue #86)", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    expect(main().getByText(t("ui.codecs.order_default"))).toBeInTheDocument();
+    fireEvent.click(main().getByRole("button", { name: t("ui.codecs.order_edit") }));
+    const dialog = await screen.findByRole("dialog", { name: t("ui.codecs.order_title") });
+    const rows = () => within(dialog).getAllByRole("listitem").map((li) => li.querySelector(".auto-order-name")!.textContent);
+    expect(rows()[0]).toBe(t("codec.lhdc_v5"));
+    // Back to quality order: nothing to do yet
+    const reset = within(dialog).getByRole("button", { name: t("ui.codecs.order_reset") });
+    expect(reset).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: t("ui.codecs.order_up", t("codec.lhdc_v5")) })).toBeDisabled();
+    // AAC up to the top, one step at a time (AAC is 8th)
+    for (let i = 0; i < 7; i++) {
+      fireEvent.click(within(dialog).getByRole("button", { name: t("ui.codecs.order_up", t("codec.aac")) }));
+    }
+    expect(rows()[0]).toBe(t("codec.aac"));
+    expect(reset).not.toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.filter((c) => c.method === "settings.set").at(-1)?.params).toMatchObject({
+      settings: { auto_order: ["aac", "lhdcv5", "ldac", "aptxad", "opus", "aptxhd", "aptx", "aptxll", "sbcxq", "sbc"] },
+    });
+    await waitFor(() => expect(main().getByText(t("ui.codecs.order_custom"))).toBeInTheDocument());
+    // The cards follow it, and Auto now picks AAC on the WH-1000XM5
+    const names = () => [...wh.querySelectorAll(".codec-card-name")].map((n) => n.textContent);
+    expect(names()[0]).toBe(t("codec.aac"));
+    fireEvent.click(autoSwitch());
+    await waitFor(() => expect(wh).toHaveTextContent(t("ui.codecs.auto_uses", t("codec.aac"))));
+
+    // Back to quality order: saved as the default (empty)
+    fireEvent.click(main().getByRole("button", { name: t("ui.codecs.order_edit") }));
+    const again = await screen.findByRole("dialog", { name: t("ui.codecs.order_title") });
+    fireEvent.click(within(again).getByRole("button", { name: t("ui.codecs.order_reset") }));
+    fireEvent.click(within(again).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(main().getByText(t("ui.codecs.order_default"))).toBeInTheDocument());
+    expect(calls.filter((c) => c.method === "settings.set").at(-1)?.params).toMatchObject({ settings: { auto_order: [] } });
+  });
+
+  it("leaves Auto's order as it was when its dialog is cancelled", async () => {
+    const { calls } = start("#/codecs");
+    await section("WH-1000XM5");
+    fireEvent.click(main().getByRole("button", { name: t("ui.codecs.order_edit") }));
+    const dialog = await screen.findByRole("dialog", { name: t("ui.codecs.order_title") });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.codecs.order_down", t("codec.lhdc_v5")) }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.some((c) => c.method === "settings.set")).toBe(false);
+    // Opened again: the order saved
+    fireEvent.click(main().getByRole("button", { name: t("ui.codecs.order_edit") }));
+    const again = await screen.findByRole("dialog", { name: t("ui.codecs.order_title") });
+    expect(within(again).getAllByRole("listitem")[0]).toHaveTextContent(t("codec.lhdc_v5"));
+  });
+
   it("show Auto's order behind the ? beside the switch", async () => {
     start("#/codecs");
     await section("WH-1000XM5");
-    const help = main().getByRole("button", { name: t("ui.codecs.auto_order") });
+    const help = main().getByRole("button", { name: t("ui.codecs.order_title") });
     const tip = document.getElementById(help.getAttribute("aria-describedby")!)!;
     expect(tip).toHaveAttribute("role", "tooltip");
     const items = within(tip).getAllByRole("listitem").map((li) => li.textContent);

@@ -1354,7 +1354,7 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
     let _ = writeln!(out, "Language     : {}, theme {}", s.language, s.theme);
     let _ = writeln!(
         out,
-        "Settings     : media keys {}, remember volume {}{}, experimental codecs {}, auto-select {}, AFH {}, updates {}{}",
+        "Settings     : media keys {}, remember volume {}{}, experimental codecs {}, auto-select {}{}, AFH {}, updates {}{}",
         on_off(s.media_keys),
         on_off(s.remember_volume),
         match s.device_options.len() {
@@ -1363,6 +1363,10 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         },
         on_off(s.experimental_codecs),
         on_off(s.auto_codec),
+        match s.auto_order() {
+            o if o.is_default() => String::new(),
+            o => format!(" (order {})", o.names()),
+        },
         s.afh,
         on_off(s.check_updates_on_startup),
         if s.include_prereleases { " (pre-releases too)" } else { "" }

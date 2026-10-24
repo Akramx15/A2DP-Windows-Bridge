@@ -61,6 +61,61 @@ pub enum CodecKind {
     AptxAdaptive,
 }
 
+/// Auto's order (settings `auto_order`, issue #86): the codecs of
+/// [`CodecKind::AUTO_PRIORITY`] in the order the user put them on the
+/// Codecs screen; the default is that list, highest sound quality first.
+/// Auto takes the first one the device offers, and a chosen codec the
+/// device does not offer falls back to the next one below it here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AutoOrder([CodecKind; 10]);
+
+impl Default for AutoOrder {
+    fn default() -> Self {
+        AutoOrder(CodecKind::AUTO_PRIORITY)
+    }
+}
+
+impl AutoOrder {
+    /// From codec keys: those of AUTO_PRIORITY in the order given (others
+    /// and repeats left out), then any missing in their default order. An
+    /// empty list is the default order.
+    pub fn from_keys<S: AsRef<str>>(keys: &[S]) -> AutoOrder {
+        let mut order = Vec::with_capacity(CodecKind::AUTO_PRIORITY.len());
+        let given = keys.iter().filter_map(|k| CodecKind::from_key(k.as_ref()));
+        for k in given.chain(CodecKind::AUTO_PRIORITY) {
+            if CodecKind::AUTO_PRIORITY.contains(&k) && !order.contains(&k) {
+                order.push(k);
+            }
+        }
+        AutoOrder(order.try_into().unwrap_or(CodecKind::AUTO_PRIORITY))
+    }
+
+    pub fn codecs(&self) -> [CodecKind; 10] {
+        self.0
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.0 == CodecKind::AUTO_PRIORITY
+    }
+
+    /// Where the codec stands (0 = first). Opus 05 stands with Opus and
+    /// FastStream after the last, so a fallback from them still goes down
+    /// the list.
+    pub fn rank(&self, kind: CodecKind) -> usize {
+        let at = |k: CodecKind| self.0.iter().position(|&c| c == k).unwrap_or(0);
+        match kind {
+            CodecKind::Opus05 => at(CodecKind::Opus),
+            CodecKind::FastStream => self.0.len(),
+            k => at(k),
+        }
+    }
+
+    /// The codec names in order, for the log
+    pub fn names(&self) -> String {
+        self.0.iter().map(|k| k.name()).collect::<Vec<_>>().join(" > ")
+    }
+}
+
 impl CodecKind {
     pub const ALL: [CodecKind; 12] = [
         CodecKind::Ldac,
@@ -105,12 +160,7 @@ impl CodecKind {
     /// Opus 05 stands with Opus and FastStream below SBC, so a fallback from
     /// them still goes down the list.
     pub fn quality_rank(self) -> usize {
-        let at = |k: CodecKind| CodecKind::AUTO_PRIORITY.iter().position(|&c| c == k).unwrap_or(0);
-        match self {
-            CodecKind::Opus05 => at(CodecKind::Opus),
-            CodecKind::FastStream => CodecKind::AUTO_PRIORITY.len(),
-            k => at(k),
-        }
+        AutoOrder::default().rank(self)
     }
 
     /// Display name (as v1 shows it)

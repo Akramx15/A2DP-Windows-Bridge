@@ -36,6 +36,7 @@ Le codec de chaque appareil audio enregistré, une section par appareil (nom, ad
 
 - **Masquer les codecs non pris en charge par l'appareil audio** (activé par défaut) : les codecs qu'un appareil n'a pas proposés sont omis (le nombre de codecs masqués figure entre parenthèses). Avant la première connexion d'un appareil, tous sont affichés
 - **Sélectionner automatiquement le codec pris en charge de meilleure qualité** (un réglage pour tous les appareils, en haut de la page ; activé par défaut) : chaque appareil utilise le codec pris en charge de meilleure qualité sonore ; les cartes sont en lecture seule et montrent le codec utilisé (ou celui que la sélection automatique choisira). Désactivez-la pour choisir le codec de chaque appareil et ses réglages (un appareil sans choix garde celui de la sélection automatique). Le codec choisi pour un appareil est conservé tant qu'elle est activée. Si les réglages d'avant 2.0.2 choisissaient un codec pour un appareil, elle démarre désactivée
+- **Ordre de la sélection automatique…** (sous l'interrupteur) : ouvre la liste des codecs dans l'ordre où la sélection automatique les choisit (par défaut, meilleure qualité sonore d'abord). Faites glisser un codec, ou utilisez ses flèches, pour les ordonner ; **Revenir à l'ordre par qualité sonore** le rétablit. La sélection automatique utilise le premier codec de la liste pris en charge par l'appareil, et un codec choisi non pris en charge passe au suivant en dessous dans cet ordre. Les cartes suivent cet ordre. Si le codec d'un flux en cours change, il se reconnecte
 - **Activer les codecs expérimentaux** (activé par défaut) : les codecs expérimentaux (aptX HD, aptX Low Latency, Opus, Opus 05, FastStream) portent l'étiquette **Expérimental** sur leur carte. Si l'option est désactivée, leurs cartes sont masquées, Auto ne les choisit jamais, et un appareil dont le codec choisi en fait partie utilise le codec immédiatement inférieur, dans l'ordre d'Auto, que l'appareil propose ; la page l'indique. Si cela change le codec d'une diffusion en cours, l'appareil se reconnecte. CLI : `--no-experimental`
 - **Utiliser un autre codec pris en charge si celui-ci n'est pas disponible** (activé par défaut, pour tous les appareils ; voir [Codec choisi explicitement mais non proposé](#codec-fallback))
 - **...** sur une carte ouvre les réglages de ce codec ; **OK** choisit le codec avec ces réglages. Chaque codec garde ses propres réglages : si vous choisissez un autre codec puis revenez, ils sont de retour. Seul ce que ce codec permet est proposé :
@@ -291,8 +292,8 @@ Le bouclage système et le périphérique virtuel utilisent le mode partagé de 
 | LDAC (HQ) | La meilleure qualité audio | Latence plus élevée, nécessite une connexion stable |
 | LDAC (ABR) | Qualité + stabilité | Le débit varie selon la connexion |
 | aptX HD | Haute qualité, plus large compatibilité | 576 kbps fixe |
-| aptX LL | Jeux, vidéo (faible latence) | Qualité audio moindre (16 bits) |
 | aptX | La plus large compatibilité aptX | 16 bits, 352/384 kbps |
+| aptX LL | Jeux, vidéo (faible latence) | Qualité audio moindre (16 bits) |
 | AAC | Appareils Apple, bonne efficacité | Qualité moyenne |
 | SBC | Compatibilité maximale | Qualité audio la plus faible |
 
@@ -310,10 +311,10 @@ A2DPWB prend en charge trois codecs aptX encodés avec [libopenaptx](https://git
 
 | Codec | Vendor ID / Codec ID | En-tête RTP | État |
 |:------|:---------------------|:-----------|:-------|
-| aptX | 0x0000004F / 0x0001 | Non | Pris en charge (352/384 kbps à 44.1/48 kHz) |
-| aptX HD | 0x000000D7 / 0x0024 | Oui | Pris en charge (576 kbps, entrée 24 bits) |
-| aptX Low Latency | 0x0000000A ou 0x000000D7 / 0x0002 | Non | Pris en charge (352 kbps) |
 | aptX Adaptive | 0x000000D7 / 0x00AD | Oui | Pris en charge (265-427 kbps, 48 / 96 kHz, 24 bits) |
+| aptX HD | 0x000000D7 / 0x0024 | Oui | Pris en charge (576 kbps, entrée 24 bits) |
+| aptX | 0x0000004F / 0x0001 | Non | Pris en charge (352/384 kbps à 44.1/48 kHz) |
+| aptX Low Latency | 0x0000000A ou 0x000000D7 / 0x0002 | Non | Pris en charge (352 kbps) |
 
 ### aptX Adaptive {#aptx-adaptive}
 

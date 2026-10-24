@@ -11,7 +11,7 @@ has_toc: false
 適用於 Windows、支援所有轉碼器的藍牙 A2DP 音訊串流工具。
 {: .fs-6 .fw-300 }
 
-使用處於 WinUSB 模式的 USB 藍牙介面卡，以 **LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、aptX Adaptive** 及（實驗性的）**Opus** 與 PipeWire 的 **Opus 05** 串流系統音訊 -- 不需要核心驅動程式，也不需要測試簽章。
+使用處於 WinUSB 模式的 USB 藍牙介面卡，以 **LHDC V5、LDAC、aptX Adaptive、aptX HD、aptX、aptX Low Latency、AAC、SBC** 及（實驗性的）**Opus** 與 PipeWire 的 **Opus 05** 串流系統音訊 -- 不需要核心驅動程式，也不需要測試簽章。
 
 ![A2DPWB streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](../images/app_sample.png)
 
@@ -24,18 +24,18 @@ has_toc: false
 
 | 轉碼器 | 位元率 | 取樣率 | 位元深度 | 延遲 |
 |:------|:--------|:------------|:----------|:--------|
+| LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | 約 200 ms |
+| aptX Adaptive | 265--427 kbps（96 kHz：255--646） | 48/96 kHz | 24 bit | -- |
+| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | 約 150 ms |
-| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
+| aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
 | AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC XQ | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最高約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
-| LHDC V5 | 400/500/900/1000 kbps，ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
-| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
 | Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
-| aptX Adaptive | 265--427 kbps（96 kHz：255--646） | 48/96 kHz | 24 bit | -- |
 | LC3（LE Audio） 🧪 | 每聲道 32--124 kbps | 16/24/32/48 kHz | 16 bit | 約 140 ms |
 | LC3 低延遲（LE Audio GMAP） 🧪 | 每聲道 64--96 kbps | 32/48 kHz | 16 bit | 約 30 ms |
 
@@ -43,18 +43,18 @@ has_toc: false
 
 | 轉碼器 | Windows 10 內建 | Windows 11 內建 | Ubuntu 內建 (PipeWire) | **A2DPWB** (Windows 10 / 11) |
 |:------|:-------------------:|:-------------------:|:--------------------------:|:----------------------------:|
+| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
 | LDAC | ❌ | ❌ | ✅ | ✅ |
+| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
+| Opus（Android 的 A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2+（`opus_g`）；Ubuntu 24.04（PipeWire 1.0.5）中沒有 | 🧪 實驗性 |
 | aptX HD | ❌ | ❌ | ✅ | 🧪 實驗性 |
-| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 實驗性 |
 | aptX | ✅ | ✅ | ✅ | ✅ |
+| aptX Low Latency | ❌ | ❌ | ✅ | 🧪 實驗性 |
 | AAC | ❌ | ✅ | ❌ 不在 Ubuntu 的套件中 | ✅ |
 | SBC XQ | ❌ | ❌ | ✅ | ✅（SBC 允許雙聲道且 bitpool ≥ 29 的接收端） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 實驗性（僅限音樂，需明確選擇） |
-| LHDC V5 | ❌ | ❌ | ❌ | ✅ |
-| Opus（Android 的 A2DP Opus） | ❌ | ❌ | ✅ PipeWire 1.2+（`opus_g`）；Ubuntu 24.04（PipeWire 1.0.5）中沒有 | 🧪 實驗性 |
 | Opus 05（PipeWire 自有的 Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57+（`opus_05`，僅限 PipeWire 裝置） | 🧪 實驗性（需明確選擇） |
-| aptX Adaptive | ❌ | ❌ | ❌ | ✅ |
 | LC3（LE Audio，BAP 單播） | ❌ | ✅ 僅限藍牙硬體與驅動程式支援 LE Audio 的 PC | ✅ PipeWire BAP `lc3`（BlueZ LE Audio） | 🧪 實驗性（裝置的 LE Audio 項目；電競耳機使用 GMAP 低延遲；需要支援 ISO 的 Bluetooth 5.2 介面卡，[使用方式](usage#le-audio)） |
 
 ✅ 支援 · 🧪 實驗性 · ❌ 不支援。所有欄位皆為傳送端（PC → 耳機）。「內建」指不使用 A2DPWB 時作業系統本身的藍牙音訊；Ubuntu 欄位為 Ubuntu 26.04 的 PipeWire 轉碼器組合（`libspa-0.2-bluetooth`）。
@@ -135,7 +135,7 @@ A2DPWB 完全繞過 Windows 藍牙堆疊。它透過 WinUSB 直接與 USB 藍牙
 
 ## 功能
 
-- **多轉碼器**：LDAC、aptX HD、aptX Low Latency、aptX、AAC、SBC、LHDC V5、aptX Adaptive 及（實驗性的）Opus / Opus 05，自動協商
+- **多轉碼器**：LHDC V5、LDAC、aptX Adaptive、aptX HD、aptX、aptX Low Latency、AAC、SBC 及（實驗性的）Opus / Opus 05，自動協商
 - **LE Audio（實驗性）**：以 LC3 傳送到 LE Audio 耳機（BAP 單播、一對耳機的左右兩耳、耳機音量、媒體按鍵、GMAP 低延遲）。需要支援 Bluetooth 5.2 等時通道的介面卡；只在藍牙模擬器上測試過，尚未在實際的 LE Audio 耳機上確認（請參閱[使用方式](usage#le-audio)）
 - **三種擷取模式**：系統回送、虛擬音訊裝置路由，或單一應用程式的輸出
 - **視窗、系統匣與 CLI**：用於設定與診斷的視窗、日常連線用的系統匣快顯視窗與選單，以及命令列（請參閱 [使用方式](usage)）

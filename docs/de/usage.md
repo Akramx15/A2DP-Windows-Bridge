@@ -36,6 +36,7 @@ Der Codec jedes gespeicherten Audiogeräts, ein Abschnitt pro Gerät (Name, Adre
 
 - **Codecs ausblenden, die das Audiogerät nicht unterstützt** (standardmäßig aktiviert): Codecs, die ein Gerät nicht angeboten hat, werden weggelassen (die Anzahl der ausgeblendeten steht in Klammern). Vor der ersten Verbindung eines Geräts werden alle angezeigt
 - **Automatisch den unterstützten Codec mit der höchsten Qualität wählen** (eine Einstellung für alle Geräte, oben auf der Seite; standardmäßig aktiviert): Jedes Gerät verwendet den unterstützten Codec mit der höchsten Klangqualität; die Karten sind schreibgeschützt und zeigen den verwendeten (oder von der Automatik gewählten) Codec. Ausgeschaltet wählen Sie für jedes Gerät Codec und Einstellungen selbst (ein Gerät ohne Wahl behält die der Automatik). Der für ein Gerät gewählte Codec bleibt erhalten, solange die Automatik an ist. Hatten Einstellungen vor 2.0.2 für ein Gerät einen Codec gewählt, beginnt sie ausgeschaltet
+- **Reihenfolge der Automatik…** (unter dem Schalter): öffnet die Liste der Codecs in der Reihenfolge, in der die Automatik sie wählt (standardmäßig höchste Klangqualität zuerst). Codecs ziehen oder mit den Pfeilen verschieben; **Zurück zur Reihenfolge nach Klangqualität** setzt sie zurück. Die Automatik verwendet den ersten Codec der Liste, den das Gerät unterstützt, und ein gewählter, nicht unterstützter Codec weicht auf den nächsten darunter aus. Die Karten folgen dieser Reihenfolge. Ändert sich dadurch der Codec eines laufenden Streams, verbindet er sich neu
 - **Experimentelle Codecs aktivieren** (standardmäßig aktiviert): Die experimentellen Codecs (aptX HD, aptX Low Latency, Opus, Opus 05, FastStream) tragen auf ihren Karten die Markierung **Experimentell**. Ist die Option deaktiviert, werden ihre Karten ausgeblendet, Automatisch wählt sie nie, und ein Gerät, dessen gewählter Codec einer davon ist, verwendet den nächstniedrigeren Codec in der Reihenfolge von Automatisch, den das Gerät anbietet; die Seite weist darauf hin. Ändert sich dadurch der Codec eines laufenden Streams, verbindet sich das Gerät erneut. CLI: `--no-experimental`
 - **Einen anderen unterstützten Codec verwenden, wenn dieser nicht verfügbar ist** (standardmäßig aktiviert, für alle Geräte; siehe [Ausdrücklich gewählter Codec wird nicht angeboten](#codec-fallback))
 - **...** auf einer Karte öffnet die Einstellungen dieses Codecs; **OK** wählt den Codec mit diesen. Jeder Codec behält seine eigenen Einstellungen: Wählen Sie einen anderen Codec und kehren Sie zurück, sind sie wieder da. Angeboten wird nur, was dieser Codec beherrscht:
@@ -291,8 +292,8 @@ System-Loopback und Virtuelles Gerät verwenden den gemeinsamen Modus (Shared Mo
 | LDAC (HQ) | Höchste Audioqualität | Höhere Latenz, benötigt eine stabile Verbindung |
 | LDAC (ABR) | Qualität + Stabilität | Bitrate schwankt mit der Verbindung |
 | aptX HD | Hohe Qualität, breitere Geräteunterstützung | Fest 576 kbps |
-| aptX LL | Spiele, Video (geringe Latenz) | Geringere Audioqualität (16 Bit) |
 | aptX | Breiteste Unterstützung unter aptX-Geräten | 16 Bit, 352/384 kbps |
+| aptX LL | Spiele, Video (geringe Latenz) | Geringere Audioqualität (16 Bit) |
 | AAC | Apple-Geräte, gute Effizienz | Mittlere Qualität |
 | SBC | Maximale Kompatibilität | Niedrigste Audioqualität |
 
@@ -310,10 +311,10 @@ A2DPWB unterstützt drei aptX-Codecs, kodiert mit [libopenaptx](https://github.c
 
 | Codec | Vendor ID / Codec ID | RTP-Header | Status |
 |:------|:---------------------|:-----------|:-------|
-| aptX | 0x0000004F / 0x0001 | Nein | Unterstützt (352/384 kbps bei 44,1/48 kHz) |
-| aptX HD | 0x000000D7 / 0x0024 | Ja | Unterstützt (576 kbps, 24-Bit-Eingang) |
-| aptX Low Latency | 0x0000000A oder 0x000000D7 / 0x0002 | Nein | Unterstützt (352 kbps) |
 | aptX Adaptive | 0x000000D7 / 0x00AD | Ja | Unterstützt (265-427 kbps, 48 / 96 kHz, 24 Bit) |
+| aptX HD | 0x000000D7 / 0x0024 | Ja | Unterstützt (576 kbps, 24-Bit-Eingang) |
+| aptX | 0x0000004F / 0x0001 | Nein | Unterstützt (352/384 kbps bei 44,1/48 kHz) |
+| aptX Low Latency | 0x0000000A oder 0x000000D7 / 0x0002 | Nein | Unterstützt (352 kbps) |
 
 ### aptX Adaptive {#aptx-adaptive}
 
