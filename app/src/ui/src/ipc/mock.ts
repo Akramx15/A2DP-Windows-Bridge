@@ -171,6 +171,8 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     le_audio_experimental: false,
     le_audio_low_latency: false,
     experimental_codecs: true,
+    // Off, as schema 5 sets it: WH-1000XM5 chose LDAC
+    auto_codec: false,
     ...over,
   };
 }
@@ -659,6 +661,7 @@ export class MockCore implements Transport {
           le_audio_experimental: next.le_audio_experimental ?? before.le_audio_experimental,
           le_audio_low_latency: next.le_audio_low_latency ?? before.le_audio_low_latency,
           experimental_codecs: next.experimental_codecs ?? before.experimental_codecs,
+          auto_codec: next.auto_codec ?? before.auto_codec,
         };
         this.emit({ kind: "settings", value: this.snap.settings });
         let le_audio_deferred = false;

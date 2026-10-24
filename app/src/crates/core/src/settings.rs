@@ -10,8 +10,8 @@ use bt_host::media::{MEDIA_PAYLOAD_LIMIT_DEFAULT, clamp_media_payload_limit};
 
 /// settings.json's format: 1 is v1's (which wrote no schema_version), 2 is
 /// v2's, 3 has LE Audio on by default, 4 remembers each device's volume by
-/// default (see migrate.rs)
-pub const SCHEMA_VERSION: u32 = 4;
+/// default, 5 has one Auto-select for every device (see migrate.rs)
+pub const SCHEMA_VERSION: u32 = 5;
 /// The first schema_version v2 wrote: a lower one is v1's folder
 pub const FIRST_V2_SCHEMA: u32 = 2;
 
@@ -168,6 +168,13 @@ pub struct Settings {
     /// are hidden there and never used, by Auto or as a fallback
     pub experimental_codecs: bool,
 
+    /// Codecs > "Auto-select the codec with the highest quality", for every
+    /// device (issue #86; each device had its own before schema 5): on,
+    /// every profile streams as Auto with Auto's defaults; off, each one
+    /// with the codec chosen for it (a profile with none chosen, "auto",
+    /// still as Auto). LE Audio profiles (LC3) are not affected.
+    pub auto_codec: bool,
+
     /// Before v1.1 the max media packet size was a setting; it now seeds
     /// profiles saved without one. Read, not written.
     #[serde(skip_serializing)]
@@ -264,6 +271,7 @@ impl Default for Settings {
             le_audio_experimental: true,
             le_audio_low_latency: false,
             experimental_codecs: true,
+            auto_codec: true,
             max_media_payload: None,
             other: BTreeMap::new(),
         }

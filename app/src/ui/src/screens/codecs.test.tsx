@@ -29,9 +29,9 @@ const settled = (where: HTMLElement) =>
   waitFor(() => expect(within(where).getAllByRole("radio").every((r) => !(r as HTMLInputElement).disabled)).toBe(true));
 /** The screen itself (the sidebar names the devices too) */
 const main = () => within(screen.getByRole("main"));
-/** A device's "Auto-select the codec with the highest quality" switch */
-const autoSwitch = (where: HTMLElement) =>
-  within(where).getByRole("switch", { name: (n) => n.startsWith(t("ui.codecs.auto_select")) });
+/** "Auto-select the codec with the highest quality", for every device */
+const autoName = (n: string) => n.startsWith(t("ui.codecs.auto_select"));
+const autoSwitch = () => main().getByRole("switch", { name: autoName });
 /** The profiles saved, in order */
 const saves = (calls: { method: string; params: unknown }[]) =>
   calls
@@ -54,9 +54,11 @@ describe("the Codecs screen", () => {
     expect(wh).toHaveTextContent("AC:80:0A:12:34:56");
     expect(wh).toHaveTextContent(t("device.tag_saved"));
     expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked();
-    // No Auto card: Auto is the device's switch (issue #86), off here
+    // No Auto card: Auto is one switch for every device (issue #86), off
+    // here, not the device's own
     expect(within(wh).queryByRole("radio", { name: /Auto/ })).toBeNull();
-    expect(autoSwitch(wh)).not.toBeChecked();
+    expect(autoSwitch()).not.toBeChecked();
+    expect(within(wh).queryByRole("switch", { name: autoName })).toBeNull();
     const xb = await section("SRS-XB13");
     expect(within(xb).getByRole("radio", { name: /AAC/ })).toBeChecked();
     // What is the device's own is on Audio Devices
@@ -66,32 +68,22 @@ describe("the Codecs screen", () => {
 
   it("saves the device's profile when a card is chosen, its name following the codec", async () => {
     const { calls } = start("#/codecs");
-    // A device without a profile yet: Auto until one is chosen, its cards
-    // read-only
+    // A device without a profile yet: Auto until one is chosen; with
+    // Auto-select off its cards can be chosen
     await mock!.call("device.rename", { address: "54:2F:04:4B:29:DC", name: "moto buds+" });
     const moto = await section("moto buds+");
-    expect(autoSwitch(moto)).toBeChecked();
-    expect(within(moto).getByRole("radio", { name: /AAC/ })).toBeDisabled();
-    expect(within(moto).queryByRole("button", { name: t("ui.profile.codec_settings", t("codec.aac")) })).toBeNull();
-    // Off: its codecs are not known yet, so SBC, which every device has
-    fireEvent.click(autoSwitch(moto));
+    expect(within(moto).getByRole("radio", { name: /AAC/ })).not.toBeDisabled();
+    // One click on a card chooses it
+    fireEvent.click(within(moto).getByRole("radio", { name: /AAC/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0]).toMatchObject({
-      profile: { name: "moto buds+ | SBC", device_address: "54:2F:04:4B:29:DC", codec: "sbc" },
+      profile: { name: "moto buds+ | AAC", device_address: "54:2F:04:4B:29:DC", codec: "aac" },
       original_name: null,
     });
     await settled(moto);
-    // One click on a card chooses it
-    fireEvent.click(within(moto).getByRole("radio", { name: /AAC/ }));
+    fireEvent.click(within(moto).getByRole("radio", { name: /LDAC/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(2));
     expect(saves(calls)[1]).toMatchObject({
-      profile: { name: "moto buds+ | AAC", codec: "aac" },
-      original_name: "moto buds+ | SBC",
-    });
-    await settled(moto);
-    fireEvent.click(within(moto).getByRole("radio", { name: /LDAC/ }));
-    await waitFor(() => expect(saves(calls)).toHaveLength(3));
-    expect(saves(calls)[2]).toMatchObject({
       profile: { name: "moto buds+ | LDAC", codec: "ldac" },
       original_name: "moto buds+ | AAC",
     });
@@ -99,21 +91,18 @@ describe("the Codecs screen", () => {
     await settled(moto);
     const wh = await section("WH-1000XM5");
     fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
-    await waitFor(() => expect(saves(calls)).toHaveLength(4));
-    expect(saves(calls)[3]).toMatchObject({ profile: { name: "WH-1000XM5 (LDAC)", codec: "aac" } });
+    await waitFor(() => expect(saves(calls)).toHaveLength(3));
+    expect(saves(calls)[2]).toMatchObject({ profile: { name: "WH-1000XM5 (LDAC)", codec: "aac" } });
   });
 
   it("keeps each device's codec to that device (issue #86: LHDC asked of the EarFun after the moto buds+)", async () => {
     const { calls } = start("#/codecs");
     await mock!.call("device.rename", { address: "54:2F:04:4B:29:DC", name: "moto buds+" });
     const moto = await section("moto buds+");
-    fireEvent.click(autoSwitch(moto));
-    await waitFor(() => expect(saves(calls)).toHaveLength(1));
-    await settled(moto);
     // Its codecs are not known yet: LHDC V5 is offered
     fireEvent.click(within(moto).getByRole("radio", { name: /LHDC V5/ }));
-    await waitFor(() => expect(saves(calls)).toHaveLength(2));
-    expect(saves(calls)[1].profile).toMatchObject({ device_address: "54:2F:04:4B:29:DC", codec: "lhdcv5" });
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0].profile).toMatchObject({ device_address: "54:2F:04:4B:29:DC", codec: "lhdcv5" });
     await settled(moto);
     // The other devices keep theirs, on screen and in what Connect streams
     const wh = await section("WH-1000XM5");
@@ -128,13 +117,12 @@ describe("the Codecs screen", () => {
     // A new device starts from Auto, not from the codec chosen last
     await mock!.call("device.rename", { address: "70:5A:6F:6D:ED:1F", name: "EarFun Air Pro 4+" });
     const earfun = await section("EarFun Air Pro 4+");
-    expect(autoSwitch(earfun)).toBeChecked();
     expect(within(earfun).getByRole("radio", { name: /LHDC V5/ })).not.toBeChecked();
     location.hash = "#/home";
     const card = await screen.findByRole("group", { name: "EarFun Air Pro 4+" });
     fireEvent.click(within(card).getByRole("button", { name: "Connect" }));
-    await waitFor(() => expect(saves(calls)).toHaveLength(3));
-    expect(saves(calls)[2].profile).toMatchObject({ device_address: "70:5A:6F:6D:ED:1F", codec: "auto" });
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1].profile).toMatchObject({ device_address: "70:5A:6F:6D:ED:1F", codec: "auto" });
   });
 
   it("brings a codec's settings back when it is chosen again (issue #86: AAC's VBR came back off)", async () => {
@@ -156,43 +144,33 @@ describe("the Codecs screen", () => {
     expect(saves(calls)[2].profile.codec_settings).not.toHaveProperty("aac");
   });
 
-  it("turns Auto on and off for one device, the cards then showing its pick (issue #86)", async () => {
+  it("turns Auto-select on and off for every device, each keeping the codec chosen for it (issue #86)", async () => {
     const { calls } = start("#/codecs");
     // No page-wide fallback option any more: a codec always falls back
     expect(screen.queryByRole("checkbox", { name: /another supported codec/ })).toBeNull();
     const wh = await section("WH-1000XM5");
-    const ldacSettings = await codecSettings(wh, "codec.ldac");
-    fireEvent.change(within(ldacSettings).getByLabelText(t("connection.quality")), { target: { value: "sq" } });
-    fireEvent.click(within(ldacSettings).getByRole("button", { name: t("modal.ok") }));
+    fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     await settled(wh);
-    fireEvent.click(autoSwitch(wh));
-    await waitFor(() => expect(saves(calls)).toHaveLength(2));
-    // Auto with its defaults; LDAC keeps its own settings for later
-    expect(saves(calls)[1].profile).toMatchObject({
-      name: "WH-1000XM5 (LDAC)",
-      codec: "auto",
-      quality: "hq",
-      abr: false,
-      codec_settings: { ldac: { quality: "sq" } },
+    fireEvent.click(autoSwitch());
+    await waitFor(() => expect(autoSwitch()).toBeChecked());
+    expect(calls.filter((c) => c.method === "settings.set").at(-1)?.params).toMatchObject({
+      settings: { auto_codec: true },
     });
     // The WH-1000XM5 supported SBC, AAC and LDAC: Auto picks LDAC, shown
-    // on the read-only cards
+    // on the read-only cards; every device's cards are read-only
     await waitFor(() => expect(wh.querySelector(".codec-more")).toBeNull());
     const ldac = within(wh).getByRole("radio", { name: /LDAC/ });
     expect(ldac).toBeDisabled();
     expect(ldac).toBeChecked();
-    expect(autoSwitch(wh)).toBeChecked();
     expect(wh).toHaveTextContent(t("ui.codecs.auto_uses", t("codec.ldac")));
-    // The other device is left alone
-    const xb = await section("SRS-XB13");
-    expect(autoSwitch(xb)).not.toBeChecked();
-    expect(within(xb).getByRole("radio", { name: /AAC/ })).not.toBeDisabled();
-    // Off: Auto's pick, with the settings it had
-    fireEvent.click(autoSwitch(wh));
-    await waitFor(() => expect(saves(calls)).toHaveLength(3));
-    expect(saves(calls)[2].profile).toMatchObject({ codec: "ldac", quality: "sq" });
-    await settled(wh);
+    expect(within(await section("SRS-XB13")).getByRole("radio", { name: /AAC/ })).toBeDisabled();
+    // No profile changed: off again, the codec chosen is back
+    fireEvent.click(autoSwitch());
+    await waitFor(() => expect(within(wh).getByRole("radio", { name: /AAC/ })).toBeChecked());
+    expect(within(wh).getByRole("radio", { name: /AAC/ })).not.toBeDisabled();
+    expect(wh).not.toHaveTextContent(t("ui.codecs.auto_uses", t("codec.ldac")));
+    expect(saves(calls)).toHaveLength(1);
   });
 
   it("falls back to the next supported codec below the chosen one", async () => {
@@ -367,8 +345,8 @@ describe("codec cards", () => {
 
   it("show Auto's order behind the ? beside the switch", async () => {
     start("#/codecs");
-    const wh = await section("WH-1000XM5");
-    const help = within(wh).getByRole("button", { name: t("ui.codecs.auto_order") });
+    await section("WH-1000XM5");
+    const help = main().getByRole("button", { name: t("ui.codecs.auto_order") });
     const tip = document.getElementById(help.getAttribute("aria-describedby")!)!;
     expect(tip).toHaveAttribute("role", "tooltip");
     const items = within(tip).getAllByRole("listitem").map((li) => li.textContent);

@@ -28,6 +28,12 @@
 //! #86), so a folder of schema 3 or older gets `remember_volume` turned on
 //! once. A device the user turned it off for (`device_options`) keeps that.
 //!
+//! Schema 5 (issue #86): "Auto-select the codec with the highest quality"
+//! is one setting for every device (`auto_codec`) instead of each profile's
+//! codec "auto". It starts on only when no profile had a codec chosen, so
+//! a device someone chose a codec for keeps streaming with it (v1's folders
+//! too: each v1 profile chose its codec).
+//!
 //! At every start, the profiles are folded into one per device
 //! ([`profiles::consolidate`]: the Codecs screen keeps one); the
 //! first time that changes anything, profiles.json is copied as it was to
@@ -230,6 +236,7 @@ fn prepare_settings(dir: &Path) -> Report {
     // it); v2 honours the setting, so it is set to keep that
     settings.start_minimized = true;
     let (mut list, renamed) = profiles::load_counted(dir);
+    settings.auto_codec = auto_codec_from(&list);
     let mut seeded = 0;
     if settings.max_media_payload.is_some() {
         let legacy = settings.legacy_max_media_payload();
@@ -267,6 +274,16 @@ fn prepare_settings(dir: &Path) -> Report {
     report
 }
 
+/// Schema 5's Auto-select for every device: on unless a profile chose a
+/// codec (LE Audio profiles have only LC3)
+fn auto_codec_from(list: &[profiles::Profile]) -> bool {
+    let chosen = list.iter().filter(|p| !p.le_audio && p.codec != "auto").count();
+    if chosen > 0 {
+        tracing::info!("settings: Auto-select for every device off, {chosen} profile(s) chose their codec");
+    }
+    chosen == 0
+}
+
 /// The schema steps after v2's first one, for a folder v2 already used
 fn upgrade_v2(dir: &Path, report: &mut Report) {
     let mut settings = Settings::load(dir);
@@ -279,6 +296,10 @@ fn upgrade_v2(dir: &Path, report: &mut Report) {
     if report.schema_before.is_some_and(|n| n < 4) && !settings.remember_volume {
         settings.remember_volume = true;
         tracing::info!("settings: remembering each device's volume, as it now is by default");
+    }
+    // 5: one Auto-select for every device
+    if report.schema_before.is_some_and(|n| n < 5) {
+        settings.auto_codec = auto_codec_from(&profiles::load(dir));
     }
     match settings.save(dir) {
         Ok(()) => report.schema_written = true,
@@ -357,6 +378,8 @@ mod tests {
         let s = read_json(&Settings::path(dir));
         assert_eq!(s["schema_version"], SCHEMA_VERSION);
         assert_eq!(s["language"], "ja");
+        // Profile A chose LDAC: no Auto-select for every device
+        assert_eq!(s["auto_codec"], false);
         assert_eq!(s["window_x"], 10);
         assert!(s.get("max_media_payload").is_none());
         // v1 started hidden at logon: kept
@@ -426,6 +449,40 @@ mod tests {
         off.save(dir).unwrap();
         assert_eq!(prepare(dir), Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
         assert!(!Settings::load(dir).remember_volume);
+    }
+
+    #[test]
+    fn v2_settings_get_one_auto_select_from_the_profiles() {
+        let t = TempDir::new("schema5");
+        let dir = &t.0;
+        let write = |profiles: &str| {
+            std::fs::write(Settings::path(dir), r#"{"schema_version":4}"#).unwrap();
+            std::fs::write(profiles::path(dir), profiles).unwrap();
+        };
+        // Every device on Auto (an LE Audio profile counts as Auto): on
+        write(
+            r#"{"profiles":[{"name":"A","device_address":"AA:BB:CC:DD:EE:FF","codec":"auto"},
+                {"name":"B","device_address":"11:22:33:44:55:66","codec":"lc3","le_audio":true}]}"#,
+        );
+        assert!(prepare(dir).schema_written);
+        assert!(Settings::load(dir).auto_codec);
+        // A device with its codec chosen: off, and it keeps that codec
+        write(
+            r#"{"profiles":[{"name":"A","device_address":"AA:BB:CC:DD:EE:FF","codec":"auto"},
+                {"name":"B","device_address":"11:22:33:44:55:66","codec":"aac"}]}"#,
+        );
+        prepare(dir);
+        let s = Settings::load(dir);
+        assert_eq!(s.schema_version, SCHEMA_VERSION);
+        assert!(!s.auto_codec);
+        assert_eq!(profiles::load(dir)[1].codec, "aac");
+
+        // Turned on by the user: stays on
+        let mut on = s;
+        on.auto_codec = true;
+        on.save(dir).unwrap();
+        assert_eq!(prepare(dir), Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
+        assert!(Settings::load(dir).auto_codec);
     }
 
     #[test]

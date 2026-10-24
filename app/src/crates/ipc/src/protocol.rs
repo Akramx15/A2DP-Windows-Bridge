@@ -599,6 +599,11 @@ pub struct Settings {
     /// stream is set up)
     #[serde(default = "yes")]
     pub experimental_codecs: bool,
+    /// Codecs > "Auto-select the codec with the highest quality", for every
+    /// device (on by default): on, every A2DP profile streams as Auto; off,
+    /// each with the codec chosen for it (read when the next stream starts)
+    #[serde(default = "yes")]
+    pub auto_codec: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
