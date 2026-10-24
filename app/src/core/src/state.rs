@@ -1204,7 +1204,7 @@ impl CoreState {
 
     pub fn stop(&self) {
         let service = self.service.clone();
-        std::thread::spawn(move || service.stop_streaming());
+        std::thread::spawn(move || service.disconnect());
     }
 
     pub fn quit(&self) {

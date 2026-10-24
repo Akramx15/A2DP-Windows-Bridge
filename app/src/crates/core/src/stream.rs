@@ -622,7 +622,7 @@ fn device_turned_off(inner: &Inner, host: &BtHost) -> bool {
 /// the stack has to start anew (sleep, a stopped adapter), which the next
 /// connection does.
 fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6], pipeline: &mut Option<Pipeline>) -> bool {
-    inner.waiting_for_device(true);
+    inner.waiting_for_device();
     host.device_came_back(device);
     if let Some(p) = pipeline.take()
         && let Some(s) = p.stop()
@@ -640,7 +640,7 @@ fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6], pipeline: &mut
         }
     };
     tracing::debug!("device off: waited {} s, back {back}", t.elapsed().as_secs());
-    inner.waiting_for_device(false);
+    inner.done_waiting_for_device(back);
     back
 }
 
