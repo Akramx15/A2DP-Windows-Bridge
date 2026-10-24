@@ -1005,6 +1005,7 @@ impl CoreState {
                     stream.info = None;
                     stream.volume = None;
                     stream.battery = None;
+                    stream.battery_refused = false;
                     if state == CoreStreamState::Idle {
                         stream.profile = None;
                     }
@@ -1056,8 +1057,13 @@ impl CoreState {
                 devices_changed = true;
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
+            ServiceEvent::BatteryRefused => {
+                stream.battery = None;
+                stream.battery_refused = true;
+            }
             ServiceEvent::Battery(v) => {
                 stream.battery = Some(v);
+                stream.battery_refused = false;
                 let mut warned = self.battery_warned.load(Ordering::Acquire);
                 let alert = battery_low_alert(&mut warned, v);
                 self.battery_warned.store(warned, Ordering::Release);
@@ -1209,6 +1215,7 @@ impl CoreState {
             info: None,
             volume: None,
             battery: None,
+            battery_refused: false,
         }));
         let service = self.service.clone();
         // start_streaming joins a running session first: not on a runtime thread

@@ -614,6 +614,7 @@ fn stream_session(
             ),
             Ok(ServiceEvent::Volume(v)) => println!("Headphone volume: {v} ({}%)", v as u32 * 100 / 127),
             Ok(ServiceEvent::Battery(v)) => println!("Headphone battery: {v}%"),
+            Ok(ServiceEvent::BatteryRefused) => println!("Headphone battery: unknown (HFP refused)"),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return false,
         }

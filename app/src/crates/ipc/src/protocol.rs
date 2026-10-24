@@ -374,6 +374,11 @@ pub struct StreamStatus {
     /// Settings.battery_experimental and headphones that report it)
     #[serde(default)]
     pub battery: Option<u8>,
+    /// The headphones refused the connection that reports the battery
+    /// (another device such as a phone may hold their hands-free profile):
+    /// the battery shows as unknown
+    #[serde(default)]
+    pub battery_refused: bool,
 }
 
 /// A connection profile, as in profiles.json

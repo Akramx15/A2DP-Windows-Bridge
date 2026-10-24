@@ -702,6 +702,8 @@
   "ui.devices.manage": "管理裝置",
   "ui.devices.saved_empty": "尚無已儲存的裝置。請在「音訊裝置」中新增。",
   "ui.home.battery": "電量 %d%%",
+  "ui.home.battery_unknown": "電量未知",
+  "ui.home.battery_refused_tip": "耳機拒絕回報電量。可能有其他裝置（例如手機）同時連線中；中斷該裝置後重新連線即可顯示電量。",
   "ui.nav.about": "關於",
   "ui.home.no_device": "尚無音訊裝置。新增一個即可開始。",
   "ui.home.add_device": "新增裝置",

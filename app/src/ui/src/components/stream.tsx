@@ -158,18 +158,32 @@ export function codecName(info: StreamInfo): string {
   return key ? t(key) : info.codec;
 }
 
-/** The battery level: a small battery that fills and changes colour with it, and the number */
-export function BatteryLevel(props: { percent: number; class?: string }) {
-  const level = () => Math.max(0, Math.min(100, props.percent));
-  const tone = () => (level() <= 15 ? "bad" : level() <= 40 ? "warn" : "good");
+/** Whether the stream has a battery to show: a level, or "unknown" when the
+ *  headphones refused to report it (another device holds their HFP) */
+export const showsBattery = (s: StreamStatus) => s.battery !== null || s.battery_refused;
+
+/** The battery level: a small battery that fills and changes colour with it,
+ *  and the number; null is "unknown", with the reason on hover */
+export function BatteryLevel(props: { percent: number | null; class?: string }) {
+  const level = () => Math.max(0, Math.min(100, props.percent ?? 0));
+  const known = () => props.percent !== null;
+  const tone = () => (!known() ? "unknown" : level() <= 15 ? "bad" : level() <= 40 ? "warn" : "good");
+  const text = () => (known() ? t("ui.home.battery", level()) : t("ui.home.battery_unknown"));
+  const tip = () => (known() ? undefined : t("ui.home.battery_refused_tip"));
   return (
-    <span class={`battery ${props.class ?? ""}`} role="img" aria-label={t("ui.home.battery", level())}>
+    <span
+      class={`battery ${props.class ?? ""}`}
+      classList={{ "battery-unknown": !known() }}
+      role="img"
+      aria-label={tip() ? `${text()}: ${tip()}` : text()}
+      title={tip()}
+    >
       <svg class={`battery-icon st-${tone()}`} width="22" height="12" viewBox="0 0 22 12" aria-hidden="true">
         <rect x="0.5" y="0.5" width="18" height="11" rx="2.5" fill="none" stroke="currentColor" opacity="0.7" />
         <rect x="19.5" y="3.5" width="2" height="5" rx="1" fill="currentColor" opacity="0.7" />
         <rect x="2" y="2" width={(15 * level()) / 100} height="8" rx="1.5" fill="currentColor" />
       </svg>
-      <span class="num">{t("ui.home.battery", level())}</span>
+      <span class="num">{text()}</span>
     </span>
   );
 }

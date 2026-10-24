@@ -201,6 +201,9 @@ pub enum HostEvent {
     Volume(u8),
     /// The headphones reported their battery level (percent)
     Battery(u8),
+    /// The headphones refused the HFP connection that reports the battery
+    /// level, typically because another device (a phone) holds their HFP
+    BatteryRefused,
     /// A headphone button to pass to Windows as a media key
     MediaKey(MediaKey),
     /// The HCI transport stopped working for good

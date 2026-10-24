@@ -51,6 +51,21 @@ describe("Home", () => {
     expect(calls.some((c) => c.method === "stream.stop")).toBe(true);
   });
 
+  it("shows the battery as unknown, with the reason on hover, when the headphones refuse to report it", async () => {
+    start("#/home", { scenario: "battery_refused" });
+    const wh = await homeCard("WH-1000XM5");
+    fireEvent.click(within(wh).getByRole("button", { name: "Connect" }));
+    await within(wh).findByRole("button", { name: "Disconnect" });
+    const battery = await waitFor(() => {
+      const b = wh.querySelector(".battery");
+      expect(b).not.toBeNull();
+      return b!;
+    });
+    expect(battery).toHaveTextContent("Battery unknown");
+    expect(battery.getAttribute("title")).toMatch(/Another device \(such as a phone\)/);
+    expect(battery).not.toHaveTextContent("%");
+  });
+
   it("switches to another device with its Connect (one device streams at a time)", async () => {
     const { calls } = start("#/home");
     const wh = await homeCard("WH-1000XM5");

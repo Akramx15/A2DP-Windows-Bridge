@@ -2748,3 +2748,10 @@ html.win-flyout body {
 .battery-icon.st-bad {
   color: var(--bad);
 }
+/* Unknown (the headphones refused to report it): the reason on hover */
+.battery-unknown {
+  cursor: help;
+}
+.battery-icon.st-unknown {
+  color: var(--text-2);
+}

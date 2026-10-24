@@ -702,6 +702,8 @@
   "ui.devices.manage": "Manage devices",
   "ui.devices.saved_empty": "No saved devices yet. Add one under Audio Devices.",
   "ui.home.battery": "Battery %d%%",
+  "ui.home.battery_unknown": "Battery unknown",
+  "ui.home.battery_refused_tip": "The headphones refused to report their battery. Another device (such as a phone) may be connected to them at the same time; disconnect it and reconnect to see the battery.",
   "ui.nav.about": "About",
   "ui.home.no_device": "No audio device yet. Add one to get started.",
   "ui.home.add_device": "Add a device",

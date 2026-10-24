@@ -206,6 +206,9 @@ pub enum ServiceEvent {
     Volume(u8),
     /// The headphones reported their battery level (percent)
     Battery(u8),
+    /// The headphones refused to report their battery level (HFP refused,
+    /// another device may hold it)
+    BatteryRefused,
 }
 
 pub struct ServiceOptions {
@@ -486,6 +489,16 @@ impl Inner {
                         if let Some(inner) = weak.upgrade() {
                             let _ =
                                 inner.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::Battery(v));
+                        }
+                    }
+                    HostEvent::BatteryRefused => {
+                        tracing::debug!("host event: battery refused");
+                        if let Some(inner) = weak.upgrade() {
+                            let _ = inner
+                                .events
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .send(ServiceEvent::BatteryRefused);
                         }
                     }
                     HostEvent::ConnectionLost | HostEvent::TransportFailed => {
