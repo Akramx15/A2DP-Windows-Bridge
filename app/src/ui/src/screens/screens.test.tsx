@@ -186,6 +186,13 @@ describe("every screen renders", () => {
     const order = calls.map((c) => c.method).filter((m) => m === "adapter.assign_winusb" || m === "adapter.download_firmware");
     expect(order).toEqual(["adapter.assign_winusb", "adapter.download_firmware"]);
     expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled();
+    // Step 3: no connection while another A2DPWB holds the adapter
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    const connect = (await screen.findAllByRole("button", { name: "Connect" }, { timeout: 5000 }))[0];
+    mock!.setV1Running(true);
+    await waitFor(() => expect(connect).toBeDisabled());
+    mock!.setV1Running(false);
+    await waitFor(() => expect(connect).toBeEnabled());
   });
 
   it("the flyout", async () => {

@@ -420,7 +420,14 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
           </div>
         )}
       </Show>
-      <DevicePicker address="" classicOnly onPick={() => {}} onConnect={(a, n) => void connect(a, n)} connecting={connecting()} />
+      <DevicePicker
+        address=""
+        classicOnly
+        onPick={() => {}}
+        onConnect={(a, n) => void connect(a, n)}
+        connecting={connecting()}
+        connectDisabled={snap().v1_running}
+      />
       <Startup />
     </div>
   );
