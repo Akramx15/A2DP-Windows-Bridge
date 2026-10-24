@@ -190,7 +190,7 @@ describe("every screen renders", () => {
     const setUp = await screen.findByRole("button", { name: "Set up this adapter" });
     expect(screen.getByText(/Windows then stops using this adapter/)).toBeInTheDocument();
     expect(screen.getByText("rtl8761bu_fw.bin, rtl8761bu_config.bin")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Assign WinUSB" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Replace with WinUSB driver" })).toBeNull();
     // Another A2DPWB started meanwhile: no driver change until it exits
     mock!.setV1Running(true);
     await waitFor(() => expect(setUp).toBeDisabled());

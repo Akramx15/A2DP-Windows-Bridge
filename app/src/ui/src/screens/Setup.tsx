@@ -16,7 +16,7 @@ import { t } from "../i18n";
 import { IpcError } from "../ipc/types";
 import type { AdapterInfo, Snapshot } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
-import { adapterSupported, adapterTitle, driverText, usableFirst } from "./Adapter";
+import { adapterIds, adapterName, adapterSupported, driverText, usableFirst } from "./Adapter";
 import { V1Running } from "./Home";
 
 export function needsSetup(snap: Snapshot): boolean {
@@ -26,18 +26,18 @@ export function needsSetup(snap: Snapshot): boolean {
 const STEP_KEYS = ["ui.setup.step_adapter", "ui.setup.step_driver", "ui.setup.step_device"];
 const LAST = STEP_KEYS.length - 1;
 
-/** The adapter's name and what A2DPWB can do with it (issue #86): the vendor
- *  and chip as the title, Windows' name and the driver below, and a green
- *  "Supported" or red "Not supported" tag */
+/** The adapter's name and what A2DPWB can do with it (issue #86): Device
+ *  Manager's name with the chip as the title, its IDs and the driver below,
+ *  and a green "Supported" or red "Not supported" tag */
 function AdapterLine(props: { adapter: AdapterInfo }) {
   const ok = () => adapterSupported(props.adapter);
   return (
     <>
       <Icon name="usb_stick" />
       <span class="choice-text">
-        <strong>{adapterTitle(props.adapter, false)}</strong>
+        <strong>{adapterName(props.adapter)}</strong>
         <span class="muted">
-          {[props.adapter.device_name, driverText(props.adapter.driver).text].filter((x) => x).join(" · ")}
+          {adapterIds(props.adapter)} · {driverText(props.adapter.driver).text}
         </span>
       </span>
       <span class={`tag st-${ok() ? "good" : "bad"}`}>{t(ok() ? "ui.setup.supported" : "ui.adapter.firmware_unsupported")}</span>

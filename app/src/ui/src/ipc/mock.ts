@@ -82,6 +82,7 @@ const RTL: AdapterInfo = {
   le_audio: null,
   address: "00:1A:7D:DA:71:13",
   bt_version: "5.1",
+  windows_name: "TP-Link Bluetooth USB Adapter",
 };
 
 /** A chip A2DPWB has no firmware loader for (the first run lists it too) */
@@ -100,8 +101,10 @@ const MEDIATEK: AdapterInfo = {
   firmware_files: [],
   firmware_download: false,
   vendor_note: { key: "firmware.vendor_unsupported", args: [] },
-  address: null,
-  bt_version: null,
+  // As Windows' Bluetooth reports it (Device Manager's Advanced tab)
+  address: "C0:E3:50:2E:00:09",
+  bt_version: "5.4",
+  windows_name: "MediaTek Bluetooth Adapter",
 };
 
 export function sampleProfile(over: Partial<Profile> = {}): Profile {

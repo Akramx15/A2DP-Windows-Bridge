@@ -301,10 +301,10 @@ describe("setup adapter step", () => {
     // The supported one first, and chosen
     const rtl = radios[0].closest(".choice") as HTMLElement;
     const mtk = radios[1].closest(".choice") as HTMLElement;
-    expect(rtl).toHaveTextContent("Realtek RTL8761BU");
+    expect(rtl).toHaveTextContent("TP-Link Bluetooth USB Adapter (RTL8761BU)");
     expect(within(rtl).getByText("Supported")).toHaveClass("st-good");
     expect(radios[0]).toBeChecked();
-    expect(mtk).toHaveTextContent("MediaTek");
+    expect(mtk).toHaveTextContent("MediaTek Bluetooth Adapter");
     expect(mtk).not.toHaveTextContent("[unsupported]");
     expect(within(mtk).getByText("Not supported")).toHaveClass("st-bad");
     fireEvent.click(radios[1]);

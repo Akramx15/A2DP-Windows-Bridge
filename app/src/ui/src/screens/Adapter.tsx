@@ -19,22 +19,39 @@ import {
 } from "../lib/chips";
 import { LINKS, vendorFirmwareUrl } from "../lib/links";
 
-/** The adapters A2DPWB can use first (WinUSB), the ones without a driver last */
+/** The adapters A2DPWB can use first (WinUSB), the ones without a driver
+ *  and then the ones it cannot use at all last */
 export function usableFirst(list: readonly AdapterInfo[]): AdapterInfo[] {
-  const rank = (a: AdapterInfo) => (a.driver === "winusb" ? 0 : a.driver === "none" ? 2 : 1);
+  const rank = (a: AdapterInfo) =>
+    (adapterSupported(a) ? 0 : 3) + (a.driver === "winusb" ? 0 : a.driver === "none" ? 2 : 1);
   return [...list].sort((a, b) => rank(a) - rank(b));
 }
 
 const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, "0");
 
-/** "Realtek RTL8761BU": the vendor and chip, without the VID:PID the line
- *  below shows (issue #86); "MediaTek [unsupported]" keeps its mark */
-export function adapterTitle(a: Pick<AdapterInfo, "display_name" | "vendor">, mark = true): string {
-  let name = a.display_name.replace(/\s*\(0x[0-9a-f]{4}:0x[0-9a-f]{4}\)/i, "").trim();
-  // The setup's own tag says it instead
-  if (!mark) name = name.replace(/\s*\[unsupported\]/i, "");
-  if (!a.vendor || name.toLowerCase().startsWith(a.vendor.toLowerCase())) return name;
-  return `${a.vendor} ${name}`;
+/** "Realtek Bluetooth 5.3 Adapter (RTL8761BU)": the name Device Manager
+ *  gives it with the chip (issue #86); before Windows' Bluetooth ever ran
+ *  it, the vendor and chip ("Realtek RTL8761BU"), without the VID:PID the
+ *  line below shows and the "[unsupported]" its firmware tag says */
+export function adapterName(
+  a: Pick<AdapterInfo, "display_name" | "vendor" | "windows_name" | "realtek_chip">,
+): string {
+  const name = a.windows_name?.trim();
+  if (!name) {
+    const chip = a.display_name
+      .replace(/\s*\(0x[0-9a-f]{4}:0x[0-9a-f]{4}\)/i, "")
+      .replace(/\s*\[unsupported\]/i, "")
+      .trim();
+    if (!a.vendor || chip.toLowerCase().startsWith(a.vendor.toLowerCase())) return chip;
+    return `${a.vendor} ${chip}`;
+  }
+  const chip = a.realtek_chip;
+  return chip && !name.toUpperCase().includes(chip.toUpperCase()) ? `${name} (${chip})` : name;
+}
+
+/** "8C:88:4B:46:DD:AE | 0BDA:A729 | v5.1": what is known of it */
+export function adapterIds(a: Pick<AdapterInfo, "address" | "vid" | "pid" | "bt_version">): string {
+  return [a.address, `${hex4(a.vid)}:${hex4(a.pid)}`, a.bt_version && `v${a.bt_version}`].filter(Boolean).join(" | ");
 }
 
 /** A2DPWB can stream through it: not a chip whose firmware loader it lacks
@@ -64,6 +81,12 @@ export function Adapter() {
   const adapter = () => snap().adapter;
   // The order shown; the chip section goes with its adapter in it
   const sorted = () => usableFirst(adapter().adapters);
+  // The card the chip choice goes in; none for an adapter A2DPWB cannot
+  // use, the choice then stands on its own below the cards
+  const chipCard = () => {
+    const i = chipTargetIndex(sorted());
+    return i >= 0 && adapterSupported(sorted()[i]) ? i : -1;
+  };
   const [dialog, setDialog] = createSignal<{ adapter: AdapterInfo; mode: "assign" | "restore" } | null>(null);
   const [listing, setListing] = createSignal(false);
   // The *_fw.bin files in the settings folder: chips the table lacks
@@ -133,81 +156,74 @@ export function Adapter() {
           {(a, i) => {
             const drv = () => driverText(a.driver);
             const fw = () => adapterFirmwareTag(a, snap().settings);
+            const driverHead = createUniqueId();
+            const firmwareHead = createUniqueId();
             return (
-              <section class="card adapter-card" aria-label={adapterTitle(a)}>
+              <section class="card adapter-card" aria-label={adapterName(a)}>
                 <div class="adapter-head">
                   <Icon name="usb_stick" />
                   <div>
-                    <h2>{adapterTitle(a)}</h2>
-                    <span class="muted">
-                      {a.device_name} · <span class="mono">{hex4(a.vid)}:{hex4(a.pid)}</span>
-                    </span>
+                    {/* Device Manager's name; the USB device's own on hover */}
+                    <h2 title={a.device_name}>{adapterName(a)}</h2>
+                    <span class="muted mono">{adapterIds(a)}</span>
                   </div>
                 </div>
-                <dl class="kv">
-                  <Show when={a.address}>
-                    <div>
-                      <dt>{t("ui.adapter.address")}</dt>
-                      <dd class="mono">{a.address}</dd>
-                    </div>
-                  </Show>
-                  {/* What the controller itself reports (HCI), not Windows' name */}
-                  <Show when={a.bt_version}>
-                    <div>
-                      <dt>{t("ui.adapter.bt_version")}</dt>
-                      <dd class="num">{a.bt_version}</dd>
-                    </div>
-                  </Show>
-                  <div>
-                    <dt>{t("ui.adapter.driver")}</dt>
-                    <dd>
-                      <span class={`tag st-${drv().status}`}>{drv().text}</span>
-                      <span class="muted mono"> {a.driver_service}</span>
+                <div class="adapter-boxes">
+                  <div class="adapter-box" role="group" aria-labelledby={driverHead}>
+                    <h3 id={driverHead}>
+                      {t("ui.adapter.driver")}: <span class={`tag st-${drv().status}`}>{drv().text}</span>
                       <Show when={a.restart_needed}>
+                        {" "}
                         <span class="tag st-warn" title={t("ui.adapter.restart_needed_hint")}>
                           {t("ui.adapter.restart_needed")}
                         </span>
                       </Show>
-                    </dd>
+                    </h3>
+                    <Show
+                      when={a.driver === "winusb"}
+                      fallback={
+                        <>
+                          <Button kind="strong" icon="shield" onClick={() => setDialog({ adapter: a, mode: "assign" })}>
+                            {t("ui.adapter.assign_winusb")}
+                          </Button>
+                          <p class="hint">{t("ui.adapter.assign_short")}</p>
+                        </>
+                      }
+                    >
+                      <Button icon="arrow_reset" onClick={() => setDialog({ adapter: a, mode: "restore" })}>
+                        {t("ui.adapter.restore_driver")}
+                      </Button>
+                      <p class="hint">{t("ui.adapter.restore_short")}</p>
+                    </Show>
                   </div>
-                  <div>
-                    <dt>{t("ui.adapter.firmware")}</dt>
-                    <dd>
-                      <span class={`tag st-${fw().status}`}>{t(fw().key)}</span>
-                      <Show when={a.realtek_chip}>
-                        <span class="muted"> {a.realtek_chip}</span>
-                      </Show>
+                  <div
+                    class="adapter-box"
+                    id={i() === chipCard() ? FIRMWARE_SECTION : undefined}
+                    role="group"
+                    aria-labelledby={firmwareHead}
+                  >
+                    <h3 id={firmwareHead}>
+                      {t("ui.adapter.firmware")}: <span class={`tag st-${fw().status}`}>{t(fw().key)}</span>
                       {/* The running stack found it on its ROM code (issue #81) */}
                       <Show when={adapter().rom_firmware && a.realtek_chip && a.driver === "winusb"}>
+                        {" "}
                         <span class="tag st-bad" title={t("firmware.rom_status")}>
                           {t("ui.adapter.rom_firmware")}
                         </span>
                       </Show>
-                    </dd>
+                    </h3>
+                    {/* The chip setting is one for all adapters: with the one it applies to */}
+                    <Show when={i() === chipCard()}>
+                      <ChipSection files={files()} onChanged={loadFiles} adapter={a} />
+                    </Show>
+                    <Show when={!adapterSupported(a)}>
+                      <Button icon="arrow_download" disabled>
+                        {t("ui.adapter.firmware_download_unavailable")}
+                      </Button>
+                      <p class="hint">{t("firmware.vendor_unsupported")}</p>
+                    </Show>
                   </div>
-                </dl>
-                <div class="adapter-actions">
-                  <Show
-                    when={a.driver === "winusb"}
-                    fallback={
-                      <>
-                        <Button kind="strong" icon="shield" onClick={() => setDialog({ adapter: a, mode: "assign" })}>
-                          {t("ui.adapter.assign_winusb")}
-                        </Button>
-                        <span class="hint">{t("ui.adapter.assign_short")}</span>
-                      </>
-                    }
-                  >
-                    <Button icon="arrow_reset" onClick={() => setDialog({ adapter: a, mode: "restore" })}>
-                      {t("ui.adapter.restore_driver")}
-                    </Button>
-                    <span class="hint">{t("ui.adapter.restore_short")}</span>
-                  </Show>
                 </div>
-                {/* The chip setting is one for all adapters: with the one it applies to */}
-                <Show when={i() === chipTargetIndex(sorted())}>
-                  <ChipSection files={files()} onChanged={loadFiles} embedded />
-                </Show>
               </section>
             );
           }}
@@ -215,7 +231,7 @@ export function Adapter() {
       </Show>
 
       {/* No adapter to put it with: on its own, to choose the chip beforehand */}
-      <Show when={adapter().adapters.length === 0}>
+      <Show when={chipCard() < 0}>
         <ChipSection files={files()} onChanged={loadFiles} />
       </Show>
       <AfhSection />
@@ -226,7 +242,7 @@ export function Adapter() {
 }
 
 /** v1 FirmwareDialog: the chip choice and the firmware state of that chip */
-function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<void>; embedded?: boolean }) {
+function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<void>; adapter?: AdapterInfo }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const settings = () => snap().settings;
@@ -266,10 +282,14 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
       </Field>
       <div aria-live="polite">
         <Show when={status()} keyed>
-          {(st) => <FirmwareStatus status={st} />}
+          {(st) => <FirmwareStatus status={st} embedded={props.adapter !== undefined} />}
         </Show>
       </div>
-      <div class="inline">
+      <div class="inline wrap">
+        {/* Also to fetch the files again when they are there */}
+        <Show when={props.adapter?.firmware_download && props.adapter}>
+          {(a) => <FirmwareDownload files={a().firmware_files} kind={a().firmware_present ? undefined : "strong"} />}
+        </Show>
         <Button icon="folder_open" kind="subtle" onClick={() => void openFirmwareFolder(app)}>
           {t("firmware.open_folder")}
         </Button>
@@ -279,26 +299,25 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
       </div>
     </>
   );
-  const headId = createUniqueId();
+  // In the adapter's firmware box, which has the heading
   return (
     <Show
-      when={props.embedded}
+      when={props.adapter}
       fallback={
         <Section id={FIRMWARE_SECTION} title={t("firmware.title")}>
           {body()}
         </Section>
       }
     >
-      <div id={FIRMWARE_SECTION} class="adapter-firmware" role="group" aria-labelledby={headId}>
-        <h3 id={headId}>{t("firmware.title")}</h3>
-        {body()}
-      </div>
+      {body()}
     </Show>
   );
 }
 
 /** v1 UpdateFirmwareStatus: the files, what is missing, a vendor's note */
-function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
+/** `embedded`: in the adapter's firmware box, whose tag says the files are
+ *  there and which has the download button itself */
+function FirmwareStatus(props: { status: ChipStatus; embedded?: boolean }): JSX.Element {
   const app = useApp();
   const download = (url: string) => (
     <Button icon="open" onClick={() => app.core.transport.openUrl(url)}>
@@ -308,7 +327,7 @@ function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
   // The core fetches the files itself; the page stays for doing it by hand
   const realtekActions = (files: string[], fetch: boolean) => (
     <>
-      <Show when={fetch}>
+      <Show when={fetch && !props.embedded}>
         <FirmwareDownload files={files} kind="strong" />
       </Show>
       {download(LINKS.firmwareRealtek)}
@@ -322,6 +341,7 @@ function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
   const st = props.status;
   switch (st.kind) {
     case "present":
+      if (props.embedded) return null;
       return (
         <Banner kind="good" title={t("firmware.present")}>
           {fileList(st.files)}
@@ -330,6 +350,7 @@ function FirmwareStatus(props: { status: ChipStatus }): JSX.Element {
     case "missing":
     case "unchecked": {
       if (st.kind === "unchecked" && st.present === true) {
+        if (props.embedded) return null;
         return (
           <Banner kind="good" title={t("firmware.present")}>
             {fileList(st.files)}

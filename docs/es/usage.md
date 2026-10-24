@@ -26,7 +26,7 @@ Inicie **A2DP Windows Bridge** desde el menú Inicio (o `a2dpwb.exe`). El menú 
 - **Conectar** / **Desconectar** bajo cada tarjeta. Solo transmite un dispositivo a la vez: **Conectar** en otro dispositivo detiene la transmisión en curso y conecta ese
 - **Volumen**: el volumen de los auriculares (consulte [Volumen](#volume))
 - El origen de captura del dispositivo en uso (con **Más ajustes de captura**) y la calidad del enlace con un pequeño gráfico
-- Un error aparece con su causa y, si lo hay, el botón que lo soluciona (**Asignar WinUSB**, **Abrir página de descarga**, **Reiniciar Bluetooth**, **Reintentar**, **Códecs**, **Dispositivos de audio**, ...)
+- Un error aparece con su causa y, si lo hay, el botón que lo soluciona (**Reemplazar por el controlador WinUSB**, **Abrir página de descarga**, **Reiniciar Bluetooth**, **Reintentar**, **Códecs**, **Dispositivos de audio**, ...)
 
 La barra lateral muestra lo mismo para cada dispositivo en todas las pantallas.
 
@@ -68,7 +68,7 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene además una p
 ### Adaptador
 
 - Los adaptadores Bluetooth USB detectados con su chip, **Controlador** y **Firmware**. **Actualizar** vuelve a buscarlos
-- **Asignar WinUSB** / **Restaurar controlador** (consulte [Instalación](setup#winusb)); Windows solicita permiso de administrador cada vez
+- **Reemplazar por el controlador WinUSB** / **Restaurar el controlador original** (consulte [Instalación](setup#winusb)); Windows solicita permiso de administrador cada vez
 - **Chip Bluetooth** para el firmware, con **Descargar firmware**, **Abrir página de descarga** y **Abrir carpeta de configuración** (consulte [Firmware](setup#firmware))
 - **AFH**: Automático, Desactivado o canales Wi-Fi en Manual (consulte [Calidad del enlace y AFH](#link-quality))
 - **Pila Bluetooth**: detenida (se inicia con la primera búsqueda o conexión), iniciando, lista o error, y **Reiniciar Bluetooth**

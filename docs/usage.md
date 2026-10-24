@@ -25,7 +25,7 @@ Start **A2DP Windows Bridge** from the Start menu (or `a2dpwb.exe`). The menu on
 - **Connect** / **Disconnect** under each card. One device streams at a time: **Connect** on another device stops the running stream and connects that one
 - **Volume**: the headphones' volume (see [Volume](#volume))
 - The capture source of the device in use (with **More capture settings**) and the link quality with a small graph
-- An error comes with its cause and, where there is one, the button that fixes it (**Assign WinUSB**, **Open Download Page**, **Restart Bluetooth**, **Try again**, **Codecs**, **Audio Devices**, ...)
+- An error comes with its cause and, where there is one, the button that fixes it (**Replace with WinUSB driver**, **Open Download Page**, **Restart Bluetooth**, **Try again**, **Codecs**, **Audio Devices**, ...)
 
 The sidebar shows the same for every device on every screen.
 
@@ -79,7 +79,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 ### Adapter
 
 - The detected USB Bluetooth adapters with their chip, **Driver** and **Firmware**. **Refresh** looks again
-- **Assign WinUSB** / **Restore driver** (see [Setup](setup#winusb)); Windows asks for administrator permission each time
+- **Replace with WinUSB driver** / **Restore original driver** (see [Setup](setup#winusb)); Windows asks for administrator permission each time
 - **Bluetooth Chip** for the firmware, with **Download Firmware**, **Open Download Page** and **Open Config Folder** (see [Firmware](setup#firmware))
 - **AFH**: Auto, Off or Manual Wi-Fi channels (see [Link Quality and AFH](#link-quality))
 - **Bluetooth stack**: stopped (it starts with the first scan or connection), starting, ready or error, and **Restart Bluetooth**

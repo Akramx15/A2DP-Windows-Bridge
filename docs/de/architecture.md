@@ -100,7 +100,7 @@ Benutzermodus.
 
 **Funktionsweise**:
 1. Einem USB-Bluetooth-Adapter wird WinUSB zugewiesen, in der App (**Adapter >
-   WinUSB zuweisen**, siehe [Treiberzuweisung](#driver-assignment)) oder mit Zadig
+   Durch WinUSB-Treiber ersetzen**, siehe [Treiberzuweisung](#driver-assignment)) oder mit Zadig
 2. Das Crate `hci-transport` öffnet den Adapter über WinUSB mit `nusb`
    und verbindet ihn als HCI-Transport mit BTstack
 3. BTstack sendet HCI-Befehle, um den Bluetooth-Controller zu initialisieren

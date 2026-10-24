@@ -91,7 +91,7 @@ flowchart TB
 - 裝置位址需手動輸入，或以 USB 介面卡掃描（GAP inquiry）找到
 
 **運作方式**：
-1. 在應用程式中（**介面卡 > 指派 WinUSB**，請參閱 [驅動程式指派](#driver-assignment)）
+1. 在應用程式中（**介面卡 > 替換為 WinUSB 驅動程式**，請參閱 [驅動程式指派](#driver-assignment)）
    或透過 Zadig，為 USB 藍牙介面卡指派 WinUSB
 2. `hci-transport` crate 以 `nusb` 透過 WinUSB 開啟介面卡，並將它作為 HCI 傳輸
    連接到 BTstack

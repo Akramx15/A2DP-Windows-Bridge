@@ -110,14 +110,20 @@ pub struct AdapterInfo {
     /// on it found out (remembered); None if none ran on it yet
     #[serde(default)]
     pub le_audio: Option<bool>,
-    /// The adapter's own Bluetooth address, as a stack running on it read
-    /// it (remembered); None if none ran on it yet
+    /// The adapter's own Bluetooth address, as a stack running on it or
+    /// Windows' Bluetooth read it (remembered); None if neither ran on it yet
     #[serde(default)]
     pub address: Option<String>,
     /// Bluetooth core version the controller reports (HCI version: "5.3"),
-    /// remembered; None if no stack ran on it yet
+    /// remembered; None if neither a stack nor Windows' Bluetooth ran on it
+    /// yet
     #[serde(default)]
     pub bt_version: Option<String>,
+    /// Device Manager's name for the radio while Windows' Bluetooth runs it
+    /// ("Realtek Bluetooth 5.3 Adapter"), remembered for when A2DPWB has it
+    /// on WinUSB; None if Windows never ran it
+    #[serde(default)]
+    pub windows_name: Option<String>,
 }
 
 /// A Realtek firmware pair found in the settings folder

@@ -254,6 +254,9 @@ struct AdapterCaps {
     /// The HCI version the controller reports (Bluetooth core version)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     hci_version: Option<u8>,
+    /// Device Manager's name while Windows' Bluetooth ran it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    windows_name: Option<String>,
 }
 
 fn caps_key(vid: u16, pid: u16) -> String {
@@ -320,6 +323,40 @@ pub fn save_hci_version(dir: &Path, vid: u16, pid: u16, version: u8) {
     }
     entry.hci_version = Some(version);
     tracing::debug!("adapter caps: {} HCI version {version}, saving {CAPS_FILE}", caps_key(vid, pid));
+    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
+    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
+        tracing::warn!("cannot write {CAPS_FILE}: {e}");
+    }
+}
+
+/// Device Manager's name for the adapter's radio, as Windows' Bluetooth
+/// named it when it last ran the adapter
+pub fn windows_name(dir: &Path, vid: u16, pid: u16) -> Option<String> {
+    load_caps(dir).get(&caps_key(vid, pid)).and_then(|c| c.windows_name.clone())
+}
+
+/// What Windows' Bluetooth tells about the adapter while it runs it: its
+/// name, and the address and version a stack of A2DPWB would read
+pub fn save_windows_radio(dir: &Path, vid: u16, pid: u16, name: &str, address: Option<&str>, hci_version: Option<u8>) {
+    let mut caps = load_caps(dir);
+    let entry = caps.entry(caps_key(vid, pid)).or_default();
+    let before = entry.clone();
+    if !name.is_empty() {
+        entry.windows_name = Some(name.to_owned());
+    }
+    if let Some(a) = address {
+        entry.address = Some(a.to_owned());
+    }
+    if hci_version.is_some() {
+        entry.hci_version = hci_version;
+    }
+    if *entry == before {
+        return;
+    }
+    tracing::debug!(
+        "adapter caps: {} Windows radio {name:?} {address:?} HCI {hci_version:?}, saving {CAPS_FILE}",
+        caps_key(vid, pid)
+    );
     let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
     if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
         tracing::warn!("cannot write {CAPS_FILE}: {e}");
