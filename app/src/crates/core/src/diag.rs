@@ -1354,13 +1354,10 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
     let _ = writeln!(out, "Language     : {}, theme {}", s.language, s.theme);
     let _ = writeln!(
         out,
-        "Settings     : media keys {}, remember volume {}{}, experimental codecs {}, auto-select {}{}, AFH {}, updates {}{}",
+        "Settings     : media keys {}, remember volume {}, volume sync {}, experimental codecs {}, auto-select {}{}, AFH {}, updates {}{}",
         on_off(s.media_keys),
         on_off(s.remember_volume),
-        match s.device_options.len() {
-            0 => String::new(),
-            n => format!(" ({n} device override(s))"),
-        },
+        on_off(s.volume_sync),
         on_off(s.experimental_codecs),
         on_off(s.auto_codec),
         match s.auto_order() {
@@ -1435,8 +1432,15 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
             }
             let payload = p.max_media_payload.map(|v| v.to_string()).unwrap_or_else(|| "not set".into());
             let _ = writeln!(out, ", auto switch {}, max media packet {payload}", on_off(p.auto_switch_device));
-            let _ = write!(out, "  Volume sync: {}", p.volume_sync);
-            if p.volume_sync == "device" {
+            // As the stream has it: the setting for every device, the device
+            // the profile follows (developer mode)
+            let sync = match (s.volume_sync, p.volume_sync.as_str()) {
+                (false, _) => "off",
+                (true, "device") => "device",
+                _ => "auto",
+            };
+            let _ = write!(out, "  Volume sync: {sync}");
+            if sync == "device" {
                 let _ = write!(out, " {}", quoted(&p.volume_device_name));
             }
             out.push('\n');

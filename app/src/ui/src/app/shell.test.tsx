@@ -291,6 +291,47 @@ describe("setup device step", () => {
     fireEvent.click(inTray);
     await waitFor(() => expect(core.state.snap!.settings.start_minimized).toBe(true));
   });
+
+  it("starts with Windows, in the tray, by default on a first setup (issue #86)", async () => {
+    const { core, mock: m } = start("#/setup");
+    await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
+    // A first run: no profile yet, both off
+    for (const p of [...core.state.snap!.profiles]) await m.call("profile.delete", { name: p.name });
+    await core.request("settings.set", {
+      settings: { ...core.state.snap!.settings, start_with_windows: false, start_minimized: false },
+    });
+    await waitFor(() => expect(core.state.snap!.profiles).toHaveLength(0));
+    for (let i = 0; i < 2; i++) {
+      const next = screen.getByRole("button", { name: "Next" });
+      await waitFor(() => expect(next).not.toBeDisabled());
+      fireEvent.click(next);
+    }
+    const withWindows = await screen.findByRole("switch", { name: t("settings.start_with_windows") });
+    const inTray = screen.getByRole("switch", { name: new RegExp(t("ui.settings.start_minimized")) });
+    await waitFor(() => expect(withWindows).toBeChecked());
+    expect(inTray).toBeChecked();
+    expect(core.state.snap!.settings).toMatchObject({ start_with_windows: true, start_minimized: true });
+    // Turned off, then back and forth: it stays off
+    fireEvent.click(withWindows);
+    await waitFor(() => expect(core.state.snap!.settings.start_with_windows).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    expect(await screen.findByRole("switch", { name: t("settings.start_with_windows") })).not.toBeChecked();
+  });
+
+  it("scans for 30 s and captures a new device's profile from the installed cable (issue #86)", async () => {
+    const { calls, core } = await toDeviceStep({ scenario: "normal" });
+    await waitFor(() => expect(calls.some((c) => c.method === "device.scan")).toBe(true));
+    expect(calls.find((c) => c.method === "device.scan")!.params).toEqual({ seconds: 30 });
+    const row = (await screen.findByText("Galaxy Buds2 Pro")).closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(core.state.snap!.profiles.some((p) => p.name === "Galaxy Buds2 Pro | Auto")).toBe(true));
+    expect(core.state.snap!.profiles.find((p) => p.name === "Galaxy Buds2 Pro | Auto")).toMatchObject({
+      capture_mode: "virtual",
+      audio_device_id: "{0.0.0.00000000}.{cable}",
+      audio_device_name: "CABLE Input (VB-Audio Virtual Cable)",
+    });
+  });
 });
 
 describe("setup adapter step", () => {

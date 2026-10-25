@@ -152,7 +152,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     include_prereleases: false,
     media_keys: true,
     remember_volume: true,
-    device_options: { "AC:80:0A:12:34:56": { media_keys: false, remember_volume: null } },
+    volume_sync: true,
     developer_mode: false,
     dev_overrides: {
       rtp_marker: false,

@@ -1574,7 +1574,8 @@ option {
   align-items: center;
   gap: var(--s3);
 }
-/* Audio Devices: each saved device with its settings, then the add card */
+/* Audio Devices: the settings for every device, each saved device with its
+   own settings, then the add card */
 .device-list.saved-devices {
   max-height: none;
   overflow: visible;
@@ -1593,6 +1594,7 @@ option {
   padding: var(--s3) var(--s4) var(--s4);
   border-top: 1px solid var(--border);
 }
+.device-global,
 .device-add {
   display: flex;
   flex-direction: column;

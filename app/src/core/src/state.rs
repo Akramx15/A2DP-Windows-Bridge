@@ -14,7 +14,7 @@ use a2dpwb_core::receiver::{self, ReceiverClient};
 use a2dpwb_core::settings::Settings as CoreSettings;
 use a2dpwb_core::{
     LeStreamDetails, ScannedDevice, Service, ServiceEvent, SourceRequest, StreamRequest,
-    StreamState as CoreStreamState, devices,
+    StreamState as CoreStreamState, VolumeSync, devices,
 };
 use bt_host::LinkStats;
 use bt_host::chips::{self, ChipVendor};
@@ -242,13 +242,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         include_prereleases: s.include_prereleases,
         media_keys: s.media_keys,
         remember_volume: s.remember_volume,
-        device_options: s
-            .device_options
-            .iter()
-            .map(|(a, o)| {
-                (a.clone(), ipc::DeviceOptions { media_keys: o.media_keys, remember_volume: o.remember_volume })
-            })
-            .collect(),
+        volume_sync: s.volume_sync,
         developer_mode: s.debug_mode,
         dev_overrides: DevOverrides {
             rtp_marker: s.dev_overrides.rtp_marker,
@@ -292,18 +286,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.include_prereleases = s.include_prereleases;
     c.media_keys = s.media_keys;
     c.remember_volume = s.remember_volume;
-    // Keys in capitals; a device with no override left is dropped
-    c.device_options = s
-        .device_options
-        .iter()
-        .map(|(a, o)| {
-            (
-                a.to_uppercase(),
-                a2dpwb_core::settings::DeviceOptions { media_keys: o.media_keys, remember_volume: o.remember_volume },
-            )
-        })
-        .filter(|(_, o)| !o.is_empty())
-        .collect();
+    c.volume_sync = s.volume_sync;
     c.debug_mode = s.developer_mode;
     c.dev_overrides = codec::dev::DevOverrides {
         rtp_marker: s.dev_overrides.rtp_marker,
@@ -724,6 +707,18 @@ pub fn custom_request(c: &CustomStream, legacy_max_media_payload: u16) -> Result
         req.source = SourceRequest::TestTone;
     }
     Ok(req)
+}
+
+/// A profile's Windows Volume Sync under the setting for every device
+/// (issue #86): off, none; on, the device the profile follows (set in
+/// developer mode), else the captured device (Auto). A profile's own "off"
+/// from before that setting no longer counts.
+fn effective_volume_sync(global: bool, profile: VolumeSync) -> VolumeSync {
+    match profile {
+        _ if !global => VolumeSync::Off,
+        VolumeSync::Device(id) => VolumeSync::Device(id),
+        _ => VolumeSync::Auto,
+    }
 }
 
 /// HKCU Run value of v2: the resident core, which opens the UI unless
@@ -1269,6 +1264,7 @@ impl CoreState {
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
         req.auto_order = settings.auto_order();
+        req.volume_sync = effective_volume_sync(settings.volume_sync, req.volume_sync);
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -1697,6 +1693,7 @@ impl CoreState {
                     let experimental_toggled = base.experimental_codecs != merged.experimental_codecs;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
                     let order_changed = base.auto_order != merged.auto_order;
+                    let sync_toggled = base.volume_sync != merged.volume_sync;
                     let order_names = merged.auto_order().names();
                     me.save_settings(merged)?;
                     if chip {
@@ -1704,8 +1701,10 @@ impl CoreState {
                     }
                     // Experimental codecs or Auto-select on / off: a profile
                     // in use whose codec it changes starts again (as a
-                    // profile save does)
-                    if experimental_toggled || auto_toggled || order_changed {
+                    // profile save does); Windows Volume Sync on / off: the
+                    // profile in use starts again (as when it was the
+                    // profile's own setting)
+                    if experimental_toggled || auto_toggled || order_changed || sync_toggled {
                         let (_, s) = me.snapshot();
                         let list = profiles::load(&me.config_dir());
                         let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
@@ -1715,13 +1714,15 @@ impl CoreState {
                             (experimental_toggled && restart_for_experimental(&s.stream, &effective))
                                 || (order_changed && restart_for_order(&s.stream, &effective))
                                 || (auto_toggled && restart_for_auto(&s.stream, p))
+                                || (sync_toggled && restart_after_save(&s.stream, &p.name))
                         };
                         if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
-                                "experimental codecs {}, Auto-select {}, order {}: profile {} starts again",
+                                "experimental codecs {}, Auto-select {}, order {}, volume sync {}: profile {} starts again",
                                 if settings.experimental_codecs { "on" } else { "off" },
                                 if settings.auto_codec { "on" } else { "off" },
                                 order_names,
+                                if settings.volume_sync { "on" } else { "off" },
                                 a2dpwb_core::diag::quoted(&p.name)
                             );
                             me.start_profile(&p.name.clone())?;
@@ -2545,19 +2546,25 @@ mod tests {
         assert!(!merged.le_audio_experimental && merged.le_audio_low_latency);
         assert_eq!(to_ipc_settings(&merged), off);
 
-        // Per-device options: keys in capitals, empty ones dropped
-        let mut options = std::collections::BTreeMap::new();
-        options.insert(
-            "aa:bb:cc:dd:ee:ff".to_string(),
-            ipc::DeviceOptions { media_keys: Some(false), remember_volume: None },
-        );
-        options.insert("11:22:33:44:55:66".to_string(), ipc::DeviceOptions::default());
-        let per_device = Settings { device_options: options, ..off };
-        let merged = merge_settings(&base, &per_device);
-        assert_eq!(merged.device_options.keys().collect::<Vec<_>>(), ["AA:BB:CC:DD:EE:FF"]);
-        assert!(!merged.media_keys_for("aa:bb:cc:dd:ee:ff") && merged.media_keys_for("11:22:33:44:55:66"));
-        let back = to_ipc_settings(&merged);
-        assert_eq!(back.device_options["AA:BB:CC:DD:EE:FF"].media_keys, Some(false));
+        // Windows Volume Sync for every device: on by default
+        assert!(to_ipc_settings(&base).volume_sync);
+        let no_sync = Settings { volume_sync: false, ..off };
+        let merged = merge_settings(&base, &no_sync);
+        assert!(!merged.volume_sync);
+        assert_eq!(to_ipc_settings(&merged), no_sync);
+    }
+
+    #[test]
+    fn volume_sync_for_every_device_overrides_the_profiles() {
+        let dev = || VolumeSync::Device("{0.0.0.00000000}.{x}".into());
+        // Off for every device: no profile syncs
+        for p in [VolumeSync::Auto, VolumeSync::Off, dev()] {
+            assert_eq!(effective_volume_sync(false, p), VolumeSync::Off);
+        }
+        // On: a profile's old "off" no longer counts; a followed device does
+        assert_eq!(effective_volume_sync(true, VolumeSync::Off), VolumeSync::Auto);
+        assert_eq!(effective_volume_sync(true, VolumeSync::Auto), VolumeSync::Auto);
+        assert_eq!(effective_volume_sync(true, dev()), dev());
     }
 
     #[test]

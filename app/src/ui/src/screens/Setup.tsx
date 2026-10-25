@@ -3,7 +3,8 @@
 // button switches it to WinUSB and downloads its firmware), 3 find the audio
 // device: the scan starts by itself, and Connect on a device makes its
 // "<name> | Auto" profile and connects with it, so one click is enough.
-// The last step also asks whether A2DPWB starts with Windows.
+// The last step also asks whether A2DPWB starts with Windows (on, in the
+// tray, by default). The scan takes 30 s (SCAN_SECONDS).
 
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
 import { errorText, useApp, type AppContext } from "../app/context";
@@ -92,7 +93,18 @@ export function Setup() {
   };
 
   let heading: HTMLHeadingElement | undefined;
+  // "Start with Windows" and "Start in the tray" are on by default (issue
+  // #86): turned on once when a first setup (no profile yet) reaches them;
+  // switched off there, they stay off
+  let startupOn = false;
   const go = (n: number) => {
+    if (n === LAST && !startupOn) {
+      startupOn = true;
+      const s = snap().settings;
+      if (snap().profiles.length === 0 && !s.start_with_windows && !s.start_minimized) {
+        void saveSettings(app, { start_with_windows: true, start_minimized: true });
+      }
+    }
     setStep(n);
     // Screen readers and keyboard users land on the new step's title
     queueMicrotask(() => heading?.focus());

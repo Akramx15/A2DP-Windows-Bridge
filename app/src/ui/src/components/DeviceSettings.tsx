@@ -1,26 +1,24 @@
 // One audio device's own settings on the Audio Devices screen (issue #86):
-// what is captured for it (one list, as on Home), the Windows volume that
-// follows it and, in
-// developer mode, the max media packet size (kept in its profile: the core
-// reads them from the profile it streams; a device without one gets it with
-// the first change),
-// whether its buttons control playback and whether its volume is
-// remembered (Settings.device_options; the global value until changed).
-// Only what matters is spelled out: the long explanations are behind the
-// info buttons.
+// what is captured for it (one list, as on Home) and whether a virtual
+// device becomes the Windows default output; in developer mode also the
+// device its Windows volume follows and the max media packet size (kept in
+// its profile: the core reads them from the profile it streams; a device
+// without one gets it with the first change). Windows Volume Sync, the
+// buttons and the remembered volume are one setting each for every device,
+// above the list (Devices.tsx). Only what matters is spelled out: the long
+// explanations are behind the info buttons.
 
 import { createEffect, createMemo, createResource, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
-import { saveSettings } from "../app/settings";
 import { t } from "../i18n";
 import { codecSpec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "../lib/codecs";
-import type { DeviceOptions } from "../ipc/bindings/DeviceOptions";
 import type { AudioApp, AudioDevice, Device, Profile } from "../ipc/types";
 import { LINKS } from "../lib/links";
 import {
   appCaptureSupport,
   captureDevice,
+  defaultCapture,
   deviceFields,
   deviceFieldsComplete,
   entryBase,
@@ -48,12 +46,21 @@ export function DeviceSettings(props: { device: Device }) {
 
   // ---- Audio devices and apps (asked from the core when needed) ----------
   const [devices, setDevices] = createSignal<AudioDevice[] | null>(null);
+  // Windows' list was read (not only failed to be): the VB-Cable suggestion
+  // relies on it
+  const [listed, setListed] = createSignal(false);
   const [apps, setApps] = createSignal<AudioApp[] | null>(null);
   const loadDevices = () =>
     core
       .request("audio.devices")
-      .then(setDevices)
-      .catch(() => setDevices([]));
+      .then((list) => {
+        setDevices(list);
+        setListed(true);
+      })
+      .catch(() => {
+        setDevices([]);
+        setListed(false);
+      });
   const loadApps = () =>
     core
       .request("audio.apps")
@@ -71,6 +78,17 @@ export function DeviceSettings(props: { device: Device }) {
   });
   onCleanup(() => window.removeEventListener("focus", load));
   const virtualDevices = createMemo(() => (devices() ?? []).filter((d) => d.is_virtual));
+  // VB-Cable is suggested only when Windows has no capture source of that
+  // kind at all: no virtual device (issue #86)
+  const noVirtual = () => listed() && virtualDevices().length === 0;
+  // A device without a profile has no capture source chosen yet: a virtual
+  // device if one is installed (issue #86), as its first profile gets
+  let chosen = false;
+  createEffect(
+    on(devices, (list) => {
+      if (list && !chosen && profiles().length === 0) setF(defaultCapture(list));
+    }),
+  );
   const [appSupport] = createResource(appCaptureSupport);
   const leOnly = () => leEntry() || (profiles().length > 0 && profiles().every((p) => p.le_audio));
   /** The shown settings as a profile (what Home's capture source list takes) */
@@ -81,6 +99,7 @@ export function DeviceSettings(props: { device: Device }) {
    *  them (profile.save in the core). A device without a profile gets one
    *  (Auto, as the Codecs screen would make it). */
   const apply = async (patch: Partial<DeviceFields>) => {
+    chosen = true;
     setF(patch);
     const next = { ...unwrap(f) };
     if (!deviceFieldsComplete(next)) return;
@@ -101,23 +120,12 @@ export function DeviceSettings(props: { device: Device }) {
     setSaving(false);
   };
 
-  // ---- Buttons and remembered volume: per device, else the global value ----
-  const key = () => props.device.address.toUpperCase();
-  const options = () => snap().settings.device_options?.[key()] ?? null;
-  const mediaKeys = () => options()?.media_keys ?? snap().settings.media_keys;
-  const rememberVolume = () => options()?.remember_volume ?? snap().settings.remember_volume;
-  const setOption = (patch: Partial<DeviceOptions>) => {
-    const all = { ...(unwrap(snap().settings.device_options) ?? {}) };
-    all[key()] = { ...(all[key()] ?? { media_keys: null, remember_volume: null }), ...patch };
-    void saveSettings(app, { device_options: all });
-  };
-
   /** System Loopback, the virtual devices and the playing apps in one list */
   const sources = createMemo((): Option<string>[] => {
     const p = shown();
     const c = captureChoices(p, devices() ?? [], apps() ?? [], appSupport() !== "no");
     const virtual: Option<string>[] = c.virtual.map((o) => ({ ...o, group: t("capture.virtual") }));
-    if (virtual.length === 0 && devices() !== null) {
+    if (virtual.length === 0 && noVirtual()) {
       virtual.push({ value: "virtual:", label: t("capture.no_virtual_device"), group: t("capture.virtual"), disabled: true });
     }
     const list: Option<string>[] = c.apps.map((o) => ({ ...o, group: t("capture.app") }));
@@ -155,7 +163,7 @@ export function DeviceSettings(props: { device: Device }) {
             <Show when={f.capture_mode === "app" && appSupport() !== "yes" && appSupport() !== "no"}>
               <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
             </Show>
-            <Show when={devices() !== null && virtualDevices().length === 0}>
+            <Show when={noVirtual()}>
               <div class="inline">
                 <span class="hint">{t("capture.no_virtual_device")}</span>
                 <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
@@ -189,55 +197,44 @@ export function DeviceSettings(props: { device: Device }) {
           onChange={(v) => void apply({ auto_switch_device: v })}
         />
       </Show>
-      <Field
-        label={t("capture.volume_sync")}
-        hint={t("capture.volume_sync_hint")}
-        more={() => <p class="hint">{t("tooltip.volume_sync")}</p>}
-      >
-        {(id, described) => (
-          <Select
-            id={id}
-            describedBy={described}
-            value={f.volume_sync === "device" ? `device:${f.volume_device_id}` : f.volume_sync}
-            options={[
-              { value: "auto", label: t("capture.volume_sync_auto") },
-              { value: "off", label: t("capture.volume_sync_off") },
-              ...volumeDevices(devices(), f).map((d) => ({
-                value: `device:${d.id}`,
-                label: d.name,
-                group: t("capture.volume_sync_other"),
-              })),
-            ]}
-            onChange={(v) => {
-              if (v.startsWith("device:")) {
-                const did = v.slice("device:".length);
-                const d = (devices() ?? []).find((x) => x.id === did);
-                void apply({ volume_sync: "device", volume_device_id: did, volume_device_name: d?.name ?? f.volume_device_name });
-              } else {
-                void apply({ volume_sync: v });
-              }
-            }}
-          />
-        )}
-      </Field>
+      {/* Whether the Windows volume syncs is one switch for every device
+          (Devices.tsx); which device it follows is not one for end users
+          (issue #86): developer mode, or a device chosen earlier, so it can
+          be set back */}
+      <Show when={snap().settings.developer_mode || f.volume_sync === "device"}>
+        <Field label={t("capture.volume_sync")}>
+          {(id, described) => (
+            <Select
+              id={id}
+              describedBy={described}
+              disabled={!snap().settings.volume_sync}
+              value={f.volume_sync === "device" ? `device:${f.volume_device_id}` : "auto"}
+              options={[
+                { value: "auto", label: t("capture.volume_sync_captured") },
+                ...volumeDevices(devices(), f).map((d) => ({
+                  value: `device:${d.id}`,
+                  label: d.name,
+                  group: t("capture.volume_sync_other"),
+                })),
+              ]}
+              onChange={(v) => {
+                if (v.startsWith("device:")) {
+                  const did = v.slice("device:".length);
+                  const d = (devices() ?? []).find((x) => x.id === did);
+                  void apply({ volume_sync: "device", volume_device_id: did, volume_device_name: d?.name ?? f.volume_device_name });
+                } else {
+                  void apply({ volume_sync: "auto" });
+                }
+              }}
+            />
+          )}
+        </Field>
+      </Show>
       {/* Not one for end users (issue #86): developer mode, or a size
           changed earlier, so it can be set back */}
       <Show when={!leOnly() && (snap().settings.developer_mode || f.max_media_payload !== PACKET_DEFAULT)}>
         <PacketSize value={f.max_media_payload} onChange={(v) => void apply({ max_media_payload: v })} />
       </Show>
-      <div>
-        <Toggle
-          label={t("settings.media_keys")}
-          hint={t("tooltip.media_keys")}
-          checked={mediaKeys()}
-          onChange={(v) => setOption({ media_keys: v })}
-        />
-        <Toggle
-          label={t("settings.remember_volume")}
-          checked={rememberVolume()}
-          onChange={(v) => setOption({ remember_volume: v })}
-        />
-      </div>
     </div>
   );
 }
