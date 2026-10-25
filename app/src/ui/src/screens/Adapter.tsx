@@ -62,11 +62,16 @@ export function adapterExperimental(a: Pick<AdapterInfo, "display_name">): boole
 }
 
 /** A2DPWB can stream through it: not a chip whose firmware loader it lacks
- *  (MediaTek, Qualcomm) */
+ *  (MediaTek, Qualcomm). Those need their firmware loaded at every start
+ *  before they answer as a Bluetooth controller, so they cannot work at all:
+ *  neither WinUSB nor a firmware download is offered for them (issue #86) */
 export function adapterSupported(a: Pick<AdapterInfo, "vendor_note">): boolean {
   return a.vendor_note?.key !== "firmware.vendor_unsupported";
 }
 
+/** The driver the adapter has now. Windows' Bluetooth driver (BTHUSB) is
+ *  the "original" one WinUSB replaces, a vendor's own (MediaTek's filter, a
+ *  composite device's) the manufacturer's (issue #86) */
 export function driverText(d: DriverKind): { text: string; status: "good" | "warn" | "bad" } {
   switch (d) {
     case "winusb":
@@ -80,6 +85,10 @@ export function driverText(d: DriverKind): { text: string; status: "good" | "war
   }
 }
 
+/** How often the shown list is asked for anew: there is no Refresh button
+ *  (issue #86) and the core has no device notification, so an adapter
+ *  plugged in or out shows up by itself */
+export const ADAPTER_POLL_MS = 5000;
 
 export function Adapter() {
   const app = useApp();
@@ -106,22 +115,26 @@ export function Adapter() {
     }
   };
 
-  const refresh = async () => {
+  // The list anew, one request at a time
+  const relist = async () => {
+    if (listing()) return;
     setListing(true);
-    await Promise.all([app.run(() => core.request("adapter.list")), loadFiles()]);
+    await Promise.all([core.request("adapter.list").catch(() => {}), loadFiles()]);
     setListing(false);
   };
 
   // v1 checked the firmware again when its dialog got the focus back: the
-  // files may have been placed through Open Config Folder meanwhile
-  const onFocus = () => {
-    if (listing()) return;
-    void core.request("adapter.list").catch(() => {});
-    void loadFiles();
-  };
+  // files may have been placed through Open Config Folder meanwhile. On
+  // opening the screen and every few seconds while it is in view as well,
+  // for an adapter plugged in or out
+  const onFocus = () => void relist();
   onMount(() => {
-    void loadFiles();
+    void relist();
     window.addEventListener("focus", onFocus);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible" && dialog() === null) void relist();
+    }, ADAPTER_POLL_MS);
+    onCleanup(() => clearInterval(timer));
   });
   onCleanup(() => window.removeEventListener("focus", onFocus));
   // #/adapter/afh (the receiver test links there): the AFH section in view;
@@ -136,9 +149,6 @@ export function Adapter() {
       <header class="page-head">
         <h1>{t("ui.nav.adapter")}</h1>
         <div class="head-actions">
-          <Button icon="arrow_sync" busy={listing()} onClick={refresh}>
-            {t("ui.adapter.refresh")}
-          </Button>
           <Button icon="arrow_reset" onClick={() => app.run(() => core.request("adapter.restart"))}>
             {t("ui.adapter.restart")}
           </Button>
@@ -186,7 +196,10 @@ export function Adapter() {
                 <div class="adapter-boxes">
                   <div class="adapter-box" role="group" aria-labelledby={driverHead}>
                     <h3 id={driverHead}>
-                      {t("ui.adapter.driver")}: <span class={`tag st-${drv().status}`}>{drv().text}</span>
+                      {t("ui.adapter.driver")}:{" "}
+                      <span class={`tag st-${drv().status}`} title={a.driver_service || undefined}>
+                        {drv().text}
+                      </span>
                       <Show when={a.restart_needed}>
                         {" "}
                         <span class="tag st-warn" title={t("ui.adapter.restart_needed_hint")}>
@@ -198,10 +211,18 @@ export function Adapter() {
                       when={a.driver === "winusb"}
                       fallback={
                         <>
-                          <Button kind="strong" icon="shield" onClick={() => setDialog({ adapter: a, mode: "assign" })}>
+                          {/* One A2DPWB cannot use keeps its driver (issue #86) */}
+                          <Button
+                            kind="strong"
+                            icon="shield"
+                            disabled={!adapterSupported(a)}
+                            onClick={() => setDialog({ adapter: a, mode: "assign" })}
+                          >
                             {t("ui.adapter.assign_winusb")}
                           </Button>
-                          <p class="hint">{t("ui.adapter.assign_short")}</p>
+                          <p class="hint">
+                            {t(adapterSupported(a) ? "ui.adapter.assign_short" : "ui.adapter.assign_unsupported")}
+                          </p>
                         </>
                       }
                     >

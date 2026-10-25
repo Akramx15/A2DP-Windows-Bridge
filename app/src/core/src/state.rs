@@ -365,8 +365,26 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
         .into_iter()
         .map(|a| {
             // Windows' Bluetooth runs it: what Device Manager shows, kept
-            // for when it is on WinUSB (issue #86)
-            if let Some(r) = radios.iter().find(|r| r.on_device(&a.device.instance_id)) {
+            // for when it is on WinUSB (issue #86). A radio it cannot be asked
+            // on or that is not running (a vendor's driver, a MediaTek
+            // composite device) may still have what Windows' stack stored on
+            // its device node: also for an adapter A2DPWB does not support
+            let radio = radios
+                .iter()
+                .find(|r| r.on_device(&a.device.instance_id))
+                .cloned()
+                .map(|mut r| {
+                    if r.address.is_none()
+                        && let Some(p) = win_sys::bt_radios::device_radio(&a.device.instance_id)
+                    {
+                        r.address = p.address;
+                        r.hci_version = r.hci_version.or(p.hci_version);
+                        r.lmp_version = r.lmp_version.or(p.lmp_version);
+                    }
+                    r
+                })
+                .or_else(|| win_sys::bt_radios::device_radio(&a.device.instance_id));
+            if let Some(r) = &radio {
                 a2dpwb_core::adapter::save_windows_radio(
                     config_dir,
                     a.device.vid,

@@ -347,10 +347,12 @@ describe("setup adapter step", () => {
     expect(radios[0]).toBeChecked();
     expect(mtk).toHaveTextContent("MediaTek Bluetooth Adapter");
     expect(mtk).not.toHaveTextContent("[unsupported]");
-    expect(within(mtk).getByText("Not supported")).toHaveClass("st-bad");
+    expect(within(mtk).getByText("Unsupported")).toHaveClass("st-bad");
     fireEvent.click(radios[1]);
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText(t("ui.setup.unsupported_note"))).toBeInTheDocument();
+    // Its driver is not replaced (issue #86)
+    expect(screen.getByRole("button", { name: t("ui.setup.auto_button") })).toBeDisabled();
   });
 });
 

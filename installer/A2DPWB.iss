@@ -102,11 +102,11 @@ VersionInfoProductTextVersion={#AppVersion}
 PrivilegesRequired=lowest
 ; Where the NSIS installer of 2.0.x put it, unless it was elsewhere
 DefaultDirName={code:DefaultDir}
-; A Start Menu folder, which the user may turn off ("Don't create a Start
-; Menu folder"); the page is shown to a new installation only
+; A Start Menu folder, offered as a task beside the desktop shortcut on one
+; page (issue #86: a page of its own for each was one too many); its
+; folder name is not asked
 DefaultGroupName={#AppName}
-DisableProgramGroupPage=auto
-AllowNoIcons=yes
+DisableProgramGroupPage=yes
 #if Arch == "arm64"
 ArchitecturesAllowed=arm64
 ArchitecturesInstallIn64BitMode=arm64
@@ -210,6 +210,17 @@ es.InstallingWebView2=Instalando el runtime de Microsoft Edge WebView2...
 ko.InstallingWebView2=Microsoft Edge WebView2 런타임을 설치하는 중...
 zhcn.InstallingWebView2=正在安装 Microsoft Edge WebView2 运行时...
 zhtw.InstallingWebView2=正在安裝 Microsoft Edge WebView2 執行階段...
+
+; The Start Menu task, beside Setup's own CreateDesktopIcon (worded as each
+; language's CreateDesktopIcon)
+en.CreateStartMenuIcon=Create a &Start Menu shortcut
+ja.CreateStartMenuIcon=スタートメニューにアイコンを作成する(&S)
+de.CreateStartMenuIcon=&Startmenü-Symbol erstellen
+fr.CreateStartMenuIcon=Créer une icône dans le menu &Démarrer
+es.CreateStartMenuIcon=Crear un acceso directo en el menú &Inicio
+ko.CreateStartMenuIcon=시작 메뉴에 바로 가기 만들기(&S)
+zhcn.CreateStartMenuIcon=创建开始菜单快捷方式(&S)
+zhtw.CreateStartMenuIcon=建立開始功能表圖示(&S)
 
 ; The app's language code (app/lang, settings.rs LANGUAGES) of each one
 en.AppLanguage=en
@@ -322,6 +333,9 @@ zhcn.UpdateFinishedLabel=安装程序已将您电脑上的 %1 更新到版本 %2
 zhtw.UpdateFinishedLabel=安裝程式已將您電腦上的 %1 更新至版本 %2。
 
 [Tasks]
+; Both checked; an update keeps the previous choice (UsePreviousTasks), an
+; update from before the Start Menu task gets it checked
+Name: "startmenuicon"; Description: "{cm:CreateStartMenuIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Dirs]
@@ -339,10 +353,14 @@ Source: "{#WebView2Setup}"; Flags: dontcopy
 ; The Start Menu shortcut of 2.0.x (NSIS) and 2.0.2-beta.6, outside a
 ; folder: it is in {group} now
 Type: files; Name: "{autoprograms}\{#AppName}.lnk"
+; The Start Menu task turned off in an update: the folder an earlier
+; installation made goes
+Type: files; Name: "{group}\*.lnk"; Tasks: not startmenuicon
+Type: dirifempty; Name: "{group}"; Tasks: not startmenuicon
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelId}"
-Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AppUserModelId}"; Tasks: startmenuicon
+Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"; Tasks: startmenuicon
 ; Kept where there is one: the NSIS installer of 2.0.x always made one, and
 ; its uninstaller leaves it (also after a failed installation, when the
 ; setup is run again)
@@ -432,7 +450,10 @@ begin
   { The [Languages] above, each in its own language }
   Names := ['en', 'ja', 'de', 'fr', 'es', 'ko', 'zhcn', 'zhtw'];
   Captions := ['English', '日本語', 'Deutsch', 'Français', 'Español', '한국어', '简体中文', '繁體中文'];
-  Form := CreateCustomForm(ScaleX(220), ScaleY(80), False, False);
+  { Wide enough for "Select the language to use during the installation." on
+    one line (issue #86: 220 cut it); a longer translation wraps, and the
+    form grows with it }
+  Form := CreateCustomForm(ScaleX(320), ScaleY(80), False, False);
   try
     Form.Caption := SetupMessage(msgSelectLanguageTitle);
     Lbl := TNewStaticText.Create(Form);
@@ -442,12 +463,14 @@ begin
     Lbl.Width := Form.ClientWidth - ScaleX(20);
     Lbl.WordWrap := True;
     Lbl.Caption := SetupMessage(msgSelectLanguageLabel);
+    Lbl.AdjustHeight;
     Combo := TNewComboBox.Create(Form);
     Combo.Parent := Form;
     Combo.Style := csDropDownList;
     Combo.Left := ScaleX(10);
-    Combo.Top := ScaleY(30);
+    Combo.Top := Lbl.Top + Lbl.Height + ScaleY(8);
     Combo.Width := Form.ClientWidth - ScaleX(20);
+    Form.ClientHeight := Combo.Top + Combo.Height + ScaleY(12 + 23 + 10);
     for I := 0 to GetArrayLength(Names) - 1 do begin
       Combo.Items.Add(Captions[I]);
       if Names[I] = ActiveLanguage then
@@ -717,7 +740,15 @@ begin
 end;
 
 procedure InitializeWizard;
+var
+  NoIcons: String;
 begin
+  { The Start Menu task alone decides about the folder (there is no Select
+    Start Menu Folder page any more): an earlier installation's "Don't create
+    a Start Menu folder" turns the task off instead }
+  if RegQueryStringValue(HKCU, UninstKey, 'Inno Setup: No Icons', NoIcons) and (NoIcons = '1') then
+    WizardSelectTasks('!startmenuicon');
+  WizardForm.NoIconsCheck.Checked := False;
   if not IsUpgrade then
     Exit;
   { As SetupWindowTitle, with AppVerName }

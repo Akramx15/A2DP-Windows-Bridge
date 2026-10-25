@@ -319,7 +319,7 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
                   <Button
                     kind="strong"
                     icon="checkmark"
-                    disabled={!!core.state.snap?.v1_running}
+                    disabled={!!core.state.snap?.v1_running || !adapterSupported(a())}
                     onClick={() => setUp(a())}
                   >
                     {t("ui.setup.auto_button")}

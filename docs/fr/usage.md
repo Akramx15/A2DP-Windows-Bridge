@@ -70,7 +70,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 
 ### Adaptateur
 
-- Les adaptateurs Bluetooth USB détectés, avec leur puce, leur **Pilote** et leur **Firmware**. **Actualiser** relance la détection
+- Les adaptateurs Bluetooth USB détectés, avec leur puce, leur **Pilote** et leur **Firmware** ; la liste se met à jour d'elle-même quand un adaptateur est branché ou débranché. Un adaptateur qu'A2DPWB ne peut pas utiliser (MediaTek, Qualcomm) garde son pilote : ses boutons WinUSB et firmware sont désactivés
 - **Remplacer par le pilote WinUSB** / **Restaurer le pilote d'origine** (voir [Installation](setup#winusb)) ; Windows demande à chaque fois l'autorisation de l'administrateur
 - **Puce Bluetooth** pour le firmware, avec **Télécharger le firmware**, **Ouvrir la page de téléchargement** et **Ouvrir le dossier de configuration** (voir [Firmware](setup#firmware))
 - **AFH** : Auto, Désactivé ou canaux Wi-Fi en Manuel (voir [Qualité de liaison et AFH](#link-quality))
