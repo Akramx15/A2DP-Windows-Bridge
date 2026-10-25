@@ -80,7 +80,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 
 ### Adapter
 
-- The detected USB Bluetooth adapters with their chip, **Driver** and **Firmware**. **Refresh** looks again
+- The detected USB Bluetooth adapters with their chip, **Driver** and **Firmware**; the list updates by itself when an adapter is plugged in or out. An adapter A2DPWB cannot use (MediaTek, Qualcomm) keeps its driver: its WinUSB and firmware buttons are disabled
 - **Replace with WinUSB driver** / **Restore original driver** (see [Setup](setup#winusb)); Windows asks for administrator permission each time
 - **Bluetooth Chip** for the firmware, with **Download Firmware**, **Open Download Page** and **Open Config Folder** (see [Firmware](setup#firmware))
 - **AFH**: Auto, Off or Manual Wi-Fi channels (see [Link Quality and AFH](#link-quality))

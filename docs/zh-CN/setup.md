@@ -53,7 +53,7 @@ v2 首次启动时，会先将 v1 的设置复制到 `%APPDATA%\A2DPWB\backup-v1
 A2DPWB 通过 WinUSB（Windows 自带的通用 USB 驱动程序）直接与 USB Bluetooth 适配器通信。建议使用**专用适配器**——这样内置 Bluetooth 仍可照常用于 Windows 的普通 Bluetooth 功能。
 
 1. 打开**适配器**页面（或设置向导中的**驱动程序和固件**步骤）
-2. 适配器的**驱动程序**显示为 **Windows Bluetooth**（或**其他驱动程序** / **无驱动程序**）。单击**替换为 WinUSB 驱动程序**
+2. 适配器的**驱动程序**显示为**原始驱动程序**（或**制造商驱动程序** / **无驱动程序**），即 Windows 或制造商安装的驱动程序，WinUSB 将替换它。单击**替换为 WinUSB 驱动程序**
 3. 阅读确认信息后继续：Windows 会请求管理员权限（UAC）
 4. 驱动程序现在显示为 **WinUSB（由 A2DPWB 使用）**
 

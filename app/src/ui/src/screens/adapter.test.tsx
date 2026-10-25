@@ -75,16 +75,24 @@ describe("Adapter firmware", () => {
     m.emit({ kind: "adapter", value: m.snap.adapter });
     const rtl = await screen.findByRole("region", { name: "TP-Link Bluetooth USB Adapter (RTL8761BU)" });
     expect(rtl).toHaveTextContent("00:1A:7D:DA:71:13 | 2357:0604 | v5.1");
-    expect(within(rtl).getByRole("group", { name: "Driver: Windows Bluetooth" })).toContainElement(
-      within(rtl).getByRole("button", { name: "Replace with WinUSB driver" }),
-    );
+    // The driver WinUSB replaces is called the original one (issue #86)
+    const rtlDriver = within(rtl).getByRole("group", { name: "Driver: Original driver" });
+    const assign = within(rtl).getByRole("button", { name: "Replace with WinUSB driver" });
+    expect(rtlDriver).toContainElement(assign);
+    expect(assign).toBeEnabled();
+    expect(rtlDriver).toHaveTextContent("Replaces the original driver");
     // Windows' Bluetooth runs it: its name, address and version from there
     const mtk = screen.getByRole("region", { name: "MediaTek Bluetooth Adapter" });
     expect(mtk).toHaveTextContent("C0:E3:50:2E:00:09 | 0E8D:7925 | v5.4");
     expect(mtk).not.toHaveTextContent("[unsupported]");
-    const fw = within(mtk).getByRole("group", { name: "Firmware: Not supported" });
-    expect(within(fw).getByText("Not supported")).toHaveClass("st-bad");
+    const fw = within(mtk).getByRole("group", { name: "Firmware: Unsupported" });
+    expect(within(fw).getByText("Unsupported")).toHaveClass("st-bad");
     expect(within(fw).getByRole("button", { name: "Download not available" })).toBeDisabled();
+    // A vendor's driver; A2DPWB cannot use it, so it keeps that driver
+    const mtkDriver = within(mtk).getByRole("group", { name: "Driver: Manufacturer driver" });
+    expect(within(mtkDriver).getByText("Manufacturer driver")).toHaveAttribute("title", "mtkbtfilterx");
+    expect(within(mtkDriver).getByRole("button", { name: "Replace with WinUSB driver" })).toBeDisabled();
+    expect(mtkDriver).toHaveTextContent("A2DPWB cannot use this adapter, so its driver stays as it is");
     // The chip choice goes with the Realtek adapter only
     expect(within(mtk).queryByLabelText("Bluetooth Chip")).toBeNull();
     expect(within(rtl).getByLabelText("Bluetooth Chip")).toBeInTheDocument();
@@ -92,6 +100,20 @@ describe("Adapter firmware", () => {
     const intelCard = screen.getByRole("region", { name: "Intel" });
     expect(intelCard).not.toHaveTextContent("[experimental]");
     expect(within(intelCard).getByText("Experimental")).toHaveClass("st-warn");
+  });
+
+  it("lists the adapters by itself, without a Refresh button (issue #86)", async () => {
+    const { calls } = start();
+    await screen.findByRole("heading", { level: 1, name: "Adapters" });
+    expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Restart Bluetooth" })).toBeInTheDocument();
+    // On opening the screen, and when the window gets the focus back
+    await waitFor(() => expect(calls.filter((c) => c.method === "adapter.list").length).toBe(1));
+    await waitFor(() => expect(calls.some((c) => c.method === "adapter.firmware_files")).toBe(true));
+    // Once that request has its answer (one at a time)
+    await new Promise((r) => setTimeout(r, 10));
+    fireEvent.focus(window);
+    await waitFor(() => expect(calls.filter((c) => c.method === "adapter.list").length).toBe(2));
   });
 
   it("adapter names", () => {
