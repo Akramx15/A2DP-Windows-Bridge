@@ -32,7 +32,8 @@ export function routeHash(r: Route): string {
 
 export interface Notice {
   text: string;
-  kind: "info" | "error";
+  /** info: done ("Copied"); hint: what to do instead (no success mark) */
+  kind: "info" | "hint" | "error";
 }
 
 export interface AppContext {

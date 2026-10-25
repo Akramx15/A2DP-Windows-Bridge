@@ -292,7 +292,7 @@ function DeviceCodecs(props: {
                 readOnly={props.auto}
                 support={support(c.id)}
                 onPick={() => void choose(c.id)}
-                onReadOnly={() => app.notify(t("ui.codecs.auto_read_only"))}
+                onReadOnly={() => app.notify(t("ui.codecs.auto_read_only"), "hint")}
                 onSettings={() => setSettingsOf(c)}
               />
             )}
