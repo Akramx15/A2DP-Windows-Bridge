@@ -49,8 +49,8 @@ export interface CodecSpec {
   /** The SBC bitpool and frame setup (blocks, subbands, allocation) can be chosen */
   bitpool?: boolean;
   /** Not yet confirmed with real headphones (the README's 🧪; core:
-   *  CodecKind::experimental): hidden and never used while Codecs >
-   *  "Enable experimental codecs" (settings.experimental_codecs) is off */
+   *  CodecKind::experimental). The app offers and uses them as any other
+   *  (issue #86); only the CLI's --no-experimental leaves them out */
   experimental?: boolean;
 }
 

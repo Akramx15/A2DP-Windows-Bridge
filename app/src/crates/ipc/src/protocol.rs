@@ -583,10 +583,8 @@ pub struct Settings {
     /// LE Audio stream is set up); only with le_audio_experimental
     #[serde(default)]
     pub le_audio_low_latency: bool,
-    /// Codecs > "Enable experimental codecs" (on by default): off, the
-    /// codecs not yet confirmed with real headphones (aptX HD, aptX LL,
-    /// Opus, Opus 05, FastStream) are never used (read when the next
-    /// stream is set up)
+    /// Before 2.0.2: Codecs > "Enable experimental codecs". Every codec
+    /// is used now: the core reads it as on whatever is sent
     #[serde(default = "yes")]
     pub experimental_codecs: bool,
     /// Codecs > "Auto-select the codec with the highest quality", for every

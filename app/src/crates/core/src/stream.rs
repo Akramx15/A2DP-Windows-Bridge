@@ -985,7 +985,14 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         _ => preferred,
     };
     if picked != preferred {
-        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz (supported rate)", kind.name());
+        // aptX Adaptive takes 96 kHz only when chosen, not from the mix
+        // rate: said so, not "supported" (issue #86)
+        let why = if kind == CodecKind::AptxAdaptive && req.sample_rate.is_none() {
+            "the profile's rate is Auto; 96 kHz only when chosen in the codec's settings"
+        } else {
+            "supported rate"
+        };
+        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz ({why})", kind.name());
         preferred = picked;
     }
 

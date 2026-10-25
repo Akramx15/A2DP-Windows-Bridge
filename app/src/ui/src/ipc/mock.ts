@@ -661,7 +661,8 @@ export class MockCore implements Transport {
           ...(p.settings as Settings),
           le_audio_experimental: next.le_audio_experimental ?? before.le_audio_experimental,
           le_audio_low_latency: next.le_audio_low_latency ?? before.le_audio_low_latency,
-          experimental_codecs: next.experimental_codecs ?? before.experimental_codecs,
+          // Always on, as the core reads it (issue #86)
+          experimental_codecs: true,
           auto_codec: next.auto_codec ?? before.auto_codec,
           auto_order: next.auto_order ?? before.auto_order,
         };
