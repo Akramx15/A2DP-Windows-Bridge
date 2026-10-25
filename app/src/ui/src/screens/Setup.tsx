@@ -101,7 +101,7 @@ export function Setup() {
     if (n === LAST && !startupOn) {
       startupOn = true;
       const s = snap().settings;
-      if (snap().profiles.length === 0 && !s.start_with_windows && !s.start_minimized) {
+      if (snap().profiles.length === 0 && !(s.start_with_windows && s.start_minimized)) {
         void saveSettings(app, { start_with_windows: true, start_minimized: true });
       }
     }
