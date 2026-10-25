@@ -13,9 +13,10 @@ import { carryToCodec, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from
 import { parseAddress } from "./format";
 
 /** What belongs to the audio device rather than the codec: the capture
- *  source, Windows Volume Sync and the max media packet size. Set on the
- *  Audio Devices screen and kept the same in all the device's profiles
- *  (issue #86). */
+ *  source, the device its Windows volume follows (developer mode; whether
+ *  it syncs at all is Settings.volume_sync, for every device) and the max
+ *  media packet size. Set on the Audio Devices screen and kept the same in
+ *  all the device's profiles (issue #86). */
 export const DEVICE_FIELDS = [
   "capture_mode",
   "audio_device_id",
@@ -52,6 +53,21 @@ export function deviceFieldsComplete(f: DeviceFields): boolean {
 export function deviceDefaults(profiles: readonly Profile[], address: string): DeviceFields | null {
   const p = profilesOf(profiles, address)[0];
   return p ? deviceFields(p) : null;
+}
+
+export type CaptureFields = Pick<DeviceFields, "capture_mode" | "audio_device_id" | "audio_device_name">;
+
+/**
+ * The capture source of a device none was chosen for yet (issue #86): an
+ * installed virtual device (VB-Audio's "CABLE" first, else the first one),
+ * else System Loopback
+ */
+export function defaultCapture(devices: readonly AudioDevice[]): CaptureFields {
+  const virtual = devices.filter((d) => d.is_virtual);
+  const d = virtual.find((v) => /cable/i.test(v.name)) ?? virtual[0];
+  return d
+    ? { capture_mode: "virtual", audio_device_id: d.id, audio_device_name: d.name }
+    : { capture_mode: "loopback", audio_device_id: "", audio_device_name: "" };
 }
 
 export function newProfile(): Profile {
@@ -140,10 +156,16 @@ export function entryByKey(list: () => AudioEntry[], key: string): () => AudioEn
 }
 
 /** The profile a device entry starts from before it has its own: Auto,
- *  and the capture source and volume sync of its other entry's profile */
-export function entryBase(entry: Pick<AudioEntry, "address" | "name" | "le_audio">, profiles: readonly Profile[]): Profile {
+ *  and the capture source and volume sync of its other entry's profile,
+ *  else the default capture source of `devices` (Windows' audio devices) */
+export function entryBase(
+  entry: Pick<AudioEntry, "address" | "name" | "le_audio">,
+  profiles: readonly Profile[],
+  devices: readonly AudioDevice[] = [],
+): Profile {
   return {
     ...newProfile(),
+    ...defaultCapture(devices),
     device_address: entry.address.toUpperCase(),
     device_name: entry.name,
     le_audio: entry.le_audio,

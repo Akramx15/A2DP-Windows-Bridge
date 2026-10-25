@@ -28,6 +28,7 @@ import { saveSettings } from "../app/settings";
 import { AutoOrderDialog } from "../components/AutoOrder";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
 import { Banner, Button, Check, HelpTip, Toggle } from "../components/controls";
+import { audioDevices } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
@@ -75,9 +76,11 @@ export async function chooseCodec(
   codec: string,
   values?: Omit<CodecChoice, "codec">,
 ): Promise<string | null> {
+  // A device's first profile captures from a virtual device if one is installed
+  const devices = entry.profile ? [] : await audioDevices(app);
   const snap = app.core.state.snap!;
   const cur = entry.profile ? structuredClone(unwrap(entry.profile)) : null;
-  const base = cur ?? entryBase(entry, snap.profiles);
+  const base = cur ?? entryBase(entry, snap.profiles, devices);
   const next = entry.le_audio ? base : withCodec(base, codec, values);
   const taken = snap.profiles.map((p) => p.name).filter((n) => n !== cur?.name);
   next.name = followedName(next, entry.le_audio ? "" : t(codecSpec(next.codec).label), taken);

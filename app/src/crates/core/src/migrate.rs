@@ -26,13 +26,20 @@
 //!
 //! Schema 4 (2.0.2): each device's volume is remembered by default (issue
 //! #86), so a folder of schema 3 or older gets `remember_volume` turned on
-//! once. A device the user turned it off for (`device_options`) keeps that.
+//! once.
 //!
 //! Schema 5 (issue #86): "Auto-select the codec with the highest quality"
 //! is one setting for every device (`auto_codec`) instead of each profile's
 //! codec "auto". It starts on only when no profile had a codec chosen, so
 //! a device someone chose a codec for keeps streaming with it (v1's folders
 //! too: each v1 profile chose its codec).
+//!
+//! Schema 6 (issue #86): Windows Volume Sync, the media keys and "remember
+//! volume" are one setting each for every device. `volume_sync` starts as
+//! the profile in use had it (the last one streamed, else the first; on
+//! without a profile); a profile that follows another device keeps that.
+//! The per-device overrides of media keys and remember volume
+//! (`device_options`) are dropped: the global values count.
 //!
 //! At every start, the profiles are folded into one per device
 //! ([`profiles::consolidate`]: the Codecs screen keeps one); the
@@ -237,6 +244,7 @@ fn prepare_settings(dir: &Path) -> Report {
     settings.start_minimized = true;
     let (mut list, renamed) = profiles::load_counted(dir);
     settings.auto_codec = auto_codec_from(&list);
+    settings.volume_sync = volume_sync_from(&settings, &list);
     let mut seeded = 0;
     if settings.max_media_payload.is_some() {
         let legacy = settings.legacy_max_media_payload();
@@ -284,6 +292,21 @@ fn auto_codec_from(list: &[profiles::Profile]) -> bool {
     chosen == 0
 }
 
+/// Schema 6's Windows Volume Sync for every device: as the profile in use
+/// had it (the last one streamed, else the first); on without a profile
+fn volume_sync_from(settings: &Settings, list: &[profiles::Profile]) -> bool {
+    let p = list.iter().find(|p| p.name == settings.last_profile).or(list.first());
+    let on = p.is_none_or(|p| p.volume_sync != "off");
+    if let Some(p) = p {
+        tracing::info!(
+            "settings: Windows Volume Sync for every device {}, as profile {} had it",
+            if on { "on" } else { "off" },
+            crate::diag::quoted(&p.name)
+        );
+    }
+    on
+}
+
 /// The schema steps after v2's first one, for a folder v2 already used
 fn upgrade_v2(dir: &Path, report: &mut Report) {
     let mut settings = Settings::load(dir);
@@ -300,6 +323,14 @@ fn upgrade_v2(dir: &Path, report: &mut Report) {
     // 5: one Auto-select for every device
     if report.schema_before.is_some_and(|n| n < 5) {
         settings.auto_codec = auto_codec_from(&profiles::load(dir));
+    }
+    // 6: one Windows Volume Sync, media keys and remember volume for every
+    // device (the overrides in device_options are not written back)
+    if report.schema_before.is_some_and(|n| n < 6) {
+        settings.volume_sync = volume_sync_from(&settings, &profiles::load(dir));
+        if settings.device_options.take().is_some() {
+            tracing::info!("settings: the per-device media keys and remember volume give way to the global ones");
+        }
     }
     match settings.save(dir) {
         Ok(()) => report.schema_written = true,
@@ -438,10 +469,11 @@ mod tests {
         assert_eq!(r, Report { schema_before: Some(3), schema_written: true, ..Report::default() });
         let s = Settings::load(dir);
         assert_eq!(s.schema_version, SCHEMA_VERSION);
-        assert!(s.remember_volume_for("AA:BB:CC:DD:EE:FF"));
+        assert!(s.remember_volume);
         assert_eq!(s.saved_volumes["AA:BB:CC:DD:EE:FF"], 40);
-        // A device the user turned it off for keeps that
-        assert!(!s.remember_volume_for("11:22:33:44:55:66"));
+        // A device's own value gave way to the one for every device (schema 6)
+        assert!(s.device_options.is_none());
+        assert!(read_json(&Settings::path(dir)).get("device_options").is_none());
 
         // Turned off again by the user: stays off
         let mut off = s;
@@ -483,6 +515,44 @@ mod tests {
         on.save(dir).unwrap();
         assert_eq!(prepare(dir), Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
         assert!(Settings::load(dir).auto_codec);
+    }
+
+    #[test]
+    fn v2_settings_get_one_volume_sync_from_the_profile_in_use() {
+        let t = TempDir::new("schema6");
+        let dir = &t.0;
+        let write = |settings: &str| {
+            std::fs::write(Settings::path(dir), settings).unwrap();
+            std::fs::write(
+                profiles::path(dir),
+                r#"{"profiles":[{"name":"A","device_address":"AA:BB:CC:DD:EE:FF","volume_sync":"auto"},
+                    {"name":"B","device_address":"11:22:33:44:55:66","volume_sync":"off"}]}"#,
+            )
+            .unwrap();
+        };
+        // The last profile streamed had it off: off for every device
+        write(
+            r#"{"schema_version":5,"last_profile":"B","media_keys":true,
+                "device_options":{"AA:BB:CC:DD:EE:FF":{"media_keys":false}}}"#,
+        );
+        assert!(prepare(dir).schema_written);
+        let s = Settings::load(dir);
+        assert_eq!(s.schema_version, SCHEMA_VERSION);
+        assert!(!s.volume_sync);
+        // The device's own media keys are gone: the global value counts
+        assert!(s.media_keys && s.device_options.is_none());
+        assert!(read_json(&Settings::path(dir)).get("device_options").is_none());
+        // No profile streamed yet: the first one's (on)
+        write(r#"{"schema_version":5}"#);
+        prepare(dir);
+        assert!(Settings::load(dir).volume_sync);
+
+        // Turned off by the user: stays off
+        let mut off = Settings::load(dir);
+        off.volume_sync = false;
+        off.save(dir).unwrap();
+        assert_eq!(prepare(dir), Report { schema_before: Some(SCHEMA_VERSION), ..Report::default() });
+        assert!(!Settings::load(dir).volume_sync);
     }
 
     #[test]

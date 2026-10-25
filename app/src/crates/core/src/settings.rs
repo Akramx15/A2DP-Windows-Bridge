@@ -10,8 +10,9 @@ use bt_host::media::{MEDIA_PAYLOAD_LIMIT_DEFAULT, clamp_media_payload_limit};
 
 /// settings.json's format: 1 is v1's (which wrote no schema_version), 2 is
 /// v2's, 3 has LE Audio on by default, 4 remembers each device's volume by
-/// default, 5 has one Auto-select for every device (see migrate.rs)
-pub const SCHEMA_VERSION: u32 = 5;
+/// default, 5 has one Auto-select for every device, 6 one Windows Volume
+/// Sync, media keys and remember volume for every device (see migrate.rs)
+pub const SCHEMA_VERSION: u32 = 6;
 /// The first schema_version v2 wrote: a lower one is v1's folder
 pub const FIRST_V2_SCHEMA: u32 = 2;
 
@@ -74,26 +75,6 @@ fn is_prerelease(version: &str) -> bool {
     version.contains('-')
 }
 
-/// Per-device overrides of the global options; None follows the global
-/// value
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub struct DeviceOptions {
-    /// The headphones' buttons act as Windows media keys
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub media_keys: Option<bool>,
-    /// Remember the headphones' volume and set it again when they connect
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remember_volume: Option<bool>,
-}
-
-impl DeviceOptions {
-    /// No override set
-    pub fn is_empty(&self) -> bool {
-        self.media_keys.is_none() && self.remember_volume.is_none()
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
@@ -119,18 +100,27 @@ pub struct Settings {
     #[serde(default = "default_prereleases")]
     pub include_prereleases: bool,
 
-    /// The headphones' buttons act as Windows media keys
+    /// The headphones' buttons act as Windows media keys (every device)
     #[serde(default = "default_true")]
     pub media_keys: bool,
     /// Remember the headphones' volume per device (address -> AVRCP volume
     /// 0..127) and set it again when they connect; on by default (issue
-    /// #86: one device's volume must not carry over to another)
+    /// #86: one device's volume must not carry over to another). One switch
+    /// for every device.
     #[serde(default = "default_true")]
     pub remember_volume: bool,
     pub saved_volumes: BTreeMap<String, i32>,
-    /// Per-device overrides of media_keys and remember_volume (address in
-    /// capitals "AA:BB:..")
-    pub device_options: BTreeMap<String, DeviceOptions>,
+    /// Before schema 6: per-device overrides of media_keys and
+    /// remember_volume. Those are one setting for every device now (issue
+    /// #86); read (and ignored), not written.
+    #[serde(skip_serializing)]
+    pub device_options: Option<serde_json::Value>,
+    /// Windows Volume Sync for every device (issue #86; each profile had its
+    /// own before schema 6): on, the audio device's volume and the captured
+    /// device's Windows volume follow each other (a profile can still follow
+    /// another device, set in developer mode); off for every stream
+    #[serde(default = "default_true")]
+    pub volume_sync: bool,
 
     pub debug_mode: bool,
     /// Developer mode: overrides of the codec and media path (in force only
@@ -265,7 +255,8 @@ impl Default for Settings {
             media_keys: true,
             remember_volume: true,
             saved_volumes: BTreeMap::new(),
-            device_options: BTreeMap::new(),
+            device_options: None,
+            volume_sync: true,
             debug_mode: false,
             dev_overrides: codec::dev::DevOverrides::default(),
             dev_log: DevLog::default(),
@@ -296,23 +287,6 @@ impl Settings {
         if self.debug_mode { self.dev_log.clamped() } else { DevLog::default() }
     }
 
-    /// A device's override, if one (any case of the address)
-    fn device(&self, addr: &str) -> Option<&DeviceOptions> {
-        self.device_options.get(&addr.to_uppercase())
-    }
-
-    /// Whether a device's buttons act as media keys: its override, else the
-    /// global media_keys
-    pub fn media_keys_for(&self, addr: &str) -> bool {
-        self.device(addr).and_then(|o| o.media_keys).unwrap_or(self.media_keys)
-    }
-
-    /// Whether a device's volume is remembered: its override, else the
-    /// global remember_volume
-    pub fn remember_volume_for(&self, addr: &str) -> bool {
-        self.device(addr).and_then(|o| o.remember_volume).unwrap_or(self.remember_volume)
-    }
-
     pub fn path(dir: &Path) -> PathBuf {
         dir.join("settings.json")
     }
@@ -338,11 +312,6 @@ impl Settings {
                     );
                 }
                 s.theme = normalize_theme(&s.theme).into();
-                s.device_options = std::mem::take(&mut s.device_options)
-                    .into_iter()
-                    .filter(|(_, o)| !o.is_empty())
-                    .map(|(a, o)| (a.to_uppercase(), o))
-                    .collect();
                 tracing::debug!(
                     "settings: loaded {} (schema {}, {} unknown key(s))",
                     path.display(),
@@ -446,52 +415,21 @@ mod tests {
     }
 
     #[test]
-    fn device_options_override_the_global_values() {
-        let mut s: Settings = serde_json::from_str(
-            r#"{"media_keys":true,"remember_volume":false,
-                "device_options":{"AA:BB:CC:DD:EE:FF":{"media_keys":false},"11:22:33:44:55:66":{"remember_volume":true}}}"#,
-        )
-        .unwrap();
-        assert!(!s.media_keys_for("aa:bb:cc:dd:ee:ff"));
-        assert!(!s.remember_volume_for("AA:BB:CC:DD:EE:FF"));
-        assert!(s.media_keys_for("11:22:33:44:55:66"));
-        assert!(s.remember_volume_for("11:22:33:44:55:66"));
-        // No override: the global values
-        assert!(s.media_keys_for("00:00:00:00:00:01"));
-        assert!(!s.remember_volume_for("00:00:00:00:00:01"));
-        s.media_keys = false;
-        s.remember_volume = true;
-        assert!(!s.media_keys_for("00:00:00:00:00:01"));
-        assert!(s.remember_volume_for("00:00:00:00:00:01"));
-        // Only its media keys are its own: the volume follows the global value
-        assert!(s.remember_volume_for("aa:bb:cc:dd:ee:ff"));
-        assert!(!s.media_keys_for("11:22:33:44:55:66"));
-    }
-
-    #[test]
-    fn device_options_round_trip() {
+    fn old_device_options_are_read_but_not_written() {
         let s: Settings = serde_json::from_str("{}").unwrap();
-        assert!(s.device_options.is_empty());
-        let mut s = Settings::default();
-        s.device_options
-            .insert("AA:BB:CC:DD:EE:FF".into(), DeviceOptions { media_keys: Some(false), remember_volume: None });
-        let out = serde_json::to_value(&s).unwrap();
-        assert_eq!(out["device_options"], serde_json::json!({"AA:BB:CC:DD:EE:FF": {"media_keys": false}}));
-        let back: Settings = serde_json::from_value(out).unwrap();
-        assert_eq!(back, s);
-
-        // load(): keys in capitals, empty overrides dropped
-        let dir = std::env::temp_dir().join(format!("a2dpwb-devopt-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            Settings::path(&dir),
-            r#"{"device_options":{"aa:bb:cc:dd:ee:ff":{"remember_volume":true},"11:22:33:44:55:66":{}}}"#,
+        assert!(s.volume_sync && s.media_keys && s.remember_volume);
+        // Schema 5's per-device overrides: read without error, never in force
+        // nor written back (nor kept as an unknown key)
+        let s: Settings = serde_json::from_str(
+            r#"{"media_keys":true,"volume_sync":false,
+                "device_options":{"AA:BB:CC:DD:EE:FF":{"media_keys":false}}}"#,
         )
         .unwrap();
-        let loaded = Settings::load(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(loaded.device_options.len(), 1);
-        assert_eq!(loaded.device_options["AA:BB:CC:DD:EE:FF"].remember_volume, Some(true));
+        assert!(s.media_keys && !s.volume_sync);
+        assert!(s.device_options.is_some() && s.other.is_empty());
+        let out = serde_json::to_value(&s).unwrap();
+        assert!(out.get("device_options").is_none());
+        assert_eq!(out["volume_sync"], false);
     }
 
     #[test]

@@ -615,8 +615,11 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const entry = await deviceEntry(/moto buds\+/);
     const select = within(entry).getByLabelText(t("capture.mode"));
     await within(select).findByRole("option", { name: "Spotify" });
-    // The source it has already: nothing to save
-    fireEvent.change(select, { target: { value: "loopback" } });
+    // None chosen yet: the installed VB-Audio cable, not System Loopback
+    // (issue #86); the source it has already: nothing to save
+    const cable = "virtual:{0.0.0.00000000}.{cable}";
+    await waitFor(() => expect(select).toHaveValue(cable));
+    fireEvent.change(select, { target: { value: cable } });
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
     fireEvent.change(select, { target: { value: "app:spotify.exe" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
@@ -632,22 +635,51 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     });
   });
 
-  it("keeps the buttons and remembered volume per device", async () => {
+  it("has one Volume Sync, buttons and remembered volume for every device, above the list", async () => {
     const { calls } = start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
-    // The mock's WH-1000XM5 has its buttons off, the global setting is on
-    const keys = within(entry).getByRole("switch", { name: (n) => n.startsWith(t("settings.media_keys")) });
-    expect(keys).not.toBeChecked();
-    fireEvent.click(keys);
+    const all = await screen.findByRole("region", { name: t("ui.devices.all_title") });
+    const named = (key: string) => ({ name: (n: string) => n.startsWith(t(key)) });
+    // Not in a device's own settings
+    for (const key of ["capture.volume_sync", "settings.media_keys", "settings.remember_volume"]) {
+      expect(within(entry).queryByRole("switch", named(key))).toBeNull();
+    }
+    expect(within(entry).queryByLabelText(t("capture.volume_sync"))).toBeNull();
+    // Switches, on by default
+    const sync = within(all).getByRole("switch", named("capture.volume_sync"));
+    const keys = within(all).getByRole("switch", named("settings.media_keys"));
+    expect(sync).toBeChecked();
+    expect(keys).toBeChecked();
+    expect(within(all).getByRole("switch", named("settings.remember_volume"))).toBeChecked();
+    fireEvent.click(sync);
     await waitFor(() => expect(calls.some((c) => c.method === "settings.set")).toBe(true));
-    const set = calls.find((c) => c.method === "settings.set")!.params as {
-      settings: { device_options: Record<string, unknown> };
-    };
-    expect(set.settings.device_options["AC:80:0A:12:34:56"]).toEqual({ media_keys: true, remember_volume: null });
+    const set = calls.find((c) => c.method === "settings.set")!.params as { settings: Record<string, unknown> };
+    expect(set.settings.volume_sync).toBe(false);
+    expect(set.settings).not.toHaveProperty("device_options");
+    await waitFor(() => expect(sync).not.toBeChecked());
     // Settings keeps only the general ones
     location.hash = "#/settings";
     await screen.findByRole("heading", { name: t("settings.header") });
-    expect(screen.queryByRole("switch", { name: (n) => n.startsWith(t("settings.media_keys")) })).toBeNull();
+    expect(screen.queryByRole("switch", named("settings.media_keys"))).toBeNull();
+  });
+
+  it("lets a device follow another device's volume only in developer mode", async () => {
+    const { calls, core } = start("#/devices");
+    const entry = await deviceEntry(/WH-1000XM5/);
+    expect(within(entry).queryByLabelText(t("capture.volume_sync"))).toBeNull();
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    const select = await within(entry).findByLabelText(t("capture.volume_sync"));
+    expect(select).toHaveValue("auto");
+    const speakers = "{0.0.0.00000000}.{speakers}";
+    await within(select).findByRole("option", { name: "Speakers (Realtek(R) Audio)" });
+    // Off and On are the switch for every device: here the captured device,
+    // or one of Windows' devices
+    const options = within(select).getAllByRole("option");
+    expect(options[0]).toHaveTextContent(t("capture.volume_sync_captured"));
+    expect(options.map((o) => (o as HTMLOptionElement).value).filter((v) => !v.startsWith("device:"))).toEqual(["auto"]);
+    fireEvent.change(select, { target: { value: `device:${speakers}` } });
+    await waitFor(() => expect(saves(calls).length).toBeGreaterThan(0));
+    expect(saves(calls)[0].profile).toMatchObject({ volume_sync: "device", volume_device_id: speakers });
   });
 
   it("says what application capture needs when the Windows build is not known", async () => {
