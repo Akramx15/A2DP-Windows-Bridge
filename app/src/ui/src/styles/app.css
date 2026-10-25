@@ -598,11 +598,17 @@ option {
   cursor: pointer;
   font-size: var(--fs-14);
 }
-.check input {
-  width: 1rem;
+.switch.small {
+  width: 2rem;
   height: 1rem;
-  margin: 0;
-  accent-color: var(--strong-bg);
+}
+.switch.small::after {
+  left: 0.15rem;
+  width: 0.6rem;
+  height: 0.6rem;
+}
+.switch.small:checked::after {
+  left: calc(100% - 0.75rem);
 }
 .check:has(input:disabled) {
   opacity: 0.5;

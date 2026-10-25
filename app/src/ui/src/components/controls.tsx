@@ -107,11 +107,15 @@ export function Toggle(props: {
   );
 }
 
+/** A small switch with its label after it, for options inside a line or a
+ *  dialog (every on/off option is a switch, issue #86) */
 export function Check(props: { label: string; checked: boolean; disabled?: boolean; title?: string; onChange: (v: boolean) => void }) {
   return (
     <label class="check" title={props.title}>
       <input
         type="checkbox"
+        role="switch"
+        class="switch small"
         checked={props.checked}
         disabled={props.disabled}
         onChange={(e) => props.onChange(e.currentTarget.checked)}

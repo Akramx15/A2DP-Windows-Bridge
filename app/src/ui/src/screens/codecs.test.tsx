@@ -73,7 +73,7 @@ describe("the Codecs screen", () => {
     expect(main().queryByRole("button", { name: t("ui.codecs.order_title") })).toBeNull();
     expect(main().queryByRole("button", { name: t("ui.codecs.order_edit") })).toBeNull();
     expect(main().queryByText(t("ui.codecs.order_default"))).toBeNull();
-    expect(main().queryAllByRole("checkbox")).toHaveLength(0);
+    expect(main().queryAllByRole("switch")).toHaveLength(0);
     expect(hideSwitch()).toBeChecked();
     // A line between the device and its codecs
     expect(wh.querySelector(".device-codecs-head")).not.toBeNull();
@@ -142,7 +142,7 @@ describe("the Codecs screen", () => {
     const { calls } = start("#/codecs");
     const wh = await section("WH-1000XM5");
     const dialog = await codecSettings(wh, "codec.aac");
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.vbr") }));
+    fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.vbr") }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0].profile).toMatchObject({ codec: "aac", abr: true, codec_settings: { ldac: { quality: "hq" } } });
@@ -160,7 +160,7 @@ describe("the Codecs screen", () => {
   it("turns Auto-select on and off for every device, each keeping the codec chosen for it (issue #86)", async () => {
     const { calls } = start("#/codecs");
     // No page-wide fallback option any more: a codec always falls back
-    expect(screen.queryByRole("checkbox", { name: /another supported codec/ })).toBeNull();
+    expect(screen.queryByRole("switch", { name: /another supported codec/ })).toBeNull();
     const wh = await section("WH-1000XM5");
     fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
@@ -443,16 +443,16 @@ describe("codec settings", () => {
     expect(within(rate).getByRole("option", { name: /192/ })).toBeInTheDocument();
     const quality = within(dialog).getByLabelText(t("connection.quality"));
     expect(quality).not.toBeDisabled();
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.abr") }));
     await waitFor(() => expect(quality).toBeDisabled());
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.abr") }));
     await waitFor(() => expect(quality).not.toBeDisabled());
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     // LDAC's ABR keeps the quality, and has no 192 kHz
     const ldac = await codecSettings(xb, "codec.ldac");
-    fireEvent.click(within(ldac).getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(ldac).getByRole("switch", { name: t("connection.abr") }));
     expect(within(ldac).getByLabelText(t("connection.quality"))).not.toBeDisabled();
     expect(within(within(ldac).getByLabelText(t("connection.sample_rate"))).queryByRole("option", { name: /192/ })).toBeNull();
   });
@@ -543,7 +543,7 @@ describe("SBC settings", () => {
     fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
     const wh = await section("WH-1000XM5");
     let dialog = await codecSettings(wh, "codec.sbc");
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.abr") }));
     fireEvent.change(within(dialog).getByLabelText(t("ui.diag.cd_blocks")), { target: { value: "8" } });
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
@@ -551,7 +551,7 @@ describe("SBC settings", () => {
     await settled(wh);
 
     dialog = await codecSettings(wh, "codec.sbc_xq");
-    expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).not.toBeChecked();
+    expect(within(dialog).getByRole("switch", { name: t("connection.abr") })).not.toBeChecked();
     expect(within(dialog).getByLabelText(t("ui.diag.cd_blocks"))).toHaveValue("0");
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
     await waitFor(() => expect(saves(calls)).toHaveLength(2));
@@ -561,7 +561,7 @@ describe("SBC settings", () => {
 
     // SBC's own come back as they were
     dialog = await codecSettings(wh, "codec.sbc");
-    expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).toBeChecked();
+    expect(within(dialog).getByRole("switch", { name: t("connection.abr") })).toBeChecked();
     expect(within(dialog).getByLabelText(t("ui.diag.cd_blocks"))).toHaveValue("8");
   });
 });
@@ -765,12 +765,12 @@ describe("SBC ABR", () => {
     const wh = await section("WH-1000XM5");
     // LDAC with ABR on
     let dialog = await codecSettings(wh, "codec.ldac");
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("connection.abr") }));
+    fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.abr") }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     // SBC's dialog starts with its adaptive bitpool off
     dialog = await codecSettings(wh, "codec.sbc");
-    const abr = within(dialog).getByRole("checkbox", { name: t("connection.abr") });
+    const abr = within(dialog).getByRole("switch", { name: t("connection.abr") });
     expect(abr).not.toBeChecked();
     fireEvent.click(abr);
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
@@ -782,6 +782,6 @@ describe("SBC ABR", () => {
     start("#/codecs");
     fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
-    expect(within(dialog).getByRole("checkbox", { name: t("connection.abr") })).not.toBeChecked();
+    expect(within(dialog).getByRole("switch", { name: t("connection.abr") })).not.toBeChecked();
   });
 });
