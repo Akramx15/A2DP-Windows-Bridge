@@ -83,6 +83,7 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'sbc-stereo-12b': r'SBC 44100 Hz, stereo, 12 blocks, 8 subbands, loudness, bitpool 2-53$',
     'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
+    'ldac-96k': r'LDAC 96000',
     'faststream': r'FastStream \d+ Hz, direction 0x01 \(music\)',   # no voice backchannel
     'opus': r'Opus 48000 Hz, stereo, 20 ms',
     # PipeWire's choice: 10 ms, one coupled stream, 312 x 1024 bps, no return channel
@@ -98,7 +99,7 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
 }
 # Frame headers are validated, audio is not decoded (aptX Adaptive: its RTP
 # header, packet sizes and frame types)
-NO_DECODER = {'ldac', 'lhdcv5', 'aptxad', 'aptxad-r2', 'aptxad-r2-96k'}
+NO_DECODER = {'ldac', 'ldac-96k', 'lhdcv5', 'aptxad', 'aptxad-r2', 'aptxad-r2-96k'}
 APTXAD_SINK = ['--codecs', 'sbc', 'aac', 'aptx', 'aptxad']
 # Further cases: name -> (A2DPWB -c, emu_sink.py arguments, the codec expected,
 # more A2DPWB arguments)
@@ -162,6 +163,10 @@ NEGOTIATION = {
     'aptxad-r1-from-96k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '96000']),
     'aptxad-r2-ll-from-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['--rate', '96000', '-q', 'll']),
     'auto-aptxad': ('auto', APTXAD_SINK, 'aptxad', []),
+    # Auto: the best codec with its best options, the highest rate the sink
+    # lists (issue #86): 96 kHz to an R2 aptX Adaptive sink, LDAC 96 kHz
+    'auto-aptxad-r2-96k': ('auto', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', []),
+    'auto-ldac-96k': ('auto', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac-96k', []),
     # 18 free sink SEPs, LDAC the 14th: BTstack 1.8.1 overflowed its 10-entry
     # SEP discovery array (crash); none may be dropped either
     'many-seps-ldac': ('ldac', ['--extra-seps', '8'], 'ldac', []),
