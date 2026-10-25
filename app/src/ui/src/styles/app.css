@@ -830,6 +830,10 @@ option {
 .tag > .icon {
   flex: none;
 }
+/* Only the mark in colour, the tag itself neutral (Codecs, issue #86) */
+.tag > .icon[class*="st-"] {
+  color: var(--st-text);
+}
 .tag[class*="st-"] {
   color: var(--st-text);
   border-color: color-mix(in srgb, var(--st) 55%, transparent);
@@ -1485,10 +1489,6 @@ option {
   opacity: 0.5;
   border-style: dashed;
 }
-.auto-order-row.off .auto-order-name {
-  color: var(--text-3);
-  text-decoration: line-through;
-}
 .auto-order-grip {
   color: var(--text-3);
   flex: none;
@@ -1520,6 +1520,9 @@ option {
   display: flex;
   align-items: center;
   gap: var(--s3);
+  /* A line between the device and its codecs */
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--border);
 }
 .device-codecs-head > .icon {
   width: 1.5rem;
@@ -1700,10 +1703,10 @@ option {
   border-color: var(--text);
   background: var(--surface-2);
 }
-/* Auto chooses: the cards only show its pick */
+/* Auto chooses: the cards only show its pick (a click says how to choose) */
 .codec-card.ro,
 .codec-card.ro input {
-  cursor: default;
+  cursor: not-allowed;
 }
 .codec-card.ro:not(.on) {
   opacity: 0.75;
@@ -1719,7 +1722,7 @@ option {
   /* Room for the settings button in the corner */
   padding-right: 1.75rem;
 }
-/* Supported / Not supported, and Experimental */
+/* Supported / Unsupported */
 .codec-card-tags {
   display: flex;
   flex-wrap: wrap;

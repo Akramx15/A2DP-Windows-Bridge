@@ -39,6 +39,8 @@ export function CodecCard(props: {
   readOnly?: boolean;
   support: CodecSupport | null;
   onPick: () => void;
+  /** Clicked while read-only: says how to choose (issue #86) */
+  onReadOnly?: () => void;
   onSettings: () => void;
 }) {
   const bar = (label: string, v: number) => (
@@ -53,7 +55,13 @@ export function CodecCard(props: {
   return (
     // The button is beside the label, not in it: the radio's name stays the codec's
     <div class="codec-cell">
-      <label class="codec-card" classList={{ on: props.selected, ro: props.readOnly }}>
+      <label
+        class="codec-card"
+        classList={{ on: props.selected, ro: props.readOnly }}
+        onClick={() => {
+          if (props.readOnly) props.onReadOnly?.();
+        }}
+      >
         <input
           type="radio"
           name={props.group}
@@ -63,34 +71,31 @@ export function CodecCard(props: {
           onChange={() => props.onPick()}
         />
         <span class="codec-card-name">{name()}</span>
-        {/* The wrapper keeps the tags their own size in the card's column */}
-        <Show when={props.support || props.spec.experimental}>
-          <span class="codec-card-tags">
-            {/* Unknown until the device's first connection */}
-            <Show when={props.support}>
-              {(s) => (
-                <Show
-                  when={s() !== "unknown"}
-                  fallback={
-                    <span class="tag">
-                      <Icon name="question_circle" />
-                      {t("ui.profile.codec_support_unknown")}
-                    </span>
-                  }
-                >
-                  <span class={`tag ${s() === "offered" ? "st-good" : "st-bad"}`}>
-                    <Icon name={s() === "offered" ? "checkmark" : "dismiss"} />
-                    {s() === "offered" ? t("ui.profile.codec_supported") : t("ui.profile.codec_not_supported")}
+        {/* The wrapper keeps the tag its own size in the card's column */}
+        <Show when={props.support}>
+          {(s) => (
+            <span class="codec-card-tags">
+              {/* Unknown until the device's first connection */}
+              <Show
+                when={s() !== "unknown"}
+                fallback={
+                  <span class="tag">
+                    <Icon name="question_circle" />
+                    {t("ui.profile.codec_support_unknown")}
                   </span>
-                </Show>
-              )}
-            </Show>
-            <Show when={props.spec.experimental}>
-              <span class="tag" title={t("ui.codecs.experimental_hint")}>
-                {t("ui.codecs.experimental_tag")}
-              </span>
-            </Show>
-          </span>
+                }
+              >
+                {/* Only the mark in colour (issue #86) */}
+                <span class="tag">
+                  <Icon
+                    name={s() === "offered" ? "checkmark" : "dismiss"}
+                    class={s() === "offered" ? "st-good" : "st-bad"}
+                  />
+                  {s() === "offered" ? t("ui.profile.codec_supported") : t("ui.profile.codec_not_supported")}
+                </span>
+              </Show>
+            </span>
+          )}
         </Show>
         <Show when={props.spec.bars}>
           {(b) => (
