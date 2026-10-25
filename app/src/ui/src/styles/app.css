@@ -1130,6 +1130,9 @@ option {
   flex-direction: column;
   gap: var(--s2);
   min-width: 0;
+  /* Its width, not its text's, decides how the state line fits */
+  flex: 1;
+  container-type: inline-size;
 }
 .device-name {
   font-family: var(--font-display);
@@ -1149,6 +1152,18 @@ option {
   align-items: center;
   gap: var(--s2);
   min-width: 0;
+}
+/* Too narrow for "Battery 80% | Connected" (two devices side by side): the
+   state on its own line, without a "|" left at the end of the first */
+@container (max-width: 13.5rem) {
+  .device-state {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s1);
+  }
+  .device-state .state-sep {
+    display: none;
+  }
 }
 .status-line {
   display: inline-flex;
@@ -1726,9 +1741,13 @@ option {
   background: var(--surface-2);
 }
 /* Auto chooses: the cards only show its pick (a click says how to choose) */
-.codec-card.ro,
-.codec-card.ro input {
+.codec-card.ro {
   cursor: not-allowed;
+}
+/* The disabled radio over the card would swallow the click: it goes to the
+   card instead, which says how to choose (issue #86) */
+.codec-card.ro input {
+  pointer-events: none;
 }
 .codec-card.ro:not(.on) {
   opacity: 0.75;

@@ -253,7 +253,7 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
           <div class="device-state">
             <Show when={live() && showsBattery(stream())}>
               <BatteryLevel percent={stream().battery} />
-              <span class="muted" aria-hidden="true">
+              <span class="muted state-sep" aria-hidden="true">
                 |
               </span>
             </Show>
