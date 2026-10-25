@@ -958,14 +958,34 @@ impl RemoteCaps {
     /// bitstream) and the sink can take it ([`Self::aptxad_96k`]); else 48
     /// kHz, the rate every sink takes
     pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality) -> u32 {
-        let rate =
-            if wanted == 96000 && quality != crate::Quality::LowLatency && self.aptxad_96k() { 96000 } else { 48000 };
-        tracing::debug!(
-            "caps: aptX Adaptive rate {wanted} -> {rate} ({quality:?}, r2 {}, rates 0x{:02x})",
-            self.aptxad_r2(),
-            self.aptxad_info.get(6).copied().unwrap_or(0) & 0xF8
-        );
+        let no_96k = self.aptxad_no_96k(quality);
+        let rate = if wanted == 96000 && no_96k.is_none() { 96000 } else { 48000 };
+        let (r2, rates) = (self.aptxad_r2(), self.aptxad_info.get(6).copied().unwrap_or(0) & 0xF8);
+        match no_96k {
+            // Asked for and refused: why, with the sink's bytes (issue #86:
+            // an EarFun Air Pro 4+ said to take 96 kHz stayed at 48 kHz)
+            Some(why) if wanted == 96000 => tracing::info!(
+                "caps: aptX Adaptive at 48 kHz, not 96 kHz: {why} (r2 {r2}, rates 0x{rates:02x}, extension {:?})",
+                self.aptxad_info.get(APTXAD_EXT_VERSION)
+            ),
+            _ => tracing::debug!(
+                "caps: aptX Adaptive rate {wanted} -> {rate} ({quality:?}, r2 {r2}, rates 0x{rates:02x})"
+            ),
+        }
         rate
+    }
+
+    /// Why aptX Adaptive cannot stream at 96 kHz in `quality`; None when it can
+    pub fn aptxad_no_96k(&self, quality: crate::Quality) -> Option<&'static str> {
+        if quality == crate::Quality::LowLatency {
+            Some("low latency has no 96 kHz bitstream")
+        } else if !self.aptxad_r2() {
+            Some("the audio device is aptX Adaptive R1 (upstream streams 96 kHz to R2 only)")
+        } else if !self.aptxad_96k() {
+            Some("the audio device does not list 96 kHz")
+        } else {
+            None
+        }
     }
 
     /// The best codec both sides have (Auto)
@@ -2294,10 +2314,13 @@ mod tests {
         no96[6] = 0x18;
         let mut r1_96 = PX7_S2E_APTXAD;
         r1_96[6] |= 0x20;
-        for info in [&no96[..30], &r1_96[..]] {
+        assert_eq!(r2.aptxad_no_96k(Quality::High), None);
+        assert!(r2.aptxad_no_96k(Quality::LowLatency).is_some_and(|w| w.contains("low latency")));
+        for (info, why) in [(&no96[..30], "does not list"), (&r1_96[..], "R1")] {
             let mut caps = RemoteCaps::default();
             caps.add_vendor(4, info);
             assert!(!caps.aptxad_96k());
+            assert!(caps.aptxad_no_96k(Quality::High).is_some_and(|w| w.contains(why)), "{why}");
             assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High), 48000);
             assert_eq!(
                 caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24),
