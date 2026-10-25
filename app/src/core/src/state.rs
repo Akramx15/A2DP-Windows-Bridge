@@ -335,7 +335,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.remote_sink = s.remote_sink.clone();
     c.le_audio_experimental = s.le_audio_experimental;
     c.le_audio_low_latency = s.le_audio_low_latency;
-    c.experimental_codecs = s.experimental_codecs;
+    // experimental_codecs: always on (issue #86), as loaded
     c.auto_codec = s.auto_codec;
     // Kept only when it is not the default order
     let order = codec::AutoOrder::from_keys(&s.auto_order);
@@ -822,19 +822,6 @@ fn tray_tooltip(base: &str, device: Option<&str>, lines: &[String]) -> String {
 fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
     matches!(stream.state, StreamState::Connecting | StreamState::Streaming | StreamState::Reconnecting)
         && stream.profile.as_deref() == Some(saved)
-}
-
-/// Whether turning experimental codecs on or off may change the codec of
-/// the profile in use: it streams with one, asks for one, is Auto or fell
-/// back (either may pick one now). Not LE Audio (LC3).
-fn restart_for_experimental(stream: &StreamStatus, p: &CoreProfile) -> bool {
-    let experimental = |key: &str| codec::CodecKind::from_key(key).is_some_and(codec::CodecKind::experimental);
-    let (streams_one, fell_back) = stream.info.as_ref().map_or((false, false), |i| {
-        (codec::CodecKind::ALL.iter().any(|k| k.experimental() && k.name() == i.codec), i.requested_codec.is_some())
-    });
-    restart_after_save(stream, &p.name)
-        && !p.le_audio
-        && (p.codec == "auto" || experimental(&p.codec) || streams_one || fell_back)
 }
 
 /// Whether turning Auto-select (for every device) on or off may change the
@@ -1694,7 +1681,6 @@ impl CoreState {
                     }
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
-                    let experimental_toggled = base.experimental_codecs != merged.experimental_codecs;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
                     let order_changed = base.auto_order != merged.auto_order;
                     let order_names = merged.auto_order().names();
@@ -1702,24 +1688,22 @@ impl CoreState {
                     if chip {
                         me.reload_adapter();
                     }
-                    // Experimental codecs or Auto-select on / off: a profile
-                    // in use whose codec it changes starts again (as a
-                    // profile save does)
-                    if experimental_toggled || auto_toggled || order_changed {
+                    // Auto-select on / off or Auto's order: a profile in use
+                    // whose codec it changes starts again (as a profile save
+                    // does)
+                    if auto_toggled || order_changed {
                         let (_, s) = me.snapshot();
                         let list = profiles::load(&me.config_dir());
                         let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
                         let restart = |p: &&CoreProfile| {
                             // As it streams under Auto-select (for every device)
                             let effective = if settings.auto_codec { p.as_auto() } else { (*p).clone() };
-                            (experimental_toggled && restart_for_experimental(&s.stream, &effective))
-                                || (order_changed && restart_for_order(&s.stream, &effective))
+                            (order_changed && restart_for_order(&s.stream, &effective))
                                 || (auto_toggled && restart_for_auto(&s.stream, p))
                         };
                         if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
-                                "experimental codecs {}, Auto-select {}, order {}: profile {} starts again",
-                                if settings.experimental_codecs { "on" } else { "off" },
+                                "Auto-select {}, order {}: profile {} starts again",
                                 if settings.auto_codec { "on" } else { "off" },
                                 order_names,
                                 a2dpwb_core::diag::quoted(&p.name)
@@ -2116,49 +2100,6 @@ mod tests {
         for state in [StreamState::Idle, StreamState::Error] {
             assert!(!restart_after_save(&status(state, Some("WH LDAC")), "WH LDAC"));
         }
-    }
-
-    #[test]
-    fn experimental_codecs_on_or_off_restart_the_profile_they_change() {
-        let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
-        let streaming = |codec: &str, requested: Option<&str>| StreamStatus {
-            state: StreamState::Streaming,
-            profile: Some("WH".into()),
-            info: Some(ipc::StreamInfo {
-                codec: codec.into(),
-                bitrate_kbps: 0,
-                sample_rate: 48000,
-                channels: 2,
-                bits: 16,
-                source_sample_rate: 48000,
-                source_channels: 2,
-                source_bits: 32,
-                requested_codec: requested.map(str::to_owned),
-                requested_in_use: false,
-                abr: false,
-                bitrate_capped: false,
-                source: None,
-                le: None,
-                details: None,
-            }),
-            ..StreamStatus::default()
-        };
-        // Auto, an experimental codec chosen or in use, a fallback: again
-        assert!(restart_for_experimental(&streaming("LDAC", None), &profile("auto")));
-        assert!(restart_for_experimental(&streaming("aptX HD", None), &profile("aptxhd")));
-        assert!(restart_for_experimental(&streaming("AAC", None), &profile("opus")));
-        assert!(restart_for_experimental(&streaming("Opus", Some("LDAC")), &profile("ldac")));
-        assert!(restart_for_experimental(&streaming("AAC", Some("LDAC")), &profile("ldac")));
-        // A codec of its own, not experimental: left alone
-        assert!(!restart_for_experimental(&streaming("LDAC", None), &profile("ldac")));
-        assert!(!restart_for_experimental(&streaming("aptX Adaptive", None), &profile("aptxad")));
-        // Another profile, nothing running, LE Audio
-        assert!(!restart_for_experimental(
-            &streaming("LDAC", None),
-            &CoreProfile { name: "Buds".into(), ..profile("auto") }
-        ));
-        assert!(!restart_for_experimental(&StreamStatus::default(), &profile("auto")));
-        assert!(!restart_for_experimental(&streaming("LC3", None), &CoreProfile { le_audio: true, ..profile("auto") }));
     }
 
     #[test]

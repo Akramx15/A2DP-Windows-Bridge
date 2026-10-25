@@ -163,9 +163,11 @@ pub struct Settings {
     /// profile option (`le_low_latency`); kept only so the file round-trips.
     pub le_audio_low_latency: bool,
 
-    /// Codecs > "Enable experimental codecs" (on by default, issue #86):
+    /// Before 2.0.2: Codecs > "Enable experimental codecs" (issue #86);
     /// off, the experimental codecs ([`codec::CodecKind::experimental`])
-    /// are hidden there and never used, by Auto or as a fallback
+    /// were never used. The app offers every codec now (the experimental
+    /// ones are marked in the README only): always on once loaded, kept so
+    /// the file round-trips and for the CLI's --no-experimental
     pub experimental_codecs: bool,
 
     /// Codecs > "Auto-select the codec with the highest quality", for every
@@ -338,6 +340,9 @@ impl Settings {
                     );
                 }
                 s.theme = normalize_theme(&s.theme).into();
+                // No longer a choice (issue #86): a file with it off uses
+                // every codec too
+                s.experimental_codecs = true;
                 s.device_options = std::mem::take(&mut s.device_options)
                     .into_iter()
                     .filter(|(_, o)| !o.is_empty())
@@ -515,6 +520,15 @@ mod tests {
             std::fs::write(Settings::path(&dir), format!(r#"{{"theme":"{v1}"}}"#)).unwrap();
             assert_eq!(Settings::load(&dir).theme, v2, "{v1}");
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn experimental_codecs_off_loads_as_on() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-experimental-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(Settings::path(&dir), r#"{"schema_version":5,"experimental_codecs":false}"#).unwrap();
+        assert!(Settings::load(&dir).experimental_codecs);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

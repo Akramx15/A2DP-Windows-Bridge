@@ -41,8 +41,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
                         next one below it in quality (as a profile), instead of
                         an error
   --no-experimental     never use the experimental codecs (aptX HD, aptX LL, Opus,
-                        Opus 05, FastStream), as with Codecs > Enable
-                        experimental codecs off
+                        Opus 05, FastStream: experimental in the README)
   -m <mode>             capture: loopback (default), virtual, app
   --audio-device <id>   render device for -m virtual
   --app <exe>           executable for -m app
