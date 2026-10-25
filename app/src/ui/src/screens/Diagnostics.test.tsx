@@ -64,7 +64,7 @@ describe("Diagnostics", () => {
     const dialog = await screen.findByRole("dialog", { name: "Save Diagnostic Bundle" });
     expect(calls.some((c) => c.method === "diag.bundle")).toBe(false);
     // HCI captures are off unless asked for: ticking the box opts in
-    const hci = screen.getByRole("checkbox", { name: "Include HCI captures" });
+    const hci = screen.getByRole("switch", { name: "Include HCI captures" });
     expect(hci).not.toBeChecked();
     fireEvent.click(hci);
     fireEvent.click(dialog.querySelector(".dialog-actions .btn-strong")!);
@@ -92,7 +92,7 @@ describe("Diagnostics", () => {
     await waitFor(() => expect(view.container.querySelector(".bundle-saved")).toBeNull());
     // Back to the default for the other tests (the choice lives with the window)
     fireEvent.click(screen.getByRole("button", { name: "Save…" }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Include HCI captures" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Include HCI captures" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   });
 
@@ -102,12 +102,12 @@ describe("Diagnostics", () => {
     fireEvent.click(copy);
     await waitFor(() => expect(calls.some((c) => c.method === "diag.info")).toBe(true));
     expect(calls.find((c) => c.method === "diag.info")!.params).toEqual({ mask: true });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Mask Bluetooth addresses" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Mask Bluetooth addresses" }));
     fireEvent.click(copy);
     await waitFor(() => expect(calls.filter((c) => c.method === "diag.info").length).toBe(2));
     expect(calls.filter((c) => c.method === "diag.info")[1].params).toEqual({ mask: false });
     // Back to the default for the other tests (the setting lives with the window)
-    fireEvent.click(screen.getByRole("checkbox", { name: "Mask Bluetooth addresses" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Mask Bluetooth addresses" }));
   });
 
   it("jumps from a flow step to its log line", async () => {
@@ -142,7 +142,7 @@ describe("Diagnostics", () => {
     expect(screen.getByRole("button", { name: "Copy Selected Lines" })).not.toBeDisabled();
 
     // This attempt only keeps the attempt's lines
-    fireEvent.click(screen.getByRole("checkbox", { name: "Current attempt only" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Current attempt only" }));
     await waitFor(() => expect(view.container.querySelector(".log-line")).toHaveTextContent("stream: device"));
   });
 });
