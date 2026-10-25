@@ -73,7 +73,7 @@ describe("the Codecs screen", () => {
     expect(main().queryByRole("button", { name: t("ui.codecs.order_title") })).toBeNull();
     expect(main().queryByRole("button", { name: t("ui.codecs.order_edit") })).toBeNull();
     expect(main().queryByText(t("ui.codecs.order_default"))).toBeNull();
-    expect(main().queryAllByRole("switch")).toHaveLength(0);
+    expect(main().queryAllByRole("checkbox")).toHaveLength(0);
     expect(hideSwitch()).toBeChecked();
     // A line between the device and its codecs
     expect(wh.querySelector(".device-codecs-head")).not.toBeNull();

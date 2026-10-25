@@ -86,7 +86,10 @@ export function Flyout() {
       </header>
 
       <Show when={profile()} fallback={<p class="muted">{t("profile.empty")}</p>}>
-        <VolumeControl />
+        {/* As on Home: the volume while a device is in use */}
+        <Show when={stream().state !== "idle"}>
+          <VolumeControl />
+        </Show>
         <ConnectButton compact onError={(e) => setReqError(IpcError.from(e))} />
       </Show>
       {/* Kept simple: the capture source is chosen in the main window (issue #86) */}
