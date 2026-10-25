@@ -73,7 +73,7 @@ describe("Codecs screen", () => {
   it("offers GMAP low latency, on by default, saved with the profile", async () => {
     const { calls } = start("#/codecs", "le");
     const le = await screen.findByRole("region", { name: "Galaxy Buds2 Pro" });
-    const gmap = within(le).getByRole("checkbox", { name: t("settings.le_low_latency") });
+    const gmap = within(le).getByRole("switch", { name: t("settings.le_low_latency") });
     expect(gmap).toBeChecked();
     fireEvent.click(gmap);
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));

@@ -5,9 +5,9 @@
 // the first codec in it the device offers, and a chosen codec it does not
 // offer falls back down it.
 
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For } from "solid-js";
 import { t } from "../i18n";
-import { AUTO_ORDER, codecSpec, isDefaultOrder, isExperimental, type CodecId } from "../lib/codecs";
+import { AUTO_ORDER, codecSpec, isDefaultOrder, type CodecId } from "../lib/codecs";
 import { Button, Dialog, IconButton } from "./controls";
 import { Icon } from "./Icon";
 
@@ -22,8 +22,6 @@ export function moved<T>(list: readonly T[], from: number, to: number): T[] {
 export function AutoOrderDialog(props: {
   open: boolean;
   order: readonly CodecId[];
-  /** Experimental codecs are on (off: their rows say Auto skips them) */
-  experimental: boolean;
   onSave: (order: CodecId[]) => void;
   onCancel: () => void;
 }) {
@@ -54,7 +52,7 @@ export function AutoOrderDialog(props: {
           {(id, i) => (
             <li
               class="auto-order-row"
-              classList={{ dragging: dragging() === i(), off: !props.experimental && isExperimental(id) }}
+              classList={{ dragging: dragging() === i() }}
               draggable="true"
               onDragStart={(e) => {
                 setDragging(i());
@@ -77,11 +75,6 @@ export function AutoOrderDialog(props: {
               <Icon name="navigation" class="auto-order-grip" />
               <span class="auto-order-rank">{i() + 1}</span>
               <span class="auto-order-name">{name(id)}</span>
-              <Show when={isExperimental(id)}>
-                <span class="tag">
-                  {props.experimental ? t("ui.codecs.experimental_tag") : t("ui.codecs.order_experimental_off")}
-                </span>
-              </Show>
               <span class="auto-order-moves">
                 <IconButton
                   icon="chevron_down"

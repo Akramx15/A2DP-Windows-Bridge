@@ -239,10 +239,9 @@ impl CodecKind {
     }
 
     /// Experimental: passes the encoder and emulator tests but is not yet
-    /// confirmed with real headphones (the README's 🧪). Codecs > "Enable
-    /// experimental codecs" (settings `experimental_codecs`, on by default)
-    /// turns them off: hidden there and never used, by Auto or as a
-    /// fallback (issue #86).
+    /// confirmed with real headphones (the README's 🧪). The app uses them
+    /// as any other codec (issue #86); the CLI's --no-experimental leaves
+    /// them out, by Auto and as a fallback.
     pub fn experimental(self) -> bool {
         matches!(
             self,

@@ -6,18 +6,26 @@
 //! on it returns BTH_LOCAL_RADIO_INFO (bthioctl.h). A radio of a composite
 //! device (MediaTek: `USB\VID_0E8D&PID_7925&MI_00\...`) is a child of the
 //! USB device `usb_adapters` lists, so the device tree is walked up to it.
+//!
+//! Windows' stack also stores what it read as properties of the radio's
+//! device node (DEVPKEY_BluetoothRadio_*: {A92F26CA-...}). A radio the IOCTL
+//! cannot be asked on (a vendor's driver that does not pass it on, Windows'
+//! Bluetooth switched off) or with no BTHPORT interface at all may still
+//! have them, so they are read when the IOCTL gives nothing (issue #86).
 
 use windows::Win32::Devices::Bluetooth::GUID_BTHPORT_DEVICE_INTERFACE;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_Get_Device_IDW, CM_Get_Parent, CR_SUCCESS, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, SP_DEVICE_INTERFACE_DATA,
-    SPDRP_DEVICEDESC, SPDRP_FRIENDLYNAME, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW,
+    CM_Get_Child, CM_Get_DevNode_PropertyW, CM_Get_Device_IDW, CM_Get_Parent, CM_Get_Sibling, CM_LOCATE_DEVNODE_NORMAL,
+    CM_Locate_DevNodeW, CR_SUCCESS, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, SP_DEVICE_INTERFACE_DATA, SPDRP_DEVICEDESC,
+    SPDRP_FRIENDLYNAME, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW,
 };
-use windows::Win32::Foundation::ERROR_NO_MORE_ITEMS;
+use windows::Win32::Devices::Properties::{DEVPROP_TYPE_BYTE, DEVPROP_TYPE_UINT64, DEVPROPTYPE};
+use windows::Win32::Foundation::{DEVPROPKEY, ERROR_NO_MORE_ITEMS};
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 use windows::Win32::System::IO::DeviceIoControl;
-use windows::core::{HSTRING, PCWSTR};
+use windows::core::{GUID, HSTRING, PCWSTR};
 
 use crate::usb_adapters::{DevInfoSet, OwnedHandle};
 
@@ -42,6 +50,113 @@ impl WindowsRadio {
     pub fn on_device(&self, instance_id: &str) -> bool {
         self.instance_ids.iter().any(|i| i.eq_ignore_ascii_case(instance_id))
     }
+}
+
+/// What Windows' stack stored on a radio's device node
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RadioProperties {
+    /// BTH_ADDR
+    pub address: Option<u64>,
+    pub hci_version: Option<u8>,
+    pub lmp_version: Option<u8>,
+}
+
+impl RadioProperties {
+    fn is_empty(&self) -> bool {
+        self.address.is_none() && self.hci_version.is_none() && self.lmp_version.is_none()
+    }
+}
+
+impl WindowsRadio {
+    /// The values the IOCTL did not give, from the device node's properties
+    pub fn fill_from(&mut self, p: &RadioProperties) {
+        if self.address.is_none() {
+            self.address = p.address.map(format_address);
+        }
+        self.hci_version = self.hci_version.or(p.hci_version);
+        self.lmp_version = self.lmp_version.or(p.lmp_version);
+    }
+}
+
+/// The radio of a USB device as its device node (or a child's: a composite
+/// device's Bluetooth function) stores it, for one `radios` did not find or
+/// could not ask; None if Windows' stack never stored a radio there
+pub fn device_radio(instance_id: &str) -> Option<WindowsRadio> {
+    let mut devinst = 0u32;
+    // SAFETY: NUL-terminated instance ID and out pointer.
+    if unsafe { CM_Locate_DevNodeW(&mut devinst, &HSTRING::from(instance_id), CM_LOCATE_DEVNODE_NORMAL) } != CR_SUCCESS
+    {
+        return None;
+    }
+    let props = subtree_properties(devinst, 2)?;
+    let mut radio = WindowsRadio {
+        instance_ids: vec![instance_id.to_owned()],
+        name: String::new(),
+        address: None,
+        hci_version: None,
+        lmp_version: None,
+    };
+    radio.fill_from(&props);
+    tracing::debug!("bt_radios: from the device node of {instance_id}: {radio:?}");
+    Some(radio)
+}
+
+/// The first device node at or below `devinst` (`depth` levels of children)
+/// with radio properties
+fn subtree_properties(devinst: u32, depth: u32) -> Option<RadioProperties> {
+    let own = node_properties(devinst);
+    if !own.is_empty() {
+        return Some(own);
+    }
+    if depth == 0 {
+        return None;
+    }
+    let mut child = 0u32;
+    // SAFETY: valid devinst and out pointer.
+    if unsafe { CM_Get_Child(&mut child, devinst, 0) } != CR_SUCCESS {
+        return None;
+    }
+    // A composite device has a few functions; the bound guards a broken tree
+    for _ in 0..16 {
+        if let Some(p) = subtree_properties(child, depth - 1) {
+            return Some(p);
+        }
+        let mut next = 0u32;
+        // SAFETY: valid devinst and out pointer.
+        if unsafe { CM_Get_Sibling(&mut next, child, 0) } != CR_SUCCESS {
+            break;
+        }
+        child = next;
+    }
+    None
+}
+
+/// DEVPKEY_BluetoothRadio_* (not in the SDK's headers; Device Manager's
+/// Details tab lists them): 1 address, 4 LMP version, 6 HCI version
+const RADIO_PROPERTIES: GUID = GUID::from_u128(0xA92F26CA_EDA7_4B1D_9DB2_27B68AA5A2EB);
+const RADIO_ADDRESS: u32 = 1;
+const RADIO_LMP_VERSION: u32 = 4;
+const RADIO_HCI_VERSION: u32 = 6;
+
+fn node_properties(devinst: u32) -> RadioProperties {
+    RadioProperties {
+        address: node_property::<8>(devinst, RADIO_ADDRESS, DEVPROP_TYPE_UINT64)
+            .map(u64::from_le_bytes)
+            .filter(|&a| a != 0),
+        lmp_version: node_property::<1>(devinst, RADIO_LMP_VERSION, DEVPROP_TYPE_BYTE).map(|b| b[0]),
+        hci_version: node_property::<1>(devinst, RADIO_HCI_VERSION, DEVPROP_TYPE_BYTE).map(|b| b[0]),
+    }
+}
+
+/// A fixed-size property of the radio set, None if absent or of another type
+fn node_property<const N: usize>(devinst: u32, pid: u32, want: DEVPROPTYPE) -> Option<[u8; N]> {
+    let key = DEVPROPKEY { fmtid: RADIO_PROPERTIES, pid };
+    let mut ty = DEVPROPTYPE::default();
+    let mut buf = [0u8; N];
+    let mut size = N as u32;
+    // SAFETY: valid key, out type and a buffer of the size passed.
+    let cr = unsafe { CM_Get_DevNode_PropertyW(devinst, &key, &mut ty, Some(buf.as_mut_ptr()), &mut size, 0) };
+    (cr == CR_SUCCESS && ty == want && size as usize == N).then_some(buf)
 }
 
 /// BTH_DEVICE_INFO (bthdef.h)
@@ -112,13 +227,16 @@ pub fn radios() -> Vec<WindowsRadio> {
             .or_else(|| set.registry_string(&data, SPDRP_DEVICEDESC))
             .unwrap_or_default();
         let info = local_info(&path);
-        let radio = WindowsRadio {
+        let mut radio = WindowsRadio {
             instance_ids: ancestors(data.DevInst),
             name,
             address: info.as_ref().map(|i| format_address(i.local_info.address)),
             hci_version: info.as_ref().map(|i| i.hci_version),
             lmp_version: info.as_ref().map(|i| i.radio_info.lmp_version),
         };
+        if radio.address.is_none() {
+            radio.fill_from(&node_properties(data.DevInst));
+        }
         tracing::debug!("bt_radios: {radio:?}");
         result.push(radio);
     }
@@ -223,6 +341,33 @@ mod tests {
         for r in radios() {
             println!("{r:?}");
         }
+    }
+
+    /// This PC's adapters' radio properties (cargo test -p win-sys
+    /// list_device_radios -- --ignored --nocapture)
+    #[test]
+    #[ignore = "reads this PC's USB devices"]
+    fn list_device_radios() {
+        for d in crate::usb_adapters::enumerate(false).unwrap() {
+            println!("{} {:?}", d.instance_id, device_radio(&d.instance_id));
+        }
+    }
+
+    #[test]
+    fn properties_fill_what_the_ioctl_lacks() {
+        let mut r = WindowsRadio {
+            instance_ids: Vec::new(),
+            name: "MediaTek Bluetooth Adapter".into(),
+            address: None,
+            hci_version: None,
+            lmp_version: Some(12),
+        };
+        r.fill_from(&RadioProperties { address: Some(0xC0E3_502E_0009), hci_version: Some(13), lmp_version: Some(13) });
+        assert_eq!(r.address.as_deref(), Some("C0:E3:50:2E:00:09"));
+        assert_eq!(r.hci_version, Some(13));
+        // What the IOCTL read stays
+        assert_eq!(r.lmp_version, Some(12));
+        assert!(RadioProperties::default().is_empty());
     }
 
     #[test]

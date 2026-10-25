@@ -152,7 +152,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     include_prereleases: false,
     media_keys: true,
     remember_volume: true,
-    device_options: { "AC:80:0A:12:34:56": { media_keys: false, remember_volume: null } },
+    volume_sync: true,
     developer_mode: false,
     dev_overrides: {
       rtp_marker: false,
@@ -661,7 +661,8 @@ export class MockCore implements Transport {
           ...(p.settings as Settings),
           le_audio_experimental: next.le_audio_experimental ?? before.le_audio_experimental,
           le_audio_low_latency: next.le_audio_low_latency ?? before.le_audio_low_latency,
-          experimental_codecs: next.experimental_codecs ?? before.experimental_codecs,
+          // Always on, as the core reads it (issue #86)
+          experimental_codecs: true,
           auto_codec: next.auto_codec ?? before.auto_codec,
           auto_order: next.auto_order ?? before.auto_order,
         };
@@ -1118,7 +1119,7 @@ export class MockCore implements Transport {
               battery: 80,
               battery_refused: false,
             }
-          : { state: "streaming", message: { key: "status.streaming", args: [] }, profile: name, info: info(), volume: 76, ...(this.scenario === "battery_refused" ? { battery: null, battery_refused: true } : { battery: 80, battery_refused: false }) };
+          : { state: "streaming", message: { key: "status.connected", args: [] }, profile: name, info: info(), volume: 76, ...(this.scenario === "battery_refused" ? { battery: null, battery_refused: true } : { battery: 80, battery_refused: false }) };
       this.log("info", "a2dpwb_core::service", "state Streaming: Streaming");
       this.emit({ kind: "stream", value: this.snap.stream });
       if (this.snap.stream.info?.details?.sbc?.abr_bitpool) this.later(500, () => this.sbcAbrStep(0));

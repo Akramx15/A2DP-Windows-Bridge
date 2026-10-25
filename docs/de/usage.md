@@ -70,7 +70,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 
 ### Adapter
 
-- Die erkannten USB-Bluetooth-Adapter mit ihrem Chip, **Treiber** und **Firmware**. **Aktualisieren** sucht erneut
+- Die erkannten USB-Bluetooth-Adapter mit ihrem Chip, **Treiber** und **Firmware**; die Liste aktualisiert sich selbst, wenn ein Adapter ein- oder ausgesteckt wird. Ein Adapter, den A2DPWB nicht verwenden kann (MediaTek, Qualcomm), behält seinen Treiber: seine Schaltflächen für WinUSB und Firmware sind deaktiviert
 - **Durch WinUSB-Treiber ersetzen** / **Originaltreiber wiederherstellen** (siehe [Einrichtung](setup#winusb)); Windows fragt jedes Mal nach Administratorrechten
 - **Bluetooth-Chip** für die Firmware, mit **Firmware herunterladen**, **Downloadseite öffnen** und **Konfigurationsordner öffnen** (siehe [Firmware](setup#firmware))
 - **AFH**: Automatisch, Aus oder Manuell (Wi-Fi-Kanäle) (siehe [Verbindungsqualität und AFH](#link-quality))

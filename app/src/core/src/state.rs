@@ -14,7 +14,7 @@ use a2dpwb_core::receiver::{self, ReceiverClient};
 use a2dpwb_core::settings::Settings as CoreSettings;
 use a2dpwb_core::{
     LeStreamDetails, ScannedDevice, Service, ServiceEvent, SourceRequest, StreamRequest,
-    StreamState as CoreStreamState, devices,
+    StreamState as CoreStreamState, VolumeSync, devices,
 };
 use bt_host::LinkStats;
 use bt_host::chips::{self, ChipVendor};
@@ -242,13 +242,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         include_prereleases: s.include_prereleases,
         media_keys: s.media_keys,
         remember_volume: s.remember_volume,
-        device_options: s
-            .device_options
-            .iter()
-            .map(|(a, o)| {
-                (a.clone(), ipc::DeviceOptions { media_keys: o.media_keys, remember_volume: o.remember_volume })
-            })
-            .collect(),
+        volume_sync: s.volume_sync,
         developer_mode: s.debug_mode,
         dev_overrides: DevOverrides {
             rtp_marker: s.dev_overrides.rtp_marker,
@@ -292,18 +286,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.include_prereleases = s.include_prereleases;
     c.media_keys = s.media_keys;
     c.remember_volume = s.remember_volume;
-    // Keys in capitals; a device with no override left is dropped
-    c.device_options = s
-        .device_options
-        .iter()
-        .map(|(a, o)| {
-            (
-                a.to_uppercase(),
-                a2dpwb_core::settings::DeviceOptions { media_keys: o.media_keys, remember_volume: o.remember_volume },
-            )
-        })
-        .filter(|(_, o)| !o.is_empty())
-        .collect();
+    c.volume_sync = s.volume_sync;
     c.debug_mode = s.developer_mode;
     c.dev_overrides = codec::dev::DevOverrides {
         rtp_marker: s.dev_overrides.rtp_marker,
@@ -335,7 +318,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.remote_sink = s.remote_sink.clone();
     c.le_audio_experimental = s.le_audio_experimental;
     c.le_audio_low_latency = s.le_audio_low_latency;
-    c.experimental_codecs = s.experimental_codecs;
+    // experimental_codecs: always on (issue #86), as loaded
     c.auto_codec = s.auto_codec;
     // Kept only when it is not the default order
     let order = codec::AutoOrder::from_keys(&s.auto_order);
@@ -382,8 +365,26 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
         .into_iter()
         .map(|a| {
             // Windows' Bluetooth runs it: what Device Manager shows, kept
-            // for when it is on WinUSB (issue #86)
-            if let Some(r) = radios.iter().find(|r| r.on_device(&a.device.instance_id)) {
+            // for when it is on WinUSB (issue #86). A radio it cannot be asked
+            // on or that is not running (a vendor's driver, a MediaTek
+            // composite device) may still have what Windows' stack stored on
+            // its device node: also for an adapter A2DPWB does not support
+            let radio = radios
+                .iter()
+                .find(|r| r.on_device(&a.device.instance_id))
+                .cloned()
+                .map(|mut r| {
+                    if r.address.is_none()
+                        && let Some(p) = win_sys::bt_radios::device_radio(&a.device.instance_id)
+                    {
+                        r.address = p.address;
+                        r.hci_version = r.hci_version.or(p.hci_version);
+                        r.lmp_version = r.lmp_version.or(p.lmp_version);
+                    }
+                    r
+                })
+                .or_else(|| win_sys::bt_radios::device_radio(&a.device.instance_id));
+            if let Some(r) = &radio {
                 a2dpwb_core::adapter::save_windows_radio(
                     config_dir,
                     a.device.vid,
@@ -726,6 +727,18 @@ pub fn custom_request(c: &CustomStream, legacy_max_media_payload: u16) -> Result
     Ok(req)
 }
 
+/// A profile's Windows Volume Sync under the setting for every device
+/// (issue #86): off, none; on, the device the profile follows (set in
+/// developer mode), else the captured device (Auto). A profile's own "off"
+/// from before that setting no longer counts.
+fn effective_volume_sync(global: bool, profile: VolumeSync) -> VolumeSync {
+    match profile {
+        _ if !global => VolumeSync::Off,
+        VolumeSync::Device(id) => VolumeSync::Device(id),
+        _ => VolumeSync::Auto,
+    }
+}
+
 /// HKCU Run value of v2: the resident core, which opens the UI unless
 /// started with --background (start_minimized: only the tray at logon)
 fn apply_autostart(enabled: bool, minimized: bool) -> Result<(), String> {
@@ -822,19 +835,6 @@ fn tray_tooltip(base: &str, device: Option<&str>, lines: &[String]) -> String {
 fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
     matches!(stream.state, StreamState::Connecting | StreamState::Streaming | StreamState::Reconnecting)
         && stream.profile.as_deref() == Some(saved)
-}
-
-/// Whether turning experimental codecs on or off may change the codec of
-/// the profile in use: it streams with one, asks for one, is Auto or fell
-/// back (either may pick one now). Not LE Audio (LC3).
-fn restart_for_experimental(stream: &StreamStatus, p: &CoreProfile) -> bool {
-    let experimental = |key: &str| codec::CodecKind::from_key(key).is_some_and(codec::CodecKind::experimental);
-    let (streams_one, fell_back) = stream.info.as_ref().map_or((false, false), |i| {
-        (codec::CodecKind::ALL.iter().any(|k| k.experimental() && k.name() == i.codec), i.requested_codec.is_some())
-    });
-    restart_after_save(stream, &p.name)
-        && !p.le_audio
-        && (p.codec == "auto" || experimental(&p.codec) || streams_one || fell_back)
 }
 
 /// Whether turning Auto-select (for every device) on or off may change the
@@ -1269,6 +1269,7 @@ impl CoreState {
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
         req.auto_order = settings.auto_order();
+        req.volume_sync = effective_volume_sync(settings.volume_sync, req.volume_sync);
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -1694,34 +1695,35 @@ impl CoreState {
                     }
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
-                    let experimental_toggled = base.experimental_codecs != merged.experimental_codecs;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
                     let order_changed = base.auto_order != merged.auto_order;
+                    let sync_toggled = base.volume_sync != merged.volume_sync;
                     let order_names = merged.auto_order().names();
                     me.save_settings(merged)?;
                     if chip {
                         me.reload_adapter();
                     }
-                    // Experimental codecs or Auto-select on / off: a profile
-                    // in use whose codec it changes starts again (as a
-                    // profile save does)
-                    if experimental_toggled || auto_toggled || order_changed {
+                    // Auto-select on / off or Auto's order: a profile in use
+                    // whose codec it changes starts again (as a profile save
+                    // does); Windows Volume Sync on / off: the profile in use
+                    // starts again (as when it was the profile's own setting)
+                    if auto_toggled || order_changed || sync_toggled {
                         let (_, s) = me.snapshot();
                         let list = profiles::load(&me.config_dir());
                         let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
                         let restart = |p: &&CoreProfile| {
                             // As it streams under Auto-select (for every device)
                             let effective = if settings.auto_codec { p.as_auto() } else { (*p).clone() };
-                            (experimental_toggled && restart_for_experimental(&s.stream, &effective))
-                                || (order_changed && restart_for_order(&s.stream, &effective))
+                            (order_changed && restart_for_order(&s.stream, &effective))
                                 || (auto_toggled && restart_for_auto(&s.stream, p))
+                                || (sync_toggled && restart_after_save(&s.stream, &p.name))
                         };
                         if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
-                                "experimental codecs {}, Auto-select {}, order {}: profile {} starts again",
-                                if settings.experimental_codecs { "on" } else { "off" },
+                                "Auto-select {}, order {}, volume sync {}: profile {} starts again",
                                 if settings.auto_codec { "on" } else { "off" },
                                 order_names,
+                                if settings.volume_sync { "on" } else { "off" },
                                 a2dpwb_core::diag::quoted(&p.name)
                             );
                             me.start_profile(&p.name.clone())?;
@@ -2119,49 +2121,6 @@ mod tests {
     }
 
     #[test]
-    fn experimental_codecs_on_or_off_restart_the_profile_they_change() {
-        let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
-        let streaming = |codec: &str, requested: Option<&str>| StreamStatus {
-            state: StreamState::Streaming,
-            profile: Some("WH".into()),
-            info: Some(ipc::StreamInfo {
-                codec: codec.into(),
-                bitrate_kbps: 0,
-                sample_rate: 48000,
-                channels: 2,
-                bits: 16,
-                source_sample_rate: 48000,
-                source_channels: 2,
-                source_bits: 32,
-                requested_codec: requested.map(str::to_owned),
-                requested_in_use: false,
-                abr: false,
-                bitrate_capped: false,
-                source: None,
-                le: None,
-                details: None,
-            }),
-            ..StreamStatus::default()
-        };
-        // Auto, an experimental codec chosen or in use, a fallback: again
-        assert!(restart_for_experimental(&streaming("LDAC", None), &profile("auto")));
-        assert!(restart_for_experimental(&streaming("aptX HD", None), &profile("aptxhd")));
-        assert!(restart_for_experimental(&streaming("AAC", None), &profile("opus")));
-        assert!(restart_for_experimental(&streaming("Opus", Some("LDAC")), &profile("ldac")));
-        assert!(restart_for_experimental(&streaming("AAC", Some("LDAC")), &profile("ldac")));
-        // A codec of its own, not experimental: left alone
-        assert!(!restart_for_experimental(&streaming("LDAC", None), &profile("ldac")));
-        assert!(!restart_for_experimental(&streaming("aptX Adaptive", None), &profile("aptxad")));
-        // Another profile, nothing running, LE Audio
-        assert!(!restart_for_experimental(
-            &streaming("LDAC", None),
-            &CoreProfile { name: "Buds".into(), ..profile("auto") }
-        ));
-        assert!(!restart_for_experimental(&StreamStatus::default(), &profile("auto")));
-        assert!(!restart_for_experimental(&streaming("LC3", None), &CoreProfile { le_audio: true, ..profile("auto") }));
-    }
-
-    #[test]
     fn a_new_auto_order_restarts_a_profile_on_auto_or_fallen_back() {
         let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
         let streaming = |requested: Option<&str>| StreamStatus {
@@ -2545,19 +2504,25 @@ mod tests {
         assert!(!merged.le_audio_experimental && merged.le_audio_low_latency);
         assert_eq!(to_ipc_settings(&merged), off);
 
-        // Per-device options: keys in capitals, empty ones dropped
-        let mut options = std::collections::BTreeMap::new();
-        options.insert(
-            "aa:bb:cc:dd:ee:ff".to_string(),
-            ipc::DeviceOptions { media_keys: Some(false), remember_volume: None },
-        );
-        options.insert("11:22:33:44:55:66".to_string(), ipc::DeviceOptions::default());
-        let per_device = Settings { device_options: options, ..off };
-        let merged = merge_settings(&base, &per_device);
-        assert_eq!(merged.device_options.keys().collect::<Vec<_>>(), ["AA:BB:CC:DD:EE:FF"]);
-        assert!(!merged.media_keys_for("aa:bb:cc:dd:ee:ff") && merged.media_keys_for("11:22:33:44:55:66"));
-        let back = to_ipc_settings(&merged);
-        assert_eq!(back.device_options["AA:BB:CC:DD:EE:FF"].media_keys, Some(false));
+        // Windows Volume Sync for every device: on by default
+        assert!(to_ipc_settings(&base).volume_sync);
+        let no_sync = Settings { volume_sync: false, ..off };
+        let merged = merge_settings(&base, &no_sync);
+        assert!(!merged.volume_sync);
+        assert_eq!(to_ipc_settings(&merged), no_sync);
+    }
+
+    #[test]
+    fn volume_sync_for_every_device_overrides_the_profiles() {
+        let dev = || VolumeSync::Device("{0.0.0.00000000}.{x}".into());
+        // Off for every device: no profile syncs
+        for p in [VolumeSync::Auto, VolumeSync::Off, dev()] {
+            assert_eq!(effective_volume_sync(false, p), VolumeSync::Off);
+        }
+        // On: a profile's old "off" no longer counts; a followed device does
+        assert_eq!(effective_volume_sync(true, VolumeSync::Off), VolumeSync::Auto);
+        assert_eq!(effective_volume_sync(true, VolumeSync::Auto), VolumeSync::Auto);
+        assert_eq!(effective_volume_sync(true, dev()), dev());
     }
 
     #[test]

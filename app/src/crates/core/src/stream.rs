@@ -802,16 +802,6 @@ impl Drop for StreamedMark<'_> {
     }
 }
 
-/// The session's device for its own options (media keys), cleared when the
-/// session ends
-struct SessionDevice<'a>(&'a Inner);
-
-impl Drop for SessionDevice<'_> {
-    fn drop(&mut self) {
-        self.0.set_device(None);
-    }
-}
-
 /// The session thread. Returns when stopped or on an error (state reported).
 pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let addr = bt_host::addr_str(&req.device);
@@ -845,10 +835,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         return inner.notify(StreamState::Idle, Msg::new("status.ready"));
     }
 
-    // The device's own options: media keys now, the volume below
-    inner.set_device(Some(&addr));
-    let _device = SessionDevice(inner);
-    host.set_media_keys(inner.media_keys_for(&addr));
+    // Media keys now, the device's remembered volume below
+    host.set_media_keys(inner.media_keys());
 
     // Remembered headphone volume, set as soon as AVRCP connects
     let restore = inner.saved_volume(&addr);
@@ -997,7 +985,14 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         _ => preferred,
     };
     if picked != preferred {
-        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz (supported rate)", kind.name());
+        // aptX Adaptive takes 96 kHz only when chosen, not from the mix
+        // rate: said so, not "supported" (issue #86)
+        let why = if kind == CodecKind::AptxAdaptive && req.sample_rate.is_none() {
+            "the profile's rate is Auto; 96 kHz only when chosen in the codec's settings"
+        } else {
+            "supported rate"
+        };
+        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz ({why})", kind.name());
         preferred = picked;
     }
 
@@ -1485,7 +1480,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                     }
                 }
                 host.set_restore_volume(inner.saved_volume(&addr));
-                host.set_media_keys(inner.media_keys_for(&addr));
+                host.set_media_keys(inner.media_keys());
                 if stopped() {
                     break;
                 }

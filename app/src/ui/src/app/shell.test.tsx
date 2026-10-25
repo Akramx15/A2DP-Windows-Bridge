@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, hideToTray, isDiagnosticsShortcut } from "./App";
 import { captureRunningText } from "./indicators";
-import { errorCopyText, isAppFault, sourceText, statusText } from "../components/stream";
+import { errorCopyText, isAppFault, sourceText, stateLabel, statusText } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, sampleProfile, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
@@ -291,6 +291,47 @@ describe("setup device step", () => {
     fireEvent.click(inTray);
     await waitFor(() => expect(core.state.snap!.settings.start_minimized).toBe(true));
   });
+
+  it("starts with Windows, in the tray, by default on a first setup (issue #86)", async () => {
+    const { core, mock: m } = start("#/setup");
+    await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
+    // A first run: no profile yet, both off
+    for (const p of [...core.state.snap!.profiles]) await m.call("profile.delete", { name: p.name });
+    await core.request("settings.set", {
+      settings: { ...core.state.snap!.settings, start_with_windows: false, start_minimized: false },
+    });
+    await waitFor(() => expect(core.state.snap!.profiles).toHaveLength(0));
+    for (let i = 0; i < 2; i++) {
+      const next = screen.getByRole("button", { name: "Next" });
+      await waitFor(() => expect(next).not.toBeDisabled());
+      fireEvent.click(next);
+    }
+    const withWindows = await screen.findByRole("switch", { name: t("settings.start_with_windows") });
+    const inTray = screen.getByRole("switch", { name: new RegExp(t("ui.settings.start_minimized")) });
+    await waitFor(() => expect(withWindows).toBeChecked());
+    expect(inTray).toBeChecked();
+    expect(core.state.snap!.settings).toMatchObject({ start_with_windows: true, start_minimized: true });
+    // Turned off, then back and forth: it stays off
+    fireEvent.click(withWindows);
+    await waitFor(() => expect(core.state.snap!.settings.start_with_windows).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    expect(await screen.findByRole("switch", { name: t("settings.start_with_windows") })).not.toBeChecked();
+  });
+
+  it("scans for 30 s and captures a new device's profile from the installed cable (issue #86)", async () => {
+    const { calls, core } = await toDeviceStep({ scenario: "normal" });
+    await waitFor(() => expect(calls.some((c) => c.method === "device.scan")).toBe(true));
+    expect(calls.find((c) => c.method === "device.scan")!.params).toEqual({ seconds: 30 });
+    const row = (await screen.findByText("Galaxy Buds2 Pro")).closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(core.state.snap!.profiles.some((p) => p.name === "Galaxy Buds2 Pro | Auto")).toBe(true));
+    expect(core.state.snap!.profiles.find((p) => p.name === "Galaxy Buds2 Pro | Auto")).toMatchObject({
+      capture_mode: "virtual",
+      audio_device_id: "{0.0.0.00000000}.{cable}",
+      audio_device_name: "CABLE Input (VB-Audio Virtual Cable)",
+    });
+  });
 });
 
 describe("setup adapter step", () => {
@@ -306,10 +347,12 @@ describe("setup adapter step", () => {
     expect(radios[0]).toBeChecked();
     expect(mtk).toHaveTextContent("MediaTek Bluetooth Adapter");
     expect(mtk).not.toHaveTextContent("[unsupported]");
-    expect(within(mtk).getByText("Not supported")).toHaveClass("st-bad");
+    expect(within(mtk).getByText("Unsupported")).toHaveClass("st-bad");
     fireEvent.click(radios[1]);
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText(t("ui.setup.unsupported_note"))).toBeInTheDocument();
+    // Its driver is not replaced (issue #86)
+    expect(screen.getByRole("button", { name: t("ui.setup.auto_button") })).toBeDisabled();
   });
 });
 
@@ -332,6 +375,12 @@ describe("helpers", () => {
     expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
     expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
     expect(statusText({ state: "idle", message: msg("") })).toBe("Idle");
+    // Streaming reads "Connected" everywhere (issue #86); the other states keep their words
+    expect(statusText({ state: "streaming", message: msg("") })).toBe("Connected");
+    expect(stateLabel("streaming")).toBe("Connected");
+    expect(stateLabel("connecting")).toBe("Connecting...");
+    expect(stateLabel("reconnecting")).toBe("Reconnecting...");
+    expect(stateLabel("idle")).toBe("Idle");
   });
 
   it("error copy text", () => {

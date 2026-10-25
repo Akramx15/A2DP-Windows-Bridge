@@ -13,13 +13,14 @@
 // and starts a stream in use again with it). What belongs to the device
 // rather than the codec (capture source, volume sync, packet size) is on
 // Audio Devices. An LE Audio entry (experimental) has LC3 only.
-// "Auto's order..." opens a dialog (components/AutoOrder.tsx) where the
-// order Auto picks in, and a chosen codec falls back down, is set by
-// dragging (settings.auto_order; empty: highest sound quality first); the
-// cards are shown in that order.
-// "Enable experimental codecs" (settings.experimental_codecs, on by
-// default): off, the codecs not yet confirmed with real headphones are
-// hidden and never used, by Auto or as a fallback (as the core).
+// Developer mode only: "Auto's order..." opens a dialog
+// (components/AutoOrder.tsx) where the order Auto picks in, and a chosen
+// codec falls back down, is set by dragging (settings.auto_order; empty:
+// highest sound quality first); the cards are shown in that order. An
+// order saved there still applies outside developer mode.
+// Every codec is offered, the experimental ones too (issue #86: they are
+// marked in the README only; the core no longer reads
+// settings.experimental_codecs).
 
 import { createSignal, For, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
@@ -27,7 +28,8 @@ import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { AutoOrderDialog } from "../components/AutoOrder";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
-import { Banner, Button, Check, HelpTip, Toggle } from "../components/controls";
+import { Banner, Button, Check, Toggle } from "../components/controls";
+import { audioDevices } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
@@ -39,7 +41,6 @@ import {
   codecSupport,
   effectiveCodec,
   isDefaultOrder,
-  isExperimental,
   qualityRank,
   type CodecId,
   type CodecSpec,
@@ -75,9 +76,11 @@ export async function chooseCodec(
   codec: string,
   values?: Omit<CodecChoice, "codec">,
 ): Promise<string | null> {
+  // A device's first profile captures from a virtual device if one is installed
+  const devices = entry.profile ? [] : await audioDevices(app);
   const snap = app.core.state.snap!;
   const cur = entry.profile ? structuredClone(unwrap(entry.profile)) : null;
-  const base = cur ?? entryBase(entry, snap.profiles);
+  const base = cur ?? entryBase(entry, snap.profiles, devices);
   const next = entry.le_audio ? base : withCodec(base, codec, values);
   const taken = snap.profiles.map((p) => p.name).filter((n) => n !== cur?.name);
   next.name = followedName(next, entry.le_audio ? "" : t(codecSpec(next.codec).label), taken);
@@ -101,24 +104,10 @@ export function Codecs() {
       // Only remembered when the WebView keeps storage
     }
   };
-  const experimental = () => snap().settings.experimental_codecs;
   const autoAll = () => snap().settings.auto_codec;
   const order = () => autoOrder(snap().settings.auto_order);
+  const dev = () => snap().settings.developer_mode;
   const [ordering, setOrdering] = createSignal(false);
-  // What the codec of each entry is not offered by: counted for the check box
-  const hiddenOf = (e: AudioEntry) => {
-    if (e.le_audio) return 0;
-    const known = knownCodecs(snap().devices, e.address);
-    const chosen = e.profile?.codec ?? "auto";
-    return CODECS.filter(
-      (c) =>
-        c.id !== "auto" &&
-        c.id !== chosen &&
-        (experimental() || !c.experimental) &&
-        codecSupport(c.id, known) === "not_offered",
-    ).length;
-  };
-  const hidden = () => entries().reduce((n, e) => n + hiddenOf(e), 0);
 
   return (
     <div class="page codecs">
@@ -128,50 +117,28 @@ export function Codecs() {
       <div class="codecs-options">
         <Toggle
           label={t("ui.codecs.auto_select")}
-          help={() => (
-            <HelpTip label={t("ui.codecs.order_title")}>
-              {isDefaultOrder(order()) ? t("ui.codecs.auto_order") : t("ui.codecs.order_title")}
-              <ol>
-                <For each={order().filter((id) => experimental() || !isExperimental(id))}>
-                  {(id) => <li>{t(codecSpec(id).label)}</li>}
-                </For>
-              </ol>
-            </HelpTip>
-          )}
-          hint={autoAll() ? t("ui.codecs.auto_all") : t("ui.codecs.auto_off")}
           checked={autoAll()}
           onChange={(v) => void saveSettings(app, { auto_codec: v })}
         />
-        <div class="codecs-order">
-          <Button icon="settings" onClick={() => setOrdering(true)} aria-haspopup="dialog">
-            {t("ui.codecs.order_edit")}
-          </Button>
-          <span class="hint">{isDefaultOrder(order()) ? t("ui.codecs.order_default") : t("ui.codecs.order_custom")}</span>
-        </div>
-        <AutoOrderDialog
-          open={ordering()}
-          order={order()}
-          experimental={experimental()}
-          onCancel={() => setOrdering(false)}
-          onSave={(next: CodecId[]) => {
-            setOrdering(false);
-            void saveSettings(app, { auto_order: isDefaultOrder(next) ? [] : next });
-          }}
-        />
-        <Check label={t("ui.profile.codecs_hide", hidden())} title={t("ui.codecs.hide_hint")} checked={hide()} onChange={setHide} />
-        <Check
-          label={t("ui.codecs.experimental")}
-          title={t("ui.codecs.experimental_hint")}
-          checked={experimental()}
-          onChange={(v) => void saveSettings(app, { experimental_codecs: v })}
-        />
+        <Show when={dev()}>
+          <div class="codecs-order">
+            <Button icon="settings" onClick={() => setOrdering(true)} aria-haspopup="dialog">
+              {t("ui.codecs.order_edit")}
+            </Button>
+            <span class="hint">{isDefaultOrder(order()) ? t("ui.codecs.order_default") : t("ui.codecs.order_custom")}</span>
+          </div>
+          <AutoOrderDialog
+            open={ordering()}
+            order={order()}
+            onCancel={() => setOrdering(false)}
+            onSave={(next: CodecId[]) => {
+              setOrdering(false);
+              void saveSettings(app, { auto_order: isDefaultOrder(next) ? [] : next });
+            }}
+          />
+        </Show>
+        <Toggle label={t("ui.profile.codecs_hide")} checked={hide()} onChange={setHide} />
       </div>
-      <p class="hint">
-        {t("ui.codecs.page_hint")}{" "}
-        <button type="button" class="link" onClick={() => navigate({ name: "devices" })}>
-          {t("ui.nav.devices")}
-        </button>
-      </p>
       <Show
         when={entries().length > 0}
         fallback={
@@ -189,13 +156,7 @@ export function Codecs() {
           {(key) => {
             const entry = entryByKey(entries, key);
             return (
-              <DeviceCodecs
-                entry={entry()}
-                hide={hide()}
-                experimental={experimental()}
-                auto={autoAll()}
-                order={order()}
-              />
+              <DeviceCodecs entry={entry()} hide={hide()} auto={autoAll()} order={order()} />
             );
           }}
         </For>
@@ -208,7 +169,6 @@ export function Codecs() {
 function DeviceCodecs(props: {
   entry: AudioEntry;
   hide: boolean;
-  experimental: boolean;
   auto: boolean;
   order: readonly CodecId[];
 }) {
@@ -233,22 +193,16 @@ function DeviceCodecs(props: {
   };
   // Auto: the codec it streams with, else the one it would pick (null when
   // the device's codecs are not known); else the codec chosen
-  const picked = () => (auto() ? (streaming() ?? effectiveCodec("auto", known(), props.experimental, props.order)) : codec());
-  // A chosen experimental codec while they are off
-  const turnedOff = () => !auto() && !props.experimental && isExperimental(codec());
-  // A chosen codec the device did not offer, or turned off: the one used
-  // instead (null: the device's codecs are not known yet)
+  const picked = () => (auto() ? (streaming() ?? effectiveCodec("auto", known(), true, props.order)) : codec());
+  // A chosen codec the device did not offer: the one used instead (null:
+  // the device's codecs are not known yet)
   const instead = () =>
-    !auto() && (turnedOff() || support(codec()) === "not_offered")
-      ? effectiveCodec(codec(), known(), props.experimental, props.order)
-      : null;
-  // In Auto's order (highest quality first unless set); the experimental ones only while
-  // they are on
+    !auto() && support(codec()) === "not_offered" ? effectiveCodec(codec(), known(), true, props.order) : null;
+  // In Auto's order (highest quality first unless set)
   const cards = () =>
     CODECS.filter(
       (c) =>
         c.id !== "auto" &&
-        (props.experimental || !c.experimental) &&
         (!props.hide || c.id === codec() || c.id === picked() || support(c.id) !== "not_offered"),
     ).sort((a, b) => qualityRank(a.id, props.order) - qualityRank(b.id, props.order));
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
@@ -327,9 +281,6 @@ function DeviceCodecs(props: {
           </>
         }
       >
-        <Show when={props.auto && picked()}>
-          {(c) => <p class="hint">{t("ui.codecs.auto_uses", t(codecSpec(c()).label))}</p>}
-        </Show>
         <div class="codec-grid" role="radiogroup" aria-labelledby={titleId()} aria-disabled={props.auto ? "true" : undefined}>
           <For each={cards()}>
             {(c) => (
@@ -341,6 +292,7 @@ function DeviceCodecs(props: {
                 readOnly={props.auto}
                 support={support(c.id)}
                 onPick={() => void choose(c.id)}
+                onReadOnly={() => app.notify(t("ui.codecs.auto_read_only"), "hint")}
                 onSettings={() => setSettingsOf(c)}
               />
             )}
@@ -351,17 +303,8 @@ function DeviceCodecs(props: {
         </Show>
         <Show when={instead()}>
           {(c) => (
-            <Banner
-              kind="warn"
-              title={
-                turnedOff()
-                  ? t("error.codec_experimental_off", t(codecSpec(codec()).label))
-                  : t("error.codec_not_supported", t(codecSpec(codec()).label))
-              }
-            >
-              {turnedOff()
-                ? t("ui.codecs.experimental_fallback_to", t(codecSpec(c()).label))
-                : t("ui.codecs.fallback_to", t(codecSpec(c()).label))}
+            <Banner kind="warn" title={t("error.codec_not_supported", t(codecSpec(codec()).label))}>
+              {t("ui.codecs.fallback_to", t(codecSpec(c()).label))}
             </Banner>
           )}
         </Show>

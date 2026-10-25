@@ -6,7 +6,7 @@ import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch } f
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import type { IconName } from "../components/icons";
-import { BatteryLevel, codecDetails, codecName, showsBattery, stateLabel } from "../components/stream";
+import { BatteryLevel, CodecBadge, codecDetails, codecName, showsBattery, stateLabel } from "../components/stream";
 import { lang, setLanguage, t } from "../i18n";
 import type { Core } from "../ipc/store";
 import { About } from "../screens/About";
@@ -306,16 +306,9 @@ function DevicePill(props: { entry: AudioEntry | null }) {
           </Show>
           <span class="status-pill-state">{stateLabel(state())}</span>
         </span>
+        {/* The codec, then its details below it, as on Home and in the tray (issue #86) */}
         <Show when={info()}>
-          {(i) => (
-            <span class="status-pill-codec">
-              <Show when={i().requested_codec}>
-                <Icon name="warning" class="st-warn" />
-              </Show>
-              <strong>{codecName(i())}</strong>
-              <span class="status-pill-details num">{details()}</span>
-            </span>
-          )}
+          <CodecBadge />
         </Show>
       </span>
     </button>

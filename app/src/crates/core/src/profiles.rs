@@ -72,7 +72,9 @@ pub struct Profile {
     pub auto_switch_device: bool,
     pub app_exe: String,
     pub app_name: String,
-    /// auto, off, device
+    /// auto, off, device. Streams follow Settings::volume_sync for every
+    /// device (schema 6): off there, none syncs; on, "device" follows
+    /// volume_device_id and the others are Auto (the core's state.rs)
     #[serde(default = "auto")]
     pub volume_sync: String,
     pub volume_device_id: String,

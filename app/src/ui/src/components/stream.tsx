@@ -22,8 +22,10 @@ export function currentProfile(snap: Snapshot): Profile | null {
   return snap.profiles.find((p) => p.name === name) ?? snap.profiles[0] ?? null;
 }
 
+/** A state in words; streaming reads "Connected", as the core's own
+ *  message on Home and in the tray (issue #86) */
 export function stateLabel(s: StreamState): string {
-  return t(`status.${s}`);
+  return t(s === "streaming" ? "status.connected" : `status.${s}`);
 }
 
 // A reconnect or a retry reads as plain connecting, and its end as connected
@@ -39,7 +41,7 @@ const PLAIN_STATUS: Record<string, string> = {
 export function statusText(s: Pick<StreamStatus, "state" | "message">): string {
   if (s.state === "error") return t("status.error");
   const plain = PLAIN_STATUS[s.message.key];
-  return plain ? t(plain) : tm(s.message) || t(`status.${s.state}`);
+  return plain ? t(plain) : tm(s.message) || stateLabel(s.state);
 }
 
 /** The ring around the device: pulses while connecting, glows while streaming */
@@ -216,7 +218,9 @@ export function codecDetails(info: StreamInfo): string[] {
   return out;
 }
 
-export function CodecBadge(props: { compact?: boolean }) {
+/** The codec in two lines (issue #86): its name, then what it runs with in
+ *  a badge; `aside` goes beside the badge (the flyout's link quality) */
+export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
   const { core } = useApp();
   const info = () => core.state.snap?.stream.info ?? null;
   const name = () => {
@@ -237,34 +241,41 @@ export function CodecBadge(props: { compact?: boolean }) {
   return (
     <Show when={info()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
       {(i) => (
-        <span class="codec-badge" title={fallbackHelp() || undefined}>
-          <Show when={i().requested_codec}>
-            <Icon name="warning" class="st-warn" title={fallbackHelp()} />
-          </Show>
-          <strong>{name()}</strong>
-          <span class="num" title={bitrateNote(i())}>
-            {i().bitrate_kbps} kbps
-          </span>
-          <Show when={liveBitpool(i())}>
-            {(bp) => (
-              <span class="num live-bitpool" title={t("tooltip.sbc_bitpool_live", bp().min, bp().max)}>
-                {bitpoolText(i())}
-              </span>
-            )}
-          </Show>
-          <Show when={!props.compact}>
-            <span class="num">{khz(i().sample_rate)} kHz</span>
-            <Show when={i().bits > 0}>
-              <span class="num">{t(`bitdepth.${i().bits}`)}</span>
+        <div class="codec-info">
+          <span class="codec-name" title={fallbackHelp() || undefined}>
+            <Show when={i().requested_codec}>
+              <Icon name="warning" class="st-warn" title={fallbackHelp()} />
             </Show>
-          </Show>
-          {/* Last, as in the sidebar's line (issue #86) */}
-          <Show when={i().abr}>
-            <span class="muted" title={t(abrTooltipKey(i()))}>
-              {abrLabel(i())}
+            <strong class="ellipsis">{name()}</strong>
+          </span>
+          <div class="codec-line">
+            <span class="codec-badge">
+              <span class="num" title={bitrateNote(i())}>
+                {i().bitrate_kbps} kbps
+              </span>
+              <Show when={liveBitpool(i())}>
+                {(bp) => (
+                  <span class="num live-bitpool" title={t("tooltip.sbc_bitpool_live", bp().min, bp().max)}>
+                    {bitpoolText(i())}
+                  </span>
+                )}
+              </Show>
+              <Show when={!props.compact}>
+                <span class="num">{khz(i().sample_rate)} kHz</span>
+                <Show when={i().bits > 0}>
+                  <span class="num">{t(`bitdepth.${i().bits}`)}</span>
+                </Show>
+              </Show>
+              {/* Last, as in the sidebar's line (issue #86) */}
+              <Show when={i().abr}>
+                <span class="muted" title={t(abrTooltipKey(i()))}>
+                  {abrLabel(i())}
+                </span>
+              </Show>
             </span>
-          </Show>
-        </span>
+            {props.aside}
+          </div>
+        </div>
       )}
     </Show>
   );

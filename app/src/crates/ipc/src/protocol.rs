@@ -413,7 +413,9 @@ pub struct Profile {
     pub auto_switch_device: bool,
     pub app_exe: String,
     pub app_name: String,
-    /// auto, off, device
+    /// auto, device (the Windows volume of volume_device_id; set in
+    /// developer mode); "off" from before Settings.volume_sync counts as
+    /// auto. Only while Settings.volume_sync is on.
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
@@ -532,19 +534,6 @@ impl Default for DevLog {
     }
 }
 
-/// A device's own values of options that are otherwise global; None
-/// follows the global value
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-
-pub struct DeviceOptions {
-    /// Its buttons act as Windows media keys
-    #[serde(default)]
-    pub media_keys: Option<bool>,
-    /// Its volume is remembered and set again when it connects
-    #[serde(default)]
-    pub remember_volume: Option<bool>,
-}
-
 /// Application settings the UI edits
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
@@ -557,16 +546,17 @@ pub struct Settings {
     pub minimize_to_tray: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
-    /// The headphones' buttons act as Windows media keys (the default for
-    /// devices without an override in device_options)
+    /// The headphones' buttons act as Windows media keys (every device)
     pub media_keys: bool,
-    /// Remember each device's volume (the default for devices without an
-    /// override in device_options)
+    /// Remember each device's volume (one switch for every device)
     pub remember_volume: bool,
-    /// Per-device overrides of media_keys and remember_volume; key: the
-    /// device address in capitals ("AA:BB:CC:DD:EE:FF")
-    #[serde(default)]
-    pub device_options: std::collections::BTreeMap<String, DeviceOptions>,
+    /// Windows Volume Sync for every device (on by default): the audio
+    /// device's volume and the captured device's Windows volume follow each
+    /// other; a profile can follow another device instead (its volume_sync
+    /// "device", set in developer mode). Off: no stream syncs. A change
+    /// starts the profile in use again.
+    #[serde(default = "yes")]
+    pub volume_sync: bool,
     /// Developer mode: receiver test, HCI capture, debug details
     pub developer_mode: bool,
     /// Developer mode: overrides of the codec and media path, in force
@@ -593,10 +583,8 @@ pub struct Settings {
     /// LE Audio stream is set up); only with le_audio_experimental
     #[serde(default)]
     pub le_audio_low_latency: bool,
-    /// Codecs > "Enable experimental codecs" (on by default): off, the
-    /// codecs not yet confirmed with real headphones (aptX HD, aptX LL,
-    /// Opus, Opus 05, FastStream) are never used (read when the next
-    /// stream is set up)
+    /// Before 2.0.2: Codecs > "Enable experimental codecs". Every codec
+    /// is used now: the core reads it as on whatever is sent
     #[serde(default = "yes")]
     pub experimental_codecs: bool,
     /// Codecs > "Auto-select the codec with the highest quality", for every
@@ -1539,11 +1527,8 @@ mod tests {
             "bt_chip_fw_stem": "", "afh": "auto", "remote_sink": ""}))
         .unwrap();
         assert!(!settings.le_audio_experimental && !settings.le_audio_low_latency);
-        assert!(settings.device_options.is_empty());
-        let mut device_options = std::collections::BTreeMap::new();
-        device_options
-            .insert("AA:BB:CC:DD:EE:FF".to_string(), DeviceOptions { media_keys: Some(false), remember_volume: None });
-        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, device_options, ..settings };
+        assert!(settings.volume_sync);
+        let on = Settings { le_audio_experimental: true, le_audio_low_latency: true, volume_sync: false, ..settings };
         assert_eq!(serde_json::from_value::<Settings>(serde_json::to_value(&on).unwrap()).unwrap(), on);
 
         let info: StreamInfo = serde_json::from_value(serde_json::json!({
