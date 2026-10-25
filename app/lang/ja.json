@@ -719,7 +719,6 @@
   "status.device_off": "切断されました",
   "status.device_unreachable": "切断されました(電源オフまたは範囲外)",
   "status.device_back": "オーディオデバイスの電源が戻りました。接続しています...",
-  "ui.flyout.profile": "デバイス:",
   "ui.profile.codec_supported": "対応",
   "ui.profile.codec_not_supported": "非対応",
   "ui.profile.codec_support_unknown": "不明",

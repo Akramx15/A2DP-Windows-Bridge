@@ -718,7 +718,6 @@
   "ui.profile.sbc_bitrate": "≈ %d kbit/s bei %s kHz",
   "status.device_off": "Getrennt",
   "status.device_unreachable": "Getrennt (ausgeschaltet oder außer Reichweite)",
-  "ui.flyout.profile": "Gerät:",
   "ui.profile.codec_supported": "Unterstützt",
   "ui.profile.codec_not_supported": "Nicht unterstützt",
   "ui.profile.codec_support_unknown": "Unbekannt",

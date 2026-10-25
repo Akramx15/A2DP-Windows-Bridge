@@ -36,8 +36,10 @@ describe("Home", () => {
     const disconnect = await within(wh).findByRole("button", { name: "Disconnect" });
     expect(calls.find((c) => c.method === "stream.start")?.params).toEqual({ profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(wh).toHaveTextContent("990 kbps"));
-    // The badge on Home has the bit depth too
+    // The badge on Home has the bit depth too, on the line below the codec (issue #86)
     expect(wh.querySelector(".codec-badge")).toHaveTextContent("24-bit");
+    expect(wh.querySelector(".codec-info > .codec-name")).toHaveTextContent(/^LDAC$/);
+    expect(within(wh).getByRole("status")).toHaveTextContent(/^Connected$/);
     // The other device: ready, not streaming, its own Connect
     expect(xb).toHaveTextContent("Ready");
     expect(xb).toHaveTextContent("Not streaming");
@@ -107,14 +109,18 @@ describe("Home", () => {
     expect(wh).toHaveTextContent("Idle");
     expect(xb).toHaveTextContent("SRS-XB13");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
-    await waitFor(() => expect(wh.querySelector(".status-pill-codec")).toHaveTextContent("LDAC"));
-    expect(wh).toHaveTextContent("Streaming");
-    // One line: "LDAC 990 kbps 96 kHz 24-bit"
-    expect(wh.querySelector(".status-pill-details")).toHaveTextContent(/^990 kbps [\d.]+ kHz 24-bit$/);
-    expect(wh).toHaveAccessibleName(/^WH-1000XM5, .*, LDAC 990 kbps/);
+    await waitFor(() => expect(wh.querySelector(".codec-name")).toHaveTextContent(/^LDAC$/));
+    // Streaming reads "Connected", as on Home and in the tray (issue #86)
+    expect(wh.querySelector(".status-pill-state")).toHaveTextContent(/^Connected$/);
+    expect(wh).not.toHaveTextContent("Streaming");
+    // Two lines: "LDAC", then "990 kbps 96 kHz 24-bit" in the badge below it
+    const badge = wh.querySelector(".codec-line .codec-badge")!;
+    expect(badge).not.toHaveTextContent("LDAC");
+    expect([...badge.children].map((c) => c.textContent)).toEqual(["990 kbps", expect.stringMatching(/^[\d.]+ kHz$/), "24-bit"]);
+    expect(wh).toHaveAccessibleName(/^WH-1000XM5, Connected, LDAC 990 kbps/);
     // The other one: idle, no codec
     expect(xb).toHaveTextContent("Idle");
-    expect(xb.querySelector(".status-pill-codec")).toBeNull();
+    expect(xb.querySelector(".codec-info")).toBeNull();
   });
 
   it("asks to exit the other A2DPWB (v1, or another v2) while it runs", async () => {
@@ -214,6 +220,31 @@ describe("every screen renders", () => {
     start("", { window: "flyout" });
     expect(await screen.findByRole("button", { name: "Connect" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open app" })).toBeInTheDocument();
+  });
+
+  it("the flyout looks like Home's card: the device chooser as its title, the codec in two lines (issue #86)", async () => {
+    start("", { window: "flyout" });
+    const connect = await screen.findByRole("button", { name: "Connect" });
+    // The device once: the chooser in the title's place, no "Device:" row
+    const chooser = screen.getByRole("combobox", { name: "Device" });
+    expect(chooser.closest(".fly-title")).not.toBeNull();
+    expect(screen.queryByText("Device:")).toBeNull();
+    expect(document.querySelector(".fly-title .device-name")).toBeNull();
+    // Hidden by Escape and on losing the focus: no close button
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    expect(screen.getByText("Not streaming")).toBeInTheDocument();
+    fireEvent.click(connect);
+    await screen.findByRole("button", { name: "Disconnect" });
+    await waitFor(() => expect(document.querySelector(".fly-title .codec-name")).toHaveTextContent(/^LDAC$/));
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connected$/);
+    // The link quality beside the codec's details
+    const line = document.querySelector(".fly-title .codec-line")!;
+    expect(line.querySelector(".codec-badge")).toHaveTextContent("990 kbps");
+    expect(line.querySelector(".quality")).not.toBeNull();
+    // Then the volume, then Disconnect
+    const slider = screen.getByRole("slider", { name: "Volume" });
+    const disconnect = screen.getByRole("button", { name: "Disconnect" });
+    expect(slider.compareDocumentPosition(disconnect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("in Japanese", async () => {
