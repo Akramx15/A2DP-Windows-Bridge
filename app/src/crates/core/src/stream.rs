@@ -952,15 +952,28 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     // ---- audio source ----
     inner.notify(StreamState::Connecting, Msg::new("status.initializing_audio"));
     let test_tone = req.source == SourceRequest::TestTone;
+    // Auto (Auto-select): the best codec with its best options, so the
+    // highest rate the codec takes, as far as the device lists it (issue
+    // #86), the test tone too; quality (HQ) and bit depth (24-bit where
+    // carried) are already the best by default. WASAPI resamples a lower
+    // mix rate.
+    let best_rate = req.codec.is_none() && req.sample_rate.is_none();
     let mut preferred = match (&req.source, req.sample_rate) {
         (_, Some(r)) => r,
+        _ if best_rate => kind.max_sample_rate(),
         (SourceRequest::TestTone, None) => 48000,
         (SourceRequest::VirtualDevice { id, .. }, None) => audio_capture::mix_rate(Some(id)).unwrap_or(48000),
         (_, None) => audio_capture::mix_rate(None).unwrap_or(48000),
     };
     tracing::debug!(
         "capture rate: {preferred} Hz preferred ({})",
-        if req.sample_rate.is_some() { "profile" } else { "source mix rate" }
+        if req.sample_rate.is_some() {
+            "profile"
+        } else if best_rate {
+            "Auto: the codec's highest"
+        } else {
+            "source mix rate"
+        }
     );
     if preferred > kind.max_sample_rate() {
         tracing::info!(
@@ -970,15 +983,18 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         );
         preferred = kind.max_sample_rate();
     }
-    // aptX family, AAC: 44.1 / 48 kHz as the sink lists them; LHDC V5: its rates;
-    // Opus, Opus 05: 48 kHz only; aptX Adaptive: 48 kHz, 96 kHz only when the
-    // profile asks for it (HQ, an R2 sink that lists it), not from the
-    // source's mix rate. WASAPI resamples to the requested rate.
+    // aptX family, AAC: 44.1 / 48 kHz as the sink lists them; LHDC V5, LDAC:
+    // their rates;
+    // Opus, Opus 05: 48 kHz only; aptX Adaptive: 48 kHz, 96 kHz when the
+    // profile or Auto asks for it (HQ, an R2 sink that lists it), not from
+    // the source's mix rate. WASAPI resamples to the requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
+        CodecKind::Ldac => remote.pick_ldac_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
-        CodecKind::AptxAdaptive => remote.pick_aptxad_sample_rate(req.sample_rate.unwrap_or(48000), req.quality),
+        CodecKind::AptxAdaptive => remote
+            .pick_aptxad_sample_rate(req.sample_rate.unwrap_or(if best_rate { 96000 } else { 48000 }), req.quality),
         CodecKind::Opus | CodecKind::Opus05 => 48000,
         CodecKind::Aac => remote.pick_aac_sample_rate(preferred),
         CodecKind::Sbc | CodecKind::SbcXq if preferred != 44100 => 48000,
@@ -987,7 +1003,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     if picked != preferred {
         // aptX Adaptive takes 96 kHz only when chosen, not from the mix
         // rate: said so, not "supported" (issue #86)
-        let why = if kind == CodecKind::AptxAdaptive && req.sample_rate.is_none() {
+        let why = if kind == CodecKind::AptxAdaptive && req.sample_rate.is_none() && !best_rate {
             "the profile's rate is Auto; 96 kHz only when chosen in the codec's settings"
         } else {
             "supported rate"

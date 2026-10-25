@@ -33,7 +33,7 @@ The sidebar shows the same for every device on every screen.
 
 The codec of each saved audio device, one section per device (name, address, **Paired** / **Audio** tags) with its codec cards, highest sound quality first, each with three bars (sound quality, low latency, stability) and whether the device offered it when it last connected: **Supported** (green mark) or **Unsupported** (red mark). Every codec is offered; the experimental ones (🧪 in the README's codec table) are marked only in the documentation.
 
-- **Auto-select the codec with the highest quality** (one setting for every device, at the top of the page; on by default): each device uses the codec with the highest sound quality it supports, in this order: LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. The cards are read-only and the codec in use (or the one Auto will pick) is highlighted; clicking a card says to turn the switch off first. Turn it off to choose each device's codec and its settings yourself; a device with none chosen yet keeps Auto's pick. The codec chosen for a device is kept while Auto-select is on. Settings from before 2.0.2 that chose a codec for any device start with it off
+- **Auto-select the codec with the highest quality** (one setting for every device, at the top of the page; on by default): each device uses the codec with the highest sound quality it supports, in this order: LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC, with its best settings: high quality, 24-bit where the codec carries it and the highest sample rate the device lists (e.g. LDAC 96 kHz, aptX Adaptive 96 kHz on an R2 device, LHDC V5 up to 192 kHz; Windows' own rate is resampled). The cards are read-only and the codec in use (or the one Auto will pick) is highlighted; clicking a card says to turn the switch off first. Turn it off to choose each device's codec and its settings yourself; a device with none chosen yet keeps Auto's pick. The codec chosen for a device is kept while Auto-select is on. Settings from before 2.0.2 that chose a codec for any device start with it off
 - **Auto's order…** (below the switch, in developer mode only): opens a list of the codecs in the order Auto picks them, highest sound quality first by default. Drag a codec, or use its arrows, to put them in the order you want; **Back to sound quality order** resets it. Auto uses the first codec in the list the device supports, and a chosen codec the device does not support falls back to the next one below it in this order. The cards are shown in this order. An order set there keeps applying with developer mode off. A device streaming with a codec this changes connects again
 - With it off, click a card to choose that device's codec; it is saved at once, and a device streaming connects again with it. If the device does not support the codec, the next supported codec below it in Auto's order is used (see [Explicitly Selected Codec Not Offered](#codec-fallback))
 - **Hide the codecs the audio device does not support** (on by default): the codecs a device did not offer are left out. Before a device's first connection, all of them are shown
@@ -292,7 +292,7 @@ Application mode, or a free virtual device such as VB-CABLE, covers the same use
 - Windows has no public API for changing the default device. A2DPWB uses the undocumented IPolicyConfig interface, as other audio switching tools do (Windows 10 and 11).
 
 {: .warning }
-System Loopback and Virtual Device use WASAPI shared mode, so the capture sample rate is determined by the device's **Default Format** in Windows Sound settings (typically 48 kHz). To use LDAC at 96 kHz, change the output device's format to 96 kHz in **Sound settings > Device properties > Advanced > Default format**.
+System Loopback and Virtual Device use WASAPI shared mode: with Auto-select on, A2DPWB asks for the codec's highest rate the headphones list (LDAC 96 kHz, for example) and WASAPI resamples the device's **Default Format** to it. With a codec chosen and its sample rate on Auto, the capture follows the Default Format in Windows Sound settings (typically 48 kHz); to use LDAC at 96 kHz then, choose 96 kHz in the codec's settings or change the output device's format to 96 kHz in **Sound settings > Device properties > Advanced > Default format**.
 
 ## Codec Comparison
 
@@ -333,7 +333,7 @@ A2DPWB supports three aptX codecs encoded with [libopenaptx](https://github.com/
 The encoder is the pure-Rust aptX Adaptive encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). Upstream describes it as a clean-room reimplementation whose numeric tables were reconstructed from lawfully obtained shipped Qualcomm binaries and on-air captures; no Qualcomm code, SDK or binary is included (see [Licenses](licenses)).
 
 - **Choosing it**: Auto picks it when the headphones offer neither LHDC V5 nor LDAC. Or choose **aptX Adaptive** on **Codecs**, or `-c aptxad`.
-- **Format**: 48 kHz stereo, 24-bit only; 44.1 or 96 kHz requests are captured at 48 kHz.
+- **Format**: 48 kHz stereo, 24-bit; 96 kHz in high quality to a device that lists it (aptX Adaptive R2), with Auto-select or when chosen; a 44.1 kHz request is captured at 48 kHz.
 - **Headphones**: R1 sinks (no capability extension, e.g. B&W Px7 S2e) and R2 sinks (R2 bitstream).
 
 | Quality (**...** / `-q`) | R1 sinks | R2 sinks | Packets |
@@ -381,7 +381,7 @@ and the error says that endpoints are in use by another device. Disconnect the h
 
 ### Sample Rate
 
-aptX, aptX HD and aptX LL support only 44.1 kHz and 48 kHz (aptX Adaptive 48 kHz, or 96 kHz when chosen and the headphones list it). A2DPWB picks one of the rates the headphones advertise (preferring the current Windows device rate, otherwise 48 kHz) and lets WASAPI resample the capture. You do not need to change the Windows Sound settings for aptX.
+aptX, aptX HD and aptX LL support only 44.1 kHz and 48 kHz (aptX Adaptive 48 kHz, or 96 kHz with Auto-select or when chosen, if the headphones list it). A2DPWB picks one of the rates the headphones advertise (with Auto-select the highest; otherwise preferring the current Windows device rate, then 48 kHz) and lets WASAPI resample the capture. You do not need to change the Windows Sound settings for aptX.
 
 ### Checking What Your Headphones Offer
 

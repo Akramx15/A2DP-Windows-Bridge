@@ -38,6 +38,8 @@ pub const CODEC_TYPE_VENDOR: u8 = 0xFF;
 
 // LDAC byte 6: 0x20 44.1k, 0x10 48k, 0x08 88.2k, 0x04 96k; byte 7: 0x04 mono, 0x02 dual, 0x01 stereo
 const LDAC_FREQ_ALL: u8 = 0x3C;
+/// LDAC rates by byte 6 bit, highest first
+const LDAC_RATES: [(u8, u32); 4] = [(0x04, 96000), (0x08, 88200), (0x10, 48000), (0x20, 44100)];
 const LDAC_CH_ALL: u8 = 0x07;
 
 // aptX family byte 6: high nibble frequency (0x20 44.1k, 0x10 48k), low nibble channels (0x02 stereo, 0x01 mono)
@@ -539,6 +541,8 @@ pub struct RemoteCaps {
     /// The AAC SEP's capabilities, when reported
     pub aac_caps: Option<AacCapabilities>,
     pub ldac: Option<RemoteSep>,
+    /// LDAC byte 6: the rates the sink lists (0 = not reported: assume all)
+    pub ldac_rates: u8,
     pub aptx: Option<RemoteSep>,
     pub aptx_hd: Option<RemoteSep>,
     pub aptx_ll: Option<RemoteSep>,
@@ -761,6 +765,7 @@ impl RemoteCaps {
         let byte = |i: usize| info.get(i).copied().unwrap_or(0);
         if vid == LDAC_VENDOR_ID && cid == LDAC_CODEC_ID {
             self.ldac = Some(RemoteSep { seid });
+            self.ldac_rates = byte(6) & LDAC_FREQ_ALL;
             return VendorCapability::Taken(CodecKind::Ldac);
         }
         if vid == APTXHD_VENDOR_ID && cid == APTXHD_CODEC_ID {
@@ -1046,6 +1051,17 @@ impl RemoteCaps {
             wanted
         };
         tracing::debug!("caps: {kind} rate {wanted} -> {rate} (caps 0x{caps:02x})");
+        rate
+    }
+
+    /// Capture rate for LDAC: `wanted` when the sink lists it, else the
+    /// highest listed rate below it, else the lowest above it (88.2 / 96 kHz
+    /// are optional for a sink)
+    pub fn pick_ldac_sample_rate(&self, wanted: u32) -> u32 {
+        let rates = if self.ldac_rates == 0 { LDAC_FREQ_ALL } else { self.ldac_rates };
+        let listed = || LDAC_RATES.into_iter().filter(|&(bit, _)| rates & bit != 0).map(|(_, r)| r);
+        let rate = listed().find(|&r| r <= wanted).or_else(|| listed().next_back()).unwrap_or(wanted);
+        tracing::debug!("caps: LDAC rate {wanted} -> {rate} (rates 0x{rates:02x})");
         rate
     }
 
@@ -1594,6 +1610,29 @@ mod tests {
         assert_eq!(c.kind, CodecKind::Sbc);
         assert_eq!(c.replaced, Some((CodecKind::Ldac, Unavailable::SepInUse { in_use: 1, total: 2 })));
         assert!(choose(&caps, Some(CodecKind::Ldac), false, true).is_err());
+    }
+
+    #[test]
+    fn ldac_rate_as_the_sink_lists_it() {
+        let ldac = |rates: u8| {
+            let mut caps = RemoteCaps::default();
+            let mut info = vendor_header(LDAC_VENDOR_ID, LDAC_CODEC_ID);
+            info.extend_from_slice(&[rates, LDAC_CH_ALL]);
+            assert_eq!(caps.add_vendor(1, &info), VendorCapability::Taken(CodecKind::Ldac));
+            caps
+        };
+        // Every rate: Auto's 96 kHz and the mix rate as asked
+        let all = ldac(LDAC_FREQ_ALL);
+        assert_eq!((all.pick_ldac_sample_rate(96000), all.pick_ldac_sample_rate(48000)), (96000, 48000));
+        // Not reported: as every rate
+        assert_eq!(RemoteCaps::default().pick_ldac_sample_rate(96000), 96000);
+        // 44.1 / 48 kHz only (88.2 / 96 kHz are optional): the highest below
+        let base = ldac(0x30);
+        assert_eq!((base.pick_ldac_sample_rate(96000), base.pick_ldac_sample_rate(44100)), (48000, 44100));
+        // 88.2 kHz the highest
+        assert_eq!(ldac(0x38).pick_ldac_sample_rate(96000), 88200);
+        // Only above: the lowest of them
+        assert_eq!(ldac(0x0C).pick_ldac_sample_rate(48000), 88200);
     }
 
     #[test]
