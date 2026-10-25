@@ -1119,7 +1119,7 @@ export class MockCore implements Transport {
               battery: 80,
               battery_refused: false,
             }
-          : { state: "streaming", message: { key: "status.streaming", args: [] }, profile: name, info: info(), volume: 76, ...(this.scenario === "battery_refused" ? { battery: null, battery_refused: true } : { battery: 80, battery_refused: false }) };
+          : { state: "streaming", message: { key: "status.connected", args: [] }, profile: name, info: info(), volume: 76, ...(this.scenario === "battery_refused" ? { battery: null, battery_refused: true } : { battery: 80, battery_refused: false }) };
       this.log("info", "a2dpwb_core::service", "state Streaming: Streaming");
       this.emit({ kind: "stream", value: this.snap.stream });
       if (this.snap.stream.info?.details?.sbc?.abr_bitpool) this.later(500, () => this.sbcAbrStep(0));

@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App, hideToTray, isDiagnosticsShortcut } from "./App";
 import { captureRunningText } from "./indicators";
-import { errorCopyText, isAppFault, sourceText, statusText } from "../components/stream";
+import { errorCopyText, isAppFault, sourceText, stateLabel, statusText } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, sampleProfile, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
@@ -375,6 +375,12 @@ describe("helpers", () => {
     expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
     expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
     expect(statusText({ state: "idle", message: msg("") })).toBe("Idle");
+    // Streaming reads "Connected" everywhere (issue #86); the other states keep their words
+    expect(statusText({ state: "streaming", message: msg("") })).toBe("Connected");
+    expect(stateLabel("streaming")).toBe("Connected");
+    expect(stateLabel("connecting")).toBe("Connecting...");
+    expect(stateLabel("reconnecting")).toBe("Reconnecting...");
+    expect(stateLabel("idle")).toBe("Idle");
   });
 
   it("error copy text", () => {

@@ -302,7 +302,7 @@ describe("saved devices on the Audio Devices screen", () => {
     fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
     const row = (await screen.findByText(/Galaxy Buds2 Pro/)).closest(".device-row") as HTMLElement;
     await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
-    await waitFor(() => expect(screen.getAllByText(/Streaming/).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/^Connected$/).length).toBeGreaterThan(0));
     calls.length = 0;
     fireEvent.click(within(row).getByRole("button", { name: t("ui.devices.add") }));
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));

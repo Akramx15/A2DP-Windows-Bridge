@@ -717,7 +717,6 @@
   "ui.profile.sbc_bitrate": "≈ %d kbit/s à %s kHz",
   "status.device_off": "Déconnecté",
   "status.device_unreachable": "Déconnecté (éteint ou hors de portée)",
-  "ui.flyout.profile": "Appareil :",
   "ui.profile.codec_supported": "Pris en charge",
   "ui.profile.codec_not_supported": "Non pris en charge",
   "ui.profile.codec_support_unknown": "Inconnu",

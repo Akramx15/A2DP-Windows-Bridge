@@ -1,6 +1,8 @@
 // The tray flyout (360×440): everyday control without the main window.
-// Device, state and battery, the big Connect / Disconnect, volume right
-// below, the profile switcher, codec and link quality, "Open app".
+// As Home's card (issue #86): the ring, and beside it the device chooser
+// in the title's place, battery and state, the codec and link quality;
+// then the volume, the big Connect / Disconnect and "Open app". No close
+// button: the flyout hides on Escape and when it loses the focus.
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -59,8 +61,14 @@ export function Flyout() {
           <Icon name="headphones" />
         </Ring>
         <div class="fly-title">
-          <div class="device-name ellipsis">{profile()?.device_name || profile()?.name || t("profile.none_selected")}</div>
-          {/* As on Home and in the sidebar: battery | state (issue #86) */}
+          {/* The device chooser is the title: the device once (issue #86) */}
+          <Show
+            when={profile()}
+            fallback={<div class="device-name ellipsis">{t("profile.none_selected")}</div>}
+          >
+            <ProfileSwitcher />
+          </Show>
+          {/* As on Home and in the sidebar: battery | state, the codec (issue #86) */}
           <div class="fly-state">
             <Show when={showsBattery(stream())}>
               <BatteryLevel class="fly-battery" percent={stream().battery} />
@@ -73,23 +81,14 @@ export function Flyout() {
               <span class="ellipsis">{statusText(stream())}</span>
             </div>
           </div>
+          <CodecBadge aside={<QualityIndicator />} />
         </div>
-        <IconButton icon="dismiss" label={t("modal.close")} onClick={() => void core.transport.hideWindow()} />
       </header>
 
       <Show when={profile()} fallback={<p class="muted">{t("profile.empty")}</p>}>
-        <ConnectButton compact onError={(e) => setReqError(IpcError.from(e))} />
         <VolumeControl />
-        <div class="fly-profile">
-          <span class="muted">{t("ui.flyout.profile")}</span>
-          <ProfileSwitcher />
-        </div>
+        <ConnectButton compact onError={(e) => setReqError(IpcError.from(e))} />
       </Show>
-
-      <div class="fly-row">
-        <CodecBadge />
-        <QualityIndicator />
-      </div>
       {/* Kept simple: the capture source is chosen in the main window (issue #86) */}
       <Show when={snap().capture}>
         <div class="fly-meta">

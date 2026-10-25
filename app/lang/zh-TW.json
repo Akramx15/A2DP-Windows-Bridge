@@ -717,7 +717,6 @@
   "ui.profile.sbc_bitrate": "≈ %d kbps，%s kHz",
   "status.device_off": "已中斷連線",
   "status.device_unreachable": "已中斷連線(已關機或超出範圍)",
-  "ui.flyout.profile": "裝置:",
   "ui.profile.codec_supported": "支援",
   "ui.profile.codec_not_supported": "不支援",
   "ui.profile.codec_support_unknown": "未知",

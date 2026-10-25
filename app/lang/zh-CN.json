@@ -717,7 +717,6 @@
   "ui.profile.sbc_bitrate": "≈ %d kbps，%s kHz",
   "status.device_off": "已断开连接",
   "status.device_unreachable": "已断开连接(已关机或超出范围)",
-  "ui.flyout.profile": "设备:",
   "ui.profile.codec_supported": "支持",
   "ui.profile.codec_not_supported": "不支持",
   "ui.profile.codec_support_unknown": "未知",
