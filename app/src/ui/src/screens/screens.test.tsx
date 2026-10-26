@@ -145,6 +145,42 @@ describe("Home", () => {
     expect(pill.querySelector(".status-pill-state")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
   });
 
+  it("chooses the codec of the device in use right there, the capture source being on Audio Devices (issue #86)", async () => {
+    const { calls } = start("#/home");
+    await homeCard("WH-1000XM5");
+    const card = (await screen.findByRole("heading", { level: 2, name: "Codec" })).closest("section")!;
+    expect(screen.queryByRole("heading", { name: "Capture Source" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "More capture settings" })).toBeNull();
+    const select = within(card).getByRole("combobox", { name: "Codec" }) as HTMLSelectElement;
+    // Auto-select, then the codecs the device supports in its order
+    expect([...select.options].map((o) => o.value)).toEqual(["auto", "ldac", "aac", "sbc"]);
+    expect(select.value).toBe("ldac");
+    // Saved at once, as a card chosen on Codecs
+    fireEvent.change(select, { target: { value: "aac" } });
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "profile.save")?.params).toMatchObject({
+        profile: { codec: "aac" },
+        original_name: "WH-1000XM5 (LDAC)",
+      }),
+    );
+    await waitFor(() => expect(select.value).toBe("aac"));
+    // Auto-select is the one setting for every device; it shows its pick
+    fireEvent.change(select, { target: { value: "auto" } });
+    await waitFor(() => expect(select.selectedOptions[0]).toHaveTextContent(/^Auto-select \(LDAC\)$/));
+    expect(calls.filter((c) => c.method === "settings.set").at(-1)?.params).toMatchObject({ settings: { auto_codec: true } });
+    // A codec chosen under Auto-select turns it off first
+    const before = calls.length;
+    fireEvent.change(select, { target: { value: "sbc" } });
+    const after = () => calls.slice(before).filter((c) => c.method === "settings.set" || c.method === "profile.save");
+    await waitFor(() => expect(after().map((c) => c.method)).toEqual(["settings.set", "profile.save"]));
+    await waitFor(() => expect(select.value).toBe("sbc"));
+    expect(select.selectedOptions[0]).toHaveTextContent(/^SBC$/);
+    expect(after()[0].params).toMatchObject({ settings: { auto_codec: false } });
+    expect(after()[1].params).toMatchObject({ profile: { codec: "sbc" } });
+    fireEvent.click(within(card).getByRole("button", { name: "More codec settings" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Codecs" })).toBeInTheDocument();
+  });
+
   it("asks to exit the other A2DPWB (v1, or another v2) while it runs", async () => {
     start("#/home");
     await homeCard("WH-1000XM5");
