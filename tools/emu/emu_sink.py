@@ -140,10 +140,14 @@ APTXAD_R2 = ([0x39, 0x0A, 0x37, 0x6A, 0x00, 0xAF, 0x64, 0x4B, 0x00, 0x01, 0x03, 
               0x02, 0x03, 0x03, 0x03, 0x00, 0xAA] + [0] * 14)
 
 
-def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53, aptxad_r2=False):
+def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53, aptxad_r2=False, aptxad_rates=None):
     """Endpoints a typical high-end headset offers (all sample rates / modes).
     SBC allows SBC XQ (dual channel, bitpool up to 53) unless sbc_dual is
-    False; aptX Adaptive is an R1 sink's unless aptxad_r2."""
+    False; aptX Adaptive is an R1 sink's unless aptxad_r2, with its rate
+    byte (bits 7..3 of byte 6) replaced by aptxad_rates when given."""
+    aptxad = list(APTXAD_R2 if aptxad_r2 else APTXAD_R1)
+    if aptxad_rates is not None:
+        aptxad[0] = (aptxad_rates & 0xF8) | (aptxad[0] & 0x07)
     sbc = SbcMediaCodecInformation
     sbc_modes = sbc.ChannelMode.MONO | sbc.ChannelMode.STEREO | sbc.ChannelMode.JOINT_STEREO
     if sbc_dual:
@@ -211,7 +215,7 @@ def sink_codec_capabilities(sbc_dual=True, sbc_max_bitpool=53, aptxad_r2=False):
         # direction stereo at front left + right (0x00000003), every frame
         # duration (0x1F), no bit rate limit; no return channel
         vendor(0x000005F1, 0x1005, [2, 0, 0x03, 0, 0, 0, 0x1F, 0, 0] + [0] * 9),
-        vendor(0x000000D7, 0x00AD, APTXAD_R2 if aptxad_r2 else APTXAD_R1),
+        vendor(0x000000D7, 0x00AD, aptxad),
     ]
 
 
@@ -270,7 +274,7 @@ async def main(args):
                 media_codec_information=VendorSpecificMediaCodecInformation(0x0000FFFE, 0x0001, bytes(1)),
             ))
         for name, capabilities in zip(CODEC_NAMES, sink_codec_capabilities(not args.sbc_no_dual, args.sbc_max_bitpool,
-                                                                         args.aptxad_r2)):
+                                                                         args.aptxad_r2, args.aptxad_rates)):
             if args.codecs and name not in args.codecs:
                 continue
             # BTstack 1.8.1 keeps at most 10 discovered SEPs (a2dp.c
@@ -322,5 +326,8 @@ if __name__ == '__main__':
                         help='largest SBC bitpool the sink takes (default 53)')
     parser.add_argument('--aptxad-r2', action='store_true',
                         help='aptX Adaptive as an R2 sink lists it (default: R1, the B&W Px7 S2e)')
+    parser.add_argument('--aptxad-rates', type=lambda x: int(x, 0),
+                        help='aptX Adaptive rate byte to list instead (e.g. 0xD1: an EarFun Air Pro 4+, '
+                             '96 kHz by its 0x80 bit only; 0x51: a Bose QC Ultra, no 96 kHz; issue #86)')
     bumble.logging.setup_basic_logging(parser.parse_known_args()[0].log_level)
     asyncio.run(main(parser.parse_args()))

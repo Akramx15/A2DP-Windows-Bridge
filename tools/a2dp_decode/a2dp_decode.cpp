@@ -308,15 +308,18 @@ static CodecConfig parse_media_codec(const uint8_t *p, size_t n) {
         }
         if (vendor == 0xD7 && vcodec == 0x00AD && vlen >= 11) {
             /* aptX Adaptive (AKS-Logic/aptx-adaptive-linux spec
-             * a2dp-integration.md sections 1, 7H): byte 6 rate bits 7..3 (0x08
-             * 44.1k, 0x10 48k, 0x20 96k) | source type bits 2..0 (0x02 a host
+             * a2dp-integration.md sections 1, 7H; the rates as Qualcomm's
+             * Android a2dp_vendor_aptx_adaptive_constants.h defines them,
+             * issue #86): byte 6 rate bits 7..3 (0x40 44.1k, or 0x08 in older
+             * headers; 0x10 48k; 0xA0 96k, which Android configures with both
+             * bits) | source type bits 2..0 (0x02 a host
              * encoder; 0x01 is sink-only), byte 7 channel mode, bytes 8..11
              * target latencies (LL0, LL1 in ms; HQ, TWS in 2 ms units), byte
              * 15 the capability extension version (1 = R2; R1 has its end
              * marker 00 AA at 15..16). Sent as stereo. */
             c.codec = Codec::AptxAdaptive;
             uint8_t rate = v[0] & 0xF8, source = v[0] & 0x07, mode = v[1];
-            c.sample_rate = rate == 0x08 ? 44100 : rate == 0x10 ? 48000 : rate == 0x20 ? 96000 : 0;
+            c.sample_rate = (rate == 0x08 || rate == 0x40) ? 44100 : rate == 0x10 ? 48000 : rate == 0xA0 ? 96000 : 0;
             c.channels = (mode == 0x02 || mode == 0x08) ? 2 : 0;
             c.aptxad_r2 = v[9] == 1;
             c.desc = strf("aptX Adaptive %u Hz, %s, %s, source type %u, target latency LL0 %u ms, LL1 %u ms, "

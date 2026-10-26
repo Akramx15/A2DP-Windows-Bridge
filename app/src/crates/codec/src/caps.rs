@@ -123,9 +123,15 @@ pub const OPUS05_BITRATE_UNIT: u32 = 1024;
 // aptX Adaptive (AKS-Logic/aptx-adaptive-linux spec/a2dp-integration.md §1,
 // §7G-§7J; the public CodeAurora / LineageOS headers): 40 bytes, the vendor
 // header then
-//   6: bits 7..3 rates (0x08 44.1k, 0x10 48k, 0x20 96k), bits 2..0 the
-//      source type (0x02: a host encoder, the sink times playback itself;
-//      0x01 is the sink's own flag, never sent)
+//   6: bits 7..3 rates, bits 2..0 the source type (0x02: a host encoder,
+//      the sink times playback itself; 0x01 is the sink's own flag, never
+//      sent). The rates as Qualcomm's Android stack defines them
+//      (a2dp_vendor_aptx_adaptive_constants.h): 0x40 44.1k (0x08 in older
+//      headers), 0x10 48k, 0xA0 96k (0x80 | 0x20; 0x80 alone is "reserved").
+//      Android takes a sink with any bit of 0xA0 for 96 kHz and configures
+//      0xA0: an EarFun Air Pro 4+ lists 0xD1 (0x80, no 0x20), a Sennheiser
+//      MOMENTUM 5 0x71 (0x20, no 0x80), a Bose QC Ultra 0x51 (neither, and
+//      it refuses 96 kHz). Issue #86.
 //   7: channel modes (0x01 mono, 0x02 stereo, 0x04 TWS stereo, 0x08 joint
 //      stereo, 0x10 TWS mono, 0x20 TWS+)
 //   8..13: target latencies (LL0, LL1 in ms; HQ, TWS in 2 ms units)
@@ -138,7 +144,8 @@ const APTXAD_INFO_LEN: usize = 40;
 /// The R1 layout's end (its end marker), the least a usable SEP reports
 const APTXAD_R1_LEN: usize = 17;
 const APTXAD_RATE_48000: u8 = 0x10;
-const APTXAD_RATE_96000: u8 = 0x20;
+/// 96 kHz as configured (both bits, as a Snapdragon phone sends it)
+const APTXAD_RATE_96000: u8 = 0xA0;
 const APTXAD_SOURCE_TYPE_HOST: u8 = 0x02;
 const APTXAD_CH_STEREO: u8 = 0x02;
 const APTXAD_CH_JOINT_STEREO: u8 = 0x08;
@@ -1029,8 +1036,9 @@ impl RemoteCaps {
         self.aptxad_info.get(APTXAD_EXT_VERSION) == Some(&1)
     }
 
-    /// aptX Adaptive at 96 kHz: an R2 sink that lists the rate (upstream
-    /// offers 96 kHz to R2 sinks only; an R1 sink is always 48 kHz)
+    /// aptX Adaptive at 96 kHz: an R2 sink that lists the rate, by either
+    /// of its bits as Android checks it (upstream offers 96 kHz to R2 sinks
+    /// only; an R1 sink is always 48 kHz)
     pub fn aptxad_96k(&self) -> bool {
         self.aptxad_r2() && self.aptxad_info.get(6).is_some_and(|&b| b & APTXAD_RATE_96000 != 0)
     }
@@ -2469,7 +2477,8 @@ mod tests {
         }
 
         // 96 kHz: an R2 sink that lists it, asked for by the profile, high
-        // quality; 0x22 in the configuration. Else 48 kHz.
+        // quality; 0xA2 in the configuration (both rate bits, as a
+        // Snapdragon phone sends it). Else 48 kHz.
         let mut r2 = RemoteCaps::default();
         r2.add_vendor(4, &r2_aptxad(0x0F00_0000)[..30]);
         assert!(r2.aptxad_96k());
@@ -2486,13 +2495,31 @@ mod tests {
         else {
             panic!("not a vendor configuration")
         };
-        assert_eq!(info[6..8], [0x22, 0x02]);
+        assert_eq!(info[6..8], [0xA2, 0x02]);
         assert_eq!(info[8..26], APTXAD_R2_DATA);
-        // An R2 sink without 96 kHz, an R1 sink that lists it anyway: 48 kHz
+        // Real sinks (issue #86): an EarFun Air Pro 4+ lists 0xD1 (0x80
+        // only), a MOMENTUM 5 0x71 (0x20 only): both take 96 kHz, configured
+        // 0xA2 either way, as Android does
+        for byte6 in [0xD1, 0x71, 0xB1] {
+            let mut info = r2_aptxad(0x0F00_0087);
+            info[6] = byte6;
+            let mut caps = RemoteCaps::default();
+            caps.add_vendor(4, &info[..30]);
+            assert!(caps.aptxad_96k(), "{byte6:#x}");
+            assert_eq!(caps.aptxad_no_96k(Quality::High, true), None, "{byte6:#x}");
+            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High, true), 96000, "{byte6:#x}");
+            let ConfigRequest::Vendor(c) = caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24).unwrap().request
+            else {
+                panic!("not a vendor configuration")
+            };
+            assert_eq!(c[6..8], [0xA2, 0x02], "{byte6:#x}");
+        }
+        // An R2 sink without 96 kHz (a Bose QC Ultra's 0x51: 44.1 and 48 kHz
+        // only), an R1 sink that lists it anyway: 48 kHz
         let mut no96 = r2_aptxad(0x0F00_0000);
-        no96[6] = 0x18;
+        no96[6] = 0x51;
         let mut r1_96 = PX7_S2E_APTXAD;
-        r1_96[6] |= 0x20;
+        r1_96[6] |= 0xA0;
         assert_eq!(r2.aptxad_no_96k(Quality::High, true), None);
         assert!(r2.aptxad_no_96k(Quality::LowLatency, true).is_some_and(|w| w.contains("low latency")));
         for (info, why) in [(&no96[..30], "does not list"), (&r1_96[..], "R1")] {
