@@ -34,7 +34,7 @@ nav_order: 2
 
 每个已保存音频设备的编解码器，每台设备一个分区（名称、地址、**已配对** / **音频**标记），其下是该设备的编解码器卡片：**自动**（设备支持的最佳编解码器）以及设备上次连接时提供的编解码器，各带三个指标条（音质、低延迟、稳定性）。单击卡片即可选择该设备的编解码器，选择会立即保存；正在串流的设备会用它重新连接。
 
-- **隐藏音频设备不支持的编解码器**（默认开启）：设备没有提供的编解码器会被隐藏（隐藏的数量显示在括号中）。设备首次连接之前，会显示全部编解码器
+- **仅显示支持的编解码器**（默认开启；关闭后将同时显示支持和不支持的编解码器）：设备没有提供的编解码器会被隐藏（隐藏的数量显示在括号中）。设备首次连接之前，会显示全部编解码器
 - **自动选择支持的音质最高的编解码器**（页面顶部，适用于所有设备的设置；默认开启）：每个设备使用其支持的音质最高的编解码器，并采用其最佳设置：高音质、编解码器支持时为 24-bit，以及设备列出的最高采样率（例如 LDAC 96 kHz、R2 设备上的 aptX Adaptive 96 kHz、LHDC V5 最高 192 kHz；Windows 自身的采样率会被重采样）。卡片为只读，显示正在使用（或将自动选择）的编解码器。关闭后可为每个设备自行选择编解码器及其设置（尚未选择的设备沿用自动选择）。开启期间，为各设备选择的编解码器会被保留。如果 2.0.2 之前的设置为某个设备选择过编解码器，则初始为关闭
 - **自动选择的顺序…**（开关下方）：打开自动选择挑选编解码器的顺序列表（默认按音质从高到低）。拖动编解码器或使用箭头调整顺序，**恢复为音质顺序** 可还原。自动选择使用列表中设备支持的第一个编解码器，所选编解码器不受支持时也按此顺序改用其下方的下一个。卡片也按此顺序显示。如果正在使用的流的编解码器因此改变，会重新连接
 - **启用实验性编解码器**（默认开启）：实验性编解码器（aptX HD、aptX Low Latency、Opus、Opus 05、FastStream）的卡片上带有**实验性**标记。关闭后，这些卡片会被隐藏，“自动”不会选择它们；所选编解码器属于其中之一的设备，会改用“自动”优先级中排在其后、且设备支持的下一个编解码器，页面上会对此加以说明。如果正在串流的编解码器因此改变，设备会重新连接。CLI：`--no-experimental`
@@ -42,7 +42,7 @@ nav_order: 2
 - 卡片上的 **...** 会打开该编解码器的设置；**确定**会连同这些设置一起选择该编解码器。每种编解码器各自保留自己的设置：选择另一种编解码器再切换回来，原来的设置会恢复。只提供该编解码器支持的选项：
   - **音质**：LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps)；LHDC V5 高 (1000 kbps) / 中高 (900 kbps) / 标准 (500 kbps) / 移动 (400 kbps)，即 Android 提供的四个级别；aptX Adaptive 高 / 标准 / 移动 / 低延迟（请参阅 [aptX Adaptive](#aptx-adaptive)）；AAC 也有音质级别，其他 aptX 编解码器则为固定比特率。SBC 和 SBC XQ 显示由其 bitpool 和帧设置得出的比特率
   - **ABR（自适应比特率）**：用于 LDAC、LHDC V5、aptX Adaptive、SBC 和 SBC XQ（请参阅 [ABR](#abr)）；AAC 为 **VBR**
-  - **采样率**：“自动”跟随捕获设备
+  - **采样率**：“自动”为 48 kHz；设备未列出 48 kHz 时，使用其列出的最佳采样率（96 kHz 会增加延迟和兼容性问题，却听不出差别，而且 Windows 以 48 kHz 混音）。如需 96 kHz，请在此处选择
   - **位深度**：LDAC 和 LHDC V5 为 16 或 24 bit（“自动”：24 bit）；其他编解码器为 16 bit
 
 默认值即可获得最佳音质；大多数设备只需保持**自动**。LE Audio 设备（实验性）只有一张 LC3 卡片，以及**游戏耳机低延迟（GMAP，实验性）**（请参阅 [LE Audio](#le-audio)）。
@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (experimental; to PipeWire sinks)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 for 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 for 96 kHz)
 ```
 
 自动选择的优先级：LHDC V5 > LDAC > aptX Adaptive > Opus（实验性）> aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 和 Opus 05 均为实验性，仅在明确选择时使用）
@@ -283,7 +283,7 @@ A2DPWB 支持三种音频捕获模式，分别录制音频路径中的不同位�
 - Windows 没有用于更改默认设备的公开 API。A2DPWB 与其他音频切换工具一样，使用未公开的 IPolicyConfig 接口（Windows 10 和 11）。
 
 {: .warning }
-系统环回和虚拟设备使用 WASAPI 共享模式：开启自动选择时，A2DPWB 会请求耳机列出的该编解码器的最高采样率（例如 LDAC 96 kHz），由 WASAPI 将设备的**默认格式**重采样为该采样率。选择了编解码器且其采样率为“自动”时，捕获遵循 Windows 声音设置中的默认格式（通常为 48 kHz）；此时如需以 96 kHz 使用 LDAC，请在编解码器的设置中选择 96 kHz，或在**声音设置 > 设备属性 > 高级 > 默认格式**中将输出设备的格式改为 96 kHz。
+系统环回和虚拟设备使用 WASAPI 共享模式：采样率为“自动”时（包括自动选择），A2DPWB 会请求 48 kHz（耳机未列出 48 kHz 时，请求其列出的最佳采样率），由 WASAPI 将设备的**默认格式**重采样为该采样率。如需以 96 kHz 使用 LDAC，请在编解码器的设置中选择 96 kHz；无需更改**声音设置 > 设备属性 > 高级**中的默认格式。
 
 ## 编解码器比较
 
@@ -319,12 +319,12 @@ A2DPWB 支持三种使用 [libopenaptx](https://github.com/pali/libopenaptx) 编
 ### aptX Adaptive {#aptx-adaptive}
 
 {: .note }
-**aptX Adaptive 已在 48 kHz 下用真实耳机确认：** 有用户在 2.0.2-beta.6 上将它串流到 EarFun Air Pro 4+，没有断音或卡顿，与经典 aptX 一样稳定（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）。它还通过了单元测试、上游的逐位一致性测试套件，以及针对虚拟 Bluetooth 接收端的端到端测试（`tools/emu`，检查 RTP 标头、数据包大小和帧类型；由于没有开源解码器，不对音频进行解码）。上游报告它在 Linux / PipeWire 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e，48 kHz，高音质和低延迟均可。96 kHz（高 646 kbps、标准 340、移动 255）仅在其设置中选择（或使用 `--rate 96000`）且耳机是列出 96 kHz 的 R2 接收端时使用，低延迟下从不使用；无论在本项目还是上游，都只针对虚拟接收端检查过。[欢迎反馈](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)。
+**aptX Adaptive 已在 48 kHz 下用真实耳机确认：** 有用户在 2.0.2-beta.6 上将它串流到 EarFun Air Pro 4+，没有断音或卡顿，与经典 aptX 一样稳定（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）。它还通过了单元测试、上游的逐位一致性测试套件，以及针对虚拟 Bluetooth 接收端的端到端测试（`tools/emu`，检查 RTP 标头、数据包大小和帧类型；由于没有开源解码器，不对音频进行解码）。上游报告它在 Linux / PipeWire 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e，48 kHz，高音质和低延迟均可。96 kHz（高 646 kbps、标准 340、移动 255）仅在其设置中选择（或使用 `--rate 96000`）且耳机是列出 96 kHz 的 R2 接收端时使用，低延迟下从不使用；96 kHz 现在也已用真实耳机确认（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）。“自动”（包括自动选择）以 48 kHz 串流。[欢迎反馈](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)。
 
 编码器是 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust aptX Adaptive 编码器（MIT）。上游称其为净室重新实现，其中的数值表是根据合法获得的 Qualcomm 已出货二进制文件和空中抓包重建的；不包含任何 Qualcomm 代码、SDK 或二进制文件（请参阅[许可证](licenses)）。
 
 - **选择方式**：耳机既不提供 LHDC V5 也不提供 LDAC 时，“自动”会选择它。也可以在**编解码器**页面选择 **aptX Adaptive**，或使用 `-c aptxad`。
-- **格式**：48 kHz 立体声、24-bit；对列出 96 kHz 的设备（aptX Adaptive R2），在自动选择或明确选择时以高音质使用 96 kHz；请求 44.1 kHz 时以 48 kHz 捕获。
+- **格式**：48 kHz 立体声、24-bit；选择 96 kHz 时，对列出 96 kHz 的设备（aptX Adaptive R2）以高音质使用 96 kHz；请求 44.1 kHz 时以 48 kHz 捕获。
 - **耳机**：R1 接收端（无能力扩展，例如 B&W Px7 S2e）和 R2 接收端（R2 比特流）。
 
 | 音质（**...** / `-q`） | R1 接收端 | R2 接收端 | 数据包 |
@@ -373,7 +373,7 @@ capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 
 ### 采样率
 
-aptX、aptX HD 和 aptX LL 只支持 44.1 kHz 和 48 kHz（aptX Adaptive 为 48 kHz；在自动选择或明确选择时，若耳机列出则为 96 kHz）。A2DPWB 会从耳机通告的采样率中选择一个（自动选择时选最高的；否则优先使用当前 Windows 设备的采样率，其次使用 48 kHz），并由 WASAPI 对捕获的音频进行重采样。使用 aptX 时无需更改 Windows 声音设置。
+aptX、aptX HD 和 aptX LL 只支持 44.1 kHz 和 48 kHz（aptX Adaptive 为 48 kHz；选择 96 kHz 且耳机列出时为 96 kHz）。A2DPWB 会从耳机通告的采样率中选择一个（“自动”时为 48 kHz，没有则为 44.1 kHz），并由 WASAPI 对捕获的音频进行重采样。使用 aptX 时无需更改 Windows 声音设置。
 
 ### 查看耳机提供的编解码器
 

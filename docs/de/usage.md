@@ -34,7 +34,7 @@ Die Seitenleiste zeigt dasselbe für jedes Gerät auf jeder Seite.
 
 Der Codec jedes gespeicherten Audiogeräts, ein Abschnitt pro Gerät (Name, Adresse, Markierungen **Gekoppelt** / **Audio**) mit seinen Codec-Karten: **Automatisch** (der beste Codec, den das Gerät unterstützt) und die Codecs, die das Gerät bei seiner letzten Verbindung angeboten hat, jeweils mit drei Balken (Klangqualität, niedrige Latenz, Stabilität). Ein Klick auf eine Karte wählt den Codec dieses Geräts; er wird sofort gespeichert, und ein streamendes Gerät verbindet sich damit erneut.
 
-- **Codecs ausblenden, die das Audiogerät nicht unterstützt** (standardmäßig aktiviert): Codecs, die ein Gerät nicht angeboten hat, werden weggelassen (die Anzahl der ausgeblendeten steht in Klammern). Vor der ersten Verbindung eines Geräts werden alle angezeigt
+- **Nur unterstützte Codecs anzeigen** (standardmäßig aktiviert; ausschalten, um unterstützte und nicht unterstützte Codecs anzuzeigen): Codecs, die ein Gerät nicht angeboten hat, werden weggelassen (die Anzahl der ausgeblendeten steht in Klammern). Vor der ersten Verbindung eines Geräts werden alle angezeigt
 - **Automatisch den unterstützten Codec mit der höchsten Qualität wählen** (eine Einstellung für alle Geräte, oben auf der Seite; standardmäßig aktiviert): Jedes Gerät verwendet den unterstützten Codec mit der höchsten Klangqualität, mit seinen besten Einstellungen: hohe Qualität, 24 Bit, wo der Codec es überträgt, und die höchste Abtastrate, die das Gerät meldet (z. B. LDAC 96 kHz, aptX Adaptive 96 kHz bei einem R2-Gerät, LHDC V5 bis 192 kHz; die Rate von Windows wird umgerechnet); die Karten sind schreibgeschützt und zeigen den verwendeten (oder von der Automatik gewählten) Codec. Ausgeschaltet wählen Sie für jedes Gerät Codec und Einstellungen selbst (ein Gerät ohne Wahl behält die der Automatik). Der für ein Gerät gewählte Codec bleibt erhalten, solange die Automatik an ist. Hatten Einstellungen vor 2.0.2 für ein Gerät einen Codec gewählt, beginnt sie ausgeschaltet
 - **Reihenfolge der Automatik…** (unter dem Schalter): öffnet die Liste der Codecs in der Reihenfolge, in der die Automatik sie wählt (standardmäßig höchste Klangqualität zuerst). Codecs ziehen oder mit den Pfeilen verschieben; **Zurück zur Reihenfolge nach Klangqualität** setzt sie zurück. Die Automatik verwendet den ersten Codec der Liste, den das Gerät unterstützt, und ein gewählter, nicht unterstützter Codec weicht auf den nächsten darunter aus. Die Karten folgen dieser Reihenfolge. Ändert sich dadurch der Codec eines laufenden Streams, verbindet er sich neu
 - **Experimentelle Codecs aktivieren** (standardmäßig aktiviert): Die experimentellen Codecs (aptX HD, aptX Low Latency, Opus, Opus 05, FastStream) tragen auf ihren Karten die Markierung **Experimentell**. Ist die Option deaktiviert, werden ihre Karten ausgeblendet, Automatisch wählt sie nie, und ein Gerät, dessen gewählter Codec einer davon ist, verwendet den nächstniedrigeren Codec in der Reihenfolge von Automatisch, den das Gerät anbietet; die Seite weist darauf hin. Ändert sich dadurch der Codec eines laufenden Streams, verbindet sich das Gerät erneut. CLI: `--no-experimental`
@@ -42,7 +42,7 @@ Der Codec jedes gespeicherten Audiogeräts, ein Abschnitt pro Gerät (Name, Adre
 - **...** auf einer Karte öffnet die Einstellungen dieses Codecs; **OK** wählt den Codec mit diesen. Jeder Codec behält seine eigenen Einstellungen: Wählen Sie einen anderen Codec und kehren Sie zurück, sind sie wieder da. Angeboten wird nur, was dieser Codec beherrscht:
   - **Qualität**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps); LHDC V5 Hoch (1000 kbps) / Mittel-hoch (900 kbps) / Standard (500 kbps) / Mobil (400 kbps), die vier Stufen, die Android anbietet; aptX Adaptive Hoch / Standard / Mobil / Niedrige Latenz (siehe [aptX Adaptive](#aptx-adaptive)); AAC hat ebenfalls Qualitätsstufen, die übrigen aptX-Codecs eine feste Bitrate. SBC und SBC XQ zeigen die Bitrate, die sich aus ihrem Bitpool und ihrer Frame-Einstellung ergibt
   - **ABR (adaptive Bitrate)**: für LDAC, LHDC V5, aptX Adaptive, SBC und SBC XQ (siehe [ABR](#abr)); **VBR** für AAC
-  - **Abtastrate**: Automatisch folgt dem Aufnahmegerät
+  - **Abtastrate**: Automatisch ist 48 kHz, oder die beste Rate, die das Gerät meldet, wenn es kein 48 kHz hat (96 kHz bringt mehr Latenz und Kompatibilitätsprobleme ohne hörbaren Gewinn, und Windows mischt mit 48 kHz); wählen Sie 96 kHz hier, um es zu nutzen
   - **Bittiefe**: 16 oder 24 Bit für LDAC und LHDC V5 (Automatisch: 24 Bit); 16 Bit für die übrigen
 
 Die Standardwerte liefern den besten Klang; die meisten Geräte brauchen nichts außer **Automatisch**. Ein LE-Audio-Gerät (experimentell) hat eine Karte, LC3, sowie **Niedrige Latenz für Gaming-Headsets (GMAP, experimentell)** (siehe [LE Audio](#le-audio)).
@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimentell; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 von PipeWire (experimentell; zu PipeWire-Senken)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 für 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 für 96 kHz)
 ```
 
 Priorität bei automatischer Auswahl: LHDC V5 > LDAC > aptX Adaptive > Opus (experimentell) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream und Opus 05, beide experimentell, nur wenn ausdrücklich gewählt)
@@ -283,7 +283,7 @@ Der Modus Anwendung oder ein kostenloses virtuelles Gerät wie VB-CABLE deckt de
 - Windows hat keine öffentliche API zum Ändern des Standardgeräts. A2DPWB verwendet die undokumentierte Schnittstelle IPolicyConfig, wie es auch andere Tools zum Umschalten von Audiogeräten tun (Windows 10 und 11).
 
 {: .warning }
-System-Loopback und Virtuelles Gerät verwenden den gemeinsamen Modus (Shared Mode) von WASAPI: Ist die automatische Auswahl an, fordert A2DPWB die höchste Rate des Codecs an, die die Kopfhörer melden (z. B. LDAC 96 kHz), und WASAPI rechnet das **Standardformat** des Geräts darauf um. Ist ein Codec gewählt und seine Abtastrate auf Automatisch, folgt die Aufnahme dem Standardformat in den Windows-Soundeinstellungen (meist 48 kHz); um LDAC dann mit 96 kHz zu nutzen, wählen Sie 96 kHz in den Einstellungen des Codecs oder stellen Sie das Format des Ausgabegeräts unter **Soundeinstellungen > Geräteeigenschaften > Erweitert > Standardformat** auf 96 kHz um.
+System-Loopback und Virtuelles Gerät verwenden den gemeinsamen Modus (Shared Mode) von WASAPI: Steht die Abtastrate auf Automatisch (auch bei automatischer Auswahl), fordert A2DPWB 48 kHz an, oder die beste Rate, die die Kopfhörer melden, wenn sie kein 48 kHz haben, und WASAPI rechnet das **Standardformat** des Geräts darauf um. Um LDAC mit 96 kHz zu nutzen, wählen Sie 96 kHz in den Einstellungen des Codecs; das Standardformat unter **Soundeinstellungen > Geräteeigenschaften > Erweitert** muss dafür nicht geändert werden.
 
 ## Codec-Vergleich
 
@@ -319,12 +319,12 @@ A2DPWB unterstützt drei aptX-Codecs, kodiert mit [libopenaptx](https://github.c
 ### aptX Adaptive {#aptx-adaptive}
 
 {: .note }
-**aptX Adaptive ist bei 48 kHz mit echten Kopfhörern bestätigt:** Ein Nutzer hat es unter 2.0.2-beta.6 ohne Aussetzer oder Stottern an einen EarFun Air Pro 4+ gestreamt, so stabil wie klassisches aptX ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). Es besteht außerdem die Unit-Tests, die bitgenaue Testsuite des Originalprojekts und den End-to-End-Test gegen die virtuelle Bluetooth-Senke (`tools/emu`, die den RTP-Header, die Paketgrößen und die Frame-Typen prüft; das Audio wird nicht dekodiert, da es keinen offenen Decoder gibt). Das Originalprojekt meldet, dass es unter Linux / PipeWire mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e bei 48 kHz in Hoch und Niedrige Latenz funktioniert. 96 kHz (Hoch 646 kbps, Standard 340, Mobil 255) wird nur verwendet, wenn es in seinen Einstellungen (oder mit `--rate 96000`) gewählt ist und die Kopfhörer eine R2-Senke sind, die es meldet, nie in Niedrige Latenz; es ist nur gegen die virtuelle Senke geprüft, hier wie im Originalprojekt. [Rückmeldungen willkommen](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**aptX Adaptive ist bei 48 kHz mit echten Kopfhörern bestätigt:** Ein Nutzer hat es unter 2.0.2-beta.6 ohne Aussetzer oder Stottern an einen EarFun Air Pro 4+ gestreamt, so stabil wie klassisches aptX ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). Es besteht außerdem die Unit-Tests, die bitgenaue Testsuite des Originalprojekts und den End-to-End-Test gegen die virtuelle Bluetooth-Senke (`tools/emu`, die den RTP-Header, die Paketgrößen und die Frame-Typen prüft; das Audio wird nicht dekodiert, da es keinen offenen Decoder gibt). Das Originalprojekt meldet, dass es unter Linux / PipeWire mit Bose QuietComfort Ultra (1. Generation) und B&W Px7 S2e bei 48 kHz in Hoch und Niedrige Latenz funktioniert. 96 kHz (Hoch 646 kbps, Standard 340, Mobil 255) wird nur verwendet, wenn es in seinen Einstellungen (oder mit `--rate 96000`) gewählt ist und die Kopfhörer eine R2-Senke sind, die es meldet, nie in Niedrige Latenz; auch 96 kHz ist inzwischen mit echten Kopfhörern bestätigt ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). Automatisch, auch die automatische Auswahl, streamt 48 kHz. [Rückmeldungen willkommen](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 Der Encoder ist der rein in Rust geschriebene aptX-Adaptive-Encoder von [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). Das Originalprojekt beschreibt ihn als Clean-Room-Neuimplementierung, deren Zahlentabellen aus rechtmäßig erworbenen, ausgelieferten Qualcomm-Binärdateien und Funkmitschnitten rekonstruiert wurden; Code, SDK oder Binärdateien von Qualcomm sind nicht enthalten (siehe [Lizenzen](licenses)).
 
 - **Auswahl**: Automatisch wählt es, wenn die Kopfhörer weder LHDC V5 noch LDAC anbieten. Oder wählen Sie **aptX Adaptive** unter **Codecs** oder `-c aptxad`.
-- **Format**: 48 kHz Stereo, 24 Bit; 96 kHz in hoher Qualität an ein Gerät, das sie meldet (aptX Adaptive R2), mit automatischer Auswahl oder wenn gewählt; eine Anforderung von 44,1 kHz wird mit 48 kHz aufgenommen.
+- **Format**: 48 kHz Stereo, 24 Bit; 96 kHz in hoher Qualität, wenn gewählt, an ein Gerät, das sie meldet (aptX Adaptive R2); eine Anforderung von 44,1 kHz wird mit 48 kHz aufgenommen.
 - **Kopfhörer**: R1-Senken (ohne Fähigkeitserweiterung, z. B. B&W Px7 S2e) und R2-Senken (R2-Bitstrom).
 
 | Qualität (**...** / `-q`) | R1-Senken | R2-Senken | Pakete |
@@ -373,7 +373,7 @@ und der Fehler besagt, dass Endpunkte von einem anderen Gerät genutzt werden. T
 
 ### Abtastrate
 
-aptX, aptX HD und aptX LL unterstützen nur 44,1 kHz und 48 kHz (aptX Adaptive 48 kHz, oder 96 kHz mit automatischer Auswahl oder wenn gewählt, sofern von den Kopfhörern gemeldet). A2DPWB wählt eine der Raten, die die Kopfhörer melden (mit automatischer Auswahl die höchste; sonst bevorzugt die aktuelle Rate des Windows-Geräts, dann 48 kHz), und lässt WASAPI die Aufnahme umrechnen. Für aptX müssen Sie die Windows-Soundeinstellungen nicht ändern.
+aptX, aptX HD und aptX LL unterstützen nur 44,1 kHz und 48 kHz (aptX Adaptive 48 kHz, oder 96 kHz, wenn gewählt und von den Kopfhörern gemeldet). A2DPWB wählt eine der Raten, die die Kopfhörer melden (bei Automatisch 48 kHz, sonst 44,1 kHz), und lässt WASAPI die Aufnahme umrechnen. Für aptX müssen Sie die Windows-Soundeinstellungen nicht ändern.
 
 ### Prüfen, was Ihre Kopfhörer anbieten
 

@@ -34,7 +34,7 @@ nav_order: 2
 
 저장된 각 오디오 장치의 코덱을 장치마다 한 구역(이름, 주소, **페어링됨** / **오디오** 태그)으로 나누고 코덱 카드를 보여 줍니다. **자동**(장치가 지원하는 최적의 코덱)과 장치가 마지막으로 연결했을 때 제공한 코덱이 있으며, 각각 세 개의 막대(음질, 낮은 지연, 안정성)가 있습니다. 카드를 클릭하면 그 장치의 코덱이 선택되고 즉시 저장되며, 스트리밍 중인 장치는 그 코덱으로 다시 연결합니다.
 
-- **오디오 장치가 지원하지 않는 코덱 숨기기**(기본적으로 켜짐): 장치가 제공하지 않은 코덱을 숨깁니다(숨겨진 개수는 괄호 안에 표시). 장치를 처음 연결하기 전에는 모두 표시됩니다
+- **지원되는 코덱만 표시**(기본적으로 켜짐. 끄면 지원되는 코덱과 지원되지 않는 코덱을 모두 표시): 장치가 제공하지 않은 코덱을 숨깁니다(숨겨진 개수는 괄호 안에 표시). 장치를 처음 연결하기 전에는 모두 표시됩니다
 - **지원하는 코덱 중 음질이 가장 높은 코덱 자동 선택**(페이지 위쪽, 모든 장치에 공통인 설정. 기본적으로 켜짐): 각 장치가 지원하는 코덱 중 음질이 가장 높은 코덱을 최적의 설정(고음질, 코덱이 지원하면 24비트, 장치가 알리는 가장 높은 샘플링 속도. 예: LDAC 96 kHz, R2 장치의 aptX Adaptive 96 kHz, LHDC V5 최대 192 kHz. Windows 쪽 속도는 리샘플링함)으로 사용하며, 카드는 읽기 전용으로 사용 중인(또는 자동으로 선택될) 코덱을 보여 줍니다. 끄면 장치마다 코덱과 그 설정을 직접 선택합니다(아직 선택하지 않은 장치는 자동 선택 그대로). 켜져 있는 동안에도 장치별로 선택한 코덱은 유지됩니다. 2.0.2 이전 설정에서 어떤 장치의 코덱을 선택했다면 꺼진 상태로 시작합니다
 - **자동 선택 순서…**(스위치 아래): 자동 선택이 코덱을 고르는 순서 목록을 엽니다(기본은 음질이 높은 순). 코덱을 끌거나 화살표로 원하는 순서로 바꾸고, **음질 순서로 되돌리기** 로 되돌립니다. 자동 선택은 목록 위에서부터 장치가 지원하는 첫 코덱을 사용하며, 선택한 코덱을 지원하지 않으면 이 순서에서 그 아래의 다음 코덱을 사용합니다. 카드도 이 순서로 표시됩니다. 사용 중인 스트림의 코덱이 바뀌면 다시 연결합니다
 - **실험적 코덱 사용**(기본적으로 켜짐): 실험적 코덱(aptX HD, aptX Low Latency, Opus, Opus 05, FastStream)의 카드에는 **실험적** 태그가 표시됩니다. 끄면 이 코덱들의 카드가 숨겨지고 자동은 이 코덱들을 선택하지 않으며, 선택한 코덱이 이 중 하나인 장치는 자동 우선순위에서 그다음으로 낮은, 장치가 제공하는 코덱을 사용합니다(화면에도 그렇게 표시됨). 이 설정으로 사용 중인 스트림의 코덱이 바뀌면 다시 연결합니다. CLI: `--no-experimental`
@@ -42,7 +42,7 @@ nav_order: 2
 - 카드의 **...**는 그 코덱의 설정을 엽니다. **확인**을 누르면 그 설정으로 코덱이 선택됩니다. 코덱마다 설정을 따로 기억하므로, 다른 코덱을 선택했다가 돌아오면 설정이 그대로 돌아옵니다. 그 코덱이 지원하는 항목만 표시합니다.
   - **음질**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps). LHDC V5 높음 (1000 kbps) / 중상 (900 kbps) / 표준 (500 kbps) / 모바일 (400 kbps)은 Android가 제공하는 네 단계입니다. aptX Adaptive 높음 / 표준 / 모바일 / 저지연([aptX Adaptive](#aptx-adaptive) 참조). AAC에도 음질 단계가 있으며, 그 밖의 aptX 코덱은 비트레이트가 고정되어 있습니다. SBC와 SBC XQ는 비트풀과 프레임 설정으로 정해지는 비트레이트를 표시합니다
   - **ABR(적응형 비트레이트)**: LDAC, LHDC V5, aptX Adaptive, SBC, SBC XQ용([ABR](#abr) 참조). AAC는 **VBR**
-  - **샘플링 속도**: 자동은 캡처 장치를 따릅니다
+  - **샘플링 속도**: 자동은 48 kHz이며, 장치가 48 kHz를 알리지 않으면 알린 것 중 가장 좋은 속도입니다(96 kHz는 지연과 호환성 문제가 늘지만 들리는 차이는 없고, Windows 믹서도 48 kHz로 동작합니다). 96 kHz를 쓰려면 여기에서 선택하십시오
   - **비트 심도**: LDAC 및 LHDC V5는 16 또는 24비트(자동: 24비트), 그 밖의 코덱은 16비트
 
 기본값으로 최상의 음질을 얻을 수 있으며, 대부분의 장치는 **자동**만으로 충분합니다. LE 오디오 기기(실험적)에는 LC3 카드 하나와 **게이밍 헤드셋용 저지연 (GMAP, 실험적)**이 있습니다([LE 오디오](#le-audio) 참조).
@@ -128,7 +128,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 for 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 for 96 kHz)
 ```
 
 자동 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 모두 실험적이며 직접 선택한 경우에만)
@@ -282,7 +282,7 @@ A2DPWB는 세 가지 오디오 캡처 모드를 지원합니다. 각 모드는 �
 - Windows에는 기본 장치를 변경하는 공개 API가 없습니다. A2DPWB는 다른 오디오 전환 도구와 마찬가지로 문서화되지 않은 IPolicyConfig 인터페이스를 사용합니다(Windows 10 및 11).
 
 {: .warning }
-시스템 루프백과 가상 장치는 WASAPI 공유 모드를 사용합니다. 자동 선택이 켜져 있으면 A2DPWB가 헤드폰이 알리는 해당 코덱의 가장 높은 속도(예: LDAC 96 kHz)를 요청하고, WASAPI가 장치의 **기본 형식**을 그 속도로 리샘플링합니다. 코덱을 선택하고 샘플링 속도를 자동으로 둔 경우에는 캡처가 Windows 소리 설정의 기본 형식(보통 48 kHz)을 따릅니다. 이때 LDAC을 96 kHz로 사용하려면 코덱 설정에서 96 kHz를 선택하거나 **소리 설정 > 장치 속성 > 고급 > 기본 형식**에서 출력 장치의 형식을 96 kHz로 변경하십시오.
+시스템 루프백과 가상 장치는 WASAPI 공유 모드를 사용합니다. 샘플링 속도가 자동이면(자동 선택 포함) A2DPWB가 48 kHz(헤드폰이 48 kHz를 알리지 않으면 알린 것 중 가장 좋은 속도)를 요청하고, WASAPI가 장치의 **기본 형식**을 그 속도로 리샘플링합니다. LDAC을 96 kHz로 사용하려면 코덱 설정에서 96 kHz를 선택하십시오. **소리 설정 > 장치 속성 > 고급**의 기본 형식은 바꿀 필요가 없습니다.
 
 ## 코덱 비교
 
@@ -318,12 +318,12 @@ A2DPWB는 [libopenaptx](https://github.com/pali/libopenaptx)로 인코딩하는 
 ### aptX Adaptive {#aptx-adaptive}
 
 {: .note }
-**aptX Adaptive는 48 kHz에서 실제 헤드폰으로 확인되었습니다.** 한 사용자가 2.0.2-beta.6에서 EarFun Air Pro 4+로 스트리밍하여, 끊김이나 버벅임 없이 기본 aptX만큼 안정적으로 동작함을 확인했습니다([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). 또한 단위 테스트, 업스트림의 비트 단위 일치 테스트 모음, 가상 Bluetooth 싱크를 상대로 한 엔드투엔드 테스트(`tools/emu`: RTP 헤더, 패킷 크기, 프레임 종류를 확인하며, 공개된 디코더가 없으므로 오디오는 디코딩하지 않음)를 통과했습니다. 업스트림은 Linux / PipeWire에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 48 kHz 높음과 저지연에서 동작한다고 보고합니다. 96 kHz(높음 646 kbps, 표준 340, 모바일 255)는 설정에서(또는 `--rate 96000`으로) 선택하고 헤드폰이 이를 알리는 R2 싱크일 때만 사용하며, 저지연에서는 사용하지 않습니다. A2DPWB에서도 업스트림에서도 가상 싱크로만 확인했습니다. [보고를 환영합니다](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**aptX Adaptive는 48 kHz에서 실제 헤드폰으로 확인되었습니다.** 한 사용자가 2.0.2-beta.6에서 EarFun Air Pro 4+로 스트리밍하여, 끊김이나 버벅임 없이 기본 aptX만큼 안정적으로 동작함을 확인했습니다([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). 또한 단위 테스트, 업스트림의 비트 단위 일치 테스트 모음, 가상 Bluetooth 싱크를 상대로 한 엔드투엔드 테스트(`tools/emu`: RTP 헤더, 패킷 크기, 프레임 종류를 확인하며, 공개된 디코더가 없으므로 오디오는 디코딩하지 않음)를 통과했습니다. 업스트림은 Linux / PipeWire에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 48 kHz 높음과 저지연에서 동작한다고 보고합니다. 96 kHz(높음 646 kbps, 표준 340, 모바일 255)는 설정에서(또는 `--rate 96000`으로) 선택하고 헤드폰이 이를 알리는 R2 싱크일 때만 사용하며, 저지연에서는 사용하지 않습니다. 96 kHz도 이제 실제 헤드폰으로 확인되었습니다([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). 자동(자동 선택 포함)은 48 kHz로 스트리밍합니다. [보고를 환영합니다](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 인코더는 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 순수 Rust aptX Adaptive 인코더(MIT)입니다. 업스트림은 이를 클린룸 재구현으로 설명하며, 숫자 테이블은 합법적으로 입수한 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성했습니다. Qualcomm의 코드, SDK, 바이너리는 포함되어 있지 않습니다([라이선스](licenses) 참조).
 
 - **선택 방법**: 헤드폰이 LHDC V5도 LDAC도 제공하지 않으면 자동이 이를 선택합니다. **코덱** 화면에서 **aptX Adaptive**를 선택하거나 `-c aptxad`를 사용할 수도 있습니다.
-- **형식**: 48 kHz 스테레오, 24비트. 96 kHz를 알리는 장치(aptX Adaptive R2)에는 자동 선택이거나 직접 선택한 경우 고음질에서 96 kHz. 44.1 kHz를 요청하면 48 kHz로 캡처합니다.
+- **형식**: 48 kHz 스테레오, 24비트. 96 kHz를 선택하면 이를 알리는 장치(aptX Adaptive R2)에는 고음질에서 96 kHz. 44.1 kHz를 요청하면 48 kHz로 캡처합니다.
 - **헤드폰**: R1 싱크(기능 확장 없음, 예: B&W Px7 S2e)와 R2 싱크(R2 비트스트림).
 
 | 음질 (**...** / `-q`) | R1 싱크 | R2 싱크 | 패킷 |
@@ -372,7 +372,7 @@ capability discovery complete (LDAC=false ... , 1 of 6 audio sink SEP(s) in use)
 
 ### 샘플링 속도
 
-aptX, aptX HD, aptX LL은 44.1 kHz와 48 kHz만 지원합니다(aptX Adaptive는 48 kHz, 자동 선택이거나 직접 선택했고 헤드폰이 알리면 96 kHz). A2DPWB는 헤드폰이 알리는 속도 중 하나를 선택하고(자동 선택이면 가장 높은 속도, 그 외에는 현재 Windows 장치 속도를 우선하며, 없으면 48 kHz), 캡처는 WASAPI가 리샘플링하도록 합니다. aptX를 위해 Windows 소리 설정을 변경할 필요는 없습니다.
+aptX, aptX HD, aptX LL은 44.1 kHz와 48 kHz만 지원합니다(aptX Adaptive는 48 kHz, 96 kHz를 선택했고 헤드폰이 알리면 96 kHz). A2DPWB는 헤드폰이 알리는 속도 중 하나를 선택하고(자동이면 48 kHz, 없으면 44.1 kHz), 캡처는 WASAPI가 리샘플링하도록 합니다. aptX를 위해 Windows 소리 설정을 변경할 필요는 없습니다.
 
 ### 헤드폰이 제공하는 코덱 확인
 
