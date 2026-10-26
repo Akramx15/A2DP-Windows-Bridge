@@ -34,6 +34,10 @@ const PLAIN_STATUS: Record<string, string> = {
   "status.reconnect_attempt": "status.connecting",
   "status.connecting_retry": "status.connecting",
   "status.reconnected": "status.connected",
+  // Why another codec is used goes on the codec's line (issue #86)
+  "status.connected_fallback": "status.connected",
+  "status.connected_fallback_in_use": "status.connected",
+  "status.connected_fallback_experimental": "status.connected",
 };
 
 /** The device's status line: the core's message, else the state; an error's
@@ -218,6 +222,15 @@ export function codecDetails(info: StreamInfo): string[] {
   return out;
 }
 
+/** Beside the codec's name when it is not the one chosen: "(Opus is not
+ *  supported)", in use elsewhere, or experimental and off (issue #86); the
+ *  reason is the core's message, the status line just says "Connected" */
+export function fallbackNoteKey(info: StreamInfo, messageKey: string): string | null {
+  if (!info.requested_codec) return null;
+  if (messageKey === "status.connected_fallback_experimental") return "ui.codec.fallback_experimental";
+  return info.requested_in_use ? "ui.codec.fallback_in_use" : "ui.codec.fallback_unsupported";
+}
+
 /** The codec in two lines (issue #86): its name, then what it runs with in
  *  a badge; `aside` goes beside the badge (the flyout's link quality) */
 export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
@@ -238,6 +251,13 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
     const req = codecLabelKey(i.requested_codec);
     return t("tooltip.codec_fallback_help", req ? t(req) : i.requested_codec, name());
   };
+  const fallbackNote = () => {
+    const i = info();
+    const key = i && fallbackNoteKey(i, core.state.snap?.stream.message.key ?? "");
+    if (!i || !key) return "";
+    const req = codecLabelKey(i.requested_codec!);
+    return t(key, req ? t(req) : i.requested_codec!);
+  };
   return (
     <Show when={info()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
       {(i) => (
@@ -247,6 +267,9 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
               <Icon name="warning" class="st-warn" title={fallbackHelp()} />
             </Show>
             <strong class="ellipsis">{name()}</strong>
+            <Show when={fallbackNote()}>
+              <span class="codec-note ellipsis">{fallbackNote()}</span>
+            </Show>
           </span>
           <div class="codec-line">
             <span class="codec-badge">

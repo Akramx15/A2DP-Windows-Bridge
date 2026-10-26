@@ -1380,6 +1380,16 @@ option {
   font-size: var(--fs-14);
   color: var(--text);
 }
+/* "(Opus is not supported)": why another codec is used (issue #86) */
+.codec-name strong {
+  flex: none;
+}
+.codec-note {
+  min-width: 0;
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--text-2);
+}
 .codec-line {
   display: flex;
   flex-wrap: wrap;
@@ -1429,6 +1439,16 @@ option {
 .home-device .device-card {
   flex: 1;
   min-width: 0;
+  gap: var(--s4);
+  padding: var(--s5);
+}
+/* A smaller name and ring than the defaults, so long names ("EarFun Air
+   Pro 4+") fit two cards side by side before the ellipsis (issue #86) */
+.home-device .ring {
+  --size: 5.5rem;
+}
+.home-device .device-name {
+  font-size: 1.375rem;
 }
 .home-device:not(.live) .ring .icon {
   color: var(--text-2);
@@ -2724,14 +2744,16 @@ html.win-flyout body {
   .page {
     padding: var(--s4);
   }
-  .device-card {
+  .device-card,
+  .home-device .device-card {
     gap: var(--s4);
     padding: var(--s4);
   }
   .ring:not(.ring-small) {
     --size: 5.5rem;
   }
-  .device-name {
+  .device-name,
+  .home-device .device-name {
     font-size: var(--fs-20);
   }
 }
