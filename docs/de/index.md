@@ -146,7 +146,7 @@ A2DPWB umgeht den Bluetooth-Stack von Windows vollständig. Es kommuniziert übe
 - **Verbindungsqualität und AFH**: Zeigt, was gesendet wird, den RSSI und die genutzten Kanäle; teilt dem Adapter mit, welche Wi-Fi-Kanäle zu meiden sind (siehe [Verwendung](usage#link-quality))
 - **Kopfhörersteuerung (AVRCP)**: Lautstärkeregler, synchron mit den Kopfhörern und der Windows-Lautstärke; deren Tasten für Wiedergabe/Pause, Weiter und Zurück steuern die Wiedergabe auf dem PC (siehe [Verwendung](usage#headphone-buttons))
 - **Einstellungen pro Gerät**: ein Codec (mit eigenen Einstellungen) und eine Aufnahmequelle für jedes Audiogerät, nebeneinander auf Start und über den Infobereich verbindbar
-- **Updates**: Die installierte Version aktualisiert sich selbst, sobald das Streaming endet (siehe [Verwendung](usage#updates))
+- **Updates**: Die installierte Version aktualisiert sich selbst, sobald das Audiogerät getrennt ist (siehe [Verwendung](usage#updates))
 - **Lokalisierung**: Englisch, Japanisch, vereinfachtes / traditionelles Chinesisch, Koreanisch, Deutsch, Französisch und Spanisch
 - **Realtek-Firmware**: Geführter Firmware-Download für Realtek-Adapter
 - **Diagnose**: Verbindungsablauf, Protokoll, HCI-Aufzeichnung, Diagnoseinformationen für Fehlerberichte, Peer-Empfängertest gegen einen Linux-PC (siehe [Verwendung](usage#receiver))

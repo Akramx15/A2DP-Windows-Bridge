@@ -33,7 +33,7 @@ import { audioDevices } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
-import type { Profile } from "../ipc/types";
+import type { Profile, Snapshot } from "../ipc/types";
 import {
   AUTO_ORDER,
   CARD_ORDER,
@@ -118,6 +118,38 @@ function orderKeys(order: readonly CodecId[]): string[] {
 /** Saves the device's codec order (its cards' order) */
 export function saveCodecOrder(app: ReturnType<typeof useApp>, entry: AudioEntry, order: readonly CodecId[]) {
   return saveEntry(app, entry, (base) => ({ ...base, codec_order: orderKeys(order) }));
+}
+
+/** The codec a device streams with now, when its profile streams */
+export function streamingCodec(snap: Snapshot, entry: AudioEntry): CodecId | null {
+  const st = snap.stream;
+  const p = entry.profile;
+  if (st.state !== "streaming" || !st.info || !p || st.profile !== p.name) return null;
+  const key = codecLabelKey(st.info.codec);
+  return CODECS.find((c) => c.id !== "auto" && c.label === key)?.id ?? null;
+}
+
+/** The codec a device's cards (and Home's Codec card) show chosen: under
+ *  Auto (Auto-select on, `autoAll`, or no codec chosen for the device yet)
+ *  the one it streams with, else the one it would pick (null when the
+ *  device's codecs are not known); else the codec chosen. `order`: its
+ *  cards' order. */
+export function pickedCodec(
+  snap: Snapshot,
+  entry: AudioEntry,
+  autoAll: boolean,
+  order: readonly CodecId[],
+): string | null {
+  const codec = (entry.profile ?? entryBase(entry, snap.profiles)).codec;
+  if (!autoAll && codec !== "auto") return codec;
+  const known = knownCodecs(snap.devices, entry.address);
+  return streamingCodec(snap, entry) ?? effectiveCodec("auto", known, true, autoAll ? AUTO_ORDER : order);
+}
+
+/** Whether a codec's card shows: the codec chosen and the one picked
+ *  always, the others unless `hide` and the device did not offer them */
+export function codecShown(id: string, codec: string, picked: string | null, known: readonly string[], hide: boolean) {
+  return !hide || id === codec || id === picked || codecSupport(id, known) !== "not_offered";
 }
 
 export function Codecs() {
@@ -217,24 +249,14 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
   const order = (): CodecId[] => (props.auto ? [...CARD_ORDER] : (dragOrder() ?? cardOrder(shown().codec_order)));
   // The order Auto and the fallback go by
   const pickOrder = (): readonly string[] => (props.auto ? AUTO_ORDER : order());
-  // The codec the device streams with now, when its profile streams
-  const streaming = () => {
-    const st = snap().stream;
-    const p = e().profile;
-    if (st.state !== "streaming" || !st.info || !p || st.profile !== p.name) return null;
-    const key = codecLabelKey(st.info.codec);
-    return CODECS.find((c) => c.id !== "auto" && c.label === key)?.id ?? null;
-  };
-  // Auto: the codec it streams with, else the one it would pick (null when
-  // the device's codecs are not known); else the codec chosen
-  const picked = () => (auto() ? (streaming() ?? effectiveCodec("auto", known(), true, pickOrder())) : codec());
+  const picked = () => pickedCodec(snap(), e(), props.auto, order());
   // A chosen codec the device did not offer: the one used instead, the
   // first card it offers (null: the device's codecs are not known yet)
   const instead = () =>
     !auto() && support(codec()) === "not_offered" ? effectiveCodec(codec(), known(), true, pickOrder()) : null;
   const cards = () =>
     order()
-      .filter((id) => !props.hide || id === codec() || id === picked() || support(id) !== "not_offered")
+      .filter((id) => codecShown(id, codec(), picked(), known(), props.hide))
       .map((id) => codecSpec(id));
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
   // The device's saves one after the other: a card chosen right after one
