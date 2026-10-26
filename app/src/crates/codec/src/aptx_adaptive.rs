@@ -8,7 +8,7 @@
 //! streams 48 kHz stereo, the rate every aptX Adaptive sink takes and the only
 //! one an R1 sink is ever streamed at, or 96 kHz in HQ to an R2 sink that
 //! lists it when the profile asks for 96 kHz (as upstream's plugin: config 3,
-//! the 96 kHz table row; untried on hardware there and here). The encoder
+//! the 96 kHz table row; confirmed on real headphones, issue #86). The encoder
 //! also has 44.1 kHz for R2 sinks, not used.
 //!
 //! Framing as upstream's spec (`a2dp-integration.md` §7D, §7F, §7H), which

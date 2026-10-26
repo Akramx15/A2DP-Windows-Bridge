@@ -40,14 +40,12 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   -a                    adaptive bit rate (LDAC, LHDC V5, aptX Adaptive; SBC / SBC XQ: bitpool)
   --fallback            a codec -c the device does not offer falls back to the
                         best one it offers (as the app does), instead of an error
-  --aptxad-96k          aptX Adaptive may stream at 96 kHz (Developer > aptX
-                        Adaptive at 96 kHz; off: 48 kHz only)
   --no-experimental     never use the experimental codecs (aptX HD, aptX LL, Opus,
                         Opus 05, FastStream: experimental in the README)
   -m <mode>             capture: loopback (default), virtual, app
   --audio-device <id>   render device for -m virtual
   --app <exe>           executable for -m app
-  --rate <hz>           capture sample rate (default: the device's)
+  --rate <hz>           capture sample rate (default: 48 kHz, or the best the device lists)
   --bits <16|24>        bit depth (default: 24 where the codec carries it)
   --max-packet <bytes>  max media packet size (679-1679, default 1023)
   --sbc-blocks <n>      SBC / SBC XQ block length: 4, 8, 12, 16 (default)
@@ -103,8 +101,6 @@ struct Args {
     fallback: bool,
     /// --no-experimental: settings experimental_codecs off
     no_experimental: bool,
-    /// --aptxad-96k: the developer override aptxad_96k on for this run
-    aptxad_96k: bool,
     mode: String,
     audio_device: String,
     app: String,
@@ -176,7 +172,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
         abr: false,
         fallback: false,
         no_experimental: false,
-        aptxad_96k: false,
         mode: "loopback".into(),
         audio_device: String::new(),
         app: String::new(),
@@ -224,7 +219,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "-a" => a.abr = true,
             "--fallback" => a.fallback = true,
             "--no-experimental" => a.no_experimental = true,
-            "--aptxad-96k" => a.aptxad_96k = true,
             "-m" => a.mode = value(&mut it, "-m")?.to_lowercase(),
             "--audio-device" => a.audio_device = value(&mut it, "--audio-device")?,
             "--app" => a.app = value(&mut it, "--app")?,
@@ -374,9 +368,6 @@ pub fn run(args: &[String]) -> i32 {
         },
         tx,
     );
-    if a.aptxad_96k {
-        codec::dev::set_overrides(codec::dev::DevOverrides { aptxad_96k: true, ..codec::dev::overrides() });
-    }
 
     if a.le.on {
         // LE Audio (experimental): its own flow (v1 le_audio_cli.cpp)

@@ -54,7 +54,8 @@ export type MockScenario =
   /** Streaming, the headphones refused to report their battery (a phone holds their HFP) */
   | "battery_refused"
   /** A third device whose codecs cap what can be set (issue #86: the
-   *  moto buds+, SBC bitpool 39, AAC 131 kbps, LHDC V5 48 kHz at most) */
+   *  moto buds+, SBC bitpool 39, AAC 131 kbps, LHDC V5 48 kHz at most),
+   *  and two aptX Adaptive ones, with and without 96 kHz */
   | "capped";
 
 export interface MockOptions {
@@ -166,7 +167,6 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
       aac_no_peak: false,
       aac_no_afterburner: false,
       aac_latm_v0: false,
-      aptxad_96k: false,
     },
     dev_log: { keep_days: 7, day_cap_mb: 100, always_verbose: null, health_every_interval: false },
     bt_chip_pid: 0,
@@ -217,6 +217,23 @@ export const MOTO_BUDS = sampleDevice({
     { codec: "aac", sample_rates: [44100, 48000], bit_depths: [], max_bitrate: 0x020000 },
     { codec: "lhdcv5", sample_rates: [44100, 48000], bit_depths: [16, 24], max_bitrate: 0 },
   ],
+});
+
+/** aptX Adaptive R2 earbuds without 96 kHz (issue #86: a Bose QC Ultra's
+ *  rates 0x51) and with it (an EarFun Air Pro 4+'s 0xD1) */
+export const APTXAD_48K = sampleDevice({
+  address: "AC:BF:71:AA:BB:CC",
+  name: "QC Ultra Earbuds",
+  saved: true,
+  codecs: ["sbc", "aac", "aptxad"],
+  codec_caps: [{ codec: "aptxad", sample_rates: [48000], bit_depths: [], max_bitrate: 0 }],
+});
+export const APTXAD_96K = sampleDevice({
+  address: "E8:AB:FA:AA:BB:CC",
+  name: "EarFun Air Pro 4+",
+  saved: true,
+  codecs: ["sbc", "aac", "aptxad"],
+  codec_caps: [{ codec: "aptxad", sample_rates: [48000, 96000], bit_depths: [], max_bitrate: 0 }],
 });
 
 /** The earbuds' LE Audio entry (the same address as their classic one) */
@@ -277,7 +294,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
             codec_caps: XM5_CODEC_CAPS,
           }),
           sampleDevice({ address: "00:1A:7D:DA:71:13", name: "SRS-XB13", saved: true }),
-          ...(scenario === "capped" ? [MOTO_BUDS] : []),
+          ...(scenario === "capped" ? [MOTO_BUDS, APTXAD_48K, APTXAD_96K] : []),
           ...(le ? [{ ...LE_BUDS, saved: true }] : []),
         ],
     scanning: false,

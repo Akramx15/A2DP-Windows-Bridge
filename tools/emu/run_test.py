@@ -84,6 +84,7 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
     'ldac-96k': r'LDAC 96000',
+    'ldac-48k': r'LDAC 48000',
     'faststream': r'FastStream \d+ Hz, direction 0x01 \(music\)',   # no voice backchannel
     'opus': r'Opus 48000 Hz, stereo, 20 ms',
     # PipeWire's choice: 10 ms, one coupled stream, 312 x 1024 bps, no return channel
@@ -99,7 +100,7 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
 }
 # Frame headers are validated, audio is not decoded (aptX Adaptive: its RTP
 # header, packet sizes and frame types)
-NO_DECODER = {'ldac', 'ldac-96k', 'lhdcv5', 'aptxad', 'aptxad-r2', 'aptxad-r2-96k'}
+NO_DECODER = {'ldac', 'ldac-96k', 'ldac-48k', 'lhdcv5', 'aptxad', 'aptxad-r2', 'aptxad-r2-96k'}
 APTXAD_SINK = ['--codecs', 'sbc', 'aac', 'aptx', 'aptxad']
 # Further cases: name -> (A2DPWB -c, emu_sink.py arguments, the codec expected,
 # more A2DPWB arguments)
@@ -151,38 +152,33 @@ NEGOTIATION = {
     # aptX Adaptive (offered by the sink only when named, with SBC, AAC and
     # aptX as aptX Adaptive headsets list them: emu_sink.py): HQ, low latency
     # (SSRC 0xA1, 348-byte packets), an R2 sink in HQ and LL (frame types 3 /
-    # 4), ABR, 48 kHz from a 44.1 kHz request; 96 kHz when asked for and
-    # switched on (--aptxad-96k: Developer > aptX Adaptive at 96 kHz, off by
-    # default, issue #86), in HQ to an R2 sink that lists it (emu_sink.py's
-    # R2 caps do), else 48 kHz (switched off, an R1 sink, low latency); Auto
-    # takes it over aptX and AAC (issue #86)
+    # 4), ABR, 48 kHz from a 44.1 kHz request; 96 kHz when asked for, in HQ
+    # to an R2 sink that lists it (emu_sink.py's R2 caps do), else 48 kHz (an
+    # R1 sink, low latency); Auto takes it over aptX and AAC (issue #86)
     'aptxad': ('aptxad', APTXAD_SINK, 'aptxad', []),
     'aptxad-ll': ('aptxad', APTXAD_SINK, 'aptxad', ['-q', 'll']),
     'aptxad-r2': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
     'aptxad-r2-ll': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['-q', 'll']),
     'aptxad-abr': ('aptxad', APTXAD_SINK, 'aptxad', ['-a']),
     'aptxad-from-44k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '44100']),
-    'aptxad-r2-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--rate', '96000', '--aptxad-96k']),
-    'aptxad-r2-96k-abr': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k',
-                          ['--rate', '96000', '-a', '--aptxad-96k']),
-    'aptxad-r2-96k-off': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['--rate', '96000']),
+    'aptxad-r2-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--rate', '96000']),
+    'aptxad-r2-96k-abr': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--rate', '96000', '-a']),
     # Real sinks' rate bytes (issue #86): an EarFun Air Pro 4+ lists 0xD1
     # (96 kHz by Android's 0x80 bit, no 0x20), a Bose QC Ultra 0x51 (44.1
     # and 48 kHz only)
     'aptxad-r2-96k-earfun': ('aptxad', APTXAD_SINK + ['--aptxad-r2', '--aptxad-rates', '0xD1'], 'aptxad-r2-96k',
-                             ['--rate', '96000', '--aptxad-96k']),
+                             ['--rate', '96000']),
     'aptxad-r2-96k-bose': ('aptxad', APTXAD_SINK + ['--aptxad-r2', '--aptxad-rates', '0x51'], 'aptxad-r2',
-                           ['--rate', '96000', '--aptxad-96k']),
-    'aptxad-r1-from-96k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '96000', '--aptxad-96k']),
-    'aptxad-r2-ll-from-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2',
-                              ['--rate', '96000', '-q', 'll', '--aptxad-96k']),
+                           ['--rate', '96000']),
+    'aptxad-r1-from-96k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '96000']),
+    'aptxad-r2-ll-from-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['--rate', '96000', '-q', 'll']),
     'auto-aptxad': ('auto', APTXAD_SINK, 'aptxad', []),
-    # Auto: the best codec with its best options, the highest rate the sink
-    # lists (issue #86): 96 kHz to an R2 aptX Adaptive sink (switched on;
-    # off, 48 kHz), LDAC 96 kHz
-    'auto-aptxad-r2-96k': ('auto', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--aptxad-96k']),
-    'auto-aptxad-r2-96k-off': ('auto', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
-    'auto-ldac-96k': ('auto', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac-96k', []),
+    # The rate on Auto: 48 kHz where the sink lists it, not its highest
+    # (issue #86: 96 kHz only when chosen), to an R2 aptX Adaptive sink
+    # that takes 96 kHz and an LDAC one; LDAC 96 kHz when chosen
+    'auto-aptxad-r2-48k': ('auto', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
+    'auto-ldac-48k': ('auto', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac-48k', []),
+    'ldac-chosen-96k': ('ldac', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac-96k', ['--rate', '96000']),
     # 18 free sink SEPs, LDAC the 14th: BTstack 1.8.1 overflowed its 10-entry
     # SEP discovery array (crash); none may be dropped either
     'many-seps-ldac': ('ldac', ['--extra-seps', '8'], 'ldac', []),
