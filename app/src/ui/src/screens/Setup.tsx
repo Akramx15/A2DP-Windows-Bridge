@@ -17,7 +17,15 @@ import { t } from "../i18n";
 import { IpcError } from "../ipc/types";
 import type { AdapterInfo, Snapshot } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
-import { adapterExperimental, adapterIds, adapterName, adapterSupported, driverText, usableFirst } from "./Adapter";
+import {
+  adapterExperimental,
+  adapterIds,
+  adapterIdsHint,
+  adapterName,
+  adapterSupported,
+  driverText,
+  usableFirst,
+} from "./Adapter";
 import { V1Running } from "./Home";
 
 export function needsSetup(snap: Snapshot): boolean {
@@ -37,7 +45,7 @@ function AdapterLine(props: { adapter: AdapterInfo }) {
       <Icon name="usb_stick" />
       <span class="choice-text">
         <strong>{adapterName(props.adapter)}</strong>
-        <span class="muted">
+        <span class="muted" title={adapterIdsHint(props.adapter)}>
           {adapterIds(props.adapter)} · {driverText(props.adapter.driver).text}
         </span>
       </span>
