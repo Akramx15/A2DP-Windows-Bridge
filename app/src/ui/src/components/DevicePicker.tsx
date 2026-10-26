@@ -131,6 +131,8 @@ export function DevicePicker(props: {
       app.core.request("device.scan", { seconds: SCAN_SECONDS }),
     );
   };
+  // The devices show up as they answer: the user stops once theirs is there
+  const stopScan = () => app.run(() => app.core.request("device.scan_stop"));
   const name = "device-pick";
   const uid = createUniqueId();
 
@@ -314,8 +316,11 @@ export function DevicePicker(props: {
           </Button>
         }
       >
-        <Button icon="search" busy={scanning()} onClick={scan}>
-          {scanning() ? t("connection.scanning") : t("connection.scan")}
+        <Button
+          icon={scanning() ? "stop" : "search"}
+          onClick={() => void (scanning() ? stopScan() : scan())}
+        >
+          {scanning() ? t("connection.scan_stop") : t("connection.scan")}
         </Button>
       </Show>
     </div>

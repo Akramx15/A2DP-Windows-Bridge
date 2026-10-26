@@ -4,6 +4,7 @@
   "connection.scan": "デバイスを検索",
   "connection.scanning": "検索中...",
   "connection.scanning_hint": "周辺デバイスを検索しています（約30秒）...",
+  "connection.scan_stop": "検索を停止",
   "connection.no_devices": "デバイスが見つかりません。アドレスを手動で入力してください。",
   "connection.manual": "手動入力:",
   "connection.device_addr": "デバイスアドレス",

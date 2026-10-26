@@ -150,6 +150,16 @@ describe("device list", () => {
     expect(screen.queryByText(t("status.le_scanning"))).toBeNull();
   });
 
+  it("stops a running scan with what it found (issue #86)", async () => {
+    // Slow enough to see the scan running
+    const { calls } = start("#/devices", "le", 0.2);
+    fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
+    fireEvent.click(await screen.findByRole("button", { name: t("connection.scan_stop") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "device.scan_stop")).toBe(true));
+    await screen.findByRole("button", { name: t("connection.scan") }, { timeout: 3000 });
+    expect(screen.getAllByText(/MX Keys/).length).toBeGreaterThan(0);
+  });
+
   it("forgets and renames the LE Audio entry by address and kind", async () => {
     const { calls } = start("#/devices", "le");
     const le = (await screen.findByText(t("device.tag_le_audio_set"))).closest(".device-row") as HTMLElement;

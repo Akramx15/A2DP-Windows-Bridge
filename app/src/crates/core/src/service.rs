@@ -32,6 +32,9 @@ const RESUME_TICK: Duration = Duration::from_millis(200);
 const RESUME_WAIT_TICKS: u32 = 300;
 /// LE Audio (experimental): the LE scan after the classic one (v1)
 const LE_SCAN: Duration = Duration::from_secs(5);
+/// A connection started during a scan waits this long for the scan to end
+/// (a name request being cancelled takes up to ~2 s)
+const SCAN_END_WAIT: Duration = Duration::from_secs(5);
 /// ... once the LE core is ready (HCI works, so at once or a moment later)
 const LE_SCAN_READY_WAIT: Duration = Duration::from_secs(1);
 
@@ -981,6 +984,7 @@ impl Service {
             bt_host::addr_str(&req.device),
             if req.le.is_some() { "LE Audio" } else { "A2DP" }
         );
+        self.end_scan();
         self.stop_streaming();
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.turned_off.store(false, Ordering::Release);
@@ -1057,8 +1061,14 @@ impl Service {
 
     /// Inquiry for nearby devices, then, when the stack has LE Audio
     /// (experimental), a 5 s LE scan for LE Audio devices (v1's scan): the
-    /// classic devices, then the LE Audio ones ([`ScannedDevice`])
-    pub fn scan_devices(&self, seconds: u32) -> Result<Vec<ScannedDevice>, Msg> {
+    /// classic devices, then the LE Audio ones ([`ScannedDevice`]).
+    /// `on_found` gets the classic devices each time one answers (or its
+    /// name comes), long before the scan ends.
+    pub fn scan_devices(
+        &self,
+        seconds: u32,
+        on_found: &mut dyn FnMut(&[ScannedDevice]),
+    ) -> Result<Vec<ScannedDevice>, Msg> {
         self.end_wait_for_device();
         if self.is_running() {
             return Err(Msg::new("status.streaming"));
@@ -1067,7 +1077,9 @@ impl Service {
         self.inner.notify(StreamState::Idle, Msg::new("status.initializing_scan"));
         let host = self.inner.ensure_host()?;
         self.inner.notify(StreamState::Idle, Msg::new("status.scanning_devices"));
-        let classic = host.scan(seconds);
+        let classic = host.scan_with(seconds, &mut |found| {
+            on_found(&found.iter().map(ScannedDevice::classic).collect::<Vec<_>>());
+        });
         let mut list: Vec<ScannedDevice> = classic.iter().map(ScannedDevice::classic).collect();
         for d in &list {
             tracing::debug!(
@@ -1080,7 +1092,7 @@ impl Service {
             );
         }
         let mut le_found = 0;
-        if self.inner.le_active() {
+        if self.inner.le_active() && !host.scan_stopped() {
             let until = Instant::now() + LE_SCAN_READY_WAIT;
             while !host.le_ready() && Instant::now() < until {
                 std::thread::sleep(Duration::from_millis(100));
@@ -1113,6 +1125,32 @@ impl Service {
         }
         self.inner.notify(StreamState::Idle, Msg::with("status.scan_complete", &[&(classic.len() + le_found)]));
         Ok(list)
+    }
+
+    /// Ends a running scan early ([`Service::scan_devices`] returns what it
+    /// found so far)
+    pub fn stop_scan(&self) {
+        if self.is_scanning()
+            && let Some(h) = self.host()
+        {
+            tracing::info!("scan: stopped");
+            h.stop_scan();
+        }
+    }
+
+    /// A connection while the scan inquires and pages on the same radio
+    /// would be slow or fail: the scan ends first (a device it listed was
+    /// picked)
+    fn end_scan(&self) {
+        if !self.is_scanning() {
+            return;
+        }
+        self.stop_scan();
+        let until = Instant::now() + SCAN_END_WAIT;
+        while self.is_scanning() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        tracing::debug!("start streaming: scan ended first (still running: {})", self.is_scanning());
     }
 
     /// Stops streaming and the stack (the adapter is released)

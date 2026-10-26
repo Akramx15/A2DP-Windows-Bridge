@@ -4,6 +4,7 @@
   "connection.scan": "Scan Devices",
   "connection.scanning": "Scanning...",
   "connection.scanning_hint": "Scanning nearby devices (~30s)...",
+  "connection.scan_stop": "Stop Scanning",
   "connection.no_devices": "No devices found. Enter address manually.",
   "connection.manual": "Manual:",
   "connection.device_addr": "Device Address",

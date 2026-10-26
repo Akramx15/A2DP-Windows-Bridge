@@ -4,6 +4,7 @@
   "connection.scan": "Buscar dispositivos",
   "connection.scanning": "Buscando...",
   "connection.scanning_hint": "Buscando dispositivos cercanos (~30 s)...",
+  "connection.scan_stop": "Detener búsqueda",
   "connection.no_devices": "No se encontraron dispositivos. Escriba la dirección manualmente.",
   "connection.manual": "Manual:",
   "connection.device_addr": "Dirección del dispositivo",

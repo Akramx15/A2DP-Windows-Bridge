@@ -1610,8 +1610,20 @@ impl CoreState {
             Method::DeviceScan { seconds } => {
                 blocking(Box::new(move |me| {
                     me.publish(Event::Scanning(true));
+                    // The list shows the devices as they answer: first the
+                    // saved ones alone (the last scan's are gone), then each
+                    // device found. A scan refused (streaming) keeps the list.
+                    let dir = me.config_dir();
+                    let codecs = me.service.device_codecs();
+                    if !me.service.is_running() {
+                        me.publish(Event::Devices(saved_devices(&dir, &[], &codecs)));
+                    }
+                    let mut on_found = |found: &[ScannedDevice]| {
+                        let scanned: Vec<Device> = found.iter().map(scanned_device).collect();
+                        me.publish(Event::Devices(saved_devices(&dir, &scanned, &codecs)));
+                    };
                     // Classic, then (LE Audio on) the LE Audio devices
-                    let r = me.service.scan_devices(seconds.clamp(3, 30));
+                    let r = me.service.scan_devices(seconds.clamp(3, 30), &mut on_found);
                     if me.with_snapshot(|s| s.le_scanning) {
                         me.publish(Event::LeScanning(false));
                     }
@@ -1623,6 +1635,10 @@ impl CoreState {
                     Ok(json(&list))
                 }))
                 .await
+            }
+            Method::DeviceScanStop => {
+                self.service.stop_scan();
+                Ok(Value::Null)
             }
             Method::DeviceForget { address, le_audio } => {
                 let dir = self.config_dir();
