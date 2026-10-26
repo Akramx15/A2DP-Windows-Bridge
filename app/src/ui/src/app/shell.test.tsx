@@ -390,6 +390,9 @@ describe("helpers", () => {
     expect(statusText({ state: "reconnecting", message: msg("status.reconnect_attempt", "1", "3") })).toBe("Connecting...");
     expect(statusText({ state: "connecting", message: msg("status.connecting_retry", "2", "3") })).toBe("Connecting...");
     expect(statusText({ state: "streaming", message: msg("status.reconnected") })).toBe("Connected");
+    // Why another codec is used is on the codec's line (issue #86)
+    expect(statusText({ state: "streaming", message: msg("status.connected_fallback", "Opus", "aptX") })).toBe("Connected");
+    expect(statusText({ state: "streaming", message: msg("status.connected_fallback_in_use", "LDAC", "AAC") })).toBe("Connected");
     expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
     expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
     expect(statusText({ state: "idle", message: msg("") })).toBe("Idle");

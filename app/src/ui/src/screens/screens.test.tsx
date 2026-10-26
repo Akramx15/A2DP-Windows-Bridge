@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
-import { setLanguage } from "../i18n";
+import { setLanguage, t } from "../i18n";
 import { MockCore, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 
@@ -121,6 +121,28 @@ describe("Home", () => {
     // The other one: idle, no codec
     expect(xb).toHaveTextContent("Idle");
     expect(xb.querySelector(".codec-info")).toBeNull();
+  });
+
+  it("says why another codec is used on the codec's line, not the state line (issue #86)", async () => {
+    // "long": LDAC chosen, in use elsewhere, aptX HD used
+    const { core } = start("#/home", { scenario: "long" });
+    await waitFor(() => expect(core.state.snap).toBeTruthy());
+    await core.request("stream.start", { profile: core.state.snap!.active_profile! });
+    const pill = await waitFor(() => {
+      const p = document.querySelector(".status-pill.st-streaming");
+      expect(p).not.toBeNull();
+      return p as HTMLElement;
+    });
+    const card = document.querySelector(".home-device.live") as HTMLElement;
+    const note = t("ui.codec.fallback_in_use", "LDAC");
+    for (const where of [card, pill]) {
+      await waitFor(() => expect(where.querySelector(".codec-name")).toHaveTextContent(`aptX HD${note}`));
+      const name = where.querySelector(".codec-name")!;
+      expect(name.querySelector(".icon")).not.toBeNull();
+      expect(name.querySelector(".codec-note")).toHaveTextContent(note);
+    }
+    expect(within(card).getByRole("status")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
+    expect(pill.querySelector(".status-pill-state")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
   });
 
   it("asks to exit the other A2DPWB (v1, or another v2) while it runs", async () => {
