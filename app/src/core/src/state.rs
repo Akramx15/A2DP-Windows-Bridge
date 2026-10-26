@@ -102,6 +102,9 @@ pub struct CoreState {
     starting_profile: Mutex<Option<String>>,
     /// The low-battery balloon was shown for this connection
     battery_warned: AtomicBool,
+    /// A new connection started: its balloon is shown once it streams with
+    /// the codec settled (not after a reconnect of the same connection)
+    connect_announce: AtomicBool,
     tray: Box<dyn Fn(TrayView) + Send + Sync>,
     quit: Box<dyn Fn() + Send + Sync>,
     balloon: Box<dyn Fn(BalloonRequest) + Send + Sync>,
@@ -248,6 +251,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         start_with_windows: s.start_with_windows,
         start_minimized: s.start_minimized,
         minimize_to_tray: s.minimize_to_tray,
+        notify_connected: s.notify_connected,
         check_updates_on_startup: s.check_updates_on_startup,
         include_prereleases: s.include_prereleases,
         media_keys: s.media_keys,
@@ -292,6 +296,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.start_with_windows = s.start_with_windows;
     c.start_minimized = s.start_minimized;
     c.minimize_to_tray = s.minimize_to_tray;
+    c.notify_connected = s.notify_connected;
     c.check_updates_on_startup = s.check_updates_on_startup;
     c.include_prereleases = s.include_prereleases;
     c.media_keys = s.media_keys;
@@ -836,15 +841,46 @@ fn chip_changed(before: &CoreSettings, after: &CoreSettings) -> bool {
 }
 
 /// The codec and what it runs with: "LDAC 990 kbps | 96 kHz | 24-bit | ABR"
+/// (AAC's variable bit rate is VBR, as the UI calls it)
 fn tray_codec_line(codec: &str, kbps: u32, sample_rate: u32, bits: u32, abr: bool) -> String {
     let mut line = format!("{codec} {kbps} kbps | {} kHz", sample_rate as f64 / 1000.0);
     if bits > 0 {
         line.push_str(&format!(" | {bits}-bit"));
     }
     if abr {
-        line.push_str(" | ABR");
+        line.push_str(if codec == "AAC" { " | VBR" } else { " | ABR" });
     }
     line
+}
+
+/// The balloon of a new connection (issue #86): "WH-1000XM4 connected",
+/// then the codec as the tooltip shows it ([`tray_codec_line`]), the codec
+/// asked for when another one is used (as the UI's note beside the codec),
+/// and the battery when it is known already. None without the stream info:
+/// the codec's values are the negotiated ones, known once it is set up.
+fn connected_balloon(lang: &str, device: Option<&str>, stream: &StreamStatus) -> Option<BalloonRequest> {
+    let i = stream.info.as_ref()?;
+    let tr = |key: &str, default: &str| a2dpwb_core::messages::translate(lang, key, default);
+    let printf = a2dpwb_core::messages::format_printf;
+    let title = match device.filter(|d| !d.is_empty()) {
+        Some(d) => printf(&tr("notify.connected", "%s connected"), &[d.to_string()]),
+        None => tr("status.connected", "Connected"),
+    };
+    let mut lines = vec![tray_codec_line(&i.codec, i.bitrate_kbps, i.sample_rate, i.bits, i.abr)];
+    if let Some(req) = &i.requested_codec {
+        let (key, default) = if stream.message.key == "status.connected_fallback_experimental" {
+            ("ui.codec.fallback_experimental", "(%s is experimental)")
+        } else if i.requested_in_use {
+            ("ui.codec.fallback_in_use", "(%s is in use)")
+        } else {
+            ("ui.codec.fallback_unsupported", "(%s is not supported)")
+        };
+        lines.push(printf(&tr(key, default), std::slice::from_ref(req)));
+    }
+    if let Some(b) = stream.battery {
+        lines.push(printf(&tr("ui.home.battery", "Battery %d%%"), &[b.to_string()]));
+    }
+    Some(BalloonRequest { title, text: lines.join("\n"), url: None })
 }
 
 /// The tray icon's tooltip while streaming: "A2DPWB - Streaming (WH-1000XM4)"
@@ -942,6 +978,7 @@ impl CoreState {
             rates: Mutex::new(None),
             starting_profile: Mutex::new(None),
             battery_warned: AtomicBool::new(false),
+            connect_announce: AtomicBool::new(false),
             tray,
             quit,
             balloon,
@@ -1098,6 +1135,16 @@ impl CoreState {
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error | CoreStreamState::Connecting) {
                     self.battery_warned.store(false, Ordering::Release);
                 }
+                // A connection (also the headphones back on after they went
+                // off) is announced; a lost link reconnecting is not, its
+                // dropouts would repeat the same balloon
+                match state {
+                    CoreStreamState::Connecting => self.connect_announce.store(true, Ordering::Release),
+                    CoreStreamState::Idle | CoreStreamState::Error => {
+                        self.connect_announce.store(false, Ordering::Release)
+                    }
+                    _ => {}
+                }
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error) {
                     stream.info = None;
                     stream.volume = None;
@@ -1170,6 +1217,7 @@ impl CoreState {
             }
         }
         self.publish(Event::Stream(stream));
+        self.announce_connected();
         if devices_changed {
             self.refresh_devices();
         }
@@ -1428,6 +1476,23 @@ impl CoreState {
             text: a2dpwb_core::messages::format_printf(&template, &[device.to_string(), level.to_string()]),
             url: None,
         });
+    }
+
+    /// A new connection streams with its codec settled (the stream info
+    /// comes after the Streaming state on a first connection, before it on a
+    /// reconnect): the balloon with what it runs ([`connected_balloon`]),
+    /// once, when the setting is on
+    fn announce_connected(&self) {
+        let (_, s) = self.snapshot();
+        if s.stream.state != StreamState::Streaming || s.stream.info.is_none() {
+            return;
+        }
+        if !self.connect_announce.swap(false, Ordering::AcqRel) || !self.service.settings().notify_connected {
+            return;
+        }
+        let Some(b) = connected_balloon(&s.settings.language, streamed_device(&s), &s.stream) else { return };
+        tracing::info!("connected balloon: {} / {}", b.title, b.text.replace('\n', " / "));
+        (self.balloon)(b);
     }
 
     /// The automatic check found a newer release: a balloon whose click
@@ -2153,6 +2218,134 @@ mod tests {
             tray_tooltip("A2DP Windows Bridge - Streaming", Some("AA:BB:CC:DD:EE:FF"), &[]),
             "A2DP Windows Bridge - Streaming (AA:BB:CC:DD:EE:FF)"
         );
+        // AAC's variable bit rate, as the UI calls it
+        assert_eq!(tray_codec_line("AAC", 320, 48000, 16, true), "AAC 320 kbps | 48 kHz | 16-bit | VBR");
+    }
+
+    /// A stream as the core reports it once the codec is set up
+    fn streaming_with(codec: &str, kbps: u32, rate: u32, bits: u32, abr: bool, battery: Option<u8>) -> StreamStatus {
+        StreamStatus {
+            state: StreamState::Streaming,
+            message: Msg::new("status.connected"),
+            info: Some(ipc::StreamInfo {
+                codec: codec.into(),
+                bitrate_kbps: kbps,
+                sample_rate: rate,
+                channels: 2,
+                bits,
+                source_sample_rate: rate,
+                source_channels: 2,
+                source_bits: 32,
+                requested_codec: None,
+                requested_in_use: false,
+                abr,
+                bitrate_capped: false,
+                source: None,
+                le: None,
+                details: None,
+            }),
+            battery,
+            ..StreamStatus::default()
+        }
+    }
+
+    #[test]
+    fn the_connected_balloon_shows_the_device_codec_and_battery() {
+        let ldac = streaming_with("LDAC", 990, 96000, 24, true, Some(80));
+        let b = connected_balloon("en", Some("WH-1000XM4"), &ldac).unwrap();
+        assert_eq!(b.title, "WH-1000XM4 connected");
+        assert_eq!(b.text, "LDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%");
+        assert_eq!(b.url, None);
+
+        // Battery not known yet; an address when the device has no name
+        let aptx = streaming_with("aptX Adaptive", 420, 48000, 24, true, None);
+        let b = connected_balloon("en", Some("C0:11:22:33:44:55"), &aptx).unwrap();
+        assert_eq!(b.title, "C0:11:22:33:44:55 connected");
+        assert_eq!(b.text, "aptX Adaptive 420 kbps | 48 kHz | 24-bit | ABR");
+
+        // Another codec than the one asked for: the reason, as the UI's note
+        let mut aac = streaming_with("AAC", 320, 44100, 16, true, Some(55));
+        aac.info.as_mut().unwrap().requested_codec = Some("LDAC".into());
+        let b = connected_balloon("en", None, &aac).unwrap();
+        assert_eq!(b.title, "Connected");
+        assert_eq!(b.text, "AAC 320 kbps | 44.1 kHz | 16-bit | VBR\n(LDAC is not supported)\nBattery 55%");
+        aac.info.as_mut().unwrap().requested_in_use = true;
+        assert!(connected_balloon("en", None, &aac).unwrap().text.contains("(LDAC is in use)"));
+
+        // Translated; nothing before the codec is set up
+        let b = connected_balloon("ja", Some("WH-1000XM4"), &ldac).unwrap();
+        assert_eq!(b.text, "LDAC 990 kbps | 96 kHz | 24-bit | ABR\nバッテリー 80%");
+        assert!(connected_balloon("en", Some("WH"), &StreamStatus::default()).is_none());
+    }
+
+    #[test]
+    fn a_connection_is_announced_once_with_its_negotiated_codec() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-state-announce-{}", std::process::id()));
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let options = a2dpwb_core::ServiceOptions {
+            config_dir: dir.clone(),
+            hci_tcp: None,
+            capture: bt_host::HciCapture::new(),
+            afh: None,
+            usb: Default::default(),
+        };
+        let shown = Arc::new(Mutex::new(Vec::<BalloonRequest>::new()));
+        let sink = shown.clone();
+        let state = CoreState::new(
+            Arc::new(Service::new(options, tx)),
+            Box::new(|_| {}),
+            Box::new(|| {}),
+            Box::new(move |b| sink.lock().unwrap().push(b)),
+        );
+        let event = |st| state.on_service_event(ServiceEvent::State(st, a2dpwb_core::Msg::new("status.ready")));
+        let info = |kbps| {
+            state.on_service_event(ServiceEvent::StreamInfo(a2dpwb_core::StreamInfo {
+                codec: "LDAC".into(),
+                bitrate_kbps: kbps,
+                sample_rate: 96000,
+                channels: 2,
+                bits: 24,
+                source_sample_rate: 96000,
+                source_channels: 2,
+                source_bits: 32,
+                requested_codec: None,
+                requested_in_use: false,
+                abr: false,
+                bitrate_capped: false,
+                source: a2dpwb_core::SourceInfo { kind: "tone", name: String::new(), waiting: false },
+                details: None,
+            }))
+        };
+        let texts = || shown.lock().unwrap().iter().map(|b| b.text.clone()).collect::<Vec<_>>();
+        // A first connection: Streaming, then the negotiated codec
+        event(CoreStreamState::Connecting);
+        event(CoreStreamState::Streaming);
+        assert!(texts().is_empty());
+        info(660);
+        assert_eq!(texts(), ["LDAC 660 kbps | 96 kHz | 24-bit"]);
+        // A lost link reconnecting (its info again, then Streaming): quiet
+        event(CoreStreamState::Reconnecting);
+        info(660);
+        event(CoreStreamState::Streaming);
+        assert_eq!(texts().len(), 1);
+        // The headphones off and back on: a connection again
+        event(CoreStreamState::Idle);
+        event(CoreStreamState::Connecting);
+        info(990);
+        assert_eq!(texts().len(), 1);
+        event(CoreStreamState::Streaming);
+        assert_eq!(texts().len(), 2);
+        assert_eq!(texts()[1], "LDAC 990 kbps | 96 kHz | 24-bit");
+        // The setting off: nothing
+        let mut s = state.service.settings();
+        s.notify_connected = false;
+        state.service.set_settings(s);
+        event(CoreStreamState::Idle);
+        event(CoreStreamState::Connecting);
+        event(CoreStreamState::Streaming);
+        info(990);
+        assert_eq!(texts().len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -117,6 +117,15 @@ describe("tray", () => {
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, start_with_windows: false } });
     await waitFor(() => expect(toggle).toBeDisabled());
   });
+
+  it("turns the notification of a connection off and on (issue #86)", async () => {
+    const { core } = start("#/settings");
+    const toggle = await screen.findByRole("switch", { name: new RegExp(t("ui.settings.notify_connected")) });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(core.state.snap!.settings.notify_connected).toBe(false));
+    expect(toggle).not.toBeChecked();
+  });
 });
 
 describe("Home", () => {

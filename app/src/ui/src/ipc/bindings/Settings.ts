@@ -9,7 +9,12 @@ export type Settings = { language: string,
 /**
  * system, light, dark
  */
-theme: string, start_with_windows: boolean, start_minimized: boolean, minimize_to_tray: boolean, check_updates_on_startup: boolean, include_prereleases: boolean, 
+theme: string, start_with_windows: boolean, start_minimized: boolean, minimize_to_tray: boolean, 
+/**
+ * A notification when a device connects: its codec, what the codec
+ * runs with, the battery (on by default)
+ */
+notify_connected: boolean, check_updates_on_startup: boolean, include_prereleases: boolean, 
 /**
  * The headphones' buttons act as Windows media keys (every device)
  */

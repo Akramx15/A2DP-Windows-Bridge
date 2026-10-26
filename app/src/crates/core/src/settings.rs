@@ -90,6 +90,10 @@ pub struct Settings {
     pub start_minimized: bool,
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
+    /// A notification when a device connects (issue #86): its name, codec,
+    /// what the codec runs with and the battery. On by default.
+    #[serde(default = "default_true")]
+    pub notify_connected: bool,
 
     #[serde(default = "default_true")]
     pub check_updates_on_startup: bool,
@@ -249,6 +253,7 @@ impl Default for Settings {
             start_with_windows: false,
             start_minimized: false,
             minimize_to_tray: true,
+            notify_connected: true,
             check_updates_on_startup: true,
             last_update_check: String::new(),
             include_prereleases: default_prereleases(),
@@ -397,6 +402,7 @@ mod tests {
         assert_eq!(s.language, "ja");
         assert!(!s.media_keys);
         assert!(s.minimize_to_tray);
+        assert!(s.notify_connected);
         assert_eq!(s.legacy_max_media_payload(), 1500);
         assert!(s.le_audio_experimental);
         assert!(!s.le_audio_low_latency);

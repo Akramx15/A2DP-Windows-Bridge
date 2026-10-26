@@ -572,6 +572,10 @@ pub struct Settings {
     pub start_with_windows: bool,
     pub start_minimized: bool,
     pub minimize_to_tray: bool,
+    /// A notification when a device connects: its codec, what the codec
+    /// runs with, the battery (on by default)
+    #[serde(default = "yes")]
+    pub notify_connected: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
     /// The headphones' buttons act as Windows media keys (every device)
