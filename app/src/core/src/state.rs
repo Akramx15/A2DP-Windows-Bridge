@@ -252,6 +252,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
             aac_no_peak: s.dev_overrides.aac_no_peak,
             aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
             aac_latm_v0: s.dev_overrides.aac_latm_v0,
+            aptxad_96k: s.dev_overrides.aptxad_96k,
         },
         dev_log: DevLog {
             keep_days: s.dev_log.keep_days,
@@ -300,6 +301,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
         aac_no_peak: s.dev_overrides.aac_no_peak,
         aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
         aac_latm_v0: s.dev_overrides.aac_latm_v0,
+        aptxad_96k: s.dev_overrides.aptxad_96k,
     };
     c.dev_log = a2dpwb_core::settings::DevLog {
         keep_days: s.dev_log.keep_days,
@@ -496,6 +498,7 @@ fn saved_devices(
             rssi: None,
             codecs: Vec::new(),
             sbc: None,
+            codec_caps: Vec::new(),
             le_audio: d.le_audio,
             le_audio_set: false,
         })
@@ -516,6 +519,16 @@ fn saved_devices(
         if let Some(c) = codecs.get(&d.address.to_uppercase()) {
             d.codecs = c.keys.clone();
             d.sbc = c.sbc.clone().map(to_ipc_sbc_caps);
+            d.codec_caps = c
+                .caps
+                .iter()
+                .map(|k| ipc::CodecDeviceCaps {
+                    codec: k.codec.clone(),
+                    sample_rates: k.sample_rates.clone(),
+                    bit_depths: k.bit_depths.clone(),
+                    max_bitrate: k.max_bitrate,
+                })
+                .collect();
         }
     }
     list
@@ -531,6 +544,7 @@ fn scanned_device(d: &ScannedDevice) -> Device {
         rssi: Some(d.rssi),
         codecs: Vec::new(),
         sbc: None,
+        codec_caps: Vec::new(),
         le_audio: d.le_audio,
         le_audio_set: d.le_audio_set,
     }
@@ -2438,6 +2452,7 @@ mod tests {
             rssi: Some(-60),
             codecs: Vec::new(),
             sbc: None,
+            codec_caps: Vec::new(),
             le_audio: false,
             le_audio_set: false,
         }];
@@ -2453,13 +2468,27 @@ mod tests {
         };
         codecs.insert(
             "AA:BB:CC:DD:EE:FF".to_string(),
-            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string(), "ldac".to_string()], sbc: Some(sbc) },
+            a2dpwb_core::KnownCodecs {
+                keys: vec!["sbc".to_string(), "ldac".to_string()],
+                sbc: Some(sbc),
+                caps: vec![a2dpwb_core::CodecDeviceCaps {
+                    codec: "ldac".into(),
+                    sample_rates: vec![44100, 48000],
+                    ..Default::default()
+                }],
+            },
         );
         let list = saved_devices(&dir, &scanned, &codecs);
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].codecs, ["sbc", "ldac"]);
         // What its SBC endpoint offered, for the profile editor
         assert_eq!(list[0].sbc.as_ref().map(|s| s.blocks.clone()), Some(vec![8, 16]));
+        // And what each codec lists, for the codec settings (issue #86)
+        assert_eq!(list[0].codec_caps.len(), 1);
+        assert_eq!(
+            (list[0].codec_caps[0].codec.as_str(), list[0].codec_caps[0].sample_rates.clone()),
+            ("ldac", vec![44100, 48000])
+        );
         assert!(list[1].sbc.is_none());
         assert!(list[0].saved && !list[1].saved && list[1].codecs.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
@@ -2568,7 +2597,7 @@ mod tests {
         let mut codecs = BTreeMap::new();
         codecs.insert(
             "AA:BB:CC:DD:EE:FF".to_string(),
-            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string()], sbc: None },
+            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string()], ..Default::default() },
         );
         let list = saved_devices(&dir, &scanned, &codecs);
         let kinds: Vec<(&str, bool, bool)> = list.iter().map(|d| (d.name.as_str(), d.le_audio, d.saved)).collect();

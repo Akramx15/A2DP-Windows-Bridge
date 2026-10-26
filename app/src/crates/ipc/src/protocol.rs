@@ -182,6 +182,11 @@ pub struct Device {
     /// those SBC settings); None while not known
     #[serde(default)]
     pub sbc: Option<SbcDeviceCaps>,
+    /// What each codec it offered then lists (the codec settings offer
+    /// only those sample rates, bit depths and bit rates, issue #86);
+    /// empty while not known
+    #[serde(default)]
+    pub codec_caps: Vec<CodecDeviceCaps>,
     /// An LE Audio entry (experimental; le_audio_devices.txt and the LE
     /// scan). A dual-mode device has two entries with the same address, a
     /// classic one and an LE Audio one: address and this flag identify an
@@ -307,6 +312,20 @@ pub struct SbcDeviceCaps {
     pub allocations: Vec<String>,
     pub min_bitpool: u32,
     pub max_bitpool: u32,
+}
+
+/// What a device's endpoint of one codec lists (a2dpwb_core::CodecDeviceCaps)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct CodecDeviceCaps {
+    /// Codec key ("ldac", "aac", ...)
+    pub codec: String,
+    /// Sample rates it lists, lowest first (empty: not said)
+    pub sample_rates: Vec<u32>,
+    /// Bit depths it lists (empty: not said, or no choice)
+    pub bit_depths: Vec<u32>,
+    /// Its largest bit rate in bps (0 = not said)
+    pub max_bitrate: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -506,6 +525,8 @@ pub struct DevOverrides {
     pub aac_no_peak: bool,
     pub aac_no_afterburner: bool,
     pub aac_latm_v0: bool,
+    /// aptX Adaptive may stream at 96 kHz; off (the default), 48 kHz only
+    pub aptxad_96k: bool,
 }
 
 /// Developer mode's logging (a2dpwb_core::settings::DevLog), in force while

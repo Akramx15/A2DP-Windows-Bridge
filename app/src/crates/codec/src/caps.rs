@@ -900,6 +900,83 @@ impl RemoteCaps {
         self.lhdcv5_info[7] & LHDCV5_BITRATE_LIMITS_MASK
     }
 
+    /// The sample rates the sink lists for `kind`, lowest first, as the
+    /// codec settings offer them (issue #86); empty when it said none.
+    /// aptX Adaptive lists 96 kHz only when the sink can take it
+    /// ([`Self::aptxad_96k`]); Opus and Opus 05 are 48 kHz.
+    pub fn listed_sample_rates(&self, kind: CodecKind) -> Vec<u32> {
+        let from_bits = |table: &[(u8, u32)], bits: u8| {
+            let mut r: Vec<u32> = table.iter().filter(|&&(b, _)| bits & b != 0).map(|&(_, r)| r).collect();
+            r.sort_unstable();
+            r
+        };
+        let aptx = |caps: u8| match caps & APTX_FREQ_MASK {
+            0 => vec![44100, 48000],
+            f => from_bits(&[(APTX_FREQ_44100, 44100), (APTX_FREQ_48000, 48000)], f),
+        };
+        match kind {
+            _ if !self.has(kind) => Vec::new(),
+            CodecKind::Sbc | CodecKind::SbcXq => self.sbc_caps.map(|c| c.sample_rates()).unwrap_or_default(),
+            CodecKind::Aac => self.aac_caps.map(|c| c.sample_rates()).unwrap_or_default(),
+            CodecKind::Ldac => {
+                from_bits(&LDAC_RATES, if self.ldac_rates == 0 { LDAC_FREQ_ALL } else { self.ldac_rates })
+            }
+            CodecKind::LhdcV5 => from_bits(
+                &[
+                    (LHDCV5_SR_44100, 44100),
+                    (LHDCV5_SR_48000, 48000),
+                    (LHDCV5_SR_96000, 96000),
+                    (LHDCV5_SR_192000, 192000),
+                ],
+                self.lhdcv5_rates(),
+            ),
+            CodecKind::Aptx => aptx(self.aptx_caps),
+            CodecKind::AptxHd => aptx(self.aptxhd_caps),
+            CodecKind::AptxLl => aptx(self.aptxll_caps),
+            CodecKind::FastStream => {
+                from_bits(&[(FASTSTREAM_SINK_44100, 44100), (FASTSTREAM_SINK_48000, 48000)], self.faststream_rates)
+            }
+            CodecKind::AptxAdaptive => {
+                if self.aptxad_96k() {
+                    vec![48000, 96000]
+                } else {
+                    vec![48000]
+                }
+            }
+            CodecKind::Opus | CodecKind::Opus05 => vec![48000],
+        }
+    }
+
+    /// The bit depths the sink lists for `kind` (LHDC V5 only; empty for
+    /// the others: no choice, or the sink does not say)
+    pub fn listed_bit_depths(&self, kind: CodecKind) -> Vec<u32> {
+        if kind != CodecKind::LhdcV5 || !self.has(kind) {
+            return Vec::new();
+        }
+        let bits = self.lhdcv5_info[7] & LHDCV5_BITS_MASK;
+        [(LHDCV5_BITS_16, 16), (LHDCV5_BITS_24, 24)]
+            .into_iter()
+            .filter(|&(b, _)| bits & b != 0)
+            .map(|(_, d)| d)
+            .collect()
+    }
+
+    /// The largest bit rate (bps) the sink lists for `kind`: AAC's bit rate
+    /// field, LHDC V5's maximum (400 / 500 / 900 kbps); 0 when it gives none
+    pub fn listed_max_bitrate(&self, kind: CodecKind) -> u32 {
+        match kind {
+            _ if !self.has(kind) => 0,
+            CodecKind::Aac => self.aac_caps.map_or(0, |c| c.bit_rate),
+            CodecKind::LhdcV5 => match self.lhdcv5_bitrate_limits() & 0x30 {
+                0x10 => 400_000,
+                0x20 => 500_000,
+                0x30 => 900_000,
+                _ => 0,
+            },
+            _ => 0,
+        }
+    }
+
     /// Opus: the frame duration (ms) and the channels on the wire for
     /// `channels` of input. 20 ms when offered (the only duration Android
     /// has a bit rate for; PipeWire prefers it too), else 10 ms. Mono only
@@ -959,11 +1036,12 @@ impl RemoteCaps {
     }
 
     /// Capture rate for aptX Adaptive: 96 kHz when the profile asks for it
-    /// (`wanted`), the stream is high quality (96 kHz has no low latency
-    /// bitstream) and the sink can take it ([`Self::aptxad_96k`]); else 48
-    /// kHz, the rate every sink takes
-    pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality) -> u32 {
-        let no_96k = self.aptxad_no_96k(quality);
+    /// (`wanted`), 96 kHz is allowed (`allow`: Developer > "aptX Adaptive at
+    /// 96 kHz", off by default, issue #86), the stream is high quality (96
+    /// kHz has no low latency bitstream) and the sink can take it
+    /// ([`Self::aptxad_96k`]); else 48 kHz, the rate every sink takes
+    pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality, allow: bool) -> u32 {
+        let no_96k = self.aptxad_no_96k(quality, allow);
         let rate = if wanted == 96000 && no_96k.is_none() { 96000 } else { 48000 };
         let (r2, rates) = (self.aptxad_r2(), self.aptxad_info.get(6).copied().unwrap_or(0) & 0xF8);
         match no_96k {
@@ -980,10 +1058,13 @@ impl RemoteCaps {
         rate
     }
 
-    /// Why aptX Adaptive cannot stream at 96 kHz in `quality`; None when it can
-    pub fn aptxad_no_96k(&self, quality: crate::Quality) -> Option<&'static str> {
+    /// Why aptX Adaptive cannot stream at 96 kHz in `quality` (`allow`: 96
+    /// kHz switched on); None when it can
+    pub fn aptxad_no_96k(&self, quality: crate::Quality, allow: bool) -> Option<&'static str> {
         if quality == crate::Quality::LowLatency {
             Some("low latency has no 96 kHz bitstream")
+        } else if !allow {
+            Some("96 kHz is off (Developer: aptX Adaptive at 96 kHz)")
         } else if !self.aptxad_r2() {
             Some("the audio device is aptX Adaptive R1 (upstream streams 96 kHz to R2 only)")
         } else if !self.aptxad_96k() {
@@ -1764,6 +1845,57 @@ mod tests {
     }
 
     #[test]
+    fn listed_rates_depths_and_bit_rates() {
+        // Not offered: nothing listed
+        let none = RemoteCaps::default();
+        assert!(none.listed_sample_rates(CodecKind::Ldac).is_empty());
+        assert_eq!(none.listed_max_bitrate(CodecKind::Aac), 0);
+
+        // An LHDC V5 sink of 44.1 / 48 kHz, 16 / 24-bit, at most 900 kbps
+        // (moto buds+: 48 kHz at most, issue #86)
+        let mut caps = RemoteCaps { lhdcv5: Some(RemoteSep { seid: 1 }), ..Default::default() };
+        caps.lhdcv5_info[6] = LHDCV5_SR_44100 | LHDCV5_SR_48000;
+        caps.lhdcv5_info[7] = LHDCV5_BITS_16 | LHDCV5_BITS_24 | 0x30;
+        assert_eq!(caps.listed_sample_rates(CodecKind::LhdcV5), vec![44100, 48000]);
+        assert_eq!(caps.listed_bit_depths(CodecKind::LhdcV5), vec![16, 24]);
+        assert_eq!(caps.listed_max_bitrate(CodecKind::LhdcV5), 900_000);
+        caps.lhdcv5_info[7] = LHDCV5_BITS_16;
+        assert_eq!(caps.listed_bit_depths(CodecKind::LhdcV5), vec![16]);
+        assert_eq!(caps.listed_max_bitrate(CodecKind::LhdcV5), 0);
+
+        // AAC's bit rate field as it is (0x020000 = 131072 bps)
+        caps.add_aac_caps(
+            2,
+            AacCapabilities {
+                object_types: AAC_OBJ_MPEG2_LC,
+                sampling_frequency: AAC_FREQ_44100 | AAC_FREQ_48000,
+                channels: AAC_CH_2,
+                bit_rate: 0x02_0000,
+                vbr: false,
+            },
+        );
+        assert_eq!(caps.listed_max_bitrate(CodecKind::Aac), 131_072);
+        assert_eq!(caps.listed_sample_rates(CodecKind::Aac), vec![44100, 48000]);
+
+        // SBC from its capabilities; LDAC's rates, every one when not said
+        caps.add_sbc_caps(3, SbcCapabilities { sampling_frequency: SBC_FREQ_48000, ..sbc_all() });
+        assert_eq!(caps.listed_sample_rates(CodecKind::Sbc), vec![48000]);
+        caps.ldac = Some(RemoteSep { seid: 4 });
+        caps.ldac_rates = 0x30;
+        assert_eq!(caps.listed_sample_rates(CodecKind::Ldac), vec![44100, 48000]);
+        caps.ldac_rates = 0;
+        assert_eq!(caps.listed_sample_rates(CodecKind::Ldac), vec![44100, 48000, 88200, 96000]);
+
+        // aptX Adaptive: 96 kHz only to an R2 sink that lists it
+        let mut r2 = RemoteCaps::default();
+        r2.add_vendor(5, &r2_aptxad(0x0F00_0000)[..30]);
+        assert_eq!(r2.listed_sample_rates(CodecKind::AptxAdaptive), vec![48000, 96000]);
+        let mut r1 = RemoteCaps::default();
+        r1.add_vendor(5, &PX7_S2E_APTXAD);
+        assert_eq!(r1.listed_sample_rates(CodecKind::AptxAdaptive), vec![48000]);
+    }
+
+    #[test]
     fn sbc_xq_negotiation() {
         let mut caps = RemoteCaps::default();
         caps.add_sbc_caps(1, sbc_all());
@@ -2336,12 +2468,15 @@ mod tests {
         let mut r2 = RemoteCaps::default();
         r2.add_vendor(4, &r2_aptxad(0x0F00_0000)[..30]);
         assert!(r2.aptxad_96k());
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High), 96000);
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::Mobile), 96000);
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::LowLatency), 48000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High, true), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::Mobile, true), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::LowLatency, true), 48000);
         for wanted in [44100, 48000, 88200, 192000] {
-            assert_eq!(r2.pick_aptxad_sample_rate(wanted, Quality::High), 48000, "{wanted}");
+            assert_eq!(r2.pick_aptxad_sample_rate(wanted, Quality::High, true), 48000, "{wanted}");
         }
+        // 96 kHz switched off (the default, issue #86): always 48 kHz
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High, false), 48000);
+        assert!(r2.aptxad_no_96k(Quality::High, false).is_some_and(|w| w.contains("off")));
         let ConfigRequest::Vendor(info) = r2.configuration(CodecKind::AptxAdaptive, 96000, 2, 24).unwrap().request
         else {
             panic!("not a vendor configuration")
@@ -2353,14 +2488,14 @@ mod tests {
         no96[6] = 0x18;
         let mut r1_96 = PX7_S2E_APTXAD;
         r1_96[6] |= 0x20;
-        assert_eq!(r2.aptxad_no_96k(Quality::High), None);
-        assert!(r2.aptxad_no_96k(Quality::LowLatency).is_some_and(|w| w.contains("low latency")));
+        assert_eq!(r2.aptxad_no_96k(Quality::High, true), None);
+        assert!(r2.aptxad_no_96k(Quality::LowLatency, true).is_some_and(|w| w.contains("low latency")));
         for (info, why) in [(&no96[..30], "does not list"), (&r1_96[..], "R1")] {
             let mut caps = RemoteCaps::default();
             caps.add_vendor(4, info);
             assert!(!caps.aptxad_96k());
-            assert!(caps.aptxad_no_96k(Quality::High).is_some_and(|w| w.contains(why)), "{why}");
-            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High), 48000);
+            assert!(caps.aptxad_no_96k(Quality::High, true).is_some_and(|w| w.contains(why)), "{why}");
+            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High, true), 48000);
             assert_eq!(
                 caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24),
                 Err(ConfigError::SampleRate(CodecKind::AptxAdaptive, 96000))
