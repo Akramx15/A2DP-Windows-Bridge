@@ -1080,7 +1080,7 @@ impl CoreState {
         let lang = s.settings.language.clone();
         let streaming = s.stream.state == StreamState::Streaming;
         let base = if streaming {
-            a2dpwb_core::messages::translate(&lang, "tray.tooltip_streaming", "A2DP Windows Bridge - Streaming")
+            a2dpwb_core::messages::translate(&lang, "tray.tooltip_streaming", "A2DP Windows Bridge - Connected")
         } else {
             a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DP Windows Bridge - Idle")
         };
@@ -2204,17 +2204,17 @@ mod tests {
         assert_eq!(tray_codec_line("SBC", 328, 44100, 16, false), "SBC 328 kbps | 44.1 kHz | 16-bit");
         assert_eq!(tray_codec_line("LC3", 320, 48000, 0, false), "LC3 320 kbps | 48 kHz");
         assert_eq!(
-            tray_tooltip("A2DP Windows Bridge - Streaming", Some("WH-1000XM4"), &[ldac.clone(), "Battery 80%".into()]),
-            "A2DP Windows Bridge - Streaming (WH-1000XM4)\nLDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%"
+            tray_tooltip("A2DP Windows Bridge - Connected", Some("WH-1000XM4"), &[ldac.clone(), "Battery 80%".into()]),
+            "A2DP Windows Bridge - Connected (WH-1000XM4)\nLDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%"
         );
         assert_eq!(
-            tray_tooltip("A2DP Windows Bridge - Streaming", None, &[ldac]),
-            "A2DP Windows Bridge - Streaming\nLDAC 990 kbps | 96 kHz | 24-bit | ABR"
+            tray_tooltip("A2DP Windows Bridge - Connected", None, &[ldac]),
+            "A2DP Windows Bridge - Connected\nLDAC 990 kbps | 96 kHz | 24-bit | ABR"
         );
-        assert_eq!(tray_tooltip("A2DP Windows Bridge - Streaming", Some(""), &[]), "A2DP Windows Bridge - Streaming");
+        assert_eq!(tray_tooltip("A2DP Windows Bridge - Connected", Some(""), &[]), "A2DP Windows Bridge - Connected");
         assert_eq!(
-            tray_tooltip("A2DP Windows Bridge - Streaming", Some("AA:BB:CC:DD:EE:FF"), &[]),
-            "A2DP Windows Bridge - Streaming (AA:BB:CC:DD:EE:FF)"
+            tray_tooltip("A2DP Windows Bridge - Connected", Some("AA:BB:CC:DD:EE:FF"), &[]),
+            "A2DP Windows Bridge - Connected (AA:BB:CC:DD:EE:FF)"
         );
         // AAC's variable bit rate, as the UI calls it
         assert_eq!(tray_codec_line("AAC", 320, 48000, 16, true), "AAC 320 kbps | 48 kHz | 16-bit | VBR");
