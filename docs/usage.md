@@ -46,16 +46,16 @@ The codec of each saved audio device, one section per device (a dot that is gree
 
 The defaults give the best sound; most devices need nothing but **Auto**. An LE Audio device (experimental) has one card, LC3, and **Low latency for gaming headsets (GMAP, experimental)** (see [LE Audio](#le-audio)).
 
-Behind the scenes A2DPWB keeps one entry per device in `profiles.json` (its codec, each codec's settings and its codec order), which the tray menu lists as "*device* | *codec*". Earlier versions let you make several profiles for one device: the first start of a version with the Codecs screen keeps the one last used (otherwise the first) and folds the others into it, keeping their codec settings (quality, sample rate, bit depth, ABR, SBC setup) for their codecs. Their own names, capture sources and packet sizes are not kept; `profiles.json` as it was is saved once as `profiles-before-codecs.json` in the settings folder. The 2.0.2 pre-releases' **Auto's order…** (one order for every device, in developer mode) is no longer used: each device has its own order now.
+Behind the scenes A2DPWB keeps one entry per device in `profiles.json` (its codec, each codec's settings and its codec order), named "*device* | *codec*" there; the window and the tray menu show the device's name. Earlier versions let you make several profiles for one device: the first start of a version with the Codecs screen keeps the one last used (otherwise the first) and folds the others into it, keeping their codec settings (quality, sample rate, bit depth, ABR, SBC setup) for their codecs. Their own names, capture sources and packet sizes are not kept; `profiles.json` as it was is saved once as `profiles-before-codecs.json` in the settings folder. The 2.0.2 pre-releases' **Auto's order…** (one order for every device, in developer mode) is no longer used: each device has its own order now.
 
 ### Audio Devices
 
 The headphones and speakers A2DPWB can stream to, each with its own settings: **Scan Devices** finds nearby devices with the USB adapter (about 10 seconds; put the headphones into pairing mode). Devices A2DPWB paired with before are tagged **Paired**. If the scan does not find them, enter the address under **Manual:** and click **Use**; typed or pasted addresses are formatted as you go (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`). A saved device can be renamed or removed, and has:
 
-- **Capture Source**: System Loopback, Virtual Device or Application (see [Capture Modes](#capture-modes))
-- **Windows Volume Sync** (see [Volume](#volume))
-- **Max media packet size (bytes)**, in developer mode (see [Max Media Packet Size](#max-packet))
-- **Audio Device Buttons Control Playback** and **Remember Audio Device Volume**
+- **Capture Source**: System Loopback (a new device's default), Virtual Device or Application (see [Capture Modes](#capture-modes))
+- **Auto Switch Windows Default Audio Output Device**, with a virtual device
+
+**All audio devices**, above the list, has the switches that apply to every device: **Windows Volume Sync** (see [Volume](#volume)), **Audio Device Buttons Playback Control** and **Remember the Bluetooth Audio Device's Last Volume Level**. Each device's **Max media packet size** is on the **Developer** screen (see [Max Media Packet Size](#max-packet)).
 
 ### Diagnostics
 
@@ -93,7 +93,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 | Appearance | Language, theme (System / Light / Dark) |
 | Startup | **Start with Windows** and **Start in the tray** (see [Start with Windows](#autostart)), **Minimize to System Tray** (see [Tray and Flyout](#tray)) |
 | Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
-| Advanced | **Developer mode** (adds the **Developer** screen with codec overrides such as **aptX Adaptive at 96 kHz** and logging options, the receiver test to Diagnostics, **Max media packet size** to Audio Devices and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
+| Advanced | **Developer mode** (adds the **Developer** screen with codec overrides such as **aptX Adaptive at 96 kHz**, each device's **Max media packet size** and logging options, the receiver test to Diagnostics and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
 | About A2DP Windows Bridge | Version, license, third-party licenses, **Quit A2DP Windows Bridge** |
 
 ### First-Run Setup
@@ -105,7 +105,7 @@ The first start (no audio device yet, or no adapter with WinUSB) opens **Set up 
 A2DPWB keeps running in the system tray, with or without the window:
 
 - **Left-click** the tray icon for the flyout: the device and its state, **Connect** / **Disconnect**, the volume, the device switcher, the codec, the link quality and **Open app**. Esc or a click elsewhere hides it. If an error needs a screen of the main window (Codecs, Audio Devices, the adapter), its button opens the window there
-- **Right-click** for the menu: **Open A2DP Windows Bridge**, the first 10 devices as "*device* | *codec*" (the one streaming checked; click one to connect it), **Disconnect** and **Exit**. The menu opens at once, without starting the window
+- **Right-click** for the menu: **Open A2DP Windows Bridge**, the first 10 devices by name (an LE Audio entry tagged "(LE Audio)"; the one streaming checked; click one to connect it), **Disconnect** and **Exit**. The menu opens at once, without starting the window
 - The tooltip says whether A2DPWB is idle or streaming
 
 With **Settings > Minimize to System Tray** on (the default), minimizing or closing the window only hides it in the tray, and streaming goes on. With it off, the window minimizes to the taskbar, and closing it quits A2DPWB. **Exit** in the tray menu or **Settings > Quit A2DP Windows Bridge** stops streaming, releases the adapter and closes A2DPWB completely.
@@ -217,7 +217,7 @@ A2DPWB supports three audio capture modes. Each records a different point in the
 | Virtual Device | What apps play into the selected device (e.g., VB-CABLE) |
 | Application | Only what one app (and its child processes) plays, after the app's own processing. Needs Windows 11 or Windows 10 version 2004 (build 19041) or later |
 
-**Audio Devices** shows the same explanation under **Capture Source**.
+**Audio Devices** shows the same explanation under **Capture Source**. A new device captures System Loopback, which works with nothing else installed; choose Virtual Device or Application for it there.
 
 System Loopback copies the audio; it does not take it away from the default output device. The audio keeps playing on that device (speakers, an HDMI TV, ...) as well as on the Bluetooth headphones. To hear it only on the headphones, use Virtual Device mode with a device that does not play anywhere, such as VB-CABLE.
 
@@ -234,7 +234,7 @@ Application mode sends the audio of one app, for example a music player, a brows
 
 - The app does not have to be running. A2DPWB connects to the headphones anyway and starts sending once the app is up. When the app quits during streaming, A2DPWB stays connected and picks the app up again when it is restarted.
 - The app keeps playing on its own output device as well. To hear it only on the headphones, mute that output device (its master volume): this does not affect what A2DPWB captures. Do not mute the app in the Windows Volume Mixer, though, or the headphones get silence too.
-- The app's slider in the Windows Volume Mixer changes the level sent to the headphones (and on its output device). The master volume and the volume keys do not change the audio sent; with the device's **Windows Volume Sync** on Auto they change the headphones' volume instead (see [Volume](#volume)).
+- The app's slider in the Windows Volume Mixer changes the level sent to the headphones (and on its output device). The master volume and the volume keys do not change the audio sent; with **Windows Volume Sync** on they change the headphones' volume instead (see [Volume](#volume)).
 - Windows converts the audio to the sample rate that A2DPWB asks for, so the device format in Sound settings does not limit it.
 - On Windows 10 before version 2004 (build 19041), Windows has no per-app capture. Connecting a device set to Application capture then shows an error that asks for another capture source.
 
@@ -242,21 +242,17 @@ Application mode sends the audio of one app, for example a music player, a brows
 
 While streaming, Home and the tray flyout show a **Volume** slider when the headphones support AVRCP absolute volume. It sets the volume on the headphones themselves, so the audio sent keeps its full resolution. The slider also follows the volume buttons and touch controls on the headphones.
 
-**Windows Volume Sync** (a device's setting on **Audio Devices**) makes a Windows volume and the headphones' volume one volume while streaming:
-
-| Choice | Windows volume synced |
-|:-------|:----------------------|
-| Auto (default) | The device A2DPWB captures: the default output device in System Loopback and Application mode, the selected device in Virtual Device mode |
-| Off | None: the Windows volume and the headphones' volume are separate |
-| An output device | That device's volume |
+**Windows Volume Sync** (on **Audio Devices**, for every device; on by default) makes a Windows volume and the headphones' volume one volume while streaming. The Windows volume synced is that of the device A2DPWB captures: the default output device in System Loopback and Application mode, the selected device in Virtual Device mode. Off, the Windows volume and the headphones' volume are separate.
 
 - The headphones' volume buttons and gestures, and the **Volume** slider, move the synced Windows volume, and its slider in Sound settings moves the headphones' volume.
-- The volume keys and the Windows volume flyout always act on the default output device, so they change the headphones' volume only when the default output device is the one synced (as with Auto, except in Virtual Device mode without **Auto-switch default device**).
+- The volume keys and the Windows volume flyout always act on the default output device, so they change the headphones' volume only when the default output device is the one synced (always, except in Virtual Device mode without **Auto-switch default device**).
 - When streaming starts, the Windows volume takes over the headphones' volume; when streaming stops, the device gets back the volume it had before.
-- With Auto, the audio is captured before the Windows volume is applied, so it is still lowered only once, on the headphones. If the synced volume also changes the captured audio, the volume applies twice: choose Off then (see [System-wide effects apps](#effects-apps)).
+- The audio is captured before the Windows volume is applied, so it is still lowered only once, on the headphones. If the synced volume also changes the captured audio, the volume applies twice: turn the sync off then (see [System-wide effects apps](#effects-apps)).
 - Mute is not synced: muting the output device keeps the PC silent and does not mute the headphones.
 
-**Remember Audio Device Volume** (on **Audio Devices**, for each device; on by default) saves each audio device's own volume and sets it again as soon as it connects, before any audio is sent, so one device's volume does not carry over to another. Turn it off for a device to let it start at its own last volume, which may be much louder than the volume used last time with A2DPWB (e.g., after using it with a phone). Updating from an earlier version turns it on once; a device it was turned off for keeps it off.
+Earlier versions let a device follow another output device's volume (in developer mode); that choice is no longer used.
+
+**Remember the Bluetooth Audio Device's Last Volume Level** (on **Audio Devices**, for every device; on by default) saves each audio device's own volume and sets it again as soon as it connects, before any audio is sent, so one device's volume does not carry over to another. Turn it off to let each device start at its own last volume, which may be much louder than the volume used last time with A2DPWB (e.g., after using it with a phone).
 
 ### Headphone buttons {#headphone-buttons}
 
@@ -282,7 +278,7 @@ A system-wide effects app (an equalizer, a sound enhancer, a virtual surround ap
 
 In Application mode, the effects app's output device can be any device: A2DPWB takes what the app plays, not what the device plays, so the device is only somewhere for the audio to go. So that the PC does not play the audio at the same time, choose an output nobody listens to (e.g., a monitor's HDMI audio) or mute that device's master volume. A virtual device such as VB-CABLE also works as a silent place to send it, but it is not required. The device must be enabled and connected.
 
-If the effects app's own virtual device is the Windows default output device, its volume also lowers what the effects app receives. With **Windows Volume Sync** on Auto, a volume change then applies twice (on the effects app's input and on the headphones). Set it to Off for that device, and use the headphones' volume or the **Volume** slider.
+If the effects app's own virtual device is the Windows default output device, its volume also lowers what the effects app receives. With **Windows Volume Sync** on, a volume change then applies twice (on the effects app's input and on the headphones). Turn it off, and use the headphones' volume or the **Volume** slider.
 
 #### Why A2DPWB has no virtual output device of its own {#no-virtual-device}
 
@@ -407,7 +403,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Max Media Packet Size (per Device) {#max-packet}
 
-**Max media packet size** of each device (**Audio Devices**; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so audio devices that need a different value can have their own. The field is shown in developer mode (**Settings > Developer mode**), or while a device has a value other than 1023, so it can be set back; most users never need it. The audio device's own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. It was a profile setting before (under **Advanced**): a device keeps the value of the profile kept for it (see [Codecs](#codecs)); profiles saved by v1 before 1.1 take the value that was set globally then.
+**Max media packet size** of each device (**Developer** screen, one field per saved device; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so audio devices that need a different value can have their own. The Developer screen is shown in developer mode (**Settings > Developer mode**); most users never need it. The audio device's own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. It was a profile setting before (under **Advanced**): a device keeps the value of the profile kept for it (see [Codecs](#codecs)); profiles saved by v1 before 1.1 take the value that was set globally then.
 
 **1023 (default) is recommended.** It fits one Bluetooth baseband packet (3-DH5). Larger values save only 1-2% overhead, and each lost packet then loses more audio. 679 fits one 2-DH5 packet and is the minimum LDAC accepts.
 

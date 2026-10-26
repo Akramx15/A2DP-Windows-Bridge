@@ -47,16 +47,16 @@ El códec de cada dispositivo de audio guardado, una sección por dispositivo (n
 
 Los valores predeterminados dan el mejor sonido; la mayoría de los dispositivos no necesitan más que **Automático**. Un dispositivo LE Audio (experimental) tiene una tarjeta, LC3, y **Baja latencia para auriculares gaming (GMAP, experimental)** (consulte [LE Audio](#le-audio)).
 
-Por debajo, A2DPWB guarda un perfil por dispositivo («*dispositivo* | *códec*»), que es el que lista el menú de la bandeja. Las versiones anteriores permitían crear varios perfiles para un mismo dispositivo: en el primer inicio de una versión con la pantalla Códecs se conserva el último usado (si no, el primero) y los demás se integran en él, manteniendo sus ajustes de códec (calidad, frecuencia de muestreo, profundidad de bits, ABR, configuración SBC) para sus códecs. No se conservan sus nombres, orígenes de captura ni tamaños de paquete; el `profiles.json` tal como estaba se guarda una vez como `profiles-before-codecs.json` en la carpeta de configuración.
+Por debajo, A2DPWB guarda un perfil por dispositivo en `profiles.json`, llamado allí «*dispositivo* | *códec*»; la ventana y el menú de la bandeja muestran el nombre del dispositivo. Las versiones anteriores permitían crear varios perfiles para un mismo dispositivo: en el primer inicio de una versión con la pantalla Códecs se conserva el último usado (si no, el primero) y los demás se integran en él, manteniendo sus ajustes de códec (calidad, frecuencia de muestreo, profundidad de bits, ABR, configuración SBC) para sus códecs. No se conservan sus nombres, orígenes de captura ni tamaños de paquete; el `profiles.json` tal como estaba se guarda una vez como `profiles-before-codecs.json` en la carpeta de configuración.
 
 ### Dispositivos de audio
 
 Los auriculares y altavoces a los que A2DPWB puede transmitir, cada uno con sus propios ajustes: **Buscar dispositivos** busca dispositivos cercanos con el adaptador USB (unos 10 segundos; ponga los auriculares en modo de emparejamiento). Los dispositivos con los que A2DPWB ya se ha emparejado llevan la etiqueta **Emparejado**. Si la búsqueda no los encuentra, escriba la dirección en **Manual:** y haga clic en **Usar**; las direcciones escritas o pegadas se formatean mientras escribe (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` y `AA BB CC DD EE FF` se convierten todas en `AA:BB:CC:DD:EE:FF`). Un dispositivo guardado se puede renombrar o eliminar, y tiene:
 
-- **Origen de captura**: Loopback del sistema, Dispositivo virtual o Aplicación (consulte [Modos de captura](#capture-modes))
-- **Sincronizar volumen de Windows** (consulte [Volumen](#volume))
-- **Tamaño máx. de paquete multimedia (bytes)**, en modo de desarrollador (consulte [Tamaño máximo del paquete multimedia](#max-packet))
-- **Los botones del dispositivo de audio controlan la reproducción** y **Recordar el volumen del dispositivo de audio**
+- **Origen de captura**: Loopback del sistema (el predeterminado de un dispositivo nuevo), Dispositivo virtual o Aplicación (consulte [Modos de captura](#capture-modes))
+- **Cambiar automáticamente la salida predeterminada de Windows**, con un dispositivo virtual
+
+**Todos los dispositivos de audio**, encima de la lista, tiene los interruptores que se aplican a todos los dispositivos: **Sincronizar volumen de Windows** (consulte [Volumen](#volume)), **Control de reproducción con los botones del dispositivo de audio** y **Recordar el último volumen del dispositivo de audio Bluetooth**. El **Tamaño máx. de paquete multimedia** de cada dispositivo está en la pantalla **Desarrollador** (consulte [Tamaño máximo del paquete multimedia](#max-packet)).
 
 ### Diagnóstico
 
@@ -83,7 +83,7 @@ Con **Configuración > Modo de desarrollador**, Diagnóstico tiene además una p
 | Apariencia | Idioma, tema (Sistema / Claro / Oscuro) |
 | Inicio | **Iniciar con Windows** e **Iniciar en la bandeja** (consulte [Iniciar con Windows](#autostart)), **Minimizar en la bandeja del sistema** (consulte [Bandeja y panel desplegable](#tray)) |
 | Actualizaciones | **Buscar actualizaciones**, **Buscar actualizaciones al iniciar**, **Incluir versiones preliminares al buscar actualizaciones** (también ofrece versiones beta), **Actualizar ahora** (consulte [Actualizaciones](#updates)) |
-| Avanzado | **Modo de desarrollador** (añade la prueba con receptor a Diagnóstico, el **Tamaño máx. de paquete multimedia** a Dispositivos de audio y más detalles al registro; no requiere reiniciar), **Carpeta de configuración** con **Abrir carpeta de configuración**, **Ejecutar la configuración inicial** |
+| Avanzado | **Modo de desarrollador** (añade la pantalla **Desarrollador** con el **Tamaño máx. de paquete multimedia** de cada dispositivo, la prueba con receptor a Diagnóstico y más detalles al registro; no requiere reiniciar), **Carpeta de configuración** con **Abrir carpeta de configuración**, **Ejecutar la configuración inicial** |
 | Acerca de A2DPWB | Versión, licencia, licencias de terceros, **Salir de A2DPWB** |
 
 ### Configuración inicial
@@ -95,7 +95,7 @@ El primer inicio (aún sin perfil, o sin ningún adaptador con WinUSB) abre **Co
 A2DPWB sigue ejecutándose en la bandeja del sistema, con o sin la ventana:
 
 - **Clic izquierdo** en el icono de la bandeja abre el panel desplegable: el dispositivo y su estado, **Conectar** / **Desconectar**, el volumen, el selector de dispositivos, el códec, la calidad del enlace y **Abrir la aplicación**. Esc o un clic en otro sitio lo ocultan. Si un error requiere una pantalla de la ventana principal (Códecs, Dispositivos de audio, el adaptador), su botón abre la ventana en esa pantalla
-- **Clic derecho** abre el menú: **Abrir A2DPWB**, los 10 primeros dispositivos por su perfil, «*dispositivo* | *códec*» (el que transmite, marcado; haga clic en uno para conectarlo), **Desconectar** y **Salir**. El menú se abre al instante, sin iniciar la ventana
+- **Clic derecho** abre el menú: **Abrir A2DPWB**, los 10 primeros dispositivos por su nombre (una entrada LE Audio marcada con «(LE Audio)»; el que transmite, marcado; haga clic en uno para conectarlo), **Desconectar** y **Salir**. El menú se abre al instante, sin iniciar la ventana
 - La información sobre herramientas indica si A2DPWB está inactivo o transmitiendo
 
 Con **Configuración > Minimizar en la bandeja del sistema** activado (el valor predeterminado), minimizar o cerrar la ventana solo la oculta en la bandeja, y la transmisión continúa. Si está desactivado, la ventana se minimiza en la barra de tareas y cerrarla sale de A2DPWB. **Salir** en el menú de la bandeja o **Configuración > Salir de A2DPWB** detiene la transmisión, libera el adaptador y cierra A2DPWB por completo.
@@ -203,7 +203,7 @@ A2DPWB admite tres modos de captura de audio. Cada uno graba un punto distinto d
 | Dispositivo virtual | Lo que las aplicaciones reproducen en el dispositivo seleccionado (p. ej., VB-CABLE) |
 | Aplicación | Solo lo que reproduce una aplicación (y sus procesos secundarios), después del procesamiento propio de la aplicación. Requiere Windows 11 o Windows 10 versión 2004 (compilación 19041) o posterior |
 
-**Dispositivos de audio** muestra la misma explicación en **Origen de captura**.
+**Dispositivos de audio** muestra la misma explicación en **Origen de captura**. Un dispositivo nuevo captura con Loopback del sistema, que funciona sin instalar nada más; elija allí Dispositivo virtual o Aplicación para él.
 
 El Loopback del sistema copia el audio; no se lo quita al dispositivo de salida predeterminado. El audio sigue sonando en ese dispositivo (altavoces, un televisor HDMI, ...) además de en los auriculares Bluetooth. Para oírlo solo en los auriculares, use el modo Dispositivo virtual con un dispositivo que no reproduzca en ningún sitio, como VB-CABLE.
 
@@ -220,7 +220,7 @@ El modo Aplicación envía el audio de una aplicación, por ejemplo un reproduct
 
 - No es necesario que la aplicación esté en ejecución. A2DPWB se conecta igualmente a los auriculares y empieza a enviar en cuanto la aplicación se inicia. Si la aplicación se cierra durante la transmisión, A2DPWB sigue conectado y la vuelve a captar cuando se reinicia.
 - La aplicación sigue sonando también en su propio dispositivo de salida. Para oírla solo en los auriculares, silencie ese dispositivo de salida (su volumen maestro): esto no afecta a lo que captura A2DPWB. Pero no silencie la aplicación en el Mezclador de volumen de Windows, porque los auriculares también recibirían silencio.
-- El control deslizante de la aplicación en el Mezclador de volumen de Windows cambia el nivel enviado a los auriculares (y el de su dispositivo de salida). El volumen maestro y las teclas de volumen no cambian el audio enviado; con **Sincronizar volumen de Windows** del dispositivo en Automático, cambian en su lugar el volumen de los auriculares (consulte [Volumen](#volume)).
+- El control deslizante de la aplicación en el Mezclador de volumen de Windows cambia el nivel enviado a los auriculares (y el de su dispositivo de salida). El volumen maestro y las teclas de volumen no cambian el audio enviado; con **Sincronizar volumen de Windows** activado, cambian en su lugar el volumen de los auriculares (consulte [Volumen](#volume)).
 - Windows convierte el audio a la frecuencia de muestreo que pide A2DPWB, así que el formato del dispositivo en la configuración de Sonido no lo limita.
 - En Windows 10 anterior a la versión 2004 (compilación 19041), Windows no permite capturar por aplicación. Al conectar un dispositivo configurado con captura de Aplicación se muestra entonces un error que pide otro origen de captura.
 
@@ -228,21 +228,17 @@ El modo Aplicación envía el audio de una aplicación, por ejemplo un reproduct
 
 Durante la transmisión, Inicio y el panel desplegable de la bandeja muestran un control deslizante **Volumen** cuando los auriculares admiten el volumen absoluto de AVRCP. Ajusta el volumen en los propios auriculares, de modo que el audio enviado conserva toda su resolución. El control deslizante también sigue los botones de volumen y los controles táctiles de los auriculares.
 
-**Sincronizar volumen de Windows** (un ajuste del dispositivo en **Dispositivos de audio**) hace que un volumen de Windows y el volumen de los auriculares sean uno solo durante la transmisión:
-
-| Opción | Volumen de Windows sincronizado |
-|:-------|:----------------------|
-| Automático (predeterminado) | El dispositivo que captura A2DPWB: el dispositivo de salida predeterminado en los modos Loopback del sistema y Aplicación, el dispositivo seleccionado en el modo Dispositivo virtual |
-| Desactivado | Ninguno: el volumen de Windows y el de los auriculares son independientes |
-| Un dispositivo de salida | El volumen de ese dispositivo |
+**Sincronizar volumen de Windows** (en **Dispositivos de audio**, para todos los dispositivos; activado de forma predeterminada) hace que un volumen de Windows y el volumen de los auriculares sean uno solo durante la transmisión. El volumen de Windows sincronizado es el del dispositivo que captura A2DPWB: el dispositivo de salida predeterminado en los modos Loopback del sistema y Aplicación, el dispositivo seleccionado en el modo Dispositivo virtual. Desactivado, el volumen de Windows y el de los auriculares son independientes.
 
 - Los botones y gestos de volumen de los auriculares, y el control deslizante **Volumen**, mueven el volumen de Windows sincronizado, y su control deslizante en la configuración de Sonido mueve el volumen de los auriculares.
-- Las teclas de volumen y el control flotante de volumen de Windows siempre actúan sobre el dispositivo de salida predeterminado, así que solo cambian el volumen de los auriculares cuando el dispositivo de salida predeterminado es el sincronizado (como con Automático, salvo en el modo Dispositivo virtual sin **Cambiar dispositivo predeterminado**).
+- Las teclas de volumen y el control flotante de volumen de Windows siempre actúan sobre el dispositivo de salida predeterminado, así que solo cambian el volumen de los auriculares cuando el dispositivo de salida predeterminado es el sincronizado (siempre, salvo en el modo Dispositivo virtual sin **Cambiar dispositivo predeterminado**).
 - Al iniciar la transmisión, el volumen de Windows pasa a ser el de los auriculares; al detenerla, el dispositivo recupera el volumen que tenía antes.
-- Con Automático, el audio se captura antes de aplicar el volumen de Windows, por lo que se reduce una sola vez, en los auriculares. Si el volumen sincronizado también cambia el audio capturado, el volumen se aplica dos veces: en ese caso elija Desactivado (consulte [Aplicaciones de efectos para todo el sistema](#effects-apps)).
+- El audio se captura antes de aplicar el volumen de Windows, por lo que se reduce una sola vez, en los auriculares. Si el volumen sincronizado también cambia el audio capturado, el volumen se aplica dos veces: en ese caso desactive la sincronización (consulte [Aplicaciones de efectos para todo el sistema](#effects-apps)).
 - El silencio no se sincroniza: silenciar el dispositivo de salida deja el PC en silencio, pero no silencia los auriculares.
 
-**Recordar el volumen del dispositivo de audio** (en **Dispositivos de audio**, para cada dispositivo; activado de forma predeterminada) guarda el volumen propio de cada dispositivo de audio y lo vuelve a aplicar en cuanto se conecta, antes de enviar audio, así que el volumen de un dispositivo no pasa a otro. Desactívelo para un dispositivo si quiere que empiece con su propio último volumen, que puede ser mucho más alto que el usado la última vez con A2DPWB (p. ej., después de usarlo con un teléfono). Al actualizar desde una versión anterior se activa una vez; un dispositivo para el que se había desactivado lo mantiene desactivado.
+Las versiones anteriores permitían que un dispositivo siguiera el volumen de otro dispositivo de salida (en modo de desarrollador); esa opción ya no se usa.
+
+**Recordar el último volumen del dispositivo de audio Bluetooth** (en **Dispositivos de audio**, para todos los dispositivos; activado de forma predeterminada) guarda el volumen propio de cada dispositivo de audio y lo vuelve a aplicar en cuanto se conecta, antes de enviar audio, así que el volumen de un dispositivo no pasa a otro. Desactívelo si quiere que cada dispositivo empiece con su propio último volumen, que puede ser mucho más alto que el usado la última vez con A2DPWB (p. ej., después de usarlo con un teléfono).
 
 ### Botones de los auriculares {#headphone-buttons}
 
@@ -268,7 +264,7 @@ Una aplicación de efectos para todo el sistema (un ecualizador, un potenciador 
 
 En el modo Aplicación, el dispositivo de salida de la aplicación de efectos puede ser cualquiera: A2DPWB toma lo que reproduce la aplicación, no lo que reproduce el dispositivo, así que el dispositivo solo es un destino para el audio. Para que el PC no reproduzca el audio al mismo tiempo, elija una salida que nadie escuche (p. ej., el audio HDMI de un monitor) o silencie el volumen maestro de ese dispositivo. Un dispositivo virtual como VB-CABLE también sirve como destino silencioso, pero no es necesario. El dispositivo debe estar habilitado y conectado.
 
-Si el dispositivo virtual propio de la aplicación de efectos es el dispositivo de salida predeterminado de Windows, su volumen también reduce lo que recibe la aplicación de efectos. Con **Sincronizar volumen de Windows** en Automático, un cambio de volumen se aplica entonces dos veces (en la entrada de la aplicación de efectos y en los auriculares). Póngalo en Desactivado para ese dispositivo y use el volumen de los auriculares o el control deslizante **Volumen**.
+Si el dispositivo virtual propio de la aplicación de efectos es el dispositivo de salida predeterminado de Windows, su volumen también reduce lo que recibe la aplicación de efectos. Con **Sincronizar volumen de Windows** activado, un cambio de volumen se aplica entonces dos veces (en la entrada de la aplicación de efectos y en los auriculares). Desactívelo y use el volumen de los auriculares o el control deslizante **Volumen**.
 
 #### Por qué A2DPWB no tiene su propio dispositivo de salida virtual {#no-virtual-device}
 
@@ -396,7 +392,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Tamaño máximo del paquete multimedia (por dispositivo) {#max-packet}
 
-**Tamaño máx. de paquete multimedia** de cada dispositivo (**Dispositivos de audio**; CLI: `--max-packet <bytes>`) fija el límite superior de los datos de audio de cada paquete Bluetooth, de 679 a 1679 bytes, para que los dispositivos de audio que necesitan otro valor puedan tener el suyo. El campo se muestra en modo de desarrollador (**Configuración > Modo de desarrollador**), o mientras un dispositivo tenga un valor distinto de 1023, para poder restablecerlo; la mayoría de los usuarios nunca lo necesita. El límite propio del dispositivo de audio (MTU) también se aplica siempre; A2DPWB usa el menor de los dos. El cambio se aplica a partir de la siguiente conexión. Antes era un ajuste del perfil (en **Avanzado**): un dispositivo conserva el valor del perfil que se mantuvo (consulte [Códecs](#codecs)); los perfiles guardados por la v1 anterior a la 1.1 toman el valor que entonces se configuraba de forma global.
+**Tamaño máx. de paquete multimedia** de cada dispositivo (pantalla **Desarrollador**, un campo por dispositivo guardado; CLI: `--max-packet <bytes>`) fija el límite superior de los datos de audio de cada paquete Bluetooth, de 679 a 1679 bytes, para que los dispositivos de audio que necesitan otro valor puedan tener el suyo. La pantalla Desarrollador se muestra en modo de desarrollador (**Configuración > Modo de desarrollador**); la mayoría de los usuarios nunca lo necesita. El límite propio del dispositivo de audio (MTU) también se aplica siempre; A2DPWB usa el menor de los dos. El cambio se aplica a partir de la siguiente conexión. Antes era un ajuste del perfil (en **Avanzado**): un dispositivo conserva el valor del perfil que se mantuvo (consulte [Códecs](#codecs)); los perfiles guardados por la v1 anterior a la 1.1 toman el valor que entonces se configuraba de forma global.
 
 **Se recomienda 1023 (predeterminado).** Cabe en un paquete de banda base Bluetooth (3-DH5). Los valores mayores solo ahorran un 1-2 % de sobrecarga, y cada paquete perdido supone entonces perder más audio. 679 cabe en un paquete 2-DH5 y es el mínimo que acepta LDAC.
 
