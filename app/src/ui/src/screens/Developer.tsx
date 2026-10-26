@@ -1,10 +1,12 @@
 // Developer (shown while developer mode is on): the peer receiver test,
 // overrides of the codec and the media path for finding out why a sink stays
-// silent (issue #87; read when the next stream is set up), and how the core
+// silent (issue #87; read when the next stream is set up), each saved
+// device's max media packet size (issue #86), and how the core
 // logs: retention, the daily size cap, verbose logging that stays on, the
 // stream health line every interval (issue #84) and marker lines.
 
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
+import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Select, Toggle } from "../components/controls";
@@ -12,6 +14,8 @@ import { Icon } from "../components/Icon";
 import type { IconName } from "../components/icons";
 import { t } from "../i18n";
 import type { DevLog, DevOverrides, LogLevel } from "../ipc/types";
+import { PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "../lib/codecs";
+import { audioEntries, entryByKey, normalizeProfile, profilesOf } from "../lib/profile";
 import { ReceiverTest } from "./ReceiverTest";
 
 type Tab = "receiver" | "overrides" | "logging";
@@ -123,6 +127,7 @@ function Overrides(props: { value: DevOverrides; save: (v: DevOverrides) => Prom
           onChange={(v) => set({ packet_dump: v })}
         />
       </Section>
+      <PacketSizes />
       <Section title="AAC">
         <Toggle
           label={t("ui.dev.aac_latm_v0")}
@@ -176,7 +181,90 @@ function Overrides(props: { value: DevOverrides; save: (v: DevOverrides) => Prom
   );
 }
 
-const DEFAULT_LOG: DevLog = { keep_days: 7, day_cap_mb: 100, always_verbose: null, health_every_interval: false };
+/**
+ * The max media packet size of each saved device (issue #86: not one for
+ * end users, so here and not in the device's settings). Kept in the
+ * device's profiles, as the core reads it from the one it streams; LE Audio
+ * sends no A2DP packets.
+ */
+function PacketSizes() {
+  const app = useApp();
+  const snap = () => app.core.state.snap!;
+  const entries = () => audioEntries(snap()).filter((e) => !e.le_audio && e.profile);
+  // Keyed by the entry, so a field keeps what is typed across updates
+  const keys = createMemo(() => entries().map((e) => e.key));
+  const save = async (address: string, v: number) => {
+    for (const p of profilesOf(snap().profiles, address)) {
+      if (p.le_audio || p.max_media_payload === v) continue;
+      const profile = normalizeProfile({ ...structuredClone(unwrap(p)), max_media_payload: v });
+      if (!(await app.run(() => app.core.request("profile.save", { profile, original_name: p.name })))) break;
+    }
+  };
+  return (
+    <Show when={keys().length > 0}>
+      <Section title={t("advanced.max_packet")}>
+        <p class="hint">{t("advanced.max_packet_help", PACKET_MIN, PACKET_MAX, PACKET_DEFAULT)}</p>
+        <For each={keys()}>
+          {(key) => {
+            const e = entryByKey(entries, key);
+            return (
+              <PacketSize
+                label={e().name || e().address}
+                value={e().profile?.max_media_payload ?? PACKET_DEFAULT}
+                onChange={(v) => void save(e().address, v)}
+              />
+            );
+          }}
+        </For>
+      </Section>
+    </Show>
+  );
+}
+
+/** One device's max media packet size: saved when a valid value is left or
+ *  the recommended one chosen */
+function PacketSize(props: { label: string; value: number; onChange: (v: number) => void }) {
+  const [text, setText] = createSignal<string | null>(null);
+  createEffect(on(() => props.value, () => setText(null), { defer: true }));
+  const shown = () => text() ?? String(props.value);
+  const valid = (s: string) => {
+    const n = Number(s);
+    return Number.isInteger(n) && n >= PACKET_MIN && n <= PACKET_MAX;
+  };
+  const commit = () => {
+    const s = text();
+    if (s === null || !valid(s)) return;
+    if (Number(s) !== props.value) props.onChange(Number(s));
+  };
+  return (
+    <Field label={props.label} error={text() !== null && !valid(text()!) ? t("ui.profile.err_packet", PACKET_MIN, PACKET_MAX) : null}>
+      {(id, described) => (
+        <div class="inline">
+          <input
+            id={id}
+            class="input num narrow"
+            type="number"
+            inputmode="numeric"
+            min={PACKET_MIN}
+            max={PACKET_MAX}
+            step="1"
+            value={shown()}
+            aria-describedby={described}
+            aria-invalid={text() !== null && !valid(text()!) ? "true" : undefined}
+            onInput={(e) => setText(e.currentTarget.value)}
+            onChange={commit}
+            onKeyDown={(e) => e.key === "Enter" && commit()}
+          />
+          <Button kind="subtle" disabled={props.value === PACKET_DEFAULT && text() === null} onClick={() => props.onChange(PACKET_DEFAULT)}>
+            {t("advanced.max_packet_recommended", PACKET_DEFAULT)}
+          </Button>
+        </div>
+      )}
+    </Field>
+  );
+}
+
+const DEFAULT_LOG: DevLog ={ keep_days: 7, day_cap_mb: 100, always_verbose: null, health_every_interval: false };
 
 /** A whole number in min..=max from a field; the fallback when it is not one */
 function clampInt(text: string, min: number, max: number, fallback: number): number {

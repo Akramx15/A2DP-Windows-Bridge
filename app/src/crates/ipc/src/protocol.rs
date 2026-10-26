@@ -432,9 +432,8 @@ pub struct Profile {
     pub auto_switch_device: bool,
     pub app_exe: String,
     pub app_name: String,
-    /// auto, device (the Windows volume of volume_device_id; set in
-    /// developer mode); "off" from before Settings.volume_sync counts as
-    /// auto. Only while Settings.volume_sync is on.
+    /// auto, off, device: kept as saved, but not used (issue #86): streams
+    /// follow Settings.volume_sync alone.
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
@@ -580,9 +579,8 @@ pub struct Settings {
     pub remember_volume: bool,
     /// Windows Volume Sync for every device (on by default): the audio
     /// device's volume and the captured device's Windows volume follow each
-    /// other; a profile can follow another device instead (its volume_sync
-    /// "device", set in developer mode). Off: no stream syncs. A change
-    /// starts the profile in use again.
+    /// other. Off: no stream syncs. A change starts the profile in use
+    /// again.
     #[serde(default = "yes")]
     pub volume_sync: bool,
     /// Developer mode: receiver test, HCI capture, debug details

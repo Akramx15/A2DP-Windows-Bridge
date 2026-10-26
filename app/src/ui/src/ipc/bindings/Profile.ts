@@ -26,9 +26,8 @@ bit_depth: number,
  */
 capture_mode: string, audio_device_id: string, audio_device_name: string, auto_switch_device: boolean, app_exe: string, app_name: string, 
 /**
- * auto, device (the Windows volume of volume_device_id; set in
- * developer mode); "off" from before Settings.volume_sync counts as
- * auto. Only while Settings.volume_sync is on.
+ * auto, off, device: kept as saved, but not used (issue #86): streams
+ * follow Settings.volume_sync alone.
  */
 volume_sync: string, volume_device_id: string, volume_device_name: string, max_media_payload: number, 
 /**

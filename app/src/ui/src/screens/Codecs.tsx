@@ -29,7 +29,6 @@ import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
 import { Banner, Button, Check, Dialog, Toggle } from "../components/controls";
-import { audioDevices } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
@@ -80,11 +79,9 @@ async function saveEntry(
   entry: AudioEntry,
   edit: (p: Profile) => Profile,
 ): Promise<string | null> {
-  // A device's first profile captures from a virtual device if one is installed
-  const devices = entry.profile ? [] : await audioDevices(app);
   const snap = app.core.state.snap!;
   const cur = entry.profile ? structuredClone(unwrap(entry.profile)) : null;
-  const next = edit(cur ?? entryBase(entry, snap.profiles, devices));
+  const next = edit(cur ?? entryBase(entry, snap.profiles));
   const taken = snap.profiles.map((p) => p.name).filter((n) => n !== cur?.name);
   next.name = followedName(next, entry.le_audio ? "" : t(codecSpec(next.codec).label), taken);
   if (cur && JSON.stringify(next) === JSON.stringify(cur)) return cur.name;

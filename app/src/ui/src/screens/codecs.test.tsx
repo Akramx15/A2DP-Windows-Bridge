@@ -721,6 +721,8 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const warning = entry.querySelector(".field-error")!;
     expect(warning).toHaveTextContent(t("capture.device_format", 48000, 32));
     expect(warning).toHaveTextContent(t("ui.profile.format_differs", t("connection.sample_rate")));
+    // The device, not its profile by name (issue #86)
+    expect(warning).not.toHaveTextContent("WH-1000XM5 (LDAC)");
   });
 
   it("lists System Loopback, the virtual devices and the playing apps in one list", async () => {
@@ -766,11 +768,10 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const entry = await deviceEntry(/moto buds\+/);
     const select = within(entry).getByLabelText(t("capture.mode"));
     await within(select).findByRole("option", { name: "Spotify" });
-    // None chosen yet: the installed VB-Audio cable, not System Loopback
-    // (issue #86); the source it has already: nothing to save
-    const cable = "virtual:{0.0.0.00000000}.{cable}";
-    await waitFor(() => expect(select).toHaveValue(cable));
-    fireEvent.change(select, { target: { value: cable } });
+    // None chosen yet: System Loopback, though a VB-Audio cable is
+    // installed (issue #86); the source it has already: nothing to save
+    await waitFor(() => expect(select).toHaveValue("loopback"));
+    fireEvent.change(select, { target: { value: "loopback" } });
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
     fireEvent.change(select, { target: { value: "app:spotify.exe" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
@@ -814,23 +815,13 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(screen.queryByRole("switch", named("settings.media_keys"))).toBeNull();
   });
 
-  it("lets a device follow another device's volume only in developer mode", async () => {
-    const { calls, core } = start("#/devices");
+  it("has no Volume Sync or packet size of its own, developer mode or not (issue #86)", async () => {
+    const { core } = start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
-    expect(within(entry).queryByLabelText(t("capture.volume_sync"))).toBeNull();
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
-    const select = await within(entry).findByLabelText(t("capture.volume_sync"));
-    expect(select).toHaveValue("auto");
-    const speakers = "{0.0.0.00000000}.{speakers}";
-    await within(select).findByRole("option", { name: "Speakers (Realtek(R) Audio)" });
-    // Off and On are the switch for every device: here the captured device,
-    // or one of Windows' devices
-    const options = within(select).getAllByRole("option");
-    expect(options[0]).toHaveTextContent(t("capture.volume_sync_captured"));
-    expect(options.map((o) => (o as HTMLOptionElement).value).filter((v) => !v.startsWith("device:"))).toEqual(["auto"]);
-    fireEvent.change(select, { target: { value: `device:${speakers}` } });
-    await waitFor(() => expect(saves(calls).length).toBeGreaterThan(0));
-    expect(saves(calls)[0].profile).toMatchObject({ volume_sync: "device", volume_device_id: speakers });
+    await within(entry).findByLabelText(t("capture.mode"));
+    expect(within(entry).queryByLabelText(t("capture.volume_sync"))).toBeNull();
+    expect(within(entry).queryByLabelText(t("advanced.max_packet"))).toBeNull();
   });
 
   it("says what application capture needs when the Windows build is not known", async () => {
@@ -860,33 +851,27 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
   });
 });
 
-describe("the max media packet size (the device's since issue #86)", () => {
-  it("is shown only in developer mode while it has the recommended size", async () => {
-    const { core } = start("#/devices");
-    const entry = await deviceEntry(/WH-1000XM5/);
-    expect(within(entry).queryByLabelText(t("advanced.max_packet"))).toBeNull();
-    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
-    expect(await within(entry).findByLabelText(t("advanced.max_packet"))).toHaveValue(1023);
-  });
-
-  it("is checked, then saved into the device's profile", async () => {
+describe("the max media packet size (each device's, on the Developer page since issue #86)", () => {
+  it("is listed per saved device, checked, then saved into the device's profile", async () => {
     const { calls, core } = start("#/devices");
-    const entry = await deviceEntry(/WH-1000XM5/);
+    await deviceEntry(/WH-1000XM5/);
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
-    const packet = await within(entry).findByLabelText(t("advanced.max_packet"));
+    location.hash = "#/developer";
+    const section = await screen.findByRole("region", { name: t("advanced.max_packet") });
+    // By the device's name, not its profile's
+    const packet = within(section).getByLabelText("WH-1000XM5");
+    expect(within(section).queryByLabelText("WH-1000XM5 (LDAC)")).toBeNull();
     expect(packet).toHaveValue(1023);
     fireEvent.input(packet, { target: { value: "2000" } });
     fireEvent.change(packet, { target: { value: "2000" } });
-    expect(await within(entry).findByText(t("ui.profile.err_packet", 679, 1679))).toBeInTheDocument();
+    expect(await within(section).findByText(t("ui.profile.err_packet", 679, 1679))).toBeInTheDocument();
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
     fireEvent.input(packet, { target: { value: "800" } });
     fireEvent.change(packet, { target: { value: "800" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0].profile).toMatchObject({ name: "WH-1000XM5 (LDAC)", max_media_payload: 800 });
-    // A size changed earlier stays in sight without developer mode, so it can be set back
-    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: false } });
-    expect(await within(entry).findByLabelText(t("advanced.max_packet"))).toHaveValue(800);
-    // Not on the Codecs screen any more
+    await waitFor(() => expect(within(section).getByLabelText("WH-1000XM5")).toHaveValue(800));
+    // Not on the Codecs screen
     location.hash = "#/codecs";
     await screen.findByRole("heading", { level: 1, name: t("ui.nav.codecs") });
     expect(screen.queryByLabelText(t("advanced.max_packet"))).toBeNull();

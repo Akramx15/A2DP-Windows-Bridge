@@ -66,11 +66,19 @@ fn battery_low_alert(warned: &mut bool, level: u8) -> bool {
 
 /// The streamed profile's device: its name, else its address
 fn streamed_device(s: &Snapshot) -> Option<&str> {
-    s.stream
-        .profile
-        .as_ref()
-        .and_then(|n| s.profiles.iter().find(|p| &p.name == n))
-        .map(|p| if p.device_name.is_empty() { p.device_address.as_str() } else { p.device_name.as_str() })
+    s.stream.profile.as_ref().and_then(|n| s.profiles.iter().find(|p| &p.name == n)).map(|p| device_name(&s.devices, p))
+}
+
+/// What users call a profile (issue #86: never its own name): its saved
+/// device's name (renamed after the profile was made, too), else the name
+/// the profile kept, else the address
+fn device_name<'a>(devices: &'a [Device], p: &'a Profile) -> &'a str {
+    devices
+        .iter()
+        .find(|d| d.saved && d.le_audio == p.le_audio && d.address.eq_ignore_ascii_case(&p.device_address))
+        .map(|d| d.name.as_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or(if p.device_name.is_empty() { p.device_address.as_str() } else { p.device_name.as_str() })
 }
 
 /// What the tray shows
@@ -79,6 +87,9 @@ pub struct TrayView {
     pub streaming: bool,
     pub tooltip: String,
     pub profiles: Vec<String>,
+    /// The menu's item for each of `profiles`: its device, as the flyout
+    /// lists it
+    pub labels: Vec<String>,
     pub active_profile: Option<String>,
     pub language: String,
 }
@@ -758,16 +769,13 @@ pub fn custom_request(c: &CustomStream, legacy_max_media_payload: u16) -> Result
     Ok(req)
 }
 
-/// A profile's Windows Volume Sync under the setting for every device
-/// (issue #86): off, none; on, the device the profile follows (set in
-/// developer mode), else the captured device (Auto). A profile's own "off"
-/// from before that setting no longer counts.
-fn effective_volume_sync(global: bool, profile: VolumeSync) -> VolumeSync {
-    match profile {
-        _ if !global => VolumeSync::Off,
-        VolumeSync::Device(id) => VolumeSync::Device(id),
-        _ => VolumeSync::Auto,
-    }
+/// A profile's Windows Volume Sync: the setting for every device alone
+/// (issue #86), on the captured device (Auto). A profile's own "off" from
+/// before that setting, or a device it followed (once set in developer
+/// mode), stays in the file but no longer counts: no screen shows or
+/// resets it.
+fn effective_volume_sync(global: bool, _profile: VolumeSync) -> VolumeSync {
+    if global { VolumeSync::Auto } else { VolumeSync::Off }
 }
 
 /// HKCU Run value of v2: the resident core, which opens the UI unless
@@ -859,6 +867,12 @@ fn tray_tooltip(base: &str, device: Option<&str>, lines: &[String]) -> String {
         t.push_str(l);
     }
     t
+}
+
+/// A tray menu item: the device, its LE Audio entry tagged as in the
+/// flyout ("WF-1000XM5 (LE Audio)")
+fn tray_label(device: &str, le_audio: bool, le_tag: &str) -> String {
+    if le_audio { format!("{device} ({le_tag})") } else { device.to_string() }
 }
 
 /// A saved profile is the one streaming or connecting (under its name before
@@ -1064,10 +1078,13 @@ impl CoreState {
         } else {
             base
         };
+        let le = a2dpwb_core::messages::translate(&lang, "device.tag_le_audio", "LE Audio");
+        let labels = s.profiles.iter().map(|p| tray_label(device_name(&s.devices, p), p.le_audio, &le)).collect();
         (self.tray)(TrayView {
             streaming,
             tooltip,
             profiles: s.profiles.iter().map(|p| p.name.clone()).collect(),
+            labels,
             active_profile: s.active_profile.clone(),
             language: lang,
         });
@@ -2156,6 +2173,39 @@ mod tests {
     }
 
     #[test]
+    fn the_tray_menu_names_devices_not_profiles() {
+        let saved = |name: &str, le_audio| Device {
+            address: "aa:bb:cc:dd:ee:ff".into(),
+            name: name.into(),
+            saved: true,
+            audio: true,
+            rssi: None,
+            codecs: Vec::new(),
+            sbc: None,
+            codec_caps: Vec::new(),
+            le_audio,
+            le_audio_set: false,
+        };
+        let core = CoreProfile {
+            name: "EarFun Air Pro 4+ | aptX Adaptive".into(),
+            device_address: "AA:BB:CC:DD:EE:FF".into(),
+            device_name: "EarFun".into(),
+            ..CoreProfile::default()
+        };
+        let p = to_ipc_profile(&core, 679);
+        // The saved device's name (renamed since), else the profile's, else the address
+        assert_eq!(
+            device_name(&[saved("Air Pro 4+", true), saved("Air Pro 4+ (renamed)", false)], &p),
+            "Air Pro 4+ (renamed)"
+        );
+        assert_eq!(device_name(&[], &p), "EarFun");
+        let unnamed = to_ipc_profile(&CoreProfile { device_name: String::new(), ..core }, 679);
+        assert_eq!(device_name(&[], &unnamed), "AA:BB:CC:DD:EE:FF");
+        assert_eq!(tray_label("Air Pro 4+", true, "LE Audio"), "Air Pro 4+ (LE Audio)");
+        assert_eq!(tray_label("Air Pro 4+", false, "LE Audio"), "Air Pro 4+");
+    }
+
+    #[test]
     fn saving_the_profile_in_use_restarts_it() {
         let status = |state, profile: Option<&str>| StreamStatus {
             state,
@@ -2600,10 +2650,10 @@ mod tests {
         for p in [VolumeSync::Auto, VolumeSync::Off, dev()] {
             assert_eq!(effective_volume_sync(false, p), VolumeSync::Off);
         }
-        // On: a profile's old "off" no longer counts; a followed device does
-        assert_eq!(effective_volume_sync(true, VolumeSync::Off), VolumeSync::Auto);
-        assert_eq!(effective_volume_sync(true, VolumeSync::Auto), VolumeSync::Auto);
-        assert_eq!(effective_volume_sync(true, dev()), dev());
+        // On: neither a profile's old "off" nor a device it followed counts
+        for p in [VolumeSync::Auto, VolumeSync::Off, dev()] {
+            assert_eq!(effective_volume_sync(true, p), VolumeSync::Auto);
+        }
     }
 
     #[test]
