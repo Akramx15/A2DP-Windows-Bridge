@@ -281,8 +281,18 @@ result. Listing adapters and their driver needs no elevation.
   every device, settings.json's `auto_order`, now ignored.)
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
   advertises; WASAPI resamples the capture); aptX Adaptive uses 48 kHz, or
-  96 kHz when the profile asks for it in High / Standard / Mobile and the sink
-  is R2 and lists 96 kHz
+  96 kHz when the developer override `aptxad_96k` is on (Developer > aptX
+  Adaptive at 96 kHz, CLI `--aptxad-96k`; off by default since issue #86),
+  96 kHz is chosen or Auto-select is on, the quality is High and the sink is
+  R2 and lists 96 kHz
+- Maps the profile's quality to the ones the codec offers
+  (`Quality::for_codec`, issue #86): LDAC and LHDC V5 High / Medium
+  (`sq`) / Low (`mq`), aptX Adaptive High / Low Latency, every other codec
+  High (its highest bit rate the device takes); a quality saved before, such
+  as LHDC V5's Medium-High, runs as High
+- Records what each codec the device offered lists (`KnownCodecs.caps`:
+  sample rates, bit depths, maximum bit rate; `RemoteCaps::listed_*`), so the
+  codec settings offer only those; SBC's bitpool range was already recorded
 
 ### Bluetooth host (`bt-host`)
 
@@ -329,14 +339,14 @@ Captures audio in real time using the Windows Audio Session API.
 
 | Encoder | Library | Bitrate | Features |
 |---------|---------|---------|----------|
-| LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/900/1000 kbps, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
-| LDAC | libldac (AOSP) | 330/660/990 kbps | HQ/SQ/MQ modes, ABR |
-| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | R1 sinks: 427/364/318 kbps (High/Standard/Mobile), 265 kbps Low Latency; R2 sinks: 427/270/204, 270 kbps | 48 kHz stereo (96 kHz in HQ to an R2 sink that lists it, when asked for: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; Auto takes it after LHDC V5 and LDAC |
-| Opus | libopus 1.5.2 | 128/192/256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
+| LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/1000 kbps (Low/Medium/High; 900 kbps Medium-High no longer offered), at most the sink's listed maximum, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
+| LDAC | libldac (AOSP) | 330/660/990 kbps | High/Medium/Low (HQ/SQ/MQ) modes, ABR |
+| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | 427 kbps High, 265 kbps Low Latency (R2 sinks: 270); ABR steps down to 364/318 (R2: 270/204) | 48 kHz stereo (96 kHz in High to an R2 sink that lists it, only with the `aptxad_96k` override: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; Auto takes it after LHDC V5 and LDAC |
+| Opus | libopus 1.5.2 | 256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
 | aptX HD | libopenaptx | 576 kbps | 24-bit input, fixed rate, RTP header |
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit stereo, no RTP header |
 | aptX LL | libopenaptx | 352 kbps | ~32 ms latency, no RTP header, packets ≤ ~7.5 ms |
-| AAC | fdk-aac | up to 256 kbps | AAC-LC, LATM transport |
+| AAC | fdk-aac | up to 256 kbps (at most the sink's listed bit rate) | AAC-LC, LATM transport |
 | SBC XQ | the same SBC encoder | ~385/505/552 kbps | Dual channel, bitpool 47 / 43 at 44.1 / 48 kHz (High); only when the sink's SBC allows dual channel and a bitpool of at least 29 (the bitpool is then capped at the sink's maximum, as PipeWire); shares SBC's stream endpoint, media payload header and RTP header |
 | SBC | Rust port of the Bluedroid encoder | up to ~345 kbps | Mandatory A2DP baseline; bit-exact with the C encoder (tested over all configurations) |
 | FastStream | the same SBC encoder | 198/216 kbps (44.1/48 kHz) | CSR vendor codec, music direction only (no voice backchannel): SBC joint stereo bitpool 29, frames padded to 72 bytes, 3 per packet, no media payload header and no RTP header (as PipeWire); never chosen by Auto |
@@ -454,4 +464,4 @@ formats as v1:
   dedicated USB adapter for A2DPWB
 - Some Bluetooth adapters' firmware limits achievable bitrate
 - USB Bluetooth 5.0+ adapters generally work well for LDAC
-- Auto codec selection priority (by sound quality, issue #86): LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream and Opus 05 only when chosen); a chosen codec the device does not offer falls back down this list
+- Auto codec selection priority (by sound quality, issue #86): LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream and Opus 05 only when chosen); a chosen codec the device does not offer falls back to the first one in the device's order it offers

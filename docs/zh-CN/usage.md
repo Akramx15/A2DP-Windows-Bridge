@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (experimental; to PipeWire sinks)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 for 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 for 96 kHz)
 ```
 
 自动选择的优先级：LHDC V5 > LDAC > aptX Adaptive > Opus（实验性）> aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 和 Opus 05 均为实验性，仅在明确选择时使用）
@@ -143,8 +143,8 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
-# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+# LHDC V5: hq 1000 / sq 500 / mq 400 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q sq   # 500 kbps
 
 # aptX Adaptive: hq 427 / sq 364 / mq 318 / ll 265 kbps (R1 sinks)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Low Latency
@@ -175,7 +175,7 @@ a2dpwb-core.exe --cli --scan
 |:-------|:------------|
 | `-d <addr>` | 耳机 / 接收器的 Bluetooth 地址（`AA:BB:CC:DD:EE:FF`） |
 | `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`lhdcv5`、`opus`、`opus05`、`aptxad`、`auto`（默认：`auto`） |
-| `-q <mode>` | 音质：`hq`（默认）、`sq`、`mq`；LHDC V5 另有 `mhq`（900 kbps）；aptX Adaptive 另有 `ll`（低延迟；其他编解码器视为 `hq`） |
+| `-q <mode>` | 音质：`hq`（默认）、`sq`、`mq`；aptX Adaptive 另有 `ll`（低延迟；其他编解码器视为 `hq`） |
 | `-a` | ABR（LDAC、LHDC V5 和 aptX Adaptive） |
 | `--no-experimental` | 从不使用实验性编解码器（aptX HD、aptX LL、Opus、Opus 05、FastStream），与关闭 **编解码器 > 启用实验性编解码器** 相同 |
 | `-m <mode>` | 捕获模式：`loopback`（默认）、`virtual`、`app` |

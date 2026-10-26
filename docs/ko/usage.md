@@ -128,7 +128,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aac       # AAC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 for 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 for 96 kHz)
 ```
 
 자동 선택 우선순위: LHDC V5 > LDAC > aptX Adaptive > Opus (실험적) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream, Opus 05는 모두 실험적이며 직접 선택한 경우에만)
@@ -142,8 +142,8 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
-# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+# LHDC V5: hq 1000 / sq 500 / mq 400 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q sq   # 500 kbps
 
 # aptX Adaptive: hq 427 / sq 364 / mq 318 / ll 265 kbps (R1 sinks)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Low Latency
@@ -174,7 +174,7 @@ a2dpwb-core.exe --cli --scan
 |:-----|:-----|
 | `-d <addr>` | 헤드폰 / 수신기의 Bluetooth 주소 (`AA:BB:CC:DD:EE:FF`) |
 | `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `aptxad`, `auto` (기본값: `auto`) |
-| `-q <mode>` | 음질: `hq` (기본값), `sq`, `mq`; LHDC V5는 `mhq` (900 kbps)도 가능; aptX Adaptive는 `ll` (저지연, 다른 코덱은 `hq`로 처리)도 가능 |
+| `-q <mode>` | 음질: `hq` (기본값), `sq`, `mq`; aptX Adaptive는 `ll` (저지연, 다른 코덱은 `hq`로 처리)도 가능 |
 | `-a` | ABR (LDAC, LHDC V5, aptX Adaptive) |
 | `--no-experimental` | 실험적 코덱(aptX HD, aptX LL, Opus, Opus 05, FastStream)을 사용하지 않음. **코덱 > 실험적 코덱 사용**을 끈 것과 같음 |
 | `-m <mode>` | 캡처 모드: `loopback` (기본값), `virtual`, `app` |

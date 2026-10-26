@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimentell; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 von PipeWire (experimentell; zu PipeWire-Senken)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 für 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 für 96 kHz)
 ```
 
 Priorität bei automatischer Auswahl: LHDC V5 > LDAC > aptX Adaptive > Opus (experimentell) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream und Opus 05, beide experimentell, nur wenn ausdrücklich gewählt)
@@ -143,8 +143,8 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (Standard)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
-# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (die vier Stufen von Android)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+# LHDC V5: hq 1000 / sq 500 / mq 400 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q sq   # 500 kbps
 
 # aptX Adaptive: hq 427 / sq 364 / mq 318 / ll 265 kbps (R1-Senken)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Niedrige Latenz
@@ -175,7 +175,7 @@ Versetzen Sie die Kopfhörer vorher in den Kopplungsmodus.
 |:-------|:-------------|
 | `-d <addr>` | Bluetooth-Adresse der Kopfhörer / des Empfängers (`AA:BB:CC:DD:EE:FF`) |
 | `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `opus05`, `aptxad`, `auto` (Standard: `auto`) |
-| `-q <mode>` | Qualität: `hq` (Standard), `sq`, `mq`; bei LHDC V5 zusätzlich `mhq` (900 kbps); bei aptX Adaptive zusätzlich `ll` (Niedrige Latenz; andere Codecs behandeln es wie `hq`) |
+| `-q <mode>` | Qualität: `hq` (Standard), `sq`, `mq`; bei aptX Adaptive zusätzlich `ll` (Niedrige Latenz; andere Codecs behandeln es wie `hq`) |
 | `-a` | ABR (LDAC, LHDC V5 und aptX Adaptive) |
 | `--no-experimental` | Die experimentellen Codecs (aptX HD, aptX LL, Opus, Opus 05, FastStream) nie verwenden, wie bei deaktiviertem **Codecs > Experimentelle Codecs aktivieren** |
 | `-m <mode>` | Aufnahmemodus: `loopback` (Standard), `virtual`, `app` |

@@ -21,31 +21,32 @@ Start **A2DP Windows Bridge** from the Start menu (or `a2dpwb.exe`). The menu on
 
 ### Home
 
-- A card for each saved audio device, side by side: its state, battery and, for the one streaming, the codec in use with its bitrate. When a different codec than the one chosen is used, the codec badge says which one and why
+- A card for each saved audio device, side by side: its state, battery and, for the one streaming, the codec in use with its bitrate. When a different codec than the one chosen is used, the codec line says why beside its name, e.g. **aptX Adaptive (Opus is not supported)** (or *is in use*, *is experimental*); the status line just says **Connected**
 - **Connect** / **Disconnect** under each card. One device streams at a time: **Connect** on another device stops the running stream and connects that one
 - **Volume**: the headphones' volume (see [Volume](#volume))
 - The capture source of the device in use (with **More capture settings**) and the link quality with a small graph
 - An error comes with its cause and, where there is one, the button that fixes it (**Replace with WinUSB driver**, **Open Download Page**, **Restart Bluetooth**, **Try again**, **Codecs**, **Audio Devices**, ...)
 
-The sidebar shows the same for every device on every screen.
+The sidebar shows the same for every device on every screen, and the tray flyout for the device in use.
 
 ### Codecs {#codecs}
 
 The codec of each saved audio device, one section per device (a dot that is green while the device is connected, its name, address, **Paired** / **Audio** tags) with its codec cards, highest sound quality first unless you put them in your own order, each with three bars (sound quality, low latency, stability) and whether the device offered it when it last connected: **Supported** (green mark) or **Unsupported** (red mark). Every codec is offered; the experimental ones (🧪 in the README's codec table) are marked only in the documentation.
 
-- **Auto-select the codec with the highest quality** (one setting for every device, at the top of the page; on by default): each device uses the codec with the highest sound quality it supports, in this order: LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC, with its best settings: high quality, 24-bit where the codec carries it and the highest sample rate the device lists (e.g. LDAC 96 kHz, aptX Adaptive 96 kHz on an R2 device, LHDC V5 up to 192 kHz; Windows' own rate is resampled). The cards are read-only, in the default order, and the codec in use (or the one Auto will pick) is highlighted; clicking a card or its **...** asks whether to turn Auto-select off (**Disable Auto-select** / **Cancel**). Turn it off to choose each device's codec and its settings yourself; a device with none chosen yet keeps Auto's pick. The codec chosen for a device is kept while Auto-select is on. Settings from before 2.0.2 that chose a codec for any device start with it off
+- **Auto-select the codec with the highest quality** (one setting for every device, at the top of the page; on by default): each device uses the codec with the highest sound quality it supports, in this order: LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC, with its best settings: high quality, 24-bit where the codec carries it and the highest sample rate the device lists (e.g. LDAC 96 kHz, LHDC V5 up to 192 kHz; aptX Adaptive 48 kHz, see [aptX Adaptive](#aptx-adaptive); Windows' own rate is resampled). The line under the switch says to turn it off to choose, set up and order the codecs yourself. The cards are read-only, in the default order, and the codec in use (or the one Auto will pick) is highlighted; clicking a card or its **...** asks whether to turn Auto-select off (**Disable Auto-select** / **Cancel**). Turn it off to choose each device's codec and its settings yourself; a device with none chosen yet keeps Auto's pick. The codec chosen for a device is kept while Auto-select is on. Settings from before 2.0.2 that chose a codec for any device start with it off
 - With it off, click a card to choose that device's codec; it is saved at once, and a device streaming connects again with it. If the device does not support the codec, the first card in the device's order that it supports is used: the best codec it supports unless you changed the order (see [Explicitly Selected Codec Not Offered](#codec-fallback))
 - With it off, drag a device's cards (or press Alt with an arrow key on a card) to put its codecs in your own order; each device keeps its own order. A device with no codec chosen yet uses the first card it supports, and so does a chosen codec it does not support. FastStream and Opus 05 are never used unless chosen, wherever they stand. **Back to sound quality order** resets it. Under Auto-select the order is not used. A device streaming with a codec this changes connects again
 - **Hide the codecs the audio device does not support** (on by default): the codecs a device did not offer are left out. Before a device's first connection, all of them are shown
-- **...** on a card opens that codec's settings; **OK** chooses the codec with them. Each codec keeps its own settings: choosing another codec and coming back brings them back. Only what that codec can do is offered:
-  - **Quality**: LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps); LHDC V5 High (1000 kbps) / Medium-High (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), the four levels Android offers; aptX Adaptive High / Standard / Mobile / Low Latency (see [aptX Adaptive](#aptx-adaptive)); AAC has quality levels too, the other aptX codecs a fixed bitrate. SBC and SBC XQ show the bit rate their bitpool and frame setup give
+- **...** on a card opens that codec's settings; **OK** chooses the codec with them. Each codec keeps its own settings: choosing another codec and coming back brings them back. Only what that codec can do, and what the device listed at its last connection, is offered:
+  - **Quality**: LDAC and LHDC V5 **High** / **Medium** / **Low** (LDAC 990 / 660 / 330 kbps, LHDC V5 1000 / 500 / 400 kbps); aptX Adaptive **High** / **Low Latency** (see [aptX Adaptive](#aptx-adaptive)). AAC, Opus, Opus 05, SBC and SBC XQ have one, **High**, shown rather than chosen: the highest bit rate the device takes (ABR or VBR, where offered, still varies it; SBC and SBC XQ show the bit rate their bitpool and frame setup give). aptX, aptX HD, aptX LL and FastStream have a bit rate fixed by the codec. A quality saved by an earlier version that the codec no longer has (LHDC V5's Medium-High, aptX Adaptive's Standard / Mobile, AAC's lower levels, ...) loads as High
   - **ABR (Adaptive Bit Rate)**: for LDAC, LHDC V5, aptX Adaptive, SBC and SBC XQ (see [ABR](#abr)); **VBR** for AAC
-  - **Sample Rate**: Auto follows the capture device
-  - **Bit Depth**: 16 or 24 bit for LDAC and LHDC V5 (Auto: 24 bit); 16 bit for the others
+  - **Sample Rate**: Auto follows the capture device; only the rates the device lists are offered (aptX Adaptive's 96 kHz only with the Developer switch, see [aptX Adaptive](#aptx-adaptive))
+  - **Bit Depth**: 16 or 24 bit for LDAC and LHDC V5 (Auto: 24 bit), as far as the device lists them; 16 bit for the others
+  - **Bitpool** (SBC, SBC XQ): only the range the device lists, which the dialog shows. AAC's and LHDC V5's bit rates stay within the maximum the device lists
 
 The defaults give the best sound; most devices need nothing but **Auto**. An LE Audio device (experimental) has one card, LC3, and **Low latency for gaming headsets (GMAP, experimental)** (see [LE Audio](#le-audio)).
 
-Behind the scenes A2DPWB keeps one profile per device ("*device* | *codec*"), which the tray menu lists. Earlier versions let you make several profiles for one device: the first start of a version with the Codecs screen keeps the one last used (otherwise the first) and folds the others into it, keeping their codec settings (quality, sample rate, bit depth, ABR, SBC setup) for their codecs. Their own names, capture sources and packet sizes are not kept; `profiles.json` as it was is saved once as `profiles-before-codecs.json` in the settings folder.
+Behind the scenes A2DPWB keeps one entry per device in `profiles.json` (its codec, each codec's settings and its codec order), which the tray menu lists as "*device* | *codec*". Earlier versions let you make several profiles for one device: the first start of a version with the Codecs screen keeps the one last used (otherwise the first) and folds the others into it, keeping their codec settings (quality, sample rate, bit depth, ABR, SBC setup) for their codecs. Their own names, capture sources and packet sizes are not kept; `profiles.json` as it was is saved once as `profiles-before-codecs.json` in the settings folder. The 2.0.2 pre-releases' **Auto's order…** (one order for every device, in developer mode) is no longer used: each device has its own order now.
 
 ### Audio Devices
 
@@ -62,10 +63,10 @@ The headphones and speakers A2DPWB can stream to, each with its own settings: **
 - **Connection Flow**: the eleven stages of the latest connection attempt (start, Bluetooth adapter, ACL / AVDTP connect, capability discovery, codec selection, audio capture, stream configuration, encoder, stream start, audio sending, connection upkeep with disconnects / reconnects) as OK, Warning or Failed, with the time it took. **Copy Flow** copies it
 - **Log**: live, filtered by level (all, info and above, warnings and errors, errors only) and by text. **Copy Shown Log** copies what is shown
 - **Start HCI Capture** / **Stop HCI Capture** (see [Verifying the Media Stream](#verify-stream))
-- **Copy Diagnostics**: version, OS, adapter, profile, the flow, warnings / errors and the recent log on the clipboard, ready to paste into a bug report. **Mask Bluetooth addresses** (on by default) replaces addresses with `<addr-1>`, `<addr-2>`... (the adapter's own with `<adapter>`) and device names with `<device-1>`, `<device-2>`..., and hides USB serial numbers, file paths above the app's own folder (`<path>\A2DPWB\logs\...`) and your Windows account (user name and SID). The same masking applies to the crash report and error texts copied for a bug report
+- **Copy Diagnostics**: version, OS, adapter, audio device (codec, its settings and order), the flow, warnings / errors and the recent log on the clipboard, ready to paste into a bug report. **Mask Bluetooth addresses** (on by default) replaces addresses with `<addr-1>`, `<addr-2>`... (the adapter's own with `<adapter>`) and device names with `<device-1>`, `<device-2>`..., and hides USB serial numbers, file paths above the app's own folder (`<path>\A2DPWB\logs\...`) and your Windows account (user name and SID). The same masking applies to the crash report and error texts copied for a bug report
 - **Report a problem**:
   - **Verbose logging**: **Detailed (debug)** or **Everything (trace, 1 hour)** logs far more about Bluetooth, USB, audio capture and encoding. Debug stays on for 24 hours, also across restarts (for problems at start-up), then turns itself off. Turn it on, reproduce the problem, then save a diagnostic bundle
-  - **Diagnostic bundle > Save…**: choose whether HCI captures go in (off unless you were asked for them: they keep the addresses and device names) and whether Bluetooth addresses are masked in the text files, then save one `.zip` (in `logs\bundles\` of the settings folder, the newest 3 kept): the diagnostic info, the log files of the core, the window and the driver helper, crash reports, system information (USB Bluetooth adapters and their drivers, Windows' paired devices, audio devices), settings and profiles (never the link keys), and the HCI flight recorder. The HCI captures keep the addresses (not the pairing keys). It is kept under GitHub's 25 MB attachment limit where possible (the newest logs first, up to 48 MB of text, the newest 5 recordings and 2 minidumps)
+  - **Diagnostic bundle > Save…**: choose whether HCI captures go in (off unless you were asked for them: they keep the addresses and device names) and whether Bluetooth addresses are masked in the text files, then save one `.zip` (in `logs\bundles\` of the settings folder, the newest 3 kept): the diagnostic info, the log files of the core, the window and the driver helper, crash reports, system information (USB Bluetooth adapters and their drivers, Windows' paired devices, audio devices), settings and each device's codec settings (never the link keys), and the HCI flight recorder. The HCI captures keep the addresses (not the pairing keys). It is kept under GitHub's 25 MB attachment limit where possible (the newest logs first, up to 48 MB of text, the newest 5 recordings and 2 minidumps)
   - **Report on GitHub** (after saving): opens a new bug report with the version, Windows build, adapter, headphones, codec, capture mode and the diagnostic info (addresses masked) filled in, and shows the bundle in Explorer to drag into it
 
 A2DPWB also records some things all the time, so that a problem that happened once can still be looked at:
@@ -79,7 +80,7 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 
 ### Adapter
 
-- The detected USB Bluetooth adapters with their chip, **Driver** and **Firmware**; the list updates by itself when an adapter is plugged in or out. An adapter A2DPWB cannot use (MediaTek, Qualcomm) keeps its driver: its WinUSB and firmware buttons are disabled
+- The detected USB Bluetooth adapters with their chip, address, USB ID, Bluetooth version, **Driver** and **Firmware**; the list updates by itself when an adapter is plugged in or out. The driver is **Original driver** (the one Windows or the manufacturer installed; hover for its name) or **WinUSB driver** (the one A2DPWB uses). A Realtek adapter shows its address, from its USB serial number, even before it was used; for the others the address and Bluetooth version show once Windows' Bluetooth or A2DPWB has used the adapter (hover over the line for why). An adapter A2DPWB cannot use (MediaTek, Qualcomm) keeps its driver: its WinUSB and firmware buttons are disabled
 - **Replace with WinUSB driver** / **Restore original driver** (see [Setup](setup#winusb)); Windows asks for administrator permission each time
 - **Bluetooth Chip** for the firmware, with **Download Firmware**, **Open Download Page** and **Open Config Folder** (see [Firmware](setup#firmware))
 - **AFH**: Auto, Off or Manual Wi-Fi channels (see [Link Quality and AFH](#link-quality))
@@ -92,22 +93,22 @@ With **Settings > Developer mode**, Diagnostics also has a **Peer Receiver Test*
 | Appearance | Language, theme (System / Light / Dark) |
 | Startup | **Start with Windows** and **Start in the tray** (see [Start with Windows](#autostart)), **Minimize to System Tray** (see [Tray and Flyout](#tray)) |
 | Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
-| Advanced | **Developer mode** (adds the receiver test to Diagnostics, **Max media packet size** to Audio Devices and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
-| About A2DPWB | Version, license, third-party licenses, **Quit A2DPWB** |
+| Advanced | **Developer mode** (adds the **Developer** screen with codec overrides such as **aptX Adaptive at 96 kHz** and logging options, the receiver test to Diagnostics, **Max media packet size** to Audio Devices and more details to the log; no restart needed), **Settings folder** with **Open Config Folder**, **Run setup** |
+| About A2DP Windows Bridge | Version, license, third-party licenses, **Quit A2DP Windows Bridge** |
 
 ### First-Run Setup
 
-The first start (no profile yet, or no adapter with WinUSB) opens **Set up A2DPWB**: choose the adapter, driver and firmware, find your audio devices (Connect creates the profile and connects; this step also has **Start with Windows** and **Start in the tray**). See [Setup](setup#first-run). **Settings > Run setup** opens it again.
+The first start (no audio device yet, or no adapter with WinUSB) opens **Set up A2DP Windows Bridge**: choose the adapter, driver and firmware, find your audio devices (Connect saves the device with the best settings for it and connects; this step also has **Start with Windows** and **Start in the tray**). See [Setup](setup#first-run). **Settings > Run setup** opens it again.
 
 ## Tray and Flyout {#tray}
 
 A2DPWB keeps running in the system tray, with or without the window:
 
 - **Left-click** the tray icon for the flyout: the device and its state, **Connect** / **Disconnect**, the volume, the device switcher, the codec, the link quality and **Open app**. Esc or a click elsewhere hides it. If an error needs a screen of the main window (Codecs, Audio Devices, the adapter), its button opens the window there
-- **Right-click** for the menu: **Open A2DPWB**, the first 10 devices by their profile, "*device* | *codec*" (the one streaming checked; click one to connect it), **Disconnect** and **Exit**. The menu opens at once, without starting the window
+- **Right-click** for the menu: **Open A2DP Windows Bridge**, the first 10 devices as "*device* | *codec*" (the one streaming checked; click one to connect it), **Disconnect** and **Exit**. The menu opens at once, without starting the window
 - The tooltip says whether A2DPWB is idle or streaming
 
-With **Settings > Minimize to System Tray** on (the default), minimizing or closing the window only hides it in the tray, and streaming goes on. With it off, the window minimizes to the taskbar, and closing it quits A2DPWB. **Exit** in the tray menu or **Settings > Quit A2DPWB** stops streaming, releases the adapter and closes A2DPWB completely.
+With **Settings > Minimize to System Tray** on (the default), minimizing or closing the window only hides it in the tray, and streaming goes on. With it off, the window minimizes to the taskbar, and closing it quits A2DPWB. **Exit** in the tray menu or **Settings > Quit A2DP Windows Bridge** stops streaming, releases the adapter and closes A2DPWB completely.
 
 ## Start with Windows {#autostart}
 
@@ -115,7 +116,7 @@ With **Settings > Minimize to System Tray** on (the default), minimizing or clos
 
 ## CLI Mode
 
-`a2dpwb-core.exe --cli` streams from a console, with the same core as the window. Quit A2DPWB first (tray > **Exit**): only one program can use the adapter at a time. The CLI does not read the profiles; everything is given as options.
+`a2dpwb-core.exe --cli` streams from a console, with the same core as the window. Quit A2DPWB first (tray > **Exit**): only one program can use the adapter at a time. The CLI does not read the saved devices' settings; everything is given as options.
 
 ### Basic
 
@@ -138,7 +139,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (experimental; to PipeWire sinks)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 for 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz; --aptxad-96k --rate 96000 for 96 kHz)
 ```
 
 Auto-select priority: LHDC V5 > LDAC > aptX Adaptive > Opus (experimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream and Opus 05, both experimental, only when chosen)
@@ -148,16 +149,18 @@ If the requested codec is not offered by the headphones, the CLI stops with an e
 ### Quality
 
 ```bash
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # High, 990 kbps (default)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # Medium, 660 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # Low, 330 kbps
 
-# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+# LHDC V5: hq 1000 / sq 500 / mq 400 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q sq   # Medium, 500 kbps
 
-# aptX Adaptive: hq 427 / sq 364 / mq 318 / ll 265 kbps (R1 sinks)
+# aptX Adaptive: hq 427 / ll 265 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Low Latency
 ```
+
+The other codecs have no quality choice: they run as `hq`, the highest bit rate the headphones take (aptX, aptX HD, aptX LL and FastStream: fixed by the codec). A level a codec does not have (`mhq`, `sq` / `mq` for aptX Adaptive, `ll` for any codec but aptX Adaptive) runs as `hq`.
 
 ### ABR (Adaptive Bit Rate) {#abr}
 
@@ -184,8 +187,10 @@ Put the headphones into pairing mode first.
 |:-------|:------------|
 | `-d <addr>` | Bluetooth address of the headphones / receiver (`AA:BB:CC:DD:EE:FF`) |
 | `-c <codec>` | `ldac`, `aptxhd`, `aptxll`, `aptx`, `aac`, `sbc`, `lhdcv5`, `opus`, `opus05`, `aptxad`, `auto` (default: `auto`) |
-| `-q <mode>` | Quality: `hq` (default), `sq`, `mq`; LHDC V5 also `mhq` (900 kbps); aptX Adaptive also `ll` (Low Latency; other codecs treat it as `hq`) |
-| `-a` | ABR (LDAC, LHDC V5 and aptX Adaptive) |
+| `-q <mode>` | Quality: `hq` (High, default); LDAC and LHDC V5 also `sq` (Medium) and `mq` (Low); aptX Adaptive also `ll` (Low Latency). Other codecs run any level as `hq` |
+| `-a` | ABR (LDAC, LHDC V5 and aptX Adaptive; SBC / SBC XQ: adaptive bitpool) |
+| `--fallback` | A codec `-c` the headphones do not offer falls back to the best one they offer, as the app does, instead of an error |
+| `--aptxad-96k` | aptX Adaptive may stream at 96 kHz (as **Developer > aptX Adaptive at 96 kHz**; without it, 48 kHz only) |
 | `--no-experimental` | Never use the experimental codecs (aptX HD, aptX LL, Opus, Opus 05, FastStream) |
 | `-m <mode>` | Capture mode: `loopback` (default), `virtual`, `app` |
 | `--audio-device <id>` | Render device for `-m virtual` |
@@ -320,7 +325,7 @@ A2DPWB supports three aptX codecs encoded with [libopenaptx](https://github.com/
 
 | Codec | Vendor ID / Codec ID | RTP header | Status |
 |:------|:---------------------|:-----------|:-------|
-| aptX Adaptive | 0x000000D7 / 0x00AD | Yes | Supported (265-427 kbps, 48 / 96 kHz, 24-bit) |
+| aptX Adaptive | 0x000000D7 / 0x00AD | Yes | Supported (265-427 kbps, 48 kHz (96 kHz behind a Developer switch), 24-bit) |
 | aptX HD | 0x000000D7 / 0x0024 | Yes | Supported (576 kbps, 24-bit input) |
 | aptX | 0x0000004F / 0x0001 | No | Supported (352/384 kbps at 44.1/48 kHz) |
 | aptX Low Latency | 0x0000000A or 0x000000D7 / 0x0002 | No | Supported (352 kbps) |
@@ -328,24 +333,22 @@ A2DPWB supports three aptX codecs encoded with [libopenaptx](https://github.com/
 ### aptX Adaptive {#aptx-adaptive}
 
 {: .note }
-**aptX Adaptive is confirmed with real headphones at 48 kHz:** a user streamed it to an EarFun Air Pro 4+ on 2.0.2-beta.6 with no drops or stutter, as stable as classic aptX ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). It also passes the unit tests, upstream's bit-exact test suite and the end-to-end test against the virtual Bluetooth sink (`tools/emu`, which checks the RTP header, the packet sizes and the frame types; the audio is not decoded, as there is no open decoder). Upstream reports it working on Linux / PipeWire with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e at 48 kHz in High and Low Latency. 96 kHz (High 646 kbps, Standard 340, Mobile 255) is used only when chosen in its settings (or `--rate 96000`) and the headphones are an R2 sink that lists it, never in Low Latency; it is checked against the virtual sink only, here and upstream. [Reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**aptX Adaptive is confirmed with real headphones at 48 kHz:** a user streamed it to an EarFun Air Pro 4+ on 2.0.2-beta.6 with no drops or stutter, as stable as classic aptX ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). It also passes the unit tests, upstream's bit-exact test suite and the end-to-end test against the virtual Bluetooth sink (`tools/emu`, which checks the RTP header, the packet sizes and the frame types; the audio is not decoded, as there is no open decoder). Upstream reports it working on Linux / PipeWire with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e at 48 kHz in High and Low Latency. 96 kHz (High, 646 kbps) is off by default, as it is checked against the virtual sink only, here and upstream, and did not work on the EarFun yet: it needs **Developer > aptX Adaptive at 96 kHz** (**Settings > Developer mode** shows the Developer screen; CLI `--aptxad-96k`), and is then used with Auto-select or when chosen in the codec's settings (CLI `--rate 96000`), if the headphones are an R2 sink that lists it, never in Low Latency. [Reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 The encoder is the pure-Rust aptX Adaptive encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). Upstream describes it as a clean-room reimplementation whose numeric tables were reconstructed from lawfully obtained shipped Qualcomm binaries and on-air captures; no Qualcomm code, SDK or binary is included (see [Licenses](licenses)).
 
 - **Choosing it**: Auto picks it when the headphones offer neither LHDC V5 nor LDAC. Or choose **aptX Adaptive** on **Codecs**, or `-c aptxad`.
-- **Format**: 48 kHz stereo, 24-bit; 96 kHz in high quality to a device that lists it (aptX Adaptive R2), with Auto-select or when chosen; a 44.1 kHz request is captured at 48 kHz.
+- **Format**: 48 kHz stereo, 24-bit; with the 96 kHz switch on, 96 kHz in High to a device that lists it (aptX Adaptive R2), with Auto-select or when chosen; a 44.1 kHz request is captured at 48 kHz.
 - **Headphones**: R1 sinks (no capability extension, e.g. B&W Px7 S2e) and R2 sinks (R2 bitstream).
 
 | Quality (**...** / `-q`) | R1 sinks | R2 sinks | Packets |
 |:-------------------------|:---------|:---------|:--------|
 | High (`hq`) | 427 kbps | 427 kbps | 12 ms, 656 bytes |
-| Standard (`sq`; the reference's default) | 364 kbps | 270 kbps | 14 ms |
-| Mobile (`mq`) | 318 kbps | 204 kbps | 16 ms |
 | Low Latency (`ll`) | 265 kbps | 270 kbps | 10 ms, 348 bytes |
 
-`ll` is used only by aptX Adaptive; other codecs treat it as High.
+`ll` is used only by aptX Adaptive; other codecs treat it as High. The Standard and Mobile levels (R1 364 / 318 kbps, R2 270 / 204 kbps) are no longer offered as qualities: a device saved with one, and `-q sq` / `-q mq`, run High; ABR still steps through them.
 
-**ABR** (codec settings **ABR**, CLI `-a`): in High, the bit rate steps down one level (not below Mobile) while the send queue holds 3 or more packets, at most every ~0.5 s, and back up one level (up to the chosen quality) after ~3 s with at most one packet queued. Low Latency has no ABR.
+**ABR** (codec settings **ABR**, CLI `-a`): in High, the bit rate steps down one level (Standard, then Mobile, not below) while the send queue holds 3 or more packets, at most every ~0.5 s, and back up one level (up to High) after ~3 s with at most one packet queued. Low Latency has no ABR.
 
 ### There is no "fallback" from aptX Adaptive to aptX
 
@@ -381,7 +384,7 @@ and the error says that endpoints are in use by another device. Disconnect the h
 
 ### Sample Rate
 
-aptX, aptX HD and aptX LL support only 44.1 kHz and 48 kHz (aptX Adaptive 48 kHz, or 96 kHz with Auto-select or when chosen, if the headphones list it). A2DPWB picks one of the rates the headphones advertise (with Auto-select the highest; otherwise preferring the current Windows device rate, then 48 kHz) and lets WASAPI resample the capture. You do not need to change the Windows Sound settings for aptX.
+aptX, aptX HD and aptX LL support only 44.1 kHz and 48 kHz (aptX Adaptive 48 kHz; 96 kHz only with **Developer > aptX Adaptive at 96 kHz** on, with Auto-select or when chosen, if the headphones list it). A2DPWB picks one of the rates the headphones advertise (with Auto-select the highest; otherwise preferring the current Windows device rate, then 48 kHz) and lets WASAPI resample the capture. You do not need to change the Windows Sound settings for aptX.
 
 ### Checking What Your Headphones Offer
 
@@ -404,7 +407,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Max Media Packet Size (per Device) {#max-packet}
 
-**Max media packet size** of each device (**Audio Devices**; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so audio devices that need a different value can have their own. The field is shown in developer mode (**Settings > Developer mode**), or while a device has a value other than 1023, so it can be set back; most users never need it. The audio device's own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. It was a profile setting before (under **Advanced**): a device keeps the value of the profile it kept (see [Codecs](#codecs)); profiles saved by v1 before 1.1 take the value that was set globally then.
+**Max media packet size** of each device (**Audio Devices**; CLI: `--max-packet <bytes>`) sets the upper limit for the audio data in each Bluetooth packet, from 679 to 1679 bytes, so audio devices that need a different value can have their own. The field is shown in developer mode (**Settings > Developer mode**), or while a device has a value other than 1023, so it can be set back; most users never need it. The audio device's own limit (MTU) always applies too; A2DPWB uses the smaller of the two. The change applies from the next connection. It was a profile setting before (under **Advanced**): a device keeps the value of the profile kept for it (see [Codecs](#codecs)); profiles saved by v1 before 1.1 take the value that was set globally then.
 
 **1023 (default) is recommended.** It fits one Bluetooth baseband packet (3-DH5). Larger values save only 1-2% overhead, and each lost packet then loses more audio. 679 fits one 2-DH5 packet and is the minimum LDAC accepts.
 
@@ -504,7 +507,7 @@ A2DPWB checks GitHub Releases at most once a day (**Settings > Check for Updates
 
 ### The Window Says the Core Is Not Running
 
-The window needs `a2dpwb-core.exe` next to it and starts it by itself. "The A2DPWB core is not running" means it could not be started: reinstall A2DPWB (or extract the portable zip again). "The core is a different version" means the two programs come from different versions: install the same version of both (the latest release does this).
+The window needs `a2dpwb-core.exe` next to it and starts it by itself. "The A2DP Windows Bridge core is not running" means it could not be started: reinstall A2DPWB (or extract the portable zip again). "The core is a different version" means the two programs come from different versions: install the same version of both (the latest release does this).
 
 ### Assigning or Restoring the Driver Fails
 
