@@ -3,23 +3,27 @@
 // connected (green / red, issue #86), and behind "..." that codec's
 // quality, sample rate, bit depth
 // and ABR (SBC and SBC XQ: bitpool and frame setup). The codecs offered
-// and what they can be set to come from lib/codecs.ts.
+// and what they can be set to come from lib/codecs.ts, as far as the
+// device listed them when it last connected (issue #86: its rates, bit
+// depths, largest bit rate and bitpool range).
 
 import { createEffect, on, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
 import {
-  bitDepths,
+  capsOf,
   carryToCodec,
   fixedBitDepth,
   codecSpec,
   BITPOOL_MAX,
   BITPOOL_MAX_XQ,
   BITPOOL_MIN,
+  offeredBitDepths,
+  offeredQualities,
+  offeredSampleRates,
   qualityIgnored,
-  qualityKbps,
-  sampleRates,
+  type CodecCaps,
   type CodecSpec,
   type CodecSupport,
 } from "../lib/codecs";
@@ -34,14 +38,23 @@ export function CodecCard(props: {
   group: string;
   selected: boolean;
   disabled?: boolean;
-  /** Auto chooses (issue #86): the card only shows whether Auto picked it,
-   *  without its settings */
+  /** Auto chooses (issue #86): the card only shows whether Auto picked it */
   readOnly?: boolean;
   support: CodecSupport | null;
   onPick: () => void;
-  /** Clicked while read-only: says how to choose (issue #86) */
+  /** The card or its "..." clicked while read-only: offers to turn
+   *  Auto-select off (issue #86 round 8) */
   onReadOnly?: () => void;
   onSettings: () => void;
+  /** The card can be dragged (and moved with Alt+arrow keys) into the
+   *  device's order (issue #86 round 8) */
+  orderable?: boolean;
+  /** Being dragged */
+  dragging?: boolean;
+  /** Alt+arrow key: one place earlier (-1) or later (1) */
+  onMove?: (by: -1 | 1) => void;
+  /** The id of what tells how to move it (screen readers) */
+  describedBy?: string;
 }) {
   const bar = (label: string, v: number) => (
     <div class="cbar">
@@ -54,10 +67,10 @@ export function CodecCard(props: {
   const name = () => t(props.spec.label);
   return (
     // The button is beside the label, not in it: the radio's name stays the codec's
-    <div class="codec-cell">
+    <div class="codec-cell" classList={{ dragging: props.dragging }} data-codec={props.spec.id}>
       <label
         class="codec-card"
-        classList={{ on: props.selected, ro: props.readOnly }}
+        classList={{ on: props.selected, ro: props.readOnly, orderable: props.orderable }}
         onClick={() => {
           if (props.readOnly) props.onReadOnly?.();
         }}
@@ -68,7 +81,16 @@ export function CodecCard(props: {
           value={props.spec.id}
           checked={props.selected}
           disabled={props.disabled || props.readOnly}
+          aria-describedby={props.orderable ? props.describedBy : undefined}
           onChange={() => props.onPick()}
+          onKeyDown={(e) => {
+            if (!props.orderable || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            const by = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key] as -1 | 1 | undefined;
+            if (!by) return;
+            // Not the radio group's own arrow keys (they choose the next card)
+            e.preventDefault();
+            props.onMove?.(by);
+          }}
         />
         <span class="codec-card-name">{name()}</span>
         {/* The wrapper keeps the tag its own size in the card's column */}
@@ -107,15 +129,13 @@ export function CodecCard(props: {
           )}
         </Show>
       </label>
-      <Show when={!props.readOnly}>
-        <IconButton
-          icon="more_horizontal"
-          class="codec-more"
-          label={t("ui.profile.codec_settings", name())}
-          aria-haspopup="dialog"
-          onClick={() => props.onSettings()}
-        />
-      </Show>
+      <IconButton
+        icon="more_horizontal"
+        class="codec-more"
+        label={t("ui.profile.codec_settings", name())}
+        aria-haspopup="dialog"
+        onClick={() => (props.readOnly ? props.onReadOnly?.() : props.onSettings())}
+      />
     </div>
   );
 }
@@ -151,11 +171,23 @@ export function codecChoice(p: CodecChoice): CodecChoice {
   };
 }
 
+/** The SBC / SBC XQ bitpool range the dialog offers: the codec's, within
+ *  the device's when known (issue #86: a device of max bitpool 39 is not
+ *  offered 53; the core keeps the encoder within it the same way) */
+export function bitpoolRange(codec: string, caps: SbcCaps | null): { min: number; max: number } {
+  const local = codec === "sbcxq" ? BITPOOL_MAX_XQ : BITPOOL_MAX;
+  if (!caps || caps.max_bitpool < BITPOOL_MIN) return { min: BITPOOL_MIN, max: local };
+  const max = Math.max(Math.min(local, caps.max_bitpool), BITPOOL_MIN);
+  return { min: Math.min(Math.max(caps.min_bitpool, BITPOOL_MIN), max), max };
+}
+
 /**
  * One codec's quality, sample rate, bit depth and ABR (what "Advanced" had
  * for the chosen codec); SBC and SBC XQ also their bitpool and frame setup,
- * offering only what the device listed when it last connected (`sbcCaps`),
- * with the bit rate that gives. It starts from the profile's values fitted
+ * offering only what the device listed when it last connected (`sbcCaps`,
+ * and for every codec its rates, bit depths and largest bit rate: `caps`,
+ * issue #86), with the bit rate that gives. A codec with one quality shows
+ * it rather than a choice. It starts from the profile's values fitted
  * to the codec, or from what that codec was last set to (`kept`: the
  * profile's codec_settings); OK chooses the codec with them, Cancel leaves
  * the profile alone.
@@ -165,6 +197,11 @@ export function CodecSettings(props: {
   profile: Profile;
   kept: (codec: string) => Omit<CodecChoice, "codec"> | undefined;
   sbcCaps: SbcCaps | null;
+  /** Device.codec_caps (empty: not known) */
+  caps?: readonly CodecCaps[];
+  /** Developer > "aptX Adaptive at 96 kHz" (in force in developer mode
+   *  only): off, aptX Adaptive is not offered 96 kHz */
+  aptxad96k?: boolean;
   onApply: (values: CodecChoice) => void;
   onCancel: () => void;
 }) {
@@ -192,20 +229,48 @@ export function CodecSettings(props: {
         // (SBC and SBC XQ apart, issue #86)
         const from = carryToCodec(codecChoice(p), s.id);
         // SBC / SBC XQ: no quality to choose, Auto is the highest bitpool
-        setV(s.bitpool ? { ...from, quality: "hq" } : from);
+        const fitted = s.bitpool ? { ...from, quality: "hq" } : from;
+        // What the device does not list (or 96 kHz switched off) goes back
+        // to Auto, a bitpool above the device's largest down to it, a
+        // quality capped like a higher one to High (issue #86)
+        const caps = capsOf(props.caps ?? [], s.id);
+        if (!offeredSampleRates(s.id, caps, props.aptxad96k ?? true).includes(fitted.sample_rate)) fitted.sample_rate = 0;
+        if (!offeredBitDepths(s.id, caps).includes(fitted.bit_depth)) fitted.bit_depth = 0;
+        if (s.qualities.length > 0 && !offeredQualities(s.id, fitted.sample_rate, caps?.max_bitrate).some((q) => q.id === fitted.quality))
+          fitted.quality = "hq";
+        const range = bitpoolRange(s.id, props.sbcCaps);
+        const key = s.id === "sbcxq" ? "sbcxq_bitpool" : "sbc_bitpool";
+        if (s.bitpool && fitted[key] > range.max) fitted[key] = range.max;
+        setV(fitted);
       },
     ),
   );
   const spec = () => codecSpec(v.codec);
   const name = () => t(spec().label);
+  /** What the device listed for this codec (null: not known) */
+  const caps = () => capsOf(props.caps ?? [], v.codec);
+  const maxBitrate = () => caps()?.max_bitrate ?? 0;
   // SBC and SBC XQ keep their own bitpool
   const bpKey = () => (v.codec === "sbcxq" ? "sbcxq_bitpool" : "sbc_bitpool");
   const bp = () => v[bpKey()];
-  const bpMax = () => (v.codec === "sbcxq" ? BITPOOL_MAX_XQ : BITPOOL_MAX);
+  const bpRange = () => bitpoolRange(v.codec, props.sbcCaps);
+  const bpMin = () => bpRange().min;
+  const bpMax = () => bpRange().max;
   const bitpoolError = () =>
-    bp() !== 0 && !(Number.isInteger(bp()) && bp() >= BITPOOL_MIN && bp() <= bpMax())
-      ? t("error.sbc_bitpool_range", BITPOOL_MIN, bpMax())
+    bp() !== 0 && !(Number.isInteger(bp()) && bp() >= bpMin() && bp() <= bpMax())
+      ? t("error.sbc_bitpool_range", bpMin(), bpMax())
       : undefined;
+  // The qualities with their bit rates on this device; one is shown, not chosen
+  const qualities = () => offeredQualities(v.codec, v.sample_rate, maxBitrate(), v.quality);
+  const qualityText = (q: { label: string; kbps?: string }) => (q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label));
+  const rates = () => {
+    const offered = offeredSampleRates(v.codec, caps(), props.aptxad96k ?? true);
+    return offered.includes(v.sample_rate) ? offered : [...offered, v.sample_rate];
+  };
+  const depths = () => {
+    const offered = offeredBitDepths(v.codec, caps());
+    return offered.includes(v.bit_depth) ? offered : [...offered, v.bit_depth];
+  };
   // The frame setup: Auto, then what the device listed (the value chosen
   // stays, marked, when it did not list it: it falls back when connecting)
   const sbcChoice = <T extends string | number>(
@@ -256,25 +321,36 @@ export function CodecSettings(props: {
             </Field>
           }
         >
-          <Field label={t("connection.quality")} hint={t("tooltip.quality")}>
-            {(id, described) => (
-              <Select
-                id={id}
-                describedBy={described}
-                value={v.quality}
-                disabled={spec().qualities.length === 0 || qualityIgnored(v.codec, v.abr)}
-                options={
-                  spec().qualities.length
-                    ? spec().qualities.map((q) => {
-                        const kbps = qualityKbps(v.codec, q.id, v.sample_rate);
-                        return { value: q.id, label: kbps ? `${t(q.label)} (${kbps} kbps)` : t(q.label) };
-                      })
-                    : [{ value: v.quality, label: t("ui.profile.fixed_bitrate") }]
-                }
-                onChange={(x) => setV("quality", x)}
-              />
-            )}
-          </Field>
+          {/* One quality (or a fixed bit rate): shown, not a choice (issue
+              #86: High is the highest bit rate the device takes) */}
+          <Show
+            when={qualities().length > 1}
+            fallback={
+              <Field
+                label={t("connection.quality")}
+                hint={t(spec().qualities.length ? "ui.profile.quality_highest_hint" : "tooltip.quality")}
+              >
+                {(id, described) => (
+                  <output id={id} class="input readonly" aria-describedby={described}>
+                    {qualities().length ? qualityText(qualities()[0]) : t("ui.profile.fixed_bitrate")}
+                  </output>
+                )}
+              </Field>
+            }
+          >
+            <Field label={t("connection.quality")} hint={t("tooltip.quality")}>
+              {(id, described) => (
+                <Select
+                  id={id}
+                  describedBy={described}
+                  value={v.quality}
+                  disabled={qualityIgnored(v.codec, v.abr)}
+                  options={qualities().map((q) => ({ value: q.id, label: qualityText(q) }))}
+                  onChange={(x) => setV("quality", x)}
+                />
+              )}
+            </Field>
+          </Show>
         </Show>
         <Field label={t("connection.sample_rate")} hint={t("tooltip.sample_rate")}>
           {(id, described) => (
@@ -282,7 +358,11 @@ export function CodecSettings(props: {
               id={id}
               describedBy={described}
               value={v.sample_rate}
-              options={sampleRates(v.codec).map((r) => ({ value: r, label: r === 0 ? t("codec.auto") : `${r} Hz` }))}
+              options={rates().map((r) => {
+                const label = r === 0 ? t("codec.auto") : `${r} Hz`;
+                const listed = offeredSampleRates(v.codec, caps(), props.aptxad96k ?? true).includes(r);
+                return { value: r, label: listed ? label : t("ui.profile.sbc_not_offered", label) };
+              })}
               onChange={(x) => setV("sample_rate", x)}
             />
           )}
@@ -293,15 +373,17 @@ export function CodecSettings(props: {
               id={id}
               describedBy={described}
               value={v.bit_depth}
-              disabled={bitDepths(v.codec).length === 1}
-              options={bitDepths(v.codec).map((b) => ({
+              disabled={depths().length === 1}
+              options={depths().map((b) => ({
                 value: b,
                 label:
                   b === 0
-                    ? bitDepths(v.codec).length > 1
+                    ? depths().length > 1
                       ? t("codec.auto")
                       : t(`bitdepth.${fixedBitDepth(v.codec)}`)
-                    : t(`bitdepth.${b}`),
+                    : offeredBitDepths(v.codec, caps()).includes(b)
+                      ? t(`bitdepth.${b}`)
+                      : t("ui.profile.sbc_not_offered", t(`bitdepth.${b}`)),
               }))}
               onChange={(x) => setV("bit_depth", x)}
             />
@@ -321,7 +403,11 @@ export function CodecSettings(props: {
         <Show when={spec().bitpool}>
           <Field
             label={t("connection.sbc_bitpool")}
-            hint={t("tooltip.sbc_bitpool", BITPOOL_MIN, bpMax())}
+            hint={
+              props.sbcCaps
+                ? `${t("tooltip.sbc_bitpool", BITPOOL_MIN, bitpoolRange(v.codec, null).max)} ${t("ui.profile.sbc_bitpool_device", bpMin(), bpMax())}`
+                : t("tooltip.sbc_bitpool", bpMin(), bpMax())
+            }
             error={bitpoolError()}
           >
             {(id, described) => (
@@ -331,7 +417,7 @@ export function CodecSettings(props: {
                   class="input num narrow"
                   type="number"
                   inputmode="numeric"
-                  min={BITPOOL_MIN}
+                  min={bpMin()}
                   max={bpMax()}
                   step="1"
                   placeholder={t("codec.auto")}

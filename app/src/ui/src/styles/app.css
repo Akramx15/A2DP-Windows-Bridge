@@ -1380,6 +1380,16 @@ option {
   font-size: var(--fs-14);
   color: var(--text);
 }
+/* "(Opus is not supported)": why another codec is used (issue #86) */
+.codec-name strong {
+  flex: none;
+}
+.codec-note {
+  min-width: 0;
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--text-2);
+}
 .codec-line {
   display: flex;
   flex-wrap: wrap;
@@ -1429,6 +1439,16 @@ option {
 .home-device .device-card {
   flex: 1;
   min-width: 0;
+  gap: var(--s4);
+  padding: var(--s5);
+}
+/* A smaller name and ring than the defaults, so long names ("EarFun Air
+   Pro 4+") fit two cards side by side before the ellipsis (issue #86) */
+.home-device .ring {
+  --size: 5.5rem;
+}
+.home-device .device-name {
+  font-size: 1.375rem;
 }
 .home-device:not(.live) .ring .icon {
   color: var(--text-2);
@@ -1481,7 +1501,7 @@ option {
   min-width: 4.5rem;
   text-align: right;
 }
-.profile-switcher .select {
+.device-switcher .select {
   min-width: 14rem;
 }
 
@@ -1499,50 +1519,6 @@ option {
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
-}
-/* Auto's order dialog: rows dragged into place, or moved with ↑ / ↓ */
-.auto-order {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-}
-.auto-order-row {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--surface-2);
-  cursor: grab;
-  user-select: none;
-}
-.auto-order-row.dragging {
-  opacity: 0.5;
-  border-style: dashed;
-}
-.auto-order-grip {
-  color: var(--text-3);
-  flex: none;
-}
-.auto-order-rank {
-  width: 1.5em;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-3);
-}
-.auto-order-name {
-  flex: 1;
-}
-.auto-order-moves {
-  display: flex;
-  gap: 2px;
-}
-.auto-order-up svg {
-  transform: rotate(180deg);
 }
 .device-codecs {
   display: flex;
@@ -1740,12 +1716,13 @@ option {
   border-color: var(--text);
   background: var(--surface-2);
 }
-/* Auto chooses: the cards only show its pick (a click says how to choose) */
+/* Auto chooses: the cards only show its pick (a click offers to turn
+   Auto-select off, issue #86 round 8) */
 .codec-card.ro {
-  cursor: not-allowed;
+  cursor: pointer;
 }
 /* The disabled radio over the card would swallow the click: it goes to the
-   card instead, which says how to choose (issue #86) */
+   card instead */
 .codec-card.ro input {
   pointer-events: none;
 }
@@ -1754,6 +1731,28 @@ option {
 }
 .codec-card.ro:hover:not(.on) {
   border-color: var(--border);
+}
+/* Auto-select off: the cards are dragged into the device's order */
+.codec-card.orderable,
+.codec-card.orderable input {
+  cursor: grab;
+  user-select: none;
+}
+.codec-grid.ordering,
+.codec-grid.ordering .codec-card,
+.codec-grid.ordering .codec-card input {
+  cursor: grabbing;
+}
+.codec-cell.dragging {
+  opacity: 0.5;
+}
+.codec-cell.dragging .codec-card {
+  border-style: dashed;
+}
+/* The activity dot before the device's icon, as the sidebar's */
+.device-codecs-head > .dot {
+  width: 0.625rem;
+  height: 0.625rem;
 }
 .device-codecs .toggle-row {
   padding: 0;
@@ -2687,7 +2686,7 @@ html.win-flyout body {
   font-size: var(--fs-12);
   max-width: 100%;
 }
-.flyout .profile-switcher .select {
+.flyout .device-switcher .select {
   width: 100%;
   min-width: 0;
 }
@@ -2724,14 +2723,16 @@ html.win-flyout body {
   .page {
     padding: var(--s4);
   }
-  .device-card {
+  .device-card,
+  .home-device .device-card {
     gap: var(--s4);
     padding: var(--s4);
   }
   .ring:not(.ring-small) {
     --size: 5.5rem;
   }
-  .device-name {
+  .device-name,
+  .home-device .device-name {
     font-size: var(--fs-20);
   }
 }

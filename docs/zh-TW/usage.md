@@ -129,7 +129,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (experimental; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # PipeWire's Opus 05 (experimental; to PipeWire sinks)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 for 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 for 96 kHz)
 ```
 
 自動選擇的優先順序：LHDC V5 > LDAC > aptX Adaptive > Opus（實驗性） > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC（FastStream 與 Opus 05 皆為實驗性，僅在明確選擇時使用）
@@ -143,8 +143,8 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 990 kbps (default)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 660 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 330 kbps
 
-# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps (Android's four levels)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q mhq  # 900 kbps
+# LHDC V5: hq 1000 / sq 500 / mq 400 kbps
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q sq   # 500 kbps
 
 # aptX Adaptive: hq 427 / sq 364 / mq 318 / ll 265 kbps (R1 sinks)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Low Latency
@@ -175,7 +175,7 @@ a2dpwb-core.exe --cli --scan
 |:-------|:------------|
 | `-d <addr>` | 耳機 / 接收器的藍牙位址（`AA:BB:CC:DD:EE:FF`） |
 | `-c <codec>` | `ldac`、`aptxhd`、`aptxll`、`aptx`、`aac`、`sbc`、`lhdcv5`、`opus`、`opus05`、`aptxad`、`auto`（預設：`auto`） |
-| `-q <mode>` | 品質：`hq`（預設）、`sq`、`mq`；LHDC V5 另有 `mhq`（900 kbps）；aptX Adaptive 另有 `ll`（低延遲；其他轉碼器視為 `hq`） |
+| `-q <mode>` | 品質：`hq`（預設）、`sq`、`mq`；aptX Adaptive 另有 `ll`（低延遲；其他轉碼器視為 `hq`） |
 | `-a` | ABR（LDAC、LHDC V5 與 aptX Adaptive） |
 | `--no-experimental` | 一律不使用實驗性轉碼器（aptX HD、aptX LL、Opus、Opus 05、FastStream），與關閉 **編解碼器 > 啟用實驗性編解碼器** 相同 |
 | `-m <mode>` | 擷取模式：`loopback`（預設）、`virtual`、`app` |

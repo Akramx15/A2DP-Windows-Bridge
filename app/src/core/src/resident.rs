@@ -54,7 +54,7 @@ fn tr(lang: &str, key: &str, default: &str) -> String {
 fn build_menu(view: &TrayView) -> Menu {
     let lang = view.language.as_str();
     let menu = Menu::new();
-    let _ = menu.append(&MenuItem::with_id("open", tr(lang, "tray.open", "Open A2DPWB"), true, None));
+    let _ = menu.append(&MenuItem::with_id("open", tr(lang, "tray.open", "Open A2DP Windows Bridge"), true, None));
     let _ = menu.append(&PredefinedMenuItem::separator());
     for (i, name) in view.profiles.iter().take(TRAY_PROFILES).enumerate() {
         let active = view.streaming && view.active_profile.as_deref() == Some(name.as_str());
@@ -365,7 +365,7 @@ pub fn run(args: &[String]) -> i32 {
             TaoEvent::NewEvents(StartCause::Init) => {
                 let v = view.clone().unwrap_or(TrayView {
                     streaming: false,
-                    tooltip: "A2DPWB".into(),
+                    tooltip: "A2DP Windows Bridge".into(),
                     profiles: Vec::new(),
                     active_profile: None,
                     language: "en".into(),

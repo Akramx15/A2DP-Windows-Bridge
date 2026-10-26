@@ -52,7 +52,10 @@ export type MockScenario =
   /** The core crashed earlier (a crash report not dismissed yet) */
   | "crash"
   /** Streaming, the headphones refused to report their battery (a phone holds their HFP) */
-  | "battery_refused";
+  | "battery_refused"
+  /** A third device whose codecs cap what can be set (issue #86: the
+   *  moto buds+, SBC bitpool 39, AAC 131 kbps, LHDC V5 48 kHz at most) */
+  | "capped";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -138,6 +141,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     sbc_channel_mode: "",
     ...over,
     codec_settings: over.codec_settings ?? {},
+    codec_order: over.codec_order ?? [],
   };
 }
 
@@ -162,6 +166,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
       aac_no_peak: false,
       aac_no_afterburner: false,
       aac_latm_v0: false,
+      aptxad_96k: false,
     },
     dev_log: { keep_days: 7, day_cap_mb: 100, always_verbose: null, health_every_interval: false },
     bt_chip_pid: 0,
@@ -173,14 +178,13 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     experimental_codecs: true,
     // Off, as schema 5 sets it: WH-1000XM5 chose LDAC
     auto_codec: false,
-    auto_order: [],
     ...over,
   };
 }
 
 /** A device entry: classic unless `over` says otherwise */
 export function sampleDevice(over: Partial<Device> & { address: string }): Device {
-  return { name: "", saved: false, audio: true, rssi: null, codecs: [], sbc: null, le_audio: false, le_audio_set: false, ...over };
+  return { name: "", saved: false, audio: true, rssi: null, codecs: [], sbc: null, codec_caps: [], le_audio: false, le_audio_set: false, ...over };
 }
 
 /** What the WH-1000XM5's SBC endpoint lists (no 4 subbands, no SNR, as many headphones) */
@@ -193,6 +197,27 @@ export const XM5_SBC = {
   min_bitpool: 2,
   max_bitpool: 53,
 };
+
+/** What the WH-1000XM5's codecs list (Device.codec_caps) */
+export const XM5_CODEC_CAPS = [
+  { codec: "sbc", sample_rates: [44100, 48000], bit_depths: [], max_bitrate: 0 },
+  { codec: "aac", sample_rates: [44100, 48000], bit_depths: [], max_bitrate: 320000 },
+  { codec: "ldac", sample_rates: [44100, 48000, 88200, 96000], bit_depths: [], max_bitrate: 0 },
+];
+
+/** The moto buds+ as the tester's log lists them (issue #86) */
+export const MOTO_BUDS = sampleDevice({
+  address: "34:1C:F0:AA:BB:CC",
+  name: "moto buds+",
+  saved: true,
+  codecs: ["sbc", "aac", "lhdcv5"],
+  sbc: { ...XM5_SBC, max_bitpool: 39 },
+  codec_caps: [
+    { codec: "sbc", sample_rates: [44100, 48000], bit_depths: [], max_bitrate: 0 },
+    { codec: "aac", sample_rates: [44100, 48000], bit_depths: [], max_bitrate: 0x020000 },
+    { codec: "lhdcv5", sample_rates: [44100, 48000], bit_depths: [16, 24], max_bitrate: 0 },
+  ],
+});
 
 /** The earbuds' LE Audio entry (the same address as their classic one) */
 const LE_BUDS = sampleDevice({ address: "F4:4E:FD:00:11:22", name: "Galaxy Buds2 Pro", le_audio: true, le_audio_set: true });
@@ -249,8 +274,10 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
             saved: true,
             codecs: ["sbc", "aac", "ldac"],
             sbc: XM5_SBC,
+            codec_caps: XM5_CODEC_CAPS,
           }),
           sampleDevice({ address: "00:1A:7D:DA:71:13", name: "SRS-XB13", saved: true }),
+          ...(scenario === "capped" ? [MOTO_BUDS] : []),
           ...(le ? [{ ...LE_BUDS, saved: true }] : []),
         ],
     scanning: false,
@@ -664,7 +691,6 @@ export class MockCore implements Transport {
           // Always on, as the core reads it (issue #86)
           experimental_codecs: true,
           auto_codec: next.auto_codec ?? before.auto_codec,
-          auto_order: next.auto_order ?? before.auto_order,
         };
         this.emit({ kind: "settings", value: this.snap.settings });
         let le_audio_deferred = false;

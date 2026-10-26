@@ -167,12 +167,10 @@ pub struct Settings {
     /// still as Auto). LE Audio profiles (LC3) are not affected.
     pub auto_codec: bool,
 
-    /// Codecs > Auto's order (issue #86): codec keys, what Auto picks first
-    /// and the way a chosen codec falls back. Empty: highest sound quality
-    /// first ([`codec::CodecKind::AUTO_PRIORITY`]).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub auto_order: Vec<String>,
-
+    // `auto_order` (2.0.2 betas: Codecs > Auto's order, for every device)
+    // is no longer read: each device has its own order now (the profile's
+    // `codec_order`, issue #86 round 8). A file that has it keeps it in
+    // `other`.
     /// Before v1.1 the max media packet size was a setting; it now seeds
     /// profiles saved without one. Read, not written.
     #[serde(skip_serializing)]
@@ -271,7 +269,6 @@ impl Default for Settings {
             le_audio_low_latency: false,
             experimental_codecs: true,
             auto_codec: true,
-            auto_order: Vec::new(),
             max_media_payload: None,
             other: BTreeMap::new(),
         }
@@ -279,11 +276,6 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// Auto's order as streams use it
-    pub fn auto_order(&self) -> codec::AutoOrder {
-        codec::AutoOrder::from_keys(&self.auto_order)
-    }
-
     /// The logging in force: developer mode's, else the defaults
     pub fn log(&self) -> DevLog {
         if self.debug_mode { self.dev_log.clamped() } else { DevLog::default() }
@@ -417,6 +409,15 @@ mod tests {
         // v1 wrote no schema; save() writes the current one (migrate.rs)
         assert_eq!(out["schema_version"], 1);
         assert!(out.get("max_media_payload").is_none());
+    }
+
+    #[test]
+    fn auto_order_of_the_betas_is_loaded_and_left_alone() {
+        // 2.0.2 betas: Auto's order for every device; each device has its
+        // own now (the profile's codec_order, issue #86 round 8)
+        let s: Settings = serde_json::from_str(r#"{"auto_codec":false,"auto_order":["aac","sbc"]}"#).unwrap();
+        assert!(!s.auto_codec);
+        assert_eq!(serde_json::to_value(&s).unwrap()["auto_order"], serde_json::json!(["aac", "sbc"]));
     }
 
     #[test]

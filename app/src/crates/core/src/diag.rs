@@ -1243,10 +1243,24 @@ fn bitrate_note(i: &StreamInfo) -> &'static str {
     }
 }
 
+/// The driver in the two names the Adapters screen uses (issue #86):
+/// "WinUSB driver", or the "original driver" it replaces with its service
+/// ("original driver (BTHUSB)")
+pub fn driver_name(kind: win_sys::driver::DriverKind, service: &str) -> String {
+    use win_sys::driver::DriverKind;
+    match kind {
+        DriverKind::WinUsb => "WinUSB driver".to_string(),
+        DriverKind::Bluetooth | DriverKind::Other if service.is_empty() => "original driver".to_string(),
+        DriverKind::Bluetooth | DriverKind::Other => format!("original driver ({service})"),
+        DriverKind::None => "no driver".to_string(),
+    }
+}
+
 /// One adapter for the diagnostics: name, VID:PID, driver
 pub fn adapter_line(a: &crate::adapter::Adapter) -> String {
     let d = &a.device;
-    let mut s = format!("{} [{:04X}:{:04X}], driver {:?}", a.display_name, d.vid, d.pid, d.driver_kind);
+    let mut s =
+        format!("{} [{:04X}:{:04X}], {}", a.display_name, d.vid, d.pid, driver_name(d.driver_kind, &d.driver.service));
     if let Some(code) = d.problem_code {
         let _ = write!(s, ", problem code {code}");
     }
@@ -1354,15 +1368,11 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
     let _ = writeln!(out, "Language     : {}, theme {}", s.language, s.theme);
     let _ = writeln!(
         out,
-        "Settings     : media keys {}, remember volume {}, volume sync {}, auto-select {}{}, AFH {}, updates {}{}",
+        "Settings     : media keys {}, remember volume {}, volume sync {}, auto-select {}, AFH {}, updates {}{}",
         on_off(s.media_keys),
         on_off(s.remember_volume),
         on_off(s.volume_sync),
         on_off(s.auto_codec),
-        match s.auto_order() {
-            o if o.is_default() => String::new(),
-            o => format!(" (order {})", o.names()),
-        },
         s.afh,
         on_off(s.check_updates_on_startup),
         if s.include_prereleases { " (pre-releases too)" } else { "" }
@@ -1406,20 +1416,22 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         let _ = writeln!(out, "  {l}");
     }
 
-    out.push_str("\n[Profile]\n");
+    out.push_str("\n[Audio device]\n");
     match d.profile {
         Some(p) => {
             let _ = writeln!(out, "  Name: {}", quoted(&p.name));
             let _ = writeln!(out, "  Device: {} [{}]", quoted(&p.device_name), p.device_address);
             let auto_or = |v: u32| if v == 0 { "auto".to_string() } else { v.to_string() };
+            let order = p.order();
             let _ = writeln!(
                 out,
-                "  Codec: {}, quality {}, ABR {}, sample rate {}, bit depth {}",
+                "  Codec: {}, quality {}, ABR {}, sample rate {}, bit depth {}{}",
                 p.codec,
                 p.quality,
                 on_off(p.abr),
                 auto_or(p.sample_rate),
-                auto_or(p.bit_depth)
+                auto_or(p.bit_depth),
+                if order.is_default() { String::new() } else { format!(", order {}", order.names()) }
             );
             let _ = write!(out, "  Capture: {}", p.capture_mode);
             if p.capture_mode == "app" {
@@ -1643,6 +1655,17 @@ mod tests {
 
     fn status(f: &ConnectionFlow, s: Step) -> StepStatus {
         f.session().step(s).status
+    }
+
+    #[test]
+    fn driver_in_the_adapters_screens_two_names() {
+        use win_sys::driver::DriverKind;
+        assert_eq!(driver_name(DriverKind::WinUsb, "WINUSB"), "WinUSB driver");
+        assert_eq!(driver_name(DriverKind::Bluetooth, "BTHUSB"), "original driver (BTHUSB)");
+        // A vendor's own driver is the original one too
+        assert_eq!(driver_name(DriverKind::Other, "mtkbtfilterx"), "original driver (mtkbtfilterx)");
+        assert_eq!(driver_name(DriverKind::Other, ""), "original driver");
+        assert_eq!(driver_name(DriverKind::None, ""), "no driver");
     }
 
     #[test]

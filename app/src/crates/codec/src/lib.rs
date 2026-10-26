@@ -61,11 +61,12 @@ pub enum CodecKind {
     AptxAdaptive,
 }
 
-/// Auto's order (settings `auto_order`, issue #86): the codecs of
-/// [`CodecKind::AUTO_PRIORITY`] in the order the user put them on the
-/// Codecs screen; the default is that list, highest sound quality first.
-/// Auto takes the first one the device offers, and a chosen codec the
-/// device does not offer falls back to the next one below it here.
+/// A device's codec order (its profile's `codec_order`, issue #86 round 8):
+/// the codecs of [`CodecKind::AUTO_PRIORITY`] in the order the user dragged
+/// the device's cards into on the Codecs screen (with Auto-select off); the
+/// default is that list, highest sound quality first. Auto takes the first
+/// one the device offers, and so does a chosen codec the device does not
+/// offer (the fallback).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AutoOrder([CodecKind; 10]);
 
@@ -99,8 +100,7 @@ impl AutoOrder {
     }
 
     /// Where the codec stands (0 = first). Opus 05 stands with Opus and
-    /// FastStream after the last, so a fallback from them still goes down
-    /// the list.
+    /// FastStream after the last.
     pub fn rank(&self, kind: CodecKind) -> usize {
         let at = |k: CodecKind| self.0.iter().position(|&c| c == k).unwrap_or(0);
         match kind {
@@ -138,7 +138,7 @@ impl CodecKind {
     /// AAC, SBC XQ and SBC. SBC XQ stays below AAC: it carries more bits,
     /// but AAC sounds better per bit and SBC XQ has trouble with some
     /// frequencies. A chosen codec the device does not offer falls back
-    /// down this list ([`caps::choose`]). FastStream is not here: it sounds
+    /// to the first one here the device offers ([`caps::choose`]). FastStream is not here: it sounds
     /// worse than SBC, so it is used only when chosen. Neither is Opus 05:
     /// only PipeWire implements it (as a sink too), it is not verified with
     /// one, and a PipeWire sink offers Android's Opus as well from PipeWire
@@ -269,7 +269,9 @@ impl fmt::Display for CodecKind {
     }
 }
 
-/// Quality mode (codec-specific meaning, as in v1)
+/// Quality mode (codec-specific meaning, as in v1). Since issue #86 each
+/// codec offers only some ([`Quality::for_codec`]); the encoders still map
+/// every one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Quality {
     /// LDAC 990 kbps, SBC bitpool 53, SBC XQ ~552 kbps, AAC 256 kbps,
@@ -297,6 +299,19 @@ impl Quality {
             "mq" => Quality::Mobile,
             "mhq" => Quality::MediumHigh,
             "ll" => Quality::LowLatency,
+            _ => Quality::High,
+        }
+    }
+
+    /// The quality a `kind` stream runs with (issue #86): LDAC and LHDC V5
+    /// offer High, Medium (Standard) and Low (Mobile), aptX Adaptive High
+    /// and Low Latency, every other codec High only (its highest bit rate
+    /// the device takes; ABR / VBR does the rest). A quality the codec no
+    /// longer offers (a profile saved before, the CLI's -q) is High.
+    pub fn for_codec(self, kind: CodecKind) -> Quality {
+        match (kind, self) {
+            (CodecKind::Ldac | CodecKind::LhdcV5, Quality::Standard | Quality::Mobile) => self,
+            (CodecKind::AptxAdaptive, Quality::LowLatency) => self,
             _ => Quality::High,
         }
     }
@@ -529,5 +544,30 @@ fn create_inner(kind: CodecKind, config: &EncoderConfig) -> Result<Box<dyn Encod
         CodecKind::AptxAdaptive => Ok(Box::new(aptx_adaptive::AptxAdaptiveEncoder::new(config)?)),
         #[allow(unreachable_patterns)]
         _ => Err(EncoderError::NotAvailable(kind)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qualities_each_codec_offers() {
+        use Quality::*;
+        for q in [Standard, Mobile] {
+            assert_eq!(q.for_codec(CodecKind::Ldac), q);
+            assert_eq!(q.for_codec(CodecKind::LhdcV5), q);
+        }
+        // LHDC V5's Medium-High is gone (issue #86): High
+        assert_eq!(MediumHigh.for_codec(CodecKind::LhdcV5), High);
+        assert_eq!(LowLatency.for_codec(CodecKind::AptxAdaptive), LowLatency);
+        for q in [Standard, Mobile, MediumHigh] {
+            assert_eq!(q.for_codec(CodecKind::AptxAdaptive), High, "{q:?}");
+        }
+        for kind in [CodecKind::Aac, CodecKind::Sbc, CodecKind::SbcXq, CodecKind::Opus, CodecKind::Opus05] {
+            for q in [Standard, Mobile, MediumHigh, LowLatency] {
+                assert_eq!(q.for_codec(kind), High, "{kind:?} {q:?}");
+            }
+        }
     }
 }

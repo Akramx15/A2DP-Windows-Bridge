@@ -55,6 +55,13 @@ export function adapterIds(a: Pick<AdapterInfo, "address" | "vid" | "pid" | "bt_
   return [a.address, `${hex4(a.vid)}:${hex4(a.pid)}`, a.bt_version && `v${a.bt_version}`].filter(Boolean).join(" | ");
 }
 
+/** Why adapterIds lacks the address or the Bluetooth version: neither
+ *  Windows' Bluetooth (it runs one radio only) nor A2DP Windows Bridge has
+ *  used the adapter yet (issue #86); undefined when both are known */
+export function adapterIdsHint(a: Pick<AdapterInfo, "address" | "bt_version">): string | undefined {
+  return a.address && a.bt_version ? undefined : t("ui.adapter.ids_unknown");
+}
+
 /** A vendor whose loader is experimental (Intel, Broadcom): the core marks
  *  the chip "[experimental]" */
 export function adapterExperimental(a: Pick<AdapterInfo, "display_name">): boolean {
@@ -69,17 +76,17 @@ export function adapterSupported(a: Pick<AdapterInfo, "vendor_note">): boolean {
   return a.vendor_note?.key !== "firmware.vendor_unsupported";
 }
 
-/** The driver the adapter has now. Windows' Bluetooth driver (BTHUSB) is
- *  the "original" one WinUSB replaces, a vendor's own (MediaTek's filter, a
- *  composite device's) the manufacturer's (issue #86) */
+/** The driver the adapter has now, in two names only whatever the adapter
+ *  and its manufacturer (issue #86): WinUSB, or the "original" one WinUSB
+ *  replaces (Windows' BTHUSB, or a vendor's own such as MediaTek's filter or
+ *  a composite device's; the service shows on hover) */
 export function driverText(d: DriverKind): { text: string; status: "good" | "warn" | "bad" } {
   switch (d) {
     case "winusb":
       return { text: t("ui.adapter.driver_winusb"), status: "good" };
     case "bluetooth":
-      return { text: t("ui.adapter.driver_bluetooth"), status: "warn" };
     case "other":
-      return { text: t("ui.adapter.driver_other"), status: "warn" };
+      return { text: t("ui.adapter.driver_original"), status: "warn" };
     default:
       return { text: t("ui.adapter.driver_none"), status: "bad" };
   }
@@ -190,7 +197,9 @@ export function Adapter() {
                         </span>
                       </Show>
                     </h2>
-                    <span class="muted mono">{adapterIds(a)}</span>
+                    <span class="muted mono" title={adapterIdsHint(a)}>
+                      {adapterIds(a)}
+                    </span>
                   </div>
                 </div>
                 <div class="adapter-boxes">

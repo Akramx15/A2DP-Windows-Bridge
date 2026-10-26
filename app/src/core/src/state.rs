@@ -158,6 +158,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         sbc_allocation: p.sbc_allocation.clone(),
         sbc_channel_mode: p.sbc_channel_mode.clone(),
         codec_settings: p.codec_settings.iter().map(|(c, v)| (c.clone(), to_ipc_codec_values(v))).collect(),
+        codec_order: p.codec_order.clone(),
     }
 }
 
@@ -228,6 +229,15 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
         .filter(|(k, _)| **k != p.codec)
         .map(|(k, v)| (k.clone(), from_ipc_codec_values(v)))
         .collect();
+    // The codecs' keys, each once (the cards' order: FastStream and Opus 05
+    // too, which Auto and the fallback never take); the UI sends none for
+    // the default order
+    c.codec_order = Vec::new();
+    for k in p.codec_order.iter().filter_map(|k| codec::CodecKind::from_key(k)) {
+        if !c.codec_order.iter().any(|x| x == k.key()) {
+            c.codec_order.push(k.key().to_string());
+        }
+    }
     c
 }
 
@@ -252,6 +262,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
             aac_no_peak: s.dev_overrides.aac_no_peak,
             aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
             aac_latm_v0: s.dev_overrides.aac_latm_v0,
+            aptxad_96k: s.dev_overrides.aptxad_96k,
         },
         dev_log: DevLog {
             keep_days: s.dev_log.keep_days,
@@ -271,7 +282,6 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         le_audio_low_latency: s.le_audio_low_latency,
         experimental_codecs: s.experimental_codecs,
         auto_codec: s.auto_codec,
-        auto_order: s.auto_order.clone(),
     }
 }
 
@@ -300,6 +310,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
         aac_no_peak: s.dev_overrides.aac_no_peak,
         aac_no_afterburner: s.dev_overrides.aac_no_afterburner,
         aac_latm_v0: s.dev_overrides.aac_latm_v0,
+        aptxad_96k: s.dev_overrides.aptxad_96k,
     };
     c.dev_log = a2dpwb_core::settings::DevLog {
         keep_days: s.dev_log.keep_days,
@@ -320,10 +331,6 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.le_audio_low_latency = s.le_audio_low_latency;
     // experimental_codecs: always on (issue #86), as loaded
     c.auto_codec = s.auto_codec;
-    // Kept only when it is not the default order
-    let order = codec::AutoOrder::from_keys(&s.auto_order);
-    c.auto_order =
-        if order.is_default() { Vec::new() } else { order.codecs().iter().map(|k| k.key().to_string()).collect() };
     c
 }
 
@@ -420,8 +427,20 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 vendor_note: vendor_note(a.vendor),
                 restart_needed: a.device.problem_code == Some(CM_PROB_NEED_RESTART),
                 le_audio: a2dpwb_core::adapter::le_audio(config_dir, a.device.vid, a.device.pid),
-                address: a2dpwb_core::adapter::address(config_dir, a.device.vid, a.device.pid),
-                bt_version: a2dpwb_core::adapter::hci_version(config_dir, a.device.vid, a.device.pid)
+                // What Windows' radio of this very device reads now, else
+                // what it or a stack of A2DPWB read when one ran it (kept per
+                // VID:PID), else a Realtek adapter's USB serial: an adapter
+                // neither ran yet (Windows uses one radio only, the second
+                // one tells nothing) still shows it (issue #86)
+                address: radio
+                    .as_ref()
+                    .and_then(|r| r.address.clone())
+                    .or_else(|| a2dpwb_core::adapter::address(config_dir, a.device.vid, a.device.pid))
+                    .or_else(|| a2dpwb_core::adapter::serial_address(a.vendor, &a.device.instance_id)),
+                bt_version: radio
+                    .as_ref()
+                    .and_then(|r| r.hci_version)
+                    .or_else(|| a2dpwb_core::adapter::hci_version(config_dir, a.device.vid, a.device.pid))
                     .and_then(a2dpwb_core::adapter::bt_core_version)
                     .map(str::to_owned),
                 // An adapter already on WinUSB when A2DPWB came to know
@@ -496,6 +515,7 @@ fn saved_devices(
             rssi: None,
             codecs: Vec::new(),
             sbc: None,
+            codec_caps: Vec::new(),
             le_audio: d.le_audio,
             le_audio_set: false,
         })
@@ -516,6 +536,16 @@ fn saved_devices(
         if let Some(c) = codecs.get(&d.address.to_uppercase()) {
             d.codecs = c.keys.clone();
             d.sbc = c.sbc.clone().map(to_ipc_sbc_caps);
+            d.codec_caps = c
+                .caps
+                .iter()
+                .map(|k| ipc::CodecDeviceCaps {
+                    codec: k.codec.clone(),
+                    sample_rates: k.sample_rates.clone(),
+                    bit_depths: k.bit_depths.clone(),
+                    max_bitrate: k.max_bitrate,
+                })
+                .collect();
         }
     }
     list
@@ -531,6 +561,7 @@ fn scanned_device(d: &ScannedDevice) -> Device {
         rssi: Some(d.rssi),
         codecs: Vec::new(),
         sbc: None,
+        codec_caps: Vec::new(),
         le_audio: d.le_audio,
         le_audio_set: d.le_audio_set,
     }
@@ -838,14 +869,17 @@ fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
 }
 
 /// Whether turning Auto-select (for every device) on or off may change the
-/// codec of the profile in use: it chose one (a profile left on "auto"
-/// streams as Auto either way). Not LE Audio (LC3).
+/// codec of the profile in use: it chose one, or its own codec order (a
+/// profile left on "auto" in the default order streams as Auto either
+/// way). Not LE Audio (LC3).
 fn restart_for_auto(stream: &StreamStatus, p: &CoreProfile) -> bool {
-    restart_after_save(stream, &p.name) && !p.le_audio && p.codec != "auto"
+    restart_after_save(stream, &p.name) && !p.le_audio && (p.codec != "auto" || !p.order().is_default())
 }
 
-/// Whether a new Auto's order may change the codec of the profile in use:
-/// it is Auto or fell back (the fallback goes down the order). Not LE Audio.
+/// Whether a new codec order of the device (its cards dragged, issue #86
+/// round 8) may change the codec of the profile in use (`p` as it streams):
+/// it is Auto or fell back (the fallback takes the first codec in the
+/// order). Not LE Audio.
 fn restart_for_order(stream: &StreamStatus, p: &CoreProfile) -> bool {
     let fell_back = stream.info.as_ref().is_some_and(|i| i.requested_codec.is_some());
     restart_after_save(stream, &p.name) && !p.le_audio && (p.codec == "auto" || fell_back)
@@ -1011,9 +1045,9 @@ impl CoreState {
         let lang = s.settings.language.clone();
         let streaming = s.stream.state == StreamState::Streaming;
         let base = if streaming {
-            a2dpwb_core::messages::translate(&lang, "tray.tooltip_streaming", "A2DPWB - Streaming")
+            a2dpwb_core::messages::translate(&lang, "tray.tooltip_streaming", "A2DP Windows Bridge - Streaming")
         } else {
-            a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DPWB - Idle")
+            a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DP Windows Bridge - Idle")
         };
         // The streamed profile's device (v1)
         let device = streamed_device(&s);
@@ -1253,9 +1287,10 @@ impl CoreState {
         let list = profiles::load(&dir);
         let p =
             list.iter().find(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
-        // Auto-select for every device: Auto, whatever codec the profile chose
-        let auto = (settings.auto_codec && !p.le_audio && p.codec != "auto").then(|| p.as_auto());
-        if auto.is_some() {
+        // Auto-select for every device: Auto in the default order, whatever
+        // codec and order the profile chose
+        let auto = (settings.auto_codec && !p.le_audio).then(|| p.as_auto());
+        if auto.is_some() && p.codec != "auto" {
             tracing::debug!(
                 "profile {}: codec {} chosen, Auto-select streams Auto",
                 a2dpwb_core::diag::quoted(&p.name),
@@ -1268,7 +1303,6 @@ impl CoreState {
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
-        req.auto_order = settings.auto_order();
         req.volume_sync = effective_volume_sync(settings.volume_sync, req.volume_sync);
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
@@ -1280,7 +1314,6 @@ impl CoreState {
         let settings = self.service.settings();
         let mut req = custom_request(c, settings.legacy_max_media_payload())?;
         req.experimental_codecs = settings.experimental_codecs;
-        req.auto_order = settings.auto_order();
         tracing::info!("custom stream to {}: codec {}, source {}", c.device, c.codec, req.source);
         self.begin_stream(req, None);
         Ok(())
@@ -1373,8 +1406,8 @@ impl CoreState {
             return;
         }
         (self.balloon)(BalloonRequest {
-            title: "A2DPWB".into(),
-            text: self.tr("tray.minimized_hint", "A2DPWB is still running in the system tray."),
+            title: "A2DP Windows Bridge".into(),
+            text: self.tr("tray.minimized_hint", "A2DP Windows Bridge is still running in the system tray."),
             url: None,
         });
         s.other.insert(TRAY_HINT_SHOWN.into(), Value::Bool(true));
@@ -1387,11 +1420,11 @@ impl CoreState {
     /// The streamed headphones' battery went low: a balloon, once per
     /// connection ([`battery_low_alert`])
     fn battery_low(&self, s: &Snapshot, level: u8) {
-        let device = streamed_device(s).unwrap_or("A2DPWB");
+        let device = streamed_device(s).unwrap_or("A2DP Windows Bridge");
         tracing::info!("battery: {device} at {level}%, below {BATTERY_LOW}%: balloon");
         let template = self.tr("notify.battery_low", "%s: battery low (%d%%)");
         (self.balloon)(BalloonRequest {
-            title: "A2DPWB".into(),
+            title: "A2DP Windows Bridge".into(),
             text: a2dpwb_core::messages::format_printf(&template, &[device.to_string(), level.to_string()]),
             url: None,
         });
@@ -1402,7 +1435,7 @@ impl CoreState {
     fn announce_update(&self, u: &UpdateState) {
         let Some(a) = &u.available else { return };
         let text = self
-            .tr("update.balloon", "A2DPWB %s is available. Click here to open the download page.")
+            .tr("update.balloon", "A2DP Windows Bridge %s is available. Click here to open the download page.")
             .replacen("%s", &a.version, 1);
         (self.balloon)(BalloonRequest {
             title: self.tr("update.available_title", "Update Available"),
@@ -1629,6 +1662,15 @@ impl CoreState {
                 let key = original_name.as_deref().unwrap_or(&profile.name).to_string();
                 let pos = list.iter().position(|p| p.name == key);
                 let merged = merge_profile(pos.map(|i| &list[i]), &profile);
+                // Only the device's codec order changed (its cards dragged):
+                // the stream goes on unless the order changes its codec
+                let order_only = pos.is_some_and(|i| {
+                    list[i].codec_order != merged.codec_order
+                        && CoreProfile { codec_order: merged.codec_order.clone(), ..list[i].clone() } == merged
+                });
+                // Under Auto-select the order is not used
+                let order_unused = self.service.settings().auto_codec || merged.le_audio;
+                let in_order = merged.clone();
                 // The profile's device joins the saved ones of its kind (as
                 // a connection saves it)
                 let address = merged.device_address.clone();
@@ -1661,7 +1703,8 @@ impl CoreState {
                 }
                 self.refresh_devices();
                 // The profile in use starts again with what was saved (v1)
-                if restart_after_save(&s.stream, &key) {
+                let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
+                if restart_after_save(&s.stream, &key) && !order_keeps_codec {
                     tracing::info!(
                         "profile {} saved while in use: it starts again as {}",
                         a2dpwb_core::diag::quoted(&key),
@@ -1696,33 +1739,27 @@ impl CoreState {
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
-                    let order_changed = base.auto_order != merged.auto_order;
                     let sync_toggled = base.volume_sync != merged.volume_sync;
-                    let order_names = merged.auto_order().names();
                     me.save_settings(merged)?;
                     if chip {
                         me.reload_adapter();
                     }
-                    // Auto-select on / off or Auto's order: a profile in use
-                    // whose codec it changes starts again (as a profile save
-                    // does); Windows Volume Sync on / off: the profile in use
-                    // starts again (as when it was the profile's own setting)
-                    if auto_toggled || order_changed || sync_toggled {
+                    // Auto-select on / off: a profile in use whose codec it
+                    // changes starts again (as a profile save does); Windows
+                    // Volume Sync on / off: the profile in use starts again
+                    // (as when it was the profile's own setting)
+                    if auto_toggled || sync_toggled {
                         let (_, s) = me.snapshot();
                         let list = profiles::load(&me.config_dir());
                         let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
                         let restart = |p: &&CoreProfile| {
-                            // As it streams under Auto-select (for every device)
-                            let effective = if settings.auto_codec { p.as_auto() } else { (*p).clone() };
-                            (order_changed && restart_for_order(&s.stream, &effective))
-                                || (auto_toggled && restart_for_auto(&s.stream, p))
+                            (auto_toggled && restart_for_auto(&s.stream, p))
                                 || (sync_toggled && restart_after_save(&s.stream, &p.name))
                         };
                         if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
-                                "Auto-select {}, order {}, volume sync {}: profile {} starts again",
+                                "Auto-select {}, volume sync {}: profile {} starts again",
                                 if settings.auto_codec { "on" } else { "off" },
-                                order_names,
                                 if settings.volume_sync { "on" } else { "off" },
                                 a2dpwb_core::diag::quoted(&p.name)
                             );
@@ -1757,7 +1794,6 @@ impl CoreState {
                     // stack, with the same profile (issue #86)
                     if let Some(mut req) = again {
                         req.experimental_codecs = me.service.settings().experimental_codecs;
-                        req.auto_order = me.service.settings().auto_order();
                         let profile = me.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         me.begin_stream(req, profile);
                     }
@@ -2061,6 +2097,23 @@ mod tests {
         assert_eq!(adapter_chip(ChipVendor::Qualcomm, None, &stem), (0, ""));
     }
 
+    /// This PC's adapters as the Adapters screen lists them, with nothing
+    /// remembered yet (a fresh config folder; read-only otherwise): cargo
+    /// test -p a2dpwb-core-exe list_adapter_infos -- --ignored --nocapture
+    #[test]
+    #[ignore = "reads this PC's USB devices and Bluetooth radios"]
+    fn list_adapter_infos() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-adapter-infos-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for a in adapter_infos(&dir, &CoreSettings::default()) {
+            println!(
+                "{} {:04X}:{:04X} {:?} ({}) address {:?} version {:?} name {:?}",
+                a.instance_id, a.vid, a.pid, a.driver, a.driver_service, a.address, a.bt_version, a.windows_name
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn firmware_fixed_and_invalid_files_are_noticed() {
         let missing = rtl("a", Some(false), None);
@@ -2088,17 +2141,17 @@ mod tests {
         assert_eq!(tray_codec_line("SBC", 328, 44100, 16, false), "SBC 328 kbps | 44.1 kHz | 16-bit");
         assert_eq!(tray_codec_line("LC3", 320, 48000, 0, false), "LC3 320 kbps | 48 kHz");
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", Some("WH-1000XM4"), &[ldac.clone(), "Battery 80%".into()]),
-            "A2DPWB - Streaming (WH-1000XM4)\nLDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%"
+            tray_tooltip("A2DP Windows Bridge - Streaming", Some("WH-1000XM4"), &[ldac.clone(), "Battery 80%".into()]),
+            "A2DP Windows Bridge - Streaming (WH-1000XM4)\nLDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%"
         );
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", None, &[ldac]),
-            "A2DPWB - Streaming\nLDAC 990 kbps | 96 kHz | 24-bit | ABR"
+            tray_tooltip("A2DP Windows Bridge - Streaming", None, &[ldac]),
+            "A2DP Windows Bridge - Streaming\nLDAC 990 kbps | 96 kHz | 24-bit | ABR"
         );
-        assert_eq!(tray_tooltip("A2DPWB - Streaming", Some(""), &[]), "A2DPWB - Streaming");
+        assert_eq!(tray_tooltip("A2DP Windows Bridge - Streaming", Some(""), &[]), "A2DP Windows Bridge - Streaming");
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", Some("AA:BB:CC:DD:EE:FF"), &[]),
-            "A2DPWB - Streaming (AA:BB:CC:DD:EE:FF)"
+            tray_tooltip("A2DP Windows Bridge - Streaming", Some("AA:BB:CC:DD:EE:FF"), &[]),
+            "A2DP Windows Bridge - Streaming (AA:BB:CC:DD:EE:FF)"
         );
     }
 
@@ -2121,7 +2174,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_auto_order_restarts_a_profile_on_auto_or_fallen_back() {
+    fn a_new_codec_order_restarts_a_profile_on_auto_or_fallen_back() {
         let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
         let streaming = |requested: Option<&str>| StreamStatus {
             state: StreamState::Streaming,
@@ -2160,6 +2213,8 @@ mod tests {
         assert!(restart_for_auto(&streaming, &profile("aac")));
         // Auto either way, another profile, nothing running, LE Audio
         assert!(!restart_for_auto(&streaming, &profile("auto")));
+        // Auto in its own order: Auto-select takes the default order
+        assert!(restart_for_auto(&streaming, &CoreProfile { codec_order: vec!["sbc".into()], ..profile("auto") }));
         assert!(!restart_for_auto(&streaming, &CoreProfile { name: "Buds".into(), ..profile("aac") }));
         assert!(!restart_for_auto(&StreamStatus::default(), &profile("aac")));
         assert!(!restart_for_auto(&streaming, &CoreProfile { le_audio: true, ..profile("aac") }));
@@ -2438,6 +2493,7 @@ mod tests {
             rssi: Some(-60),
             codecs: Vec::new(),
             sbc: None,
+            codec_caps: Vec::new(),
             le_audio: false,
             le_audio_set: false,
         }];
@@ -2453,13 +2509,27 @@ mod tests {
         };
         codecs.insert(
             "AA:BB:CC:DD:EE:FF".to_string(),
-            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string(), "ldac".to_string()], sbc: Some(sbc) },
+            a2dpwb_core::KnownCodecs {
+                keys: vec!["sbc".to_string(), "ldac".to_string()],
+                sbc: Some(sbc),
+                caps: vec![a2dpwb_core::CodecDeviceCaps {
+                    codec: "ldac".into(),
+                    sample_rates: vec![44100, 48000],
+                    ..Default::default()
+                }],
+            },
         );
         let list = saved_devices(&dir, &scanned, &codecs);
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].codecs, ["sbc", "ldac"]);
         // What its SBC endpoint offered, for the profile editor
         assert_eq!(list[0].sbc.as_ref().map(|s| s.blocks.clone()), Some(vec![8, 16]));
+        // And what each codec lists, for the codec settings (issue #86)
+        assert_eq!(list[0].codec_caps.len(), 1);
+        assert_eq!(
+            (list[0].codec_caps[0].codec.as_str(), list[0].codec_caps[0].sample_rates.clone()),
+            ("ldac", vec![44100, 48000])
+        );
         assert!(list[1].sbc.is_none());
         assert!(list[0].saved && !list[1].saved && list[1].codecs.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
@@ -2478,6 +2548,17 @@ mod tests {
         let mut warned = false;
         assert!(battery_low_alert(&mut warned, 12));
         assert!(!battery_low_alert(&mut warned, 11));
+    }
+
+    #[test]
+    fn codec_order_is_stored_with_known_keys_once() {
+        let ui =
+            to_ipc_profile(&CoreProfile { device_address: "C0:11:22:33:44:55".into(), ..CoreProfile::default() }, 679);
+        assert!(ui.codec_order.is_empty());
+        let order = ["SBCXQ", "nope", "faststream", "sbcxq", "aac"].map(String::from).to_vec();
+        let merged = merge_profile(None, &Profile { codec_order: order, ..ui });
+        assert_eq!(merged.codec_order, ["sbcxq", "faststream", "aac"]);
+        assert_eq!(to_ipc_profile(&merged, 679).codec_order, merged.codec_order);
     }
 
     #[test]
@@ -2568,7 +2649,7 @@ mod tests {
         let mut codecs = BTreeMap::new();
         codecs.insert(
             "AA:BB:CC:DD:EE:FF".to_string(),
-            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string()], sbc: None },
+            a2dpwb_core::KnownCodecs { keys: vec!["sbc".to_string()], ..Default::default() },
         );
         let list = saved_devices(&dir, &scanned, &codecs);
         let kinds: Vec<(&str, bool, bool)> = list.iter().map(|d| (d.name.as_str(), d.le_audio, d.saved)).collect();

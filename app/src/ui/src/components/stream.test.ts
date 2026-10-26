@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLanguage } from "../i18n";
 import type { CodecDetails, LinkSample, StreamInfo } from "../ipc/types";
-import { abrTooltipKey, codecDetails, linkQuality } from "./stream";
+import { abrTooltipKey, codecDetails, fallbackNoteKey, linkQuality } from "./stream";
 
 const sample = (i: number, over: Partial<LinkSample> = {}): LinkSample => ({
   time_ms: i * 250,
@@ -103,5 +103,15 @@ describe("codec summary", () => {
     const aac: StreamInfo = { ...SBC_INFO, codec: "AAC", bitrate_kbps: 256, sample_rate: 44100, details: null };
     expect(codecDetails(aac)).toEqual(["256 kbps", "44.1 kHz", "16-bit", "VBR"]);
     expect(abrTooltipKey(aac)).toBe("tooltip.vbr");
+  });
+
+  it("says beside the codec why the chosen one is not used (issue #86)", () => {
+    expect(fallbackNoteKey(SBC_INFO, "status.connected")).toBeNull();
+    const opus: StreamInfo = { ...SBC_INFO, requested_codec: "Opus" };
+    expect(fallbackNoteKey(opus, "status.connected_fallback")).toBe("ui.codec.fallback_unsupported");
+    expect(fallbackNoteKey({ ...opus, requested_in_use: true }, "status.connected_fallback_in_use")).toBe("ui.codec.fallback_in_use");
+    expect(fallbackNoteKey(opus, "status.connected_fallback_experimental")).toBe("ui.codec.fallback_experimental");
+    // A later message (a reconnect) keeps the note
+    expect(fallbackNoteKey(opus, "status.reconnected")).toBe("ui.codec.fallback_unsupported");
   });
 });

@@ -24,18 +24,18 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LHDC V5、LDAC
 
 | コーデック | ビットレート | サンプルレート | ビット深度 | レイテンシー |
 |:-----------|:-------------|:---------------|:-----------|:-------------|
-| LHDC V5 | 400/500/900/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/1000 kbps、ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | 約 200 ms |
-| aptX Adaptive | 265--427 kbps（96 kHz: 255--646） | 48/96 kHz | 24 bit | -- |
-| Opus 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| aptX Adaptive | 265/427 kbps（96 kHz: 646） | 48 kHz（96 kHz は開発者のスイッチ） | 24 bit | -- |
+| Opus 🧪 | 256 kbps | 48 kHz | 16 bit | -- |
 | aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | 約 150 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
 | aptX Low Latency 🧪 | 352 kbps | 44.1/48 kHz | 16 bit | 約 32 ms |
-| AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
+| AAC | 最大 256 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC XQ | 約 385/505/552 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | SBC | 最大約 345 kbps | 44.1/48 kHz | 16 bit | 約 150 ms |
 | FastStream 🧪 | 198/216 kbps | 44.1/48 kHz | 16 bit | -- |
-| Opus 05 🧪 | 128/192/256 kbps | 48 kHz | 16 bit | -- |
+| Opus 05 🧪 | 256 kbps | 48 kHz | 16 bit | -- |
 | LC3（LE Audio） 🧪 | 1 チャネルあたり 32--124 kbps | 16/24/32/48 kHz | 16 bit | 約 140 ms |
 | LC3 低遅延（LE Audio GMAP） 🧪 | 1 チャネルあたり 64--96 kbps | 32/48 kHz | 16 bit | 約 30 ms |
 
@@ -78,7 +78,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LHDC V5、LDAC
 **クラシック aptX だけが目的なら**、Windows 10 標準の Bluetooth スタックがクラシック aptX に対応しています（aptX HD・aptX LL・aptX Adaptive は非対応）。その場合 A2DPWB は不要です。A2DPWB が主に役立つのは LDAC・aptX HD・aptX Low Latency です。
 
 {: .note }
-**aptX Adaptive について。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオ（44.1 kHz を指定しても 48 kHz で取り込みます）、24 bit で、R1 のシンクでは高音質 427 kbps、標準 364、モバイル 318、低遅延 265 kbps（R2 のシンクは別の値）、高音質では ABR が使えます。コーデックの設定で 96 kHz を選び、ヘッドホンが 96 kHz を通知する R2 のシンクであれば 96 kHz（高音質 646 kbps、標準 340、モバイル 255）になります。低遅延では使えず、それ以外は 48 kHz です。96 kHz は A2DPWB でも上流でもエミュレーターでしか試していません。自動選択では LHDC V5、LDAC の次に選ばれます。**コーデック** 画面か `-c aptxad` で選ぶこともできます。2.0.2-beta.6 で EarFun Air Pro 4+ を使った 48 kHz での動作が利用者から報告されており、クラシック aptX と同じくらい安定しています（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
+**aptX Adaptive について。** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) の MIT ライセンスの Rust 製エンコーダーでエンコードします。そのテーブルは、作者が Qualcomm の出荷済みバイナリと無線のキャプチャから再構成したものです。48 kHz ステレオ（44.1 kHz を指定しても 48 kHz で取り込みます）、24 bit で、高音質 427 kbps か低遅延 265 kbps（R2 のシンクは 270）、高音質では ABR が使えます。96 kHz（高音質 646 kbps）は A2DPWB でも上流でもエミュレーターでしか試していないため、**開発者 > aptX Adaptive を 96 kHz で** をオンにしたときだけ使います。そのときは、自動選択か、コーデックの設定で 96 kHz を選んだときに、ヘッドホンが 96 kHz を通知する R2 のシンクであれば 96 kHz になります。低遅延では使いません。自動選択では LHDC V5、LDAC の次に選ばれます。**コーデック** 画面か `-c aptxad` で選ぶこともできます。2.0.2-beta.6 で EarFun Air Pro 4+ を使った 48 kHz での動作が利用者から報告されており、クラシック aptX と同じくらい安定しています（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）。上流は Linux で Bose QuietComfort Ultra（第 1 世代）と B&W Px7 S2e での動作を報告しています。詳しくは [aptX ファミリーと aptX Adaptive](usage#aptx-compatibility)を参照してください。
 
 ## 対応プラットフォーム {#platform-support}
 

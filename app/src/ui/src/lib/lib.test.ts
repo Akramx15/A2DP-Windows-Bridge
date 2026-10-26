@@ -9,6 +9,9 @@ import {
   autoPick,
   bitDepths,
   bitrateNoteKey,
+  capsOf,
+  CARD_ORDER,
+  cardOrder,
   carryToCodec,
   codecLabelKey,
   CODECS,
@@ -17,8 +20,12 @@ import {
   isDefaultOrder,
   isExperimental,
   fixedBitDepth,
+  moved,
+  offeredBitDepths,
+  offeredQualities,
+  offeredSampleRates,
   qualityIgnored,
-  qualityRank,
+  qualityKbps,
   qualityTag,
   sampleRates,
 } from "./codecs";
@@ -154,9 +161,11 @@ describe("a device's profile (Codecs screen, issue #86)", () => {
     expect(back).toMatchObject({ codec: "aac", abr: true });
     expect(back.codec_settings).not.toHaveProperty("aac");
     expect(back.codec_settings.ldac).toBeDefined();
-    // The "..." dialog's values win over what was kept
+    // The "..." dialog's values win over what was kept; a quality the codec
+    // no longer offers is High (issue #86: AAC has High only)
     const sq = withCodec(ldac, "aac", { ...ldac.codec_settings.aac, quality: "sq", abr: false });
-    expect(sq).toMatchObject({ codec: "aac", quality: "sq", abr: false });
+    expect(sq).toMatchObject({ codec: "aac", quality: "hq", abr: false });
+    expect(withCodec(aac, "ldac", { ...ldac.codec_settings.aac, quality: "sq" })).toMatchObject({ codec: "ldac", quality: "sq" });
     // Fitted to the codec: SBC's bitpool does not reach AAC
     expect(withCodec(sampleProfile({ codec: "sbc", sbc_bitpool: 40 }), "aac").sbc_bitpool).toBe(0);
   });
@@ -270,6 +279,40 @@ describe("profiles", () => {
     expect(qualityIgnored("lhdcv5", true)).toBe(true);
     expect(qualityIgnored("lhdcv5", false)).toBe(false);
     expect(qualityIgnored("ldac", true)).toBe(false);
+  });
+
+  it("offers High / Medium / Low for LDAC and LHDC V5, High / LL for aptX Adaptive, High elsewhere (issue #86)", () => {
+    const ids = (codec: string) => CODECS.find((c) => c.id === codec)!.qualities.map((q) => q.id);
+    expect(ids("ldac")).toEqual(["hq", "sq", "mq"]);
+    expect(ids("lhdcv5")).toEqual(["hq", "sq", "mq"]);
+    expect(ids("aptxad")).toEqual(["hq", "ll"]);
+    for (const c of ["auto", "aac", "opus", "opus05", "sbc", "sbcxq"]) expect(ids(c)).toEqual(["hq"]);
+    for (const c of ["aptx", "aptxhd", "aptxll", "faststream"]) expect(ids(c)).toEqual([]);
+  });
+
+  it("offers only what the device lists (issue #86: moto buds+)", () => {
+    const caps = [
+      { codec: "lhdcv5", sample_rates: [44100, 48000], bit_depths: [16], max_bitrate: 0 },
+      { codec: "aac", sample_rates: [44100, 48000], bit_depths: [], max_bitrate: 0x020000 },
+    ];
+    const lhdc = capsOf(caps, "LHDCV5");
+    expect(offeredSampleRates("lhdcv5", lhdc)).toEqual([0, 44100, 48000]);
+    expect(offeredBitDepths("lhdcv5", lhdc)).toEqual([0, 16]);
+    // Not known: everything; 88.2 kHz runs as 96 kHz on LHDC V5
+    expect(offeredSampleRates("lhdcv5", null)).toEqual(sampleRates("lhdcv5"));
+    expect(offeredSampleRates("lhdcv5", { ...lhdc!, sample_rates: [48000, 96000] })).toEqual([0, 48000, 88200, 96000]);
+    // AAC's High at the device's largest bit rate
+    expect(qualityKbps("aac", "hq", 0, capsOf(caps, "aac")!.max_bitrate)).toBe("131");
+    expect(qualityKbps("aac", "hq", 0, 320000)).toBe("256");
+    // LHDC V5 at most 500 kbps: High is 500, Medium the same (left out)
+    expect(offeredQualities("lhdcv5", 48000, 500000).map((q) => [q.id, q.kbps])).toEqual([
+      ["hq", "500"],
+      ["mq", "400"],
+    ]);
+    expect(offeredQualities("lhdcv5", 48000, 500000, "sq").map((q) => q.id)).toEqual(["hq", "sq", "mq"]);
+    // aptX Adaptive's 96 kHz only while switched on (Developer)
+    expect(offeredSampleRates("aptxad", null, false)).toEqual([0, 48000]);
+    expect(offeredSampleRates("aptxad", null, true)).toEqual([0, 48000, 96000]);
   });
 
   it("says why the bit rate is below the profile's", () => {
@@ -460,17 +503,19 @@ describe("profile list", () => {
   it("shows the quality and its bit rate as v1 did", () => {
     const tag = (over: Parameters<typeof sampleProfile>[0]) => qualityTag(sampleProfile(over), t);
     expect(tag({ codec: "ldac", quality: "hq" })).toBe("High (990 kbps)");
-    expect(tag({ codec: "ldac", quality: "sq", sample_rate: 44100 })).toBe("Standard (606 kbps)");
-    expect(tag({ codec: "ldac", quality: "mq", sample_rate: 88200 })).toBe("Mobile (303 kbps)");
-    expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 44100 })).toBe("Standard (480 kbps)");
-    expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 88200 })).toBe("Standard (500 kbps)");
-    expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("Medium-High (900 kbps)");
+    expect(tag({ codec: "ldac", quality: "sq", sample_rate: 44100 })).toBe("Medium (606 kbps)");
+    expect(tag({ codec: "ldac", quality: "mq", sample_rate: 88200 })).toBe("Low (303 kbps)");
+    expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 44100 })).toBe("Medium (480 kbps)");
+    expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 88200 })).toBe("Medium (500 kbps)");
+    // Qualities a codec no longer offers (issue #86) are High
+    expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("High (1000 kbps)");
     expect(tag({ codec: "aptxad", quality: "ll" })).toBe("Low Latency (265 kbps)");
     expect(tag({ codec: "aptxad", quality: "hq", sample_rate: 96000 })).toBe("High (646 kbps)");
-    expect(tag({ codec: "aptxad", quality: "mq", sample_rate: 96000 })).toBe("Mobile (255 kbps)");
+    expect(tag({ codec: "aptxad", quality: "mq", sample_rate: 96000 })).toBe("High (646 kbps)");
     expect(tag({ codec: "aptxad", quality: "ll", sample_rate: 96000 })).toBe("Low Latency (265 kbps)");
     expect(tag({ codec: "lhdcv5", quality: "hq", abr: true })).toBe("ABR (≤400 kbps)");
-    expect(tag({ codec: "sbc", quality: "sq" })).toBe("Standard (~240 kbps)");
+    expect(tag({ codec: "sbc", quality: "sq" })).toBe("High (~345 kbps)");
+    expect(tag({ codec: "aac", quality: "mq" })).toBe("High (256 kbps)");
     expect(tag({ codec: "auto", quality: "hq" })).toBe("High");
     // No quality choice
     expect(tag({ codec: "aptxhd" })).toBeNull();
@@ -488,20 +533,21 @@ describe("Auto's order and the fallback (issue #86)", () => {
     expect(autoPick([])).toBeNull();
   });
 
-  it("falls back to the next codec below the chosen one the device offers", () => {
-    // The EarFun (no LHDC): LHDC V5 chosen gives aptX Adaptive, the next one it has
+  it("falls back to the best codec the device offers (issue #86 round 8)", () => {
     const earfun = ["sbc", "aac", "aptx", "aptxad"];
+    // The tester's EarFun: Opus chosen gives aptX Adaptive, not aptX below Opus
+    expect(effectiveCodec("opus", earfun)).toBe("aptxad");
     expect(effectiveCodec("lhdcv5", earfun)).toBe("aptxad");
-    expect(effectiveCodec("aptxhd", earfun)).toBe("aptx");
-    // Not "the best": LDAC above aptX HD is not taken
-    expect(effectiveCodec("aptxhd", ["sbc", "aac", "ldac"])).toBe("aac");
-    expect(effectiveCodec("sbcxq", ["sbc", "aac"])).toBe("sbc");
+    expect(effectiveCodec("aptxhd", earfun)).toBe("aptxad");
+    expect(effectiveCodec("aptxhd", ["sbc", "aac", "ldac"])).toBe("ldac");
+    expect(effectiveCodec("sbcxq", ["sbc", "aac"])).toBe("aac");
     // Offered: itself; Auto: its pick
     expect(effectiveCodec("aac", earfun)).toBe("aac");
     expect(effectiveCodec("auto", earfun)).toBe("aptxad");
-    // Opus 05 stands with Opus, FastStream below SBC (then the best there is)
+    // Opus 05 and FastStream are never a fallback
     expect(effectiveCodec("opus05", ["sbc", "opus"])).toBe("opus");
     expect(effectiveCodec("faststream", ["sbc", "aac"])).toBe("aac");
+    expect(effectiveCodec("ldac", ["sbc", "faststream", "opus05"])).toBe("sbc");
     // Not known yet
     expect(effectiveCodec("ldac", [])).toBeNull();
   });
@@ -514,7 +560,7 @@ describe("Auto's order and the fallback (issue #86)", () => {
     const pw = ["sbc", "aac", "opus", "aptxhd"];
     expect(autoPick(pw)).toBe("opus");
     expect(autoPick(pw, false)).toBe("aac");
-    // Chosen while off: the next one down that is not experimental
+    // Chosen while off: the best one that is not experimental
     expect(effectiveCodec("opus", pw, false)).toBe("aac");
     expect(effectiveCodec("aptxhd", pw, false)).toBe("aac");
     // Nor a fallback for another codec
@@ -524,23 +570,38 @@ describe("Auto's order and the fallback (issue #86)", () => {
   });
 });
 
-describe("Auto's order", () => {
+describe("A device's codec order (issue #86 round 8)", () => {
   it("keeps every codec of AUTO_ORDER once, the ones given first", () => {
     expect(autoOrder([])).toEqual([...AUTO_ORDER]);
     const o = autoOrder(["AAC", "nope", "ldac", "aac", "faststream"]);
     expect(o.slice(0, 3)).toEqual(["aac", "ldac", "lhdcv5"]);
     expect(o).toHaveLength(AUTO_ORDER.length);
+  });
+
+  it("puts every card once, the ones given first", () => {
+    expect(cardOrder([])).toEqual([...CARD_ORDER]);
+    expect(CARD_ORDER.filter((c) => AUTO_ORDER.includes(c))).toEqual([...AUTO_ORDER]);
+    const o = cardOrder(["SBCXQ", "nope", "sbc", "sbcxq", "faststream"]);
+    expect(o.slice(0, 4)).toEqual(["sbcxq", "sbc", "faststream", "lhdcv5"]);
+    expect([...o].sort()).toEqual([...CARD_ORDER].sort());
     expect(isDefaultOrder([])).toBe(true);
+    expect(isDefaultOrder([...CARD_ORDER])).toBe(true);
     expect(isDefaultOrder(o)).toBe(false);
+    expect(moved(["a", "b", "c"], 2, 0)).toEqual(["c", "a", "b"]);
+    expect(moved(["a", "b", "c"], 0, 1)).toEqual(["b", "a", "c"]);
   });
 
   it("is what Auto and a fallback follow", () => {
     const known = ["sbc", "aac", "ldac"];
-    const aacFirst = autoOrder(["aac"]);
+    const aacFirst = cardOrder(["aac"]);
     expect(effectiveCodec("auto", known)).toBe("ldac");
     expect(effectiveCodec("auto", known, true, aacFirst)).toBe("aac");
-    // aptX HD not offered: the next one below it in the order set
-    expect(effectiveCodec("aptxhd", known, true, autoOrder(["aptxhd", "sbc", "ldac"]))).toBe("sbc");
-    expect(qualityRank("opus05", aacFirst)).toBe(aacFirst.indexOf("opus"));
+    // aptX HD not offered: the first card the device offers
+    expect(effectiveCodec("aptxhd", known, true, cardOrder(["aptxhd", "sbc", "ldac"]))).toBe("sbc");
+    // The tester's order, SBC XQ first: SBC XQ for an Opus it does not offer
+    const earfun = ["sbc", "sbcxq", "aac", "aptx", "aptxad"];
+    expect(effectiveCodec("opus", earfun, true, cardOrder(["sbcxq", "sbc", "aptxad", "aac", "aptx"]))).toBe("sbcxq");
+    // FastStream first: never Auto's pick nor a fallback
+    expect(effectiveCodec("ldac", ["sbc", "faststream"], true, cardOrder(["faststream"]))).toBe("sbc");
   });
 });

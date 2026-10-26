@@ -39,11 +39,11 @@ At its first start v2 copies the v1 settings to `%APPDATA%\A2DPWB\backup-v1\` be
 
 ## Step 1: First-Run Setup {#first-run}
 
-Plug in the USB Bluetooth adapter and start A2DPWB. When there is no profile yet, or no adapter has WinUSB, A2DPWB opens **Set up A2DPWB**, three steps:
+Plug in the USB Bluetooth adapter and start A2DPWB. When there is no audio device yet, or no adapter has WinUSB, A2DPWB opens **Set up A2DP Windows Bridge**, three steps:
 
 1. **Choose the adapter**: the USB Bluetooth adapters found. If yours is missing, plug it in and press **Refresh**. A green **Supported** or a red **Unsupported** says whether A2DPWB can use each one
 2. **Driver and firmware**: **Replace with WinUSB driver** (see [Step 2](#winusb)), and for Realtek adapters the firmware files (see [Firmware](#firmware))
-3. **Find your audio devices**: the scan starts by itself. Put the audio device into pairing mode and press **Connect** next to it (or type its address and press **Use**): A2DPWB creates its profile ("*name* | Auto", the best codec it has) and connects. Then **Finish** (see [Step 3](#headphones)). Its codec can be changed later on **Codecs**. The step's **Startup** block has **Start with Windows** and **Start in the tray**, the same switches as in Settings, saved at once
+3. **Find your audio devices**: the scan starts by itself. Put the audio device into pairing mode and press **Connect** next to it (or type its address and press **Use**): A2DPWB saves it with the best codec it has (Auto) and connects. Then **Finish** (see [Step 3](#headphones)). Its codec can be changed later on **Codecs**. The step's **Startup** block has **Start with Windows** and **Start in the tray**, the same switches as in Settings, saved at once
 
 **Set up later** skips the rest; **Settings > Run setup** opens it again.
 
@@ -52,9 +52,9 @@ Plug in the USB Bluetooth adapter and start A2DPWB. When there is no profile yet
 A2DPWB communicates directly with a USB Bluetooth adapter via WinUSB, the generic USB driver included in Windows. A **dedicated adapter** is recommended -- your built-in Bluetooth then continues to work normally for regular Windows Bluetooth.
 
 1. Open the **Adapter** screen (or the setup's **Driver and firmware** step)
-2. The adapter's **Driver** reads **Original driver** (or **Manufacturer driver** / **No driver**): the driver Windows or the manufacturer installed, which WinUSB replaces. Click **Replace with WinUSB driver**
+2. The adapter's **Driver** reads **Original driver** (or **No driver**): the driver Windows or the manufacturer installed, which WinUSB replaces. Click **Replace with WinUSB driver**
 3. Read the confirmation and continue: Windows asks for administrator permission (UAC)
-4. The driver now reads **WinUSB (used by A2DPWB)**
+4. The driver now reads **WinUSB driver**
 
 If Windows could not load WinUSB right away (the adapter was in use), A2DPWB says so and the driver line shows **Replug or restart Windows**. Unplug the adapter and plug it back in; for a built-in adapter, restart Windows. Until then, connecting fails with `failed to initialize WinUSB (error 50)` in the log.
 

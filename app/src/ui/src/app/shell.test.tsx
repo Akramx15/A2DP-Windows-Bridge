@@ -219,7 +219,7 @@ describe("flyout", () => {
 describe("setup device step", () => {
   async function toDeviceStep(opts: MockOptions = {}) {
     const r = start("#/setup", opts);
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
+    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
     for (let i = 0; i < 2; i++) {
       const next = screen.getByRole("button", { name: "Next" });
       await waitFor(() => expect(next).not.toBeDisabled());
@@ -294,7 +294,7 @@ describe("setup device step", () => {
 
   it("starts with Windows, in the tray, by default on a first setup (issue #86)", async () => {
     const { core, mock: m } = start("#/setup");
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
+    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
     // A first run: no profile yet, both off
     for (const p of [...core.state.snap!.profiles]) await m.call("profile.delete", { name: p.name });
     await core.request("settings.set", {
@@ -321,7 +321,7 @@ describe("setup device step", () => {
 
   it("also turns on the tray when only Start with Windows was on (issue #86)", async () => {
     const { core, mock: m } = start("#/setup");
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
+    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
     for (const p of [...core.state.snap!.profiles]) await m.call("profile.delete", { name: p.name });
     await core.request("settings.set", {
       settings: { ...core.state.snap!.settings, start_with_windows: true, start_minimized: false },
@@ -355,7 +355,7 @@ describe("setup device step", () => {
 describe("setup adapter step", () => {
   it("marks the adapters A2DPWB supports, and says so in red for one it does not", async () => {
     start("#/setup", { scenario: "fresh" });
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" });
+    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
     const radios = screen.getAllByRole("radio");
     // The supported one first, and chosen
     const rtl = radios[0].closest(".choice") as HTMLElement;
@@ -390,6 +390,9 @@ describe("helpers", () => {
     expect(statusText({ state: "reconnecting", message: msg("status.reconnect_attempt", "1", "3") })).toBe("Connecting...");
     expect(statusText({ state: "connecting", message: msg("status.connecting_retry", "2", "3") })).toBe("Connecting...");
     expect(statusText({ state: "streaming", message: msg("status.reconnected") })).toBe("Connected");
+    // Why another codec is used is on the codec's line (issue #86)
+    expect(statusText({ state: "streaming", message: msg("status.connected_fallback", "Opus", "aptX") })).toBe("Connected");
+    expect(statusText({ state: "streaming", message: msg("status.connected_fallback_in_use", "LDAC", "AAC") })).toBe("Connected");
     expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
     expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
     expect(statusText({ state: "idle", message: msg("") })).toBe("Idle");

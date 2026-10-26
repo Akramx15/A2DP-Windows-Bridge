@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
-import { setLanguage } from "../i18n";
+import { setLanguage, t } from "../i18n";
 import { MockCore, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 
@@ -123,14 +123,36 @@ describe("Home", () => {
     expect(xb.querySelector(".codec-info")).toBeNull();
   });
 
+  it("says why another codec is used on the codec's line, not the state line (issue #86)", async () => {
+    // "long": LDAC chosen, in use elsewhere, aptX HD used
+    const { core } = start("#/home", { scenario: "long" });
+    await waitFor(() => expect(core.state.snap).toBeTruthy());
+    await core.request("stream.start", { profile: core.state.snap!.active_profile! });
+    const pill = await waitFor(() => {
+      const p = document.querySelector(".status-pill.st-streaming");
+      expect(p).not.toBeNull();
+      return p as HTMLElement;
+    });
+    const card = document.querySelector(".home-device.live") as HTMLElement;
+    const note = t("ui.codec.fallback_in_use", "LDAC");
+    for (const where of [card, pill]) {
+      await waitFor(() => expect(where.querySelector(".codec-name")).toHaveTextContent(`aptX HD${note}`));
+      const name = where.querySelector(".codec-name")!;
+      expect(name.querySelector(".icon")).not.toBeNull();
+      expect(name.querySelector(".codec-note")).toHaveTextContent(note);
+    }
+    expect(within(card).getByRole("status")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
+    expect(pill.querySelector(".status-pill-state")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
+  });
+
   it("asks to exit the other A2DPWB (v1, or another v2) while it runs", async () => {
     start("#/home");
     await homeCard("WH-1000XM5");
-    expect(screen.queryByText("Another A2DPWB is running — exit it first")).toBeNull();
+    expect(screen.queryByText("Another A2DP Windows Bridge is running — exit it first")).toBeNull();
     mock!.setV1Running(true);
-    expect(await screen.findByText("Another A2DPWB is running — exit it first")).toBeInTheDocument();
+    expect(await screen.findByText("Another A2DP Windows Bridge is running — exit it first")).toBeInTheDocument();
     mock!.setV1Running(false);
-    await waitFor(() => expect(screen.queryByText("Another A2DPWB is running — exit it first")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Another A2DP Windows Bridge is running — exit it first")).toBeNull());
   });
 
   it("shows the cause of an error and a fix", async () => {
@@ -183,9 +205,9 @@ describe("every screen renders", () => {
 
   it("the first-run setup when no adapter is on WinUSB", async () => {
     const { calls } = start("#/home", { scenario: "fresh" });
-    expect(await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" })).toBeInTheDocument();
     mock!.setV1Running(true);
-    expect(await screen.findByText("Another A2DPWB is running — exit it first")).toBeInTheDocument();
+    expect(await screen.findByText("Another A2DP Windows Bridge is running — exit it first")).toBeInTheDocument();
     // The setup waits while the other one holds the adapter
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
     mock!.setV1Running(false);
@@ -203,7 +225,7 @@ describe("every screen renders", () => {
     mock!.setV1Running(false);
     await waitFor(() => expect(setUp).toBeEnabled());
     fireEvent.click(setUp);
-    await screen.findByText("The adapter is ready for A2DPWB", {}, { timeout: 5000 });
+    await screen.findByText("The adapter is ready for A2DP Windows Bridge", {}, { timeout: 5000 });
     const order = calls.map((c) => c.method).filter((m) => m === "adapter.assign_winusb" || m === "adapter.download_firmware");
     expect(order).toEqual(["adapter.assign_winusb", "adapter.download_firmware"]);
     expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled();

@@ -53,9 +53,9 @@ Branchez l'adaptateur Bluetooth USB et lancez A2DPWB. S'il n'existe encore aucun
 A2DPWB communique directement avec un adaptateur Bluetooth USB via WinUSB, le pilote USB générique inclus dans Windows. Un **adaptateur dédié** est recommandé -- votre Bluetooth intégré continue alors de fonctionner normalement pour le Bluetooth habituel de Windows.
 
 1. Ouvrez l'écran **Adaptateur** (ou l'étape **Pilote et firmware** de la configuration)
-2. Le **Pilote** de l'adaptateur indique **Pilote d'origine** (ou **Pilote du fabricant** / **Aucun pilote**) : le pilote installé par Windows ou le fabricant, que WinUSB remplace. Cliquez sur **Remplacer par le pilote WinUSB**
+2. Le **Pilote** de l'adaptateur indique **Pilote d'origine** (ou **Aucun pilote**) : le pilote installé par Windows ou le fabricant, que WinUSB remplace. Cliquez sur **Remplacer par le pilote WinUSB**
 3. Lisez la confirmation et continuez : Windows demande l'autorisation de l'administrateur (UAC)
-4. Le pilote indique désormais **WinUSB (utilisé par A2DPWB)**
+4. Le pilote indique désormais **Pilote WinUSB**
 
 Si Windows n'a pas pu charger WinUSB tout de suite (l'adaptateur était utilisé), A2DPWB le signale et la ligne du pilote indique **Rebranchez ou redémarrez Windows**. Débranchez l'adaptateur et rebranchez-le ; pour un adaptateur intégré, redémarrez Windows. D'ici là, la connexion échoue avec `failed to initialize WinUSB (error 50)` dans le journal.
 

@@ -9,7 +9,7 @@
 
 import type { CodecValues } from "../ipc/bindings/CodecValues";
 import type { AudioDevice, Device, ParamsOf, Profile, Snapshot } from "../ipc/types";
-import { carryToCodec, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "./codecs";
+import { carryToCodec, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN, type CodecCaps } from "./codecs";
 import { parseAddress } from "./format";
 
 /** What belongs to the audio device rather than the codec: the capture
@@ -101,6 +101,7 @@ export function newProfile(): Profile {
     sbc_allocation: "",
     sbc_channel_mode: "",
     codec_settings: {},
+    codec_order: [],
   };
 }
 
@@ -266,6 +267,14 @@ export function knownCodecs(devices: readonly Device[], address: string): string
   const a = parseAddress(address);
   if (!a) return [];
   return devices.find((d) => !d.le_audio && d.address.toUpperCase() === a)?.codecs ?? [];
+}
+
+/** What each codec a device offered lists (rates, bit depths, largest bit
+ *  rate: Device.codec_caps; empty while not known, issue #86) */
+export function knownCodecCaps(devices: readonly Device[], address: string): CodecCaps[] {
+  const a = parseAddress(address);
+  if (!a) return [];
+  return devices.find((d) => !d.le_audio && d.address.toUpperCase() === a)?.codec_caps ?? [];
 }
 
 /**

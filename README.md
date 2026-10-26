@@ -12,21 +12,21 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 |-------|---------|-------------|-----------|:----------------:|:------:|
 | LHDC V5 | 400–1000 kbps, ABR 160–400 | 44.1–192 kHz | 16/24 bit | ❌ | ✅ |
 | LDAC | 330/660/990 kbps | 44.1–96 kHz | 16/24/32 bit | ❌ | ✅ |
-| aptX Adaptive | 265–427 kbps (96 kHz: up to 646) | 48/96 kHz | 24 bit | ❌ | ✅ ¹ |
-| Opus (Android) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
+| aptX Adaptive | 265/427 kbps (96 kHz: 646) | 48 kHz (96 kHz ¹) | 24 bit | ❌ | ✅ ¹ |
+| Opus (Android) | 256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
 | aptX HD | 576 kbps | 44.1/48 kHz | 24 bit | ❌ | 🧪 |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
 | aptX Low Latency | 352 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 |
-| AAC | 128/192/256 kbps | 44.1/48 kHz | 16 bit | Windows 11 | ✅ |
+| AAC | up to 256 kbps | 44.1/48 kHz | 16 bit | Windows 11 | ✅ |
 | SBC XQ | up to 552 kbps | 44.1/48 kHz | 16 bit | ❌ | ✅ |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 ² |
-| Opus 05 (PipeWire) | 128/192/256 kbps | 48 kHz | 16 bit | ❌ | 🧪 ² ³ |
+| Opus 05 (PipeWire) | 256 kbps | 48 kHz | 16 bit | ❌ | 🧪 ² ³ |
 | LC3 (LE Audio) | 32–124 kbps per channel | 16–48 kHz | 16 bit | Windows 11 ⁴ | 🧪 ⁵ |
 
 ✅ supported · 🧪 experimental: passes the encoder tests and the end-to-end test against a virtual Bluetooth sink, but not yet confirmed with real headphones that use it ([reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)) · ❌ not supported. The app offers every codec, the experimental ones too.
 
-¹ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; confirmed on an EarFun Air Pro 4+ at 48 kHz ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)); 96 kHz tested only in the emulator. ² Auto never picks it; choose it on **Codecs**. ³ Only PipeWire (Linux) receivers implement it. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per device (its LE Audio entry on **Codecs**), and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
+¹ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; confirmed on an EarFun Air Pro 4+ at 48 kHz ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)); 96 kHz, tested only in the emulator, is off unless **Developer > aptX Adaptive at 96 kHz** is on. ² Auto never picks it; choose it on **Codecs**. ³ Only PipeWire (Linux) receivers implement it. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per device (its LE Audio entry on **Codecs**), and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
 
 Auto picks LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
 
@@ -43,10 +43,10 @@ Windows 10 / 11 load only kernel drivers signed through Microsoft, which needs a
 
 1. **Install**: run `A2DPWB-<version>-win64-setup.exe` (per user, no administrator rights), or extract the portable zip and run `a2dpwb.exe`. Installing over v1 removes v1 and keeps its settings, pairings and firmware.
 2. **Plug in the adapter** (or use the built-in one, see the warning below).
-3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, then press **Connect** next to your audio device: A2DPWB creates its profile and connects.
+3. **Follow the first-run setup**: choose the adapter, **Assign WinUSB** (Windows asks for administrator permission), add the firmware files for Realtek adapters, then press **Connect** next to your audio device: A2DPWB picks the best settings for it and connects.
 4. **Connect** from **Home**, or from the tray icon.
 
-> **Warning:** While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter. A built-in adapter can be used too, but **the PC then has no Windows Bluetooth at all** until the driver is restored, so a separate USB adapter is recommended. **Adapter > Restore driver** gives the adapter back to Windows at any time, and the uninstaller offers it too.
+> **Warning:** While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter. A built-in adapter can be used too, but **the PC then has no Windows Bluetooth at all** until the driver is restored, so a separate USB adapter is recommended. **Adapters > Restore original driver** gives the adapter back to Windows at any time, and the uninstaller offers it too.
 
 **Realtek adapters** need firmware files such as `rtl8761bu_fw.bin` and `rtl8761bu_config.bin` from [linux-firmware](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt) (proprietary, not included). The **Adapter** screen shows which files are needed; **Download Firmware** fetches them from kernel.org into the settings folder after you confirm, or open the download page and the settings folder to do it by hand. See the [Setup guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/setup).
 

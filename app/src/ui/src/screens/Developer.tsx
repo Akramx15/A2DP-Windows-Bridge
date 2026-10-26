@@ -24,6 +24,7 @@ const NO_OVERRIDES: DevOverrides = {
   aac_no_peak: false,
   aac_no_afterburner: false,
   aac_latm_v0: false,
+  aptxad_96k: false,
 };
 
 export function Developer() {
@@ -160,6 +161,15 @@ function Overrides(props: { value: DevOverrides; save: (v: DevOverrides) => Prom
           label={t("ui.dev.aac_no_afterburner")}
           checked={props.value.aac_no_afterburner}
           onChange={(v) => set({ aac_no_afterburner: v })}
+        />
+      </Section>
+      {/* Off by default until 96 kHz works on real headphones (issue #86) */}
+      <Section title="aptX Adaptive">
+        <Toggle
+          label={t("ui.dev.aptxad_96k")}
+          hint={t("ui.dev.aptxad_96k_hint")}
+          checked={props.value.aptxad_96k}
+          onChange={(v) => set({ aptxad_96k: v })}
         />
       </Section>
     </div>
