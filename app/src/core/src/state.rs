@@ -420,8 +420,20 @@ fn adapter_infos(config_dir: &Path, settings: &CoreSettings) -> Vec<AdapterInfo>
                 vendor_note: vendor_note(a.vendor),
                 restart_needed: a.device.problem_code == Some(CM_PROB_NEED_RESTART),
                 le_audio: a2dpwb_core::adapter::le_audio(config_dir, a.device.vid, a.device.pid),
-                address: a2dpwb_core::adapter::address(config_dir, a.device.vid, a.device.pid),
-                bt_version: a2dpwb_core::adapter::hci_version(config_dir, a.device.vid, a.device.pid)
+                // What Windows' radio of this very device reads now, else
+                // what it or a stack of A2DPWB read when one ran it (kept per
+                // VID:PID), else a Realtek adapter's USB serial: an adapter
+                // neither ran yet (Windows uses one radio only, the second
+                // one tells nothing) still shows it (issue #86)
+                address: radio
+                    .as_ref()
+                    .and_then(|r| r.address.clone())
+                    .or_else(|| a2dpwb_core::adapter::address(config_dir, a.device.vid, a.device.pid))
+                    .or_else(|| a2dpwb_core::adapter::serial_address(a.vendor, &a.device.instance_id)),
+                bt_version: radio
+                    .as_ref()
+                    .and_then(|r| r.hci_version)
+                    .or_else(|| a2dpwb_core::adapter::hci_version(config_dir, a.device.vid, a.device.pid))
                     .and_then(a2dpwb_core::adapter::bt_core_version)
                     .map(str::to_owned),
                 // An adapter already on WinUSB when A2DPWB came to know
@@ -2059,6 +2071,23 @@ mod tests {
         let stem = CoreSettings { bt_chip_fw_stem: "rtl8723bu".into(), ..s.clone() };
         assert_eq!(adapter_chip(ChipVendor::Unknown, None, &stem).1, "rtl8723bu");
         assert_eq!(adapter_chip(ChipVendor::Qualcomm, None, &stem), (0, ""));
+    }
+
+    /// This PC's adapters as the Adapters screen lists them, with nothing
+    /// remembered yet (a fresh config folder; read-only otherwise): cargo
+    /// test -p a2dpwb-core-exe list_adapter_infos -- --ignored --nocapture
+    #[test]
+    #[ignore = "reads this PC's USB devices and Bluetooth radios"]
+    fn list_adapter_infos() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-adapter-infos-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for a in adapter_infos(&dir, &CoreSettings::default()) {
+            println!(
+                "{} {:04X}:{:04X} {:?} ({}) address {:?} version {:?} name {:?}",
+                a.instance_id, a.vid, a.pid, a.driver, a.driver_service, a.address, a.bt_version, a.windows_name
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
