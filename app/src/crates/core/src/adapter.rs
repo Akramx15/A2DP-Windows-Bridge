@@ -363,6 +363,28 @@ pub fn save_windows_radio(dir: &Path, vid: u16, pid: u16, name: &str, address: O
     }
 }
 
+/// The Bluetooth address a Realtek adapter reports as its USB serial number
+/// ("E848B8C82000" on a UB500 whose controller answers E8:48:B8:C8:20:00),
+/// from the device's instance ID (`USB\VID_2357&PID_0604\E848B8C82000`).
+/// Windows tells it whatever the driver and whether its Bluetooth runs the
+/// adapter (a second radio it does not use answers no IOCTL and stores no
+/// radio properties: issue #86). None for another vendor, or a device with
+/// no serial (Windows then makes up an ID with `&`s) or another kind of one.
+pub fn serial_address(vendor: ChipVendor, instance_id: &str) -> Option<String> {
+    if vendor != ChipVendor::Realtek {
+        return None;
+    }
+    let serial = instance_id.rsplit('\\').next()?;
+    if serial.len() != 12 || !serial.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let addr = u64::from_str_radix(serial, 16).ok()?;
+    if addr == 0 || addr == 0xFFFF_FFFF_FFFF {
+        return None;
+    }
+    Some(win_sys::bt_radios::format_address(addr))
+}
+
 /// The Bluetooth core specification of an HCI version ("5.3" for 12);
 /// None for one the table does not know
 pub fn bt_core_version(hci_version: u8) -> Option<&'static str> {
@@ -419,6 +441,29 @@ mod tests {
         assert_eq!(address(&dir, 0x0BDA, 0xA729).as_deref(), Some("00:11:22:33:44:55"));
         assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), Some(false));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn realtek_serial_is_its_address() {
+        // A UB500 (Realtek under TP-Link's VID) whose stack read E8:48:B8:C8:20:00
+        assert_eq!(
+            serial_address(ChipVendor::Realtek, r"USB\VID_2357&PID_0604\E848B8C82000").as_deref(),
+            Some("E8:48:B8:C8:20:00")
+        );
+        assert_eq!(
+            serial_address(ChipVendor::Realtek, r"USB\VID_0BDA&PID_A729\00e04c239987").as_deref(),
+            Some("00:E0:4C:23:99:87")
+        );
+        // No serial: Windows' made-up ID
+        assert_eq!(serial_address(ChipVendor::Realtek, r"USB\VID_2357&PID_0604\6&28E8DB3B&0&1"), None);
+        // Another kind of serial
+        assert_eq!(serial_address(ChipVendor::Realtek, r"USB\VID_0BDA&PID_A729\0000000001"), None);
+        assert_eq!(serial_address(ChipVendor::Realtek, r"USB\VID_0BDA&PID_A729\00E04C23998Z"), None);
+        assert_eq!(serial_address(ChipVendor::Realtek, r"USB\VID_0BDA&PID_A729\000000000000"), None);
+        assert_eq!(serial_address(ChipVendor::Realtek, r"USB\VID_0BDA&PID_A729\FFFFFFFFFFFF"), None);
+        // Other vendors' serials are not addresses
+        assert_eq!(serial_address(ChipVendor::MediaTek, r"USB\VID_0E8D&PID_7925\C0E3502E0009"), None);
+        assert_eq!(serial_address(ChipVendor::Intel, r"USB\VID_8087&PID_0033\5&3B72E4CF&0&14"), None);
     }
 
     #[test]

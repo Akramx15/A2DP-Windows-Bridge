@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
 import { MockCore, type MockScenario, sampleSnapshot } from "../ipc/mock";
 import { createCore } from "../ipc/store";
-import { adapterExperimental, adapterIds, adapterName } from "./Adapter";
+import { adapterExperimental, adapterIds, adapterIdsHint, adapterName, driverText } from "./Adapter";
 
 let mock: MockCore | null = null;
 
@@ -70,6 +70,9 @@ describe("Adapter firmware", () => {
       firmware_present: null,
       vendor_note: { key: "firmware.vendor_intel", args: [] },
       windows_name: null,
+      // Neither Windows' Bluetooth nor a stack of A2DPWB ran it yet
+      address: null,
+      bt_version: null,
     };
     m.snap.adapter = { ...m.snap.adapter, adapters: [mediatek, realtek, intel] };
     m.emit({ kind: "adapter", value: m.snap.adapter });
@@ -88,9 +91,10 @@ describe("Adapter firmware", () => {
     const fw = within(mtk).getByRole("group", { name: "Firmware: Unsupported" });
     expect(within(fw).getByText("Unsupported")).toHaveClass("st-bad");
     expect(within(fw).getByRole("button", { name: "Download not available" })).toBeDisabled();
-    // A vendor's driver; A2DPWB cannot use it, so it keeps that driver
-    const mtkDriver = within(mtk).getByRole("group", { name: "Driver: Manufacturer driver" });
-    expect(within(mtkDriver).getByText("Manufacturer driver")).toHaveAttribute("title", "mtkbtfilterx");
+    // A vendor's driver is the original one too, its service on hover; A2DPWB
+    // cannot use the adapter, so it keeps that driver
+    const mtkDriver = within(mtk).getByRole("group", { name: "Driver: Original driver" });
+    expect(within(mtkDriver).getByText("Original driver")).toHaveAttribute("title", "mtkbtfilterx");
     expect(within(mtkDriver).getByRole("button", { name: "Replace with WinUSB driver" })).toBeDisabled();
     expect(mtkDriver).toHaveTextContent("A2DPWB cannot use this adapter, so its driver stays as it is");
     // The chip choice goes with the Realtek adapter only
@@ -100,6 +104,14 @@ describe("Adapter firmware", () => {
     const intelCard = screen.getByRole("region", { name: "Intel" });
     expect(intelCard).not.toHaveTextContent("[experimental]");
     expect(within(intelCard).getByText("Experimental")).toHaveClass("st-warn");
+    // WinUSB in one name too (issue #86)
+    expect(within(intelCard).getByRole("group", { name: "Driver: WinUSB driver" })).toBeInTheDocument();
+    // What is known; why the rest is missing on hover
+    expect(within(intelCard).getByText("8087:0033")).toHaveAttribute(
+      "title",
+      expect.stringContaining("once Windows' Bluetooth or A2DP Windows Bridge has used this adapter"),
+    );
+    expect(within(rtl).getByText("00:1A:7D:DA:71:13 | 2357:0604 | v5.1")).not.toHaveAttribute("title");
   });
 
   it("lists the adapters by itself, without a Refresh button (issue #86)", async () => {
@@ -127,6 +139,17 @@ describe("Adapter firmware", () => {
     // The chip once only
     expect(adapterName({ ...a, windows_name: "Realtek RTL8761BU Bluetooth" })).toBe("Realtek RTL8761BU Bluetooth");
     expect(adapterIds({ address: null, vid: 0x0bda, pid: 0xa729, bt_version: null })).toBe("0BDA:A729");
+    // A Realtek adapter's USB serial gives the address before any stack ran it
+    expect(adapterIds({ address: "00:E0:4C:23:99:87", vid: 0x0bda, pid: 0xa729, bt_version: null })).toBe(
+      "00:E0:4C:23:99:87 | 0BDA:A729",
+    );
+    expect(adapterIdsHint({ address: "00:E0:4C:23:99:87", bt_version: null })).toMatch(/Bluetooth version show once/);
+    expect(adapterIdsHint({ address: "00:E0:4C:23:99:87", bt_version: "5.1" })).toBeUndefined();
+    // The driver in two names only, whatever the manufacturer
+    expect(driverText("bluetooth").text).toBe("Original driver");
+    expect(driverText("other").text).toBe("Original driver");
+    expect(driverText("winusb").text).toBe("WinUSB driver");
+    expect(driverText("none").text).toBe("No driver");
     // An Intel adapter on WinUSB without a product string: the mark is a tag
     const intel = { ...a, display_name: "Intel (0x8087:0x0033) [experimental]", vendor: "Intel", realtek_chip: null };
     expect(adapterName(intel)).toBe("Intel");

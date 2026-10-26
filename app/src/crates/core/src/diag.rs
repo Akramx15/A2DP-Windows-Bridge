@@ -1243,10 +1243,24 @@ fn bitrate_note(i: &StreamInfo) -> &'static str {
     }
 }
 
+/// The driver in the two names the Adapters screen uses (issue #86):
+/// "WinUSB driver", or the "original driver" it replaces with its service
+/// ("original driver (BTHUSB)")
+pub fn driver_name(kind: win_sys::driver::DriverKind, service: &str) -> String {
+    use win_sys::driver::DriverKind;
+    match kind {
+        DriverKind::WinUsb => "WinUSB driver".to_string(),
+        DriverKind::Bluetooth | DriverKind::Other if service.is_empty() => "original driver".to_string(),
+        DriverKind::Bluetooth | DriverKind::Other => format!("original driver ({service})"),
+        DriverKind::None => "no driver".to_string(),
+    }
+}
+
 /// One adapter for the diagnostics: name, VID:PID, driver
 pub fn adapter_line(a: &crate::adapter::Adapter) -> String {
     let d = &a.device;
-    let mut s = format!("{} [{:04X}:{:04X}], driver {:?}", a.display_name, d.vid, d.pid, d.driver_kind);
+    let mut s =
+        format!("{} [{:04X}:{:04X}], {}", a.display_name, d.vid, d.pid, driver_name(d.driver_kind, &d.driver.service));
     if let Some(code) = d.problem_code {
         let _ = write!(s, ", problem code {code}");
     }
@@ -1643,6 +1657,17 @@ mod tests {
 
     fn status(f: &ConnectionFlow, s: Step) -> StepStatus {
         f.session().step(s).status
+    }
+
+    #[test]
+    fn driver_in_the_adapters_screens_two_names() {
+        use win_sys::driver::DriverKind;
+        assert_eq!(driver_name(DriverKind::WinUsb, "WINUSB"), "WinUSB driver");
+        assert_eq!(driver_name(DriverKind::Bluetooth, "BTHUSB"), "original driver (BTHUSB)");
+        // A vendor's own driver is the original one too
+        assert_eq!(driver_name(DriverKind::Other, "mtkbtfilterx"), "original driver (mtkbtfilterx)");
+        assert_eq!(driver_name(DriverKind::Other, ""), "original driver");
+        assert_eq!(driver_name(DriverKind::None, ""), "no driver");
     }
 
     #[test]
