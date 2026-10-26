@@ -294,10 +294,10 @@ export const AUTO_ORDER: readonly CodecId[] = [
 ];
 
 /**
- * Auto's order as the user set it (settings.auto_order, core:
- * AutoOrder::from_keys): the codecs of AUTO_ORDER in the order given
- * (others and repeats left out), then any missing in their default order.
- * Empty: AUTO_ORDER, highest sound quality first.
+ * The codec keys of `keys` that Auto and the fallback take (those of
+ * AUTO_ORDER) in the order given, then any missing in their default order
+ * (core: AutoOrder::from_keys). Empty: AUTO_ORDER, highest sound quality
+ * first.
  */
 export function autoOrder(keys: readonly string[] = []): CodecId[] {
   const order: CodecId[] = [];
@@ -307,17 +307,51 @@ export function autoOrder(keys: readonly string[] = []): CodecId[] {
   return order;
 }
 
-/** The order is AUTO_ORDER's */
-export function isDefaultOrder(order: readonly string[]): boolean {
-  return autoOrder(order).every((c, i) => c === AUTO_ORDER[i]);
+/**
+ * The default order of a device's codec cards: AUTO_ORDER, with Opus 05
+ * beside Opus and FastStream last (Auto and the fallback never take those
+ * two)
+ */
+export const CARD_ORDER: readonly CodecId[] = [
+  "lhdcv5",
+  "ldac",
+  "aptxad",
+  "opus",
+  "opus05",
+  "aptxhd",
+  "aptx",
+  "aptxll",
+  "aac",
+  "sbcxq",
+  "sbc",
+  "faststream",
+];
+
+/**
+ * A device's codec cards in its order (the profile's codec_order, issue #86
+ * round 8: dragged with Auto-select off): the codecs given (each once,
+ * unknown keys left out), then any missing in CARD_ORDER's order (as the
+ * core's AutoOrder::from_keys). Empty: CARD_ORDER.
+ */
+export function cardOrder(keys: readonly string[] = []): CodecId[] {
+  const order: CodecId[] = [];
+  for (const k of [...keys.map((k) => k.toLowerCase()), ...CARD_ORDER]) {
+    if (CARD_ORDER.includes(k as CodecId) && !order.includes(k as CodecId)) order.push(k as CodecId);
+  }
+  return order;
 }
 
-/** Where a codec stands in `order` (AUTO_ORDER unless given); Opus 05 stands
- *  with Opus, FastStream after the last */
-export function qualityRank(codec: string, order: readonly CodecId[] = AUTO_ORDER): number {
-  if (codec === "opus05") return order.indexOf("opus");
-  const i = order.indexOf(codec as CodecId);
-  return i < 0 ? order.length : i;
+/** The cards' order is the default one */
+export function isDefaultOrder(keys: readonly string[]): boolean {
+  return cardOrder(keys).every((c, i) => c === CARD_ORDER[i]);
+}
+
+/** `list` with the item at `from` moved to `to` */
+export function moved<T>(list: readonly T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
 }
 
 /** Not yet confirmed with real headphones (CodecSpec.experimental) */
@@ -331,37 +365,35 @@ function usable(codec: string, known: readonly string[], experimental: boolean):
 }
 
 /** The codec Auto picks among those a device offers (`known`, as
- *  Device.codecs), leaving out the experimental ones unless `experimental`;
- *  null when not known */
+ *  Device.codecs): the first in `order` (the device's, AUTO_ORDER unless
+ *  given; never FastStream nor Opus 05), leaving out the experimental ones
+ *  unless `experimental`; null when not known */
 export function autoPick(
   known: readonly string[],
   experimental = true,
-  order: readonly CodecId[] = AUTO_ORDER,
+  order: readonly string[] = AUTO_ORDER,
 ): CodecId | null {
-  return order.find((c) => usable(c, known, experimental)) ?? null;
+  return autoOrder(order).find((c) => usable(c, known, experimental)) ?? null;
 }
 
 /**
  * The codec a connection uses for `codec` chosen on a device that offers
- * `known` (core: caps::choose with the fallback every profile has): the
- * codec itself when offered, else the next one below it in Auto's `order`
- * (AUTO_ORDER unless given) the device offers, else the first it offers.
- * Auto: what Auto picks. Null when the device's codecs are not known yet.
- * Unless `experimental`, the experimental codecs are never used (a chosen
- * one falls back the same way).
+ * `known` (core: caps::choose_in with the fallback every profile has): the
+ * codec itself when offered, else the first in the device's `order`
+ * (AUTO_ORDER unless given) it offers, as Auto picks (issue #86 round 8:
+ * not the next one below the codec chosen). Null when the device's codecs
+ * are not known yet. Unless `experimental`, the experimental codecs are
+ * never used (a chosen one falls back the same way).
  */
 export function effectiveCodec(
   codec: string,
   known: readonly string[],
   experimental = true,
-  order: readonly CodecId[] = AUTO_ORDER,
+  order: readonly string[] = AUTO_ORDER,
 ): CodecId | null {
   if (known.length === 0) return null;
-  if (codec === "auto") return autoPick(known, experimental, order);
-  if (usable(codec, known, experimental)) return codec as CodecId;
-  const listed = order.includes(codec as CodecId);
-  const below = order.slice(qualityRank(codec, order) + (listed ? 1 : 0)).find((c) => usable(c, known, experimental));
-  return below ?? autoPick(known, experimental, order);
+  if (codec !== "auto" && usable(codec, known, experimental)) return codec as CodecId;
+  return autoPick(known, experimental, order);
 }
 
 export function sampleRates(codec: string): number[] {

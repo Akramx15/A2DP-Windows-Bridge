@@ -263,9 +263,8 @@ result. Listing adapters and their driver needs no elevation.
   (R1 and R2 sinks; usable only with 48 kHz stereo)
 - Picks the codec: Auto takes the codec with the highest sound quality the
   remote offers; a requested codec the remote does not offer is replaced by
-  the next one below it in that order the remote offers (always for a
-  profile, since issue #86; the command line only with `--fallback`), and is
-  an error otherwise
+  the same codec Auto would take (always for a profile, since issue #86; the
+  command line only with `--fallback`), and is an error otherwise
 - Leaves the experimental codecs (aptX HD, aptX LL, Opus, Opus 05,
   FastStream) out of Auto and the fallback with the command line's
   `--no-experimental`; the app always uses them (the `experimental_codecs`
@@ -274,9 +273,12 @@ result. Listing adapters and their driver needs no elevation.
   the `auto_codec` setting is on (Codecs > Auto-select the codec with the
   highest quality, one setting for every device since schema 5); the codec
   chosen for the device stays in its profile for when it is off
-- Follows Auto's order as the user set it (`auto_order`, Codecs > Auto's
-  order; `codec::AutoOrder`, empty for highest sound quality first), for
-  Auto's pick and for the fallback of a chosen codec
+- Follows the device's codec order as the user dragged its cards with
+  Auto-select off (the profile's `codec_order`; `codec::AutoOrder`, empty
+  for highest sound quality first), for Auto's pick and for the fallback of
+  a chosen codec; under Auto-select, the default order. FastStream and Opus
+  05 are never Auto's pick nor a fallback. (2.0.2's betas had one order for
+  every device, settings.json's `auto_order`, now ignored.)
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
   advertises; WASAPI resamples the capture); aptX Adaptive uses 48 kHz, or
   96 kHz when the profile asks for it in High / Standard / Mobile and the sink

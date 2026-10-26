@@ -74,4 +74,12 @@ sbc_channel_mode: string,
  * as they were last chosen (the Codecs screen brings them back when
  * that codec is chosen again)
  */
-codec_settings: { [key in string]: CodecValues }, };
+codec_settings: { [key in string]: CodecValues }, 
+/**
+ * The device's codec order (codec keys) as dragged on the Codecs
+ * screen with Auto-select off: Auto, and a chosen codec the device
+ * does not offer, take the first one in it the device offers (issue
+ * #86 round 8). Empty: highest sound quality first. Not used under
+ * Auto-select.
+ */
+codec_order: Array<string>, };

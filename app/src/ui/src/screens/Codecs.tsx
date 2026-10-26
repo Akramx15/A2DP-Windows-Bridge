@@ -1,47 +1,50 @@
 // Codecs (issue #86, it replaced Profiles): each saved audio device with
 // its codec cards, the codecs it offered when it last connected in green
 // and the others in red (hidden unless asked for), each with its settings
-// behind "...". "Auto-select the codec with the highest quality" is one
-// setting for every device (settings.auto_codec, on by default; each
-// device had its own before): on, the cards only show what Auto picks;
-// off, choosing a card is choosing that device's codec (a device with none
-// chosen yet, its profile's codec "auto", goes on with Auto's pick), and a
-// codec the device does not offer falls back to the next one below it in
-// quality (lib/codecs.ts AUTO_ORDER, as the core). The codec chosen stays
-// in the device's profile while Auto-select is on. Choosing changes the
-// device's profile (made when first needed; the core keeps one per device
-// and starts a stream in use again with it). What belongs to the device
-// rather than the codec (capture source, volume sync, packet size) is on
-// Audio Devices. An LE Audio entry (experimental) has LC3 only.
-// Developer mode only: "Auto's order..." opens a dialog
-// (components/AutoOrder.tsx) where the order Auto picks in, and a chosen
-// codec falls back down, is set by dragging (settings.auto_order; empty:
-// highest sound quality first); the cards are shown in that order. An
-// order saved there still applies outside developer mode.
+// behind "...", and a dot beside the device's name that is green while it
+// streams. "Auto-select the codec with the highest quality" is one setting
+// for every device (settings.auto_codec, on by default; each device had its
+// own before): on, the cards only show what Auto picks, in the default
+// order (highest sound quality first), and a click on one, or on its "...",
+// offers to turn Auto-select off; off, choosing a card is choosing that
+// device's codec (a device with none chosen yet, its profile's codec
+// "auto", goes on with Auto's pick), and the cards are dragged (or moved
+// with Alt+arrow keys) into the device's own order (its profile's
+// codec_order, issue #86 round 8). A codec the device does not offer falls
+// back to the first card it offers in that order (lib/codecs.ts
+// effectiveCodec, as the core), which is also what Auto picks then. The
+// codec chosen stays in the device's profile while Auto-select is on.
+// Choosing changes the device's profile (made when first needed; the core
+// keeps one per device and starts a stream in use again with it). What
+// belongs to the device rather than the codec (capture source, volume sync,
+// packet size) is on Audio Devices. An LE Audio entry (experimental) has LC3
+// only.
 // Every codec is offered, the experimental ones too (issue #86: they are
 // marked in the README only; the core no longer reads
 // settings.experimental_codecs).
 
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, on, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
-import { AutoOrderDialog } from "../components/AutoOrder";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
-import { Banner, Button, Check, Toggle } from "../components/controls";
+import { Banner, Button, Check, Dialog, Toggle } from "../components/controls";
 import { audioDevices } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
+import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
 import {
-  autoOrder,
+  AUTO_ORDER,
+  CARD_ORDER,
+  cardOrder,
   CODECS,
   codecLabelKey,
   codecSpec,
   codecSupport,
   effectiveCodec,
   isDefaultOrder,
-  qualityRank,
+  moved,
   type CodecId,
   type CodecSpec,
 } from "../lib/codecs";
@@ -56,6 +59,7 @@ import {
   type AudioEntry,
 } from "../lib/profile";
 import { knownSbcCaps } from "../lib/sbc";
+import { entryState } from "./Home";
 
 const HIDE_KEY = "a2dpwb.codecs.hide_unsupported";
 
@@ -67,27 +71,52 @@ function loadHide(): boolean {
   }
 }
 
-/** Saves the device's profile with `codec` chosen (`values`: from its "..."
- *  dialog); its name follows the codec while it is "<device> | <codec>".
- *  The profile's name once saved, None if that failed. */
-export async function chooseCodec(
+/** Saves the device's profile as `edit` changes it (the profile is made
+ *  when the device has none yet); its name follows the codec while it is
+ *  "<device> | <codec>". The profile's name once saved, None if that failed. */
+async function saveEntry(
   app: ReturnType<typeof useApp>,
   entry: AudioEntry,
-  codec: string,
-  values?: Omit<CodecChoice, "codec">,
+  edit: (p: Profile) => Profile,
 ): Promise<string | null> {
   // A device's first profile captures from a virtual device if one is installed
   const devices = entry.profile ? [] : await audioDevices(app);
   const snap = app.core.state.snap!;
   const cur = entry.profile ? structuredClone(unwrap(entry.profile)) : null;
-  const base = cur ?? entryBase(entry, snap.profiles, devices);
-  const next = entry.le_audio ? base : withCodec(base, codec, values);
+  const next = edit(cur ?? entryBase(entry, snap.profiles, devices));
   const taken = snap.profiles.map((p) => p.name).filter((n) => n !== cur?.name);
   next.name = followedName(next, entry.le_audio ? "" : t(codecSpec(next.codec).label), taken);
   if (cur && JSON.stringify(next) === JSON.stringify(cur)) return cur.name;
   const saved = normalizeProfile(next);
   const ok = await app.run(() => app.core.request("profile.save", { profile: saved, original_name: cur?.name ?? null }));
   return ok ? saved.name : null;
+}
+
+/** Saves the device's profile with `codec` chosen (`values`: from its "..."
+ *  dialog; `order`: the device's codec order, when one is not saved yet).
+ *  The profile's name once saved, None if that failed. */
+export function chooseCodec(
+  app: ReturnType<typeof useApp>,
+  entry: AudioEntry,
+  codec: string,
+  values?: Omit<CodecChoice, "codec">,
+  order?: readonly CodecId[] | null,
+): Promise<string | null> {
+  return saveEntry(app, entry, (base) => {
+    if (entry.le_audio) return base;
+    const next = withCodec(base, codec, values);
+    return order ? { ...next, codec_order: orderKeys(order) } : next;
+  });
+}
+
+/** A codec order as a profile keeps it: none for the default one */
+function orderKeys(order: readonly CodecId[]): string[] {
+  return isDefaultOrder(order) ? [] : [...order];
+}
+
+/** Saves the device's codec order (its cards' order) */
+export function saveCodecOrder(app: ReturnType<typeof useApp>, entry: AudioEntry, order: readonly CodecId[]) {
+  return saveEntry(app, entry, (base) => ({ ...base, codec_order: orderKeys(order) }));
 }
 
 export function Codecs() {
@@ -105,9 +134,8 @@ export function Codecs() {
     }
   };
   const autoAll = () => snap().settings.auto_codec;
-  const order = () => autoOrder(snap().settings.auto_order);
-  const dev = () => snap().settings.developer_mode;
-  const [ordering, setOrdering] = createSignal(false);
+  // A card, or its "...", clicked under Auto-select (issue #86 round 8)
+  const [locked, setLocked] = createSignal(false);
 
   return (
     <div class="page codecs">
@@ -117,26 +145,10 @@ export function Codecs() {
       <div class="codecs-options">
         <Toggle
           label={t("ui.codecs.auto_select")}
+          hint={t("ui.codecs.auto_select_hint")}
           checked={autoAll()}
           onChange={(v) => void saveSettings(app, { auto_codec: v })}
         />
-        <Show when={dev()}>
-          <div class="codecs-order">
-            <Button icon="settings" onClick={() => setOrdering(true)} aria-haspopup="dialog">
-              {t("ui.codecs.order_edit")}
-            </Button>
-            <span class="hint">{isDefaultOrder(order()) ? t("ui.codecs.order_default") : t("ui.codecs.order_custom")}</span>
-          </div>
-          <AutoOrderDialog
-            open={ordering()}
-            order={order()}
-            onCancel={() => setOrdering(false)}
-            onSave={(next: CodecId[]) => {
-              setOrdering(false);
-              void saveSettings(app, { auto_order: isDefaultOrder(next) ? [] : next });
-            }}
-          />
-        </Show>
         <Toggle label={t("ui.profile.codecs_hide")} checked={hide()} onChange={setHide} />
       </div>
       <Show
@@ -155,23 +167,30 @@ export function Codecs() {
         <For each={entries().map((e) => e.key)}>
           {(key) => {
             const entry = entryByKey(entries, key);
-            return (
-              <DeviceCodecs entry={entry()} hide={hide()} auto={autoAll()} order={order()} />
-            );
+            return <DeviceCodecs entry={entry()} hide={hide()} auto={autoAll()} onLocked={() => setLocked(true)} />;
           }}
         </For>
       </Show>
+      <Dialog
+        open={locked()}
+        title={t("ui.codecs.auto_dialog_title")}
+        confirm={t("ui.codecs.auto_dialog_disable")}
+        cancel={t("modal.cancel")}
+        onConfirm={() => {
+          setLocked(false);
+          // The codec stays as Auto-select left it: the user chooses next
+          void saveSettings(app, { auto_codec: false });
+        }}
+        onCancel={() => setLocked(false)}
+      >
+        <p>{t("ui.codecs.auto_dialog_text")}</p>
+      </Dialog>
     </div>
   );
 }
 
-/** One device: its name, address and tags, then its codec cards */
-function DeviceCodecs(props: {
-  entry: AudioEntry;
-  hide: boolean;
-  auto: boolean;
-  order: readonly CodecId[];
-}) {
+/** One device: its activity, name, address and tags, then its codec cards */
+function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; onLocked: () => void }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const e = () => props.entry;
@@ -183,6 +202,13 @@ function DeviceCodecs(props: {
   const auto = () => props.auto || codec() === "auto";
   const known = () => knownCodecs(snap().devices, e().address);
   const support = (id: string) => codecSupport(id, known());
+  // The device's order while it is being dragged (null: the saved one)
+  const [dragOrder, setDragOrder] = createSignal<CodecId[] | null>(null);
+  // Its cards' order: Auto-select's is the default one (highest sound
+  // quality first), read-only
+  const order = (): CodecId[] => (props.auto ? [...CARD_ORDER] : (dragOrder() ?? cardOrder(shown().codec_order)));
+  // The order Auto and the fallback go by
+  const pickOrder = (): readonly string[] => (props.auto ? AUTO_ORDER : order());
   // The codec the device streams with now, when its profile streams
   const streaming = () => {
     const st = snap().stream;
@@ -193,30 +219,127 @@ function DeviceCodecs(props: {
   };
   // Auto: the codec it streams with, else the one it would pick (null when
   // the device's codecs are not known); else the codec chosen
-  const picked = () => (auto() ? (streaming() ?? effectiveCodec("auto", known(), true, props.order)) : codec());
-  // A chosen codec the device did not offer: the one used instead (null:
-  // the device's codecs are not known yet)
+  const picked = () => (auto() ? (streaming() ?? effectiveCodec("auto", known(), true, pickOrder())) : codec());
+  // A chosen codec the device did not offer: the one used instead, the
+  // first card it offers (null: the device's codecs are not known yet)
   const instead = () =>
-    !auto() && support(codec()) === "not_offered" ? effectiveCodec(codec(), known(), true, props.order) : null;
-  // In Auto's order (highest quality first unless set)
+    !auto() && support(codec()) === "not_offered" ? effectiveCodec(codec(), known(), true, pickOrder()) : null;
   const cards = () =>
-    CODECS.filter(
-      (c) =>
-        c.id !== "auto" &&
-        (!props.hide || c.id === codec() || c.id === picked() || support(c.id) !== "not_offered"),
-    ).sort((a, b) => qualityRank(a.id, props.order) - qualityRank(b.id, props.order));
+    order()
+      .filter((id) => !props.hide || id === codec() || id === picked() || support(id) !== "not_offered")
+      .map((id) => codecSpec(id));
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
+  // The device's saves one after the other: a card chosen right after one
+  // was moved starts from the profile with the new order
+  let saving: Promise<unknown> = Promise.resolve();
+  const queued = <T,>(save: () => Promise<T>): Promise<T> => {
+    const done = saving.then(save);
+    saving = done.catch(() => undefined);
+    return done;
+  };
   const choose = async (id: string, values?: Omit<CodecChoice, "codec">) => {
     setBusy(true);
-    await chooseCodec(app, e(), id, values);
+    // An order moved but not back from the core yet goes with it
+    await queued(() => chooseCodec(app, e(), id, values, props.auto ? null : dragOrder()));
     setBusy(false);
   };
   const titleId = () => `codecs-${e().key.replace(/[^0-9A-Za-z]/g, "")}`;
   const leSupport = () => snap().adapter.le_audio;
+  const state = () => entryState(snap(), e());
+
+  // ---- the device's order (issue #86 round 8) ----
+  // Not `busy`: the card moved with the keyboard keeps the focus
+  const [ordering, setOrdering] = createSignal(false);
+  const hintId = createUniqueId();
+  const [said, setSaid] = createSignal("");
+  // A saved order replaces the one dragged
+  createEffect(on(() => shown().codec_order.join(), () => setDragOrder(null), { defer: true }));
+  const saveOrder = async (next: CodecId[]) => {
+    if (next.every((c, i) => c === cardOrder(shown().codec_order)[i])) {
+      setDragOrder(null);
+      return;
+    }
+    setDragOrder(next);
+    setOrdering(true);
+    const ok = await queued(() => saveCodecOrder(app, e(), next));
+    setOrdering(false);
+    if (!ok) setDragOrder(null);
+  };
+  // `id` put where `over` is in the full order (hidden cards keep their place)
+  const placed = (list: CodecId[], id: CodecId, over: CodecId) => moved(list, list.indexOf(id), list.indexOf(over));
+  let grid: HTMLDivElement | undefined;
+  const focusCard = (id: CodecId) =>
+    queueMicrotask(() => grid?.querySelector<HTMLInputElement>(`input[value="${id}"]`)?.focus());
+  // Alt+arrow keys: next to the card before or after it among those shown
+  const moveBy = (id: CodecId, by: -1 | 1) => {
+    const shownIds = cards().map((c) => c.id);
+    const at = shownIds.indexOf(id);
+    const to = shownIds[at + by];
+    if (!to) return;
+    const next = placed(order(), id, to);
+    setSaid(t("ui.codecs.moved", t(codecSpec(id).label), at + by + 1, shownIds.length));
+    void saveOrder(next);
+    focusCard(id);
+  };
+  // Dragging with the pointer: the card follows it over the others and the
+  // order is saved when it is let go (a click without moving still chooses)
+  let drag: { id: CodecId; x: number; y: number; pointer: number; moving: boolean } | null = null;
+  let swallowClick = false;
+  const [dragging, setDragging] = createSignal<CodecId | null>(null);
+  const cellAt = (x: number, y: number): CodecId | null => {
+    const el = document.elementFromPoint?.(x, y);
+    const cell = el?.closest<HTMLElement>(".codec-cell[data-codec]");
+    return cell && grid?.contains(cell) ? (cell.dataset.codec as CodecId) : null;
+  };
+  const onPointerDown = (ev: PointerEvent) => {
+    if (props.auto || busy() || ev.button !== 0) return;
+    const target = ev.target as Element;
+    const cell = target.closest<HTMLElement>(".codec-cell[data-codec]");
+    if (!cell || target.closest(".codec-more")) return;
+    drag = { id: cell.dataset.codec as CodecId, x: ev.clientX, y: ev.clientY, pointer: ev.pointerId, moving: false };
+  };
+  const onPointerMove = (ev: PointerEvent) => {
+    if (!drag || ev.pointerId !== drag.pointer) return;
+    if (!drag.moving) {
+      if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 6) return;
+      drag.moving = true;
+      setDragging(drag.id);
+      grid?.setPointerCapture?.(ev.pointerId);
+    }
+    ev.preventDefault();
+    const over = cellAt(ev.clientX, ev.clientY);
+    if (over && over !== drag.id) setDragOrder(placed(order(), drag.id, over));
+  };
+  const endDrag = (ev: PointerEvent, cancelled: boolean) => {
+    if (!drag || ev.pointerId !== drag.pointer) return;
+    const d = drag;
+    drag = null;
+    setDragging(null);
+    if (!d.moving) return;
+    // The click that ends a drag does not choose the card
+    swallowClick = true;
+    setTimeout(() => (swallowClick = false), 0);
+    if (cancelled) setDragOrder(null);
+    else {
+      // Where it is let go, if the last move did not get there
+      const over = cellAt(ev.clientX, ev.clientY);
+      if (over && over !== d.id) setDragOrder(placed(order(), d.id, over));
+      const next = order();
+      const at = cards().findIndex((c) => c.id === d.id);
+      setSaid(t("ui.codecs.moved", t(codecSpec(d.id).label), at + 1, cards().length));
+      void saveOrder(next);
+    }
+  };
 
   return (
-    <section class="card device-codecs" aria-labelledby={titleId()} aria-busy={busy() ? "true" : undefined}>
+    <section
+      class="card device-codecs"
+      aria-labelledby={titleId()}
+      aria-busy={busy() || ordering() ? "true" : undefined}
+    >
       <div class="device-codecs-head">
+        {/* Which device is in use (issue #86 round 8), as the sidebar's dot */}
+        <span class={`dot st-${state()}`} role="img" aria-label={stateLabel(state())} title={stateLabel(state())} />
         <Icon name="headphones" />
         <div class="device-codecs-title">
           <h2 id={titleId()} class="ellipsis">
@@ -281,7 +404,24 @@ function DeviceCodecs(props: {
           </>
         }
       >
-        <div class="codec-grid" role="radiogroup" aria-labelledby={titleId()} aria-disabled={props.auto ? "true" : undefined}>
+        <div
+          ref={grid}
+          class="codec-grid"
+          classList={{ ordering: dragging() !== null }}
+          role="radiogroup"
+          aria-labelledby={titleId()}
+          aria-disabled={props.auto ? "true" : undefined}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={(ev) => endDrag(ev, false)}
+          onPointerCancel={(ev) => endDrag(ev, true)}
+          onClick={(ev) => {
+            if (!swallowClick) return;
+            swallowClick = false;
+            ev.preventDefault();
+            ev.stopPropagation();
+          }}
+        >
           <For each={cards()}>
             {(c) => (
               <CodecCard
@@ -291,13 +431,30 @@ function DeviceCodecs(props: {
                 disabled={busy()}
                 readOnly={props.auto}
                 support={support(c.id)}
+                orderable={!props.auto}
+                dragging={dragging() === c.id}
+                describedBy={hintId}
                 onPick={() => void choose(c.id)}
-                onReadOnly={() => app.notify(t("ui.codecs.auto_read_only"), "hint")}
+                onReadOnly={props.onLocked}
                 onSettings={() => setSettingsOf(c)}
+                onMove={(by) => moveBy(c.id, by)}
               />
             )}
           </For>
         </div>
+        <span id={hintId} class="sr-only">
+          {t("ui.codecs.order_keys")}
+        </span>
+        <span class="sr-only" role="status" aria-live="polite">
+          {said()}
+        </span>
+        <Show when={!props.auto && !isDefaultOrder(order())}>
+          <div class="codecs-order">
+            <Button icon="arrow_reset" disabled={busy() || ordering()} onClick={() => void saveOrder([...CARD_ORDER])}>
+              {t("ui.codecs.order_reset")}
+            </Button>
+          </div>
+        </Show>
         <Show when={known().length === 0}>
           <p class="hint">{t("ui.profile.codecs_unknown")}</p>
         </Show>

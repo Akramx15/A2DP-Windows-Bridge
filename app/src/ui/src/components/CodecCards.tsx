@@ -34,14 +34,23 @@ export function CodecCard(props: {
   group: string;
   selected: boolean;
   disabled?: boolean;
-  /** Auto chooses (issue #86): the card only shows whether Auto picked it,
-   *  without its settings */
+  /** Auto chooses (issue #86): the card only shows whether Auto picked it */
   readOnly?: boolean;
   support: CodecSupport | null;
   onPick: () => void;
-  /** Clicked while read-only: says how to choose (issue #86) */
+  /** The card or its "..." clicked while read-only: offers to turn
+   *  Auto-select off (issue #86 round 8) */
   onReadOnly?: () => void;
   onSettings: () => void;
+  /** The card can be dragged (and moved with Alt+arrow keys) into the
+   *  device's order (issue #86 round 8) */
+  orderable?: boolean;
+  /** Being dragged */
+  dragging?: boolean;
+  /** Alt+arrow key: one place earlier (-1) or later (1) */
+  onMove?: (by: -1 | 1) => void;
+  /** The id of what tells how to move it (screen readers) */
+  describedBy?: string;
 }) {
   const bar = (label: string, v: number) => (
     <div class="cbar">
@@ -54,10 +63,10 @@ export function CodecCard(props: {
   const name = () => t(props.spec.label);
   return (
     // The button is beside the label, not in it: the radio's name stays the codec's
-    <div class="codec-cell">
+    <div class="codec-cell" classList={{ dragging: props.dragging }} data-codec={props.spec.id}>
       <label
         class="codec-card"
-        classList={{ on: props.selected, ro: props.readOnly }}
+        classList={{ on: props.selected, ro: props.readOnly, orderable: props.orderable }}
         onClick={() => {
           if (props.readOnly) props.onReadOnly?.();
         }}
@@ -68,7 +77,16 @@ export function CodecCard(props: {
           value={props.spec.id}
           checked={props.selected}
           disabled={props.disabled || props.readOnly}
+          aria-describedby={props.orderable ? props.describedBy : undefined}
           onChange={() => props.onPick()}
+          onKeyDown={(e) => {
+            if (!props.orderable || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            const by = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key] as -1 | 1 | undefined;
+            if (!by) return;
+            // Not the radio group's own arrow keys (they choose the next card)
+            e.preventDefault();
+            props.onMove?.(by);
+          }}
         />
         <span class="codec-card-name">{name()}</span>
         {/* The wrapper keeps the tag its own size in the card's column */}
@@ -107,15 +125,13 @@ export function CodecCard(props: {
           )}
         </Show>
       </label>
-      <Show when={!props.readOnly}>
-        <IconButton
-          icon="more_horizontal"
-          class="codec-more"
-          label={t("ui.profile.codec_settings", name())}
-          aria-haspopup="dialog"
-          onClick={() => props.onSettings()}
-        />
-      </Show>
+      <IconButton
+        icon="more_horizontal"
+        class="codec-more"
+        label={t("ui.profile.codec_settings", name())}
+        aria-haspopup="dialog"
+        onClick={() => (props.readOnly ? props.onReadOnly?.() : props.onSettings())}
+      />
     </div>
   );
 }

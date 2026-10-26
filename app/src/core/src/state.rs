@@ -158,6 +158,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         sbc_allocation: p.sbc_allocation.clone(),
         sbc_channel_mode: p.sbc_channel_mode.clone(),
         codec_settings: p.codec_settings.iter().map(|(c, v)| (c.clone(), to_ipc_codec_values(v))).collect(),
+        codec_order: p.codec_order.clone(),
     }
 }
 
@@ -228,6 +229,15 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
         .filter(|(k, _)| **k != p.codec)
         .map(|(k, v)| (k.clone(), from_ipc_codec_values(v)))
         .collect();
+    // The codecs' keys, each once (the cards' order: FastStream and Opus 05
+    // too, which Auto and the fallback never take); the UI sends none for
+    // the default order
+    c.codec_order = Vec::new();
+    for k in p.codec_order.iter().filter_map(|k| codec::CodecKind::from_key(k)) {
+        if !c.codec_order.iter().any(|x| x == k.key()) {
+            c.codec_order.push(k.key().to_string());
+        }
+    }
     c
 }
 
@@ -271,7 +281,6 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         le_audio_low_latency: s.le_audio_low_latency,
         experimental_codecs: s.experimental_codecs,
         auto_codec: s.auto_codec,
-        auto_order: s.auto_order.clone(),
     }
 }
 
@@ -320,10 +329,6 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.le_audio_low_latency = s.le_audio_low_latency;
     // experimental_codecs: always on (issue #86), as loaded
     c.auto_codec = s.auto_codec;
-    // Kept only when it is not the default order
-    let order = codec::AutoOrder::from_keys(&s.auto_order);
-    c.auto_order =
-        if order.is_default() { Vec::new() } else { order.codecs().iter().map(|k| k.key().to_string()).collect() };
     c
 }
 
@@ -850,14 +855,17 @@ fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
 }
 
 /// Whether turning Auto-select (for every device) on or off may change the
-/// codec of the profile in use: it chose one (a profile left on "auto"
-/// streams as Auto either way). Not LE Audio (LC3).
+/// codec of the profile in use: it chose one, or its own codec order (a
+/// profile left on "auto" in the default order streams as Auto either
+/// way). Not LE Audio (LC3).
 fn restart_for_auto(stream: &StreamStatus, p: &CoreProfile) -> bool {
-    restart_after_save(stream, &p.name) && !p.le_audio && p.codec != "auto"
+    restart_after_save(stream, &p.name) && !p.le_audio && (p.codec != "auto" || !p.order().is_default())
 }
 
-/// Whether a new Auto's order may change the codec of the profile in use:
-/// it is Auto or fell back (the fallback goes down the order). Not LE Audio.
+/// Whether a new codec order of the device (its cards dragged, issue #86
+/// round 8) may change the codec of the profile in use (`p` as it streams):
+/// it is Auto or fell back (the fallback takes the first codec in the
+/// order). Not LE Audio.
 fn restart_for_order(stream: &StreamStatus, p: &CoreProfile) -> bool {
     let fell_back = stream.info.as_ref().is_some_and(|i| i.requested_codec.is_some());
     restart_after_save(stream, &p.name) && !p.le_audio && (p.codec == "auto" || fell_back)
@@ -1265,9 +1273,10 @@ impl CoreState {
         let list = profiles::load(&dir);
         let p =
             list.iter().find(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
-        // Auto-select for every device: Auto, whatever codec the profile chose
-        let auto = (settings.auto_codec && !p.le_audio && p.codec != "auto").then(|| p.as_auto());
-        if auto.is_some() {
+        // Auto-select for every device: Auto in the default order, whatever
+        // codec and order the profile chose
+        let auto = (settings.auto_codec && !p.le_audio).then(|| p.as_auto());
+        if auto.is_some() && p.codec != "auto" {
             tracing::debug!(
                 "profile {}: codec {} chosen, Auto-select streams Auto",
                 a2dpwb_core::diag::quoted(&p.name),
@@ -1280,7 +1289,6 @@ impl CoreState {
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
-        req.auto_order = settings.auto_order();
         req.volume_sync = effective_volume_sync(settings.volume_sync, req.volume_sync);
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
@@ -1292,7 +1300,6 @@ impl CoreState {
         let settings = self.service.settings();
         let mut req = custom_request(c, settings.legacy_max_media_payload())?;
         req.experimental_codecs = settings.experimental_codecs;
-        req.auto_order = settings.auto_order();
         tracing::info!("custom stream to {}: codec {}, source {}", c.device, c.codec, req.source);
         self.begin_stream(req, None);
         Ok(())
@@ -1641,6 +1648,15 @@ impl CoreState {
                 let key = original_name.as_deref().unwrap_or(&profile.name).to_string();
                 let pos = list.iter().position(|p| p.name == key);
                 let merged = merge_profile(pos.map(|i| &list[i]), &profile);
+                // Only the device's codec order changed (its cards dragged):
+                // the stream goes on unless the order changes its codec
+                let order_only = pos.is_some_and(|i| {
+                    list[i].codec_order != merged.codec_order
+                        && CoreProfile { codec_order: merged.codec_order.clone(), ..list[i].clone() } == merged
+                });
+                // Under Auto-select the order is not used
+                let order_unused = self.service.settings().auto_codec || merged.le_audio;
+                let in_order = merged.clone();
                 // The profile's device joins the saved ones of its kind (as
                 // a connection saves it)
                 let address = merged.device_address.clone();
@@ -1673,7 +1689,8 @@ impl CoreState {
                 }
                 self.refresh_devices();
                 // The profile in use starts again with what was saved (v1)
-                if restart_after_save(&s.stream, &key) {
+                let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
+                if restart_after_save(&s.stream, &key) && !order_keeps_codec {
                     tracing::info!(
                         "profile {} saved while in use: it starts again as {}",
                         a2dpwb_core::diag::quoted(&key),
@@ -1708,33 +1725,27 @@ impl CoreState {
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
-                    let order_changed = base.auto_order != merged.auto_order;
                     let sync_toggled = base.volume_sync != merged.volume_sync;
-                    let order_names = merged.auto_order().names();
                     me.save_settings(merged)?;
                     if chip {
                         me.reload_adapter();
                     }
-                    // Auto-select on / off or Auto's order: a profile in use
-                    // whose codec it changes starts again (as a profile save
-                    // does); Windows Volume Sync on / off: the profile in use
-                    // starts again (as when it was the profile's own setting)
-                    if auto_toggled || order_changed || sync_toggled {
+                    // Auto-select on / off: a profile in use whose codec it
+                    // changes starts again (as a profile save does); Windows
+                    // Volume Sync on / off: the profile in use starts again
+                    // (as when it was the profile's own setting)
+                    if auto_toggled || sync_toggled {
                         let (_, s) = me.snapshot();
                         let list = profiles::load(&me.config_dir());
                         let in_use = s.stream.profile.as_deref().and_then(|n| list.iter().find(|p| p.name == n));
                         let restart = |p: &&CoreProfile| {
-                            // As it streams under Auto-select (for every device)
-                            let effective = if settings.auto_codec { p.as_auto() } else { (*p).clone() };
-                            (order_changed && restart_for_order(&s.stream, &effective))
-                                || (auto_toggled && restart_for_auto(&s.stream, p))
+                            (auto_toggled && restart_for_auto(&s.stream, p))
                                 || (sync_toggled && restart_after_save(&s.stream, &p.name))
                         };
                         if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
-                                "Auto-select {}, order {}, volume sync {}: profile {} starts again",
+                                "Auto-select {}, volume sync {}: profile {} starts again",
                                 if settings.auto_codec { "on" } else { "off" },
-                                order_names,
                                 if settings.volume_sync { "on" } else { "off" },
                                 a2dpwb_core::diag::quoted(&p.name)
                             );
@@ -1769,7 +1780,6 @@ impl CoreState {
                     // stack, with the same profile (issue #86)
                     if let Some(mut req) = again {
                         req.experimental_codecs = me.service.settings().experimental_codecs;
-                        req.auto_order = me.service.settings().auto_order();
                         let profile = me.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         me.begin_stream(req, profile);
                     }
@@ -2150,7 +2160,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_auto_order_restarts_a_profile_on_auto_or_fallen_back() {
+    fn a_new_codec_order_restarts_a_profile_on_auto_or_fallen_back() {
         let profile = |codec: &str| CoreProfile { name: "WH".into(), codec: codec.into(), ..CoreProfile::default() };
         let streaming = |requested: Option<&str>| StreamStatus {
             state: StreamState::Streaming,
@@ -2189,6 +2199,8 @@ mod tests {
         assert!(restart_for_auto(&streaming, &profile("aac")));
         // Auto either way, another profile, nothing running, LE Audio
         assert!(!restart_for_auto(&streaming, &profile("auto")));
+        // Auto in its own order: Auto-select takes the default order
+        assert!(restart_for_auto(&streaming, &CoreProfile { codec_order: vec!["sbc".into()], ..profile("auto") }));
         assert!(!restart_for_auto(&streaming, &CoreProfile { name: "Buds".into(), ..profile("aac") }));
         assert!(!restart_for_auto(&StreamStatus::default(), &profile("aac")));
         assert!(!restart_for_auto(&streaming, &CoreProfile { le_audio: true, ..profile("aac") }));
@@ -2507,6 +2519,17 @@ mod tests {
         let mut warned = false;
         assert!(battery_low_alert(&mut warned, 12));
         assert!(!battery_low_alert(&mut warned, 11));
+    }
+
+    #[test]
+    fn codec_order_is_stored_with_known_keys_once() {
+        let ui =
+            to_ipc_profile(&CoreProfile { device_address: "C0:11:22:33:44:55".into(), ..CoreProfile::default() }, 679);
+        assert!(ui.codec_order.is_empty());
+        let order = ["SBCXQ", "nope", "faststream", "sbcxq", "aac"].map(String::from).to_vec();
+        let merged = merge_profile(None, &Profile { codec_order: order, ..ui });
+        assert_eq!(merged.codec_order, ["sbcxq", "faststream", "aac"]);
+        assert_eq!(to_ipc_profile(&merged, 679).codec_order, merged.codec_order);
     }
 
     #[test]

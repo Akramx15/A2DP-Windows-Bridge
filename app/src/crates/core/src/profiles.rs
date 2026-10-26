@@ -52,8 +52,8 @@ pub struct Profile {
     pub abr: bool,
     /// Legacy (v1, and v2 before issue #86's Codecs redesign): whether a
     /// codec the device does not offer falls back to another. Kept in the
-    /// file but no longer used: a profile always falls back, to the next
-    /// codec below its own in Auto's order (an unsupported codec is never
+    /// file but no longer used: a profile always falls back, to the first
+    /// codec in its order the device offers (an unsupported codec is never
     /// tried)
     #[serde(default = "yes")]
     pub codec_fallback: bool,
@@ -115,6 +115,13 @@ pub struct Profile {
     /// use has its own in the fields above)
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub codec_settings: BTreeMap<String, CodecValues>,
+    /// The device's codec order (codec keys), as its cards were dragged on
+    /// the Codecs screen with Auto-select off (issue #86 round 8): Auto, and
+    /// a chosen codec the device does not offer, take the first one in it
+    /// the device offers. Empty: highest sound quality first. Under
+    /// Auto-select it is kept but not used ([`Profile::as_auto`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub codec_order: Vec<String>,
     #[serde(flatten)]
     pub other: BTreeMap<String, serde_json::Value>,
 }
@@ -150,6 +157,7 @@ impl Default for Profile {
             le_audio: false,
             le_low_latency: true,
             codec_settings: BTreeMap::new(),
+            codec_order: Vec::new(),
             other: BTreeMap::new(),
         }
     }
@@ -240,8 +248,15 @@ impl Profile {
             sbc_subbands: d.sbc_subbands,
             sbc_allocation: d.sbc_allocation,
             sbc_channel_mode: d.sbc_channel_mode,
+            // Auto-select's order is the default one
+            codec_order: Vec::new(),
             ..self.clone()
         }
+    }
+
+    /// The codec order streams use ([`Profile::codec_order`])
+    pub fn order(&self) -> codec::AutoOrder {
+        codec::AutoOrder::from_keys(&self.codec_order)
     }
 
     /// What to stream for this profile. An LE Audio (experimental) profile
@@ -286,8 +301,7 @@ impl Profile {
             codec_fallback: true,
             // The setting's, filled in by whoever starts the stream
             experimental_codecs: true,
-            // The setting's too
-            auto_order: codec::AutoOrder::default(),
+            auto_order: self.order(),
             quality: Quality::from_key(&self.quality),
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,
@@ -556,6 +570,22 @@ mod tests {
         assert_eq!(a.to_request(1023).unwrap().codec, None);
         let le = Profile { le_audio: true, ..p };
         assert_eq!(le.as_auto(), le);
+    }
+
+    #[test]
+    fn codec_order_in_the_request_written_only_when_set() {
+        let text =
+            r#"{"name":"EarFun","device_address":"00:A2:D0:00:00:02","codec":"opus","codec_order":["sbcxq","sbc"]}"#;
+        let p: Profile = serde_json::from_str(text).unwrap();
+        let order = p.to_request(1023).unwrap().auto_order;
+        assert_eq!(&order.codecs()[..2], &[CodecKind::SbcXq, CodecKind::Sbc]);
+        assert_eq!(order.codecs().len(), CodecKind::AUTO_PRIORITY.len());
+        // Auto-select: the default order
+        assert!(p.as_auto().to_request(1023).unwrap().auto_order.is_default());
+        assert_eq!(serde_json::to_value(&p).unwrap()["codec_order"], serde_json::json!(["sbcxq", "sbc"]));
+        let plain = Profile { codec_order: Vec::new(), ..p };
+        assert!(plain.to_request(1023).unwrap().auto_order.is_default());
+        assert!(serde_json::to_value(&plain).unwrap().get("codec_order").is_none());
     }
 
     #[test]

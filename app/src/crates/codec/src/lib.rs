@@ -61,11 +61,12 @@ pub enum CodecKind {
     AptxAdaptive,
 }
 
-/// Auto's order (settings `auto_order`, issue #86): the codecs of
-/// [`CodecKind::AUTO_PRIORITY`] in the order the user put them on the
-/// Codecs screen; the default is that list, highest sound quality first.
-/// Auto takes the first one the device offers, and a chosen codec the
-/// device does not offer falls back to the next one below it here.
+/// A device's codec order (its profile's `codec_order`, issue #86 round 8):
+/// the codecs of [`CodecKind::AUTO_PRIORITY`] in the order the user dragged
+/// the device's cards into on the Codecs screen (with Auto-select off); the
+/// default is that list, highest sound quality first. Auto takes the first
+/// one the device offers, and so does a chosen codec the device does not
+/// offer (the fallback).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AutoOrder([CodecKind; 10]);
 
@@ -99,8 +100,7 @@ impl AutoOrder {
     }
 
     /// Where the codec stands (0 = first). Opus 05 stands with Opus and
-    /// FastStream after the last, so a fallback from them still goes down
-    /// the list.
+    /// FastStream after the last.
     pub fn rank(&self, kind: CodecKind) -> usize {
         let at = |k: CodecKind| self.0.iter().position(|&c| c == k).unwrap_or(0);
         match kind {
@@ -138,7 +138,7 @@ impl CodecKind {
     /// AAC, SBC XQ and SBC. SBC XQ stays below AAC: it carries more bits,
     /// but AAC sounds better per bit and SBC XQ has trouble with some
     /// frequencies. A chosen codec the device does not offer falls back
-    /// down this list ([`caps::choose`]). FastStream is not here: it sounds
+    /// to the first one here the device offers ([`caps::choose`]). FastStream is not here: it sounds
     /// worse than SBC, so it is used only when chosen. Neither is Opus 05:
     /// only PipeWire implements it (as a sink too), it is not verified with
     /// one, and a PipeWire sink offers Android's Opus as well from PipeWire

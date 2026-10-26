@@ -455,6 +455,13 @@ pub struct Profile {
     /// that codec is chosen again)
     #[serde(default)]
     pub codec_settings: std::collections::BTreeMap<String, CodecValues>,
+    /// The device's codec order (codec keys) as dragged on the Codecs
+    /// screen with Auto-select off: Auto, and a chosen codec the device
+    /// does not offer, take the first one in it the device offers (issue
+    /// #86 round 8). Empty: highest sound quality first. Not used under
+    /// Auto-select.
+    #[serde(default)]
+    pub codec_order: Vec<String>,
 }
 
 /// One codec's settings in a profile (Profile.codec_settings)
@@ -592,10 +599,6 @@ pub struct Settings {
     /// each with the codec chosen for it (read when the next stream starts)
     #[serde(default = "yes")]
     pub auto_codec: bool,
-    /// Codecs > Auto's order: codec keys, first picked first (also the way
-    /// a chosen codec falls back). Empty: highest sound quality first.
-    #[serde(default)]
-    pub auto_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]

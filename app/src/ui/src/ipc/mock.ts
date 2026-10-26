@@ -138,6 +138,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     sbc_channel_mode: "",
     ...over,
     codec_settings: over.codec_settings ?? {},
+    codec_order: over.codec_order ?? [],
   };
 }
 
@@ -173,7 +174,6 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     experimental_codecs: true,
     // Off, as schema 5 sets it: WH-1000XM5 chose LDAC
     auto_codec: false,
-    auto_order: [],
     ...over,
   };
 }
@@ -664,7 +664,6 @@ export class MockCore implements Transport {
           // Always on, as the core reads it (issue #86)
           experimental_codecs: true,
           auto_codec: next.auto_codec ?? before.auto_codec,
-          auto_order: next.auto_order ?? before.auto_order,
         };
         this.emit({ kind: "settings", value: this.snap.settings });
         let le_audio_deferred = false;
