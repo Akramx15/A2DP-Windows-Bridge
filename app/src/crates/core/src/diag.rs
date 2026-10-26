@@ -1443,18 +1443,9 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
             }
             let payload = p.max_media_payload.map(|v| v.to_string()).unwrap_or_else(|| "not set".into());
             let _ = writeln!(out, ", auto switch {}, max media packet {payload}", on_off(p.auto_switch_device));
-            // As the stream has it: the setting for every device, the device
-            // the profile follows (developer mode)
-            let sync = match (s.volume_sync, p.volume_sync.as_str()) {
-                (false, _) => "off",
-                (true, "device") => "device",
-                _ => "auto",
-            };
-            let _ = write!(out, "  Volume sync: {sync}");
-            if sync == "device" {
-                let _ = write!(out, " {}", quoted(&p.volume_device_name));
-            }
-            out.push('\n');
+            // As the stream has it: the setting for every device alone (the
+            // profile's own is no longer used, issue #86)
+            let _ = writeln!(out, "  Volume sync: {}", if s.volume_sync { "auto" } else { "off" });
         }
         None => out.push_str("  (none selected - receiver measurement or not connected)\n"),
     }

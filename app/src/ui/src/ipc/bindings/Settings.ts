@@ -26,9 +26,8 @@ remember_volume: boolean,
 /**
  * Windows Volume Sync for every device (on by default): the audio
  * device's volume and the captured device's Windows volume follow each
- * other; a profile can follow another device instead (its volume_sync
- * "device", set in developer mode). Off: no stream syncs. A change
- * starts the profile in use again.
+ * other. Off: no stream syncs. A change starts the profile in use
+ * again.
  */
 volume_sync: boolean, 
 /**
