@@ -32,8 +32,8 @@ const main = () => within(screen.getByRole("main"));
 /** "Auto-select the codec with the highest quality", for every device */
 const autoName = (n: string) => n.startsWith(t("ui.codecs.auto_select"));
 const autoSwitch = () => main().getByRole("switch", { name: autoName });
-/** "Hide the codecs the audio device does not support": a switch (issue #86) */
-const hideSwitch = () => main().getByRole("switch", { name: t("ui.profile.codecs_hide") });
+/** "Show only supported codecs": a switch, on by default (issue #86) */
+const hideSwitch = () => main().getByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) });
 /** The codec cards' names in a device's section, in order */
 const cardNames = (where: HTMLElement) => [...where.querySelectorAll(".codec-card-name")].map((n) => n.textContent);
 /** "Disable Auto-select?" (issue #86 round 8) */
@@ -75,6 +75,7 @@ describe("the Codecs screen", () => {
     expect(main().queryByRole("button", { name: t("ui.codecs.order_reset") })).toBeNull();
     expect(main().queryAllByRole("checkbox")).toHaveLength(0);
     expect(hideSwitch()).toBeChecked();
+    expect(hideSwitch()).toHaveAccessibleDescription(t("ui.profile.codecs_hide_hint"));
     // A line between the device and its codecs
     expect(wh.querySelector(".device-codecs-head")).not.toBeNull();
   });
@@ -591,11 +592,10 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
     expect(saves(calls)[0].profile).toMatchObject({ codec: "sbc", sbc_bitpool: 39 });
   });
 
-  it("aptX Adaptive offers 96 kHz only while Developer's switch is on", async () => {
-    const { core } = start("#/codecs");
-    const xb = await section("SRS-XB13");
-    const rates = async () => {
-      const dialog = await codecSettings(xb, "codec.aptx_adaptive");
+  it("aptX Adaptive offers 96 kHz only to a device that lists it", async () => {
+    start("#/codecs", "capped");
+    const rates = async (device: string) => {
+      const dialog = await codecSettings(await section(device), "codec.aptx_adaptive");
       const list = within(within(dialog).getByLabelText(t("connection.sample_rate")))
         .getAllByRole("option")
         .map((o) => o.textContent);
@@ -603,12 +603,11 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       return list;
     };
-    expect(await rates()).toEqual([t("codec.auto"), "48000 Hz"]);
-    const s = core.state.snap!.settings;
-    await core.request("settings.set", {
-      settings: { ...s, developer_mode: true, dev_overrides: { ...s.dev_overrides, aptxad_96k: true } },
-    });
-    expect(await rates()).toEqual([t("codec.auto"), "48000 Hz", "96000 Hz"]);
+    // A Bose QC Ultra lists 44.1 / 48 kHz only (issue #86); an EarFun Air
+    // Pro 4+ 96 kHz too; a device not connected yet is not offered 96 kHz
+    expect(await rates("QC Ultra Earbuds")).toEqual([t("codec.auto"), "48000 Hz"]);
+    expect(await rates("EarFun Air Pro 4+")).toEqual([t("codec.auto"), "48000 Hz", "96000 Hz"]);
+    expect(await rates("SRS-XB13")).toEqual([t("codec.auto"), "48000 Hz"]);
   });
 });
 
@@ -616,8 +615,8 @@ describe("SBC settings", () => {
   it("offer what the device listed and show the bit rate as it changes", async () => {
     const { calls } = start("#/codecs");
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc");
-    // Auto: 16 blocks, 8 subbands, joint stereo, bitpool 53, at the highest
-    // rate only; read-only where the quality list was (issue #86)
+    // Auto: 16 blocks, 8 subbands, joint stereo, bitpool 53, at 48 kHz
+    // only; read-only where the quality list was (issue #86)
     const rate = within(dialog).getByRole("status");
     expect(rate).toBe(within(dialog).getByLabelText(t("connection.quality")));
     expect(rate).toHaveTextContent(new RegExp(`^${t("ui.profile.sbc_bitrate", 357, "48")}$`));
@@ -656,7 +655,7 @@ describe("SBC settings", () => {
   it("SBC XQ has no channel mode of its own", async () => {
     start("#/codecs");
     // Not among what the mock's WH-1000XM5 supported: shown when not hidden
-    fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
     expect(within(dialog).queryByLabelText(t("ui.diag.cd_channel_mode"))).toBeNull();
     // Bitpool 43 per channel at 48 kHz
@@ -674,7 +673,7 @@ describe("SBC settings", () => {
 
   it("SBC's ABR and frame setup do not carry to SBC XQ, nor back (issue #86)", async () => {
     const { calls } = start("#/codecs");
-    fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const wh = await section("WH-1000XM5");
     let dialog = await codecSettings(wh, "codec.sbc");
     fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.abr") }));
@@ -914,7 +913,7 @@ describe("SBC ABR", () => {
 
   it("SBC XQ offers it too", async () => {
     start("#/codecs");
-    fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
     expect(within(dialog).getByRole("switch", { name: t("connection.abr") })).not.toBeChecked();
   });

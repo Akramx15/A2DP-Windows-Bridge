@@ -532,8 +532,6 @@ pub struct DevOverrides {
     pub aac_no_peak: bool,
     pub aac_no_afterburner: bool,
     pub aac_latm_v0: bool,
-    /// aptX Adaptive may stream at 96 kHz; off (the default), 48 kHz only
-    pub aptxad_96k: bool,
 }
 
 /// Developer mode's logging (a2dpwb_core::settings::DevLog), in force while

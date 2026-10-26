@@ -127,8 +127,7 @@ export const CODECS: CodecSpec[] = [
   {
     // aptX Adaptive: High with an R1 sink
     // (an R2 sink: 427 -> 340), 48 kHz; ABR steps down from High; Low
-    // Latency has a fixed bit rate. 96 kHz only while Developer > "aptX
-    // Adaptive at 96 kHz" is on (issue #86), when chosen, to a device that
+    // Latency has a fixed bit rate. 96 kHz when chosen, to a device that
     // lists it (an R2 one), not in Low Latency (48 kHz otherwise; 646
     // kbps). Always 24-bit.
     id: "aptxad",
@@ -394,21 +393,20 @@ export function capsOf(caps: readonly CodecCaps[], codec: string): CodecCaps | n
 }
 
 /** Whether the device lists a sample rate (anything goes while not known;
- *  LHDC V5's 88.2 kHz runs as 96 kHz) */
+ *  LHDC V5's 88.2 kHz runs as 96 kHz). aptX Adaptive's 96 kHz only when
+ *  the device lists it: few do (an R2 one with a 96 kHz bit; issue #86, a
+ *  Bose QC Ultra has none), and the core streams 48 kHz to the others */
 export function rateOffered(codec: string, rate: number, caps: CodecCaps | null): boolean {
-  if (rate === 0 || !caps || caps.sample_rates.length === 0) return true;
+  if (rate === 0) return true;
+  if (codec === "aptxad" && rate === 96000) return caps?.sample_rates.includes(rate) ?? false;
+  if (!caps || caps.sample_rates.length === 0) return true;
   return caps.sample_rates.includes(codec === "lhdcv5" && rate === 88200 ? 96000 : rate);
 }
 
-/**
- * The sample rates the dialog offers (issue #86): the codec's, as far as
- * the device lists them, aptX Adaptive's 96 kHz only while Developer >
- * "aptX Adaptive at 96 kHz" is on (`aptxad96k`)
- */
-export function offeredSampleRates(codec: string, caps: CodecCaps | null, aptxad96k = true): number[] {
-  return sampleRates(codec).filter(
-    (r) => rateOffered(codec, r, caps) && !(codec === "aptxad" && r === 96000 && !aptxad96k),
-  );
+/** The sample rates the dialog offers (issue #86): the codec's, as far as
+ *  the device lists them */
+export function offeredSampleRates(codec: string, caps: CodecCaps | null): number[] {
+  return sampleRates(codec).filter((r) => rateOffered(codec, r, caps));
 }
 
 /** The bit depths the dialog offers: the codec's, as far as the device
