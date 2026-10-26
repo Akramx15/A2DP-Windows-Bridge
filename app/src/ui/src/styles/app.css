@@ -1501,7 +1501,7 @@ option {
   min-width: 4.5rem;
   text-align: right;
 }
-.profile-switcher .select {
+.device-switcher .select {
   min-width: 14rem;
 }
 
@@ -2686,7 +2686,7 @@ html.win-flyout body {
   font-size: var(--fs-12);
   max-width: 100%;
 }
-.flyout .profile-switcher .select {
+.flyout .device-switcher .select {
   width: 100%;
   min-width: 0;
 }

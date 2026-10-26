@@ -96,7 +96,7 @@ describe("Adapter firmware", () => {
     const mtkDriver = within(mtk).getByRole("group", { name: "Driver: Original driver" });
     expect(within(mtkDriver).getByText("Original driver")).toHaveAttribute("title", "mtkbtfilterx");
     expect(within(mtkDriver).getByRole("button", { name: "Replace with WinUSB driver" })).toBeDisabled();
-    expect(mtkDriver).toHaveTextContent("A2DPWB cannot use this adapter, so its driver stays as it is");
+    expect(mtkDriver).toHaveTextContent("A2DP Windows Bridge cannot use this adapter, so its driver stays as it is");
     // The chip choice goes with the Realtek adapter only
     expect(within(mtk).queryByLabelText("Bluetooth Chip")).toBeNull();
     expect(within(rtl).getByLabelText("Bluetooth Chip")).toBeInTheDocument();

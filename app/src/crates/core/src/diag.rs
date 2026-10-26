@@ -1416,7 +1416,7 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         let _ = writeln!(out, "  {l}");
     }
 
-    out.push_str("\n[Profile]\n");
+    out.push_str("\n[Audio device]\n");
     match d.profile {
         Some(p) => {
             let _ = writeln!(out, "  Name: {}", quoted(&p.name));

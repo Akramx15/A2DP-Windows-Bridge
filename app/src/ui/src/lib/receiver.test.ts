@@ -263,7 +263,7 @@ describe("receiver steps", () => {
     run(m2, r, STREAMING, 100);
     const lost = run(m2, r, stream("reconnecting", null, "status.connection_lost"), 200);
     expect(m2.steps.link.state).toBe("running");
-    expect(lost).toContain("Bluetooth connection lost, A2DPWB reconnects");
+    expect(lost).toContain("Bluetooth connection lost, A2DP Windows Bridge reconnects");
     run(m2, r, STREAMING, 300);
     expect(m2.steps.link.state).toBe("ok");
   });

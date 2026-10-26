@@ -1,7 +1,7 @@
-// Choosing the device for the big button (the flyout), by its profile: one
-// per device since the Codecs screen (issue #86). While a stream runs,
-// choosing another device streams to that one (stream.start stops the
-// running one); otherwise it only becomes the active profile.
+// Choosing the device for the big button (the flyout), one entry per audio
+// device (its saved settings, internally a Profile, since the Codecs screen,
+// issue #86). While a stream runs, choosing another device streams to that
+// one (stream.start stops the running one); otherwise it becomes the active one.
 
 import { useApp } from "../app/context";
 import { t } from "../i18n";
@@ -9,7 +9,7 @@ import { audioEntries } from "../lib/profile";
 import { Select } from "./controls";
 import { currentProfile } from "./stream";
 
-export function ProfileSwitcher() {
+export function DeviceSwitcher() {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const value = () => currentProfile(snap())?.name ?? "";
@@ -26,7 +26,7 @@ export function ProfileSwitcher() {
     );
   };
   return (
-    <div class="profile-switcher">
+    <div class="device-switcher">
       <Select label={t("ui.home.device")} value={value()} options={options()} onChange={choose} />
     </div>
   );

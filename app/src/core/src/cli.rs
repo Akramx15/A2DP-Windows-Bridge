@@ -39,7 +39,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
                         for aptX Adaptive (other codecs: hq, their highest bit rate)
   -a                    adaptive bit rate (LDAC, LHDC V5, aptX Adaptive; SBC / SBC XQ: bitpool)
   --fallback            a codec -c the device does not offer falls back to the
-                        best one it offers (as a profile), instead of an error
+                        best one it offers (as the app does), instead of an error
   --aptxad-96k          aptX Adaptive may stream at 96 kHz (Developer > aptX
                         Adaptive at 96 kHz; off: 48 kHz only)
   --no-experimental     never use the experimental codecs (aptX HD, aptX LL, Opus,

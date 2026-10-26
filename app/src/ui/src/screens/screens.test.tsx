@@ -148,11 +148,11 @@ describe("Home", () => {
   it("asks to exit the other A2DPWB (v1, or another v2) while it runs", async () => {
     start("#/home");
     await homeCard("WH-1000XM5");
-    expect(screen.queryByText("Another A2DPWB is running — exit it first")).toBeNull();
+    expect(screen.queryByText("Another A2DP Windows Bridge is running — exit it first")).toBeNull();
     mock!.setV1Running(true);
-    expect(await screen.findByText("Another A2DPWB is running — exit it first")).toBeInTheDocument();
+    expect(await screen.findByText("Another A2DP Windows Bridge is running — exit it first")).toBeInTheDocument();
     mock!.setV1Running(false);
-    await waitFor(() => expect(screen.queryByText("Another A2DPWB is running — exit it first")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Another A2DP Windows Bridge is running — exit it first")).toBeNull());
   });
 
   it("shows the cause of an error and a fix", async () => {
@@ -205,9 +205,9 @@ describe("every screen renders", () => {
 
   it("the first-run setup when no adapter is on WinUSB", async () => {
     const { calls } = start("#/home", { scenario: "fresh" });
-    expect(await screen.findByRole("heading", { level: 1, name: "Set up A2DPWB" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" })).toBeInTheDocument();
     mock!.setV1Running(true);
-    expect(await screen.findByText("Another A2DPWB is running — exit it first")).toBeInTheDocument();
+    expect(await screen.findByText("Another A2DP Windows Bridge is running — exit it first")).toBeInTheDocument();
     // The setup waits while the other one holds the adapter
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
     mock!.setV1Running(false);
@@ -225,7 +225,7 @@ describe("every screen renders", () => {
     mock!.setV1Running(false);
     await waitFor(() => expect(setUp).toBeEnabled());
     fireEvent.click(setUp);
-    await screen.findByText("The adapter is ready for A2DPWB", {}, { timeout: 5000 });
+    await screen.findByText("The adapter is ready for A2DP Windows Bridge", {}, { timeout: 5000 });
     const order = calls.map((c) => c.method).filter((m) => m === "adapter.assign_winusb" || m === "adapter.download_firmware");
     expect(order).toEqual(["adapter.assign_winusb", "adapter.download_firmware"]);
     expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled();

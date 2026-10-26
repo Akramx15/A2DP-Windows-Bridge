@@ -1045,9 +1045,9 @@ impl CoreState {
         let lang = s.settings.language.clone();
         let streaming = s.stream.state == StreamState::Streaming;
         let base = if streaming {
-            a2dpwb_core::messages::translate(&lang, "tray.tooltip_streaming", "A2DPWB - Streaming")
+            a2dpwb_core::messages::translate(&lang, "tray.tooltip_streaming", "A2DP Windows Bridge - Streaming")
         } else {
-            a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DPWB - Idle")
+            a2dpwb_core::messages::translate(&lang, "tray.tooltip_idle", "A2DP Windows Bridge - Idle")
         };
         // The streamed profile's device (v1)
         let device = streamed_device(&s);
@@ -1406,8 +1406,8 @@ impl CoreState {
             return;
         }
         (self.balloon)(BalloonRequest {
-            title: "A2DPWB".into(),
-            text: self.tr("tray.minimized_hint", "A2DPWB is still running in the system tray."),
+            title: "A2DP Windows Bridge".into(),
+            text: self.tr("tray.minimized_hint", "A2DP Windows Bridge is still running in the system tray."),
             url: None,
         });
         s.other.insert(TRAY_HINT_SHOWN.into(), Value::Bool(true));
@@ -1420,11 +1420,11 @@ impl CoreState {
     /// The streamed headphones' battery went low: a balloon, once per
     /// connection ([`battery_low_alert`])
     fn battery_low(&self, s: &Snapshot, level: u8) {
-        let device = streamed_device(s).unwrap_or("A2DPWB");
+        let device = streamed_device(s).unwrap_or("A2DP Windows Bridge");
         tracing::info!("battery: {device} at {level}%, below {BATTERY_LOW}%: balloon");
         let template = self.tr("notify.battery_low", "%s: battery low (%d%%)");
         (self.balloon)(BalloonRequest {
-            title: "A2DPWB".into(),
+            title: "A2DP Windows Bridge".into(),
             text: a2dpwb_core::messages::format_printf(&template, &[device.to_string(), level.to_string()]),
             url: None,
         });
@@ -1435,7 +1435,7 @@ impl CoreState {
     fn announce_update(&self, u: &UpdateState) {
         let Some(a) = &u.available else { return };
         let text = self
-            .tr("update.balloon", "A2DPWB %s is available. Click here to open the download page.")
+            .tr("update.balloon", "A2DP Windows Bridge %s is available. Click here to open the download page.")
             .replacen("%s", &a.version, 1);
         (self.balloon)(BalloonRequest {
             title: self.tr("update.available_title", "Update Available"),
@@ -2141,17 +2141,17 @@ mod tests {
         assert_eq!(tray_codec_line("SBC", 328, 44100, 16, false), "SBC 328 kbps | 44.1 kHz | 16-bit");
         assert_eq!(tray_codec_line("LC3", 320, 48000, 0, false), "LC3 320 kbps | 48 kHz");
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", Some("WH-1000XM4"), &[ldac.clone(), "Battery 80%".into()]),
-            "A2DPWB - Streaming (WH-1000XM4)\nLDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%"
+            tray_tooltip("A2DP Windows Bridge - Streaming", Some("WH-1000XM4"), &[ldac.clone(), "Battery 80%".into()]),
+            "A2DP Windows Bridge - Streaming (WH-1000XM4)\nLDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%"
         );
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", None, &[ldac]),
-            "A2DPWB - Streaming\nLDAC 990 kbps | 96 kHz | 24-bit | ABR"
+            tray_tooltip("A2DP Windows Bridge - Streaming", None, &[ldac]),
+            "A2DP Windows Bridge - Streaming\nLDAC 990 kbps | 96 kHz | 24-bit | ABR"
         );
-        assert_eq!(tray_tooltip("A2DPWB - Streaming", Some(""), &[]), "A2DPWB - Streaming");
+        assert_eq!(tray_tooltip("A2DP Windows Bridge - Streaming", Some(""), &[]), "A2DP Windows Bridge - Streaming");
         assert_eq!(
-            tray_tooltip("A2DPWB - Streaming", Some("AA:BB:CC:DD:EE:FF"), &[]),
-            "A2DPWB - Streaming (AA:BB:CC:DD:EE:FF)"
+            tray_tooltip("A2DP Windows Bridge - Streaming", Some("AA:BB:CC:DD:EE:FF"), &[]),
+            "A2DP Windows Bridge - Streaming (AA:BB:CC:DD:EE:FF)"
         );
     }
 

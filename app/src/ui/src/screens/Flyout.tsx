@@ -10,7 +10,7 @@ import { CaptureSign } from "../app/indicators";
 import { Button, IconButton } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
-import { ProfileSwitcher } from "../components/ProfileSwitcher";
+import { DeviceSwitcher } from "../components/DeviceSwitcher";
 import {
   BatteryLevel,
   CodecBadge,
@@ -66,7 +66,7 @@ export function Flyout() {
             when={profile()}
             fallback={<div class="device-name ellipsis">{t("profile.none_selected")}</div>}
           >
-            <ProfileSwitcher />
+            <DeviceSwitcher />
           </Show>
           {/* As on Home and in the sidebar: battery | state, the codec (issue #86) */}
           <div class="fly-state">
