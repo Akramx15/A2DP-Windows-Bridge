@@ -1619,6 +1619,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             && !changed
         {
             p.reset();
+            // The Idle while the headphones were off cleared the stream
+            // info (the UI's, the connected balloon's): the same again
+            if back_on {
+                inner.stream_info(info.clone());
+            }
         } else {
             let sink = match pipeline.take() {
                 Some(p) => p.stop(),
