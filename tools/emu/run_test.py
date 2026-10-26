@@ -133,11 +133,13 @@ NEGOTIATION = {
     'auto-opus': ('auto', ['--codecs', 'sbc', 'aac', 'opus'], 'opus', []),
     'auto-lhdcv5-over-opus': ('auto', ['--codecs', 'sbc', 'aac', 'opus', 'lhdcv5'], 'lhdcv5', []),
     'auto-lhdcv5-over-ldac': ('auto', ['--codecs', 'sbc', 'aac', 'ldac', 'lhdcv5'], 'lhdcv5', []),
-    # A codec the sink does not offer, with a profile's fallback: the next
-    # one below it in quality, not the best (issue #86: LHDC V5 asked of
-    # headphones without it); aptX HD missing: AAC, not LDAC above it
+    # A codec the sink does not offer, with a profile's fallback: the best
+    # one it offers, not the next one below it (issue #86 round 8: Opus
+    # asked of an EarFun gave aptX, not aptX Adaptive); aptX HD missing:
+    # LDAC above it, not AAC below
     'fallback-lhdcv5-to-ldac': ('lhdcv5', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac', ['--fallback']),
-    'fallback-aptxhd-to-aac': ('aptxhd', ['--codecs', 'sbc', 'aac', 'ldac'], 'aac', ['--fallback']),
+    'fallback-aptxhd-to-ldac': ('aptxhd', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac', ['--fallback']),
+    'fallback-opus-to-aptxad': ('opus', APTXAD_SINK, 'aptxad', ['--fallback']),
     # Opus 05: 48 kHz from a 44.1 kHz request; Auto never takes it (AAC here)
     'opus05-from-44k': ('opus05', [], 'opus05', ['--rate', '44100']),
     'auto-not-opus05': ('auto', ['--codecs', 'sbc', 'aac', 'opus05'], 'aac', []),
