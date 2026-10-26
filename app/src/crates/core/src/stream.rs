@@ -27,8 +27,9 @@ pub struct StreamRequest {
     /// Experimental codecs may be used (settings `experimental_codecs`):
     /// off, Auto and a fallback never pick them and a chosen one falls back
     pub experimental_codecs: bool,
-    /// Auto's order (settings `auto_order`): what Auto picks first, and the
-    /// way a chosen codec falls back
+    /// The device's codec order (the profile's `codec_order`; the default
+    /// under Auto-select): what Auto picks first, and what a chosen codec
+    /// the device does not offer falls back to (the first one it offers)
     pub auto_order: codec::AutoOrder,
     pub quality: Quality,
     pub abr: bool,
@@ -904,7 +905,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- codec ----
     if !req.auto_order.is_default() {
-        tracing::info!("codec: Auto's order set by the user: {}", req.auto_order.names());
+        tracing::info!("codec: the device's order set by the user: {}", req.auto_order.names());
     }
     let choice = match caps::choose_in(&remote, req.codec, req.codec_fallback, req.experimental_codecs, &req.auto_order)
     {

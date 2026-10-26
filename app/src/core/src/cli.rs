@@ -38,8 +38,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   -q <quality>          hq (default), sq, mq; mhq for LHDC V5; ll (low latency) for aptX Adaptive
   -a                    adaptive bit rate (LDAC, LHDC V5, aptX Adaptive; SBC / SBC XQ: bitpool)
   --fallback            a codec -c the device does not offer falls back to the
-                        next one below it in quality (as a profile), instead of
-                        an error
+                        best one it offers (as a profile), instead of an error
   --no-experimental     never use the experimental codecs (aptX HD, aptX LL, Opus,
                         Opus 05, FastStream: experimental in the README)
   -m <mode>             capture: loopback (default), virtual, app

@@ -101,6 +101,7 @@ export function newProfile(): Profile {
     sbc_allocation: "",
     sbc_channel_mode: "",
     codec_settings: {},
+    codec_order: [],
   };
 }
 

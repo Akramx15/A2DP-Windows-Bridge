@@ -1500,50 +1500,6 @@ option {
   gap: var(--s2);
   flex-wrap: wrap;
 }
-/* Auto's order dialog: rows dragged into place, or moved with ↑ / ↓ */
-.auto-order {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-}
-.auto-order-row {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--surface-2);
-  cursor: grab;
-  user-select: none;
-}
-.auto-order-row.dragging {
-  opacity: 0.5;
-  border-style: dashed;
-}
-.auto-order-grip {
-  color: var(--text-3);
-  flex: none;
-}
-.auto-order-rank {
-  width: 1.5em;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-3);
-}
-.auto-order-name {
-  flex: 1;
-}
-.auto-order-moves {
-  display: flex;
-  gap: 2px;
-}
-.auto-order-up svg {
-  transform: rotate(180deg);
-}
 .device-codecs {
   display: flex;
   flex-direction: column;
@@ -1740,12 +1696,13 @@ option {
   border-color: var(--text);
   background: var(--surface-2);
 }
-/* Auto chooses: the cards only show its pick (a click says how to choose) */
+/* Auto chooses: the cards only show its pick (a click offers to turn
+   Auto-select off, issue #86 round 8) */
 .codec-card.ro {
-  cursor: not-allowed;
+  cursor: pointer;
 }
 /* The disabled radio over the card would swallow the click: it goes to the
-   card instead, which says how to choose (issue #86) */
+   card instead */
 .codec-card.ro input {
   pointer-events: none;
 }
@@ -1754,6 +1711,28 @@ option {
 }
 .codec-card.ro:hover:not(.on) {
   border-color: var(--border);
+}
+/* Auto-select off: the cards are dragged into the device's order */
+.codec-card.orderable,
+.codec-card.orderable input {
+  cursor: grab;
+  user-select: none;
+}
+.codec-grid.ordering,
+.codec-grid.ordering .codec-card,
+.codec-grid.ordering .codec-card input {
+  cursor: grabbing;
+}
+.codec-cell.dragging {
+  opacity: 0.5;
+}
+.codec-cell.dragging .codec-card {
+  border-style: dashed;
+}
+/* The activity dot before the device's icon, as the sidebar's */
+.device-codecs-head > .dot {
+  width: 0.625rem;
+  height: 0.625rem;
 }
 .device-codecs .toggle-row {
   padding: 0;
