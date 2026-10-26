@@ -45,9 +45,16 @@ describe("developer screen", () => {
     fireEvent.change(bitrate, { target: { value: "9999" } });
     await screen.findByDisplayValue("512");
 
+    // aptX Adaptive at 96 kHz: off by default (issue #86)
+    const at96 = screen.getByRole("switch", { name: new RegExp(t("ui.dev.aptxad_96k")) });
+    expect(at96).not.toBeChecked();
+    fireEvent.click(at96);
+    await waitFor(() => expect(core.state.snap!.settings.dev_overrides.aptxad_96k).toBe(true));
+
     fireEvent.click(screen.getByRole("button", { name: t("ui.dev.reset") }));
     await screen.findByText(t("ui.dev.intro"));
     expect(core.state.snap!.settings.dev_overrides.rtp_marker).toBe(false);
+    expect(core.state.snap!.settings.dev_overrides.aptxad_96k).toBe(false);
   });
 
   it("saves the logging settings in range and puts markers in the log", async () => {

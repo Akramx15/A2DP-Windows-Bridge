@@ -28,6 +28,7 @@ const dev = (address: string, codecs: string[]): Device => ({
   rssi: null,
   codecs,
   sbc: null,
+  codec_caps: [],
   le_audio: false,
   le_audio_set: false,
 });

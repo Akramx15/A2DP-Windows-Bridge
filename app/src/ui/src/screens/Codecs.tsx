@@ -50,6 +50,7 @@ import {
   entryBase,
   entryByKey,
   followedName,
+  knownCodecCaps,
   knownCodecs,
   normalizeProfile,
   withCodec,
@@ -313,6 +314,8 @@ function DeviceCodecs(props: {
           profile={shown()}
           kept={(id) => shown().codec_settings?.[id]}
           sbcCaps={knownSbcCaps(snap().devices, e().address)}
+          caps={knownCodecCaps(snap().devices, e().address)}
+          aptxad96k={snap().settings.developer_mode && snap().settings.dev_overrides.aptxad_96k}
           onApply={(values) => {
             const { codec: id, ...rest } = values;
             setSettingsOf(null);
