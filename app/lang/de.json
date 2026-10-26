@@ -4,6 +4,7 @@
   "connection.scan": "Geräte suchen",
   "connection.scanning": "Suche läuft...",
   "connection.scanning_hint": "Geräte in der Nähe werden gesucht (~30 s)...",
+  "connection.scan_stop": "Suche beenden",
   "connection.no_devices": "Keine Geräte gefunden. Adresse manuell eingeben.",
   "connection.manual": "Manuell:",
   "connection.device_addr": "Geräteadresse",

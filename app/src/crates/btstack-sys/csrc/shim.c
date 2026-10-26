@@ -406,6 +406,10 @@ void a2dpwb_gap_setup(uint32_t class_of_device, uint16_t page_timeout) {
     gap_set_allow_role_switch(true);
     gap_set_default_link_policy_settings(0x0005);  /* role switch + sniff */
     gap_set_page_timeout(page_timeout);
+    /* BTstack's default is the standard inquiry (no RSSI, no extended
+     * inquiry response): every device then needed a name request after the
+     * inquiry. With EIR most answer with their name, as on other systems. */
+    hci_set_inquiry_mode(INQUIRY_MODE_RSSI_AND_EIR);
 }
 
 static uint8_t sdp_a2dp_source_service[150];
@@ -554,6 +558,12 @@ uint8_t a2dpwb_cmd_read_bd_addr(void) {
 
 uint8_t a2dpwb_cmd_read_local_version(void) {
     return hci_send_cmd(&hci_read_local_version_information);
+}
+
+uint8_t a2dpwb_cmd_remote_name_request_cancel(const uint8_t *addr) {
+    bd_addr_t a;
+    memcpy(a, addr, 6);
+    return hci_send_cmd(&hci_remote_name_request_cancel, a);
 }
 
 int a2dpwb_hci_get_state(void) {

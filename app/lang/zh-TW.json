@@ -4,6 +4,7 @@
   "connection.scan": "掃描裝置",
   "connection.scanning": "正在掃描...",
   "connection.scanning_hint": "正在掃描附近的裝置 (約 30 秒)...",
+  "connection.scan_stop": "停止掃描",
   "connection.no_devices": "找不到裝置。請手動輸入位址。",
   "connection.manual": "手動:",
   "connection.device_addr": "裝置位址",

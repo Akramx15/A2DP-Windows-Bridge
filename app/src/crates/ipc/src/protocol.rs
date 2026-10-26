@@ -1027,6 +1027,9 @@ pub enum Method {
     /// -> Device[] (also as an event)
     #[serde(rename = "device.scan")]
     DeviceScan { seconds: u32 },
+    /// Ends a running scan early: device.scan answers with what it found
+    #[serde(rename = "device.scan_stop")]
+    DeviceScanStop,
     /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
     /// or false: the classic one)
     #[serde(rename = "device.forget")]

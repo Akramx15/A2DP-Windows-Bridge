@@ -567,6 +567,8 @@ export class MockCore implements Transport {
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private linkTimer: ReturnType<typeof setInterval> | null = null;
   private slowTimer: ReturnType<typeof setInterval> | null = null;
+  /** Ends the running scan (device.scan_stop) */
+  private scanStop: (() => void) | null = null;
   private logs: LogLevel | null = null;
   private receiverSub = false;
   /** Every line, as the core keeps them, and the flow it follows */
@@ -651,6 +653,9 @@ export class MockCore implements Transport {
         return null;
       case "device.scan":
         return this.scan(Number(p.seconds ?? 10));
+      case "device.scan_stop":
+        this.scanStop?.();
+        return null;
       case "device.forget":
         this.snap.devices = this.snap.devices.filter((d) => !sameEntry(d, String(p.address), p.le_audio === true));
         this.emit({ kind: "devices", value: this.snap.devices });
@@ -1235,7 +1240,11 @@ export class MockCore implements Transport {
     this.emit({ kind: "scanning", value: true });
     this.log("info", "bt_host", `starting inquiry (~${seconds} s)`);
     return new Promise((resolve) => {
+      let done = false;
       const finish = (results: Device[]) => {
+        if (done) return;
+        done = true;
+        this.scanStop = null;
         const known = (d: Device) => this.snap.devices.find((x) => sameEntry(x, d.address, d.le_audio));
         const found = results.map((d) => ({ ...d, saved: known(d)?.saved ?? false, codecs: known(d)?.codecs ?? [] }));
         const merged = [
@@ -1248,7 +1257,10 @@ export class MockCore implements Transport {
         this.emit({ kind: "scanning", value: false });
         resolve(found);
       };
+      // device.scan_stop: what was found so far
+      this.scanStop = () => finish(SCAN_RESULTS);
       this.later(Math.min(seconds, 3) * 1000, () => {
+        if (done) return;
         if (!this.snap.settings.le_audio_experimental) {
           finish(SCAN_RESULTS);
           return;
