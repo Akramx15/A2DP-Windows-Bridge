@@ -305,6 +305,52 @@ pub struct KnownCodecs {
     /// Its SBC endpoint's capabilities, when it said
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sbc: Option<SbcDeviceCaps>,
+    /// What each codec it offered lists (the codec settings offer only
+    /// that, issue #86); empty when last recorded by an older version
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub caps: Vec<CodecDeviceCaps>,
+}
+
+impl KnownCodecs {
+    /// What a device offered, from its capabilities
+    pub fn of(remote: &caps::RemoteCaps) -> KnownCodecs {
+        KnownCodecs {
+            keys: codec_keys(remote),
+            sbc: remote.sbc_caps.as_ref().map(sbc_device_caps),
+            caps: codec_device_caps(remote),
+        }
+    }
+}
+
+/// What a device's endpoint of one codec lists, as far as the codec
+/// settings need it
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CodecDeviceCaps {
+    /// Codec key ([`codec_keys`])
+    pub codec: String,
+    /// Sample rates it lists, lowest first (empty: not said)
+    #[serde(default)]
+    pub sample_rates: Vec<u32>,
+    /// Bit depths it lists (empty: not said, or no choice)
+    #[serde(default)]
+    pub bit_depths: Vec<u32>,
+    /// Its largest bit rate in bps (0 = not said)
+    #[serde(default)]
+    pub max_bitrate: u32,
+}
+
+/// What each codec a device offered lists
+pub fn codec_device_caps(remote: &caps::RemoteCaps) -> Vec<CodecDeviceCaps> {
+    CodecKind::ALL
+        .into_iter()
+        .filter(|&k| remote.has(k))
+        .map(|k| CodecDeviceCaps {
+            codec: k.key().to_string(),
+            sample_rates: remote.listed_sample_rates(k),
+            bit_depths: remote.listed_bit_depths(k),
+            max_bitrate: remote.listed_max_bitrate(k),
+        })
+        .collect()
 }
 
 /// Codec keys ("ldac", "sbc", ...) of what a device offered
@@ -884,10 +930,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     };
     // However the session ends, the next one starts on a new stack
     let _streamed = StreamedMark(inner);
-    inner.record_codecs(
-        &addr,
-        KnownCodecs { keys: codec_keys(&remote), sbc: remote.sbc_caps.as_ref().map(sbc_device_caps) },
-    );
+    inner.record_codecs(&addr, KnownCodecs::of(&remote));
     tracing::info!("device connected, choosing the codec");
     tracing::debug!(
         "codec: device offers [{}], best {:?}, audio sinks {} ({} in use), aptX Adaptive {}",
@@ -994,8 +1037,13 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
         CodecKind::Ldac => remote.pick_ldac_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
-        CodecKind::AptxAdaptive => remote
-            .pick_aptxad_sample_rate(req.sample_rate.unwrap_or(if best_rate { 96000 } else { 48000 }), req.quality),
+        // 96 kHz only while switched on in Developer (issue #86: not yet
+        // working on an EarFun)
+        CodecKind::AptxAdaptive => remote.pick_aptxad_sample_rate(
+            req.sample_rate.unwrap_or(if best_rate { 96000 } else { 48000 }),
+            req.quality.for_codec(kind),
+            codec::dev::overrides().aptxad_96k,
+        ),
         CodecKind::Opus | CodecKind::Opus05 => 48000,
         CodecKind::Aac => remote.pick_aac_sample_rate(preferred),
         CodecKind::Sbc | CodecKind::SbcXq if preferred != 44100 => 48000,
@@ -1154,10 +1202,16 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         Msg::with(key, &[&wanted.name(), &kind.name()])
     });
+    // The qualities each codec offers (issue #86): one it does not (a
+    // profile saved before) is High, the codec's highest bit rate
+    let quality = req.quality.for_codec(kind);
+    if quality != req.quality {
+        tracing::info!("{}: quality {:?} is not one of its own, using {quality:?}", kind.name(), req.quality);
+    }
     let mut encoder_config = EncoderConfig {
         sample_rate: format.sample_rate,
         channels,
-        quality: req.quality,
+        quality,
         mtu,
         bits_per_sample: bits,
         // For AAC: variable bit rate, where the sink lists it

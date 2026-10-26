@@ -193,7 +193,10 @@ mod tests {
         let dir = temp_dir("codecs");
         assert!(load_codecs(&dir).is_empty());
         let mut map = BTreeMap::new();
-        map.insert("AA:BB:CC:DD:EE:FF".to_string(), KnownCodecs { keys: vec!["sbc".into(), "aac".into()], sbc: None });
+        map.insert(
+            "AA:BB:CC:DD:EE:FF".to_string(),
+            KnownCodecs { keys: vec!["sbc".into(), "aac".into()], ..Default::default() },
+        );
         save_codecs(&dir, &map).unwrap();
         assert_eq!(load_codecs(&dir), map);
         // A damaged file is as none

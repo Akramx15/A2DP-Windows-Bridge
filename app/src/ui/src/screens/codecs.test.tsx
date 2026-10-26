@@ -7,16 +7,16 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
 import { setLanguage, t } from "../i18n";
-import { MockCore } from "../ipc/mock";
+import { MockCore, type MockScenario } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 import { CARD_ORDER } from "../lib/codecs";
 
 let mock: MockCore | null = null;
 
-function start(hash: string) {
+function start(hash: string, scenario: MockScenario = "normal") {
   location.hash = hash;
   const calls: { method: string; params: unknown }[] = [];
-  mock = new MockCore({ speed: 0, onCall: (method, params) => calls.push({ method, params }) });
+  mock = new MockCore({ scenario, speed: 0, onCall: (method, params) => calls.push({ method, params }) });
   const core = createCore(mock);
   render(() => <App core={core} />);
   return { calls, core };
@@ -533,19 +533,82 @@ describe("codec settings", () => {
     const wh = await section("WH-1000XM5");
     let dialog = await codecSettings(wh, "codec.aac");
     expect(within(dialog).getByText(t("ui.profile.codec_settings_apply", t("codec.aac")))).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText(t("connection.quality")), { target: { value: "sq" } });
+    fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.vbr") }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked();
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
 
     dialog = await codecSettings(wh, "codec.aac");
-    fireEvent.change(within(dialog).getByLabelText(t("connection.quality")), { target: { value: "sq" } });
+    fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.vbr") }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
-    expect(saves(calls)[0].profile).toMatchObject({ codec: "aac", quality: "sq" });
+    expect(saves(calls)[0].profile).toMatchObject({ codec: "aac", quality: "hq", abr: true });
     await waitFor(() => expect(within(wh).getByRole("radio", { name: /AAC/ })).toBeChecked());
+  });
+});
+
+describe("codec settings within what the device lists (issue #86: moto buds+)", () => {
+  it("LHDC V5 offers only the rates the device lists", async () => {
+    start("#/codecs", "capped");
+    const dialog = await codecSettings(await section("moto buds+"), "codec.lhdc_v5");
+    const rate = within(dialog).getByLabelText(t("connection.sample_rate"));
+    expect(within(rate).getAllByRole("option").map((o) => o.textContent)).toEqual([t("codec.auto"), "44100 Hz", "48000 Hz"]);
+    // High, Medium, Low (issue #86)
+    const quality = within(dialog).getByLabelText(t("connection.quality"));
+    expect(within(quality).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      `${t("quality.high")} (1000 kbps)`,
+      `${t("quality.medium")} (500 kbps)`,
+      `${t("quality.low")} (400 kbps)`,
+    ]);
+  });
+
+  it("AAC shows its one quality at the device's largest bit rate", async () => {
+    start("#/codecs", "capped");
+    const dialog = await codecSettings(await section("moto buds+"), "codec.aac");
+    const quality = within(dialog).getByLabelText(t("connection.quality"));
+    // Not a choice: High is the highest the device takes (0x020000 bps)
+    expect(quality.tagName).toBe("OUTPUT");
+    expect(quality).toHaveTextContent(`${t("quality.high")} (131 kbps)`);
+  });
+
+  it("SBC's bitpool stops at the device's largest, and says so", async () => {
+    const { calls } = start("#/codecs", "capped");
+    const dialog = await codecSettings(await section("moto buds+"), "codec.sbc");
+    const bitpool = within(dialog).getByLabelText(t("connection.sbc_bitpool"));
+    expect(bitpool).toHaveAttribute("max", "39");
+    expect(bitpool).toHaveAccessibleDescription(new RegExp(t("ui.profile.sbc_bitpool_device", 2, 39)));
+    fireEvent.input(bitpool, { target: { value: "53" } });
+    expect(await within(dialog).findByText(t("error.sbc_bitpool_range", 2, 39))).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.input(bitpool, { target: { value: "39" } });
+    // Auto: bitpool 39, 16 blocks, 8 subbands, joint stereo at 48 kHz
+    await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent(t("ui.profile.sbc_bitrate", 273, "48")));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0].profile).toMatchObject({ codec: "sbc", sbc_bitpool: 39 });
+  });
+
+  it("aptX Adaptive offers 96 kHz only while Developer's switch is on", async () => {
+    const { core } = start("#/codecs");
+    const xb = await section("SRS-XB13");
+    const rates = async () => {
+      const dialog = await codecSettings(xb, "codec.aptx_adaptive");
+      const list = within(within(dialog).getByLabelText(t("connection.sample_rate")))
+        .getAllByRole("option")
+        .map((o) => o.textContent);
+      fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      return list;
+    };
+    expect(await rates()).toEqual([t("codec.auto"), "48000 Hz"]);
+    const s = core.state.snap!.settings;
+    await core.request("settings.set", {
+      settings: { ...s, developer_mode: true, dev_overrides: { ...s.dev_overrides, aptxad_96k: true } },
+    });
+    expect(await rates()).toEqual([t("codec.auto"), "48000 Hz", "96000 Hz"]);
   });
 });
 

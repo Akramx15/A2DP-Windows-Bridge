@@ -1,6 +1,9 @@
 // The codecs a profile can ask for and what each allows, as v1's profile
 // dialog (wx_profile_dialog.cpp on the develop branch, update_codec_dependent): quality
-// modes with their bitrates, ABR only for LDAC / LHDC V5 (and Auto, which may
+// modes with their bitrates (since issue #86 High / Medium / Low for LDAC
+// and LHDC V5, High / Low Latency for aptX Adaptive, only High, the highest
+// bit rate the device takes, for the others; core: Quality::for_codec),
+// ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them; v2 adds SBC / SBC XQ's adaptive bitpool), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
 // "mhq" only for LHDC V5, no quality choice for the aptX family (but aptX
 // Adaptive) or under LHDC V5 ABR, 48 kHz only for Opus and Opus 05, 48 / 96
@@ -61,20 +64,16 @@ export const BITPOOL_MAX_XQ = 47;
 export const BITPOOL_MIN = 2;
 
 const HQ = "quality.high";
-const MHQ = "quality.medium_high";
-const SQ = "quality.standard";
-const MQ = "quality.mobile";
+const MEDIUM = "quality.medium";
+const LOW = "quality.low";
 const LL = "quality.low_latency";
 
 export const CODECS: CodecSpec[] = [
   {
     id: "auto",
     label: "codec.auto",
-    qualities: [
-      { id: "hq", label: HQ },
-      { id: "sq", label: SQ },
-      { id: "mq", label: MQ },
-    ],
+    // Auto-select takes the best options (issue #86)
+    qualities: [{ id: "hq", label: HQ }],
     abr: true,
     hiRes: false,
   },
@@ -84,8 +83,8 @@ export const CODECS: CodecSpec[] = [
     bars: { quality: 5, latency: 2, stability: 2 },
     qualities: [
       { id: "hq", label: HQ, kbps: "990" },
-      { id: "sq", label: SQ, kbps: "660" },
-      { id: "mq", label: MQ, kbps: "330" },
+      { id: "sq", label: MEDIUM, kbps: "660" },
+      { id: "mq", label: LOW, kbps: "330" },
     ],
     abr: true,
     hiRes: true,
@@ -94,12 +93,12 @@ export const CODECS: CodecSpec[] = [
     id: "lhdcv5",
     label: "codec.lhdc_v5",
     bars: { quality: 5, latency: 2, stability: 2 },
-    // Android's four fixed levels (the sink may cap the maximum)
+    // Three of Android's fixed levels (the sink may cap the maximum; its
+    // 900 kbps Medium-High is gone, issue #86: High there)
     qualities: [
       { id: "hq", label: HQ, kbps: "1000" },
-      { id: "mhq", label: MHQ, kbps: "900" },
-      { id: "sq", label: SQ, kbps: "500" },
-      { id: "mq", label: MQ, kbps: "400" },
+      { id: "sq", label: MEDIUM, kbps: "500" },
+      { id: "mq", label: LOW, kbps: "400" },
     ],
     abr: true,
     hiRes: true,
@@ -126,18 +125,17 @@ export const CODECS: CodecSpec[] = [
     experimental: true,
   },
   {
-    // aptX Adaptive: the levels with an
-    // R1 sink (an R2 sink: 427 / 364 -> 340 / 270), 48 kHz; ABR steps between
-    // Mobile and the quality chosen; Low Latency has a fixed bit rate. 96 kHz
-    // only when chosen, to a device that lists it (an R2 one), not in Low
-    // Latency (48 kHz otherwise; 646 / 340 / 255 kbps). Always 24-bit.
+    // aptX Adaptive: High with an R1 sink
+    // (an R2 sink: 427 -> 340), 48 kHz; ABR steps down from High; Low
+    // Latency has a fixed bit rate. 96 kHz only while Developer > "aptX
+    // Adaptive at 96 kHz" is on (issue #86), when chosen, to a device that
+    // lists it (an R2 one), not in Low Latency (48 kHz otherwise; 646
+    // kbps). Always 24-bit.
     id: "aptxad",
     label: "codec.aptx_adaptive",
     bars: { quality: 4, latency: 3, stability: 4 },
     qualities: [
       { id: "hq", label: HQ, kbps: "427" },
-      { id: "sq", label: SQ, kbps: "364" },
-      { id: "mq", label: MQ, kbps: "318" },
       { id: "ll", label: LL, kbps: "265" },
     ],
     abr: true,
@@ -150,11 +148,7 @@ export const CODECS: CodecSpec[] = [
     label: "codec.opus",
     bars: { quality: 4, latency: 3, stability: 4 },
     // Android's A2DP Opus: 256 kbps stereo (mono: half), 48 kHz, 20 ms frames
-    qualities: [
-      { id: "hq", label: HQ, kbps: "256" },
-      { id: "sq", label: SQ, kbps: "192" },
-      { id: "mq", label: MQ, kbps: "128" },
-    ],
+    qualities: [{ id: "hq", label: HQ, kbps: "256" }],
     abr: false,
     hiRes: false,
     rates: [0, 48000],
@@ -164,11 +158,7 @@ export const CODECS: CodecSpec[] = [
     id: "aac",
     label: "codec.aac",
     bars: { quality: 3, latency: 2, stability: 4 },
-    qualities: [
-      { id: "hq", label: HQ, kbps: "256" },
-      { id: "sq", label: SQ, kbps: "192" },
-      { id: "mq", label: MQ, kbps: "128" },
-    ],
+    qualities: [{ id: "hq", label: HQ, kbps: "256" }],
     abr: false,
     vbr: true,
     hiRes: false,
@@ -179,11 +169,8 @@ export const CODECS: CodecSpec[] = [
     id: "sbcxq",
     label: "codec.sbc_xq",
     bars: { quality: 3, latency: 3, stability: 3 },
-    qualities: [
-      { id: "hq", label: HQ, kbps: "~552" },
-      { id: "sq", label: SQ, kbps: "~505" },
-      { id: "mq", label: MQ, kbps: "~385" },
-    ],
+    // High: the highest bitpool the device takes (or the one set)
+    qualities: [{ id: "hq", label: HQ, kbps: "~552" }],
     // Adaptive bitpool, down to Mobile's (core: SBC ABR only when the
     // profile asks for SBC / SBC XQ itself)
     abr: true,
@@ -194,11 +181,7 @@ export const CODECS: CodecSpec[] = [
     id: "sbc",
     label: "codec.sbc",
     bars: { quality: 2, latency: 3, stability: 5 },
-    qualities: [
-      { id: "hq", label: HQ, kbps: "~345" },
-      { id: "sq", label: SQ, kbps: "~240" },
-      { id: "mq", label: MQ, kbps: "~150" },
-    ],
+    qualities: [{ id: "hq", label: HQ, kbps: "~345" }],
     abr: true,
     bitpool: true,
     hiRes: false,
@@ -220,11 +203,7 @@ export const CODECS: CodecSpec[] = [
     id: "opus05",
     label: "codec.opus05",
     bars: { quality: 4, latency: 3, stability: 3 },
-    qualities: [
-      { id: "hq", label: HQ, kbps: "256" },
-      { id: "sq", label: SQ, kbps: "192" },
-      { id: "mq", label: MQ, kbps: "128" },
-    ],
+    qualities: [{ id: "hq", label: HQ, kbps: "256" }],
     abr: false,
     hiRes: false,
     rates: [0, 48000],
@@ -401,6 +380,44 @@ export function sampleRates(codec: string): number[] {
   return spec.rates ?? (spec.hiRes ? [0, 44100, 48000, 88200, 96000] : [0, 44100, 48000]);
 }
 
+/** What a device's endpoint of a codec lists (Device.codec_caps) */
+export interface CodecCaps {
+  codec: string;
+  sample_rates: number[];
+  bit_depths: number[];
+  max_bitrate: number;
+}
+
+/** The caps of `codec` among a device's (null: not known) */
+export function capsOf(caps: readonly CodecCaps[], codec: string): CodecCaps | null {
+  return caps.find((c) => c.codec.toLowerCase() === codec.toLowerCase()) ?? null;
+}
+
+/** Whether the device lists a sample rate (anything goes while not known;
+ *  LHDC V5's 88.2 kHz runs as 96 kHz) */
+export function rateOffered(codec: string, rate: number, caps: CodecCaps | null): boolean {
+  if (rate === 0 || !caps || caps.sample_rates.length === 0) return true;
+  return caps.sample_rates.includes(codec === "lhdcv5" && rate === 88200 ? 96000 : rate);
+}
+
+/**
+ * The sample rates the dialog offers (issue #86): the codec's, as far as
+ * the device lists them, aptX Adaptive's 96 kHz only while Developer >
+ * "aptX Adaptive at 96 kHz" is on (`aptxad96k`)
+ */
+export function offeredSampleRates(codec: string, caps: CodecCaps | null, aptxad96k = true): number[] {
+  return sampleRates(codec).filter(
+    (r) => rateOffered(codec, r, caps) && !(codec === "aptxad" && r === 96000 && !aptxad96k),
+  );
+}
+
+/** The bit depths the dialog offers: the codec's, as far as the device
+ *  lists them (LHDC V5 says) */
+export function offeredBitDepths(codec: string, caps: CodecCaps | null): number[] {
+  const listed = caps?.bit_depths ?? [];
+  return bitDepths(codec).filter((b) => b === 0 || listed.length === 0 || listed.includes(b));
+}
+
 /**
  * The profile's ABR flag means AAC's VBR under AAC, the adaptive bitpool
  * under SBC and under SBC XQ (each its own: issue #86, SBC's turned XQ's on),
@@ -445,17 +462,42 @@ const RATE_44K: Partial<Record<CodecId, Record<string, string>>> = {
 /** aptX Adaptive at 96 kHz (an R2 device's 96 kHz levels; Low Latency runs
  *  at 48 kHz) */
 const RATE_96K: Partial<Record<CodecId, Record<string, string>>> = {
-  aptxad: { hq: "646", sq: "340", mq: "255" },
+  aptxad: { hq: "646" },
 };
 
-/** A quality's bit rate at the profile's sample rate (0 = auto) */
-export function qualityKbps(codec: string, quality: string, sampleRate: number): string | undefined {
+/** A quality's bit rate at the profile's sample rate (0 = auto), at most
+ *  the device's largest (`maxBitrate` in bps, 0 = not known: AAC's, LHDC
+ *  V5's; the core caps it the same way, issue #86) */
+export function qualityKbps(codec: string, quality: string, sampleRate: number, maxBitrate = 0): string | undefined {
   const spec = codecSpec(codec);
   const q = spec.qualities.find((x) => x.id === quality) ?? spec.qualities[0];
   if (!q) return undefined;
   const is441 = codec === "lhdcv5" ? sampleRate === 44100 : sampleRate === 44100 || sampleRate === 88200;
   const table = is441 ? RATE_44K : sampleRate === 96000 ? RATE_96K : {};
-  return table[spec.id]?.[q.id] ?? q.kbps;
+  const kbps = table[spec.id]?.[q.id] ?? q.kbps;
+  const cap = Math.floor(maxBitrate / 1000);
+  return kbps && cap > 0 && /^\d+$/.test(kbps) && Number(kbps) > cap ? String(cap) : kbps;
+}
+
+/**
+ * The qualities the dialog offers for a codec on a device whose largest
+ * bit rate is `maxBitrate` (bps, 0 = not known), each with its bit rate
+ * there: one the device caps to the same bit rate as a higher one is left
+ * out (LHDC V5 at most 400 kbps: High only), unless it is `current`
+ */
+export function offeredQualities(
+  codec: string,
+  sampleRate: number,
+  maxBitrate = 0,
+  current = "",
+): { id: string; label: string; kbps?: string }[] {
+  const out: { id: string; label: string; kbps?: string }[] = [];
+  for (const q of codecSpec(codec).qualities) {
+    const kbps = qualityKbps(codec, q.id, sampleRate, maxBitrate);
+    if (q.id !== current && kbps && out.some((o) => o.kbps === kbps)) continue;
+    out.push({ id: q.id, label: q.label, kbps });
+  }
+  return out;
 }
 
 /**
