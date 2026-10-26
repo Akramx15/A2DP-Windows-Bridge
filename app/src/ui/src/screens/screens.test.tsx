@@ -40,9 +40,9 @@ describe("Home", () => {
     expect(wh.querySelector(".codec-badge")).toHaveTextContent("24-bit");
     expect(wh.querySelector(".codec-info > .codec-name")).toHaveTextContent(/^LDAC$/);
     expect(within(wh).getByRole("status")).toHaveTextContent(/^Connected$/);
-    // The other device: ready, not streaming, its own Connect
+    // The other device: ready, not connected, its own Connect
     expect(xb).toHaveTextContent("Ready");
-    expect(xb).toHaveTextContent("Not streaming");
+    expect(xb).toHaveTextContent("Not connected");
     expect(within(xb).getByRole("button", { name: "Connect" })).toBeInTheDocument();
     // The volume is the device's own: on its card only (issue #86)
     expect(within(wh).getByRole("slider", { name: "Volume" })).not.toBeDisabled();
@@ -290,7 +290,7 @@ describe("every screen renders", () => {
     expect(document.querySelector(".fly-title .device-name")).toBeNull();
     // Hidden by Escape and on losing the focus: no close button
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
-    expect(screen.getByText("Not streaming")).toBeInTheDocument();
+    expect(screen.getByText("Not connected")).toBeInTheDocument();
     fireEvent.click(connect);
     await screen.findByRole("button", { name: "Disconnect" });
     await waitFor(() => expect(document.querySelector(".fly-title .codec-name")).toHaveTextContent(/^LDAC$/));
@@ -325,7 +325,7 @@ describe("update", () => {
     await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(mock!["snap"].stream.state).toBe("streaming"));
     fireEvent.click(await screen.findByRole("button", { name: "Update now" }));
-    await screen.findByText(/It is installed when streaming stops/);
+    await screen.findByText(/It is installed when the audio device disconnects/);
     await mock!.call("stream.stop");
     await screen.findByText(/Installing version 2\.0\.0-beta\.1/, {}, { timeout: 3000 });
   });

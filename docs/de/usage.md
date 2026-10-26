@@ -22,10 +22,10 @@ Starten Sie **A2DP Windows Bridge** über das Startmenü (oder `a2dpwb.exe`). Da
 
 ### Start
 
-- Eine Karte für jedes gespeicherte Audiogerät, nebeneinander: sein Zustand, der Akkustand und, beim streamenden Gerät, der verwendete Codec mit seiner Bitrate. Wird ein anderer Codec als der gewählte verwendet, zeigt das Codec-Abzeichen, welcher und warum
-- **Verbinden** / **Trennen** unter jeder Karte. Es streamt jeweils ein Gerät: **Verbinden** bei einem anderen Gerät beendet den laufenden Stream und verbindet dieses
+- Eine Karte für jedes gespeicherte Audiogerät, nebeneinander: sein Zustand, der Akkustand und, beim verbundenen Gerät, der verwendete Codec mit seiner Bitrate. Wird ein anderer Codec als der gewählte verwendet, zeigt das Codec-Abzeichen, welcher und warum
+- **Verbinden** / **Trennen** unter jeder Karte. Es ist jeweils ein Gerät verbunden: **Verbinden** bei einem anderen Gerät trennt das verwendete und verbindet dieses
 - **Lautstärke**: die Lautstärke der Kopfhörer (siehe [Lautstärke](#volume))
-- Die Aufnahmequelle des verwendeten Geräts (mit **Weitere Aufnahmeeinstellungen**) und die Verbindungsqualität mit einem kleinen Diagramm
+- Der Codec des verwendeten Geräts zum schnellen Wechseln (etwa einer für Spiele, einer für Musik): **Automatisch wählen** oder ein Codec, den das Gerät unterstützt, wie unter [Codecs](#codecs), sofort angewendet (das Gerät verbindet sich damit neu; **Automatisch wählen** gilt wie dort für alle Geräte); **Weitere Codec-Einstellungen** öffnet Codecs. Daneben die Verbindungsqualität mit einem kleinen Diagramm. Die Aufnahmequelle ist eine Geräteeinstellung unter **Audiogeräte**
 - Ein Fehler wird mit seiner Ursache angezeigt und, sofern vorhanden, mit der Schaltfläche, die ihn behebt (**Durch WinUSB-Treiber ersetzen**, **Downloadseite öffnen**, **Bluetooth neu starten**, **Erneut versuchen**, **Codecs**, **Audiogeräte**, ...)
 
 Die Seitenleiste zeigt dasselbe für jedes Gerät auf jeder Seite.
@@ -96,7 +96,7 @@ A2DPWB läuft im Infobereich weiter, mit oder ohne Fenster:
 
 - **Linksklick** auf das Symbol im Infobereich öffnet das Flyout: das Gerät und sein Zustand, **Verbinden** / **Trennen**, die Lautstärke, die Geräteauswahl, der Codec, die Verbindungsqualität und **App öffnen**. Esc oder ein Klick an eine andere Stelle blendet es aus. Braucht ein Fehler eine Seite des Hauptfensters (Codecs, Audiogeräte, den Adapter), öffnet seine Schaltfläche das Fenster an dieser Stelle
 - **Rechtsklick** öffnet das Menü: **A2DPWB öffnen**, die ersten 10 Geräte nach ihrem Profil, „*Gerät* | *Codec*“ (das streamende mit Häkchen; ein Klick verbindet es), **Trennen** und **Beenden**. Das Menü öffnet sich sofort, ohne das Fenster zu starten
-- Der Tooltip zeigt, ob A2DPWB inaktiv ist oder streamt
+- Der Tooltip zeigt, ob A2DPWB inaktiv oder verbunden ist
 
 Ist **Einstellungen > In den Infobereich minimieren** eingeschaltet (Standard), blendet das Minimieren oder Schließen des Fensters es nur in den Infobereich aus, und das Streaming läuft weiter. Ist die Option ausgeschaltet, wird das Fenster in die Taskleiste minimiert, und das Schließen beendet A2DPWB. **Beenden** im Menü des Infobereichs oder **Einstellungen > A2DPWB beenden** stoppt das Streaming, gibt den Adapter frei und schließt A2DPWB vollständig.
 
@@ -489,7 +489,7 @@ Im CLI-Modus streamt `--le-audio -d <Adresse>` an ein LE-Audio-Gerät, `--le-dev
 
 A2DPWB prüft GitHub Releases höchstens einmal am Tag (**Einstellungen > Beim Start nach Updates suchen**; **Vorabversionen bei der Updatesuche einbeziehen** bietet auch Betaversionen an). Ist eine neue Version verfügbar, wird dies in den Einstellungen angezeigt:
 
-- **Installierte Kopie**: **Jetzt aktualisieren** lädt das signierte Update herunter. Während des Streamings wartet es und wird installiert, sobald das Streaming endet, sodass ein Update nie das Audio unterbricht. A2DPWB schließt sich dann, installiert die neue Version und startet von selbst neu.
+- **Installierte Kopie**: **Jetzt aktualisieren** lädt das signierte Update herunter. Solange ein Audiogerät verbunden ist, wartet es und wird installiert, sobald das Gerät getrennt ist, sodass ein Update nie das Audio unterbricht. A2DPWB schließt sich dann, installiert die neue Version und startet von selbst neu.
 - **Portable Kopie** (oder ein Build ohne Update-Signatur): **Download-Seite öffnen** öffnet die Release-Seite.
 
 ## Fehlerbehebung

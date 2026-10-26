@@ -21,10 +21,10 @@ Start **A2DP Windows Bridge** from the Start menu (or `a2dpwb.exe`). The menu on
 
 ### Home
 
-- A card for each saved audio device, side by side: its state, battery and, for the one streaming, the codec in use with its bitrate. When a different codec than the one chosen is used, the codec line says why beside its name, e.g. **aptX Adaptive (Opus is not supported)** (or *is in use*, *is experimental*); the status line just says **Connected**
-- **Connect** / **Disconnect** under each card. One device streams at a time: **Connect** on another device stops the running stream and connects that one
+- A card for each saved audio device, side by side: its state, battery and, for the one connected, the codec in use with its bitrate. When a different codec than the one chosen is used, the codec line says why beside its name, e.g. **aptX Adaptive (Opus is not supported)** (or *is in use*, *is experimental*); the status line just says **Connected**
+- **Connect** / **Disconnect** under each card. One device is connected at a time: **Connect** on another device disconnects the one in use and connects that one
 - **Volume**: the headphones' volume (see [Volume](#volume))
-- The capture source of the device in use (with **More capture settings**) and the link quality with a small graph
+- The codec of the device in use, to switch quickly (say, one for games and one for music): **Auto-select** or a codec the device supports, as on [Codecs](#codecs), applied at once (the device connects again with it; **Auto-select** is one setting for every device, as there); **More codec settings** opens Codecs. Beside it, the link quality with a small graph. The capture source is a device setting on **Audio Devices**
 - An error comes with its cause and, where there is one, the button that fixes it (**Replace with WinUSB driver**, **Open Download Page**, **Restart Bluetooth**, **Try again**, **Codecs**, **Audio Devices**, ...)
 
 The sidebar shows the same for every device on every screen, and the tray flyout for the device in use.
@@ -106,7 +106,7 @@ A2DPWB keeps running in the system tray, with or without the window:
 
 - **Left-click** the tray icon for the flyout: the device and its state, **Connect** / **Disconnect**, the volume, the device switcher, the codec, the link quality and **Open app**. Esc or a click elsewhere hides it. If an error needs a screen of the main window (Codecs, Audio Devices, the adapter), its button opens the window there
 - **Right-click** for the menu: **Open A2DP Windows Bridge**, the first 10 devices as "*device* | *codec*" (the one streaming checked; click one to connect it), **Disconnect** and **Exit**. The menu opens at once, without starting the window
-- The tooltip says whether A2DPWB is idle or streaming
+- The tooltip says whether A2DPWB is idle or connected
 
 With **Settings > Minimize to System Tray** on (the default), minimizing or closing the window only hides it in the tray, and streaming goes on. With it off, the window minimizes to the taskbar, and closing it quits A2DPWB. **Exit** in the tray menu or **Settings > Quit A2DP Windows Bridge** stops streaming, releases the adapter and closes A2DPWB completely.
 
@@ -500,7 +500,7 @@ In CLI mode: `--le-audio -d <address>` streams to an LE Audio device, `--le-devi
 
 A2DPWB checks GitHub Releases at most once a day (**Settings > Check for Updates on Startup**; **Include Pre-releases in Update Checks** also offers beta releases). When a new version is available, Settings says so:
 
-- **Installed copy**: **Update now** downloads the signed update. While streaming, it waits and installs when streaming stops, so an update never cuts the audio. A2DPWB then closes, installs the new version and starts again by itself.
+- **Installed copy**: **Update now** downloads the signed update. While an audio device is connected, it waits and installs when the device disconnects, so an update never cuts the audio. A2DPWB then closes, installs the new version and starts again by itself.
 - **Portable copy** (or a build without update signing): **Open download page** opens the release page.
 
 ## Troubleshooting

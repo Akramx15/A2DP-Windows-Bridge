@@ -22,10 +22,10 @@ Lancez **A2DP Windows Bridge** depuis le menu Démarrer (ou `a2dpwb.exe`). Le me
 
 ### Accueil
 
-- Une carte pour chaque appareil audio enregistré, côte à côte : son état, sa batterie et, pour celui qui diffuse, le codec utilisé et son débit. Lorsqu'un autre codec que celui qui est choisi est utilisé, le badge du codec indique lequel et pourquoi
-- **Connecter** / **Déconnecter** sous chaque carte. Un seul appareil diffuse à la fois : **Connecter** sur un autre appareil arrête la diffusion en cours et connecte celui-là
+- Une carte pour chaque appareil audio enregistré, côte à côte : son état, sa batterie et, pour celui qui est connecté, le codec utilisé et son débit. Lorsqu'un autre codec que celui qui est choisi est utilisé, le badge du codec indique lequel et pourquoi
+- **Connecter** / **Déconnecter** sous chaque carte. Un seul appareil est connecté à la fois : **Connecter** sur un autre appareil déconnecte celui utilisé et connecte celui-là
 - **Volume** : le volume du casque (voir [Volume](#volume))
-- La source de capture de l'appareil utilisé (avec **Plus de réglages de capture**) et la qualité de liaison avec un petit graphique
+- Le codec de l'appareil utilisé, pour en changer vite (par exemple un pour les jeux, un pour la musique) : **Sélection automatique** ou un codec que l'appareil prend en charge, comme dans [Codecs](#codecs), appliqué aussitôt (l'appareil se reconnecte avec lui ; **Sélection automatique** vaut pour tous les appareils, comme là-bas) ; **Plus de réglages du codec** ouvre Codecs. À côté, la qualité de liaison avec un petit graphique. La source de capture est un réglage de l'appareil dans **Périphériques audio**
 - Une erreur s'affiche avec sa cause et, s'il y en a un, le bouton qui la corrige (**Remplacer par le pilote WinUSB**, **Ouvrir la page de téléchargement**, **Redémarrer le Bluetooth**, **Réessayer**, **Codecs**, **Périphériques audio**, ...)
 
 La barre latérale affiche la même chose pour chaque appareil, sur chaque écran.
@@ -96,7 +96,7 @@ A2DPWB continue de s'exécuter dans la zone de notification, avec ou sans la fen
 
 - **Clic gauche** sur l'icône pour ouvrir le volet : l'appareil et son état, **Connecter** / **Déconnecter**, le volume, le sélecteur d'appareil, le codec, la qualité de liaison et **Ouvrir l'application**. Échap ou un clic ailleurs le masque. Si une erreur nécessite un écran de la fenêtre principale (Codecs, Périphériques audio, l'adaptateur), son bouton ouvre la fenêtre à cet endroit
 - **Clic droit** pour le menu : **Ouvrir A2DPWB**, les 10 premiers appareils par leur profil, « *appareil* | *codec* » (celui qui diffuse est coché ; cliquez sur l'un d'eux pour le connecter), **Déconnecter** et **Quitter**. Le menu s'ouvre immédiatement, sans démarrer la fenêtre
-- L'info-bulle indique si A2DPWB est inactif ou en cours de diffusion
+- L'info-bulle indique si A2DPWB est inactif ou connecté
 
 Avec **Paramètres > Réduire dans la zone de notification** activé (par défaut), réduire ou fermer la fenêtre ne fait que la masquer dans la zone de notification, et la diffusion continue. Désactivé, la fenêtre se réduit dans la barre des tâches, et la fermer quitte A2DPWB. **Quitter** dans le menu de la zone de notification ou **Paramètres > Quitter A2DPWB** arrête la diffusion, libère l'adaptateur et ferme complètement A2DPWB.
 
@@ -489,7 +489,7 @@ En mode CLI, `--le-audio -d <adresse>` diffuse vers un appareil LE Audio, `--le-
 
 A2DPWB consulte les GitHub Releases au plus une fois par jour (**Paramètres > Rechercher les mises à jour au démarrage** ; **Inclure les préversions dans les mises à jour** propose aussi les versions bêta). Lorsqu'une nouvelle version est disponible, Paramètres l'indique :
 
-- **Copie installée** : **Mettre à jour maintenant** télécharge la mise à jour signée. Pendant une diffusion, elle attend et s'installe à l'arrêt de la diffusion, si bien qu'une mise à jour ne coupe jamais l'audio. A2DPWB se ferme alors, installe la nouvelle version et redémarre tout seul.
+- **Copie installée** : **Mettre à jour maintenant** télécharge la mise à jour signée. Tant qu'un périphérique audio est connecté, elle attend et s'installe à sa déconnexion, si bien qu'une mise à jour ne coupe jamais l'audio. A2DPWB se ferme alors, installe la nouvelle version et redémarre tout seul.
 - **Copie portable** (ou version sans signature des mises à jour) : **Ouvrir la page de téléchargement** ouvre la page de la version.
 
 ## Dépannage

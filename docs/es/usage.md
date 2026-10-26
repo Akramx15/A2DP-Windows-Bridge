@@ -22,10 +22,10 @@ Inicie **A2DP Windows Bridge** desde el menú Inicio (o `a2dpwb.exe`). El menú 
 
 ### Inicio
 
-- Una tarjeta para cada dispositivo de audio guardado, una junto a otra: su estado, la batería y, en el que transmite, el códec en uso con su tasa de bits. Cuando se usa un códec distinto del elegido, la insignia del códec indica cuál y por qué
-- **Conectar** / **Desconectar** bajo cada tarjeta. Solo transmite un dispositivo a la vez: **Conectar** en otro dispositivo detiene la transmisión en curso y conecta ese
+- Una tarjeta para cada dispositivo de audio guardado, una junto a otra: su estado, la batería y, en el conectado, el códec en uso con su tasa de bits. Cuando se usa un códec distinto del elegido, la insignia del códec indica cuál y por qué
+- **Conectar** / **Desconectar** bajo cada tarjeta. Solo hay un dispositivo conectado a la vez: **Conectar** en otro dispositivo desconecta el que está en uso y conecta ese
 - **Volumen**: el volumen de los auriculares (consulte [Volumen](#volume))
-- El origen de captura del dispositivo en uso (con **Más ajustes de captura**) y la calidad del enlace con un pequeño gráfico
+- El códec del dispositivo en uso, para cambiarlo rápido (por ejemplo, uno para juegos y otro para música): **Selección automática** o un códec que el dispositivo admite, como en [Códecs](#codecs), aplicado al instante (el dispositivo se vuelve a conectar con él; **Selección automática** vale para todos los dispositivos, como allí); **Más ajustes de códec** abre Códecs. Al lado, la calidad del enlace con un pequeño gráfico. El origen de captura es un ajuste del dispositivo en **Dispositivos de audio**
 - Un error aparece con su causa y, si lo hay, el botón que lo soluciona (**Reemplazar por el controlador WinUSB**, **Abrir página de descarga**, **Reiniciar Bluetooth**, **Reintentar**, **Códecs**, **Dispositivos de audio**, ...)
 
 La barra lateral muestra lo mismo para cada dispositivo en todas las pantallas.
@@ -96,7 +96,7 @@ A2DPWB sigue ejecutándose en la bandeja del sistema, con o sin la ventana:
 
 - **Clic izquierdo** en el icono de la bandeja abre el panel desplegable: el dispositivo y su estado, **Conectar** / **Desconectar**, el volumen, el selector de dispositivos, el códec, la calidad del enlace y **Abrir la aplicación**. Esc o un clic en otro sitio lo ocultan. Si un error requiere una pantalla de la ventana principal (Códecs, Dispositivos de audio, el adaptador), su botón abre la ventana en esa pantalla
 - **Clic derecho** abre el menú: **Abrir A2DPWB**, los 10 primeros dispositivos por su perfil, «*dispositivo* | *códec*» (el que transmite, marcado; haga clic en uno para conectarlo), **Desconectar** y **Salir**. El menú se abre al instante, sin iniciar la ventana
-- La información sobre herramientas indica si A2DPWB está inactivo o transmitiendo
+- La información sobre herramientas indica si A2DPWB está inactivo o conectado
 
 Con **Configuración > Minimizar en la bandeja del sistema** activado (el valor predeterminado), minimizar o cerrar la ventana solo la oculta en la bandeja, y la transmisión continúa. Si está desactivado, la ventana se minimiza en la barra de tareas y cerrarla sale de A2DPWB. **Salir** en el menú de la bandeja o **Configuración > Salir de A2DPWB** detiene la transmisión, libera el adaptador y cierra A2DPWB por completo.
 
@@ -489,7 +489,7 @@ En el modo CLI, `--le-audio -d <dirección>` transmite a un dispositivo LE Audio
 
 A2DPWB consulta GitHub Releases como máximo una vez al día (**Configuración > Buscar actualizaciones al iniciar**; **Incluir versiones preliminares al buscar actualizaciones** también ofrece versiones beta). Cuando hay una versión nueva, Configuración lo indica:
 
-- **Copia instalada**: **Actualizar ahora** descarga la actualización firmada. Si se está transmitiendo, espera y la instala cuando se detiene la transmisión, de modo que una actualización nunca corta el audio. A2DPWB se cierra entonces, instala la nueva versión y se vuelve a iniciar por sí solo.
+- **Copia instalada**: **Actualizar ahora** descarga la actualización firmada. Si hay un dispositivo de audio conectado, espera y la instala cuando se desconecta, de modo que una actualización nunca corta el audio. A2DPWB se cierra entonces, instala la nueva versión y se vuelve a iniciar por sí solo.
 - **Copia portable** (o una compilación sin firma de actualizaciones): **Abrir la página de descarga** abre la página de la versión.
 
 ## Solución de problemas
