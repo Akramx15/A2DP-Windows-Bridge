@@ -166,6 +166,13 @@ NEGOTIATION = {
     'aptxad-r2-96k-abr': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k',
                           ['--rate', '96000', '-a', '--aptxad-96k']),
     'aptxad-r2-96k-off': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['--rate', '96000']),
+    # Real sinks' rate bytes (issue #86): an EarFun Air Pro 4+ lists 0xD1
+    # (96 kHz by Android's 0x80 bit, no 0x20), a Bose QC Ultra 0x51 (44.1
+    # and 48 kHz only)
+    'aptxad-r2-96k-earfun': ('aptxad', APTXAD_SINK + ['--aptxad-r2', '--aptxad-rates', '0xD1'], 'aptxad-r2-96k',
+                             ['--rate', '96000', '--aptxad-96k']),
+    'aptxad-r2-96k-bose': ('aptxad', APTXAD_SINK + ['--aptxad-r2', '--aptxad-rates', '0x51'], 'aptxad-r2',
+                           ['--rate', '96000', '--aptxad-96k']),
     'aptxad-r1-from-96k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '96000', '--aptxad-96k']),
     'aptxad-r2-ll-from-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2',
                               ['--rate', '96000', '-q', 'll', '--aptxad-96k']),
