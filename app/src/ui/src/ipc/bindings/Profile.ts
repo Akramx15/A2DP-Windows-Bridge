@@ -52,6 +52,16 @@ sbc_bitpool: number,
  */
 sbcxq_bitpool: number, 
 /**
+ * SBC / SBC XQ: the lowest bitpool to use (the SET_CONFIGURATION's
+ * minimum and the floor of ABR), within what the device allows and
+ * never above the bitpool (0 = Auto)
+ */
+sbc_min_bitpool: number, 
+/**
+ * The same for SBC XQ
+ */
+sbcxq_min_bitpool: number, 
+/**
  * SBC / SBC XQ: block length 4, 8, 12, 16 (0 = auto: 16)
  */
 sbc_blocks: number, 

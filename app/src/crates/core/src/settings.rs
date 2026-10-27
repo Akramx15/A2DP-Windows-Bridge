@@ -90,6 +90,9 @@ pub struct Settings {
     pub start_minimized: bool,
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
+    /// A click on the tray icon opens the main window instead of the tray
+    /// flyout (issue #86; off by default)
+    pub tray_click_opens_window: bool,
     /// A notification when a device connects (issue #86): its name, codec,
     /// what the codec runs with and the battery. On by default.
     #[serde(default = "default_true")]
@@ -253,6 +256,7 @@ impl Default for Settings {
             start_with_windows: false,
             start_minimized: false,
             minimize_to_tray: true,
+            tray_click_opens_window: false,
             notify_connected: true,
             check_updates_on_startup: true,
             last_update_check: String::new(),

@@ -37,8 +37,13 @@ pub struct StreamRequest {
     pub sbc_bitpool: u8,
     /// The same for SBC XQ
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: the lowest bitpool wanted (0 = Auto), each codec its
+    /// own; [`StreamRequest::sbc_params`] puts it in the SBC setup
+    pub sbc_min_bitpool: u8,
+    pub sbcxq_min_bitpool: u8,
     /// SBC / SBC XQ: blocks, subbands, allocation, channel mode wanted (the
-    /// defaults when not set; what the device does not list falls back)
+    /// defaults when not set; what the device does not list falls back).
+    /// Its `min_bitpool` is not used: see [`StreamRequest::sbc_params`].
     pub sbc: codec::sbc::SbcParams,
     /// None = the device's rate
     pub sample_rate: Option<u32>,
@@ -50,6 +55,20 @@ pub struct StreamRequest {
     /// LE Audio (experimental) instead of A2DP: the le_stream session
     /// streams to `device` and these extra devices. None: A2DP.
     pub le: Option<bt_host::LeRequest>,
+}
+
+impl StreamRequest {
+    /// The SBC setup of a `kind` stream (SBC or SBC XQ): [`Self::sbc`] with
+    /// that codec's minimum bitpool, as the SET_CONFIGURATION and the
+    /// encoder take it
+    pub fn sbc_params(&self, kind: CodecKind) -> codec::sbc::SbcParams {
+        let min_bitpool = match kind {
+            CodecKind::Sbc => self.sbc_min_bitpool,
+            CodecKind::SbcXq => self.sbcxq_min_bitpool,
+            _ => 0,
+        };
+        codec::sbc::SbcParams { min_bitpool, ..self.sbc }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -748,7 +767,7 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &Stream
     // The SET_CONFIGURATION took the same (configuration_with)
     let sbc = match kind {
         CodecKind::Sbc | CodecKind::SbcXq => {
-            let (sbc, notes) = remote.sbc_params(kind, req.sbc);
+            let (sbc, notes) = remote.sbc_params(kind, req.sbc_params(kind));
             for n in notes {
                 tracing::warn!("{n}");
             }
@@ -1125,7 +1144,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- stream configuration ----
     let t = Instant::now();
-    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+    let mut configured =
+        configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind));
     if let Err(failure) = &configured {
         tracing::debug!("configure: {} failed after {} ms: {failure:?}", kind.name(), t.elapsed().as_millis());
     }
@@ -1149,7 +1169,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if req.codec.is_some() && replaced.is_none() {
             replaced = Some((CodecKind::SbcXq, Unavailable::NotSupported));
         }
-        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+        configured =
+            configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind));
         if let Err(failure) = &configured {
             tracing::debug!("configure: SBC after SBC XQ failed: {failure:?}");
         }
@@ -1287,7 +1308,14 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // A reconnect builds the configuration anew from what the device lists
     // then (v1 read its capabilities again)
-    let rebuild = |r: &RemoteCaps| match r.configuration_with(kind, format.sample_rate, channels, bits, vbr, req.sbc) {
+    let rebuild = |r: &RemoteCaps| match r.configuration_with(
+        kind,
+        format.sample_rate,
+        channels,
+        bits,
+        vbr,
+        req.sbc_params(kind),
+    ) {
         Ok(c) => Some(c),
         Err(e) => {
             tracing::warn!("reconnect: {e}");

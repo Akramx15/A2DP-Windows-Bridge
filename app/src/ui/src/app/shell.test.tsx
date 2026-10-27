@@ -118,6 +118,16 @@ describe("tray", () => {
     await waitFor(() => expect(toggle).toBeDisabled());
   });
 
+  it("a click on the tray icon can open the main window instead of the flyout (issue #86)", async () => {
+    const { core, calls } = start("#/settings");
+    const toggle = await screen.findByRole("switch", { name: new RegExp(t("ui.settings.tray_click_opens_window")) });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(core.state.snap!.settings.tray_click_opens_window).toBe(true));
+    const set = calls.filter((c) => c.method === "settings.set").at(-1)!.params as { settings: { tray_click_opens_window: boolean } };
+    expect(set.settings.tray_click_opens_window).toBe(true);
+  });
+
   it("turns the notification of a connection off and on (issue #86)", async () => {
     const { core } = start("#/settings");
     const toggle = await screen.findByRole("switch", { name: new RegExp(t("ui.settings.notify_connected")) });
@@ -199,7 +209,9 @@ describe("Home", () => {
     await screen.findByRole("heading", { level: 1, name: "Home" });
     await mock.call("stream.start", { profile: "Desk speaker (AAC)" });
     await mock.call("profile.set_active", { name: "Desk speaker (AAC)" });
-    expect(await screen.findByText(t("ui.source.waiting", "Spotify"))).toBeInTheDocument();
+    // On the card of the device streaming (issue #86: no capture source card on Home)
+    const card = await screen.findByRole("group", { name: "SRS-XB13" });
+    expect(await within(card).findByText(t("ui.source.waiting", "Spotify"))).toBeInTheDocument();
   });
 
   it("shows a running HCI capture app-wide", async () => {

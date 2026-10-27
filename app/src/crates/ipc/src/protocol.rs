@@ -455,6 +455,14 @@ pub struct Profile {
     /// The same for SBC XQ
     #[serde(default)]
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: the lowest bitpool to use (the SET_CONFIGURATION's
+    /// minimum and the floor of ABR), within what the device allows and
+    /// never above the bitpool (0 = Auto)
+    #[serde(default)]
+    pub sbc_min_bitpool: u8,
+    /// The same for SBC XQ
+    #[serde(default)]
+    pub sbcxq_min_bitpool: u8,
     /// SBC / SBC XQ: block length 4, 8, 12, 16 (0 = auto: 16)
     #[serde(default)]
     pub sbc_blocks: u8,
@@ -492,6 +500,8 @@ pub struct CodecValues {
     pub abr: bool,
     pub sbc_bitpool: u8,
     pub sbcxq_bitpool: u8,
+    pub sbc_min_bitpool: u8,
+    pub sbcxq_min_bitpool: u8,
     pub sbc_blocks: u8,
     pub sbc_subbands: u8,
     pub sbc_allocation: String,
@@ -507,6 +517,8 @@ impl Default for CodecValues {
             abr: false,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
+            sbc_min_bitpool: 0,
+            sbcxq_min_bitpool: 0,
             sbc_blocks: 0,
             sbc_subbands: 0,
             sbc_allocation: String::new(),
@@ -569,6 +581,9 @@ pub struct Settings {
     pub start_with_windows: bool,
     pub start_minimized: bool,
     pub minimize_to_tray: bool,
+    /// A click on the tray icon opens the main window, not the flyout
+    #[serde(default)]
+    pub tray_click_opens_window: bool,
     /// A notification when a device connects: its codec, what the codec
     /// runs with, the battery (on by default)
     #[serde(default = "yes")]

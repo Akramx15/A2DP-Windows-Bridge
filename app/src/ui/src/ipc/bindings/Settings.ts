@@ -11,6 +11,10 @@ export type Settings = { language: string,
  */
 theme: string, start_with_windows: boolean, start_minimized: boolean, minimize_to_tray: boolean, 
 /**
+ * A click on the tray icon opens the main window, not the flyout
+ */
+tray_click_opens_window: boolean, 
+/**
  * A notification when a device connects: its codec, what the codec
  * runs with, the battery (on by default)
  */

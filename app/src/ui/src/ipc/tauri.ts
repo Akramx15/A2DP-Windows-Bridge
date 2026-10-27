@@ -33,6 +33,7 @@ export async function createTauriTransport(): Promise<Transport> {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().hide();
     },
+    fitHeight: (height) => invoke("fit_flyout", { height }),
     openUrl: (url) => invoke("open_url", { url }),
     openFolder: (path) => invoke("open_folder", { path }),
     revealPath: (path) => invoke("reveal_path", { path }),

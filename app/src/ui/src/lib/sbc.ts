@@ -27,7 +27,8 @@ export type SbcFields = Pick<
   | "sbc_subbands"
   | "sbc_allocation"
   | "sbc_channel_mode"
->;
+> &
+  Partial<Pick<Profile, "sbc_min_bitpool" | "sbcxq_min_bitpool">>;
 
 /** What the device listed when it last connected (null: not known) */
 export function knownSbcCaps(devices: readonly Device[], address: string): SbcCaps | null {
@@ -96,7 +97,9 @@ export function sbcSetup(p: SbcFields, rate: number, caps: SbcCaps | null): SbcS
   const max = xq ? xqBitpool("hq", rate) : 53;
   const asked = xq ? p.sbcxq_bitpool : p.sbc_bitpool;
   const auto = xq ? xqBitpool(p.quality, rate) : qualityBitpool(p.quality);
-  let bitpool = Math.min(asked || auto, max);
+  // Never below the profile's minimum (issue #86)
+  const min = (xq ? p.sbcxq_min_bitpool : p.sbc_min_bitpool) ?? 0;
+  let bitpool = Math.min(Math.max(asked || auto, min), max);
   if (caps && caps.max_bitpool >= 2) bitpool = Math.max(Math.min(bitpool, caps.max_bitpool), Math.min(caps.min_bitpool, caps.max_bitpool), 2);
   const frameBytes = sbcFrameLength(mode, blocks, subbands, bitpool);
   return { blocks, subbands, allocation, mode, bitpool, frameBytes, kbps: sbcKbps(frameBytes, rate, blocks, subbands) };

@@ -87,6 +87,12 @@ export function Settings() {
           onChange={(v) => set({ start_minimized: v })}
         />
         <Toggle label={t("settings.minimize_to_tray")} checked={s().minimize_to_tray} onChange={(v) => set({ minimize_to_tray: v })} />
+        <Toggle
+          label={t("ui.settings.tray_click_opens_window")}
+          hint={t("ui.settings.tray_click_opens_window_hint")}
+          checked={s().tray_click_opens_window}
+          onChange={(v) => set({ tray_click_opens_window: v })}
+        />
       </Section>
 
       <Section title={t("ui.settings.notifications")}>

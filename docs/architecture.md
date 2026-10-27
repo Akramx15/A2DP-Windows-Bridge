@@ -68,7 +68,8 @@ flowchart TB
   window.
 - **The tray belongs to the core.** Its right-click menu (open, the first 10
   profiles, disconnect, exit) opens at once, without starting the window. A
-  left click starts the window's flyout.
+  left click starts the window's flyout (or the main window, as Settings
+  say).
 - **The window only displays.** It receives a snapshot of the core's state
   and then the changes; closing it, or the window crashing, does not stop
   the audio. Closing a window only hides it, so reopening it from the tray

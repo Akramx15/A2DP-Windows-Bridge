@@ -134,6 +134,7 @@ export function CodecCard(props: {
         class="codec-more"
         label={t("ui.profile.codec_settings", name())}
         aria-haspopup="dialog"
+        disabled={props.disabled && !props.readOnly}
         onClick={() => (props.readOnly ? props.onReadOnly?.() : props.onSettings())}
       />
     </div>
@@ -149,6 +150,8 @@ export type CodecChoice = Pick<
   | "abr"
   | "sbc_bitpool"
   | "sbcxq_bitpool"
+  | "sbc_min_bitpool"
+  | "sbcxq_min_bitpool"
   | "sbc_blocks"
   | "sbc_subbands"
   | "sbc_allocation"
@@ -164,6 +167,8 @@ export function codecChoice(p: CodecChoice): CodecChoice {
     abr: p.abr,
     sbc_bitpool: p.sbc_bitpool,
     sbcxq_bitpool: p.sbcxq_bitpool,
+    sbc_min_bitpool: p.sbc_min_bitpool,
+    sbcxq_min_bitpool: p.sbcxq_min_bitpool,
     sbc_blocks: p.sbc_blocks,
     sbc_subbands: p.sbc_subbands,
     sbc_allocation: p.sbc_allocation,
@@ -179,6 +184,89 @@ export function bitpoolRange(codec: string, caps: SbcCaps | null): { min: number
   if (!caps || caps.max_bitpool < BITPOOL_MIN) return { min: BITPOOL_MIN, max: local };
   const max = Math.max(Math.min(local, caps.max_bitpool), BITPOOL_MIN);
   return { min: Math.min(Math.max(caps.min_bitpool, BITPOOL_MIN), max), max };
+}
+
+/**
+ * The SBC / SBC XQ bitpool as one slider with two handles (issue #86): the
+ * lowest bitpool (the SET_CONFIGURATION's minimum and the floor of ABR) and
+ * the highest (the bitpool the stream starts with), each 0 for Auto. Each
+ * handle is a native range input (arrow keys, Page Up / Down, Home / End),
+ * the lower one never past the higher. Auto shows where it is: the lowest
+ * at the range's start, the highest where the quality puts it.
+ */
+export function BitpoolSlider(props: {
+  /** The highest handle's (the field's label points at it) */
+  id?: string;
+  describedBy?: string;
+  label: string;
+  min: number;
+  max: number;
+  /** 0 = Auto */
+  low: number;
+  high: number;
+  /** Where Auto puts the highest */
+  autoHigh: number;
+  onLow: (bitpool: number) => void;
+  onHigh: (bitpool: number) => void;
+}) {
+  const clamp = (x: number) => Math.min(Math.max(x, props.min), props.max);
+  const hi = () => clamp(props.high || Math.max(props.autoHigh, props.low));
+  const lo = () => Math.min(clamp(props.low || props.min), hi());
+  const at = (x: number) => (props.max > props.min ? (x - props.min) / (props.max - props.min) : 0);
+  const lowText = () => (props.low ? String(lo()) : t("codec.auto"));
+  const highText = () => (props.high ? String(hi()) : t("ui.profile.sbc_bitpool_auto", hi()));
+  return (
+    <div class="bp-slider" role="group" aria-label={props.label}>
+      <output class="bp-value num" aria-hidden="true">
+        {lowText()}
+      </output>
+      <div
+        class="bp-track"
+        // Where they meet, the higher handle on top (it can still go up),
+        // unless it is at the end: then the lower one (it can still go down)
+        classList={{ "low-on-top": hi() >= props.max }}
+        style={{ "--lo": String(at(lo())), "--hi": String(at(hi())) }}
+      >
+        <span class="bp-fill" />
+        <input
+          type="range"
+          class="bp-low"
+          min={props.min}
+          max={props.max}
+          step="1"
+          value={lo()}
+          aria-label={t("ui.profile.sbc_bitpool_min")}
+          aria-valuetext={lowText()}
+          aria-describedby={props.describedBy}
+          onInput={(e) => {
+            const x = Math.min(clamp(e.currentTarget.valueAsNumber), hi());
+            e.currentTarget.value = String(x);
+            props.onLow(x);
+          }}
+        />
+        <input
+          id={props.id}
+          type="range"
+          class="bp-high"
+          min={props.min}
+          max={props.max}
+          step="1"
+          value={hi()}
+          aria-label={t("ui.profile.sbc_bitpool_max")}
+          aria-valuetext={highText()}
+          aria-describedby={props.describedBy}
+          onInput={(e) => {
+            const x = Math.max(clamp(e.currentTarget.valueAsNumber), lo());
+            e.currentTarget.value = String(x);
+            props.onHigh(x);
+          }}
+        />
+      </div>
+      <output class="bp-value num" aria-hidden="true">
+        {highText()}
+      </output>
+    </div>
+  );
 }
 
 /**
@@ -210,6 +298,8 @@ export function CodecSettings(props: {
     abr: false,
     sbc_bitpool: 0,
     sbcxq_bitpool: 0,
+    sbc_min_bitpool: 0,
+    sbcxq_min_bitpool: 0,
     sbc_blocks: 0,
     sbc_subbands: 0,
     sbc_allocation: "",
@@ -237,7 +327,11 @@ export function CodecSettings(props: {
           fitted.quality = "hq";
         const range = bitpoolRange(s.id, props.sbcCaps);
         const key = s.id === "sbcxq" ? "sbcxq_bitpool" : "sbc_bitpool";
+        const minKey = s.id === "sbcxq" ? "sbcxq_min_bitpool" : "sbc_min_bitpool";
         if (s.bitpool && fitted[key] > range.max) fitted[key] = range.max;
+        // The minimum likewise, and never above the maximum
+        if (s.bitpool && fitted[minKey] > range.max) fitted[minKey] = range.max;
+        if (s.bitpool && fitted[key] && fitted[minKey] > fitted[key]) fitted[minKey] = fitted[key];
         setV(fitted);
       },
     ),
@@ -253,10 +347,21 @@ export function CodecSettings(props: {
   const bpRange = () => bitpoolRange(v.codec, props.sbcCaps);
   const bpMin = () => bpRange().min;
   const bpMax = () => bpRange().max;
+  // ... and their own minimum (issue #86: the slider's two handles)
+  const bpMinKey = () => (v.codec === "sbcxq" ? "sbcxq_min_bitpool" : "sbc_min_bitpool");
+  const bpLow = () => v[bpMinKey()];
+  // A value from the profile outside the device's range (the slider itself
+  // stays within it)
+  const outside = (x: number) => x !== 0 && !(Number.isInteger(x) && x >= bpMin() && x <= bpMax());
   const bitpoolError = () =>
-    bp() !== 0 && !(Number.isInteger(bp()) && bp() >= bpMin() && bp() <= bpMax())
-      ? t("error.sbc_bitpool_range", bpMin(), bpMax())
-      : undefined;
+    outside(bp()) || outside(bpLow()) ? t("error.sbc_bitpool_range", bpMin(), bpMax()) : undefined;
+  /** Where Auto puts the highest bitpool: the quality's (High) within the
+   *  device's range, as the core does */
+  const autoMax = () => {
+    const r = sbcRate(v, props.sbcCaps);
+    const at = sbcSetup({ ...v, [bpKey()]: 0, [bpMinKey()]: 0 }, r, props.sbcCaps).bitpool;
+    return Math.min(Math.max(at, bpMin()), bpMax());
+  };
   // The qualities with their bit rates on this device; one is shown, not chosen
   const qualities = () => offeredQualities(v.codec, v.sample_rate, maxBitrate(), v.quality);
   const qualityText = (q: { label: string; kbps?: string }) => (q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label));
@@ -402,27 +507,33 @@ export function CodecSettings(props: {
             label={t("connection.sbc_bitpool")}
             hint={
               props.sbcCaps
-                ? `${t("tooltip.sbc_bitpool", BITPOOL_MIN, bitpoolRange(v.codec, null).max)} ${t("ui.profile.sbc_bitpool_device", bpMin(), bpMax())}`
-                : t("tooltip.sbc_bitpool", bpMin(), bpMax())
+                ? `${t("tooltip.sbc_bitpool", BITPOOL_MIN, bitpoolRange(v.codec, null).max)} ${t("ui.profile.sbc_bitpool_handles")} ${t("ui.profile.sbc_bitpool_device", bpMin(), bpMax())}`
+                : `${t("tooltip.sbc_bitpool", bpMin(), bpMax())} ${t("ui.profile.sbc_bitpool_handles")}`
             }
             error={bitpoolError()}
           >
             {(id, described) => (
-              <div class="inline">
-                <input
+              <div class="inline bp-field">
+                <BitpoolSlider
                   id={id}
-                  class="input num narrow"
-                  type="number"
-                  inputmode="numeric"
+                  describedBy={described}
+                  label={t("connection.sbc_bitpool")}
                   min={bpMin()}
                   max={bpMax()}
-                  step="1"
-                  placeholder={t("codec.auto")}
-                  value={bp() === 0 ? "" : bp()}
-                  aria-describedby={described}
-                  onInput={(e) => setV(bpKey(), e.currentTarget.value === "" ? 0 : e.currentTarget.valueAsNumber)}
+                  low={bpLow()}
+                  high={bp()}
+                  autoHigh={autoMax()}
+                  onLow={(x) => setV(bpMinKey(), x)}
+                  onHigh={(x) => setV(bpKey(), x)}
                 />
-                <Button kind="subtle" disabled={bp() === 0} onClick={() => setV(bpKey(), 0)}>
+                <Button
+                  kind="subtle"
+                  disabled={bp() === 0 && bpLow() === 0}
+                  onClick={() => {
+                    setV(bpKey(), 0);
+                    setV(bpMinKey(), 0);
+                  }}
+                >
                   {t("codec.auto")}
                 </Button>
               </div>

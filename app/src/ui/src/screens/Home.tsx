@@ -3,8 +3,8 @@
 // One device streams at a time: Connect on another one switches to it (the
 // core stops the running stream first). The volume is on the card of the
 // device in use, as each device keeps its own (issue #86); its codec
-// (chosen right there, e.g. one for games and one for music) and link
-// quality below. The capture source is chosen on Audio Devices.
+// (chosen right there, e.g. one for games and one for music), link quality
+// and link latency below. The capture source is chosen on Audio Devices.
 
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
@@ -17,6 +17,7 @@ import {
   currentProfile,
   ErrorPanel,
   FirmwareDownload,
+  LinkLatency,
   LinkSparkline,
   openFirmwareFolder,
   QualityIndicator,
@@ -206,6 +207,12 @@ export function Home() {
                   <QualityIndicator />
                 </div>
                 <LinkSparkline />
+              </section>
+              <section class="card mini" aria-labelledby="home-latency">
+                <h2 id="home-latency" class="mini-title">
+                  {t("ui.home.latency")}
+                </h2>
+                <LinkLatency />
               </section>
             </div>
           )}

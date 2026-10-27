@@ -397,7 +397,8 @@ pub fn run(args: &[String]) -> i32 {
             }
             TaoEvent::UserEvent(UserEvent::Click) => {
                 win_sys::notify::allow_foreground_for_click();
-                launch_ui(true);
+                // The flyout, or the main window when Settings say so
+                launch_ui(!state.tray_click_opens_window());
             }
             TaoEvent::UserEvent(UserEvent::Balloon(b)) => match &notifier {
                 Some(n) => show_balloon(n, b),

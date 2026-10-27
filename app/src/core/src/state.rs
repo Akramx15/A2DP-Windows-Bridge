@@ -167,6 +167,8 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         le_low_latency: p.le_low_latency,
         sbc_bitpool: p.sbc_bitpool,
         sbcxq_bitpool: p.sbcxq_bitpool,
+        sbc_min_bitpool: p.sbc_min_bitpool,
+        sbcxq_min_bitpool: p.sbcxq_min_bitpool,
         sbc_blocks: p.sbc_blocks,
         sbc_subbands: p.sbc_subbands,
         sbc_allocation: p.sbc_allocation.clone(),
@@ -184,6 +186,8 @@ fn to_ipc_codec_values(v: &profiles::CodecValues) -> ipc::CodecValues {
         abr: v.abr,
         sbc_bitpool: v.sbc_bitpool,
         sbcxq_bitpool: v.sbcxq_bitpool,
+        sbc_min_bitpool: v.sbc_min_bitpool,
+        sbcxq_min_bitpool: v.sbcxq_min_bitpool,
         sbc_blocks: v.sbc_blocks,
         sbc_subbands: v.sbc_subbands,
         sbc_allocation: v.sbc_allocation.clone(),
@@ -199,6 +203,8 @@ fn from_ipc_codec_values(v: &ipc::CodecValues) -> profiles::CodecValues {
         abr: v.abr,
         sbc_bitpool: v.sbc_bitpool,
         sbcxq_bitpool: v.sbcxq_bitpool,
+        sbc_min_bitpool: v.sbc_min_bitpool,
+        sbcxq_min_bitpool: v.sbcxq_min_bitpool,
         sbc_blocks: v.sbc_blocks,
         sbc_subbands: v.sbc_subbands,
         sbc_allocation: v.sbc_allocation.clone(),
@@ -232,6 +238,8 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.le_low_latency = p.le_low_latency;
     c.sbc_bitpool = p.sbc_bitpool;
     c.sbcxq_bitpool = p.sbcxq_bitpool;
+    c.sbc_min_bitpool = p.sbc_min_bitpool;
+    c.sbcxq_min_bitpool = p.sbcxq_min_bitpool;
     c.sbc_blocks = p.sbc_blocks;
     c.sbc_subbands = p.sbc_subbands;
     c.sbc_allocation = p.sbc_allocation.clone();
@@ -262,6 +270,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         start_with_windows: s.start_with_windows,
         start_minimized: s.start_minimized,
         minimize_to_tray: s.minimize_to_tray,
+        tray_click_opens_window: s.tray_click_opens_window,
         notify_connected: s.notify_connected,
         check_updates_on_startup: s.check_updates_on_startup,
         include_prereleases: s.include_prereleases,
@@ -306,6 +315,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.start_with_windows = s.start_with_windows;
     c.start_minimized = s.start_minimized;
     c.minimize_to_tray = s.minimize_to_tray;
+    c.tray_click_opens_window = s.tray_click_opens_window;
     c.notify_connected = s.notify_connected;
     c.check_updates_on_startup = s.check_updates_on_startup;
     c.include_prereleases = s.include_prereleases;
@@ -1394,13 +1404,22 @@ impl CoreState {
             battery_refused: false,
         }));
         let service = self.service.clone();
-        // start_streaming joins a running session first: not on a runtime thread
-        std::thread::spawn(move || service.start_streaming(req));
+        // start_streaming joins a running session first: not on a runtime
+        // thread. The ticket, taken now, keeps the order of quick switches:
+        // only the last one asked for starts (issue #86)
+        let ticket = service.ticket();
+        std::thread::spawn(move || service.start_streaming_for(req, ticket));
     }
 
     pub fn stop(&self) {
         let service = self.service.clone();
-        std::thread::spawn(move || service.disconnect());
+        let ticket = service.ticket();
+        std::thread::spawn(move || service.disconnect_for(ticket));
+    }
+
+    /// Settings > "Clicking the tray icon opens the main window"
+    pub fn tray_click_opens_window(&self) -> bool {
+        self.service.settings().tray_click_opens_window
     }
 
     pub fn quit(&self) {

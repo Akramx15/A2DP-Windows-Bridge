@@ -240,6 +240,9 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "ldac", sbc_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0 });
     // SBC and SBC XQ keep their own bitpool
     expect(fitToCodec({ ...p, codec: "sbcxq", sbc_bitpool: 53, sbcxq_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0, sbcxq_bitpool: 40 });
+    // ... and their own minimum (issue #86)
+    expect(fitToCodec({ ...p, codec: "sbcxq", sbc_min_bitpool: 20, sbcxq_min_bitpool: 30 })).toMatchObject({ sbc_min_bitpool: 0, sbcxq_min_bitpool: 30 });
+    expect(fitToCodec({ ...p, codec: "aac", sbc_min_bitpool: 20 })).toMatchObject({ sbc_min_bitpool: 0 });
     // The frame setup is both's; the channel mode SBC's only
     const frame = { sbc_blocks: 8, sbc_subbands: 4, sbc_allocation: "snr", sbc_channel_mode: "stereo" };
     expect(fitToCodec({ ...p, ...frame, codec: "sbc" })).toMatchObject(frame);

@@ -332,22 +332,22 @@ describe("codec cards", () => {
     const { calls } = start("#/codecs");
     const wh = await section("WH-1000XM5");
     const ldac = within(wh).getByRole("radio", { name: /LDAC/ });
-    expect(ldac.closest("label")).toHaveTextContent(t("ui.profile.codec_supported"));
     expect(within(wh).queryByText(t("ui.profile.codecs_unknown"))).toBeNull();
-
+    // The ones it did not support hidden (on by default, issue #86): SBC,
+    // AAC and LDAC are supported, and need no "Supported" tag then
+    expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull();
+    expect(within(wh).getAllByRole("radio")).toHaveLength(3);
+    expect(within(wh).queryByText(t("ui.profile.codec_supported"))).toBeNull();
+    const hide = hideSwitch();
+    expect(hide).toBeChecked();
+    // Shown: with their "Unsupported" tag, the others "Supported"
+    fireEvent.click(hide);
+    const hd = await within(wh).findByRole("radio", { name: /aptX HD/ });
+    expect(ldac.closest("label")).toHaveTextContent(t("ui.profile.codec_supported"));
     // Its mark in green, not the whole tag (issue #86)
     const good = within(ldac.closest("label")!).getByText(t("ui.profile.codec_supported")).closest(".tag")!;
     expect(good).not.toHaveClass("st-good");
     expect(good.querySelector(".icon")).toHaveClass("st-good");
-    // The ones it did not support hidden (on by default, issue #86): SBC,
-    // AAC and LDAC are supported
-    expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull();
-    expect(within(wh).getAllByRole("radio")).toHaveLength(3);
-    const hide = hideSwitch();
-    expect(hide).toBeChecked();
-    // Shown: with their "Unsupported" tag
-    fireEvent.click(hide);
-    const hd = await within(wh).findByRole("radio", { name: /aptX HD/ });
     expect(hd.closest("label")).toHaveTextContent("Unsupported");
     // Its mark in red
     const bad = within(hd.closest("label")!).getByText(t("ui.profile.codec_not_supported")).closest(".tag")!;
@@ -497,6 +497,33 @@ describe("the device's activity (issue #86 round 8)", () => {
     expect(within(wh).getByRole("img", { name: t("status.connected") })).toBe(dot(wh));
     expect(dot(xb)).toHaveClass("st-idle");
   });
+
+  it("waits 3 s after the codec of the device streaming changed (issue #86: quick switches crackled)", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(wh.querySelector(".device-codecs-head > .dot")).toHaveClass("st-streaming"));
+    fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    // Every card waits, with the reason said
+    expect(await within(wh).findByText(t("ui.codecs.settling"))).toBeInTheDocument();
+    expect(within(wh).getAllByRole("radio").every((r) => (r as HTMLInputElement).disabled)).toBe(true);
+    expect(within(wh).getByRole("button", { name: t("ui.profile.codec_settings", t("codec.sbc")) })).toBeDisabled();
+    fireEvent.click(within(wh).getByRole("radio", { name: /SBC/ }));
+    expect(saves(calls)).toHaveLength(1);
+    // Then they can be chosen again
+    await waitFor(() => expect(within(wh).queryByText(t("ui.codecs.settling"))).toBeNull(), { timeout: 4000 });
+    await settled(wh);
+  }, 8000);
+
+  it("does not wait after a codec chosen for a device not streaming", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    await settled(wh);
+    expect(within(wh).queryByText(t("ui.codecs.settling"))).toBeNull();
+  });
 });
 
 /** Opens a codec's settings ("...") in a device's section and returns its dialog */
@@ -577,19 +604,20 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
   it("SBC's bitpool stops at the device's largest, and says so", async () => {
     const { calls } = start("#/codecs", "capped");
     const dialog = await codecSettings(await section("moto buds+"), "codec.sbc");
-    const bitpool = within(dialog).getByLabelText(t("connection.sbc_bitpool"));
+    const bitpool = within(dialog).getByRole("slider", { name: t("ui.profile.sbc_bitpool_max") });
     expect(bitpool).toHaveAttribute("max", "39");
     expect(bitpool).toHaveAccessibleDescription(new RegExp(t("ui.profile.sbc_bitpool_device", 2, 39)));
+    // Auto: where the quality puts it, the device's largest here
+    expect(bitpool).toHaveValue("39");
+    expect(bitpool).toHaveAttribute("aria-valuetext", t("ui.profile.sbc_bitpool_auto", 39));
+    // Never past the device's largest
     fireEvent.input(bitpool, { target: { value: "53" } });
-    expect(await within(dialog).findByText(t("error.sbc_bitpool_range", 2, 39))).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    fireEvent.input(bitpool, { target: { value: "39" } });
-    // Auto: bitpool 39, 16 blocks, 8 subbands, joint stereo at 48 kHz
+    expect(bitpool).toHaveValue("39");
+    // Bitpool 39, 16 blocks, 8 subbands, joint stereo at 48 kHz
     await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent(t("ui.profile.sbc_bitrate", 273, "48")));
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
-    expect(saves(calls)[0].profile).toMatchObject({ codec: "sbc", sbc_bitpool: 39 });
+    expect(saves(calls)[0].profile).toMatchObject({ codec: "sbc", sbc_bitpool: 39, sbc_min_bitpool: 0 });
   });
 
   it("aptX Adaptive offers 96 kHz only to a device that lists it", async () => {
@@ -635,7 +663,7 @@ describe("SBC settings", () => {
     // Stereo at 44.1 kHz with bitpool 40
     fireEvent.change(within(dialog).getByLabelText(t("ui.diag.cd_channel_mode")), { target: { value: "stereo" } });
     fireEvent.change(within(dialog).getByLabelText(t("connection.sample_rate")), { target: { value: "44100" } });
-    fireEvent.input(within(dialog).getByLabelText(t("connection.sbc_bitpool")), { target: { value: "40" } });
+    fireEvent.input(within(dialog).getByRole("slider", { name: t("ui.profile.sbc_bitpool_max") }), { target: { value: "40" } });
     // 4 + 8 + 8 * 40 / 8 = 52 bytes per 64 samples
     await waitFor(() => expect(rate).toHaveTextContent(new RegExp(`^${t("ui.profile.sbc_bitrate", 286, "44.1")}$`)));
 
@@ -650,6 +678,74 @@ describe("SBC settings", () => {
       sbc_bitpool: 40,
       sample_rate: 44100,
     });
+  });
+
+  it("one slider with two handles sets the lowest and the highest bitpool (issue #86)", async () => {
+    const { calls } = start("#/codecs");
+    const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc");
+    const group = within(dialog).getByRole("group", { name: t("connection.sbc_bitpool") });
+    const low = within(group).getByRole("slider", { name: t("ui.profile.sbc_bitpool_min") });
+    const high = within(group).getByRole("slider", { name: t("ui.profile.sbc_bitpool_max") });
+    const auto = within(dialog).getByRole("button", { name: t("codec.auto") });
+    // Auto: the lowest at the start, the highest where High puts it (53)
+    expect([low, high].map((s) => [s.getAttribute("min"), s.getAttribute("max")])).toEqual([
+      ["2", "53"],
+      ["2", "53"],
+    ]);
+    expect(low).toHaveValue("2");
+    expect(low).toHaveAttribute("aria-valuetext", t("codec.auto"));
+    expect(high).toHaveValue("53");
+    expect(high).toHaveAttribute("aria-valuetext", t("ui.profile.sbc_bitpool_auto", 53));
+    expect(auto).toBeDisabled();
+
+    // The highest down to 30: the bit rate follows it (73-byte frames at 48 kHz)
+    fireEvent.input(high, { target: { value: "30" } });
+    expect(high).toHaveAttribute("aria-valuetext", "30");
+    const rate = within(dialog).getByRole("status");
+    await waitFor(() => expect(rate).toHaveTextContent(t("ui.profile.sbc_bitrate", 219, "48")));
+    expect(auto).toBeEnabled();
+    // The lowest never passes the highest, nor the highest the lowest
+    fireEvent.input(low, { target: { value: "40" } });
+    expect(low).toHaveValue("30");
+    fireEvent.input(low, { target: { value: "20" } });
+    expect(low).toHaveValue("20");
+    expect(low).toHaveAttribute("aria-valuetext", "20");
+    fireEvent.input(high, { target: { value: "10" } });
+    expect(high).toHaveValue("20");
+    fireEvent.input(high, { target: { value: "30" } });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0].profile).toMatchObject({ codec: "sbc", sbc_min_bitpool: 20, sbc_bitpool: 30, sbcxq_min_bitpool: 0 });
+
+    // Back in (once saved): the handles where they were; Auto puts both back
+    await settled(await section("WH-1000XM5"));
+    const again = await codecSettings(await section("WH-1000XM5"), "codec.sbc");
+    const [low2, high2] = within(again).getAllByRole("slider");
+    expect([low2, high2].map((s) => (s as HTMLInputElement).value)).toEqual(["20", "30"]);
+    fireEvent.click(within(again).getByRole("button", { name: t("codec.auto") }));
+    expect(low2).toHaveAttribute("aria-valuetext", t("codec.auto"));
+    expect(high2).toHaveAttribute("aria-valuetext", t("ui.profile.sbc_bitpool_auto", 53));
+    fireEvent.click(within(again).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1].profile).toMatchObject({ sbc_min_bitpool: 0, sbc_bitpool: 0 });
+  });
+
+  it("SBC XQ keeps its own minimum, within its own range", async () => {
+    const { calls } = start("#/codecs");
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
+    const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
+    const low = within(dialog).getByRole("slider", { name: t("ui.profile.sbc_bitpool_min") });
+    const high = within(dialog).getByRole("slider", { name: t("ui.profile.sbc_bitpool_max") });
+    // Auto at 48 kHz: 43 per channel
+    expect(high).toHaveAttribute("aria-valuetext", t("ui.profile.sbc_bitpool_auto", 43));
+    // With the highest on Auto, the lowest stops where Auto's highest is
+    fireEvent.input(low, { target: { value: "47" } });
+    expect(low).toHaveValue("43");
+    fireEvent.input(low, { target: { value: "35" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.ok") }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0].profile).toMatchObject({ codec: "sbcxq", sbcxq_min_bitpool: 35, sbcxq_bitpool: 0, sbc_min_bitpool: 0 });
   });
 
   it("SBC XQ has no channel mode of its own", async () => {

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::thread::JoinHandle;
@@ -703,6 +703,13 @@ impl Inner {
 pub struct Service {
     inner: Arc<Inner>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    /// Held while a session is stopped and the next one started: one start
+    /// or stop at a time (issue #86: two codec switches in quick succession
+    /// ran two sessions on one stack, no sound or crackling)
+    control: Mutex<()>,
+    /// The latest start or stop asked for ([`Service::ticket`]); an older
+    /// one still waiting for `control` is dropped
+    latest: AtomicU64,
     /// What the last session was started with: a Bluetooth restart
     /// connects it again (issue #86)
     last_request: Mutex<Option<StreamRequest>>,
@@ -790,7 +797,14 @@ impl Service {
         pipeline::set_thread_priority_hook(|| pro_audio("encode thread"));
         hci_transport::set_acl_out_priority_hook(|| pro_audio("USB ACL writer"));
         bt_host::set_runloop_priority_hook(|| pro_audio("BTstack thread"));
-        Service { inner, worker: Mutex::new(None), last_request: Mutex::new(None), _power: power }
+        Service {
+            inner,
+            worker: Mutex::new(None),
+            control: Mutex::new(()),
+            latest: AtomicU64::new(0),
+            last_request: Mutex::new(None),
+            _power: power,
+        }
     }
 
     pub fn stats(&self) -> Arc<LinkStats> {
@@ -891,8 +905,47 @@ impl Service {
     /// Disconnect (the window, the tray): the session stops, and a
     /// Bluetooth restart does not connect it again (issue #86)
     pub fn disconnect(&self) {
+        let _control = self.control.lock().unwrap_or_else(|e| e.into_inner());
         self.forget_session();
-        self.stop_streaming();
+        self.stop_session();
+    }
+
+    /// A ticket for a start or stop run later on its own thread
+    /// ([`Service::start_streaming_for`], [`Service::disconnect_for`]): the
+    /// latest one taken is the one that runs
+    pub fn ticket(&self) -> u64 {
+        self.latest.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    /// Takes `control` for the request with this ticket; None when a newer
+    /// one was asked for meanwhile (it runs instead)
+    fn control_for(&self, ticket: u64, what: &str) -> Option<std::sync::MutexGuard<'_, ()>> {
+        let control = self.control.lock().unwrap_or_else(|e| e.into_inner());
+        if self.latest.load(Ordering::Acquire) != ticket {
+            tracing::debug!("{what}: skipped, a newer start or stop was asked for");
+            return None;
+        }
+        Some(control)
+    }
+
+    /// [`Service::start_streaming`] unless a newer start or stop was asked
+    /// for since the ticket was taken
+    pub fn start_streaming_for(&self, req: StreamRequest, ticket: u64) {
+        if let Some(_control) = self.control_for(ticket, "start streaming") {
+            self.start_session(req);
+        }
+    }
+
+    /// [`Service::disconnect`] unless a newer start or stop was asked for
+    /// since the ticket was taken
+    pub fn disconnect_for(&self, ticket: u64) {
+        if let Some(_control) = self.control_for(ticket, "disconnect") {
+            self.forget_session();
+            // A start skipped for this stop left "connecting" shown
+            if !self.stop_session() {
+                self.inner.notify(StreamState::Idle, Msg::new("status.ready"));
+            }
+        }
     }
 
     fn forget_session(&self) {
@@ -979,13 +1032,18 @@ impl Service {
 
     /// Starts a session; a running one is stopped first
     pub fn start_streaming(&self, req: StreamRequest) {
+        let _control = self.control.lock().unwrap_or_else(|e| e.into_inner());
+        self.start_session(req);
+    }
+
+    fn start_session(&self, req: StreamRequest) {
         tracing::debug!(
             "start streaming: {} ({}), stopping any session first",
             bt_host::addr_str(&req.device),
             if req.le.is_some() { "LE Audio" } else { "A2DP" }
         );
         self.end_scan();
-        self.stop_streaming();
+        self.stop_session();
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.turned_off.store(false, Ordering::Release);
         self.inner.stop.store(false, Ordering::Release);
@@ -1014,7 +1072,13 @@ impl Service {
     /// Stops the session and waits for it (bounded by the stack's own
     /// timeouts: blocking waits are cancelled)
     pub fn stop_streaming(&self) {
-        let Some(t) = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        let _control = self.control.lock().unwrap_or_else(|e| e.into_inner());
+        self.stop_session();
+    }
+
+    /// False when no session was there to stop
+    fn stop_session(&self) -> bool {
+        let Some(t) = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take() else { return false };
         tracing::debug!("stop streaming: requested (state {:?})", self.state());
         let started = Instant::now();
         self.inner.stop.store(true, Ordering::Release);
@@ -1024,6 +1088,7 @@ impl Service {
         }
         let _ = t.join();
         tracing::debug!("stop streaming: session ended in {} ms", started.elapsed().as_millis());
+        true
     }
 
     /// A session that waits for turned-off headphones holds nothing worth
@@ -1260,6 +1325,30 @@ mod tests {
         // Disconnect
         s.disconnect();
         assert_eq!(s.restart_adapter(), None);
+    }
+
+    #[test]
+    fn only_the_latest_start_or_stop_asked_for_runs() {
+        let s = service();
+        // Two codec switches in quick succession, then a Disconnect: each
+        // thread runs late, the first two find a newer one asked for
+        let (first, second) = (s.ticket(), s.ticket());
+        s.start_streaming_for(request(), first);
+        assert!(s.worker.lock().unwrap().is_none());
+        *s.last_request.lock().unwrap() = Some(request());
+        let stop = s.ticket();
+        s.start_streaming_for(request(), second);
+        assert!(s.worker.lock().unwrap().is_none());
+        // The Disconnect older than a later start is skipped too
+        let start = s.ticket();
+        s.disconnect_for(stop);
+        assert_eq!(s.restart_adapter(), Some(request()));
+        let _ = start;
+        // The latest runs
+        let stop = s.ticket();
+        s.disconnect_for(stop);
+        assert_eq!(s.restart_adapter(), None);
+        assert_eq!(s.state(), StreamState::Idle);
     }
 
     #[test]

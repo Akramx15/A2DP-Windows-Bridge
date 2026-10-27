@@ -50,6 +50,11 @@ pub struct SbcParams {
     /// The channel mode of stereo input (SBC only; mono input is mono).
     /// Mono here mixes stereo input down.
     pub channel_mode: Option<ChannelMode>,
+    /// The lowest bitpool the profile asks for (0 = Auto, issue #86): the
+    /// SET_CONFIGURATION's minimum bitpool (within the sink's range and the
+    /// maximum, [`SbcParams::config_min_bitpool`]), the floor of ABR, and
+    /// the stream's bitpool is never below it
+    pub min_bitpool: u8,
 }
 
 impl SbcParams {
@@ -79,6 +84,16 @@ impl SbcParams {
     /// Nothing asked for: today's setup
     pub fn is_default(&self) -> bool {
         *self == SbcParams::default()
+    }
+
+    /// The minimum bitpool of a SET_CONFIGURATION whose range would be
+    /// `min..=max` (the sink's range, up to the codec's cap): the profile's
+    /// minimum within it, else (Auto) `min`
+    pub fn config_min_bitpool(&self, min: u8, max: u8) -> u8 {
+        match self.min_bitpool {
+            0 => min,
+            n => n.clamp(min.min(max), max),
+        }
     }
 }
 
@@ -220,6 +235,14 @@ pub fn abr_floor(kind: CodecKind, channel_mode: ChannelMode, sample_rate: u32, s
     mobile.max(ABR_MIN_BITPOOL).max(sink_min).min(ceiling)
 }
 
+/// The lowest bitpool ABR goes to when the profile sets a minimum
+/// ([`SbcParams::min_bitpool`]): that minimum, in place of Mobile and
+/// PipeWire's 12, still never below the sink's minimum (nor 2) or above
+/// `ceiling`
+pub fn user_abr_floor(min: u8, sink_min: u8, ceiling: u8) -> u8 {
+    min.max(sink_min).max(2).min(ceiling)
+}
+
 /// The adaptive bitpool state: the bitpool the stream started with is the
 /// ceiling, congestion lowers it by [`ABR_DOWN_STEP`] (at most every
 /// [`ABR_DOWN_TICKS`]), a drained queue raises it by [`ABR_UP_STEP`] every
@@ -296,6 +319,8 @@ impl SbcEncoder {
             0 => auto_bitpool(config.quality, mode),
             n => n.min(SBC_MAX_BITPOOL),
         };
+        // Never below the profile's minimum
+        let wanted = wanted.max(config.peer.sbc.min_bitpool.min(SBC_MAX_BITPOOL));
         let bitpool = sink_bitpool(wanted, config);
         Self::with_mode(CodecKind::Sbc, config, bitpool)
     }
@@ -304,10 +329,13 @@ impl SbcEncoder {
     /// the sink's range
     pub fn new_xq(config: &EncoderConfig) -> Result<SbcEncoder, EncoderError> {
         // Never above the configuration's maximum for the rate
+        let cap = xq_max_bitpool(config.sample_rate);
         let wanted = match config.peer.sbc_bitpool {
             0 => xq_bitpool(config.quality, config.sample_rate),
-            n => n.min(xq_max_bitpool(config.sample_rate)),
+            n => n.min(cap),
         };
+        // Never below the profile's minimum
+        let wanted = wanted.max(config.peer.sbc.min_bitpool.min(cap));
         let bitpool = sink_bitpool(wanted, config);
         Self::with_mode(CodecKind::SbcXq, config, bitpool)
     }
@@ -335,7 +363,10 @@ impl SbcEncoder {
         let downmix = (config.channels == 2 && channel_mode == ChannelMode::Mono).then(|| vec![0; frame.pcm_samples()]);
         let ceiling = frame.config().effective_bitpool();
         let abr = config.abr.then(|| {
-            let floor = abr_floor(kind, channel_mode, config.sample_rate, config.peer.sbc_min_bitpool, ceiling);
+            let floor = match params.min_bitpool {
+                0 => abr_floor(kind, channel_mode, config.sample_rate, config.peer.sbc_min_bitpool, ceiling),
+                n => user_abr_floor(n, config.peer.sbc_min_bitpool, ceiling),
+            };
             tracing::debug!("{kind}: ABR bitpool {floor}..{ceiling}");
             BitpoolAbr::new(floor, ceiling)
         });
@@ -676,6 +707,66 @@ mod tests {
     }
 
     #[test]
+    fn profile_minimum_bitpool() {
+        let with = |min: u8, bitpool: u8, sink: (u8, u8), quality: Quality| EncoderConfig {
+            peer: PeerParams {
+                sbc: SbcParams { min_bitpool: min, ..Default::default() },
+                sbc_bitpool: bitpool,
+                sbc_min_bitpool: sink.0,
+                sbc_max_bitpool: sink.1,
+                ..Default::default()
+            },
+            ..config(44100, 2, quality)
+        };
+        // (min, bitpool, sink range, quality) -> bitpool
+        for (min, bitpool, sink, quality, want) in [
+            (0, 0, (2, 53), Quality::Mobile, 19),  // Auto: as before
+            (30, 0, (2, 53), Quality::Mobile, 30), // the quality's below the minimum
+            (30, 0, (2, 53), Quality::High, 53),
+            (30, 40, (2, 53), Quality::High, 40),
+            (45, 40, (2, 53), Quality::High, 45),  // the maximum is never below it
+            (60, 0, (0, 0), Quality::Mobile, 53),  // never above SBC's 53
+            (45, 0, (2, 35), Quality::Mobile, 35), // the sink's maximum wins
+        ] {
+            let e = SbcEncoder::new(&with(min, bitpool, sink, quality)).unwrap();
+            assert_eq!(e.bitpool(), want, "{min} {bitpool} {sink:?} {quality:?}");
+        }
+        // SBC XQ: up to its cap of the rate
+        assert_eq!(SbcEncoder::new_xq(&with(40, 0, (2, 53), Quality::Mobile)).unwrap().bitpool(), 40);
+        assert_eq!(SbcEncoder::new_xq(&with(53, 0, (2, 53), Quality::Mobile)).unwrap().bitpool(), 47);
+    }
+
+    #[test]
+    fn profile_minimum_bitpool_is_the_abr_floor() {
+        let with = |min: u8, sink_min: u8| EncoderConfig {
+            peer: PeerParams {
+                sbc: SbcParams { min_bitpool: min, ..Default::default() },
+                sbc_min_bitpool: sink_min,
+                sbc_max_bitpool: 53,
+                ..Default::default()
+            },
+            ..abr_config(48000, 2, Quality::High)
+        };
+        // Auto: Mobile's 19
+        assert_eq!(SbcEncoder::new(&with(0, 2)).unwrap().abr_range(), Some((19, 53)));
+        // Higher or lower than Mobile, the profile's minimum
+        assert_eq!(SbcEncoder::new(&with(40, 2)).unwrap().abr_range(), Some((40, 53)));
+        let mut e = SbcEncoder::new(&with(10, 2)).unwrap();
+        assert_eq!(e.abr_range(), Some((10, 53)));
+        for _ in 0..200 {
+            e.abr_adjust(64);
+        }
+        assert_eq!(e.bitpool(), 10);
+        // Still never below the sink's minimum
+        assert_eq!(SbcEncoder::new(&with(10, 25)).unwrap().abr_range(), Some((25, 53)));
+        // SBC XQ: the profile's minimum in place of its Mobile
+        let e = SbcEncoder::new_xq(&with(20, 2)).unwrap();
+        assert_eq!(e.abr_range(), Some((20, 43)));
+        assert_eq!(user_abr_floor(1, 0, 53), 2);
+        assert_eq!(user_abr_floor(50, 2, 40), 40);
+    }
+
+    #[test]
     fn xq_bitpool_capped_by_the_sink() {
         let mut c = config(44100, 2, Quality::High);
         c.peer.sbc_max_bitpool = 45;
@@ -727,7 +818,7 @@ mod tests {
             assert_eq!(c.frame_len(), len, "{rate} {blocks}x{subbands} {mode:?} {bitpool}");
             assert_eq!(bitrate_kbps(len, rate, c.pcm_frames_per_frame()), kbps, "{rate} {blocks}x{subbands} {mode:?}");
             // The encoder agrees
-            let p = SbcParams { blocks, subbands, allocation: None, channel_mode: Some(mode) };
+            let p = SbcParams { blocks, subbands, allocation: None, channel_mode: Some(mode), min_bitpool: 0 };
             let e = SbcEncoder::new(&with_params(rate, 2, Quality::High, p, bitpool)).unwrap();
             assert_eq!((e.frame_len(), e.bitrate_kbps()), (len, kbps), "{rate} {blocks}x{subbands} {mode:?}");
         }
@@ -745,7 +836,13 @@ mod tests {
                         (2, ChannelMode::Mono),
                         (1, ChannelMode::Mono),
                     ] {
-                        let p = SbcParams { blocks, subbands, allocation: Some(allocation), channel_mode: Some(mode) };
+                        let p = SbcParams {
+                            blocks,
+                            subbands,
+                            allocation: Some(allocation),
+                            channel_mode: Some(mode),
+                            min_bitpool: 0,
+                        };
                         let mut e = SbcEncoder::new(&with_params(48000, ch, Quality::Standard, p, 0)).unwrap();
                         let what = format!("{blocks}x{subbands} {allocation:?} {ch} ch {mode:?}");
                         let frames = blocks as usize * subbands as usize;
@@ -1030,6 +1127,10 @@ mod tests {
             e.abr_adjust(64);
         }
         assert_eq!(e.bitpool(), 40);
+        // The profile's minimum at the bitpool: no room either
+        let mut c = abr_config(48000, 2, Quality::High);
+        c.peer.sbc.min_bitpool = 53;
+        assert!(!SbcEncoder::new(&c).unwrap().abr_active());
         // FastStream keeps its fixed bitpool
         let f = crate::create(CodecKind::FastStream, &abr_config(48000, 2, Quality::High)).unwrap();
         assert!(!f.abr_active());
