@@ -25,6 +25,11 @@ place — nothing is discarded. Nothing is pushed.
 Useful switches: `-Tag v2.0.2-beta.6`, `-Test` (run clippy, cargo test, tsc,
 vitest first), `-SkipBuild` (git work only), `-SkipInstall`.
 
+The build runs on `stable-x86_64-pc-windows-gnu` by default: upstream's
+`aptx-adaptive` needs rustc 1.99, the installed MSVC toolchain is older, and
+this machine has no MSVC linker. Override with `-Toolchain ''` when that
+changes.
+
 ## After deleting everything
 
 The app's stages, the Upmixer runtime and the engine build outputs are *not* in

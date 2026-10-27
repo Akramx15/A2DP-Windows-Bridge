@@ -43,6 +43,12 @@ vitest, check_lang). Slower but catches a bad merge before it reaches you.
 Engine clone used for the final byte-exact stage verification.
 Default: the sibling of this repository, i.e. <parent>\xm6-spatial-linux.
 
+.PARAMETER Toolchain
+Rust toolchain for the build. Default `stable-x86_64-pc-windows-gnu`: upstream
+crates (aptx-adaptive) now require rustc 1.99 while the installed MSVC toolchain
+is older, and this machine has no MSVC linker. Pass '' to use the default
+toolchain.
+
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File tools/xm6/apply-upstream.ps1 -Tag v2.0.2-beta.6
 #>
@@ -51,6 +57,7 @@ param(
     [string]$Tag,
     [string]$From,
     [string]$EngineDir,
+    [string]$Toolchain = 'stable-x86_64-pc-windows-gnu',
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$Test
@@ -61,6 +68,17 @@ Set-StrictMode -Version Latest
 
 $repo = (git -C $PSScriptRoot rev-parse --show-toplevel).Trim()
 Set-Location $repo
+
+# Upstream crates moved past the installed MSVC rustc, and this machine has no
+# MSVC linker at all: the GNU toolchain is the one that actually builds.
+$tc = @()
+if ($Toolchain) {
+    & rustc "+$Toolchain" --version 2>$null | Out-Null
+    if ($LASTEXITCODE) {
+        Write-Host "toolchain $Toolchain is not installed; using the default one" -ForegroundColor Yellow
+    }
+    else { $tc = @("+$Toolchain") }
+}
 
 function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
 function Fail($text) { Write-Host "error: $text" -ForegroundColor Red; exit 1 }
@@ -139,11 +157,11 @@ if ($SkipBuild) {
 
 if ($Test) {
     Step 'repository checks'
-    cargo fmt --check
+    cargo @tc fmt --check
     if ($LASTEXITCODE) { Fail 'cargo fmt --check failed' }
-    cargo clippy --workspace --all-targets -- -D warnings
+    cargo @tc clippy --workspace --all-targets -- -D warnings
     if ($LASTEXITCODE) { Fail 'clippy failed' }
-    cargo test --workspace
+    cargo @tc test --workspace
     if ($LASTEXITCODE) { Fail 'cargo test failed' }
     pnpm --dir app/src/ui exec tsc --noEmit
     if ($LASTEXITCODE) { Fail 'tsc failed' }
@@ -160,7 +178,7 @@ pnpm --dir app/src/ui build
 if ($LASTEXITCODE) { Fail 'UI build failed' }
 
 Step 'building the executables'
-cargo build --release -p a2dpwb-core-exe -p a2dpwb-driver -p a2dpwb-ui
+cargo @tc build --release -p a2dpwb-core-exe -p a2dpwb-driver -p a2dpwb-ui
 if ($LASTEXITCODE) { Fail 'cargo build failed' }
 
 $artifacts = @('a2dpwb.exe', 'a2dpwb-core.exe', 'a2dpwb-driver.exe')
