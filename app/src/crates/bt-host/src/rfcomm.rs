@@ -12,6 +12,7 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use btstack_sys::consts::*;
 use btstack_sys::{AclState, Stack};
@@ -20,8 +21,14 @@ use crate::events::{addr_str, event_type, le16, u8_at};
 
 /// Channels open or opening at a time (all clients together)
 const MAX_CHANNELS: usize = 8;
-/// Bytes a channel queues for sending before a send is refused
-const MAX_QUEUED_BYTES: usize = 64 * 1024;
+/// Bytes a channel queues for sending before a send is refused; also the
+/// largest single send
+pub const MAX_SEND_BYTES: usize = 64 * 1024;
+/// An open is answered within this time from its request, also while it
+/// waits behind other opens
+pub const OPEN_DEADLINE: Duration = Duration::from_secs(20);
+/// The deadline of the first open to end
+pub(crate) const TIMER_RFCOMM: u32 = 6;
 
 /// An open channel: its id (unique in this process, also across restarts
 /// of the stack) and the largest frame it sends and receives
@@ -33,7 +40,7 @@ pub struct RfcommOpened {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RfcommError {
-    /// The stack has no link to the device (or is not running)
+    /// The stack has no A2DP connection to the device (or is not running)
     NotConnected,
     /// The device's SDP lists no RFCOMM channel for the UUID
     ServiceNotFound,
@@ -41,9 +48,11 @@ pub enum RfcommError {
     Refused(u8),
     /// No open channel with this id (closed, or the stack restarted)
     NoChannel,
-    /// Too many channels, or the channel's send queue is full
+    /// Too many channels, the channel's send queue is full, or an open
+    /// waited behind others until its deadline
     Busy,
-    /// No answer in time
+    /// No answer in time: an open ran out of time (its channel is closed if
+    /// it opens later); a send or close may still be taken
     NoAnswer,
 }
 
@@ -68,8 +77,9 @@ pub enum RfcommEvent {
 
 /// Receives a channel's events with its id, on the BTstack thread: it must
 /// not block. The first may come before [`crate::BtHost::rfcomm_open`]
-/// has returned.
-pub type RfcommSink = Box<dyn FnMut(u32, RfcommEvent) + Send>;
+/// has returned. False after a [`RfcommEvent::Data`]: close the channel
+/// (no event follows).
+pub type RfcommSink = Box<dyn FnMut(u32, RfcommEvent) -> bool + Send>;
 
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
@@ -104,10 +114,19 @@ struct Open {
     addr: [u8; 6],
     uuid: [u8; 16],
     sink: RfcommSink,
-    /// Its receiver is gone when the caller stopped waiting: the channel is
-    /// then closed as soon as it opens
-    reply: OpenReply,
+    /// None once answered before its end (deadline, A2DP connection gone):
+    /// it then runs to its end and closes a channel that opens. Its
+    /// receiver is also gone when the caller stopped waiting.
+    reply: Option<OpenReply>,
+    deadline: Instant,
     stage: Stage,
+}
+
+impl Open {
+    /// Answers it (once)
+    fn answer(&mut self, r: Result<RfcommOpened, RfcommError>) -> bool {
+        self.reply.take().is_some_and(|reply| reply.send(r).is_ok())
+    }
 }
 
 struct Channel {
@@ -145,31 +164,78 @@ impl Rfcomm {
         }
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         tracing::info!("RFCOMM: opening #{id} to {} for service {}", addr_str(&addr), uuid_str(&uuid));
-        self.opens.push_back(Open { id, addr, uuid, sink, reply, stage: Stage::Waiting });
+        let deadline = Instant::now() + OPEN_DEADLINE;
+        self.opens.push_back(Open { id, addr, uuid, sink, reply: Some(reply), deadline, stage: Stage::Waiting });
         self.next(stack);
     }
 
-    /// Starts the first open if none runs
+    /// Starts the first open if none runs, and the timer of the next
+    /// deadline
     fn next(&mut self, stack: &Stack) {
         while let Some(open) = self.opens.front_mut() {
             if !matches!(open.stage, Stage::Waiting) {
-                return;
+                break;
             }
             stack.rfcomm_init();
             let status = stack.sdp_query_rfcomm(&open.addr, &open.uuid);
             if status == ERROR_CODE_SUCCESS {
                 open.stage = Stage::Sdp(None);
-                return;
+                break;
             }
-            self.fail_first(RfcommError::Refused(status));
+            self.end_first(stack, Err(RfcommError::Refused(status)));
+        }
+        self.arm_timer(stack);
+    }
+
+    fn arm_timer(&self, stack: &Stack) {
+        match self.opens.iter().filter(|o| o.reply.is_some()).map(|o| o.deadline).min() {
+            Some(d) => {
+                let ms = d.saturating_duration_since(Instant::now()).as_millis().max(1);
+                stack.timer_start(TIMER_RFCOMM, ms.min(u32::MAX as u128) as u32);
+            }
+            None => stack.timer_stop(TIMER_RFCOMM),
         }
     }
 
-    fn fail_first(&mut self, error: RfcommError) {
-        if let Some(open) = self.opens.pop_front() {
-            tracing::info!("RFCOMM: #{} not opened: {error:?}", open.id);
-            let _ = open.reply.send(Err(error));
+    /// TIMER_RFCOMM: opens past their deadline are answered. One that waits
+    /// is dropped (busy); the one that runs goes on to its end, and its
+    /// channel is closed if it opens.
+    pub fn on_timer(&mut self, stack: &Stack) {
+        let now = Instant::now();
+        self.opens.retain_mut(|o| {
+            if o.reply.is_none() || o.deadline > now {
+                return true;
+            }
+            if matches!(o.stage, Stage::Waiting) {
+                tracing::info!("RFCOMM: #{} waited behind other opens until its deadline", o.id);
+                o.answer(Err(RfcommError::Busy));
+                return false;
+            }
+            tracing::info!("RFCOMM: #{} not open by its deadline", o.id);
+            o.answer(Err(RfcommError::NoAnswer));
+            true
+        });
+        self.next(stack);
+    }
+
+    /// Ends the open that runs (the first): answers it if it was not
+    /// answered yet, else closes a channel it opened
+    fn end_first(&mut self, stack: &Stack, r: Result<(RfcommOpened, u16), RfcommError>) -> Option<Open> {
+        let mut open = self.opens.pop_front()?;
+        match r {
+            Ok((opened, cid)) => {
+                if open.answer(Ok(opened)) {
+                    return Some(open);
+                }
+                tracing::info!("RFCOMM: #{} opened after it was answered, closing it", open.id);
+                stack.rfcomm_disconnect(cid);
+            }
+            Err(e) => {
+                tracing::info!("RFCOMM: #{} not opened: {e:?}", open.id);
+                open.answer(Err(e));
+            }
         }
+        None
     }
 
     /// Source::SdpClient
@@ -189,6 +255,8 @@ impl Rfcomm {
                 let found = *found;
                 tracing::debug!("RFCOMM: #{} SDP query complete (0x{status:02X}), server channel {found:?}", open.id);
                 let result = match (status, found) {
+                    // Answered already: no channel for it
+                    _ if open.reply.is_none() => Err(RfcommError::NoAnswer),
                     (ERROR_CODE_SUCCESS, Some(server_channel)) => stack
                         .rfcomm_create_channel(&open.addr, server_channel)
                         .map(|cid| open.stage = Stage::Connecting(cid))
@@ -198,7 +266,7 @@ impl Rfcomm {
                     _ => Err(RfcommError::Refused(status)),
                 };
                 if let Err(e) = result {
-                    self.fail_first(e);
+                    self.end_first(stack, Err(e));
                     self.next(stack);
                 }
             }
@@ -210,13 +278,19 @@ impl Rfcomm {
     /// RFCOMM_DATA_PACKET, `channel` its RFCOMM cid)
     pub fn on_packet(&mut self, stack: &Stack, packet_type: u8, channel: u16, p: &[u8]) {
         if packet_type == RFCOMM_DATA_PACKET {
-            match self.channels.iter_mut().find(|c| c.cid == channel) {
-                Some(c) if c.closing => {}
-                Some(c) => {
-                    tracing::trace!("RFCOMM: #{} received {} bytes", c.id, p.len());
-                    (c.sink)(c.id, RfcommEvent::Data(p.to_vec()));
-                }
-                None => tracing::debug!("RFCOMM: {} bytes for unknown cid 0x{channel:04X}", p.len()),
+            let Some(i) = self.channels.iter().position(|c| c.cid == channel) else {
+                tracing::debug!("RFCOMM: {} bytes for unknown cid 0x{channel:04X}", p.len());
+                return;
+            };
+            let c = &mut self.channels[i];
+            if c.closing {
+                return;
+            }
+            tracing::trace!("RFCOMM: #{} received {} bytes", c.id, p.len());
+            if !(c.sink)(c.id, RfcommEvent::Data(p.to_vec())) {
+                let c = self.channels.remove(i);
+                tracing::info!("RFCOMM: #{} closed, its client does not take its data", c.id);
+                stack.rfcomm_disconnect(c.cid);
             }
             return;
         }
@@ -261,17 +335,17 @@ impl Rfcomm {
             tracing::debug!("RFCOMM: channel opened event for cid 0x{cid:04X} of no open (0x{status:02X})");
             return;
         }
-        let Some(open) = self.opens.pop_front() else { return };
-        if status != ERROR_CODE_SUCCESS {
-            tracing::info!("RFCOMM: #{} not opened: the device refused (0x{status:02X})", open.id);
-            let _ = open.reply.send(Err(RfcommError::Refused(status)));
-        } else if open.reply.send(Ok(RfcommOpened { id: open.id, mtu })).is_err() {
-            tracing::info!("RFCOMM: #{} opened after its client stopped waiting, closing it", open.id);
-            stack.rfcomm_disconnect(cid);
+        let id = self.opens.front().map_or(0, |o| o.id);
+        let r = if status == ERROR_CODE_SUCCESS {
+            Ok((RfcommOpened { id, mtu }, cid))
         } else {
-            tracing::info!("RFCOMM: #{} open (cid 0x{cid:04X}, frames up to {mtu} bytes)", open.id);
+            tracing::info!("RFCOMM: #{id} refused by the device (0x{status:02X})");
+            Err(RfcommError::Refused(status))
+        };
+        if let Some(open) = self.end_first(stack, r) {
+            tracing::info!("RFCOMM: #{id} open (cid 0x{cid:04X}, frames up to {mtu} bytes)");
             self.channels.push(Channel {
-                id: open.id,
+                id,
                 cid,
                 addr: open.addr,
                 mtu: mtu.max(1),
@@ -287,7 +361,7 @@ impl Rfcomm {
 
     pub fn send(&mut self, stack: &Stack, id: u32, data: &[u8]) -> Result<(), RfcommError> {
         let c = self.channels.iter_mut().find(|c| c.id == id && !c.closing).ok_or(RfcommError::NoChannel)?;
-        if c.queued_bytes + data.len() > MAX_QUEUED_BYTES {
+        if c.queued_bytes + data.len() > MAX_SEND_BYTES {
             tracing::info!("RFCOMM: #{id} send queue full ({} bytes), {} bytes refused", c.queued_bytes, data.len());
             return Err(RfcommError::Busy);
         }
@@ -315,8 +389,9 @@ impl Rfcomm {
         Ok(())
     }
 
-    /// The A2DP connection to `addr` ended: its channels go with it, so that
-    /// the link goes down as it does without them
+    /// The A2DP connection to `addr` ended: its channels and opens go with
+    /// it, so that the link goes down as it does without them. An open in
+    /// progress is answered now and closes its channel if one opens.
     pub fn close_device(&mut self, stack: &Stack, addr: [u8; 6]) {
         let (gone, kept) = std::mem::take(&mut self.channels).into_iter().partition(|c| c.addr == addr);
         self.channels = kept;
@@ -327,12 +402,21 @@ impl Rfcomm {
                 (c.sink)(c.id, RfcommEvent::Closed(RfcommCloseReason::Disconnected));
             }
         }
+        self.opens.retain_mut(|o| {
+            if o.addr != addr {
+                return true;
+            }
+            tracing::info!("RFCOMM: #{} not opened, the A2DP connection ended", o.id);
+            o.answer(Err(RfcommError::NotConnected));
+            !matches!(o.stage, Stage::Waiting)
+        });
+        self.next(stack);
     }
 
     /// The run loop exits: every channel and open ends
     pub fn stop(&mut self) {
-        for open in self.opens.drain(..) {
-            let _ = open.reply.send(Err(RfcommError::NotConnected));
+        for mut open in self.opens.drain(..) {
+            open.answer(Err(RfcommError::NotConnected));
         }
         for mut c in self.channels.drain(..) {
             tracing::info!("RFCOMM: #{} closed, the stack stops", c.id);
@@ -344,20 +428,21 @@ impl Rfcomm {
 }
 
 impl Channel {
-    /// Sends the next queued frame, or asks for the moment it can be sent
+    /// Sends the queued frames while RFCOMM takes them, then asks for the
+    /// moment it can take more
     fn send_next(&mut self, stack: &Stack) {
         if self.can_send_asked {
             return;
         }
-        if let Some(frame) = self.queue.front() {
+        while let Some(frame) = self.queue.front() {
             let status = stack.rfcomm_send(self.cid, frame);
-            if status == ERROR_CODE_SUCCESS {
-                self.queued_bytes -= frame.len();
-                self.queue.pop_front();
-            } else {
+            if status != ERROR_CODE_SUCCESS {
                 // No credits or buffers now: once it can
                 tracing::trace!("RFCOMM: #{} send deferred (0x{status:02X})", self.id);
+                break;
             }
+            self.queued_bytes -= frame.len();
+            self.queue.pop_front();
         }
         if !self.queue.is_empty() {
             self.can_send_asked = stack.rfcomm_request_can_send_now(self.cid) == ERROR_CODE_SUCCESS;

@@ -4,6 +4,7 @@ export type RfcommClosed = { channel_id: number,
 /**
  * "remote": the device closed it or the link went down;
  * "disconnected": the A2DP connection ended; "stopped": the Bluetooth
- * stack stopped
+ * stack stopped; "overflow": this connection did not read the data
+ * (over 1 MiB waiting)
  */
 reason: string, };

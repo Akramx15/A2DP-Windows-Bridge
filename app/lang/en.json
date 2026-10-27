@@ -681,6 +681,7 @@
   "ipc.error.rfcomm_open_failed": "The RFCOMM channel could not be opened (%s)",
   "ipc.error.rfcomm_no_channel": "No such RFCOMM channel",
   "ipc.error.rfcomm_busy": "The RFCOMM channel is busy, try again",
+  "ipc.error.rfcomm_timeout": "No answer from the RFCOMM channel in time; it may or may not have been done. Open the channel again",
   "tray.open": "Open A2DP Windows Bridge",
   "tray.disconnect": "Disconnect",
   "error.profile_save": "The settings could not be saved",

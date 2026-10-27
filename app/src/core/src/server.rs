@@ -77,7 +77,7 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
     let mut log_sub: Option<crate::logging::Subscription> = None;
     // RFCOMM channels this client opened: their events and the answers to
     // its rfcomm requests, in order
-    let (rfcomm_tx, mut rfcomm_rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (rfcomm_tx, mut rfcomm_rx) = mpsc::unbounded_channel::<crate::rfcomm::Queued>();
     let rfcomm = crate::rfcomm::Channels::new(state.clone(), client.clone(), rfcomm_tx);
     let result = loop {
         tokio::select! {
@@ -151,8 +151,9 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
                     Err(broadcast::error::RecvError::Closed) => break Ok(()),
                 }
             }
-            Some(m) = rfcomm_rx.recv() => {
-                if let Err(e) = write_frame(&mut wr, &m).await { break Err(e); }
+            Some(q) = rfcomm_rx.recv() => {
+                if let Err(e) = write_frame(&mut wr, &q.msg).await { break Err(e); }
+                rfcomm.written(&q);
             }
             Some(line) = log_rx.recv() => {
                 let (rev, _) = state.snapshot();

@@ -1159,22 +1159,29 @@ pub enum Method {
     ReceiverStatus,
     /// Opens an RFCOMM channel to the service `uuid` ("0000xxxx-0000-1000-
     /// 8000-00805F9B34FB", or "xxxx" on the Bluetooth base UUID) of the
-    /// device at `address`, over the link the core has to it: the core
-    /// never connects or pairs for this (error rfcomm.not_connected). Its
-    /// data comes as rfcomm_data events to this connection only, which
-    /// owns the channel; it closes when this connection ends, the A2DP
-    /// connection ends (rfcomm_closed "disconnected"), or the device
-    /// closes it ("remote"). -> RfcommOpened. Errors: rfcomm.not_connected,
-    /// rfcomm.service_not_found, rfcomm.open_failed, rfcomm.busy.
+    /// device at `address`, the device being streamed to, over the link
+    /// the core has to it: the core never connects or pairs for this
+    /// (error rfcomm.not_connected). Its data comes as rfcomm_data events
+    /// to this connection only, which owns the channel; it closes when this
+    /// connection ends, the A2DP connection ends (rfcomm_closed
+    /// "disconnected"), or the device closes it ("remote"). Answered within
+    /// 20 s, also behind other opens: wait at least 25 s. -> RfcommOpened.
+    /// Errors: rfcomm.not_connected, rfcomm.service_not_found,
+    /// rfcomm.open_failed (also when out of time: a channel that opens
+    /// later is closed), rfcomm.busy (too many channels, or out of time
+    /// behind other opens).
     #[serde(rename = "rfcomm.open")]
     RfcommOpen { address: String, uuid: String },
     /// Sends `data` (base64) on a channel of this connection, in frames of
-    /// at most its `mtu`, in the order of the requests -> null. Errors:
-    /// rfcomm.no_channel, rfcomm.busy (send queue full).
+    /// at most its `mtu`, in the order of the requests -> null. At most
+    /// 64 KiB at once (else rfcomm.bad_request). Errors: rfcomm.no_channel,
+    /// rfcomm.busy (send queue full: not sent), rfcomm.timeout (sent or
+    /// not, unknown: not to be repeated; reopen the channel).
     #[serde(rename = "rfcomm.send")]
     RfcommSend { channel_id: u32, data: String },
     /// Closes a channel of this connection after the data sent before; no
-    /// rfcomm_closed follows -> null. Error rfcomm.no_channel.
+    /// rfcomm_closed follows -> null. Errors: rfcomm.no_channel,
+    /// rfcomm.timeout.
     #[serde(rename = "rfcomm.close")]
     RfcommClose { channel_id: u32 },
     /// -> UpdateState; error update.failed (update.error) when the check
@@ -1442,7 +1449,8 @@ pub struct RfcommClosed {
     pub channel_id: u32,
     /// "remote": the device closed it or the link went down;
     /// "disconnected": the A2DP connection ended; "stopped": the Bluetooth
-    /// stack stopped
+    /// stack stopped; "overflow": this connection did not read the data
+    /// (over 1 MiB waiting)
     pub reason: String,
 }
 

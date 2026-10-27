@@ -23,7 +23,7 @@ use crate::le::core::LeCore;
 use crate::le::iso_send::TIMER_ISO;
 use crate::link_keys::FileLinkKeyStore;
 use crate::media::{MediaPacket, RTP_HEADER_SIZE};
-use crate::rfcomm::Rfcomm;
+use crate::rfcomm::{Rfcomm, TIMER_RFCOMM};
 use crate::shared::Shared;
 use crate::stats::LinkStats;
 use crate::{AfhClassification, ConnectFailure, Controls, DiscoveredDevice, HostEvent, InitFailure, MediaKey};
@@ -1965,6 +1965,7 @@ impl App for HostApp {
                 stack.timer_start(TIMER_PLAYBACK, PLAYBACK_TICK_MS);
             }
             TIMER_RTK_VERIFY => self.verify_realtek_download(stack),
+            TIMER_RFCOMM => self.rfcomm.on_timer(stack),
             TIMER_LE => {
                 if let Some(le) = self.le.as_mut() {
                     le.on_timer(stack);
