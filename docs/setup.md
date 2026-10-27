@@ -29,7 +29,7 @@ Each [release](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/la
 - **Installer** (`A2DPWB-<version>-win64-setup.exe`): installs for the current user without administrator rights, adds a Start menu entry (**A2DP Windows Bridge**) and an uninstaller, and installs the Microsoft Edge WebView2 Runtime if it is missing (Windows 11 includes it). Updates install themselves from the app (**Settings > Updates > Update now**)
 - **Portable** (`A2DPWB-<version>-win64-portable.zip`): extract anywhere and run `a2dpwb.exe`. Keep the three programs (`a2dpwb.exe`, `a2dpwb-core.exe`, `a2dpwb-driver.exe`) together. The portable copy only tells you about updates; it needs the WebView2 Runtime installed
 
-Both keep settings, profiles, link keys and firmware in `%APPDATA%\A2DPWB`, so you can switch between them. Uninstalling deletes that folder unless you turn **Delete user data** off.
+Both keep settings, profiles, link keys and firmware in `%APPDATA%\A2DPWB`, so you can switch between them. Uninstalling deletes that folder unless you turn **Delete user data** off (a silent uninstall keeps it).
 
 ### Upgrading from v1 {#from-v1}
 
