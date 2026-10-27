@@ -6,9 +6,17 @@
 //!    [`ServerMessage::Snapshot`] of its whole state with a revision.
 //! 3. Then [`ServerMessage::Event`]s, each replacing one part of the state,
 //!    with the next revision. A gap in the revisions means a lost event: the
-//!    client asks for a new snapshot ([`Method::StateSnapshot`]).
+//!    client asks for a new snapshot ([`Method::StateSnapshot`]). Events
+//!    that are not state (link, log, receiver, rfcomm_data, rfcomm_closed)
+//!    carry the current revision: they are not compared with it.
 //! 4. Requests ([`ClientMessage::Request`]) are answered by a
-//!    [`ServerMessage::Response`] with the same id.
+//!    [`ServerMessage::Response`] with the same id. A request this core
+//!    cannot read (a method it does not know, or bad parameters) is
+//!    answered with the error `ipc.bad_request`.
+//!
+//! Additions within protocol 1 are listed in the Welcome's `features`
+//! ([`FEATURES`]). Older cores close the connection on a request they do
+//! not know, so a client checks the list before using one.
 //!
 //! Errors and status texts are translation keys of app/lang ([`Msg`]): the
 //! UI translates them.
@@ -17,6 +25,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub const PROTOCOL_VERSION: u32 = 1;
+
+/// The Welcome's `features`: "rfcomm" for rfcomm.open / send / close and
+/// their events (2.0.2)
+pub const FEATURES: &[&str] = &["rfcomm"];
 
 /// A message of app/lang: key and printf-style arguments
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
@@ -1481,6 +1493,10 @@ pub enum ServerMessage {
         protocol: u32,
         /// "a2dpwb-core/2.0.0"
         server: String,
+        /// Additions to the protocol this core has ([`FEATURES`]): a client
+        /// checks for one before using it. Absent from older cores.
+        #[serde(default)]
+        features: Vec<String>,
     },
     Reject {
         reason: String,
