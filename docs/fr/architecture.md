@@ -69,7 +69,8 @@ flowchart TB
   relancer ouvre la fenêtre.
 - **La zone de notification appartient au cœur.** Son menu contextuel (ouvrir, les 10
   premiers profils, déconnecter, quitter) s'ouvre immédiatement, sans démarrer la fenêtre. Un
-  clic gauche démarre le volet de la fenêtre.
+  clic gauche démarre le volet de la fenêtre (ou la fenêtre principale, selon les
+  Paramètres).
 - **La fenêtre ne fait qu'afficher.** Elle reçoit un instantané de l'état du cœur
   puis ses modifications ; la fermer, ou un plantage de la fenêtre, n'arrête pas
   l'audio. Fermer une fenêtre ne fait que la masquer : la rouvrir depuis la zone de

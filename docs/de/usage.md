@@ -25,7 +25,7 @@ Starten Sie **A2DP Windows Bridge** über das Startmenü (oder `a2dpwb.exe`). Da
 - Eine Karte für jedes gespeicherte Audiogerät, nebeneinander: sein Zustand, der Akkustand und, beim streamenden Gerät, der verwendete Codec mit seiner Bitrate. Wird ein anderer Codec als der gewählte verwendet, zeigt das Codec-Abzeichen, welcher und warum
 - **Verbinden** / **Trennen** unter jeder Karte. Es streamt jeweils ein Gerät: **Verbinden** bei einem anderen Gerät beendet den laufenden Stream und verbindet dieses
 - **Lautstärke**: die Lautstärke der Kopfhörer (siehe [Lautstärke](#volume))
-- Die Aufnahmequelle des verwendeten Geräts (mit **Weitere Aufnahmeeinstellungen**) und die Verbindungsqualität mit einem kleinen Diagramm
+- Für das verwendete Gerät die Verbindungsqualität und die **Verbindungslatenz**, jeweils mit einem kleinen Diagramm: wie lange das Audio in der Sendewarteschlange von A2DPWB wartet, bevor es über Bluetooth hinausgeht (die Kopfhörer fügen ihren eigenen Puffer hinzu, den A2DPWB nicht sehen kann). Sie wächst, wenn die Funkverbindung nicht mithalten kann. Die Aufnahmequelle wird unter **Audiogeräte** gewählt; solange eine als Aufnahmequelle festgelegte Anwendung noch nicht läuft, zeigt die Karte des Geräts das an
 - Ein Fehler wird mit seiner Ursache angezeigt und, sofern vorhanden, mit der Schaltfläche, die ihn behebt (**Durch WinUSB-Treiber ersetzen**, **Downloadseite öffnen**, **Bluetooth neu starten**, **Erneut versuchen**, **Codecs**, **Audiogeräte**, ...)
 
 Die Seitenleiste zeigt dasselbe für jedes Gerät auf jeder Seite.
@@ -34,6 +34,7 @@ Die Seitenleiste zeigt dasselbe für jedes Gerät auf jeder Seite.
 
 Der Codec jedes gespeicherten Audiogeräts, ein Abschnitt pro Gerät (Name, Adresse, Markierungen **Gekoppelt** / **Audio**) mit seinen Codec-Karten: **Automatisch** (der beste Codec, den das Gerät unterstützt) und die Codecs, die das Gerät bei seiner letzten Verbindung angeboten hat, jeweils mit drei Balken (Klangqualität, niedrige Latenz, Stabilität). Ein Klick auf eine Karte wählt den Codec dieses Geräts; er wird sofort gespeichert, und ein streamendes Gerät verbindet sich damit erneut.
 
+- Wird für das streamende Gerät ein anderer Codec gewählt, verbindet es sich mit diesem erneut. Die Karten warten danach 3 Sekunden (**Der Codec wird gewechselt. Einen Moment warten, bevor ein anderer gewählt wird.**) bis zur nächsten Wahl, damit eine schnelle Folge von Klicks nicht mehrere Verbindungen übereinander startet
 - **Codecs ausblenden, die das Audiogerät nicht unterstützt** (standardmäßig aktiviert): Codecs, die ein Gerät nicht angeboten hat, werden weggelassen (die Anzahl der ausgeblendeten steht in Klammern). Vor der ersten Verbindung eines Geräts werden alle angezeigt
 - **Automatisch den unterstützten Codec mit der höchsten Qualität wählen** (eine Einstellung für alle Geräte, oben auf der Seite; standardmäßig aktiviert): Jedes Gerät verwendet den unterstützten Codec mit der höchsten Klangqualität, mit seinen besten Einstellungen: hohe Qualität, 24 Bit, wo der Codec es überträgt, und die höchste Abtastrate, die das Gerät meldet (z. B. LDAC 96 kHz, aptX Adaptive 96 kHz bei einem R2-Gerät, LHDC V5 bis 192 kHz; die Rate von Windows wird umgerechnet); die Karten sind schreibgeschützt und zeigen den verwendeten (oder von der Automatik gewählten) Codec. Ausgeschaltet wählen Sie für jedes Gerät Codec und Einstellungen selbst (ein Gerät ohne Wahl behält die der Automatik). Der für ein Gerät gewählte Codec bleibt erhalten, solange die Automatik an ist. Hatten Einstellungen vor 2.0.2 für ein Gerät einen Codec gewählt, beginnt sie ausgeschaltet
 - **Reihenfolge der Automatik…** (unter dem Schalter): öffnet die Liste der Codecs in der Reihenfolge, in der die Automatik sie wählt (standardmäßig höchste Klangqualität zuerst). Codecs ziehen oder mit den Pfeilen verschieben; **Zurück zur Reihenfolge nach Klangqualität** setzt sie zurück. Die Automatik verwendet den ersten Codec der Liste, den das Gerät unterstützt, und ein gewählter, nicht unterstützter Codec weicht auf den nächsten darunter aus. Die Karten folgen dieser Reihenfolge. Ändert sich dadurch der Codec eines laufenden Streams, verbindet er sich neu
@@ -81,7 +82,7 @@ Mit **Einstellungen > Entwicklermodus** hat die Diagnose zusätzlich eine Regist
 | Abschnitt | Einstellungen |
 |:----------|:--------------|
 | Darstellung | Sprache, Design (System / Hell / Dunkel) |
-| Start | **Mit Windows starten** und **Im Infobereich starten** (siehe [Mit Windows starten](#autostart)), **In den Infobereich minimieren** (siehe [Infobereich und Flyout](#tray)) |
+| Start | **Mit Windows starten** und **Im Infobereich starten** (siehe [Mit Windows starten](#autostart)), **In den Infobereich minimieren** und **Klick auf das Infobereich-Symbol öffnet das Hauptfenster** (siehe [Infobereich und Flyout](#tray)) |
 | Updates | **Nach Updates suchen**, **Beim Start nach Updates suchen**, **Vorabversionen bei der Updatesuche einbeziehen** (bietet auch Betaversionen an), **Jetzt aktualisieren** (siehe [Updates](#updates)) |
 | Erweitert | **Entwicklermodus** (fügt der Diagnose den Empfängertest, den Audiogeräten die **Max. Mediapaketgröße** und dem Protokoll mehr Details hinzu; kein Neustart nötig), **Einstellungsordner** mit **Konfigurationsordner öffnen**, **Einrichtung ausführen** |
 | Info über A2DPWB | Version, Lizenz, Lizenzen von Drittanbietern, **A2DPWB beenden** |
@@ -94,7 +95,7 @@ Der erste Start (noch kein Profil oder kein Adapter mit WinUSB) öffnet **A2DPWB
 
 A2DPWB läuft im Infobereich weiter, mit oder ohne Fenster:
 
-- **Linksklick** auf das Symbol im Infobereich öffnet das Flyout: das Gerät und sein Zustand, **Verbinden** / **Trennen**, die Lautstärke, die Geräteauswahl, der Codec, die Verbindungsqualität und **App öffnen**. Esc oder ein Klick an eine andere Stelle blendet es aus. Braucht ein Fehler eine Seite des Hauptfensters (Codecs, Audiogeräte, den Adapter), öffnet seine Schaltfläche das Fenster an dieser Stelle
+- **Linksklick** auf das Symbol im Infobereich öffnet das Flyout: das Gerät und sein Zustand, **Verbinden** / **Trennen**, die Lautstärke, die Geräteauswahl, der Codec, die Verbindungsqualität und **App öffnen**. Es ist genau so hoch wie sein Inhalt. Esc oder ein Klick an eine andere Stelle blendet es aus. Braucht ein Fehler eine Seite des Hauptfensters (Codecs, Audiogeräte, den Adapter), öffnet seine Schaltfläche das Fenster an dieser Stelle. Ist **Einstellungen > Klick auf das Infobereich-Symbol öffnet das Hauptfenster** eingeschaltet (standardmäßig aus), öffnet ein Linksklick stattdessen das Hauptfenster
 - **Rechtsklick** öffnet das Menü: **A2DPWB öffnen**, die ersten 10 Geräte nach ihrem Profil, „*Gerät* | *Codec*“ (das streamende mit Häkchen; ein Klick verbindet es), **Trennen** und **Beenden**. Das Menü öffnet sich sofort, ohne das Fenster zu starten
 - Der Tooltip zeigt, ob A2DPWB inaktiv ist oder streamt
 

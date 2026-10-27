@@ -69,7 +69,8 @@ flowchart TB
   ventana.
 - **La bandeja pertenece al núcleo.** Su menú de clic derecho (abrir, los 10 primeros
   perfiles, desconectar, salir) se abre al instante, sin iniciar la ventana. Un
-  clic izquierdo inicia el panel desplegable de la ventana.
+  clic izquierdo inicia el panel desplegable de la ventana (o la ventana
+  principal, según la Configuración).
 - **La ventana solo muestra.** Recibe una instantánea del estado del núcleo
   y después los cambios; cerrarla, o que la ventana se bloquee, no detiene
   el audio. Cerrar una ventana solo la oculta, así que volver a abrirla desde la bandeja
