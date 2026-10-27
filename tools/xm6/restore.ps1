@@ -94,6 +94,12 @@ if (-not $SkipClone) {
         if ($LASTEXITCODE) { Fail 'checking out the feature branch failed' }
     }
     else { Write-Host "  app clone already present" -ForegroundColor Yellow }
+
+    Step 'initialising the codec submodules'
+    # libldac, libopenaptx, btstack, fdk-aac, lhdcv5-enc and opus are submodules:
+    # without them the Rust build stops at the first missing include.
+    git -C $forkDir submodule update --init --recursive
+    if ($LASTEXITCODE) { Fail 'git submodule update failed' }
 }
 
 $prebuilt = Join-Path $engineDir 'engine\win-port\prebuilt\stages'
