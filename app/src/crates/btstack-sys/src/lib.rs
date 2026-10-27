@@ -76,6 +76,11 @@ pub enum Source {
     /// HFP audio gateway events (HCI_EVENT_HFP_META), after
     /// [`Stack::hfp_ag_init`]
     Hfp,
+    /// RFCOMM client channels ([`Stack::rfcomm_create_channel`]): their
+    /// events, and their data (RFCOMM_DATA_PACKET, channel = RFCOMM cid)
+    Rfcomm,
+    /// Results of [`Stack::sdp_query_rfcomm`]
+    SdpClient,
 }
 
 impl Source {
@@ -91,6 +96,8 @@ impl Source {
             8 => Source::AttServer,
             9 => Source::Iso,
             10 => Source::Hfp,
+            11 => Source::Rfcomm,
+            12 => Source::SdpClient,
             _ => Source::Hci,
         }
     }

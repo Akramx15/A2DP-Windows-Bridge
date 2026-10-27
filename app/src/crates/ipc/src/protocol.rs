@@ -963,6 +963,12 @@ pub enum Event {
     /// Subscription (diag.subscribe receiver): the receiver test, once a
     /// second and on every change
     Receiver(Box<ReceiverState>),
+    /// Data an RFCOMM channel received (to the connection that opened it
+    /// only, not part of the state)
+    RfcommData(RfcommData),
+    /// An RFCOMM channel closed without its connection's rfcomm.close (to
+    /// that connection only); its last event
+    RfcommClosed(RfcommClosed),
     /// The core is shutting down
     Bye,
 }
@@ -1151,6 +1157,26 @@ pub enum Method {
     /// -> ReceiverState
     #[serde(rename = "receiver.status")]
     ReceiverStatus,
+    /// Opens an RFCOMM channel to the service `uuid` ("0000xxxx-0000-1000-
+    /// 8000-00805F9B34FB", or "xxxx" on the Bluetooth base UUID) of the
+    /// device at `address`, over the link the core has to it: the core
+    /// never connects or pairs for this (error rfcomm.not_connected). Its
+    /// data comes as rfcomm_data events to this connection only, which
+    /// owns the channel; it closes when this connection ends, the A2DP
+    /// connection ends (rfcomm_closed "disconnected"), or the device
+    /// closes it ("remote"). -> RfcommOpened. Errors: rfcomm.not_connected,
+    /// rfcomm.service_not_found, rfcomm.open_failed, rfcomm.busy.
+    #[serde(rename = "rfcomm.open")]
+    RfcommOpen { address: String, uuid: String },
+    /// Sends `data` (base64) on a channel of this connection, in frames of
+    /// at most its `mtu`, in the order of the requests -> null. Errors:
+    /// rfcomm.no_channel, rfcomm.busy (send queue full).
+    #[serde(rename = "rfcomm.send")]
+    RfcommSend { channel_id: u32, data: String },
+    /// Closes a channel of this connection after the data sent before; no
+    /// rfcomm_closed follows -> null. Error rfcomm.no_channel.
+    #[serde(rename = "rfcomm.close")]
+    RfcommClose { channel_id: u32 },
     /// -> UpdateState; error update.failed (update.error) when the check
     /// failed
     #[serde(rename = "app.check_update")]
@@ -1393,6 +1419,33 @@ pub struct ReceiverState {
     pub stream_starts: u32,
 }
 
+/// rfcomm.open's result
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct RfcommOpened {
+    pub channel_id: u32,
+    /// Largest frame the channel sends and receives (bytes)
+    pub mtu: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct RfcommData {
+    pub channel_id: u32,
+    /// base64 (standard alphabet, padded)
+    pub data: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct RfcommClosed {
+    pub channel_id: u32,
+    /// "remote": the device closed it or the link went down;
+    /// "disconnected": the A2DP connection ended; "stopped": the Bluetooth
+    /// stack stopped
+    pub reason: String,
+}
+
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
@@ -1615,6 +1668,44 @@ mod tests {
         let j = serde_json::to_value(&e).unwrap();
         assert_eq!(j, serde_json::json!({"type": "event", "rev": 4, "event": {"kind": "le_scanning", "value": true}}));
         assert_eq!(serde_json::from_value::<ServerMessage>(j).unwrap(), e);
+    }
+
+    /// RFCOMM passthrough: the requests and the per-connection events
+    #[test]
+    fn rfcomm_wire_format() {
+        let m = |j: serde_json::Value| serde_json::from_value::<Method>(j).unwrap();
+        assert_eq!(
+            m(serde_json::json!({"method": "rfcomm.open", "params": {"address": "A", "uuid": "1101"}})),
+            Method::RfcommOpen { address: "A".into(), uuid: "1101".into() }
+        );
+        assert_eq!(
+            m(serde_json::json!({"method": "rfcomm.send", "params": {"channel_id": 3, "data": "AQI="}})),
+            Method::RfcommSend { channel_id: 3, data: "AQI=".into() }
+        );
+        assert_eq!(
+            m(serde_json::json!({"method": "rfcomm.close", "params": {"channel_id": 3}})),
+            Method::RfcommClose { channel_id: 3 }
+        );
+        assert_eq!(
+            serde_json::to_value(RfcommOpened { channel_id: 3, mtu: 990 }).unwrap(),
+            serde_json::json!({"channel_id": 3, "mtu": 990})
+        );
+        let e = ServerMessage::Event {
+            rev: 5,
+            event: Box::new(Event::RfcommData(RfcommData { channel_id: 3, data: "AQI=".into() })),
+        };
+        let j = serde_json::to_value(&e).unwrap();
+        assert_eq!(
+            j,
+            serde_json::json!({"type": "event", "rev": 5,
+                "event": {"kind": "rfcomm_data", "value": {"channel_id": 3, "data": "AQI="}}})
+        );
+        assert_eq!(serde_json::from_value::<ServerMessage>(j).unwrap(), e);
+        let closed = Event::RfcommClosed(RfcommClosed { channel_id: 3, reason: "remote".into() });
+        assert_eq!(
+            serde_json::to_value(&closed).unwrap(),
+            serde_json::json!({"kind": "rfcomm_closed", "value": {"channel_id": 3, "reason": "remote"}})
+        );
     }
 
     #[test]

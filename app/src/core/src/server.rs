@@ -75,10 +75,15 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
     // recv never ends
     let (log_tx, mut log_rx) = mpsc::channel::<ipc::LogLine>(1024);
     let mut log_sub: Option<crate::logging::Subscription> = None;
+    // RFCOMM channels this client opened: their events and the answers to
+    // its rfcomm requests, in order
+    let (rfcomm_tx, mut rfcomm_rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let rfcomm = crate::rfcomm::Channels::new(state.clone(), client.clone(), rfcomm_tx);
     let result = loop {
         tokio::select! {
             msg = read_frame::<_, ClientMessage>(&mut rd) => {
                 match msg {
+                    Ok(Some(ClientMessage::Request { id, call })) if rfcomm.request(id, &call) => {}
                     Ok(Some(ClientMessage::Request { id, call })) => {
                         if let Method::DiagSubscribe { logs: l, link: k, receiver: r } = &call {
                             log_sub = l.map(|level| {
@@ -146,6 +151,9 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
                     Err(broadcast::error::RecvError::Closed) => break Ok(()),
                 }
             }
+            Some(m) = rfcomm_rx.recv() => {
+                if let Err(e) = write_frame(&mut wr, &m).await { break Err(e); }
+            }
             Some(line) = log_rx.recv() => {
                 let (rev, _) = state.snapshot();
                 let m = ServerMessage::Event { rev, event: Box::new(Event::Log(line)) };
@@ -154,6 +162,7 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
         }
     };
     drop(log_sub);
+    drop(rfcomm);
     set_subscribed(&state.link_subscribers, &mut link, false);
     set_subscribed(&state.receiver_subscribers, &mut receiver, false);
     tracing::info!("IPC: {client} disconnected");
