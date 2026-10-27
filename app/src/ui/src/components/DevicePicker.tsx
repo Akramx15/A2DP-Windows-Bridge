@@ -10,10 +10,9 @@
 import { createMemo, createSignal, createUniqueId, For, Show, type JSX } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
 import { t } from "../i18n";
-import type { AudioDevice, Device } from "../ipc/types";
+import type { Device } from "../ipc/types";
 import { parseAddress } from "../lib/format";
 import {
-  defaultCapture,
   defaultProfileName,
   deviceKey,
   deviceProfile,
@@ -27,12 +26,6 @@ import { Icon } from "./Icon";
 
 /** How long a scan looks for devices (issue #86: 10 s found too few) */
 export const SCAN_SECONDS = 30;
-
-/** Windows' audio devices (none when they cannot be read), for the capture
- *  source of a device's first profile */
-export function audioDevices(app: AppContext): Promise<AudioDevice[]> {
-  return app.core.request("audio.devices").catch((): AudioDevice[] => []);
-}
 
 export function sortDevices(devices: readonly Device[]): Device[] {
   // Saved first, then audio devices by signal; other kinds (keyboards...) last
@@ -68,9 +61,8 @@ export async function saveWithProfile(app: AppContext, address: string, name: st
   const base = defaultProfileName(saved, address, false, t("codec.auto"));
   let profileName = base;
   for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
-  // Captured from a virtual device if one is installed (issue #86)
-  const capture = defaultCapture(await audioDevices(app));
-  const profile = normalizeProfile({ ...newProfile(), ...capture, name: profileName, device_address: address, device_name: saved });
+  // Captured by System Loopback, as every new device (issue #86)
+  const profile = normalizeProfile({ ...newProfile(), name: profileName, device_address: address, device_name: saved });
   const made = await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
   return made ? profileName : null;
 }
@@ -131,6 +123,8 @@ export function DevicePicker(props: {
       app.core.request("device.scan", { seconds: SCAN_SECONDS }),
     );
   };
+  // The devices show up as they answer: the user stops once theirs is there
+  const stopScan = () => app.run(() => app.core.request("device.scan_stop"));
   const name = "device-pick";
   const uid = createUniqueId();
 
@@ -314,8 +308,11 @@ export function DevicePicker(props: {
           </Button>
         }
       >
-        <Button icon="search" busy={scanning()} onClick={scan}>
-          {scanning() ? t("connection.scanning") : t("connection.scan")}
+        <Button
+          icon={scanning() ? "stop" : "search"}
+          onClick={() => void (scanning() ? stopScan() : scan())}
+        >
+          {scanning() ? t("connection.scan_stop") : t("connection.scan")}
         </Button>
       </Show>
     </div>

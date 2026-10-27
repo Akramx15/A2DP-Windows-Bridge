@@ -78,7 +78,7 @@ WinUSB 모드의 USB Bluetooth 어댑터를 사용하여 시스템 오디오를 
 **기본 aptX만 필요하십니까?** Windows 10의 기본 Bluetooth 스택은 이미 기본 aptX를 지원하므로(aptX HD, aptX LL, aptX Adaptive는 미지원) 이 경우 A2DPWB가 필요하지 않습니다. A2DPWB는 주로 LDAC, aptX HD, aptX Low Latency에 유용합니다.
 
 {: .note }
-**aptX Adaptive 정보.** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 MIT 라이선스 순수 Rust 인코더로 인코딩하며, 이 인코더의 테이블은 개발자들이 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성한 것입니다. 48 kHz 스테레오(44.1 kHz를 요청하면 48 kHz로 캡처), 24비트입니다. R1 싱크에서는 높음 427 kbps, 표준 364, 모바일 318, 저지연 265 kbps이며(R2 싱크는 별도의 표), 높음에서는 ABR을 사용합니다. 설정에서 96 kHz를 선택하고 헤드폰이 96 kHz를 알리는 R2 싱크이면 96 kHz(높음 646 kbps, 표준 340, 모바일 255)를 사용하며, 저지연에서는 사용하지 않고 그 밖의 경우에는 48 kHz입니다. 96 kHz는 A2DPWB에서도 업스트림에서도 에뮬레이터로만 시험했습니다. 자동 선택은 LHDC V5, LDAC 다음으로 이를 고르며, **코덱** 화면에서 또는 `-c aptxad`로 직접 선택할 수도 있습니다. 한 사용자가 2.0.2-beta.6에서 EarFun Air Pro 4+로 48 kHz 동작을 확인했으며, 기본 aptX만큼 안정적이었습니다([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). 업스트림은 Linux에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 동작한다고 보고합니다. [aptX 계열과 aptX Adaptive](usage#aptx-compatibility)를 참조하십시오.
+**aptX Adaptive 정보.** [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux)의 MIT 라이선스 순수 Rust 인코더로 인코딩하며, 이 인코더의 테이블은 개발자들이 출시된 Qualcomm 바이너리와 무선 캡처로부터 재구성한 것입니다. 48 kHz 스테레오(44.1 kHz를 요청하면 48 kHz로 캡처), 24비트입니다. R1 싱크에서는 높음 427 kbps, 표준 364, 모바일 318, 저지연 265 kbps이며(R2 싱크는 별도의 표), 높음에서는 ABR을 사용합니다. 설정에서 96 kHz를 선택하고 헤드폰이 96 kHz를 알리는 R2 싱크이면 96 kHz(높음 646 kbps, 표준 340, 모바일 255)를 사용하며, 저지연에서는 사용하지 않고 그 밖의 경우에는 48 kHz입니다. 96 kHz도 실제 헤드폰으로 확인되었습니다([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). 자동은 48 kHz입니다. 자동 선택은 LHDC V5, LDAC 다음으로 이를 고르며, **코덱** 화면에서 또는 `-c aptxad`로 직접 선택할 수도 있습니다. 한 사용자가 2.0.2-beta.6에서 EarFun Air Pro 4+로 48 kHz 동작을 확인했으며, 기본 aptX만큼 안정적이었습니다([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). 업스트림은 Linux에서 Bose QuietComfort Ultra(1세대)와 B&W Px7 S2e로 동작한다고 보고합니다. [aptX 계열과 aptX Adaptive](usage#aptx-compatibility)를 참조하십시오.
 
 ## 지원 플랫폼 {#platform-support}
 
@@ -146,7 +146,7 @@ A2DPWB는 Windows Bluetooth 스택을 완전히 우회합니다. [BTstack](https
 - **연결 품질과 AFH**: 전송 내용, RSSI, 사용 중인 채널을 표시하고, 피해야 할 Wi-Fi 채널을 어댑터에 알립니다 ([사용법](usage#link-quality) 참조)
 - **헤드폰 제어 (AVRCP)**: 헤드폰 및 Windows 볼륨과 연동되는 볼륨 슬라이더, 헤드폰의 재생/일시 정지, 다음 곡, 이전 곡 버튼으로 PC 재생 제어 ([사용법](usage#headphone-buttons) 참조)
 - **장치별 설정**: 오디오 장치마다 코덱(고유 설정 포함)과 캡처 소스를 두며, 홈에 나란히 표시되고 트레이에서 바로 연결
-- **업데이트**: 설치된 버전은 스트리밍이 중지된 후 스스로 업데이트됩니다 ([사용법](usage#updates) 참조)
+- **업데이트**: 설치된 버전은 오디오 장치의 연결이 끊긴 후 스스로 업데이트됩니다 ([사용법](usage#updates) 참조)
 - **다국어 지원**: 영어, 일본어, 중국어 간체, 중국어 번체, 한국어, 독일어, 프랑스어, 스페인어
 - **Realtek 펌웨어**: Realtek 어댑터용 안내형 펌웨어 다운로드
 - **진단**: 연결 흐름, 로그, HCI 캡처, 버그 보고용 진단 정보, Linux PC를 이용한 피어 수신기 테스트 ([사용법](usage#receiver) 참조)

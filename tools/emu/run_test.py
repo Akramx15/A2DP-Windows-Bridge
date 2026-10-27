@@ -40,6 +40,18 @@ a2dpwb_decode --le-audio on both sides:
   - the checks of le_audio_tests/<profile>.py (core.py: each CIS's channel
     allocation within the PACS locations of the sink it goes to)
 Outputs go to tools/emu/out/le-<case>/.
+
+    python tools/emu/run_test.py --scan [case ...]
+
+runs the device scan cases instead (eir, name-request): emu_sink.py answers
+the inquiry (with its name in the extended inquiry response, or without it),
+a2dpwb-core.exe --cli --scan lists it:
+  - listed once (it answers several times per inquiry), with its name, an
+    RSSI and as an audio device
+  - listed within 3 s of the inquiry's start (the sink answers after 1 s),
+    not at the scan's end; its name from the inquiry result within 3 s, or
+    from a name request after the first inquiry
+Outputs go to tools/emu/out/scan-<case>/.
 """
 
 import argparse
@@ -84,6 +96,7 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
     'aac': r'AAC ', 'aptx': r'aptX \d', 'aptxhd': r'aptX HD \d',
     'aptxll': r'aptX LL \d', 'ldac': r'LDAC \d', 'lhdcv5': r'LHDC V5 \d',
     'ldac-96k': r'LDAC 96000',
+    'ldac-48k': r'LDAC 48000',
     'faststream': r'FastStream \d+ Hz, direction 0x01 \(music\)',   # no voice backchannel
     'opus': r'Opus 48000 Hz, stereo, 20 ms',
     # PipeWire's choice: 10 ms, one coupled stream, 312 x 1024 bps, no return channel
@@ -99,7 +112,7 @@ CONFIG_PATTERN = {  # a2dpwb_decode's "Configuration :" line
 }
 # Frame headers are validated, audio is not decoded (aptX Adaptive: its RTP
 # header, packet sizes and frame types)
-NO_DECODER = {'ldac', 'ldac-96k', 'lhdcv5', 'aptxad', 'aptxad-r2', 'aptxad-r2-96k'}
+NO_DECODER = {'ldac', 'ldac-96k', 'ldac-48k', 'lhdcv5', 'aptxad', 'aptxad-r2', 'aptxad-r2-96k'}
 APTXAD_SINK = ['--codecs', 'sbc', 'aac', 'aptx', 'aptxad']
 # Further cases: name -> (A2DPWB -c, emu_sink.py arguments, the codec expected,
 # more A2DPWB arguments)
@@ -151,38 +164,33 @@ NEGOTIATION = {
     # aptX Adaptive (offered by the sink only when named, with SBC, AAC and
     # aptX as aptX Adaptive headsets list them: emu_sink.py): HQ, low latency
     # (SSRC 0xA1, 348-byte packets), an R2 sink in HQ and LL (frame types 3 /
-    # 4), ABR, 48 kHz from a 44.1 kHz request; 96 kHz when asked for and
-    # switched on (--aptxad-96k: Developer > aptX Adaptive at 96 kHz, off by
-    # default, issue #86), in HQ to an R2 sink that lists it (emu_sink.py's
-    # R2 caps do), else 48 kHz (switched off, an R1 sink, low latency); Auto
-    # takes it over aptX and AAC (issue #86)
+    # 4), ABR, 48 kHz from a 44.1 kHz request; 96 kHz when asked for, in HQ
+    # to an R2 sink that lists it (emu_sink.py's R2 caps do), else 48 kHz (an
+    # R1 sink, low latency); Auto takes it over aptX and AAC (issue #86)
     'aptxad': ('aptxad', APTXAD_SINK, 'aptxad', []),
     'aptxad-ll': ('aptxad', APTXAD_SINK, 'aptxad', ['-q', 'll']),
     'aptxad-r2': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
     'aptxad-r2-ll': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['-q', 'll']),
     'aptxad-abr': ('aptxad', APTXAD_SINK, 'aptxad', ['-a']),
     'aptxad-from-44k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '44100']),
-    'aptxad-r2-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--rate', '96000', '--aptxad-96k']),
-    'aptxad-r2-96k-abr': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k',
-                          ['--rate', '96000', '-a', '--aptxad-96k']),
-    'aptxad-r2-96k-off': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['--rate', '96000']),
+    'aptxad-r2-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--rate', '96000']),
+    'aptxad-r2-96k-abr': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--rate', '96000', '-a']),
     # Real sinks' rate bytes (issue #86): an EarFun Air Pro 4+ lists 0xD1
     # (96 kHz by Android's 0x80 bit, no 0x20), a Bose QC Ultra 0x51 (44.1
     # and 48 kHz only)
     'aptxad-r2-96k-earfun': ('aptxad', APTXAD_SINK + ['--aptxad-r2', '--aptxad-rates', '0xD1'], 'aptxad-r2-96k',
-                             ['--rate', '96000', '--aptxad-96k']),
+                             ['--rate', '96000']),
     'aptxad-r2-96k-bose': ('aptxad', APTXAD_SINK + ['--aptxad-r2', '--aptxad-rates', '0x51'], 'aptxad-r2',
-                           ['--rate', '96000', '--aptxad-96k']),
-    'aptxad-r1-from-96k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '96000', '--aptxad-96k']),
-    'aptxad-r2-ll-from-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2',
-                              ['--rate', '96000', '-q', 'll', '--aptxad-96k']),
+                           ['--rate', '96000']),
+    'aptxad-r1-from-96k': ('aptxad', APTXAD_SINK, 'aptxad', ['--rate', '96000']),
+    'aptxad-r2-ll-from-96k': ('aptxad', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', ['--rate', '96000', '-q', 'll']),
     'auto-aptxad': ('auto', APTXAD_SINK, 'aptxad', []),
-    # Auto: the best codec with its best options, the highest rate the sink
-    # lists (issue #86): 96 kHz to an R2 aptX Adaptive sink (switched on;
-    # off, 48 kHz), LDAC 96 kHz
-    'auto-aptxad-r2-96k': ('auto', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2-96k', ['--aptxad-96k']),
-    'auto-aptxad-r2-96k-off': ('auto', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
-    'auto-ldac-96k': ('auto', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac-96k', []),
+    # The rate on Auto: 48 kHz where the sink lists it, not its highest
+    # (issue #86: 96 kHz only when chosen), to an R2 aptX Adaptive sink
+    # that takes 96 kHz and an LDAC one; LDAC 96 kHz when chosen
+    'auto-aptxad-r2-48k': ('auto', APTXAD_SINK + ['--aptxad-r2'], 'aptxad-r2', []),
+    'auto-ldac-48k': ('auto', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac-48k', []),
+    'ldac-chosen-96k': ('ldac', ['--codecs', 'sbc', 'aac', 'ldac'], 'ldac-96k', ['--rate', '96000']),
     # 18 free sink SEPs, LDAC the 14th: BTstack 1.8.1 overflowed its 10-entry
     # SEP discovery array (crash); none may be dropped either
     'many-seps-ldac': ('ldac', ['--extra-seps', '8'], 'ldac', []),
@@ -623,6 +631,96 @@ def main_le(args):
     sys.exit(0 if passed == len(results) else 1)
 
 
+# Device scan cases (--scan): name -> (emu_sink.py arguments, where the name
+# comes from, how soon it must be known after the inquiry started). The sink
+# first answers 1 s into an inquiry (emu_sink.py INQUIRY_FIRST_ANSWER).
+SCAN_CASES = {
+    'eir': (['--dual-mode'], 'inquiry result', 3.0),                      # in its extended inquiry response
+    'name-request': (['--dual-mode', '--no-eir-name'], 'remote name', 15.0),  # asked after the first inquiry (10.24 s)
+}
+SCAN_SECONDS = 10
+SCAN_LISTED_MAX_S = 3.0
+SINK_NAME = 'A2DPWB Test Sink'
+LOG_TIME = re.compile(r'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3})')
+
+
+def log_time(log, pattern):
+    """Seconds since the epoch of the first log line matching pattern, or None."""
+    for line in log.splitlines():
+        if re.search(pattern, line) and (m := LOG_TIME.search(line)):
+            return time.mktime(time.strptime(m.group(1)[:19], '%Y-%m-%d %H:%M:%S')) + float(m.group(1)[19:])
+    return None
+
+
+def run_scan_case(args, case, port):
+    """a2dpwb-core --cli --scan against the sink: listed once, with its name
+    and RSSI, soon after the inquiry started."""
+    sink_args, name_from, name_max_s = SCAN_CASES[case]
+    out = os.path.join(args.out, 'scan-' + case)
+    shutil.rmtree(out, ignore_errors=True)
+    os.makedirs(out)
+    failures = []
+    sink = start_sink(port, os.path.join(out, 'sink.pklg'), os.path.join(out, 'sink.log'), extra=sink_args)
+    try:
+        env = dict(os.environ, A2DPWB_CONFIG_DIR=os.path.join(out, 'config'), A2DPWB_LOG='debug')
+        started = time.time()
+        try:
+            r = subprocess.run(
+                [args.a2dpwb, '--cli', '--hci-tcp', f'127.0.0.1:{port}', '--scan', str(SCAN_SECONDS),
+                 '--hci-capture', os.path.join(out, 'a2dpwb.pklg')],
+                capture_output=True, text=True, encoding='utf-8', errors='replace', env=env,
+                timeout=SCAN_SECONDS + 60)
+            rc, text = r.returncode, r.stdout + r.stderr
+        except subprocess.TimeoutExpired as e:
+            partial = e.stdout or ''
+            rc, text = 'timeout', partial.decode('utf-8', 'replace') if isinstance(partial, bytes) else partial
+        took = time.time() - started
+        with open(os.path.join(out, 'a2dpwb.log'), 'w', encoding='utf-8') as f:
+            f.write(text)
+    finally:
+        sink.terminate()
+        sink.wait(10)
+    if rc != 0:
+        failures.append(f'A2DPWB exited with {rc} (see a2dpwb.log)')
+    lines = [line for line in text.splitlines() if line.startswith(SINK_ADDRESS)]
+    if len(lines) != 1:
+        failures.append(f'the sink listed {len(lines)} times (expected once)')
+    elif SINK_NAME not in lines[0]:
+        failures.append(f'listed without its name: {lines[0].strip()}')
+    elif not re.search(r'RSSI -\d+', lines[0]) or '(audio)' not in lines[0]:
+        failures.append(f'no RSSI or not an audio device: {lines[0].strip()}')
+    t0 = log_time(text, r'starting inquiry')
+    listed = log_time(text, r'scan: \d+ device\(s\) listed')
+    if name_from == 'inquiry result':
+        named = log_time(text, rf'inquiry result: {SINK_ADDRESS} .*name=“{SINK_NAME}”')
+    else:
+        named = log_time(text, rf'remote name of {SINK_ADDRESS}: status 0x00 name=“{SINK_NAME}”')
+    since = lambda t: None if t is None or t0 is None else round(t - t0, 2)
+    if since(listed) is None or since(listed) > SCAN_LISTED_MAX_S:
+        failures.append(f'listed {since(listed)} s after the inquiry started (at most {SCAN_LISTED_MAX_S} s)')
+    if since(named) is None or since(named) > name_max_s:
+        failures.append(f'name from the {name_from} {since(named)} s after the inquiry started (at most {name_max_s} s)')
+    return failures, f'listed after {since(listed)} s, named after {since(named)} s, scan took {took:.1f} s'
+
+
+def main_scan(args):
+    wanted = args.scan or list(SCAN_CASES)
+    unknown = [n for n in wanted if n not in SCAN_CASES]
+    if unknown:
+        sys.exit(f'Unknown scan case(s) {unknown}; known: {list(SCAN_CASES)}')
+    results = []
+    for index, case in enumerate(wanted):
+        print(f'--- scan {case} ...', flush=True)
+        failures, detail = run_scan_case(args, case, args.base_port + 200 + index)
+        results.append((case, failures))
+        print(f'    {"PASS" if not failures else "FAIL"}  {detail}')
+        for failure in failures:
+            print(f'      - {failure}')
+    passed = sum(1 for _, f in results if not f)
+    print(f'\n{passed}/{len(results)} scan cases passed. Details: {args.out}')
+    sys.exit(0 if passed == len(results) else 1)
+
+
 def main():
     parser = argparse.ArgumentParser(description='End-to-end A2DP test of A2DPWB against a virtual sink')
     parser.add_argument('--codecs', nargs='+', choices=CODECS + list(NEGOTIATION),
@@ -630,6 +728,8 @@ def main():
                         help='codecs and negotiation cases (%(default)s)')
     parser.add_argument('--le-audio', nargs='*', metavar='CASE',
                         help='run the LE Audio (experimental) cases instead (default: all of them)')
+    parser.add_argument('--scan', nargs='*', metavar='CASE',
+                        help=f'run the device scan cases instead ({", ".join(SCAN_CASES)}; default: all of them)')
     parser.add_argument('--duration', type=int, default=5, help='seconds of streaming per codec')
     parser.add_argument('--max-packet', type=int, help='passed to A2DPWB --max-packet (default: its own)')
     parser.add_argument('--build-dir', default=os.path.join(REPO, 'build'),
@@ -645,10 +745,14 @@ def main():
     args.decoder = args.decoder or os.path.join(args.build_dir, 'a2dp_decode', args.config, 'a2dpwb_decode.exe')
     for path, hint in ((VENV_PYTHON, 'run: python tools/emu/setup_env.py'),
                        (args.a2dpwb, 'build A2DPWB'), (args.decoder, 'build a2dpwb_decode')):
+        if path == args.decoder and args.scan is not None:
+            continue  # a scan streams nothing
         if not os.path.exists(path):
             sys.exit(f'Missing {path} ({hint})')
     if args.le_audio is not None:
         main_le(args)
+    if args.scan is not None:
+        main_scan(args)
 
     results = []
     for index, codec in enumerate(args.codecs):

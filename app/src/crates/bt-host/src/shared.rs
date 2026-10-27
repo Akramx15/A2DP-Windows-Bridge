@@ -72,14 +72,68 @@ pub struct State {
     /// ACL handle of the A2DP signaling channel
     pub a2dp_con_handle: Option<u16>,
     pub remote_caps: RemoteCaps,
+    /// The devices of the scan, one entry each ([`State::add_found`])
     pub discovered: Vec<DiscoveredDevice>,
     /// How to page each device found (page scan repetition mode, clock
     /// offset): what a name request for it needs
     pub discovered_paging: Vec<([u8; 6], u8, u16)>,
+    /// Counts the changes to `discovered` worth showing (a new device, a
+    /// name): the scan reports the list on each one
+    pub found_rev: u64,
+    /// The user stopped the scan (or a connection is starting): its
+    /// inquiry and name requests end
+    pub scan_stop: bool,
     /// Media payload size of the stream (RTP header excluded)
     pub media_mtu: u16,
     /// The stack stopped working (see BtHost::stalled)
     pub stalled: bool,
+}
+
+impl State {
+    /// An inquiry result: a device answers many times during an inquiry
+    /// (with RSSI / EIR every time it is heard), so a known one is updated
+    /// in place. Its RSSI follows silently; true when the list changed in a
+    /// way worth showing (new device, name, class).
+    pub fn add_found(&mut self, d: DiscoveredDevice, psrm: u8, clock: u16) -> bool {
+        match self.discovered_paging.iter_mut().find(|x| x.0 == d.addr) {
+            Some(p) => *p = (d.addr, psrm, clock),
+            None => self.discovered_paging.push((d.addr, psrm, clock)),
+        }
+        let changed = match self.discovered.iter_mut().find(|x| x.addr == d.addr) {
+            Some(known) => {
+                known.rssi = d.rssi;
+                // A response without a name (no EIR, or a shortened one
+                // before the complete one) keeps the name known
+                let name = !d.name.is_empty() && d.name != known.name;
+                if name {
+                    known.name = d.name;
+                }
+                let class = d.class_of_device != 0 && d.class_of_device != known.class_of_device;
+                if class {
+                    known.class_of_device = d.class_of_device;
+                }
+                name || class
+            }
+            None => {
+                self.discovered.push(d);
+                true
+            }
+        };
+        if changed {
+            self.found_rev += 1;
+        }
+        changed
+    }
+
+    /// A remote name request answered: true when the list changed
+    pub fn set_found_name(&mut self, addr: &[u8; 6], name: &str) -> bool {
+        let Some(d) = self.discovered.iter_mut().find(|d| d.addr == *addr && d.name.is_empty()) else {
+            return false;
+        };
+        d.name = name.to_string();
+        self.found_rev += 1;
+        true
+    }
 }
 
 #[derive(Default)]
@@ -125,5 +179,49 @@ impl Shared {
             }
             s = self.cv.wait_timeout(s, deadline - now).unwrap_or_else(|e| e.into_inner()).0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dev(addr: u8, name: &str, cod: u32, rssi: i8) -> DiscoveredDevice {
+        DiscoveredDevice { addr: [0, 0, 0, 0, 0, addr], name: name.into(), class_of_device: cod, rssi }
+    }
+
+    #[test]
+    fn repeated_responses_are_one_device() {
+        let mut s = State::default();
+        assert!(s.add_found(dev(1, "", 0x240404, -60), 1, 0x1000));
+        assert_eq!(s.found_rev, 1);
+        // Heard again: RSSI and paging follow, nothing to show
+        assert!(!s.add_found(dev(1, "", 0x240404, -50), 2, 0x2000));
+        assert_eq!(s.found_rev, 1);
+        assert_eq!(s.discovered, vec![dev(1, "", 0x240404, -50)]);
+        assert_eq!(s.discovered_paging, vec![([0, 0, 0, 0, 0, 1], 2, 0x2000)]);
+        // Its EIR now has the name
+        assert!(s.add_found(dev(1, "Headphones", 0x240404, -55), 2, 0x2000));
+        // A response without it keeps the name
+        assert!(!s.add_found(dev(1, "", 0x240404, -58), 2, 0x2000));
+        assert_eq!(s.discovered, vec![dev(1, "Headphones", 0x240404, -58)]);
+        assert!(s.add_found(dev(2, "Phone", 0x5A020C, -70), 1, 0));
+        assert_eq!(s.discovered.len(), 2);
+        assert_eq!(s.discovered_paging.len(), 2);
+        assert_eq!(s.found_rev, 3);
+    }
+
+    #[test]
+    fn name_request_fills_a_missing_name_only() {
+        let mut s = State::default();
+        s.add_found(dev(1, "", 0x240404, -60), 1, 0);
+        s.add_found(dev(2, "Named", 0x240404, -60), 1, 0);
+        let rev = s.found_rev;
+        assert!(s.set_found_name(&[0, 0, 0, 0, 0, 1], "Earbuds"));
+        assert!(!s.set_found_name(&[0, 0, 0, 0, 0, 2], "Other"));
+        assert!(!s.set_found_name(&[0, 0, 0, 0, 0, 3], "Unknown"));
+        assert_eq!(s.discovered[0].name, "Earbuds");
+        assert_eq!(s.discovered[1].name, "Named");
+        assert_eq!(s.found_rev, rev + 1);
     }
 }

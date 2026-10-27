@@ -78,7 +78,7 @@ has_toc: false
 **只需要傳統 aptX？** Windows 10 的內建藍牙堆疊已支援傳統 aptX（不含 aptX HD、aptX LL 或 aptX Adaptive），因此不需要 A2DPWB。A2DPWB 主要適用於 LDAC、aptX HD 與 aptX Low Latency。
 
 {: .note }
-**關於 aptX Adaptive。** 它使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 以純 Rust 撰寫、採用 MIT 授權的編碼器編碼，其表格由作者從 Qualcomm 的出貨二進位檔與空中擷取資料重建而來。48 kHz 立體聲（要求 44.1 kHz 時會以 48 kHz 擷取）、24 位元：搭配 R1 接收端時為高 427 kbps、標準 364、行動 318 與低延遲 265 kbps（R2 接收端有各自的表格），高品質時可使用 ABR。在其設定中選擇 96 kHz 且耳機為列出 96 kHz 的 R2 接收端時使用 96 kHz（高 646 kbps、標準 340、行動 255）；低延遲時不使用，其他情況為 48 kHz。96 kHz 無論在本專案或上游都只在模擬器中測試過。「自動」會在 LHDC V5 與 LDAC 之後選擇它；也可以在 **編解碼器** 畫面或用 `-c aptxad` 選擇。有使用者在 2.0.2-beta.6 上以 EarFun Air Pro 4+ 確認 48 kHz 可正常運作，與傳統 aptX 一樣穩定（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）；上游回報在 Linux 上搭配 Bose QuietComfort Ultra（第 1 代）與 B&W Px7 S2e 可正常運作。請參閱 [aptX 系列與 aptX Adaptive](usage#aptx-compatibility)。
+**關於 aptX Adaptive。** 它使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 以純 Rust 撰寫、採用 MIT 授權的編碼器編碼，其表格由作者從 Qualcomm 的出貨二進位檔與空中擷取資料重建而來。48 kHz 立體聲（要求 44.1 kHz 時會以 48 kHz 擷取）、24 位元：搭配 R1 接收端時為高 427 kbps、標準 364、行動 318 與低延遲 265 kbps（R2 接收端有各自的表格），高品質時可使用 ABR。在其設定中選擇 96 kHz 且耳機為列出 96 kHz 的 R2 接收端時使用 96 kHz（高 646 kbps、標準 340、行動 255）；低延遲時不使用，其他情況為 48 kHz。96 kHz 也已以實際耳機確認（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）；「自動」為 48 kHz。「自動」會在 LHDC V5 與 LDAC 之後選擇它；也可以在 **編解碼器** 畫面或用 `-c aptxad` 選擇。有使用者在 2.0.2-beta.6 上以 EarFun Air Pro 4+ 確認 48 kHz 可正常運作，與傳統 aptX 一樣穩定（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）；上游回報在 Linux 上搭配 Bose QuietComfort Ultra（第 1 代）與 B&W Px7 S2e 可正常運作。請參閱 [aptX 系列與 aptX Adaptive](usage#aptx-compatibility)。
 
 ## 平台支援 {#platform-support}
 
@@ -146,7 +146,7 @@ A2DPWB 完全繞過 Windows 藍牙堆疊。它透過 WinUSB 直接與 USB 藍牙
 - **連線品質與 AFH**：顯示傳送的內容、RSSI 與使用中的通道；告知介面卡應避開哪些 Wi-Fi 通道（請參閱 [使用方式](usage#link-quality)）
 - **耳機控制 (AVRCP)**：與耳機及 Windows 音量同步的音量滑桿；耳機的播放/暫停、下一首與上一首按鈕可控制 PC 上的播放（請參閱 [使用方式](usage#headphone-buttons)）
 - **依裝置設定**：每個音訊裝置各有轉碼器（含其自身設定）與擷取來源，在首頁並排顯示，可從系統匣連線
-- **更新**：已安裝的版本會在停止串流後自行更新（請參閱 [使用方式](usage#updates)）
+- **更新**：已安裝的版本會在音訊裝置中斷連線後自行更新（請參閱 [使用方式](usage#updates)）
 - **多語系**：英文、日文、簡體中文、繁體中文、韓文、德文、法文、西班牙文
 - **Realtek 韌體**：Realtek 介面卡的韌體下載引導
 - **診斷**：連線流程、記錄、HCI 擷取、用於錯誤回報的診斷資訊、與 Linux PC 進行對端接收器測試（請參閱 [使用方式](usage#receiver)）

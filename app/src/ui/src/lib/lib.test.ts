@@ -310,9 +310,14 @@ describe("profiles", () => {
       ["mq", "400"],
     ]);
     expect(offeredQualities("lhdcv5", 48000, 500000, "sq").map((q) => q.id)).toEqual(["hq", "sq", "mq"]);
-    // aptX Adaptive's 96 kHz only while switched on (Developer)
-    expect(offeredSampleRates("aptxad", null, false)).toEqual([0, 48000]);
-    expect(offeredSampleRates("aptxad", null, true)).toEqual([0, 48000, 96000]);
+    // aptX Adaptive's 96 kHz only when the device lists it (issue #86: a
+    // Bose QC Ultra, 0x51, does not; an EarFun Air Pro 4+ does), also
+    // while not known
+    const aptxad = (sample_rates: number[]) => ({ codec: "aptxad", sample_rates, bit_depths: [], max_bitrate: 0 });
+    expect(offeredSampleRates("aptxad", aptxad([48000]))).toEqual([0, 48000]);
+    expect(offeredSampleRates("aptxad", aptxad([48000, 96000]))).toEqual([0, 48000, 96000]);
+    expect(offeredSampleRates("aptxad", null)).toEqual([0, 48000]);
+    expect(offeredSampleRates("aptxad", aptxad([]))).toEqual([0, 48000]);
   });
 
   it("says why the bit rate is below the profile's", () => {

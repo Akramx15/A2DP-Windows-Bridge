@@ -450,9 +450,6 @@ begin
   { The [Languages] above, each in its own language }
   Names := ['en', 'ja', 'de', 'fr', 'es', 'ko', 'zhcn', 'zhtw'];
   Captions := ['English', '日本語', 'Deutsch', 'Français', 'Español', '한국어', '简体中文', '繁體中文'];
-  { Wide enough for "Select the language to use during the installation." on
-    one line (issue #86: 220 cut it); a longer translation wraps, and the
-    form grows with it }
   Form := CreateCustomForm(ScaleX(320), ScaleY(80), False, False);
   try
     Form.Caption := SetupMessage(msgSelectLanguageTitle);
@@ -460,9 +457,19 @@ begin
     Lbl.Parent := Form;
     Lbl.Left := ScaleX(10);
     Lbl.Top := ScaleY(10);
+    Lbl.Caption := SetupMessage(msgSelectLanguageLabel);
+    { Just wide enough for "Select the language to use during the
+      installation." on one line (issue #86: 220 cut it, a fixed 320 left
+      a wide gap after it); a longer translation wraps at 320, and the form
+      grows with it }
+    W := Lbl.Width + ScaleX(20);
+    if W < ScaleX(220) then
+      W := ScaleX(220);
+    if W > ScaleX(320) then
+      W := ScaleX(320);
+    Form.ClientWidth := W;
     Lbl.Width := Form.ClientWidth - ScaleX(20);
     Lbl.WordWrap := True;
-    Lbl.Caption := SetupMessage(msgSelectLanguageLabel);
     Lbl.AdjustHeight;
     Combo := TNewComboBox.Create(Form);
     Combo.Parent := Form;
