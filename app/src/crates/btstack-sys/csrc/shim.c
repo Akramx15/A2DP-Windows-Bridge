@@ -430,6 +430,12 @@ static btstack_context_callback_registration_t sdp_rfcomm_request;
  * this stays set across a restart of BTstack in this process until the
  * callback comes. */
 static int sdp_rfcomm_listed;
+/* Registered only to make the SDP client run its request list (see
+ * a2dpwb_sdp_query_rfcomm); its own turn does nothing */
+static btstack_context_callback_registration_t sdp_rfcomm_kick;
+static void sdp_rfcomm_kicked(void *context) {
+    (void)context;
+}
 static bd_addr_t sdp_rfcomm_addr;
 static uint8_t sdp_rfcomm_uuid[16];
 
@@ -470,6 +476,11 @@ uint8_t a2dpwb_sdp_query_rfcomm(const uint8_t *addr, const uint8_t *uuid128) {
             sdp_rfcomm_wanted = 0;
             return status;
         }
+    } else if (sdp_client_ready()) {
+        /* Listed before a restart of BTstack, which left the client idle
+         * with the list kept: nothing pops it until a registration does */
+        sdp_rfcomm_kick.callback = &sdp_rfcomm_kicked;
+        (void)sdp_client_register_query_callback(&sdp_rfcomm_kick);
     }
     return ERROR_CODE_SUCCESS;
 }

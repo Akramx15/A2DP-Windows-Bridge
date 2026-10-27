@@ -623,9 +623,10 @@ impl BtHost {
     pub fn rfcomm_open(&self, addr: [u8; 6], uuid: [u8; 16], sink: RfcommSink) -> Result<RfcommOpened, RfcommError> {
         let (tx, rx) = mpsc::sync_channel(1);
         self.post(move |app, s| {
-            // Only to the device being streamed to: its channels close with
-            // the A2DP connection (close_device)
-            if app.a2dp_cid == 0 || app.remote_addr != Some(addr) {
+            // Only to the device being streamed to, once connected (not
+            // while the connection is set up, which may be given up on):
+            // its channels close with the A2DP connection (close_device)
+            if app.a2dp_cid == 0 || app.remote_addr != Some(addr) || !app.shared.lock().connected {
                 let _ = tx.send(Err(RfcommError::NotConnected));
                 return;
             }
@@ -1110,7 +1111,7 @@ impl BtHost {
         if wait && self.shared.wait(DISCONNECT_TIMEOUT, false, |s| s.released) != Wait::Done {
             tracing::warn!("leftover AVDTP release timed out");
         }
-        self.call(Duration::from_secs(2), |app, _| app.forget_connection());
+        self.call(Duration::from_secs(2), |app, s| app.forget_connection(s));
         self.shared.update(|s| {
             s.connected = false;
             s.streaming = false;
@@ -1134,7 +1135,7 @@ impl BtHost {
         }
         // This was never a live stream: the release / HCI disconnect handlers
         // must not make the streaming loop think a connection was lost
-        self.call(Duration::from_secs(2), |app, _| app.forget_connection());
+        self.call(Duration::from_secs(2), |app, s| app.forget_connection(s));
         self.shared.update(|s| {
             s.connected = false;
             s.streaming = false;

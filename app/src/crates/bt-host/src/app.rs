@@ -438,9 +438,13 @@ impl HostApp {
         }
     }
 
-    /// After an abort: this was never a live stream
-    pub fn forget_connection(&mut self) {
+    /// After an abort: this was never a live stream. RFCOMM channels to the
+    /// device go too, in case no signaling release came to close them.
+    pub fn forget_connection(&mut self, stack: &Stack) {
         tracing::debug!("forget connection (cid 0x{:04X}, streaming {})", self.a2dp_cid, self.streaming);
+        if let Some(addr) = self.remote_addr {
+            self.rfcomm.close_device(stack, addr);
+        }
         self.a2dp_cid = 0;
         self.set_streaming(false);
         self.can_send_requested = false;
