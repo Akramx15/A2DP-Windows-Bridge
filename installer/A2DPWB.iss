@@ -32,10 +32,11 @@
 ;     settings have none (settings.rs, default_language);
 ;   - an update (of this installation, of the NSIS one or of v1) says so on
 ;     the wizard's title and pages (UpdateWording).
-; Uninstall: the core is closed; the user is asked whether the adapters
-; A2DPWB put on WinUSB go back to Windows (one UAC prompt) and whether
-; %APPDATA%\A2DPWB (settings, profiles, pairings, firmware) is deleted; the
-; Run value is removed when it points at this installation.
+; Uninstall: the core is closed; one page asks whether the adapters A2DPWB
+; put on WinUSB go back to Windows (one UAC prompt) and whether
+; %APPDATA%\A2DPWB (settings, codecs, pairings, firmware) is deleted, both on
+; by default (AskUninstallChoices); the Run value is removed when it points
+; at this installation.
 ;
 ; Command line, besides Inno Setup's own (/SILENT, /VERYSILENT, /DIR=, ...):
 ;   /UPDATE  the in-app update (app/src/ui/src-tauri/src/update.rs): starts
@@ -166,23 +167,59 @@ ko.V1Left=A2DP Windows Bridge v1을 제거하지 못했습니다. 나중에 [설
 zhcn.V1Left=无法卸载 A2DP Windows Bridge v1。您可以稍后在“设置”>“应用”中将其删除；无论如何，您的设置、配对和固件都会保留。
 zhtw.V1Left=無法解除安裝 A2DP Windows Bridge v1。您可以稍後在「設定」>「應用程式」中將其移除；無論如何，您的設定、配對和韌體都會保留。
 
-en.RestoreAsk=A2DP Windows Bridge assigned the WinUSB driver to your USB Bluetooth adapter, which hides it from Windows' Bluetooth. Give the adapter back to Windows now? Windows asks for administrator permission.%n%nNo leaves it on WinUSB; you can restore it later in Device Manager.
-ja.RestoreAsk=A2DP Windows Bridge が USB Bluetooth アダプターに WinUSB ドライバーを割り当てたため、そのアダプターは Windows の Bluetooth から見えなくなっています。今アダプターを Windows に戻しますか？ Windows が管理者の許可を求めます。%n%n「いいえ」を選ぶと WinUSB のまま残ります。あとでデバイス マネージャーから戻せます。
-de.RestoreAsk=A2DP Windows Bridge hat Ihrem USB-Bluetooth-Adapter den WinUSB-Treiber zugewiesen; dadurch sieht das Bluetooth von Windows ihn nicht. Den Adapter jetzt an Windows zurückgeben? Windows fragt nach Administratorrechten.%n%nNein lässt ihn auf WinUSB; Sie können ihn später im Geräte-Manager zurücksetzen.
-fr.RestoreAsk=A2DP Windows Bridge a attribué le pilote WinUSB à votre adaptateur Bluetooth USB, ce qui le cache au Bluetooth de Windows. Rendre l'adaptateur à Windows maintenant ? Windows demande les droits d'administrateur.%n%nNon le laisse sur WinUSB ; vous pourrez le rétablir plus tard dans le Gestionnaire de périphériques.
-es.RestoreAsk=A2DP Windows Bridge asignó el controlador WinUSB a su adaptador Bluetooth USB, por lo que el Bluetooth de Windows no lo ve. ¿Devolver ahora el adaptador a Windows? Windows pedirá permisos de administrador.%n%nNo lo deja en WinUSB; puede restaurarlo más tarde en el Administrador de dispositivos.
-ko.RestoreAsk=A2DP Windows Bridge가 USB 블루투스 어댑터에 WinUSB 드라이버를 할당했기 때문에 Windows 블루투스에서 이 어댑터가 보이지 않습니다. 지금 어댑터를 Windows에 돌려주시겠습니까? Windows가 관리자 권한을 요청합니다.%n%n[아니요]를 누르면 WinUSB로 남습니다. 나중에 장치 관리자에서 되돌릴 수 있습니다.
-zhcn.RestoreAsk=A2DP Windows Bridge 已为您的 USB 蓝牙适配器分配 WinUSB 驱动程序，因此 Windows 蓝牙看不到该适配器。现在将适配器还给 Windows 吗？Windows 会请求管理员权限。%n%n选择“否”将保留 WinUSB；之后可以在设备管理器中恢复。
-zhtw.RestoreAsk=A2DP Windows Bridge 已為您的 USB 藍牙介面卡指派 WinUSB 驅動程式，因此 Windows 藍牙看不到該介面卡。現在要將介面卡交還給 Windows 嗎？Windows 會要求系統管理員權限。%n%n選擇「否」會保留 WinUSB；之後可以在裝置管理員中還原。
+en.UninstallChoices=Uninstall options
+ja.UninstallChoices=アンインストールのオプション
+de.UninstallChoices=Deinstallationsoptionen
+fr.UninstallChoices=Options de désinstallation
+es.UninstallChoices=Opciones de desinstalación
+ko.UninstallChoices=제거 옵션
+zhcn.UninstallChoices=卸载选项
+zhtw.UninstallChoices=解除安裝選項
 
-en.RestoreV1Note=%n%nA2DP Windows Bridge v1 is still on this PC and needs WinUSB too: choose No to keep using the adapter with v1.
-ja.RestoreV1Note=%n%nこの PC には A2DP Windows Bridge v1 が残っていて、v1 も WinUSB を使います。v1 でアダプターを使い続けるなら「いいえ」を選んでください。
-de.RestoreV1Note=%n%nA2DP Windows Bridge v1 ist noch auf diesem PC und braucht WinUSB ebenfalls: Wählen Sie Nein, um den Adapter weiter mit v1 zu verwenden.
-fr.RestoreV1Note=%n%nA2DP Windows Bridge v1 est encore sur ce PC et a aussi besoin de WinUSB : choisissez Non pour continuer à utiliser l'adaptateur avec v1.
-es.RestoreV1Note=%n%nA2DP Windows Bridge v1 sigue en este equipo y también necesita WinUSB: elija No para seguir usando el adaptador con v1.
-ko.RestoreV1Note=%n%n이 PC에는 A2DP Windows Bridge v1이 남아 있으며 v1도 WinUSB를 사용합니다. v1에서 어댑터를 계속 사용하려면 [아니요]를 선택하세요.
-zhcn.RestoreV1Note=%n%n此电脑上仍有 A2DP Windows Bridge v1，它也需要 WinUSB：如需继续在 v1 中使用该适配器，请选择“否”。
-zhtw.RestoreV1Note=%n%n此電腦上仍有 A2DP Windows Bridge v1，它也需要 WinUSB：若要繼續在 v1 中使用該介面卡，請選擇「否」。
+en.RestoreChoice=Restore the original Bluetooth driver
+ja.RestoreChoice=元の Bluetooth ドライバーに戻す
+de.RestoreChoice=Den ursprünglichen Bluetooth-Treiber wiederherstellen
+fr.RestoreChoice=Rétablir le pilote Bluetooth d'origine
+es.RestoreChoice=Restaurar el controlador Bluetooth original
+ko.RestoreChoice=원래 블루투스 드라이버 복원
+zhcn.RestoreChoice=恢复原来的蓝牙驱动程序
+zhtw.RestoreChoice=還原原本的藍牙驅動程式
+
+en.RestoreChoiceText=Removes the WinUSB driver and gives the Bluetooth adapter back to Windows. Windows asks for administrator permission.
+ja.RestoreChoiceText=WinUSB ドライバーを外し、Bluetooth アダプターを Windows に戻します。Windows が管理者の許可を求めます。
+de.RestoreChoiceText=Entfernt den WinUSB-Treiber und gibt den Bluetooth-Adapter an Windows zurück. Windows fragt nach Administratorrechten.
+fr.RestoreChoiceText=Retire le pilote WinUSB et rend l'adaptateur Bluetooth à Windows. Windows demande les droits d'administrateur.
+es.RestoreChoiceText=Quita el controlador WinUSB y devuelve el adaptador Bluetooth a Windows. Windows pedirá permisos de administrador.
+ko.RestoreChoiceText=WinUSB 드라이버를 제거하고 블루투스 어댑터를 Windows에 돌려줍니다. Windows가 관리자 권한을 요청합니다.
+zhcn.RestoreChoiceText=移除 WinUSB 驱动程序，将蓝牙适配器还给 Windows。Windows 会请求管理员权限。
+zhtw.RestoreChoiceText=移除 WinUSB 驅動程式，將藍牙介面卡交還給 Windows。Windows 會要求系統管理員權限。
+
+en.RestoreV1Note=A2DP Windows Bridge v1 is still on this PC and needs WinUSB too: leave this off to keep using the adapter with v1.
+ja.RestoreV1Note=この PC には A2DP Windows Bridge v1 が残っていて、v1 も WinUSB を使います。v1 でアダプターを使い続けるならオフのままにしてください。
+de.RestoreV1Note=A2DP Windows Bridge v1 ist noch auf diesem PC und braucht WinUSB ebenfalls: Lassen Sie dies aus, um den Adapter weiter mit v1 zu verwenden.
+fr.RestoreV1Note=A2DP Windows Bridge v1 est encore sur ce PC et a aussi besoin de WinUSB : laissez cette option désactivée pour continuer à utiliser l'adaptateur avec v1.
+es.RestoreV1Note=A2DP Windows Bridge v1 sigue en este equipo y también necesita WinUSB: deje esta opción desactivada para seguir usando el adaptador con v1.
+ko.RestoreV1Note=이 PC에는 A2DP Windows Bridge v1이 남아 있으며 v1도 WinUSB를 사용합니다. v1에서 어댑터를 계속 사용하려면 이 옵션을 끈 채로 두세요.
+zhcn.RestoreV1Note=此电脑上仍有 A2DP Windows Bridge v1，它也需要 WinUSB：如需继续在 v1 中使用该适配器，请不要勾选此项。
+zhtw.RestoreV1Note=此電腦上仍有 A2DP Windows Bridge v1，它也需要 WinUSB：若要繼續在 v1 中使用該介面卡，請勿勾選此項。
+
+en.DeleteChoice=Delete user data
+ja.DeleteChoice=ユーザーデータを削除する
+de.DeleteChoice=Benutzerdaten löschen
+fr.DeleteChoice=Supprimer les données utilisateur
+es.DeleteChoice=Eliminar los datos de usuario
+ko.DeleteChoice=사용자 데이터 삭제
+zhcn.DeleteChoice=删除用户数据
+zhtw.DeleteChoice=刪除使用者資料
+
+en.DeleteChoiceText=Deletes settings, codecs, device pairings and downloaded firmware (%1).
+ja.DeleteChoiceText=設定、コーデック、デバイスのペアリング、ダウンロードしたファームウェアを削除します（%1）。
+de.DeleteChoiceText=Löscht Einstellungen, Codecs, Gerätekopplungen und heruntergeladene Firmware (%1).
+fr.DeleteChoiceText=Supprime les réglages, les codecs, les appairages des appareils et le firmware téléchargé (%1).
+es.DeleteChoiceText=Elimina la configuración, los códecs, los emparejamientos de dispositivos y el firmware descargado (%1).
+ko.DeleteChoiceText=설정, 코덱, 기기 페어링, 다운로드한 펌웨어를 삭제합니다(%1).
+zhcn.DeleteChoiceText=删除设置、编解码器、设备配对和已下载的固件（%1）。
+zhtw.DeleteChoiceText=刪除設定、編解碼器、裝置配對和已下載的韌體（%1）。
 
 en.RestoreFailed=The adapter could not be given back to Windows completely: it may be unplugged, or Windows chose WinUSB again. Plug it in, right-click it in Device Manager, choose Uninstall device, then unplug and replug it (see "By hand in Device Manager" in the setup guide).
 ja.RestoreFailed=アダプターを Windows に戻しきれませんでした。アダプターが抜かれているか、Windows がまた WinUSB を選んだ可能性があります。アダプターを挿した状態でデバイス マネージャーを開き、アダプターを右クリックして「デバイスのアンインストール」を選んでから、抜いて挿し直してください（セットアップガイドの「デバイス マネージャーで手動で行う」を参照）。
@@ -192,15 +229,6 @@ es.RestoreFailed=No se pudo devolver el adaptador a Windows por completo: puede 
 ko.RestoreFailed=어댑터를 Windows에 완전히 돌려주지 못했습니다. 어댑터가 분리되었거나 Windows가 다시 WinUSB를 선택했을 수 있습니다. 어댑터를 꽂은 상태에서 장치 관리자를 열고 어댑터를 마우스 오른쪽 버튼으로 클릭한 다음 [디바이스 제거]를 선택하고, 어댑터를 뽑았다가 다시 꽂으세요(설정 가이드의 '장치 관리자에서 직접 하기' 참조).
 zhcn.RestoreFailed=未能将适配器完全还给 Windows：适配器可能已拔出，或 Windows 再次选择了 WinUSB。请插入适配器，在设备管理器中右键单击它，选择“卸载设备”，然后拔出并重新插入（参见设置指南中的“在设备管理器中手动操作”）。
 zhtw.RestoreFailed=無法將介面卡完全交還給 Windows：介面卡可能已拔除，或 Windows 再次選擇了 WinUSB。請插入介面卡，在裝置管理員中以滑鼠右鍵按一下它，選擇「解除安裝裝置」，然後拔除並重新插入（請參閱設定指南中的「在裝置管理員中手動操作」）。
-
-en.DeleteDataAsk=Also delete the app data (settings, profiles, pairings and downloaded firmware in %1)?%n%nNo keeps it for a later installation.
-ja.DeleteDataAsk=アプリのデータ（%1 にある設定、プロファイル、ペアリング、ダウンロードしたファームウェア）も削除しますか？%n%n「いいえ」を選ぶと残り、次にインストールしたときにそのまま使えます。
-de.DeleteDataAsk=Auch die App-Daten löschen (Einstellungen, Profile, Kopplungen und heruntergeladene Firmware in %1)?%n%nNein behält sie für eine spätere Installation.
-fr.DeleteDataAsk=Supprimer aussi les données de l'application (réglages, profils, appairages et firmware téléchargé dans %1) ?%n%nNon les conserve pour une installation ultérieure.
-es.DeleteDataAsk=¿Eliminar también los datos de la aplicación (configuración, perfiles, emparejamientos y firmware descargado en %1)?%n%nNo los conserva para una instalación posterior.
-ko.DeleteDataAsk=앱 데이터(%1에 있는 설정, 프로필, 페어링, 다운로드한 펌웨어)도 삭제하시겠습니까?%n%n[아니요]를 누르면 남겨 두며 나중에 다시 설치할 때 그대로 사용할 수 있습니다.
-zhcn.DeleteDataAsk=是否同时删除应用数据（%1 中的设置、配置文件、配对和已下载的固件）？%n%n选择“否”将保留这些数据，供以后安装时使用。
-zhtw.DeleteDataAsk=是否同時刪除應用程式資料（%1 中的設定、設定檔、配對和已下載的韌體）？%n%n選擇「否」會保留這些資料，供日後安裝時使用。
 
 en.InstallingWebView2=Installing the Microsoft Edge WebView2 Runtime...
 ja.InstallingWebView2=Microsoft Edge WebView2 ランタイムをインストールしています...
@@ -870,41 +898,117 @@ begin
     Exec(ExpandConstant('{app}\{#CoreExe}'), '--background', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait, Code);
 end;
 
-{ Offers to give the adapters A2DPWB put on WinUSB back to Windows. The core
-  keeps an assignment record per adapter in <settings>\driver\ (the result of
-  `a2dpwb-driver assign`, app/src/core/src/driver.rs) and deletes it on
-  "Restore driver"; `a2dpwb-driver restore --records` restores every recorded
-  adapter with one UAC prompt and deletes the records of those given back.
-  Silent mode keeps WinUSB: nobody to ask, and a silent uninstall must not
-  raise a UAC prompt. The core must be closed already. }
+{ The adapters A2DPWB put on WinUSB, as the core records them: one record per
+  adapter in <settings>\driver\ (the result of `a2dpwb-driver assign`,
+  app/src/core/src/driver.rs), deleted on "Restore driver". Restoring needs
+  the driver tool next to the uninstaller. }
+function DriverRecords: String;
+begin
+  Result := ConfigDir + '\driver';
+end;
+
+function CanRestoreDrivers: Boolean;
+var
+  Find: TFindRec;
+begin
+  Result := FileExists(ExpandConstant('{app}\{#DriverExe}')) and FindFirst(DriverRecords + '\*.json', Find);
+  if Result then
+    FindClose(Find);
+end;
+
+{ Adds a choice of the uninstall page below Top: a bold check box and the
+  text under it; returns the box, and Top below the text }
+function AddChoice(Form: TSetupForm; const Caption, Text: String; Checked: Boolean; var Top: Integer): TNewCheckBox;
+var
+  Hint: TNewStaticText;
+begin
+  Result := TNewCheckBox.Create(Form);
+  Result.Parent := Form;
+  Result.Caption := Caption;
+  Result.Font.Style := [fsBold];
+  Result.Checked := Checked;
+  Result.Left := ScaleX(16);
+  Result.Top := Top;
+  Result.Width := Form.ClientWidth - ScaleX(32);
+  Result.Height := ScaleY(20);
+  Hint := TNewStaticText.Create(Form);
+  Hint.Parent := Form;
+  Hint.AutoSize := False;
+  Hint.WordWrap := True;
+  Hint.Caption := Text;
+  Hint.Left := ScaleX(36);
+  Hint.Top := Top + ScaleY(22);
+  Hint.Width := Form.ClientWidth - ScaleX(52);
+  Hint.AdjustHeight;
+  Top := Hint.Top + Hint.Height + ScaleY(14);
+end;
+
+{ The uninstall's choices on one page (issue #86): give the adapters back to
+  Windows (only when A2DPWB put one on WinUSB) and delete the app data, both
+  on by default. v1 (running, or installed) uses the adapter through WinUSB
+  too: then the restore is off, and the page says why. Silent mode chooses
+  neither: nobody to ask, and a silent uninstall must not raise a UAC
+  prompt. }
+procedure AskUninstallChoices(var Restore, Delete: Boolean);
+var
+  Form: TSetupForm;
+  RestoreBox, DeleteBox: TNewCheckBox;
+  OkButton: TNewButton;
+  Text: String;
+  V1Present, Offer: Boolean;
+  Top: Integer;
+begin
+  Restore := False;
+  Delete := False;
+  if UninstallSilent then
+    Exit;
+  Offer := CanRestoreDrivers;
+  V1Present := CheckForMutexes(V1Mutex) or RegKeyExists(HKCU, V1UninstKey) or RegKeyExists(HKLM, V1UninstKey);
+  Form := CreateCustomForm(ScaleX(440), ScaleY(200), False, True);
+  try
+    Form.Caption := CustomMessage('UninstallChoices');
+    Top := ScaleY(16);
+    RestoreBox := nil;
+    if Offer then begin
+      Text := CustomMessage('RestoreChoiceText');
+      if V1Present then
+        Text := Text + ' ' + CustomMessage('RestoreV1Note');
+      RestoreBox := AddChoice(Form, CustomMessage('RestoreChoice'), Text, not V1Present, Top);
+    end;
+    { Only the settings folder itself, not one A2DPWB_CONFIG_DIR names }
+    DeleteBox := AddChoice(Form, CustomMessage('DeleteChoice'),
+      FmtMessage(CustomMessage('DeleteChoiceText'), [ExpandConstant('{userappdata}\A2DPWB')]), True, Top);
+    OkButton := TNewButton.Create(Form);
+    OkButton.Parent := Form;
+    OkButton.Caption := SetupMessage(msgButtonOK);
+    OkButton.Width := Form.CalculateButtonWidth([OkButton.Caption]);
+    OkButton.Height := ScaleY(23);
+    OkButton.Left := Form.ClientWidth - OkButton.Width - ScaleX(16);
+    OkButton.Top := Top;
+    OkButton.ModalResult := mrOk;
+    OkButton.Default := True;
+    Form.ClientHeight := OkButton.Top + OkButton.Height + ScaleY(16);
+    Form.ActiveControl := OkButton;
+    Form.FlipAndCenterIfNeeded(True, UninstallProgressForm, False);
+    { Closed with its X button: as chosen, too }
+    Form.ShowModal;
+    Restore := (RestoreBox <> nil) and RestoreBox.Checked;
+    Delete := DeleteBox.Checked;
+  finally
+    Form.Free;
+  end;
+end;
+
+{ Gives the adapters A2DPWB put on WinUSB back to Windows:
+  `a2dpwb-driver restore --records` restores every recorded adapter with one
+  UAC prompt and deletes the records of those given back. The core must be
+  closed already. }
 procedure RestoreDrivers;
 var
-  Records, Msg: String;
-  Find: TFindRec;
-  V1Present: Boolean;
-  Flags, Code: Integer;
+  Records: String;
+  Code: Integer;
 begin
-  Records := ConfigDir + '\driver';
-  if not FindFirst(Records + '\*.json', Find) then
-    Exit;
-  FindClose(Find);
-  if UninstallSilent or not FileExists(ExpandConstant('{app}\{#DriverExe}')) then begin
-    Log('The adapters stay on WinUSB');
-    Exit;
-  end;
-  { v1 (running, or installed) uses the adapter through WinUSB too: then No
-    is the default }
-  V1Present := CheckForMutexes(V1Mutex) or RegKeyExists(HKCU, V1UninstKey) or RegKeyExists(HKLM, V1UninstKey);
-  Msg := CustomMessage('RestoreAsk');
-  Flags := MB_YESNO;
-  if V1Present then begin
-    Msg := Msg + CustomMessage('RestoreV1Note');
-    Flags := Flags or MB_DEFBUTTON2;
-  end;
-  if MsgBox(Msg, mbConfirmation, Flags) <> IDYES then begin
-    Log('The adapters stay on WinUSB');
-    Exit;
-  end;
+  Records := DriverRecords;
   Log('Restoring the drivers of the adapters recorded in ' + Records);
   if not ShellExec('runas', ExpandConstant('{app}\{#DriverExe}'), 'restore --records "' + Records + '"', '', SW_HIDE, ewWaitUntilTerminated, Code) then
     { 1223: UAC cancelled }
@@ -921,17 +1025,18 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Cmd: String;
+  Restore: Boolean;
 begin
   case CurUninstallStep of
     usUninstall:
       begin
         CloseCore(ExpandConstant('{app}'));
         WaitForAppExit;
-        RestoreDrivers;
-        { Only the settings folder itself, not one A2DPWB_CONFIG_DIR names }
-        DeleteData := not UninstallSilent and
-          (MsgBox(FmtMessage(CustomMessage('DeleteDataAsk'), [ExpandConstant('{userappdata}\A2DPWB')]),
-                  mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES);
+        AskUninstallChoices(Restore, DeleteData);
+        if Restore then
+          RestoreDrivers
+        else if CanRestoreDrivers then
+          Log('The adapters stay on WinUSB');
       end;
     usPostUninstall:
       begin

@@ -41,8 +41,8 @@ describe("Home", () => {
     expect(wh.querySelector(".codec-info > .codec-name")).toHaveTextContent(/^LDAC$/);
     expect(within(wh).getByRole("status")).toHaveTextContent(/^Connected$/);
     // The other device: ready, not connected, its own Connect
-    expect(xb).toHaveTextContent("Ready");
-    expect(xb).toHaveTextContent("Not connected");
+    expect(xb).toHaveTextContent("Disconnected");
+    expect(xb).toHaveTextContent("—");
     expect(within(xb).getByRole("button", { name: "Connect" })).toBeInTheDocument();
     // The volume is the device's own: on its card only (issue #86)
     expect(within(wh).getByRole("slider", { name: "Volume" })).not.toBeDisabled();
@@ -115,7 +115,7 @@ describe("Home", () => {
     const [wh, xb] = pills();
     expect(wh).toHaveTextContent("WH-1000XM5");
     expect(wh).not.toHaveTextContent("AC:80:0A:12:34:56");
-    expect(wh).toHaveTextContent("Idle");
+    expect(wh).toHaveTextContent("Disconnected");
     expect(xb).toHaveTextContent("SRS-XB13");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(wh.querySelector(".codec-name")).toHaveTextContent(/^LDAC$/));
@@ -128,7 +128,7 @@ describe("Home", () => {
     expect([...badge.children].map((c) => c.textContent)).toEqual(["990 kbps", expect.stringMatching(/^[\d.]+ kHz$/), "24-bit"]);
     expect(wh).toHaveAccessibleName(/^WH-1000XM5, Connected, LDAC 990 kbps/);
     // The other one: idle, no codec
-    expect(xb).toHaveTextContent("Idle");
+    expect(xb).toHaveTextContent("Disconnected");
     expect(xb.querySelector(".codec-info")).toBeNull();
   });
 
@@ -299,7 +299,7 @@ describe("every screen renders", () => {
     expect(document.querySelector(".fly-title .device-name")).toBeNull();
     // Hidden by Escape and on losing the focus: no close button
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
-    expect(screen.getByText("Not connected")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
     fireEvent.click(connect);
     await screen.findByRole("button", { name: "Disconnect" });
     await waitFor(() => expect(document.querySelector(".fly-title .codec-name")).toHaveTextContent(/^LDAC$/));

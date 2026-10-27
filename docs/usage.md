@@ -36,7 +36,7 @@ The codec of each saved audio device, one section per device (a dot that is gree
 
 - **Auto-select the codec with the highest quality** (one setting for every device, at the top of the page; on by default): each device uses the codec with the highest sound quality it supports, in this order: LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC, with its best settings: high quality, 24-bit where the codec carries it and the highest sample rate the device lists (e.g. LDAC 96 kHz, LHDC V5 up to 192 kHz; aptX Adaptive 48 kHz, see [aptX Adaptive](#aptx-adaptive); Windows' own rate is resampled). The line under the switch says to turn it off to choose, set up and order the codecs yourself. The cards are read-only, in the default order, and the codec in use (or the one Auto will pick) is highlighted; clicking a card or its **...** asks whether to turn Auto-select off (**Disable Auto-select** / **Cancel**). Turn it off to choose each device's codec and its settings yourself; a device with none chosen yet keeps Auto's pick. The codec chosen for a device is kept while Auto-select is on. Settings from before 2.0.2 that chose a codec for any device start with it off
 - With it off, click a card to choose that device's codec; it is saved at once, and a device streaming connects again with it. If the device does not support the codec, the first card in the device's order that it supports is used: the best codec it supports unless you changed the order (see [Explicitly Selected Codec Not Offered](#codec-fallback))
-- With it off, drag a device's cards (or press Alt with an arrow key on a card) to put its codecs in your own order; each device keeps its own order. A device with no codec chosen yet uses the first card it supports, and so does a chosen codec it does not support. FastStream and Opus 05 are never used unless chosen, wherever they stand. **Back to sound quality order** resets it. Under Auto-select the order is not used. A device streaming with a codec this changes connects again
+- With it off, drag a device's cards (or press Alt with an arrow key on a card) to put its codecs in your own order; each device keeps its own order. A device with no codec chosen yet uses the first card it supports, and so does a chosen codec it does not support. FastStream and Opus 05 are never used unless chosen, wherever they stand. **Reset codecs order** resets it. Under Auto-select the order is not used. A device streaming with a codec this changes connects again
 - Choosing another codec for the device that is streaming connects it again with that codec. The cards then wait 3 seconds (**Switching the codec. Wait a moment before choosing another.**) before the next choice, so a quick series of clicks does not start several connections one over another
 - **Show only supported codecs** (on by default; turn it off to show both supported and unsupported codecs): the codecs a device did not offer are left out. Before a device's first connection, all of them are shown
 - **...** on a card opens that codec's settings; **OK** chooses the codec with them. Each codec keeps its own settings: choosing another codec and coming back brings them back. Only what that codec can do, and what the device listed at its last connection, is offered:
@@ -52,7 +52,7 @@ Behind the scenes A2DPWB keeps one entry per device in `profiles.json` (its code
 
 ### Audio Devices
 
-The headphones and speakers A2DPWB can stream to, each with its own settings: **Scan Devices** finds nearby devices with the USB adapter (about 10 seconds; put the headphones into pairing mode). Devices A2DPWB paired with before are tagged **Paired**. If the scan does not find them, enter the address under **Manual:** and click **Use**; typed or pasted addresses are formatted as you go (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`). A saved device can be renamed or removed, and has:
+The headphones and speakers A2DPWB can stream to, each with its own settings: **Scan Devices** finds nearby devices with the USB adapter (30 seconds, listed as they answer; **Stop** ends it; put the headphones into pairing mode). Devices A2DPWB paired with before are tagged **Paired**. If the scan does not find them, enter the address under **Manual:** and click **Use**; typed or pasted addresses are formatted as you go (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`). A saved device can be renamed or removed, and has:
 
 - **Capture Source**: System Loopback (a new device's default), Virtual Device or Application (see [Capture Modes](#capture-modes))
 - **Auto Switch Windows Default Audio Output Device**, with a virtual device
@@ -440,7 +440,7 @@ Bluetooth avoids busy channels by itself (AFH), but it only learns about Wi-Fi f
 
 | AFH | |
 |:--|:--|
-| Auto (default) | Only the 2.4 GHz Wi-Fi channel this PC is connected on (checked again every 30 seconds while connected). Nothing when the PC is not on 2.4 GHz Wi-Fi: disconnected, on 5 or 6 GHz, or wired |
+| Auto (default) | Only the 2.4 GHz Wi-Fi channel this PC is connected on (checked again every 30 seconds while connected). Nothing when the PC is not on 2.4 GHz Wi-Fi: disconnected, on 5 GHz, or wired. It reads only the channel number, which needs no location permission; a 6 GHz channel numbered 1 to 14 counts as 2.4 GHz |
 | Off | Nothing: the controller decides alone |
 | Manual, e.g. `6,11` | These Wi-Fi channels (1 to 14) |
 
@@ -495,7 +495,7 @@ In CLI mode: `--le-audio -d <address>` streams to an LE Audio device, `--le-devi
 
 ## Updates {#updates}
 
-A2DPWB checks GitHub Releases at most once a day (**Settings > Check for Updates on Startup**; **Include Pre-releases in Update Checks** also offers beta releases). When a new version is available, Settings says so:
+A2DPWB checks GitHub Releases at most once a day (**Settings > Check for Updates on Startup**; **Include Pre-releases in Update Checks** also offers beta releases). When a new version is available, a dialog shows a few lines on what is new (the full notes are a link away), with **Update now** (**Open download page** for a portable copy) and **Later**; **Later** leaves it to Settings until the next version. Settings says so too:
 
 - **Installed copy**: **Update now** downloads the signed update. While an audio device is connected, it waits and installs when the device disconnects, so an update never cuts the audio. A2DPWB then closes, installs the new version and starts again by itself.
 - **Portable copy** (or a build without update signing): **Open download page** opens the release page.

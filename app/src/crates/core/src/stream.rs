@@ -698,7 +698,10 @@ fn device_turned_off(inner: &Inner, host: &BtHost) -> bool {
 /// The headphones were turned off: nothing is sent until they connect to
 /// the PC again (true). False when the session ends instead: stopped, or
 /// the stack has to start anew (sleep, a stopped adapter), which the next
-/// connection does.
+/// connection does. Another saved device that connects to the PC meanwhile
+/// is announced ([`ServiceEvent::OtherDeviceBack`]): the core starts its
+/// session, which ends this one (issue #86: with two devices, turning on
+/// the other one connected nothing).
 fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6], pipeline: &mut Option<Pipeline>) -> bool {
     inner.waiting_for_device();
     host.device_came_back(device);
@@ -713,13 +716,25 @@ fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6], pipeline: &mut
         if inner.stop_requested() || inner.power.suspending() || inner.power.stale() || host.stalled() {
             break false;
         }
-        if host.device_came_back(device) {
-            break true;
+        match host.link_came_up() {
+            Some(a) if a == device => break true,
+            Some(a) if is_saved(inner, a) => {
+                tracing::info!("device off: {} connected to the PC instead", bt_host::addr_str(&a));
+                inner.other_device_back(a);
+            }
+            Some(a) => tracing::debug!("device off: {} connected, not a saved device", bt_host::addr_str(&a)),
+            None => {}
         }
     };
     tracing::debug!("device off: waited {} s, back {back}", t.elapsed().as_secs());
     inner.done_waiting_for_device(back);
     back
+}
+
+/// A device saved on Audio Devices (classic)
+fn is_saved(inner: &Inner, addr: [u8; 6]) -> bool {
+    let a = bt_host::addr_str(&addr);
+    crate::devices::load(inner.config_dir()).iter().any(|d| d.address.eq_ignore_ascii_case(&a))
 }
 
 /// The PC is going to sleep: the stack is shut down quietly (the pipeline's

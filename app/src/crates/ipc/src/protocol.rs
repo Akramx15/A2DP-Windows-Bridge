@@ -30,6 +30,9 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// their events (2.0.2)
 pub const FEATURES: &[&str] = &["rfcomm"];
 
+/// The longest `device.scan` (seconds); a longer one is cut to it
+pub const MAX_SCAN_SECONDS: u32 = 600;
+
 /// A message of app/lang: key and printf-style arguments
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
 
@@ -671,6 +674,10 @@ pub struct UpdateInfo {
     /// The updater manifest attached to the release (latest.json): the UI
     /// installs from it when it is an installed copy with an updater key
     pub manifest_url: String,
+    /// A few lines on what is new, shown with the update (the release's
+    /// in-app notes); empty when it has none
+    #[serde(default)]
+    pub notes: String,
 }
 
 /// The whole state
@@ -1057,7 +1064,8 @@ pub enum Method {
     /// AVRCP absolute volume 0..127
     #[serde(rename = "stream.set_volume")]
     StreamSetVolume { volume: u8 },
-    /// -> Device[] (also as an event)
+    /// -> Device[] (also as an event). `seconds` from 3 to
+    /// [`MAX_SCAN_SECONDS`] (the setup looks until a device is added)
     #[serde(rename = "device.scan")]
     DeviceScan { seconds: u32 },
     /// Ends a running scan early: device.scan answers with what it found

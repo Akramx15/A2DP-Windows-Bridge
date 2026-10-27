@@ -79,7 +79,7 @@ export function Flyout() {
           </Show>
           {/* As on Home and in the sidebar: battery | state, the codec (issue #86) */}
           <div class="fly-state">
-            <Show when={showsBattery(stream())}>
+            <Show when={stream().state !== "idle" && showsBattery(stream())}>
               <BatteryLevel class="fly-battery" percent={stream().battery} />
               <span class="muted" aria-hidden="true">
                 |

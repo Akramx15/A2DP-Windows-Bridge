@@ -807,6 +807,18 @@ option {
   gap: var(--s2);
   margin-top: var(--s2);
 }
+/* A release's in-app notes in the update dialog: a few short lines */
+.update-notes {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.update-notes li.plain {
+  list-style: none;
+  margin-left: -1.25rem;
+}
 @keyframes fade {
   from {
     opacity: 0;

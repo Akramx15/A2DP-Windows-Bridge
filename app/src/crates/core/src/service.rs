@@ -212,6 +212,10 @@ pub enum ServiceEvent {
     /// The headphones refused to report their battery level (HFP refused,
     /// another device may hold it)
     BatteryRefused,
+    /// While the session waited for its headphones that went off, another
+    /// saved device connected to the PC (its address): its session may
+    /// start instead
+    OtherDeviceBack([u8; 6]),
 }
 
 pub struct ServiceOptions {
@@ -310,6 +314,15 @@ impl Inner {
             self.opts.capture.save_recent(&dir, &crate::paths::local_stamp(), &what, false);
         }
         let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::State(state, msg));
+    }
+
+    /// The settings folder (devices, profiles, pairings)
+    pub fn config_dir(&self) -> &std::path::Path {
+        &self.opts.config_dir
+    }
+
+    pub fn other_device_back(&self, addr: [u8; 6]) {
+        let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::OtherDeviceBack(addr));
     }
 
     pub fn stream_info(&self, info: StreamInfo) {

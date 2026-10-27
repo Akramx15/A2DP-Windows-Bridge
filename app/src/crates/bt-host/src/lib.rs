@@ -689,7 +689,7 @@ impl BtHost {
         if !self.hci_ready() {
             return Vec::new();
         }
-        let total = Duration::from_secs(seconds.clamp(3, 60).into());
+        let total = Duration::from_secs(seconds.clamp(3, 600).into());
         tracing::info!("starting inquiry (~{} s)", total.as_secs());
         let deadline = Instant::now() + total;
         let mut shown = self.shared.update(|s| {
@@ -1341,7 +1341,13 @@ impl BtHost {
     /// The device opened a link to the PC since the last call (resets), as
     /// headphones turned back on do
     pub fn device_came_back(&self, addr: [u8; 6]) -> bool {
-        self.shared.update(|s| std::mem::take(&mut s.acl_up_from)) == Some(addr)
+        self.link_came_up() == Some(addr)
+    }
+
+    /// The device that last opened a link to the PC since the last call
+    /// (resets), whichever it is
+    pub fn link_came_up(&self) -> Option<[u8; 6]> {
+        self.shared.update(|s| std::mem::take(&mut s.acl_up_from))
     }
 
     /// Once per lost connection (resets)
