@@ -14,6 +14,7 @@ mod driver;
 mod logging;
 mod quit;
 mod resident;
+mod rfcomm;
 mod server;
 mod state;
 mod zip;

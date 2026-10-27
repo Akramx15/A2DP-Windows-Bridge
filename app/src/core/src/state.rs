@@ -111,12 +111,12 @@ pub fn msg(m: &a2dpwb_core::Msg) -> Msg {
     Msg { key: m.key.to_string(), args: m.args.clone() }
 }
 
-fn err(code: &str, key: &str) -> ErrorInfo {
+pub(crate) fn err(code: &str, key: &str) -> ErrorInfo {
     ErrorInfo { code: code.into(), message: Msg::new(key) }
 }
 
 /// A request whose parameters do not make sense (ipc.error.bad_request)
-fn bad_request(code: &str, method: &str, why: String) -> ErrorInfo {
+pub(crate) fn bad_request(code: &str, method: &str, why: String) -> ErrorInfo {
     ErrorInfo {
         code: code.into(),
         message: Msg { key: "ipc.error.bad_request".into(), args: vec![method.into(), why] },
@@ -958,6 +958,11 @@ impl CoreState {
         self.snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
+    /// The revision of the state now
+    pub fn rev(&self) -> u64 {
+        self.snapshot.lock().unwrap_or_else(|e| e.into_inner()).0
+    }
+
     /// Reads part of the snapshot without copying all of it
     pub fn with_snapshot<R>(&self, f: impl FnOnce(&Snapshot) -> R) -> R {
         f(&self.snapshot.lock().unwrap_or_else(|e| e.into_inner()).1)
@@ -989,7 +994,12 @@ impl CoreState {
                 Event::Verbose(v) => s.verbose = *v,
                 Event::Crashes(c) => s.crashes = c.clone(),
                 // Not state: no revision
-                Event::Link(_) | Event::Log(_) | Event::Receiver(_) | Event::Bye => {
+                Event::Link(_)
+                | Event::Log(_)
+                | Event::Receiver(_)
+                | Event::RfcommData(_)
+                | Event::RfcommClosed(_)
+                | Event::Bye => {
                     let _ = self.events.send((g.0, Arc::new(event)));
                     return;
                 }
@@ -1869,6 +1879,9 @@ impl CoreState {
             }
             // Handled per client by the server
             Method::DiagSubscribe { .. } => Ok(Value::Null),
+            Method::RfcommOpen { .. } | Method::RfcommSend { .. } | Method::RfcommClose { .. } => {
+                Err(err("rfcomm.no_channel", "ipc.error.rfcomm_no_channel"))
+            }
             Method::DiagCaptureStart => self.start_capture().map(Value::String),
             Method::DiagCaptureStop => Ok(json(&self.stop_capture())),
             Method::DiagInfo(params) => {

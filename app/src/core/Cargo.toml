@@ -30,6 +30,7 @@ time = { version = "0.3", features = ["local-offset"] }
 # bundle.rs: the diagnostic bundle's .zip
 flate2 = "1"
 crc32fast = "1"
+base64 = "0.22"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "time", "macros", "io-util"] }
 tray-icon = "0.26"
 tao = "0.37"

@@ -47,8 +47,10 @@ const INIT_AVRCP: u32 = 16;
 pub(crate) const INIT_LE: u32 = 32;
 /// LE: the ATT server (Stack::att_server_init)
 pub(crate) const INIT_ATT: u32 = 64;
-/// HFP audio gateway and RFCOMM (Stack::hfp_ag_init)
+/// HFP audio gateway (Stack::hfp_ag_init)
 const INIT_HFP: u32 = 128;
+/// RFCOMM (Stack::rfcomm_init: for HFP, or the first client channel)
+const INIT_RFCOMM: u32 = 256;
 
 /// Largest codec information of a stream endpoint or a SET_CONFIGURATION
 /// (shim.c A2DPWB_CODEC_INFO_MAX): aptX Adaptive's 40 bytes
@@ -170,9 +172,73 @@ impl Stack {
     /// connection is made, for the headphones' battery level; events come as
     /// [`crate::Source::Hfp`]
     pub fn hfp_ag_init(&self) {
-        // SAFETY: on the BTstack thread, after l2cap / sdp init.
+        self.rfcomm_init();
+        // SAFETY: on the BTstack thread, after l2cap / sdp / rfcomm init.
         unsafe { ffi::a2dpwb_hfp_ag_init() };
         mark(INIT_HFP);
+    }
+
+    /// RFCOMM, once (after l2cap_init): by [`Stack::hfp_ag_init`], or
+    /// before the first client channel, so that without either nothing
+    /// answers on RFCOMM's PSM
+    pub fn rfcomm_init(&self) {
+        if initialized(INIT_RFCOMM) {
+            return;
+        }
+        tracing::debug!(target: "btstack", "rfcomm init");
+        // SAFETY: on the BTstack thread, after l2cap_init.
+        unsafe { ffi::a2dpwb_rfcomm_init() };
+        mark(INIT_RFCOMM);
+    }
+
+    /// Asks the device's SDP server for the RFCOMM server channel of the
+    /// service `uuid128` (big endian, as printed). Queued behind other SDP
+    /// queries; one at a time (else ERROR_CODE_COMMAND_DISALLOWED). The
+    /// result comes as [`crate::Source::SdpClient`] events:
+    /// SDP_EVENT_QUERY_RFCOMM_SERVICE per channel found, then
+    /// SDP_EVENT_QUERY_COMPLETE.
+    pub fn sdp_query_rfcomm(&self, addr: &[u8; 6], uuid128: &[u8; 16]) -> u8 {
+        // SAFETY: on the BTstack thread after sdp_init; the shim copies
+        // both (6 and 16 bytes).
+        let status = unsafe { ffi::a2dpwb_sdp_query_rfcomm(addr.as_ptr(), uuid128.as_ptr()) };
+        tracing::debug!(target: "btstack", "sdp query rfcomm {} {uuid128:02X?}: 0x{status:02X}", addr_str(addr));
+        status
+    }
+
+    /// Opens an RFCOMM channel to the device's `server_channel` (after
+    /// [`Stack::rfcomm_init`]); its events and data come as
+    /// [`crate::Source::Rfcomm`]. Returns the RFCOMM cid, or BTstack's status.
+    pub fn rfcomm_create_channel(&self, addr: &[u8; 6], server_channel: u8) -> Result<u16, u8> {
+        let mut cid = 0u16;
+        // SAFETY: on the BTstack thread after rfcomm_init; addr is 6 bytes,
+        // cid writable.
+        let status = unsafe { ffi::a2dpwb_rfcomm_create_channel(addr.as_ptr(), server_channel, &mut cid) };
+        tracing::debug!(target: "btstack", "rfcomm create channel {} #{server_channel}: 0x{status:02X}, cid 0x{cid:04X}", addr_str(addr));
+        if status == 0 { Ok(cid) } else { Err(status) }
+    }
+
+    pub fn rfcomm_disconnect(&self, rfcomm_cid: u16) -> u8 {
+        // SAFETY: on the BTstack thread.
+        let status = unsafe { ffi::rfcomm_disconnect(rfcomm_cid) };
+        tracing::debug!(target: "btstack", "rfcomm disconnect cid 0x{rfcomm_cid:04X}: 0x{status:02X}");
+        status
+    }
+
+    /// RFCOMM_EVENT_CAN_SEND_NOW follows once the channel can take a frame
+    pub fn rfcomm_request_can_send_now(&self, rfcomm_cid: u16) -> u8 {
+        // SAFETY: on the BTstack thread.
+        unsafe { ffi::rfcomm_request_can_send_now_event(rfcomm_cid) }
+    }
+
+    /// One frame of at most the channel's max frame size (after
+    /// RFCOMM_EVENT_CAN_SEND_NOW)
+    pub fn rfcomm_send(&self, rfcomm_cid: u16, data: &[u8]) -> u8 {
+        if data.len() > u16::MAX as usize {
+            return crate::consts::ERROR_CODE_INVALID_HCI_COMMAND_PARAMETERS;
+        }
+        // SAFETY: on the BTstack thread; BTstack only reads `data` (copied
+        // into its outgoing buffer) during the call.
+        unsafe { ffi::rfcomm_send(rfcomm_cid, data.as_ptr() as *mut u8, data.len() as u16) }
     }
 
     /// Opens the service level connection to the headphones' HFP
@@ -670,6 +736,9 @@ impl Stack {
             }
             if init & INIT_HFP != 0 {
                 ffi::a2dpwb_hfp_ag_deinit();
+            }
+            if init & INIT_RFCOMM != 0 {
+                ffi::a2dpwb_rfcomm_deinit();
             }
             if init & INIT_SDP != 0 {
                 ffi::sdp_client_deinit();

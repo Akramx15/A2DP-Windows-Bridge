@@ -17,6 +17,7 @@ pub mod events;
 mod le;
 pub mod link_keys;
 pub mod media;
+pub mod rfcomm;
 mod shared;
 pub mod stats;
 
@@ -39,6 +40,10 @@ pub use le::{
     LeStreamStats, LeStreamStatus,
 };
 pub use media::{MediaPacket, MediaSink};
+pub use rfcomm::{
+    MAX_SEND_BYTES as RFCOMM_MAX_SEND_BYTES, OPEN_DEADLINE as RFCOMM_OPEN_DEADLINE, RfcommCloseReason, RfcommError,
+    RfcommEvent, RfcommOpened, RfcommReply, RfcommSink, parse_uuid,
+};
 use shared::{Shared, Wait};
 pub use stats::{LinkRadio, LinkStats, LiveCodec, MaxGauge, StreamTiming};
 
@@ -52,6 +57,9 @@ const STREAM_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A job the run loop should take at once
 const JOB_TIMEOUT: Duration = Duration::from_secs(5);
+/// An RFCOMM channel open: the BTstack thread answers by its deadline
+/// (rfcomm::OPEN_DEADLINE); this only guards against a run loop that hangs
+const RFCOMM_OPEN_TIMEOUT: Duration = Duration::from_secs(22);
 /// One remote name request: a device that does not answer takes the page
 /// timeout (5.12 s)
 const NAME_REQUEST_TIMEOUT: Duration = Duration::from_secs(7);
@@ -603,6 +611,56 @@ impl BtHost {
     /// needs ISO buffers ([`BtHost::le_iso_buffers`]).
     pub fn le_audio_capable(&self) -> bool {
         self.shared.lock().le_audio_capable
+    }
+
+    // ---- RFCOMM client channels ----
+
+    /// Opens an RFCOMM channel to the service `uuid` of `addr`, the device
+    /// being streamed to, over the link the stack has to it (it never
+    /// connects for this: else [`RfcommError::NotConnected`]). Answered
+    /// within [`RFCOMM_OPEN_DEADLINE`]. `sink` receives the channel's data
+    /// and its close, on the BTstack thread.
+    pub fn rfcomm_open(&self, addr: [u8; 6], uuid: [u8; 16], sink: RfcommSink) -> Result<RfcommOpened, RfcommError> {
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.post(move |app, s| {
+            // Only to the device being streamed to: its channels close with
+            // the A2DP connection (close_device)
+            if app.a2dp_cid == 0 || app.remote_addr != Some(addr) {
+                let _ = tx.send(Err(RfcommError::NotConnected));
+                return;
+            }
+            app.rfcomm.open(s, addr, uuid, sink, tx)
+        });
+        match rx.recv_timeout(RFCOMM_OPEN_TIMEOUT) {
+            Ok(r) => r,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // The run loop did not answer: the channel is closed if it
+                // opens later
+                tracing::warn!("RFCOMM: open to {} timed out", addr_str(&addr));
+                Err(RfcommError::NoAnswer)
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(RfcommError::NotConnected),
+        }
+    }
+
+    /// Queues `data` on channel `id`, without waiting: the order of the
+    /// calls is the order on the air. The reply tells whether it was queued.
+    pub fn rfcomm_send(&self, id: u32, data: Vec<u8>) -> RfcommReply {
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.post(move |app, s| {
+            let _ = tx.send(app.rfcomm.send(s, id, &data));
+        });
+        RfcommReply(rx)
+    }
+
+    /// Closes channel `id` after what was queued before, without waiting
+    /// (no [`RfcommEvent::Closed`] follows)
+    pub fn rfcomm_close(&self, id: u32) -> RfcommReply {
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.post(move |app, s| {
+            let _ = tx.send(app.rfcomm.close(s, id));
+        });
+        RfcommReply(rx)
     }
 
     // ---- scanning ----

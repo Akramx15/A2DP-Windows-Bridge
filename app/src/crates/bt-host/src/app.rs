@@ -23,6 +23,7 @@ use crate::le::core::LeCore;
 use crate::le::iso_send::TIMER_ISO;
 use crate::link_keys::FileLinkKeyStore;
 use crate::media::{MediaPacket, RTP_HEADER_SIZE};
+use crate::rfcomm::{Rfcomm, TIMER_RFCOMM};
 use crate::shared::Shared;
 use crate::stats::LinkStats;
 use crate::{AfhClassification, ConnectFailure, Controls, DiscoveredDevice, HostEvent, InitFailure, MediaKey};
@@ -84,6 +85,8 @@ pub(crate) struct HostApp {
     pub afh: Option<Box<dyn crate::AfhSource>>,
     /// LE Audio (experimental): None while off
     pub le: Option<LeCore>,
+    /// RFCOMM client channels of IPC clients
+    pub rfcomm: Rfcomm,
 
     // ---- connection (BTstack thread only) ----
     pub a2dp_cid: u16,
@@ -162,6 +165,7 @@ impl HostApp {
             setup,
             afh,
             le,
+            rfcomm: Rfcomm::default(),
             a2dp_cid: 0,
             avrcp_cid: 0,
             local_seid: 0,
@@ -1466,6 +1470,9 @@ impl HostApp {
                 if let Some(acl) = self.hfp_acl.take() {
                     stack.hfp_ag_release(acl);
                 }
+                if let Some(addr) = self.remote_addr {
+                    self.rfcomm.close_device(stack, addr);
+                }
                 self.shared.update(|s| s.battery = None);
                 if self.a2dp_cid == 0 {
                     // No current connection: wake a pending disconnect wait,
@@ -1879,7 +1886,12 @@ impl HostApp {
 }
 
 impl App for HostApp {
-    fn on_packet(&mut self, stack: &Stack, source: Source, packet_type: u8, _channel: u16, packet: &[u8]) {
+    fn on_packet(&mut self, stack: &Stack, source: Source, packet_type: u8, channel: u16, packet: &[u8]) {
+        // RFCOMM's data packets as well as its events
+        if source == Source::Rfcomm {
+            self.rfcomm.on_packet(stack, packet_type, channel, packet);
+            return;
+        }
         if packet_type != HCI_EVENT_PACKET {
             return;
         }
@@ -1897,6 +1909,8 @@ impl App for HostApp {
                     self.handle_hfp(packet)
                 }
             }
+            Source::SdpClient => self.rfcomm.on_sdp(stack, packet),
+            Source::Rfcomm => {}
             Source::Avrcp | Source::AvrcpController | Source::AvrcpTarget => {
                 if event_type(packet) == Some(HCI_EVENT_AVRCP_META) {
                     self.handle_avrcp(stack, packet)
@@ -1951,6 +1965,7 @@ impl App for HostApp {
                 stack.timer_start(TIMER_PLAYBACK, PLAYBACK_TICK_MS);
             }
             TIMER_RTK_VERIFY => self.verify_realtek_download(stack),
+            TIMER_RFCOMM => self.rfcomm.on_timer(stack),
             TIMER_LE => {
                 if let Some(le) = self.le.as_mut() {
                     le.on_timer(stack);
@@ -1983,6 +1998,7 @@ impl App for HostApp {
     fn on_exit(&mut self, stack: &Stack) {
         tracing::debug!("run loop exit (a2dp cid 0x{:04X}, avrcp cid 0x{:04X})", self.a2dp_cid, self.avrcp_cid);
         self.set_streaming(false);
+        self.rfcomm.stop();
         if let Some(le) = self.le.as_mut() {
             le.stack_deinit(stack);
         }
