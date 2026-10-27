@@ -572,6 +572,9 @@ pub struct Settings {
     pub start_with_windows: bool,
     pub start_minimized: bool,
     pub minimize_to_tray: bool,
+    /// A click on the tray icon opens the main window, not the flyout
+    #[serde(default)]
+    pub tray_click_opens_window: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
     /// The headphones' buttons act as Windows media keys (every device)

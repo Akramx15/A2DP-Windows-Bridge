@@ -626,6 +626,8 @@
   "ui.settings.start_minimized_logon": "A2DP Windows Bridge가 Windows와 함께 시작될 때 켜져 있으면 트레이 아이콘만 표시되고, 꺼져 있으면 기본 창이 열립니다.",
   "ui.settings.updates": "업데이트",
   "ui.settings.update_available": "버전 %s을(를) 사용할 수 있습니다(현재: %s).",
+  "ui.settings.tray_click_opens_window": "트레이 아이콘을 클릭하면 기본 창 열기",
+  "ui.settings.tray_click_opens_window_hint": "꺼져 있으면 클릭 시 작은 트레이 창이 열립니다.",
   "ui.settings.open_download": "다운로드 페이지 열기",
   "ui.update.install": "지금 업데이트",
   "ui.update.downloading": "버전 %s을(를) 다운로드하는 중… %s",

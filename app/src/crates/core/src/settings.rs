@@ -90,6 +90,9 @@ pub struct Settings {
     pub start_minimized: bool,
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
+    /// A click on the tray icon opens the main window instead of the tray
+    /// flyout (issue #86; off by default)
+    pub tray_click_opens_window: bool,
 
     #[serde(default = "default_true")]
     pub check_updates_on_startup: bool,
@@ -249,6 +252,7 @@ impl Default for Settings {
             start_with_windows: false,
             start_minimized: false,
             minimize_to_tray: true,
+            tray_click_opens_window: false,
             check_updates_on_startup: true,
             last_update_check: String::new(),
             include_prereleases: default_prereleases(),

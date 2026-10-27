@@ -626,6 +626,8 @@
   "ui.settings.start_minimized_logon": "A2DP Windows Bridge 隨 Windows 啟動時: 開啟則只會顯示系統匣圖示，關閉則會開啟主視窗。",
   "ui.settings.updates": "更新",
   "ui.settings.update_available": "版本 %s 已可使用 (目前: %s)。",
+  "ui.settings.tray_click_opens_window": "按一下系統匣圖示開啟主視窗",
+  "ui.settings.tray_click_opens_window_hint": "關閉時，按一下會開啟小型系統匣視窗。",
   "ui.settings.open_download": "開啟下載頁面",
   "ui.update.install": "立即更新",
   "ui.update.downloading": "正在下載版本 %s… %s",

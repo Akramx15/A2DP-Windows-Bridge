@@ -626,6 +626,8 @@
   "ui.settings.start_minimized_logon": "Wenn A2DP Windows Bridge mit Windows startet: Ein zeigt nur das Symbol im Infobereich, Aus öffnet das Hauptfenster.",
   "ui.settings.updates": "Updates",
   "ui.settings.update_available": "Version %s ist verfügbar (aktuell: %s).",
+  "ui.settings.tray_click_opens_window": "Klick auf das Infobereich-Symbol öffnet das Hauptfenster",
+  "ui.settings.tray_click_opens_window_hint": "Aus: Ein Klick öffnet das kleine Fenster am Infobereich.",
   "ui.settings.open_download": "Download-Seite öffnen",
   "ui.update.install": "Jetzt aktualisieren",
   "ui.update.downloading": "Version %s wird heruntergeladen… %s",

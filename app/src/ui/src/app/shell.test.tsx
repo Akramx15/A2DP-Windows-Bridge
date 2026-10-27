@@ -117,6 +117,16 @@ describe("tray", () => {
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, start_with_windows: false } });
     await waitFor(() => expect(toggle).toBeDisabled());
   });
+
+  it("a click on the tray icon can open the main window instead of the flyout (issue #86)", async () => {
+    const { core, calls } = start("#/settings");
+    const toggle = await screen.findByRole("switch", { name: new RegExp(t("ui.settings.tray_click_opens_window")) });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(core.state.snap!.settings.tray_click_opens_window).toBe(true));
+    const set = calls.filter((c) => c.method === "settings.set").at(-1)!.params as { settings: { tray_click_opens_window: boolean } };
+    expect(set.settings.tray_click_opens_window).toBe(true);
+  });
 });
 
 describe("Home", () => {

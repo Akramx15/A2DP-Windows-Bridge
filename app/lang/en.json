@@ -626,6 +626,8 @@
   "ui.settings.start_minimized_logon": "When A2DP Windows Bridge starts with Windows: on, only the tray icon appears; off, the main window opens.",
   "ui.settings.updates": "Updates",
   "ui.settings.update_available": "Version %s is available (current: %s).",
+  "ui.settings.tray_click_opens_window": "Clicking the tray icon opens the full app window",
+  "ui.settings.tray_click_opens_window_hint": "Off: a click opens the small tray window.",
   "ui.settings.open_download": "Open download page",
   "ui.update.install": "Update now",
   "ui.update.downloading": "Downloading version %s… %s",

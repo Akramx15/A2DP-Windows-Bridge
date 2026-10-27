@@ -248,6 +248,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         start_with_windows: s.start_with_windows,
         start_minimized: s.start_minimized,
         minimize_to_tray: s.minimize_to_tray,
+        tray_click_opens_window: s.tray_click_opens_window,
         check_updates_on_startup: s.check_updates_on_startup,
         include_prereleases: s.include_prereleases,
         media_keys: s.media_keys,
@@ -292,6 +293,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.start_with_windows = s.start_with_windows;
     c.start_minimized = s.start_minimized;
     c.minimize_to_tray = s.minimize_to_tray;
+    c.tray_click_opens_window = s.tray_click_opens_window;
     c.check_updates_on_startup = s.check_updates_on_startup;
     c.include_prereleases = s.include_prereleases;
     c.media_keys = s.media_keys;
@@ -1342,6 +1344,11 @@ impl CoreState {
         let service = self.service.clone();
         let ticket = service.ticket();
         std::thread::spawn(move || service.disconnect_for(ticket));
+    }
+
+    /// Settings > "Clicking the tray icon opens the main window"
+    pub fn tray_click_opens_window(&self) -> bool {
+        self.service.settings().tray_click_opens_window
     }
 
     pub fn quit(&self) {

@@ -152,6 +152,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     start_with_windows: true,
     start_minimized: false,
     minimize_to_tray: true,
+    tray_click_opens_window: false,
     check_updates_on_startup: true,
     include_prereleases: false,
     media_keys: true,

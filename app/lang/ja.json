@@ -626,6 +626,8 @@
   "ui.settings.start_minimized_logon": "Windows と一緒に起動したとき、オンならトレイのアイコンだけを出し、オフならメインウィンドウを開きます。",
   "ui.settings.updates": "更新",
   "ui.settings.update_available": "新しいバージョン %s があります（現在: %s）。",
+  "ui.settings.tray_click_opens_window": "トレイアイコンのクリックでメインウィンドウを開く",
+  "ui.settings.tray_click_opens_window_hint": "オフなら、クリックで小さなトレイウィンドウを開きます。",
   "ui.settings.open_download": "ダウンロードページを開く",
   "ui.update.install": "今すぐ更新",
   "ui.update.downloading": "バージョン %s をダウンロードしています… %s",

@@ -9,7 +9,11 @@ export type Settings = { language: string,
 /**
  * system, light, dark
  */
-theme: string, start_with_windows: boolean, start_minimized: boolean, minimize_to_tray: boolean, check_updates_on_startup: boolean, include_prereleases: boolean, 
+theme: string, start_with_windows: boolean, start_minimized: boolean, minimize_to_tray: boolean, 
+/**
+ * A click on the tray icon opens the main window, not the flyout
+ */
+tray_click_opens_window: boolean, check_updates_on_startup: boolean, include_prereleases: boolean, 
 /**
  * The headphones' buttons act as Windows media keys (every device)
  */

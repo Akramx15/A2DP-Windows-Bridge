@@ -626,6 +626,8 @@
   "ui.settings.start_minimized_logon": "Cuando A2DP Windows Bridge se inicia con Windows: activado, solo aparece el icono de la bandeja; desactivado, se abre la ventana principal.",
   "ui.settings.updates": "Actualizaciones",
   "ui.settings.update_available": "La versión %s está disponible (actual: %s).",
+  "ui.settings.tray_click_opens_window": "Al hacer clic en el icono de la bandeja se abre la ventana principal",
+  "ui.settings.tray_click_opens_window_hint": "Desactivado: un clic abre la pequeña ventana de la bandeja.",
   "ui.settings.open_download": "Abrir la página de descarga",
   "ui.update.install": "Actualizar ahora",
   "ui.update.downloading": "Descargando la versión %s… %s",

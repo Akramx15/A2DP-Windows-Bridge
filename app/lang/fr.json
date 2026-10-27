@@ -626,6 +626,8 @@
   "ui.settings.start_minimized_logon": "Quand A2DP Windows Bridge démarre avec Windows : activé, seule l'icône de la zone de notification apparaît ; désactivé, la fenêtre principale s'ouvre.",
   "ui.settings.updates": "Mises à jour",
   "ui.settings.update_available": "La version %s est disponible (actuelle : %s).",
+  "ui.settings.tray_click_opens_window": "Un clic sur l'icône de la zone de notification ouvre la fenêtre principale",
+  "ui.settings.tray_click_opens_window_hint": "Désactivé : un clic ouvre la petite fenêtre de la zone de notification.",
   "ui.settings.open_download": "Ouvrir la page de téléchargement",
   "ui.update.install": "Mettre à jour maintenant",
   "ui.update.downloading": "Téléchargement de la version %s… %s",
