@@ -28,7 +28,7 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 
 ¹ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; confirmed on an EarFun Air Pro 4+ at 48 kHz, and 96 kHz on real headphones ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). ² Auto never picks it; choose it on **Codecs**. ³ Only PipeWire (Linux) receivers implement it. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per device (its LE Audio entry on **Codecs**), and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
 
-Auto picks LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
+Auto picks LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/). Third-party apps that work with A2DPWB (not supported by this project): [Works With](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/works-with).
 
 ## Requirements
 
