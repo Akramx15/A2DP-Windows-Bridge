@@ -6,10 +6,23 @@
 // chosen changes that profile, and the settings of the codecs it is not
 // using wait in its codec_settings. The core folds older extra profiles
 // into it at start (crates/core/src/profiles.rs consolidate).
+//
+// The card, the switcher and the flyout also say what a profile is for
+// (purpose_kind / purpose_note) and which spatial engine it runs.
 
+import { captureText } from "../components/CapturePicker";
 import type { CodecValues } from "../ipc/bindings/CodecValues";
-import type { AudioDevice, Device, ParamsOf, Profile, Snapshot } from "../ipc/types";
-import { carryToCodec, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN, type CodecCaps } from "./codecs";
+import type { AudioDevice, Device, ParamsOf, Profile, Snapshot, SpatialEngine } from "../ipc/types";
+import {
+  carryToCodec,
+  codecSpec,
+  fitToCodec,
+  PACKET_DEFAULT,
+  PACKET_MAX,
+  PACKET_MIN,
+  qualityTag,
+  type CodecCaps,
+} from "./codecs";
 import { parseAddress } from "./format";
 
 /** What belongs to the audio device rather than the codec: the capture
@@ -73,6 +86,8 @@ export function defaultCapture(devices: readonly AudioDevice[]): CaptureFields {
 export function newProfile(): Profile {
   return {
     name: "",
+    purpose_kind: "",
+    purpose_note: "",
     device_address: "",
     device_name: "",
     codec: "auto",
@@ -91,6 +106,9 @@ export function newProfile(): Profile {
     volume_sync: "auto",
     volume_device_id: "",
     volume_device_name: "",
+    spatial_engine: false,
+    spatial_engine_path: "",
+    spatial_engine_registry: "",
     max_media_payload: PACKET_DEFAULT,
     le_audio: false,
     le_low_latency: true,
@@ -361,6 +379,47 @@ export async function appCaptureSupport(): Promise<AppCaptureSupport> {
   } catch {
     return "unknown";
   }
+}
+
+// ---- The words a profile shows ------------------------------------------
+//
+// The card, the switcher and the flyout say what a profile is for: the
+// device, the codec and the capture source in one line, the kind of use
+// ("headphones", "AutoEQ", ...) and the user's own note about it.
+
+/** The kinds of use a profile can have, and the key of each label */
+const PURPOSE_KINDS: Record<string, string> = {
+  headphones: "profile.purpose_headphones",
+  autoeq: "profile.purpose_autoeq",
+  speaker: "profile.purpose_speaker",
+  custom: "profile.purpose_custom",
+};
+
+/** What a profile is for, as the card's pill says it (empty: not set,
+ *  an unknown kind: as it is) */
+export function purposeLabel(kind: string, t: (key: string) => string): string {
+  const key = PURPOSE_KINDS[kind];
+  return key ? t(key) : kind;
+}
+
+/** The profile in one line of plain words: the device, the codec with its
+ *  quality and the capture source ("WH-1000XM6 · LDAC High (990 kbps) ·
+ *  System Loopback") */
+export function profileSummary(p: Profile, t: (key: string) => string): string {
+  const parts: string[] = [];
+  const device = p.device_name || p.device_address;
+  if (device) parts.push(device);
+  const codec = p.le_audio ? t("ui.codec.lc3") : t(codecSpec(p.codec).label);
+  const quality = qualityTag(p, t);
+  parts.push(quality ? `${codec} ${quality}` : codec);
+  parts.push(captureText(p).text);
+  return parts.join(" · ");
+}
+
+/** The label of the engine the profile runs (empty: none, or not among
+ *  the ones the core lists) */
+export function engineLabelOf(p: Profile, engines: readonly SpatialEngine[]): string {
+  return engines.find((e) => e.path === p.spatial_engine_path)?.label ?? "";
 }
 
 /** stream.start_custom for the core's test tone (left 1 kHz, right

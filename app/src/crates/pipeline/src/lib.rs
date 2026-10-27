@@ -14,6 +14,8 @@
 pub mod convert;
 pub mod le;
 pub mod packetizer;
+pub mod resample;
+pub mod spatial;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -25,6 +27,10 @@ use codec::{CodecKind, Encoder, Pcm, PcmFormat};
 
 pub use convert::SampleType;
 use packetizer::Packetizer;
+pub use resample::ResampleConfig;
+use resample::{CAPTURE_RATE, Downsample2, Upsample2};
+pub use spatial::SpatialConfig;
+use spatial::SpatialEngine;
 
 /// Format of the captured audio as it arrives
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +79,13 @@ pub struct PipelineConfig {
     /// Adaptive bit rate: the encoder's own [`Encoder::abr_active`]
     pub abr: bool,
     pub buffer: BufferPreset,
+    /// Optional PCM processing stage (the spatial engine) between the
+    /// capture and the encoder
+    pub spatial: Option<SpatialConfig>,
+    /// Optional resampling around the spatial engine: the capture keeps its
+    /// 96 kHz rate while the engine still runs at 48 kHz (see
+    /// [`ResampleConfig`])
+    pub resample: Option<ResampleConfig>,
 }
 
 /// The capture thread's end: copies captured audio into the ring
@@ -299,7 +312,7 @@ fn encode_thread(
     mut sink: MediaSink,
     control: &Control,
 ) -> MediaSink {
-    let PipelineConfig { mut encoder, input, channels, mtu, abr, .. } = config;
+    let PipelineConfig { mut encoder, input, channels, mtu, abr, spatial, resample, .. } = config;
     let _priority = thread_priority();
     let kind = encoder.kind();
     let fmt = encoder.pcm_format();
@@ -310,10 +323,15 @@ fn encode_thread(
     let per_codec_frame = encoder.pcm_frames_per_codec_frame() as u32;
     // ~10 ms rounds, at least 128 frames (v1)
     let round_frames = (input.sample_rate as usize / 100).max(128);
+    // The 96 kHz transport: resample around the engine (see below)
+    let resample_engine = resample.is_some() && spatial.is_some() && input.sample_rate == CAPTURE_RATE;
 
     // Preallocated: one round read and converted, plus the rest of the last
     let mut read_buf = vec![0u8; round_frames * frame_bytes];
-    let cap = (round_frames + per_encode) * out_ch;
+    // A round the resampler feeds a 1024-frame engine block back through can
+    // be twice that many frames, on top of the leftover of the last round
+    let batch = if resample_engine { 2 * spatial::ENGINE_FRAMES } else { round_frames };
+    let cap = (batch + per_encode) * out_ch;
     let mut pcm16: Vec<i16> = if fmt == PcmFormat::I16 { Vec::with_capacity(cap) } else { Vec::new() };
     let mut pcm32: Vec<i32> = if fmt == PcmFormat::I32 { Vec::with_capacity(cap) } else { Vec::new() };
     let mut encoded = vec![0u8; encoder.max_output_bytes().max(4096)];
@@ -337,6 +355,51 @@ fn encode_thread(
         encoded.len(),
         _priority.is_some()
     );
+    // The spatial engine, when the profile asks for it: it processes the
+    // captured audio before it reaches the encoder. If it cannot run, the
+    // audio passes through unchanged rather than the stream dying.
+    let mut spatial_stage = match spatial {
+        Some(cfg) => match SpatialEngine::start(&cfg) {
+            Ok(s) => {
+                tracing::info!("spatial engine: {}", cfg.exe.display());
+                Some(s)
+            }
+            Err(e) => {
+                tracing::error!("spatial engine {}: {e} (audio passes through)", cfg.exe.display());
+                None
+            }
+        },
+        None => None,
+    };
+    // The 96 kHz transport: the engine still works at 48 kHz, so the captured
+    // audio is downsampled on the way in and the engine's output upsampled on
+    // the way out. Without the engine, or at any other rate, there is nothing
+    // to resample around.
+    let mut resampler = match (resample, spatial_stage.is_some()) {
+        (Some(cfg), true) if cfg.capture_rate == CAPTURE_RATE && input.sample_rate == CAPTURE_RATE => {
+            tracing::info!("spatial engine: capturing at {CAPTURE_RATE} Hz, resampling around the 48000 Hz engine");
+            Some((Downsample2::new(), Upsample2::new()))
+        }
+        (Some(_), true) => {
+            tracing::warn!(
+                "spatial engine: resampling needs a {CAPTURE_RATE} Hz capture, not {} Hz (no resampling)",
+                input.sample_rate
+            );
+            None
+        }
+        _ => None,
+    };
+    // Preallocated so the resampling path allocates nothing once it runs
+    let mut captured: Vec<f32> = Vec::new();
+    let mut engine_in: Vec<f32> = Vec::new();
+    let mut engine_out: Vec<f32> = Vec::new();
+    let mut up_out: Vec<f32> = Vec::new();
+    if resampler.is_some() {
+        captured = Vec::with_capacity(round_frames * 2);
+        engine_in = Vec::with_capacity(round_frames);
+        engine_out = Vec::with_capacity(spatial::ENGINE_FRAMES * 2);
+        up_out = Vec::with_capacity(spatial::ENGINE_FRAMES * 4);
+    }
 
     while !control.stop.load(Ordering::Acquire) {
         if control.reset.swap(false, Ordering::AcqRel) {
@@ -353,6 +416,17 @@ fn encode_thread(
             pcm32.clear();
             timestamp = 0;
             packetizer.reset();
+            if let Some(s) = spatial_stage.as_mut() {
+                s.reset();
+            }
+            if let Some((down, up)) = resampler.as_mut() {
+                down.reset();
+                up.reset();
+            }
+            captured.clear();
+            engine_in.clear();
+            engine_out.clear();
+            up_out.clear();
             if abr {
                 encoder.abr_reset();
                 publish_live(encoder.as_ref(), &sink, &mut live);
@@ -379,7 +453,16 @@ fn encode_thread(
         } else {
             last_round = None;
         }
-        let frames = available.min(round_frames);
+        let mut frames = available.min(round_frames);
+        if resampler.is_some() {
+            // The stage is 2:1 both ways: only whole pairs keep the frame
+            // count exact, and one frame is too little to divide.
+            frames &= !1;
+            if frames == 0 {
+                std::thread::park_timeout(Duration::from_millis(10));
+                continue;
+            }
+        }
         let bytes = frames * frame_bytes;
         if let Ok(chunk) = ring.read_chunk(bytes) {
             let (a, b) = chunk.as_slices();
@@ -388,9 +471,45 @@ fn encode_thread(
             chunk.commit_all();
         }
         let raw = &read_buf[..bytes];
-        match fmt {
-            PcmFormat::I16 => convert::append_i16(raw, input.sample, in_ch, out_ch, &mut pcm16),
-            PcmFormat::I32 => convert::append_i32(raw, input.sample, in_ch, out_ch, &mut pcm32),
+        if let Some((down, up)) = resampler.as_mut() {
+            // The capture goes to the engine at 48 kHz and the engine's output
+            // comes back at the capture rate for the encoder, unmodified
+            // before the upsampling. Frames in equal frames out over the round
+            // trip, so the encoder still gets everything the capture produced.
+            captured.clear();
+            convert::append_f32(raw, input.sample, in_ch, &mut captured);
+            engine_in.clear();
+            down.process(&captured, &mut engine_in);
+            engine_out.clear();
+            let processed = spatial_stage.as_mut().is_some_and(|s| s.process_f32(&engine_in, &mut engine_out));
+            match fmt {
+                PcmFormat::I16 if processed => {
+                    up_out.clear();
+                    up.process(&engine_out, &mut up_out);
+                    convert::append_i16_f32(&up_out, 2, out_ch, &mut pcm16);
+                }
+                PcmFormat::I16 => convert::append_i16_f32(&captured, 2, out_ch, &mut pcm16),
+                PcmFormat::I32 if processed => {
+                    up_out.clear();
+                    up.process(&engine_out, &mut up_out);
+                    convert::append_i32_f32(&up_out, 2, out_ch, &mut pcm32);
+                }
+                PcmFormat::I32 => convert::append_i32_f32(&captured, 2, out_ch, &mut pcm32),
+            }
+        } else {
+            // The spatial engine, when it runs, returns processed stereo
+            // float32 (a constant one-block delay behind the capture).
+            let staged = spatial_stage.as_mut().and_then(|s| s.process(raw, input.sample, in_ch));
+            match fmt {
+                PcmFormat::I16 => match &staged {
+                    Some(s) => convert::append_i16(s, SampleType::F32, 2, out_ch, &mut pcm16),
+                    None => convert::append_i16(raw, input.sample, in_ch, out_ch, &mut pcm16),
+                },
+                PcmFormat::I32 => match &staged {
+                    Some(s) => convert::append_i32(s, SampleType::F32, 2, out_ch, &mut pcm32),
+                    None => convert::append_i32(raw, input.sample, in_ch, out_ch, &mut pcm32),
+                },
+            }
         }
 
         let queue_before = sink.depth();
@@ -648,6 +767,8 @@ mod tests {
             mtu: 1011,
             abr: true,
             buffer: BufferPreset::Standard,
+            spatial: None,
+            resample: None,
         };
         let (pipeline, mut input) = Pipeline::start(config, sink, stats.clone());
         // Published before the stream info goes out
@@ -702,6 +823,8 @@ mod tests {
             mtu: 600,
             abr: false,
             buffer: BufferPreset::Standard,
+            spatial: None,
+            resample: None,
         };
         let (pipeline, _input) = Pipeline::start(config, sink, stats.clone());
         assert_eq!(stats.live_codec(), None);
@@ -720,6 +843,8 @@ mod tests {
             mtu: 600,
             abr: true,
             buffer: BufferPreset::Standard,
+            spatial: None,
+            resample: None,
         };
         let (pipeline, mut input) = Pipeline::start(config, sink, stats.clone());
         let audio = vec![0u8; 480 * 4];

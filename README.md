@@ -65,10 +65,39 @@ a2dpwb-core.exe --cli -h                                      # All options
 
 To stream LDAC at 96 kHz, set the playback device's format to 96 kHz in Windows Sound settings. Everything else — codecs, capture modes, volume sync, link quality and AFH, diagnostics, start with Windows, troubleshooting — is in the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage).
 
+## Spatial engine (xm6 360) — fork addition
+
+The captured audio can run through a **spatial engine** before it is encoded, so the
+headphones hear the Sony 360 chain (music upmix → binaural virtualizer → UPL →
+limiter) instead of the plain stereo signal.
+
+The engine is a separate program — A2DPWB does not contain it and does not
+ship its assets. It is started as a child process and talks raw PCM:
+
+- the engine reads **48 kHz stereo float32** from stdin and writes the processed
+  audio to stdout, in blocks of 1024 frames;
+- A2DPWB converts the captured audio (float, 16-bit or 24-in-32, any channel
+  count) to that format, downmixes to stereo and captures at 48 kHz while the
+  stage is on;
+- if the engine cannot be started or dies, the audio passes through unchanged
+  and the reason is written to the log — the stream does not die.
+
+**In the app**: edit a profile → *XM6 360 spatial engine* → switch it on and
+point it at the engine executable. Its assets must sit next to that executable.
+
+**From the command line**:
+
+```bash
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF --spatial "C:\path\to\sony_native_stream.exe"
+```
+
+The stage is a plain pipe: whatever the engine writes is what gets encoded.
+
 ## Features
 
 - **Codecs**: LHDC V5, LDAC, aptX Adaptive, experimental Opus, the rest of the aptX family, AAC and SBC XQ / SBC, with automatic choice and ABR (LHDC V5, LDAC, aptX Adaptive)
 - **Capture**: all system audio, a virtual audio device (e.g. VB-CABLE), or one application
+- **Spatial engine (fork addition)**: runs the captured audio through an external engine (the xm6 360 chain) before it is encoded
 - **Resident core with tray**: streams with the window closed; reconnects after link loss and after sleep
 - **WinUSB in the app**: assigns and restores the adapter's driver, no Zadig needed
 - **Headphone controls**: volume sync and play / pause / next / previous (AVRCP)

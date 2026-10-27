@@ -40,6 +40,13 @@ fn is_zero(n: &u8) -> bool {
 #[serde(default)]
 pub struct Profile {
     pub name: String,
+    /// What this profile is for: "", "headphones", "autoeq", "speaker" or
+    /// "custom"
+    #[serde(default)]
+    pub purpose_kind: String,
+    /// A note about this profile (free text, the user's own words)
+    #[serde(default)]
+    pub purpose_note: String,
     /// XX:XX:XX:XX:XX:XX
     pub device_address: String,
     pub device_name: String,
@@ -79,6 +86,17 @@ pub struct Profile {
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
+    /// Spatial engine (the xm6 360 chain): the captured audio runs through
+    /// this program before it is encoded
+    #[serde(default)]
+    pub spatial_engine: bool,
+    /// Path to the spatial engine executable (its assets sit next to it)
+    #[serde(default)]
+    pub spatial_engine_path: String,
+    /// Folder with the spatial engine programs (the registry the user picks
+    /// from)
+    #[serde(default)]
+    pub spatial_engine_registry: String,
     /// Max media packet size (None in files from before v1.1: the legacy
     /// setting applies)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,6 +148,8 @@ impl Default for Profile {
     fn default() -> Self {
         Profile {
             name: String::new(),
+            purpose_kind: String::new(),
+            purpose_note: String::new(),
             device_address: String::new(),
             device_name: String::new(),
             codec: auto(),
@@ -147,6 +167,9 @@ impl Default for Profile {
             volume_sync: auto(),
             volume_device_id: String::new(),
             volume_device_name: String::new(),
+            spatial_engine: false,
+            spatial_engine_path: String::new(),
+            spatial_engine_registry: String::new(),
             max_media_payload: None,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
@@ -326,6 +349,16 @@ impl Profile {
             le: self
                 .le_audio
                 .then(|| bt_host::LeRequest { low_latency: self.le_low_latency, ..bt_host::LeRequest::default() }),
+            spatial: self
+                .spatial_engine
+                .then(|| PathBuf::from(self.spatial_engine_path.trim()))
+                .filter(|p| !p.as_os_str().is_empty()),
+            // The app's copy of the stage's config: the caller knows the
+            // settings folder and fills it in
+            spatial_config: None,
+            // A profile asking for the high LDAC rate keeps it and the
+            // pipeline resamples around the engine
+            spatial_keep_rate: self.sample_rate == 96_000,
         })
     }
 }
@@ -729,5 +762,36 @@ mod tests {
         );
         let back: Profile = serde_json::from_value(out).unwrap();
         assert_eq!(back, p);
+    }
+
+    #[test]
+    fn a_profile_says_what_it_is_for() {
+        let dir = std::env::temp_dir().join(format!("a2dpwb-profiles-purpose-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = Profile {
+            name: "WH LDAC".into(),
+            purpose_kind: "headphones".into(),
+            purpose_note: "the ones with the ANC".into(),
+            device_address: "00:A2:D0:00:00:02".into(),
+            ..Profile::default()
+        };
+        // Saved and loaded again: the purpose is there
+        save(&dir, std::slice::from_ref(&p)).unwrap();
+        let list = load(&dir);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].purpose_kind, "headphones");
+        assert_eq!(list[0].purpose_note, "the ones with the ANC");
+        // A file from before the purpose existed still loads: it is empty
+        std::fs::write(
+            path(&dir),
+            r#"{"profiles":[{"name":"Old","device_address":"00:A2:D0:00:00:02","codec":"ldac"}]}"#,
+        )
+        .unwrap();
+        let list = load(&dir);
+        assert_eq!(list[0].name, "Old");
+        assert_eq!(list[0].purpose_kind, "");
+        assert_eq!(list[0].purpose_note, "");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

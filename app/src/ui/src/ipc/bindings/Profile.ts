@@ -4,7 +4,16 @@ import type { CodecValues } from "./CodecValues";
 /**
  * A connection profile, as in profiles.json
  */
-export type Profile = { name: string, device_address: string, device_name: string, 
+export type Profile = { name: string, 
+/**
+ * What this profile is for: "", "headphones", "autoeq", "speaker" or
+ * "custom"
+ */
+purpose_kind: string, 
+/**
+ * A note about this profile (free text, the user's own words)
+ */
+purpose_note: string, device_address: string, device_name: string, 
 /**
  * auto, ldac, aptxhd, aptxll, aptx, aptxad, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream
  */
@@ -30,7 +39,21 @@ capture_mode: string, audio_device_id: string, audio_device_name: string, auto_s
  * developer mode); "off" from before Settings.volume_sync counts as
  * auto. Only while Settings.volume_sync is on.
  */
-volume_sync: string, volume_device_id: string, volume_device_name: string, max_media_payload: number, 
+volume_sync: string, volume_device_id: string, volume_device_name: string, 
+/**
+ * Spatial engine (the xm6 360 chain): the captured audio runs through
+ * this program before it is encoded
+ */
+spatial_engine: boolean, 
+/**
+ * Path to the spatial engine executable (its assets sit next to it)
+ */
+spatial_engine_path: string, 
+/**
+ * Folder with the spatial engine programs (the registry the user picks
+ * from)
+ */
+spatial_engine_registry: string, max_media_payload: number, 
 /**
  * An LE Audio device (experimental, LC3): codec, quality, abr,
  * sample_rate and bit_depth do not apply, capture_mode is "loopback"

@@ -31,6 +31,14 @@ pub fn crash_dir(config: &Path) -> PathBuf {
     log_dir(config).join("crash")
 }
 
+/// The spatial stages' control values: `spatial\` in the settings folder
+/// (one file per profile: the stage's config with the user's values)
+pub fn spatial_dir(config: &Path) -> PathBuf {
+    let dir = config.join("spatial");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 /// "YYYYMMDD_HHMMSS", local time: file names that sort by time
 pub fn local_stamp() -> String {
     let t = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());

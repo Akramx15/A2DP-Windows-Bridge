@@ -171,6 +171,7 @@ describe("Home", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
     expect(calls.some((c) => c.method === "stream.stop")).toBe(false);
   });
+
 });
 
 describe("every screen renders", () => {

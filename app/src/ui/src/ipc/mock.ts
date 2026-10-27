@@ -36,6 +36,8 @@ import type {
   Settings,
   Snapshot,
   SourceInfo,
+  SpatialControls,
+  SpatialEngine,
   StreamInfo,
 } from "./types";
 
@@ -113,6 +115,8 @@ const MEDIATEK: AdapterInfo = {
 export function sampleProfile(over: Partial<Profile> = {}): Profile {
   return {
     name: "WH-1000XM5 (LDAC)",
+    purpose_kind: "",
+    purpose_note: "",
     device_address: "AC:80:0A:12:34:56",
     device_name: "WH-1000XM5",
     codec: "ldac",
@@ -130,6 +134,9 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     volume_sync: "auto",
     volume_device_id: "",
     volume_device_name: "",
+    spatial_engine: false,
+    spatial_engine_path: "",
+    spatial_engine_registry: "",
     max_media_payload: 1023,
     le_audio: false,
     le_low_latency: true,
@@ -234,7 +241,20 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const profiles = fresh
     ? []
     : [
-        long ? sampleProfile({ name: LONG_NAME, device_name: LONG_DEVICE, capture_mode: "app", app_exe: "AVeryLongApplicationExecutableName_With_No_Spaces_Whatsoever.exe", app_name: "" }) : sampleProfile(),
+        long
+          ? sampleProfile({
+              name: LONG_NAME,
+              device_name: LONG_DEVICE,
+              capture_mode: "app",
+              app_exe: "AVeryLongApplicationExecutableName_With_No_Spaces_Whatsoever.exe",
+              app_name: "",
+              purpose_kind: "headphones",
+              purpose_note: "リビングのListening用プロファイル",
+            })
+          : sampleProfile({
+              purpose_kind: "headphones",
+              purpose_note: "WH-1000XM5 with the AutoEQ bass correction",
+            }),
         sampleProfile({
           name: "Desk speaker (AAC)",
           device_address: "00:1A:7D:DA:71:13",
@@ -243,6 +263,8 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
           capture_mode: "app",
           app_exe: "Spotify.exe",
           app_name: "Spotify",
+          purpose_kind: "speaker",
+          purpose_note: "Spotify on the desk speaker",
         }),
         ...(le
           ? [
@@ -252,6 +274,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
                 device_name: LE_BUDS.name,
                 codec: "auto",
                 le_audio: true,
+                purpose_kind: "headphones",
               }),
             ]
           : []),
@@ -359,6 +382,48 @@ const AUDIO_APPS: AudioApp[] = [
   { exe: "chrome.exe", name: "Google Chrome" },
   { exe: "foobar2000.exe", name: "foobar2000" },
 ];
+
+/** The engines in the sample folder (the xm6 360 chain's stages) */
+const SPATIAL_ENGINES: SpatialEngine[] = [
+  {
+    id: "sony_native",
+    label: "Sony native (reference)",
+    path: "C:\\A2DPWB\\engines\\sony_native\\sony_native.exe",
+    family: "sony",
+  },
+  {
+    id: "personalized_hpp",
+    label: "Personalized HPP + XM6 BA",
+    path: "C:\\A2DPWB\\engines\\personalized_hpp\\PersonalizedHPP.exe",
+    family: "sony",
+  },
+  {
+    id: "upmixer",
+    label: "Upmixer + personal ear file (experimental)",
+    path: "C:\\A2DPWB\\engines\\upmixer\\Upmixer.exe",
+    family: "upmixer",
+  },
+];
+
+/** The controls of a stage that has them (as its manifest declares them) */
+const SPATIAL_CONTROLS: SpatialControls = {
+  supported: true,
+  sliders: [
+    { key: "center_focus", label: "Center focus", min: 0, max: 1, step: 0.01, default: 0.5, value: 0.55 },
+  ],
+  selects: [
+    {
+      key: "correction",
+      label: "Bass correction",
+      options: ["none", "sony-xm6-ba", "autoeq"],
+      default: "none",
+      value: "none",
+    },
+  ],
+};
+
+/** A stage without controls: the app shows nothing for it */
+const NO_CONTROLS: SpatialControls = { supported: false, sliders: [], selects: [] };
 
 /** The firmware pairs in the sample settings folder (adapter.firmware_files):
  *  a table chip, a table chip without its config file, and a chip known only
@@ -581,6 +646,8 @@ export class MockCore implements Transport {
   /** The LE Audio stream's ISO counters (since it was set up) */
   private iso = { sets: 0, silence: 0, underruns: 0, prefill: 3 };
   private trayHintShown = false;
+  /** The values the user set for a stage, per profile (as the core keeps them) */
+  private spatialValues = new Map<string, Record<string, number | string>>();
   private navigate: (route: string) => void = () => {};
   private updatePhase: UpdatePhase = { state: "idle" };
   private onPhase: (p: UpdatePhase) => void = () => {};
@@ -730,6 +797,56 @@ export class MockCore implements Transport {
         return AUDIO_DEVICES;
       case "audio.apps":
         return AUDIO_APPS;
+      case "spatial.engines":
+        return SPATIAL_ENGINES;
+      case "spatial.controls": {
+        const name = String(p.profile);
+        const profile = this.snap.profiles.find((x) => x.name === name);
+        if (!profile) throw errorInfo("profile.not_found", "error.profile_not_found");
+        // A profile without a stage has no controls
+        if (!profile.spatial_engine) return NO_CONTROLS;
+        return this.stageControls(name);
+      }
+      case "spatial.set_controls": {
+        const name = String(p.profile);
+        const profile = this.snap.profiles.find((x) => x.name === name);
+        if (!profile) throw errorInfo("profile.not_found", "error.profile_not_found");
+        if (!profile.spatial_engine) {
+          throw errorInfo(
+            "spatial.no_stage",
+            "ipc.error.bad_request",
+            ["spatial.set_controls", `the profile "${name}" has no spatial stage`],
+          );
+        }
+        // The core refuses a value the control does not take
+        const values = (p.values ?? {}) as Record<string, number | string>;
+        for (const [key, v] of Object.entries(values)) {
+          const slider = SPATIAL_CONTROLS.sliders.find((s) => s.key === key);
+          const select = SPATIAL_CONTROLS.selects.find((s) => s.key === key);
+          if (slider) {
+            if (typeof v !== "number" || v < slider.min || v > slider.max) {
+              throw errorInfo("spatial.invalid_value", "ipc.error.bad_request", [
+                "spatial.set_controls",
+                `"${key}" is out of range`,
+              ]);
+            }
+          } else if (select) {
+            if (typeof v !== "string" || !select.options.includes(v)) {
+              throw errorInfo("spatial.invalid_value", "ipc.error.bad_request", [
+                "spatial.set_controls",
+                `"${key}" takes another value`,
+              ]);
+            }
+          } else {
+            throw errorInfo("spatial.invalid_value", "ipc.error.bad_request", [
+              "spatial.set_controls",
+              `unknown control "${key}"`,
+            ]);
+          }
+        }
+        this.spatialValues.set(name, { ...(this.spatialValues.get(name) ?? {}), ...values });
+        return this.stageControls(name);
+      }
       case "diag.subscribe":
         this.subscribe((p.logs as LogLevel | null) ?? null, Boolean(p.link), Boolean(p.receiver));
         return null;
@@ -815,6 +932,22 @@ export class MockCore implements Transport {
       default:
         throw errorInfo("ipc.bad_request", "ipc.error.bad_request", [method, "unknown method"]);
     }
+  }
+
+  /** The controls of a stage, with the values the user set for it */
+  private stageControls(name: string): SpatialControls {
+    const kept = this.spatialValues.get(name) ?? {};
+    return {
+      supported: true,
+      sliders: SPATIAL_CONTROLS.sliders.map((s) => ({
+        ...s,
+        value: typeof kept[s.key] === "number" ? (kept[s.key] as number) : s.value,
+      })),
+      selects: SPATIAL_CONTROLS.selects.map((s) => ({
+        ...s,
+        value: typeof kept[s.key] === "string" ? (kept[s.key] as string) : s.value,
+      })),
+    };
   }
 
   async showMain(route?: string) {

@@ -17,6 +17,7 @@ pub mod paths;
 pub mod profiles;
 mod service;
 pub mod settings;
+pub mod spatial;
 pub mod stream;
 
 pub use le_stream::{LeAudioPath, LeStreamDetails, le_silence_set, le_stats_line};
