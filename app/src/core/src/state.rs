@@ -1242,6 +1242,24 @@ impl CoreState {
                 devices_changed = true;
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
+            // Another saved device connected while the one streamed was off
+            // (issue #86): its own profile starts, as a connect on Home
+            ServiceEvent::OtherDeviceBack(addr) => {
+                let address = bt_host::addr_str(&addr);
+                let profile = profiles::load(&self.config_dir())
+                    .into_iter()
+                    .find(|p| !p.le_audio && p.device_address.eq_ignore_ascii_case(&address));
+                match profile {
+                    Some(p) => {
+                        tracing::info!("{address} connected while the device streamed was off: starting {}", p.name);
+                        if let Err(e) = self.start_profile(&p.name) {
+                            tracing::warn!("{address}: {}", e.message.key);
+                        }
+                    }
+                    None => tracing::debug!("{address} connected, but has no profile"),
+                }
+                return;
+            }
             // A report that arrives after the device went off (HFP still
             // closing) is not shown on a device no longer connected
             ServiceEvent::Battery(_) | ServiceEvent::BatteryRefused

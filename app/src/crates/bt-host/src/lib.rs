@@ -1341,7 +1341,13 @@ impl BtHost {
     /// The device opened a link to the PC since the last call (resets), as
     /// headphones turned back on do
     pub fn device_came_back(&self, addr: [u8; 6]) -> bool {
-        self.shared.update(|s| std::mem::take(&mut s.acl_up_from)) == Some(addr)
+        self.link_came_up() == Some(addr)
+    }
+
+    /// The device that last opened a link to the PC since the last call
+    /// (resets), whichever it is
+    pub fn link_came_up(&self) -> Option<[u8; 6]> {
+        self.shared.update(|s| std::mem::take(&mut s.acl_up_from))
     }
 
     /// Once per lost connection (resets)
