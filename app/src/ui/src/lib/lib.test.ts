@@ -240,6 +240,9 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "ldac", sbc_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0 });
     // SBC and SBC XQ keep their own bitpool
     expect(fitToCodec({ ...p, codec: "sbcxq", sbc_bitpool: 53, sbcxq_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0, sbcxq_bitpool: 40 });
+    // ... and their own minimum (issue #86)
+    expect(fitToCodec({ ...p, codec: "sbcxq", sbc_min_bitpool: 20, sbcxq_min_bitpool: 30 })).toMatchObject({ sbc_min_bitpool: 0, sbcxq_min_bitpool: 30 });
+    expect(fitToCodec({ ...p, codec: "aac", sbc_min_bitpool: 20 })).toMatchObject({ sbc_min_bitpool: 0 });
     // The frame setup is both's; the channel mode SBC's only
     const frame = { sbc_blocks: 8, sbc_subbands: 4, sbc_allocation: "snr", sbc_channel_mode: "stereo" };
     expect(fitToCodec({ ...p, ...frame, codec: "sbc" })).toMatchObject(frame);
@@ -310,9 +313,14 @@ describe("profiles", () => {
       ["mq", "400"],
     ]);
     expect(offeredQualities("lhdcv5", 48000, 500000, "sq").map((q) => q.id)).toEqual(["hq", "sq", "mq"]);
-    // aptX Adaptive's 96 kHz only while switched on (Developer)
-    expect(offeredSampleRates("aptxad", null, false)).toEqual([0, 48000]);
-    expect(offeredSampleRates("aptxad", null, true)).toEqual([0, 48000, 96000]);
+    // aptX Adaptive's 96 kHz only when the device lists it (issue #86: a
+    // Bose QC Ultra, 0x51, does not; an EarFun Air Pro 4+ does), also
+    // while not known
+    const aptxad = (sample_rates: number[]) => ({ codec: "aptxad", sample_rates, bit_depths: [], max_bitrate: 0 });
+    expect(offeredSampleRates("aptxad", aptxad([48000]))).toEqual([0, 48000]);
+    expect(offeredSampleRates("aptxad", aptxad([48000, 96000]))).toEqual([0, 48000, 96000]);
+    expect(offeredSampleRates("aptxad", null)).toEqual([0, 48000]);
+    expect(offeredSampleRates("aptxad", aptxad([]))).toEqual([0, 48000]);
   });
 
   it("says why the bit rate is below the profile's", () => {

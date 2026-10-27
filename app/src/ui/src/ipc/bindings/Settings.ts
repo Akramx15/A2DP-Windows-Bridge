@@ -9,7 +9,16 @@ export type Settings = { language: string,
 /**
  * system, light, dark
  */
-theme: string, start_with_windows: boolean, start_minimized: boolean, minimize_to_tray: boolean, check_updates_on_startup: boolean, include_prereleases: boolean, 
+theme: string, start_with_windows: boolean, start_minimized: boolean, minimize_to_tray: boolean, 
+/**
+ * A click on the tray icon opens the main window, not the flyout
+ */
+tray_click_opens_window: boolean, 
+/**
+ * A notification when a device connects: its codec, what the codec
+ * runs with, the battery (on by default)
+ */
+notify_connected: boolean, check_updates_on_startup: boolean, include_prereleases: boolean, 
 /**
  * The headphones' buttons act as Windows media keys (every device)
  */
@@ -21,9 +30,8 @@ remember_volume: boolean,
 /**
  * Windows Volume Sync for every device (on by default): the audio
  * device's volume and the captured device's Windows volume follow each
- * other; a profile can follow another device instead (its volume_sync
- * "device", set in developer mode). Off: no stream syncs. A change
- * starts the profile in use again.
+ * other. Off: no stream syncs. A change starts the profile in use
+ * again.
  */
 volume_sync: boolean, 
 /**

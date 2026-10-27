@@ -24,7 +24,7 @@ Streams system audio via **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low
 |:------|:--------|:------------|:----------|:--------|
 | LHDC V5 | 400/500/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | ~200 ms |
-| aptX Adaptive | 265/427 kbps (96 kHz: 646) | 48 kHz (96 kHz: Developer switch) | 24 bit | -- |
+| aptX Adaptive | 265/427 kbps (96 kHz: 646) | 48/96 kHz | 24 bit | -- |
 | Opus 🧪 | 256 kbps | 48 kHz | 16 bit | -- |
 | aptX HD 🧪 | 576 kbps | 44.1/48 kHz | 24 bit | ~150 ms |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | -- |
@@ -76,7 +76,7 @@ Streams system audio via **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low
 **Only need classic aptX?** Windows 10 already supports classic aptX in its built-in Bluetooth stack (not aptX HD, aptX LL or aptX Adaptive), so A2DPWB is not required for it. A2DPWB is mainly useful for LDAC, aptX HD and aptX Low Latency.
 
 {: .note }
-**About aptX Adaptive.** It is encoded with the MIT-licensed pure-Rust encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped Qualcomm binaries and on-air captures. 48 kHz stereo (44.1 kHz requests are captured at 48 kHz), 24-bit: High 427 kbps or Low Latency 265 kbps (R2 sinks: 270), ABR in High. 96 kHz (High, 646 kbps) is tested only in the emulator, here and upstream, so it is off unless **Developer > aptX Adaptive at 96 kHz** is on; then it is used with Auto-select or when you choose 96 kHz in its settings, if the headphones are an R2 sink that lists 96 kHz, and never in Low Latency. Auto picks it after LHDC V5 and LDAC; or choose it on **Codecs** or with `-c aptxad`. A user confirmed it on an EarFun Air Pro 4+ at 48 kHz on 2.0.2-beta.6, as stable as classic aptX ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)); upstream reports it working on Linux with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e. See [aptX Family and aptX Adaptive](usage#aptx-compatibility).
+**About aptX Adaptive.** It is encoded with the MIT-licensed pure-Rust encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped Qualcomm binaries and on-air captures. 48 kHz stereo (44.1 kHz requests are captured at 48 kHz), 24-bit: High 427 kbps or Low Latency 265 kbps (R2 sinks: 270), ABR in High. 96 kHz (High, 646 kbps) is used when you choose it in its settings, if the headphones are an R2 sink that lists 96 kHz, and never in Low Latency; Auto streams 48 kHz. Auto picks it after LHDC V5 and LDAC; or choose it on **Codecs** or with `-c aptxad`. A user confirmed it on an EarFun Air Pro 4+ at 48 kHz on 2.0.2-beta.6, as stable as classic aptX, and 96 kHz on real headphones since ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)); upstream reports it working on Linux with Bose QuietComfort Ultra (gen 1) and B&W Px7 S2e. See [aptX Family and aptX Adaptive](usage#aptx-compatibility).
 
 ## Platform Support
 
@@ -144,7 +144,7 @@ A2DPWB bypasses the Windows Bluetooth stack entirely. It communicates directly w
 - **Link quality and AFH**: Shows what is sent, the RSSI and the channels in use; tells the adapter which Wi-Fi channels to avoid (see [Usage](usage#link-quality))
 - **Headphone controls (AVRCP)**: Volume slider synced with the headphones and the Windows volume; their play/pause, next and previous buttons control playback on the PC (see [Usage](usage#headphone-buttons))
 - **Per-device settings**: a codec (with its own settings) and a capture source for each audio device, side by side on Home and connectable from the tray
-- **Updates**: The installed version updates itself after streaming stops (see [Usage](usage#updates))
+- **Updates**: The installed version updates itself after the audio device disconnects (see [Usage](usage#updates))
 - **Localization**: English, Japanese, Simplified / Traditional Chinese, Korean, German, French and Spanish
 - **Realtek firmware**: Guided firmware download for Realtek adapters
 - **Diagnostics**: connection flow, log, HCI capture, diagnostics for bug reports, peer receiver test against a Linux PC (see [Usage](usage#receiver))

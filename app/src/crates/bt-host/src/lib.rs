@@ -60,11 +60,19 @@ const JOB_TIMEOUT: Duration = Duration::from_secs(5);
 /// An RFCOMM channel open: the BTstack thread answers by its deadline
 /// (rfcomm::OPEN_DEADLINE); this only guards against a run loop that hangs
 const RFCOMM_OPEN_TIMEOUT: Duration = Duration::from_secs(22);
-/// One remote name request: a device that does not answer takes the page
-/// timeout (5.12 s)
-const NAME_REQUEST_TIMEOUT: Duration = Duration::from_secs(7);
-/// The name requests after an inquiry, all together
+/// One inquiry of a scan: 8 x 1.28 s = 10.24 s, BlueZ's and Android's
+const INQUIRY_UNITS: u8 = 8;
+/// One remote name request, then it is cancelled: a device in range answers
+/// within a second or two, one that does not would hold the controller for
+/// the page timeout (~20 s, gap_setup)
+const NAME_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// A cancelled name request completes at once
+const NAME_CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
+/// The name requests after an inquiry, all together: at most this long, at
+/// least the scan's time left or else [`NAME_REQUESTS_AFTER`]
 const NAME_REQUESTS_BUDGET: Duration = Duration::from_secs(12);
+/// The name requests after the scan's last inquiry
+const NAME_REQUESTS_AFTER: Duration = Duration::from_secs(5);
 /// Wait for the BTstack thread to end at shutdown: 10 s while the PC is awake
 const THREAD_END_STEP: Duration = Duration::from_millis(20);
 const THREAD_END_STEPS: u32 = 500;
@@ -666,66 +674,156 @@ impl BtHost {
 
     // ---- scanning ----
 
-    /// GAP inquiry for about `seconds` (3..30)
+    /// GAP inquiry for about `seconds` ([`BtHost::scan_with`])
     pub fn scan(&self, seconds: u32) -> Vec<DiscoveredDevice> {
+        self.scan_with(seconds, &mut |_| {})
+    }
+
+    /// GAP inquiry for about `seconds` (3..60): inquiries of 10.24 s one
+    /// after the other, as BlueZ and Android run them (a device one misses
+    /// answers the next), with the name requests for devices that did not
+    /// send their name in between. `on_found` gets the list each time a
+    /// device answers or a name comes, so it can be shown at once;
+    /// [`BtHost::stop_scan`] ends the scan early.
+    pub fn scan_with(&self, seconds: u32, on_found: &mut dyn FnMut(&[DiscoveredDevice])) -> Vec<DiscoveredDevice> {
         if !self.hci_ready() {
             return Vec::new();
         }
-        // Units of 1.28 s
-        let units = (seconds * 10).div_ceil(13).clamp(3, 30) as u8;
-        tracing::info!("starting inquiry (~{} s)", units as u32 * 128 / 100);
-        self.shared.update(|s| {
+        let total = Duration::from_secs(seconds.clamp(3, 60).into());
+        tracing::info!("starting inquiry (~{} s)", total.as_secs());
+        let deadline = Instant::now() + total;
+        let mut shown = self.shared.update(|s| {
             s.cancel = false;
+            s.scan_stop = false;
             s.discovered.clear();
             s.discovered_paging.clear();
-            s.inquiry_done = false;
+            s.inquiry_done = true;
+            s.found_rev
         });
-        match self.call(JOB_TIMEOUT, move |_, s| s.inquiry_start(units)) {
-            Some(0) => {}
-            r => {
-                tracing::warn!("gap_inquiry_start failed ({r:?})");
-                return Vec::new();
+        let mut asked = Vec::new();
+        let mut first = true;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            // The last inquiry may run a little over rather than be too
+            // short to find anything
+            if !first && left < Duration::from_secs(2) {
+                break;
+            }
+            first = false;
+            let units = left.as_millis().div_ceil(1280).clamp(2, INQUIRY_UNITS.into()) as u8;
+            if !self.inquiry(units, &mut shown, on_found) {
+                break;
+            }
+            let budget = deadline.saturating_duration_since(Instant::now());
+            let names_until = Instant::now() + budget.clamp(NAME_REQUESTS_AFTER, NAME_REQUESTS_BUDGET);
+            self.request_names(names_until, &mut asked, &mut shown, on_found);
+            if self.scan_stopped() {
+                break;
             }
         }
-        let timeout = Duration::from_millis(units as u64 * 1280 + 5000);
-        if self.shared.wait(timeout, true, |s| s.inquiry_done) != Wait::Done {
-            tracing::warn!("inquiry timed out or cancelled");
-            self.call(Duration::from_secs(2), |_, s| s.inquiry_stop());
-            self.shared.update(|s| s.inquiry_done = true);
-        }
-        self.request_names();
         let found = self.shared.lock().discovered.clone();
         tracing::info!("inquiry complete, {} device(s) found", found.len());
         found
     }
 
-    /// Asks the devices the inquiry found without a name (no name in their
-    /// extended inquiry response) for it, one at a time: audio devices
-    /// first, within [`NAME_REQUESTS_BUDGET`]
-    fn request_names(&self) {
-        let mut ask: Vec<(bool, [u8; 6], u8, u16)> = {
+    /// Ends a running scan early: it returns what it found so far
+    pub fn stop_scan(&self) {
+        // cancel ends the LE scan of a scan too
+        self.shared.update(|s| {
+            s.scan_stop = true;
+            s.cancel = true;
+        });
+    }
+
+    /// The running (or last) scan was stopped
+    pub fn scan_stopped(&self) -> bool {
+        let s = self.shared.lock();
+        s.scan_stop || s.cancel
+    }
+
+    /// Hands the scan's list to `on_found` when it changed since `shown`
+    fn report_found(&self, shown: &mut u64, on_found: &mut dyn FnMut(&[DiscoveredDevice])) {
+        let list = {
             let s = self.shared.lock();
-            if s.cancel {
+            if s.found_rev == *shown {
                 return;
             }
-            let mut seen = Vec::new();
+            *shown = s.found_rev;
+            s.discovered.clone()
+        };
+        tracing::debug!("scan: {} device(s) listed", list.len());
+        on_found(&list);
+    }
+
+    /// One inquiry of `units` x 1.28 s; the devices are reported as they
+    /// answer. False when the scan ends here (stopped, or no inquiry).
+    fn inquiry(&self, units: u8, shown: &mut u64, on_found: &mut dyn FnMut(&[DiscoveredDevice])) -> bool {
+        self.shared.update(|s| s.inquiry_done = false);
+        match self.call(JOB_TIMEOUT, move |_, s| s.inquiry_start(units)) {
+            Some(0) => {}
+            r => {
+                tracing::warn!("gap_inquiry_start failed ({r:?})");
+                self.shared.update(|s| s.inquiry_done = true);
+                return false;
+            }
+        }
+        let until = Instant::now() + Duration::from_millis(units as u64 * 1280 + 5000);
+        loop {
+            let rev = *shown;
+            let w = self.shared.wait(until.saturating_duration_since(Instant::now()), false, |s| {
+                s.inquiry_done || s.scan_stop || s.cancel || s.found_rev != rev
+            });
+            self.report_found(shown, on_found);
+            if self.shared.lock().inquiry_done {
+                return !self.scan_stopped();
+            }
+            let stopped = self.scan_stopped();
+            if stopped || w == Wait::TimedOut {
+                if stopped {
+                    tracing::debug!("scan stopped");
+                } else {
+                    tracing::warn!("inquiry timed out");
+                }
+                self.call(Duration::from_secs(2), |_, s| s.inquiry_stop());
+                // Inquiry Cancel completes it (BTstack reports that as the
+                // inquiry's end)
+                let _ = self.shared.wait(Duration::from_secs(2), false, |s| s.inquiry_done);
+                self.shared.update(|s| s.inquiry_done = true);
+                return false;
+            }
+        }
+    }
+
+    /// Asks the devices found without a name (none in their extended
+    /// inquiry response) for it, one at a time and each once a scan: audio
+    /// devices first, until `until`. Between inquiries: a page during an
+    /// inquiry stalls many controllers.
+    fn request_names(
+        &self,
+        until: Instant,
+        asked: &mut Vec<[u8; 6]>,
+        shown: &mut u64,
+        on_found: &mut dyn FnMut(&[DiscoveredDevice]),
+    ) {
+        let mut ask: Vec<(bool, [u8; 6], u8, u16)> = {
+            let s = self.shared.lock();
+            if s.scan_stop || s.cancel {
+                return;
+            }
             s.discovered
                 .iter()
-                .filter(|d| d.name.is_empty())
-                .filter(|d| {
-                    let new = !seen.contains(&d.addr);
-                    seen.push(d.addr);
-                    new
-                })
+                .filter(|d| d.name.is_empty() && !asked.contains(&d.addr))
                 .filter_map(|d| {
                     let &(_, psrm, clock) = s.discovered_paging.iter().find(|x| x.0 == d.addr)?;
                     Some((d.is_audio(), d.addr, psrm, clock))
                 })
                 .collect()
         };
+        if ask.is_empty() {
+            return;
+        }
         ask.sort_by_key(|x| !x.0);
         tracing::debug!("name requests: {} device(s) without a name", ask.len());
-        let until = Instant::now() + NAME_REQUESTS_BUDGET;
         for (audio, addr, psrm, clock) in ask {
             tracing::debug!(
                 "name request: {} (audio {audio}, psrm {psrm}, clock offset 0x{clock:04X})",
@@ -736,25 +834,31 @@ impl BtHost {
                 tracing::info!("no time left to ask the other devices for their names");
                 break;
             }
+            asked.push(addr);
             self.shared.update(|s| s.name_done = false);
             if self.call(JOB_TIMEOUT, move |_, s| s.remote_name_request(&addr, psrm, clock | 0x8000)) != Some(0) {
                 tracing::warn!("remote name request to {} not sent", addr_str(&addr));
                 continue;
             }
-            // A device that does not answer: the page timeout (~5 s)
-            match self.shared.wait(left.min(NAME_REQUEST_TIMEOUT), true, |s| s.name_done) {
-                Wait::Done => {}
-                Wait::Cancelled => {
-                    tracing::debug!("name requests cancelled");
-                    break;
-                }
-                Wait::TimedOut => {
+            let _ = self.shared.wait(left.min(NAME_REQUEST_TIMEOUT), false, |s| s.name_done || s.scan_stop || s.cancel);
+            let stopped = self.scan_stopped();
+            if !self.shared.lock().name_done {
+                if !stopped {
                     tracing::warn!("remote name request to {} timed out", addr_str(&addr));
-                    // The next request waits until this one completes
-                    // (BTstack runs one at a time)
-                    let _ = self.shared.wait(NAME_REQUEST_TIMEOUT, true, |s| s.name_done);
+                }
+                // A device that does not answer would hold the controller
+                // for the page timeout; cancelled, the request completes at
+                // once (BTstack runs one at a time)
+                self.call(JOB_TIMEOUT, move |_, s| s.cmd_remote_name_request_cancel(&addr));
+                if self.shared.wait(NAME_CANCEL_TIMEOUT, false, |s| s.name_done) != Wait::Done {
+                    tracing::warn!("remote name request to {} did not end", addr_str(&addr));
                     break;
                 }
+            }
+            self.report_found(shown, on_found);
+            if stopped {
+                tracing::debug!("name requests stopped");
+                break;
             }
         }
     }

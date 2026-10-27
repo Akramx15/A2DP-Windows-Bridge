@@ -444,9 +444,8 @@ pub struct Profile {
     pub auto_switch_device: bool,
     pub app_exe: String,
     pub app_name: String,
-    /// auto, device (the Windows volume of volume_device_id; set in
-    /// developer mode); "off" from before Settings.volume_sync counts as
-    /// auto. Only while Settings.volume_sync is on.
+    /// auto, off, device: kept as saved, but not used (issue #86): streams
+    /// follow Settings.volume_sync alone.
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
@@ -468,6 +467,14 @@ pub struct Profile {
     /// The same for SBC XQ
     #[serde(default)]
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: the lowest bitpool to use (the SET_CONFIGURATION's
+    /// minimum and the floor of ABR), within what the device allows and
+    /// never above the bitpool (0 = Auto)
+    #[serde(default)]
+    pub sbc_min_bitpool: u8,
+    /// The same for SBC XQ
+    #[serde(default)]
+    pub sbcxq_min_bitpool: u8,
     /// SBC / SBC XQ: block length 4, 8, 12, 16 (0 = auto: 16)
     #[serde(default)]
     pub sbc_blocks: u8,
@@ -505,6 +512,8 @@ pub struct CodecValues {
     pub abr: bool,
     pub sbc_bitpool: u8,
     pub sbcxq_bitpool: u8,
+    pub sbc_min_bitpool: u8,
+    pub sbcxq_min_bitpool: u8,
     pub sbc_blocks: u8,
     pub sbc_subbands: u8,
     pub sbc_allocation: String,
@@ -520,6 +529,8 @@ impl Default for CodecValues {
             abr: false,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
+            sbc_min_bitpool: 0,
+            sbcxq_min_bitpool: 0,
             sbc_blocks: 0,
             sbc_subbands: 0,
             sbc_allocation: String::new(),
@@ -544,8 +555,6 @@ pub struct DevOverrides {
     pub aac_no_peak: bool,
     pub aac_no_afterburner: bool,
     pub aac_latm_v0: bool,
-    /// aptX Adaptive may stream at 96 kHz; off (the default), 48 kHz only
-    pub aptxad_96k: bool,
 }
 
 /// Developer mode's logging (a2dpwb_core::settings::DevLog), in force while
@@ -584,6 +593,13 @@ pub struct Settings {
     pub start_with_windows: bool,
     pub start_minimized: bool,
     pub minimize_to_tray: bool,
+    /// A click on the tray icon opens the main window, not the flyout
+    #[serde(default)]
+    pub tray_click_opens_window: bool,
+    /// A notification when a device connects: its codec, what the codec
+    /// runs with, the battery (on by default)
+    #[serde(default = "yes")]
+    pub notify_connected: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
     /// The headphones' buttons act as Windows media keys (every device)
@@ -592,9 +608,8 @@ pub struct Settings {
     pub remember_volume: bool,
     /// Windows Volume Sync for every device (on by default): the audio
     /// device's volume and the captured device's Windows volume follow each
-    /// other; a profile can follow another device instead (its volume_sync
-    /// "device", set in developer mode). Off: no stream syncs. A change
-    /// starts the profile in use again.
+    /// other. Off: no stream syncs. A change starts the profile in use
+    /// again.
     #[serde(default = "yes")]
     pub volume_sync: bool,
     /// Developer mode: receiver test, HCI capture, debug details
@@ -1045,6 +1060,9 @@ pub enum Method {
     /// -> Device[] (also as an event)
     #[serde(rename = "device.scan")]
     DeviceScan { seconds: u32 },
+    /// Ends a running scan early: device.scan answers with what it found
+    #[serde(rename = "device.scan_stop")]
+    DeviceScanStop,
     /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
     /// or false: the classic one)
     #[serde(rename = "device.forget")]

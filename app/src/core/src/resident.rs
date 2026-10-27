@@ -56,9 +56,10 @@ fn build_menu(view: &TrayView) -> Menu {
     let menu = Menu::new();
     let _ = menu.append(&MenuItem::with_id("open", tr(lang, "tray.open", "Open A2DP Windows Bridge"), true, None));
     let _ = menu.append(&PredefinedMenuItem::separator());
-    for (i, name) in view.profiles.iter().take(TRAY_PROFILES).enumerate() {
+    // Each by its device (issue #86: profile names are not shown)
+    for (i, (name, label)) in view.profiles.iter().zip(&view.labels).take(TRAY_PROFILES).enumerate() {
         let active = view.streaming && view.active_profile.as_deref() == Some(name.as_str());
-        let _ = menu.append(&CheckMenuItem::with_id(format!("profile:{i}"), name, true, active, None));
+        let _ = menu.append(&CheckMenuItem::with_id(format!("profile:{i}"), label, true, active, None));
     }
     if !view.profiles.is_empty() {
         let _ = menu.append(&PredefinedMenuItem::separator());
@@ -367,6 +368,7 @@ pub fn run(args: &[String]) -> i32 {
                     streaming: false,
                     tooltip: "A2DP Windows Bridge".into(),
                     profiles: Vec::new(),
+                    labels: Vec::new(),
                     active_profile: None,
                     language: "en".into(),
                 });
@@ -395,7 +397,8 @@ pub fn run(args: &[String]) -> i32 {
             }
             TaoEvent::UserEvent(UserEvent::Click) => {
                 win_sys::notify::allow_foreground_for_click();
-                launch_ui(true);
+                // The flyout, or the main window when Settings say so
+                launch_ui(!state.tray_click_opens_window());
             }
             TaoEvent::UserEvent(UserEvent::Balloon(b)) => match &notifier {
                 Some(n) => show_balloon(n, b),

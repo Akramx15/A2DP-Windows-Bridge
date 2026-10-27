@@ -56,6 +56,7 @@ fn main() {
             commands::ui_info,
             commands::show_main,
             commands::show_flyout,
+            commands::fit_flyout,
             commands::set_theme,
             commands::open_url,
             commands::open_folder,

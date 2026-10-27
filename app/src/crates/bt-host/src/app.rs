@@ -766,6 +766,11 @@ impl HostApp {
                     && status != ERROR_CODE_SUCCESS
                 {
                     tracing::debug!("HCI command 0x{opcode:04X} status 0x{status:02X} ({})", hci_error_string(status));
+                    // An inquiry the controller refused: BTstack goes idle
+                    // without an Inquiry Complete, the scan would wait for it
+                    if opcode == HCI_OPCODE_INQUIRY {
+                        self.shared.update(|s| s.inquiry_done = true);
+                    }
                 }
             }
             HCI_EVENT_COMMAND_COMPLETE => {
@@ -927,18 +932,16 @@ impl HostApp {
                 } else {
                     String::new()
                 };
-                tracing::info!(
-                    "inquiry result: {} CoD=0x{cod:06X} RSSI={} name={}",
-                    addr_str(&addr),
-                    rssi as i8,
-                    format_args!("“{name}”")
-                );
-                self.shared.update(|s| {
-                    if !s.inquiry_done {
-                        s.discovered.push(DiscoveredDevice { addr, name, class_of_device: cod, rssi: rssi as i8 });
-                        s.discovered_paging.push((addr, psrm, clock));
-                    }
-                });
+                let line =
+                    format!("inquiry result: {} CoD=0x{cod:06X} RSSI={} name=“{name}”", addr_str(&addr), rssi as i8);
+                let d = DiscoveredDevice { addr, name, class_of_device: cod, rssi: rssi as i8 };
+                // A device answers again and again (inquiry with RSSI / EIR):
+                // the repeats at trace
+                if self.shared.update(|s| !s.inquiry_done && s.add_found(d, psrm, clock)) {
+                    tracing::info!("{line}");
+                } else {
+                    tracing::trace!("{line}");
+                }
             }
             HCI_EVENT_REMOTE_NAME_REQUEST_COMPLETE => {
                 let (Some(status), Some(addr)) = (u8_at(p, 2), addr_at(p, 3)) else { return };
@@ -953,9 +956,7 @@ impl HostApp {
                 );
                 self.shared.update(|s| {
                     if status == 0 && !name.is_empty() {
-                        for d in s.discovered.iter_mut().filter(|d| d.addr == addr && d.name.is_empty()) {
-                            d.name = name.clone();
-                        }
+                        s.set_found_name(&addr, &name);
                     }
                     s.name_done = true;
                 });

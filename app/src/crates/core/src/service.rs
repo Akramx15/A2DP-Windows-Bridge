@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::thread::JoinHandle;
@@ -32,6 +32,9 @@ const RESUME_TICK: Duration = Duration::from_millis(200);
 const RESUME_WAIT_TICKS: u32 = 300;
 /// LE Audio (experimental): the LE scan after the classic one (v1)
 const LE_SCAN: Duration = Duration::from_secs(5);
+/// A connection started during a scan waits this long for the scan to end
+/// (a name request being cancelled takes up to ~2 s)
+const SCAN_END_WAIT: Duration = Duration::from_secs(5);
 /// ... once the LE core is ready (HCI works, so at once or a moment later)
 const LE_SCAN_READY_WAIT: Duration = Duration::from_secs(1);
 
@@ -700,6 +703,13 @@ impl Inner {
 pub struct Service {
     inner: Arc<Inner>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    /// Held while a session is stopped and the next one started: one start
+    /// or stop at a time (issue #86: two codec switches in quick succession
+    /// ran two sessions on one stack, no sound or crackling)
+    control: Mutex<()>,
+    /// The latest start or stop asked for ([`Service::ticket`]); an older
+    /// one still waiting for `control` is dropped
+    latest: AtomicU64,
     /// What the last session was started with: a Bluetooth restart
     /// connects it again (issue #86)
     last_request: Mutex<Option<StreamRequest>>,
@@ -787,7 +797,14 @@ impl Service {
         pipeline::set_thread_priority_hook(|| pro_audio("encode thread"));
         hci_transport::set_acl_out_priority_hook(|| pro_audio("USB ACL writer"));
         bt_host::set_runloop_priority_hook(|| pro_audio("BTstack thread"));
-        Service { inner, worker: Mutex::new(None), last_request: Mutex::new(None), _power: power }
+        Service {
+            inner,
+            worker: Mutex::new(None),
+            control: Mutex::new(()),
+            latest: AtomicU64::new(0),
+            last_request: Mutex::new(None),
+            _power: power,
+        }
     }
 
     pub fn stats(&self) -> Arc<LinkStats> {
@@ -888,8 +905,47 @@ impl Service {
     /// Disconnect (the window, the tray): the session stops, and a
     /// Bluetooth restart does not connect it again (issue #86)
     pub fn disconnect(&self) {
+        let _control = self.control.lock().unwrap_or_else(|e| e.into_inner());
         self.forget_session();
-        self.stop_streaming();
+        self.stop_session();
+    }
+
+    /// A ticket for a start or stop run later on its own thread
+    /// ([`Service::start_streaming_for`], [`Service::disconnect_for`]): the
+    /// latest one taken is the one that runs
+    pub fn ticket(&self) -> u64 {
+        self.latest.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    /// Takes `control` for the request with this ticket; None when a newer
+    /// one was asked for meanwhile (it runs instead)
+    fn control_for(&self, ticket: u64, what: &str) -> Option<std::sync::MutexGuard<'_, ()>> {
+        let control = self.control.lock().unwrap_or_else(|e| e.into_inner());
+        if self.latest.load(Ordering::Acquire) != ticket {
+            tracing::debug!("{what}: skipped, a newer start or stop was asked for");
+            return None;
+        }
+        Some(control)
+    }
+
+    /// [`Service::start_streaming`] unless a newer start or stop was asked
+    /// for since the ticket was taken
+    pub fn start_streaming_for(&self, req: StreamRequest, ticket: u64) {
+        if let Some(_control) = self.control_for(ticket, "start streaming") {
+            self.start_session(req);
+        }
+    }
+
+    /// [`Service::disconnect`] unless a newer start or stop was asked for
+    /// since the ticket was taken
+    pub fn disconnect_for(&self, ticket: u64) {
+        if let Some(_control) = self.control_for(ticket, "disconnect") {
+            self.forget_session();
+            // A start skipped for this stop left "connecting" shown
+            if !self.stop_session() {
+                self.inner.notify(StreamState::Idle, Msg::new("status.ready"));
+            }
+        }
     }
 
     fn forget_session(&self) {
@@ -976,12 +1032,18 @@ impl Service {
 
     /// Starts a session; a running one is stopped first
     pub fn start_streaming(&self, req: StreamRequest) {
+        let _control = self.control.lock().unwrap_or_else(|e| e.into_inner());
+        self.start_session(req);
+    }
+
+    fn start_session(&self, req: StreamRequest) {
         tracing::debug!(
             "start streaming: {} ({}), stopping any session first",
             bt_host::addr_str(&req.device),
             if req.le.is_some() { "LE Audio" } else { "A2DP" }
         );
-        self.stop_streaming();
+        self.end_scan();
+        self.stop_session();
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.turned_off.store(false, Ordering::Release);
         self.inner.stop.store(false, Ordering::Release);
@@ -1010,7 +1072,13 @@ impl Service {
     /// Stops the session and waits for it (bounded by the stack's own
     /// timeouts: blocking waits are cancelled)
     pub fn stop_streaming(&self) {
-        let Some(t) = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        let _control = self.control.lock().unwrap_or_else(|e| e.into_inner());
+        self.stop_session();
+    }
+
+    /// False when no session was there to stop
+    fn stop_session(&self) -> bool {
+        let Some(t) = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take() else { return false };
         tracing::debug!("stop streaming: requested (state {:?})", self.state());
         let started = Instant::now();
         self.inner.stop.store(true, Ordering::Release);
@@ -1020,6 +1088,7 @@ impl Service {
         }
         let _ = t.join();
         tracing::debug!("stop streaming: session ended in {} ms", started.elapsed().as_millis());
+        true
     }
 
     /// A session that waits for turned-off headphones holds nothing worth
@@ -1057,8 +1126,14 @@ impl Service {
 
     /// Inquiry for nearby devices, then, when the stack has LE Audio
     /// (experimental), a 5 s LE scan for LE Audio devices (v1's scan): the
-    /// classic devices, then the LE Audio ones ([`ScannedDevice`])
-    pub fn scan_devices(&self, seconds: u32) -> Result<Vec<ScannedDevice>, Msg> {
+    /// classic devices, then the LE Audio ones ([`ScannedDevice`]).
+    /// `on_found` gets the classic devices each time one answers (or its
+    /// name comes), long before the scan ends.
+    pub fn scan_devices(
+        &self,
+        seconds: u32,
+        on_found: &mut dyn FnMut(&[ScannedDevice]),
+    ) -> Result<Vec<ScannedDevice>, Msg> {
         self.end_wait_for_device();
         if self.is_running() {
             return Err(Msg::new("status.streaming"));
@@ -1067,7 +1142,9 @@ impl Service {
         self.inner.notify(StreamState::Idle, Msg::new("status.initializing_scan"));
         let host = self.inner.ensure_host()?;
         self.inner.notify(StreamState::Idle, Msg::new("status.scanning_devices"));
-        let classic = host.scan(seconds);
+        let classic = host.scan_with(seconds, &mut |found| {
+            on_found(&found.iter().map(ScannedDevice::classic).collect::<Vec<_>>());
+        });
         let mut list: Vec<ScannedDevice> = classic.iter().map(ScannedDevice::classic).collect();
         for d in &list {
             tracing::debug!(
@@ -1080,7 +1157,7 @@ impl Service {
             );
         }
         let mut le_found = 0;
-        if self.inner.le_active() {
+        if self.inner.le_active() && !host.scan_stopped() {
             let until = Instant::now() + LE_SCAN_READY_WAIT;
             while !host.le_ready() && Instant::now() < until {
                 std::thread::sleep(Duration::from_millis(100));
@@ -1113,6 +1190,32 @@ impl Service {
         }
         self.inner.notify(StreamState::Idle, Msg::with("status.scan_complete", &[&(classic.len() + le_found)]));
         Ok(list)
+    }
+
+    /// Ends a running scan early ([`Service::scan_devices`] returns what it
+    /// found so far)
+    pub fn stop_scan(&self) {
+        if self.is_scanning()
+            && let Some(h) = self.host()
+        {
+            tracing::info!("scan: stopped");
+            h.stop_scan();
+        }
+    }
+
+    /// A connection while the scan inquires and pages on the same radio
+    /// would be slow or fail: the scan ends first (a device it listed was
+    /// picked)
+    fn end_scan(&self) {
+        if !self.is_scanning() {
+            return;
+        }
+        self.stop_scan();
+        let until = Instant::now() + SCAN_END_WAIT;
+        while self.is_scanning() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        tracing::debug!("start streaming: scan ended first (still running: {})", self.is_scanning());
     }
 
     /// Stops streaming and the stack (the adapter is released)
@@ -1222,6 +1325,30 @@ mod tests {
         // Disconnect
         s.disconnect();
         assert_eq!(s.restart_adapter(), None);
+    }
+
+    #[test]
+    fn only_the_latest_start_or_stop_asked_for_runs() {
+        let s = service();
+        // Two codec switches in quick succession, then a Disconnect: each
+        // thread runs late, the first two find a newer one asked for
+        let (first, second) = (s.ticket(), s.ticket());
+        s.start_streaming_for(request(), first);
+        assert!(s.worker.lock().unwrap().is_none());
+        *s.last_request.lock().unwrap() = Some(request());
+        let stop = s.ticket();
+        s.start_streaming_for(request(), second);
+        assert!(s.worker.lock().unwrap().is_none());
+        // The Disconnect older than a later start is skipped too
+        let start = s.ticket();
+        s.disconnect_for(stop);
+        assert_eq!(s.restart_adapter(), Some(request()));
+        let _ = start;
+        // The latest runs
+        let stop = s.ticket();
+        s.disconnect_for(stop);
+        assert_eq!(s.restart_adapter(), None);
+        assert_eq!(s.state(), StreamState::Idle);
     }
 
     #[test]

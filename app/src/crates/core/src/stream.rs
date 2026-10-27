@@ -37,8 +37,13 @@ pub struct StreamRequest {
     pub sbc_bitpool: u8,
     /// The same for SBC XQ
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: the lowest bitpool wanted (0 = Auto), each codec its
+    /// own; [`StreamRequest::sbc_params`] puts it in the SBC setup
+    pub sbc_min_bitpool: u8,
+    pub sbcxq_min_bitpool: u8,
     /// SBC / SBC XQ: blocks, subbands, allocation, channel mode wanted (the
-    /// defaults when not set; what the device does not list falls back)
+    /// defaults when not set; what the device does not list falls back).
+    /// Its `min_bitpool` is not used: see [`StreamRequest::sbc_params`].
     pub sbc: codec::sbc::SbcParams,
     /// None = the device's rate
     pub sample_rate: Option<u32>,
@@ -50,6 +55,20 @@ pub struct StreamRequest {
     /// LE Audio (experimental) instead of A2DP: the le_stream session
     /// streams to `device` and these extra devices. None: A2DP.
     pub le: Option<bt_host::LeRequest>,
+}
+
+impl StreamRequest {
+    /// The SBC setup of a `kind` stream (SBC or SBC XQ): [`Self::sbc`] with
+    /// that codec's minimum bitpool, as the SET_CONFIGURATION and the
+    /// encoder take it
+    pub fn sbc_params(&self, kind: CodecKind) -> codec::sbc::SbcParams {
+        let min_bitpool = match kind {
+            CodecKind::Sbc => self.sbc_min_bitpool,
+            CodecKind::SbcXq => self.sbcxq_min_bitpool,
+            _ => 0,
+        };
+        codec::sbc::SbcParams { min_bitpool, ..self.sbc }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -615,6 +634,10 @@ impl Drop for DefaultDeviceGuard {
 /// Why a stack is restarted after sleep (also in the log and the flow)
 pub(crate) const RESUMED: &str = "the PC resumed from sleep";
 const ADAPTER_STOPPED: &str = "the Bluetooth adapter stopped working";
+
+/// The capture rate a profile's Auto sample rate asks for (issue #86)
+const AUTO_SAMPLE_RATE: u32 = 48000;
+
 /// A new stack (sleep, a stopped adapter): the adapter may take a while to
 /// come back
 const RESTART_ATTEMPTS: u32 = 10;
@@ -744,7 +767,7 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &Stream
     // The SET_CONFIGURATION took the same (configuration_with)
     let sbc = match kind {
         CodecKind::Sbc | CodecKind::SbcXq => {
-            let (sbc, notes) = remote.sbc_params(kind, req.sbc);
+            let (sbc, notes) = remote.sbc_params(kind, req.sbc_params(kind));
             for n in notes {
                 tracing::warn!("{n}");
             }
@@ -996,28 +1019,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     // ---- audio source ----
     inner.notify(StreamState::Connecting, Msg::new("status.initializing_audio"));
     let test_tone = req.source == SourceRequest::TestTone;
-    // Auto (Auto-select): the best codec with its best options, so the
-    // highest rate the codec takes, as far as the device lists it (issue
-    // #86), the test tone too; quality (HQ) and bit depth (24-bit where
-    // carried) are already the best by default. WASAPI resamples a lower
-    // mix rate.
-    let best_rate = req.codec.is_none() && req.sample_rate.is_none();
-    let mut preferred = match (&req.source, req.sample_rate) {
-        (_, Some(r)) => r,
-        _ if best_rate => kind.max_sample_rate(),
-        (SourceRequest::TestTone, None) => 48000,
-        (SourceRequest::VirtualDevice { id, .. }, None) => audio_capture::mix_rate(Some(id)).unwrap_or(48000),
-        (_, None) => audio_capture::mix_rate(None).unwrap_or(48000),
-    };
+    // The rate on Auto (the profile's 0, Auto-select too): 48 kHz, each
+    // codec's picker below going to the best the device lists without it
+    // (44.1 kHz, say). Not the highest it lists nor the Windows mix rate
+    // (issue #86: 96 kHz brought latency and trouble with no audible gain,
+    // and Windows mixes at 48 kHz); 96 kHz when chosen. WASAPI resamples.
+    let mut preferred = req.sample_rate.unwrap_or(AUTO_SAMPLE_RATE);
     tracing::debug!(
         "capture rate: {preferred} Hz preferred ({})",
-        if req.sample_rate.is_some() {
-            "profile"
-        } else if best_rate {
-            "Auto: the codec's highest"
-        } else {
-            "source mix rate"
-        }
+        if req.sample_rate.is_some() { "profile" } else { "Auto" }
     );
     if preferred > kind.max_sample_rate() {
         tracing::info!(
@@ -1030,34 +1040,21 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     // aptX family, AAC: 44.1 / 48 kHz as the sink lists them; LHDC V5, LDAC:
     // their rates;
     // Opus, Opus 05: 48 kHz only; aptX Adaptive: 48 kHz, 96 kHz when the
-    // profile or Auto asks for it (HQ, an R2 sink that lists it), not from
-    // the source's mix rate. WASAPI resamples to the requested rate.
+    // profile asks for it (HQ, an R2 sink that lists it). WASAPI resamples
+    // to the requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
         CodecKind::Ldac => remote.pick_ldac_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
-        // 96 kHz only while switched on in Developer (issue #86: not yet
-        // working on an EarFun)
-        CodecKind::AptxAdaptive => remote.pick_aptxad_sample_rate(
-            req.sample_rate.unwrap_or(if best_rate { 96000 } else { 48000 }),
-            req.quality.for_codec(kind),
-            codec::dev::overrides().aptxad_96k,
-        ),
+        CodecKind::AptxAdaptive => remote.pick_aptxad_sample_rate(preferred, req.quality.for_codec(kind)),
         CodecKind::Opus | CodecKind::Opus05 => 48000,
         CodecKind::Aac => remote.pick_aac_sample_rate(preferred),
         CodecKind::Sbc | CodecKind::SbcXq if preferred != 44100 => 48000,
         _ => preferred,
     };
     if picked != preferred {
-        // aptX Adaptive takes 96 kHz only when chosen, not from the mix
-        // rate: said so, not "supported" (issue #86)
-        let why = if kind == CodecKind::AptxAdaptive && req.sample_rate.is_none() && !best_rate {
-            "the profile's rate is Auto; 96 kHz only when chosen in the codec's settings"
-        } else {
-            "supported rate"
-        };
-        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz ({why})", kind.name());
+        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz (supported rate)", kind.name());
         preferred = picked;
     }
 
@@ -1147,7 +1144,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- stream configuration ----
     let t = Instant::now();
-    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+    let mut configured =
+        configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind));
     if let Err(failure) = &configured {
         tracing::debug!("configure: {} failed after {} ms: {failure:?}", kind.name(), t.elapsed().as_millis());
     }
@@ -1171,7 +1169,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if req.codec.is_some() && replaced.is_none() {
             replaced = Some((CodecKind::SbcXq, Unavailable::NotSupported));
         }
-        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+        configured =
+            configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind));
         if let Err(failure) = &configured {
             tracing::debug!("configure: SBC after SBC XQ failed: {failure:?}");
         }
@@ -1309,7 +1308,14 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // A reconnect builds the configuration anew from what the device lists
     // then (v1 read its capabilities again)
-    let rebuild = |r: &RemoteCaps| match r.configuration_with(kind, format.sample_rate, channels, bits, vbr, req.sbc) {
+    let rebuild = |r: &RemoteCaps| match r.configuration_with(
+        kind,
+        format.sample_rate,
+        channels,
+        bits,
+        vbr,
+        req.sbc_params(kind),
+    ) {
         Ok(c) => Some(c),
         Err(e) => {
             tracing::warn!("reconnect: {e}");
@@ -1641,6 +1647,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             && !changed
         {
             p.reset();
+            // The Idle while the headphones were off cleared the stream
+            // info (the UI's, the connected balloon's): the same again
+            if back_on {
+                inner.stream_info(info.clone());
+            }
         } else {
             let sink = match pipeline.take() {
                 Some(p) => p.stop(),
