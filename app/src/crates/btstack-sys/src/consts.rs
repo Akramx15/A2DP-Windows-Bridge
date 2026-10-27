@@ -42,6 +42,15 @@ pub const HFP_SUBEVENT_APPLE_BATTERY_LEVEL: u8 = 0x2C;
 pub const HFP_HF_INDICATOR_UUID_BATTERY_LEVEL: u16 = 0x0002;
 pub const HCI_EVENT_A2DP_META: u8 = 0xF0;
 
+// ---- RFCOMM, SDP client ----
+/// Packet type of an RFCOMM channel's data
+pub const RFCOMM_DATA_PACKET: u8 = 0x07;
+pub const RFCOMM_EVENT_CHANNEL_OPENED: u8 = 0x80;
+pub const RFCOMM_EVENT_CHANNEL_CLOSED: u8 = 0x81;
+pub const RFCOMM_EVENT_CAN_SEND_NOW: u8 = 0x89;
+pub const SDP_EVENT_QUERY_COMPLETE: u8 = 0x91;
+pub const SDP_EVENT_QUERY_RFCOMM_SERVICE: u8 = 0x92;
+
 // ---- HCI opcodes ----
 pub const HCI_OPCODE_INQUIRY: u16 = 0x0401;
 pub const HCI_OPCODE_READ_LOCAL_VERSION_INFORMATION: u16 = 0x1001;

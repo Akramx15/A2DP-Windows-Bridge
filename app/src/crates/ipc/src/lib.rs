@@ -124,5 +124,6 @@ mod tests {
         SettingsApplied::export_all(&cfg).unwrap();
         DiagBundle::export_all(&cfg).unwrap();
         DiagBundleParams::export_all(&cfg).unwrap();
+        RfcommOpened::export_all(&cfg).unwrap();
     }
 }

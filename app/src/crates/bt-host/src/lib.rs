@@ -17,6 +17,7 @@ pub mod events;
 mod le;
 pub mod link_keys;
 pub mod media;
+pub mod rfcomm;
 mod shared;
 pub mod stats;
 
@@ -39,6 +40,10 @@ pub use le::{
     LeStreamStats, LeStreamStatus,
 };
 pub use media::{MediaPacket, MediaSink};
+pub use rfcomm::{
+    MAX_SEND_BYTES as RFCOMM_MAX_SEND_BYTES, OPEN_DEADLINE as RFCOMM_OPEN_DEADLINE, RfcommCloseReason, RfcommError,
+    RfcommEvent, RfcommOpened, RfcommReply, RfcommSink, parse_uuid,
+};
 use shared::{Shared, Wait};
 pub use stats::{LinkRadio, LinkStats, LiveCodec, MaxGauge, StreamTiming};
 
@@ -52,6 +57,9 @@ const STREAM_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// A job the run loop should take at once
 const JOB_TIMEOUT: Duration = Duration::from_secs(5);
+/// An RFCOMM channel open: the BTstack thread answers by its deadline
+/// (rfcomm::OPEN_DEADLINE); this only guards against a run loop that hangs
+const RFCOMM_OPEN_TIMEOUT: Duration = Duration::from_secs(22);
 /// One inquiry of a scan: 8 x 1.28 s = 10.24 s, BlueZ's and Android's
 const INQUIRY_UNITS: u8 = 8;
 /// One remote name request, then it is cancelled: a device in range answers
@@ -613,6 +621,57 @@ impl BtHost {
         self.shared.lock().le_audio_capable
     }
 
+    // ---- RFCOMM client channels ----
+
+    /// Opens an RFCOMM channel to the service `uuid` of `addr`, the device
+    /// being streamed to, over the link the stack has to it (it never
+    /// connects for this: else [`RfcommError::NotConnected`]). Answered
+    /// within [`RFCOMM_OPEN_DEADLINE`]. `sink` receives the channel's data
+    /// and its close, on the BTstack thread.
+    pub fn rfcomm_open(&self, addr: [u8; 6], uuid: [u8; 16], sink: RfcommSink) -> Result<RfcommOpened, RfcommError> {
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.post(move |app, s| {
+            // Only to the device being streamed to, once connected (not
+            // while the connection is set up, which may be given up on):
+            // its channels close with the A2DP connection (close_device)
+            if app.a2dp_cid == 0 || app.remote_addr != Some(addr) || !app.shared.lock().connected {
+                let _ = tx.send(Err(RfcommError::NotConnected));
+                return;
+            }
+            app.rfcomm.open(s, addr, uuid, sink, tx)
+        });
+        match rx.recv_timeout(RFCOMM_OPEN_TIMEOUT) {
+            Ok(r) => r,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // The run loop did not answer: the channel is closed if it
+                // opens later
+                tracing::warn!("RFCOMM: open to {} timed out", addr_str(&addr));
+                Err(RfcommError::NoAnswer)
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(RfcommError::NotConnected),
+        }
+    }
+
+    /// Queues `data` on channel `id`, without waiting: the order of the
+    /// calls is the order on the air. The reply tells whether it was queued.
+    pub fn rfcomm_send(&self, id: u32, data: Vec<u8>) -> RfcommReply {
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.post(move |app, s| {
+            let _ = tx.send(app.rfcomm.send(s, id, &data));
+        });
+        RfcommReply(rx)
+    }
+
+    /// Closes channel `id` after what was queued before, without waiting
+    /// (no [`RfcommEvent::Closed`] follows)
+    pub fn rfcomm_close(&self, id: u32) -> RfcommReply {
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.post(move |app, s| {
+            let _ = tx.send(app.rfcomm.close(s, id));
+        });
+        RfcommReply(rx)
+    }
+
     // ---- scanning ----
 
     /// GAP inquiry for about `seconds` ([`BtHost::scan_with`])
@@ -1156,7 +1215,7 @@ impl BtHost {
         if wait && self.shared.wait(DISCONNECT_TIMEOUT, false, |s| s.released) != Wait::Done {
             tracing::warn!("leftover AVDTP release timed out");
         }
-        self.call(Duration::from_secs(2), |app, _| app.forget_connection());
+        self.call(Duration::from_secs(2), |app, s| app.forget_connection(s));
         self.shared.update(|s| {
             s.connected = false;
             s.streaming = false;
@@ -1180,7 +1239,7 @@ impl BtHost {
         }
         // This was never a live stream: the release / HCI disconnect handlers
         // must not make the streaming loop think a connection was lost
-        self.call(Duration::from_secs(2), |app, _| app.forget_connection());
+        self.call(Duration::from_secs(2), |app, s| app.forget_connection(s));
         self.shared.update(|s| {
             s.connected = false;
             s.streaming = false;

@@ -45,7 +45,10 @@
 #include "classic/hfp_ag.h"
 #include "classic/rfcomm.h"
 #include "classic/btstack_link_key_db_memory.h"
+#include "classic/sdp_client.h"
+#include "classic/sdp_client_rfcomm.h"
 #include "classic/sdp_server.h"
+#include "classic/sdp_util.h"
 #include "btstack_chipset_intel_firmware.h"
 #include "btstack_tlv.h"
 #include "btstack_tlv_windows.h"
@@ -292,6 +295,8 @@ enum {
     SOURCE_ATT_SERVER = 8,
     SOURCE_ISO = 9,
     SOURCE_HFP = 10,
+    SOURCE_RFCOMM = 11,
+    SOURCE_SDP_CLIENT = 12,
 };
 
 static void handler_hci(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_HCI, t, c, p, s); }
@@ -305,6 +310,8 @@ static void handler_gatt_client(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) {
 static void handler_att_server(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_ATT_SERVER, t, c, p, s); }
 static void handler_hfp(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_HFP, t, c, p, s); }
 static void handler_iso(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_ISO, t, c, p, s); }
+static void handler_rfcomm(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_RFCOMM, t, c, p, s); }
+static void handler_sdp_client(uint8_t t, uint16_t c, uint8_t *p, uint16_t s) { a2dpwb_rs_on_packet(SOURCE_SDP_CLIENT, t, c, p, s); }
 
 static btstack_packet_callback_registration_t hci_event_registration;
 
@@ -356,7 +363,6 @@ static const char *hfp_call_hold_services[] = {"1", "2"};
 
 void a2dpwb_hfp_ag_init(void) {
     uint16_t features = (1 << HFP_AGSF_HF_INDICATORS) | (1 << HFP_AGSF_EXTENDED_ERROR_RESULT_CODES);
-    rfcomm_init();
     hfp_ag_init(A2DPWB_HFP_RFCOMM_CHANNEL);
     hfp_ag_init_supported_features(features);
     hfp_ag_init_codecs(sizeof(hfp_codecs), hfp_codecs);
@@ -386,11 +392,97 @@ uint8_t a2dpwb_hfp_ag_release(uint16_t acl_handle) {
     return hfp_ag_release_service_level_connection(acl_handle);
 }
 
-/* RFCOMM keeps its services in a static list: cleared here, or the next run
- * in this process finds the service freed by btstack_memory_deinit there */
 void a2dpwb_hfp_ag_deinit(void) {
     hfp_ag_deinit();
+}
+
+/* ======================================================================== */
+/* RFCOMM: the HFP audio gateway's, and client channels for IPC clients     */
+/* ======================================================================== */
+
+void a2dpwb_rfcomm_init(void) {
+    rfcomm_init();
+}
+
+static int sdp_rfcomm_wanted;
+
+/* RFCOMM keeps its services in a static list: cleared here, or the next run
+ * in this process finds the service freed by btstack_memory_deinit there */
+void a2dpwb_rfcomm_deinit(void) {
     rfcomm_deinit();
+    sdp_rfcomm_wanted = 0;
+}
+
+/* Events of client channels (opened, closed, can send now) and their data
+ * (RFCOMM_DATA_PACKET, channel = RFCOMM cid): SOURCE_RFCOMM */
+uint8_t a2dpwb_rfcomm_create_channel(const uint8_t *addr, uint8_t server_channel, uint16_t *out_cid) {
+    bd_addr_t a;
+    memcpy(a, addr, 6);
+    return rfcomm_create_channel(&handler_rfcomm, a, server_channel, out_cid);
+}
+
+/* The RFCOMM server channel of a service: one query at a time (Rust queues
+ * the others). It waits in the SDP client's queue, which HFP shares, until
+ * the client is free; the results (SDP_EVENT_QUERY_RFCOMM_SERVICE, then
+ * SDP_EVENT_QUERY_COMPLETE) go to SOURCE_SDP_CLIENT. */
+static btstack_context_callback_registration_t sdp_rfcomm_request;
+/* In the SDP client's request list. sdp_client_deinit keeps that list, so
+ * this stays set across a restart of BTstack in this process until the
+ * callback comes. */
+static int sdp_rfcomm_listed;
+/* Registered only to make the SDP client run its request list (see
+ * a2dpwb_sdp_query_rfcomm); its own turn does nothing */
+static btstack_context_callback_registration_t sdp_rfcomm_kick;
+static void sdp_rfcomm_kicked(void *context) {
+    (void)context;
+}
+static bd_addr_t sdp_rfcomm_addr;
+static uint8_t sdp_rfcomm_uuid[16];
+
+static void sdp_rfcomm_start(void *context) {
+    (void)context;
+    sdp_rfcomm_listed = 0;
+    if (!sdp_rfcomm_wanted) return;
+    sdp_rfcomm_wanted = 0;
+    uint8_t status;
+    uint32_t short_uuid = big_endian_read_32(sdp_rfcomm_uuid, 0);
+    /* A UUID of the Bluetooth base (SPP 0x1101...) is searched for in its
+     * 16-bit form, which every SDP server matches */
+    if (uuid_has_bluetooth_prefix(sdp_rfcomm_uuid) && short_uuid <= 0xFFFF) {
+        status = sdp_client_query_rfcomm_channel_and_name_for_search_pattern(
+            &handler_sdp_client, sdp_rfcomm_addr, sdp_service_search_pattern_for_uuid16((uint16_t)short_uuid));
+    } else {
+        status = sdp_client_query_rfcomm_channel_and_name_for_uuid128(&handler_sdp_client, sdp_rfcomm_addr,
+                                                                      sdp_rfcomm_uuid);
+    }
+    if (status != ERROR_CODE_SUCCESS) {
+        uint8_t event[3] = {SDP_EVENT_QUERY_COMPLETE, 1, status};
+        handler_sdp_client(HCI_EVENT_PACKET, 0, event, sizeof(event));
+    }
+}
+
+uint8_t a2dpwb_sdp_query_rfcomm(const uint8_t *addr, const uint8_t *uuid128) {
+    if (sdp_rfcomm_wanted) return ERROR_CODE_COMMAND_DISALLOWED;
+    memcpy(sdp_rfcomm_addr, addr, 6);
+    memcpy(sdp_rfcomm_uuid, uuid128, 16);
+    sdp_rfcomm_wanted = 1;
+    if (!sdp_rfcomm_listed) {
+        /* Set first: the callback may come before this returns */
+        sdp_rfcomm_listed = 1;
+        sdp_rfcomm_request.callback = &sdp_rfcomm_start;
+        uint8_t status = sdp_client_register_query_callback(&sdp_rfcomm_request);
+        if (status != ERROR_CODE_SUCCESS) {
+            sdp_rfcomm_listed = 0;
+            sdp_rfcomm_wanted = 0;
+            return status;
+        }
+    } else if (sdp_client_ready()) {
+        /* Listed before a restart of BTstack, which left the client idle
+         * with the list kept: nothing pops it until a registration does */
+        sdp_rfcomm_kick.callback = &sdp_rfcomm_kicked;
+        (void)sdp_client_register_query_callback(&sdp_rfcomm_kick);
+    }
+    return ERROR_CODE_SUCCESS;
 }
 
 /* ======================================================================== */

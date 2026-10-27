@@ -625,7 +625,7 @@ export class MockCore implements Transport {
     this.onMessage = onMessage;
     onStatus({ state: "connecting" });
     this.later(400, () => {
-      onMessage({ type: "welcome", protocol: 1, server: "a2dpwb-core/2.0.0-alpha.1 (mock)" });
+      onMessage({ type: "welcome", protocol: 1, server: "a2dpwb-core/2.0.0-alpha.1 (mock)", features: ["rfcomm"] });
       onStatus({ state: "connected", server: "a2dpwb-core/2.0.0-alpha.1 (mock)" });
       onMessage({ type: "snapshot", rev: this.rev, state: structuredClone(this.snap) });
     });
