@@ -1331,13 +1331,17 @@ impl CoreState {
             battery_refused: false,
         }));
         let service = self.service.clone();
-        // start_streaming joins a running session first: not on a runtime thread
-        std::thread::spawn(move || service.start_streaming(req));
+        // start_streaming joins a running session first: not on a runtime
+        // thread. The ticket, taken now, keeps the order of quick switches:
+        // only the last one asked for starts (issue #86)
+        let ticket = service.ticket();
+        std::thread::spawn(move || service.start_streaming_for(req, ticket));
     }
 
     pub fn stop(&self) {
         let service = self.service.clone();
-        std::thread::spawn(move || service.disconnect());
+        let ticket = service.ticket();
+        std::thread::spawn(move || service.disconnect_for(ticket));
     }
 
     pub fn quit(&self) {
