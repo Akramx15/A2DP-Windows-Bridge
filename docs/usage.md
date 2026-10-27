@@ -52,7 +52,7 @@ Behind the scenes A2DPWB keeps one entry per device in `profiles.json` (its code
 
 ### Audio Devices
 
-The headphones and speakers A2DPWB can stream to, each with its own settings: **Scan Devices** finds nearby devices with the USB adapter (about 10 seconds; put the headphones into pairing mode). Devices A2DPWB paired with before are tagged **Paired**. If the scan does not find them, enter the address under **Manual:** and click **Use**; typed or pasted addresses are formatted as you go (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`). A saved device can be renamed or removed, and has:
+The headphones and speakers A2DPWB can stream to, each with its own settings: **Scan Devices** finds nearby devices with the USB adapter (30 seconds, listed as they answer; **Stop** ends it; put the headphones into pairing mode). Devices A2DPWB paired with before are tagged **Paired**. If the scan does not find them, enter the address under **Manual:** and click **Use**; typed or pasted addresses are formatted as you go (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`). A saved device can be renamed or removed, and has:
 
 - **Capture Source**: System Loopback (a new device's default), Virtual Device or Application (see [Capture Modes](#capture-modes))
 - **Auto Switch Windows Default Audio Output Device**, with a virtual device
@@ -440,7 +440,7 @@ Bluetooth avoids busy channels by itself (AFH), but it only learns about Wi-Fi f
 
 | AFH | |
 |:--|:--|
-| Auto (default) | Only the 2.4 GHz Wi-Fi channel this PC is connected on (checked again every 30 seconds while connected). Nothing when the PC is not on 2.4 GHz Wi-Fi: disconnected, on 5 or 6 GHz, or wired |
+| Auto (default) | Only the 2.4 GHz Wi-Fi channel this PC is connected on (checked again every 30 seconds while connected). Nothing when the PC is not on 2.4 GHz Wi-Fi: disconnected, on 5 GHz, or wired. It reads only the channel number, which needs no location permission; a 6 GHz channel numbered 1 to 14 counts as 2.4 GHz |
 | Off | Nothing: the controller decides alone |
 | Manual, e.g. `6,11` | These Wi-Fi channels (1 to 14) |
 
@@ -495,7 +495,7 @@ In CLI mode: `--le-audio -d <address>` streams to an LE Audio device, `--le-devi
 
 ## Updates {#updates}
 
-A2DPWB checks GitHub Releases at most once a day (**Settings > Check for Updates on Startup**; **Include Pre-releases in Update Checks** also offers beta releases). When a new version is available, Settings says so:
+A2DPWB checks GitHub Releases at most once a day (**Settings > Check for Updates on Startup**; **Include Pre-releases in Update Checks** also offers beta releases). When a new version is available, a dialog shows a few lines on what is new (the full notes are a link away), with **Update now** (**Open download page** for a portable copy) and **Later**; **Later** leaves it to Settings until the next version. Settings says so too:
 
 - **Installed copy**: **Update now** downloads the signed update. While an audio device is connected, it waits and installs when the device disconnects, so an update never cuts the audio. A2DPWB then closes, installs the new version and starts again by itself.
 - **Portable copy** (or a build without update signing): **Open download page** opens the release page.

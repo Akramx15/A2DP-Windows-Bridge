@@ -29,7 +29,7 @@ Each [release](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/releases/la
 - **Installer** (`A2DPWB-<version>-win64-setup.exe`): installs for the current user without administrator rights, adds a Start menu entry (**A2DP Windows Bridge**) and an uninstaller, and installs the Microsoft Edge WebView2 Runtime if it is missing (Windows 11 includes it). Updates install themselves from the app (**Settings > Updates > Update now**)
 - **Portable** (`A2DPWB-<version>-win64-portable.zip`): extract anywhere and run `a2dpwb.exe`. Keep the three programs (`a2dpwb.exe`, `a2dpwb-core.exe`, `a2dpwb-driver.exe`) together. The portable copy only tells you about updates; it needs the WebView2 Runtime installed
 
-Both keep settings, profiles, link keys and firmware in `%APPDATA%\A2DPWB`, so you can switch between them. Uninstalling leaves that folder in place.
+Both keep settings, profiles, link keys and firmware in `%APPDATA%\A2DPWB`, so you can switch between them. Uninstalling deletes that folder unless you turn **Delete user data** off.
 
 ### Upgrading from v1 {#from-v1}
 
@@ -61,7 +61,7 @@ If Windows could not load WinUSB right away (the adapter was in use), A2DPWB say
 {: .warning }
 While WinUSB is assigned, Windows' own Bluetooth no longer sees the adapter: devices paired with Windows through it stop working until the driver is restored. Use your built-in Bluetooth for normal peripherals (keyboard, mouse, etc.). A built-in adapter that is a USB device (a Realtek one on many laptops) can be given to A2DPWB too, but then **the PC has no Windows Bluetooth at all** (Bluetooth settings, mice, keyboards, other audio devices) until you restore its driver.
 
-**Restore original driver** on the same screen gives the adapter back to Windows: Windows picks its own driver again (normally its Bluetooth driver) and the adapter works with Windows' Bluetooth. A2DPWB cannot stream through it until WinUSB is assigned again. The uninstaller offers the same: when A2DPWB put adapters on WinUSB, it asks whether to give them back to Windows (one administrator prompt). Updates keep WinUSB, and so does a silent uninstall (`/S`).
+**Restore original driver** on the same screen gives the adapter back to Windows: Windows picks its own driver again (normally its Bluetooth driver) and the adapter works with Windows' Bluetooth. A2DPWB cannot stream through it until WinUSB is assigned again. The uninstaller offers the same: one page has **Restore the original Bluetooth driver** (when A2DPWB put adapters on WinUSB; one administrator prompt) and **Delete user data** (settings, codecs, pairings and firmware in `%APPDATA%\A2DPWB`), both on by default. Updates keep WinUSB, and so does a silent uninstall (`/S`).
 
 ### Using Zadig instead {#zadig}
 
@@ -90,7 +90,7 @@ If the adapter is missing from A2DPWB's list, a button on the **Adapter** screen
 
 ## Step 3: Find Your Headphones {#headphones}
 
-**Scan Devices** (in the setup and on **Audio Devices**) finds nearby devices with the USB adapter for about 10 seconds. Put the headphones into pairing mode first. Devices A2DPWB has paired with before are listed as **Paired**.
+**Scan Devices** (on **Audio Devices**) finds nearby devices with the USB adapter for 30 seconds, listing them as they answer. In the setup the scan starts by itself and goes on until a device is connected (it then leaves the list), **Stop** is pressed or the setup is closed. Put the headphones into pairing mode first. Devices A2DPWB has paired with before are listed as **Paired**.
 
 If the scan does not find them, enter the Bluetooth address under **Manual:** and click **Use**. Typed or pasted addresses are formatted as you go: `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`.
 
