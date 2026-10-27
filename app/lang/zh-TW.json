@@ -644,7 +644,6 @@
   "ui.update.portable": "此複本為可攜版: 請從發行頁面取得新版本。",
   "ui.update.unsigned": "此組建不會自動更新: 請從發行頁面取得新版本。",
   "ui.update.open_releases": "開啟發行頁面",
-  "ui.update.show": "檢視更新",
   "ui.settings.advanced": "進階",
   "ui.settings.developer_mode": "開發人員模式",
   "ui.settings.developer_mode_hint": "在「診斷」中加入接收器測試，並在記錄中寫入更多詳細資訊。不需要重新啟動。",
@@ -764,5 +763,7 @@
   "ui.devices.add_title": "新增音訊裝置",
   "ui.settings.open_config_folder": "開啟設定資料夾",
   "ui.adapter.bt_version": "藍牙版本",
-  "status.device_back": "音訊裝置已重新開啟,正在連線..."
+  "status.device_back": "音訊裝置已重新開啟,正在連線...",
+  "ui.update.later": "稍後",
+  "ui.update.release_notes": "完整版本資訊"
 }

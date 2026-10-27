@@ -644,7 +644,6 @@
   "ui.update.portable": "ポータブル版です。新しいバージョンはリリースページから入手してください。",
   "ui.update.unsigned": "このビルドは自動で更新できません。新しいバージョンはリリースページから入手してください。",
   "ui.update.open_releases": "リリースページを開く",
-  "ui.update.show": "更新を表示",
   "ui.settings.advanced": "詳細",
   "ui.settings.developer_mode": "開発者モード",
   "ui.settings.developer_mode_hint": "開発者画面（受信機テスト、上書き設定）を追加し、ログを詳しくします。再起動は不要です。",
@@ -764,5 +763,7 @@
   "ui.devices.none_saved": "オーディオデバイスはまだありません。下でスキャンするか、アドレスを入力して追加してください。",
   "ui.devices.add_title": "オーディオデバイスを追加",
   "ui.settings.open_config_folder": "設定フォルダーを開く",
-  "ui.adapter.bt_version": "Bluetoothバージョン"
+  "ui.adapter.bt_version": "Bluetoothバージョン",
+  "ui.update.later": "後で",
+  "ui.update.release_notes": "リリースノート全文"
 }

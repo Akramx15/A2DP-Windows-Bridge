@@ -9,6 +9,7 @@ import { captureRunningText } from "./indicators";
 import { errorCopyText, isAppFault, sourceText, stateLabel, statusText } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, sampleProfile, type MockOptions } from "../ipc/mock";
+import type { UpdatePhase } from "../ipc/transport";
 import { createCore } from "../ipc/store";
 import { LINKS } from "../lib/links";
 import { toneParams } from "../lib/profile";
@@ -56,22 +57,30 @@ describe("update check", () => {
     expect(document.querySelector(".notice-error")).toBeNull();
   });
 
-  it("a newer release shows on every screen, with the way to Settings", async () => {
-    start("#/home", { scenario: "update" });
-    const notice = await screen.findByText("Version 2.0.0-beta.1 is available (current: 2.0.0-alpha.1).");
-    const banner = notice.closest(".banner") as HTMLElement;
-    fireEvent.click(within(banner).getByRole("button", { name: t("ui.update.show") }));
+  it("a newer release opens a dialog with its short notes; Update now installs it on Settings (issue #86)", async () => {
+    const { mock } = start("#/home", { scenario: "update" });
+    const install = vi.spyOn(mock, "updateInstall");
+    const dialog = await screen.findByRole("dialog", { name: "Update Available" });
+    expect(dialog).toHaveTextContent("Version 2.0.0-beta.1 is available (current: 2.0.0-alpha.1).");
+    // Markdown as plain lines
+    const notes = within(dialog).getAllByRole("listitem").map((li) => li.textContent);
+    expect(notes).toEqual(["Faster scan: devices show up as they answer", "A notification when a device connects (#86)"]);
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Update now" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
-    // Settings has its own banner with the install button: one, not two
-    expect(screen.getAllByText(/Version 2\.0\.0-beta\.1 is available/)).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+    expect(install).toHaveBeenCalledWith(expect.stringContaining("v2.0.0-beta.1/latest.json"));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("the update notice can be closed", async () => {
-    start("#/profiles", { scenario: "update" });
-    const banner = (await screen.findByText(/is available \(current/)).closest(".banner") as HTMLElement;
-    fireEvent.click(within(banner).getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(screen.queryByText(/is available \(current/)).toBeNull());
+  it("Later closes the update dialog for that version; a portable copy opens the download page", async () => {
+    localStorage.removeItem("a2dpwb.update_later");
+    const { mock } = start("#/codecs", { scenario: "update" });
+    (mock as unknown as { updatePhase: UpdatePhase }).updatePhase = { state: "unavailable", reason: "portable" };
+    const dialog = await screen.findByRole("dialog", { name: "Update Available" });
+    expect(within(dialog).getByRole("button", { name: "Open download page" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Later" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(localStorage.getItem("a2dpwb.update_later")).toBe("2.0.0-beta.1");
+    localStorage.removeItem("a2dpwb.update_later");
   });
 
   it("a crash of A2DPWB shows on every screen, ready to report, until closed", async () => {
@@ -358,13 +367,20 @@ describe("setup device step", () => {
     expect(core.state.snap!.settings).toMatchObject({ start_with_windows: true, start_minimized: true });
   });
 
-  it("scans for 30 s and captures a new device by System Loopback, a cable installed or not (issue #86)", async () => {
+  it("scans until a device is added, then lists it no more; System Loopback captures it (issue #86)", async () => {
     const { calls, core } = await toDeviceStep({ scenario: "normal" });
     await waitFor(() => expect(calls.some((c) => c.method === "device.scan")).toBe(true));
-    expect(calls.find((c) => c.method === "device.scan")!.params).toEqual({ seconds: 30 });
+    expect(calls.find((c) => c.method === "device.scan")!.params).toEqual({ seconds: 600 });
     const row = (await screen.findByText("Galaxy Buds2 Pro")).closest(".device-row") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(core.state.snap!.profiles.some((p) => p.name === "Galaxy Buds2 Pro | Auto")).toBe(true));
+    // The added device is shown above the list, with its state, not in it
+    await waitFor(() => expect(document.querySelector(".device-picker")!.textContent).not.toContain("Galaxy Buds2 Pro"));
+    // and the scan is over: no new one starts
+    await waitFor(() => expect(core.state.snap!.scanning).toBe(false));
+    const scans = calls.filter((c) => c.method === "device.scan").length;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.filter((c) => c.method === "device.scan").length).toBe(scans);
     expect(core.state.snap!.profiles.find((p) => p.name === "Galaxy Buds2 Pro | Auto")).toMatchObject({
       capture_mode: "loopback",
       audio_device_id: "",
@@ -416,13 +432,13 @@ describe("helpers", () => {
     expect(statusText({ state: "streaming", message: msg("status.connected_fallback_in_use", "LDAC", "AAC") })).toBe("Connected");
     expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
     expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
-    expect(statusText({ state: "idle", message: msg("") })).toBe("Idle");
+    expect(statusText({ state: "idle", message: msg("") })).toBe("Disconnected");
     // Streaming reads "Connected" everywhere (issue #86); the other states keep their words
     expect(statusText({ state: "streaming", message: msg("") })).toBe("Connected");
     expect(stateLabel("streaming")).toBe("Connected");
     expect(stateLabel("connecting")).toBe("Connecting...");
     expect(stateLabel("reconnecting")).toBe("Reconnecting...");
-    expect(stateLabel("idle")).toBe("Idle");
+    expect(stateLabel("idle")).toBe("Disconnected");
   });
 
   it("error copy text", () => {

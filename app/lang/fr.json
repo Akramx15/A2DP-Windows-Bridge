@@ -644,7 +644,6 @@
   "ui.update.portable": "Cette copie est portable : récupérez la nouvelle version sur la page des versions.",
   "ui.update.unsigned": "Cette version ne se met pas à jour toute seule : récupérez la nouvelle version sur la page des versions.",
   "ui.update.open_releases": "Ouvrir la page des versions",
-  "ui.update.show": "Afficher la mise à jour",
   "ui.settings.advanced": "Avancé",
   "ui.settings.developer_mode": "Mode développeur",
   "ui.settings.developer_mode_hint": "Ajoute le test du récepteur au diagnostic et plus de détails au journal. Aucun redémarrage nécessaire.",
@@ -764,5 +763,7 @@
   "ui.devices.add_title": "Ajouter un appareil audio",
   "ui.settings.open_config_folder": "Ouvrir le dossier des paramètres",
   "ui.adapter.bt_version": "Version Bluetooth",
-  "status.device_back": "L'appareil audio est rallumé, connexion..."
+  "status.device_back": "L'appareil audio est rallumé, connexion...",
+  "ui.update.later": "Plus tard",
+  "ui.update.release_notes": "Notes de version complètes"
 }

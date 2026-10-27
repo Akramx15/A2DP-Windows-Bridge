@@ -689,7 +689,7 @@ impl BtHost {
         if !self.hci_ready() {
             return Vec::new();
         }
-        let total = Duration::from_secs(seconds.clamp(3, 60).into());
+        let total = Duration::from_secs(seconds.clamp(3, 600).into());
         tracing::info!("starting inquiry (~{} s)", total.as_secs());
         let deadline = Instant::now() + total;
         let mut shown = self.shared.update(|s| {

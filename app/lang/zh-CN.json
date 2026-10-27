@@ -644,7 +644,6 @@
   "ui.update.portable": "此副本为便携版：请从发布页面获取新版本。",
   "ui.update.unsigned": "此构建不会自动更新：请从发布页面获取新版本。",
   "ui.update.open_releases": "打开发布页面",
-  "ui.update.show": "查看更新",
   "ui.settings.advanced": "高级",
   "ui.settings.developer_mode": "开发者模式",
   "ui.settings.developer_mode_hint": "在“诊断”中加入接收器测试，并在日志中记录更多详细信息。无需重新启动。",
@@ -764,5 +763,7 @@
   "ui.devices.add_title": "添加音频设备",
   "ui.settings.open_config_folder": "打开设置文件夹",
   "ui.adapter.bt_version": "蓝牙版本",
-  "status.device_back": "音频设备已重新开启,正在连接..."
+  "status.device_back": "音频设备已重新开启,正在连接...",
+  "ui.update.later": "稍后",
+  "ui.update.release_notes": "完整发行说明"
 }

@@ -644,7 +644,6 @@
   "ui.update.portable": "This copy is portable: get the new version from the release page.",
   "ui.update.unsigned": "This build does not update itself: get the new version from the release page.",
   "ui.update.open_releases": "Open release page",
-  "ui.update.show": "Show update",
   "ui.settings.advanced": "Advanced",
   "ui.settings.developer_mode": "Developer mode",
   "ui.settings.developer_mode_hint": "Adds the Developer screen (receiver test, overrides) and more details to the log. No restart needed.",
@@ -764,5 +763,7 @@
   "ui.devices.none_saved": "No audio devices yet. Scan for yours or add it by its address below.",
   "ui.devices.add_title": "Add an audio device",
   "ui.settings.open_config_folder": "Open Settings Folder",
-  "ui.adapter.bt_version": "Bluetooth version"
+  "ui.adapter.bt_version": "Bluetooth version",
+  "ui.update.later": "Later",
+  "ui.update.release_notes": "Full release notes"
 }

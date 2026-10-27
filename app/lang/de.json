@@ -644,7 +644,6 @@
   "ui.update.portable": "Dies ist eine portable Kopie: Die neue Version von der Release-Seite holen.",
   "ui.update.unsigned": "Dieser Build aktualisiert sich nicht selbst: Die neue Version von der Release-Seite holen.",
   "ui.update.open_releases": "Release-Seite öffnen",
-  "ui.update.show": "Update anzeigen",
   "ui.settings.advanced": "Erweitert",
   "ui.settings.developer_mode": "Entwicklermodus",
   "ui.settings.developer_mode_hint": "Fügt der Diagnose den Empfängertest und dem Protokoll mehr Details hinzu. Kein Neustart nötig.",
@@ -764,5 +763,7 @@
   "ui.devices.add_title": "Audiogerät hinzufügen",
   "ui.settings.open_config_folder": "Einstellungsordner öffnen",
   "ui.adapter.bt_version": "Bluetooth-Version",
-  "status.device_back": "Das Audiogerät ist wieder an, verbinde..."
+  "status.device_back": "Das Audiogerät ist wieder an, verbinde...",
+  "ui.update.later": "Später",
+  "ui.update.release_notes": "Vollständige Versionshinweise"
 }

@@ -644,7 +644,6 @@
   "ui.update.portable": "이 사본은 포터블 버전입니다. 새 버전은 릴리스 페이지에서 받으십시오.",
   "ui.update.unsigned": "이 빌드는 자동으로 업데이트되지 않습니다. 새 버전은 릴리스 페이지에서 받으십시오.",
   "ui.update.open_releases": "릴리스 페이지 열기",
-  "ui.update.show": "업데이트 보기",
   "ui.settings.advanced": "고급",
   "ui.settings.developer_mode": "개발자 모드",
   "ui.settings.developer_mode_hint": "진단에 수신기 테스트를 추가하고 로그에 더 많은 세부 정보를 남깁니다. 다시 시작할 필요가 없습니다.",
@@ -764,5 +763,7 @@
   "ui.devices.add_title": "오디오 장치 추가",
   "ui.settings.open_config_folder": "설정 폴더 열기",
   "ui.adapter.bt_version": "Bluetooth 버전",
-  "status.device_back": "오디오 장치가 다시 켜졌습니다. 연결 중..."
+  "status.device_back": "오디오 장치가 다시 켜졌습니다. 연결 중...",
+  "ui.update.later": "나중에",
+  "ui.update.release_notes": "전체 릴리스 노트"
 }

@@ -4,13 +4,14 @@
 // device: the scan starts by itself, and Connect on a device makes its
 // "<name> | Auto" profile and connects with it, so one click is enough.
 // The last step also asks whether A2DPWB starts with Windows (on, in the
-// tray, by default). The scan takes 30 s (SCAN_SECONDS).
+// tray, by default). The scan goes on until a device is added, Stop is
+// pressed or the setup is left; the added device leaves the list.
 
-import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { errorText, useApp, type AppContext } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Toggle } from "../components/controls";
-import { DevicePicker, saveWithProfile, SCAN_SECONDS } from "../components/DevicePicker";
+import { DevicePicker, saveWithProfile } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
 import { CodecBadge, openFirmwareFolder, Ring, statusText } from "../components/stream";
 import { t } from "../i18n";
@@ -401,12 +402,10 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
   const stream = () => snap().stream;
   // The device being connected: its button spins
   const [connecting, setConnecting] = createSignal<string | null>(null);
+  // The device connected here: shown above the list, no longer in it, and
+  // the scan ends (issue #86)
+  const [added, setAdded] = createSignal<string | null>(null);
   const existing = () => snap().profiles.find((p) => p.name === props.profileName) ?? null;
-
-  // Being on this step means looking for the device: no Scan press needed
-  onMount(() => {
-    if (!snap().scanning) void app.run(() => app.core.request("device.scan", { seconds: SCAN_SECONDS }));
-  });
 
   // One click: the device is saved, gets its "<name> | Auto" profile (the
   // best codec it has) and is connected with it
@@ -416,9 +415,12 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
     try {
       const profile = await saveWithProfile(app, address, name, false);
       if (!profile) return;
+      setAdded(address);
       props.onCreated(profile);
       await app.run(async () => {
         await app.core.request("profile.set_active", { name: profile });
+        // The scan looks until a device is added: it ends here
+        if (snap().scanning) await app.core.request("device.scan_stop");
         await scanEnded(app);
         const st = stream().state;
         if (st === "connecting" || st === "reconnecting" || st === "streaming") await app.core.request("stream.stop");
@@ -456,6 +458,8 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
         onConnect={(a, n) => void connect(a, n)}
         connecting={connecting()}
         connectDisabled={snap().v1_running}
+        hidden={added() ?? undefined}
+        continuous={!added()}
       />
       <Startup />
     </div>

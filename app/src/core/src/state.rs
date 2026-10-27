@@ -1180,6 +1180,12 @@ impl CoreState {
                     }
                     _ => {}
                 }
+                // A lost link's battery is stale until the device reports
+                // again (issue #86: a battery shown while disconnected)
+                if state == CoreStreamState::Reconnecting {
+                    stream.battery = None;
+                    stream.battery_refused = false;
+                }
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error) {
                     stream.info = None;
                     stream.volume = None;
@@ -1236,6 +1242,13 @@ impl CoreState {
                 devices_changed = true;
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
+            // A report that arrives after the device went off (HFP still
+            // closing) is not shown on a device no longer connected
+            ServiceEvent::Battery(_) | ServiceEvent::BatteryRefused
+                if matches!(stream.state, StreamState::Idle | StreamState::Error) =>
+            {
+                tracing::debug!("battery report while not connected: ignored");
+            }
             ServiceEvent::BatteryRefused => {
                 stream.battery = None;
                 stream.battery_refused = true;
@@ -1497,8 +1510,10 @@ impl CoreState {
         if s.other.get(TRAY_HINT_SHOWN).and_then(Value::as_bool) == Some(true) {
             return;
         }
+        // No title: Windows heads the notification with the app's name
+        // already (issue #86: the name three times)
         (self.balloon)(BalloonRequest {
-            title: "A2DP Windows Bridge".into(),
+            title: String::new(),
             text: self.tr("tray.minimized_hint", "A2DP Windows Bridge is still running in the system tray."),
             url: None,
         });
@@ -1515,8 +1530,10 @@ impl CoreState {
         let device = streamed_device(s).unwrap_or("A2DP Windows Bridge");
         tracing::info!("battery: {device} at {level}%, below {BATTERY_LOW}%: balloon");
         let template = self.tr("notify.battery_low", "%s: battery low (%d%%)");
+        // No title: Windows heads the notification with the app's name
+        // already (issue #86: the name three times)
         (self.balloon)(BalloonRequest {
-            title: "A2DP Windows Bridge".into(),
+            title: String::new(),
             text: a2dpwb_core::messages::format_printf(&template, &[device.to_string(), level.to_string()]),
             url: None,
         });
@@ -1732,7 +1749,7 @@ impl CoreState {
                         me.publish(Event::Devices(saved_devices(&dir, &scanned, &codecs)));
                     };
                     // Classic, then (LE Audio on) the LE Audio devices
-                    let r = me.service.scan_devices(seconds.clamp(3, 30), &mut on_found);
+                    let r = me.service.scan_devices(seconds.clamp(3, ipc::MAX_SCAN_SECONDS), &mut on_found);
                     if me.with_snapshot(|s| s.le_scanning) {
                         me.publish(Event::LeScanning(false));
                     }
@@ -2124,6 +2141,7 @@ impl CoreState {
                     version: r.version,
                     url: r.url,
                     prerelease: r.prerelease,
+                    notes: r.notes,
                 });
                 let u = UpdateState { checking: false, available, current_version, error: None };
                 self.publish(Event::Update(u.clone()));
