@@ -200,7 +200,9 @@ describe("Home", () => {
     await screen.findByRole("heading", { level: 1, name: "Home" });
     await mock.call("stream.start", { profile: "Desk speaker (AAC)" });
     await mock.call("profile.set_active", { name: "Desk speaker (AAC)" });
-    expect(await screen.findByText(t("ui.source.waiting", "Spotify"))).toBeInTheDocument();
+    // On the card of the device streaming (issue #86: no capture source card on Home)
+    const card = await screen.findByRole("group", { name: "SRS-XB13" });
+    expect(await within(card).findByText(t("ui.source.waiting", "Spotify"))).toBeInTheDocument();
   });
 
   it("shows a running HCI capture app-wide", async () => {

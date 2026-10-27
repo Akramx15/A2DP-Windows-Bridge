@@ -68,6 +68,15 @@ describe("Home", () => {
     expect(battery).not.toHaveTextContent("%");
   });
 
+  it("shows the link latency beside the link quality, not the capture source (issue #86)", async () => {
+    start("#/home");
+    await homeCard("WH-1000XM5");
+    const main = within(screen.getByRole("main"));
+    expect(await main.findByRole("region", { name: t("ui.home.latency") })).toHaveTextContent(t("ui.home.latency_hint"));
+    expect(main.getByRole("region", { name: t("quality.title") })).toBeInTheDocument();
+    expect(main.queryByLabelText(t("capture.mode"))).toBeNull();
+  });
+
   it("switches to another device with its Connect (one device streams at a time)", async () => {
     const { calls } = start("#/home");
     const wh = await homeCard("WH-1000XM5");

@@ -2,20 +2,22 @@
 // its connection ring, state and codec and its own Connect / Disconnect.
 // One device streams at a time: Connect on another one switches to it (the
 // core stops the running stream first). The volume is on the card of the
-// device in use, as each device keeps its own (issue #86); capture source
-// (chosen right there) and link quality below, for the device in use.
+// device in use, as each device keeps its own (issue #86); link quality and
+// link latency below, for the device in use (issue #86: the capture source
+// is chosen on Audio Devices).
 
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
-import { CapturePicker } from "../components/CapturePicker";
 import {
   BatteryLevel,
+  CaptureSource,
   CodecBadge,
   currentProfile,
   ErrorPanel,
   FirmwareDownload,
+  LinkLatency,
   LinkSparkline,
   openFirmwareFolder,
   QualityIndicator,
@@ -181,30 +183,23 @@ export function Home() {
         </div>
 
         <Show when={profile()}>
-          {(p) => (
-            <div class="home-grid">
-              <section class="card mini" aria-labelledby="home-capture">
-                <h2 id="home-capture" class="mini-title">
-                  {t("capture.mode")}
-                </h2>
-                <div class="mini-body">
-                  <CapturePicker profile={p()} />
-                </div>
-                <button type="button" class="link" onClick={() => navigate({ name: "devices" })}>
-                  {t("ui.home.capture_more")}
-                </button>
-              </section>
-              <section class="card mini" aria-labelledby="home-link">
-                <h2 id="home-link" class="mini-title">
-                  {t("quality.title")}
-                </h2>
-                <div class="mini-body">
-                  <QualityIndicator />
-                </div>
-                <LinkSparkline />
-              </section>
-            </div>
-          )}
+          <div class="home-grid">
+            <section class="card mini" aria-labelledby="home-link">
+              <h2 id="home-link" class="mini-title">
+                {t("quality.title")}
+              </h2>
+              <div class="mini-body">
+                <QualityIndicator />
+              </div>
+              <LinkSparkline />
+            </section>
+            <section class="card mini" aria-labelledby="home-latency">
+              <h2 id="home-latency" class="mini-title">
+                {t("ui.home.latency")}
+              </h2>
+              <LinkLatency />
+            </section>
+          </div>
         </Show>
       </Show>
     </div>
@@ -267,6 +262,10 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
           </div>
           <Show when={live()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
             <CodecBadge />
+          </Show>
+          {/* An application not running yet: why nothing is heard */}
+          <Show when={live() && stream().info?.source?.waiting}>
+            <CaptureSource profile={currentProfile(snap())} />
           </Show>
         </div>
       </section>
