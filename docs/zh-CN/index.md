@@ -78,7 +78,7 @@ has_toc: false
 **只需要经典 aptX？** Windows 10 的内置 Bluetooth 堆栈已经支持经典 aptX（不含 aptX HD、aptX LL 和 aptX Adaptive），因此无需 A2DPWB。A2DPWB 主要用于 LDAC、aptX HD 和 aptX Low Latency。
 
 {: .note }
-**关于 aptX Adaptive。** 它使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust 编码器（MIT 许可）编码，其中的表由该项目作者根据 Qualcomm 已出货的二进制文件和空中抓包重建。48 kHz 立体声（请求 44.1 kHz 时以 48 kHz 捕获），24-bit：对 R1 接收端为高 427 kbps、标准 364、移动 318、低延迟 265 kbps（R2 接收端有各自的表），高音质下支持 ABR。在其设置中选择 96 kHz 且耳机是列出 96 kHz 的 R2 接收端时使用 96 kHz（高 646 kbps、标准 340、移动 255）；低延迟下不使用，其他情况为 48 kHz。96 kHz 无论在本项目还是上游都只在模拟器中测试过。“自动”在 LHDC V5 和 LDAC 之后选择它；也可以在**编解码器**页面或用 `-c aptxad` 选择。有用户在 2.0.2-beta.6 上用 EarFun Air Pro 4+ 确认了 48 kHz 下的工作，与经典 aptX 一样稳定（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）；上游报告它在 Linux 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e。请参阅 [aptX 系列与 aptX Adaptive](usage#aptx-compatibility)。
+**关于 aptX Adaptive。** 它使用 [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) 的纯 Rust 编码器（MIT 许可）编码，其中的表由该项目作者根据 Qualcomm 已出货的二进制文件和空中抓包重建。48 kHz 立体声（请求 44.1 kHz 时以 48 kHz 捕获），24-bit：对 R1 接收端为高 427 kbps、标准 364、移动 318、低延迟 265 kbps（R2 接收端有各自的表），高音质下支持 ABR。在其设置中选择 96 kHz 且耳机是列出 96 kHz 的 R2 接收端时使用 96 kHz（高 646 kbps、标准 340、移动 255）；低延迟下不使用，其他情况为 48 kHz。96 kHz 也已用真实耳机确认（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）；“自动”为 48 kHz。“自动”在 LHDC V5 和 LDAC 之后选择它；也可以在**编解码器**页面或用 `-c aptxad` 选择。有用户在 2.0.2-beta.6 上用 EarFun Air Pro 4+ 确认了 48 kHz 下的工作，与经典 aptX 一样稳定（[#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)）；上游报告它在 Linux 上可用于 Bose QuietComfort Ultra（第 1 代）和 B&W Px7 S2e。请参阅 [aptX 系列与 aptX Adaptive](usage#aptx-compatibility)。
 
 ## 平台支持 {#platform-support}
 
@@ -146,7 +146,7 @@ A2DPWB 完全绕过 Windows 的 Bluetooth 堆栈。它通过 WinUSB 直接与 US
 - **链路质量与 AFH**：显示发送内容、RSSI 和正在使用的信道；告知适配器应避开哪些 Wi-Fi 信道（请参阅[使用方法](usage#link-quality)）
 - **耳机控制（AVRCP）**：音量滑块与耳机及 Windows 音量同步；耳机的播放/暂停、下一曲和上一曲按键可控制 PC 上的播放（请参阅[使用方法](usage#headphone-buttons)）
 - **按设备设置**：每个音频设备各有编解码器（含其自身设置）和捕获源，在主页并排显示，可从托盘直接连接
-- **更新**：安装版会在串流停止后自动更新（请参阅[使用方法](usage#updates)）
+- **更新**：安装版会在音频设备断开连接后自动更新（请参阅[使用方法](usage#updates)）
 - **本地化**：英语、日语、简体中文、繁体中文、韩语、德语、法语、西班牙语
 - **Realtek 固件**：为 Realtek 适配器提供固件下载引导
 - **诊断**：连接流程、日志、HCI 捕获、用于错误报告的诊断信息、与 Linux PC 进行的对端接收器测试（请参阅[使用方法](usage#receiver)）

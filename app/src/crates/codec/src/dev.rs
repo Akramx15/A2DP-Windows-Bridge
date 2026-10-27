@@ -25,10 +25,6 @@ pub struct DevOverrides {
     /// AAC: the StreamMuxConfig of 2.0.2 and before (AudioMuxVersion 0,
     /// implicit signaling) instead of Android's and PipeWire's
     pub aac_latm_v0: bool,
-    /// aptX Adaptive may stream at 96 kHz (to an R2 sink that lists it,
-    /// when chosen or under Auto-select); off, always 48 kHz (issue #86:
-    /// 96 kHz did not work on an EarFun yet)
-    pub aptxad_96k: bool,
 }
 
 impl DevOverrides {
@@ -45,7 +41,6 @@ static CURRENT: RwLock<DevOverrides> = RwLock::new(DevOverrides {
     aac_no_peak: false,
     aac_no_afterburner: false,
     aac_latm_v0: false,
-    aptxad_96k: false,
 });
 
 /// The overrides in force

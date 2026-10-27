@@ -127,6 +127,15 @@ describe("tray", () => {
     const set = calls.filter((c) => c.method === "settings.set").at(-1)!.params as { settings: { tray_click_opens_window: boolean } };
     expect(set.settings.tray_click_opens_window).toBe(true);
   });
+
+  it("turns the notification of a connection off and on (issue #86)", async () => {
+    const { core } = start("#/settings");
+    const toggle = await screen.findByRole("switch", { name: new RegExp(t("ui.settings.notify_connected")) });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(core.state.snap!.settings.notify_connected).toBe(false));
+    expect(toggle).not.toBeChecked();
+  });
 });
 
 describe("Home", () => {
@@ -349,7 +358,7 @@ describe("setup device step", () => {
     expect(core.state.snap!.settings).toMatchObject({ start_with_windows: true, start_minimized: true });
   });
 
-  it("scans for 30 s and captures a new device's profile from the installed cable (issue #86)", async () => {
+  it("scans for 30 s and captures a new device by System Loopback, a cable installed or not (issue #86)", async () => {
     const { calls, core } = await toDeviceStep({ scenario: "normal" });
     await waitFor(() => expect(calls.some((c) => c.method === "device.scan")).toBe(true));
     expect(calls.find((c) => c.method === "device.scan")!.params).toEqual({ seconds: 30 });
@@ -357,9 +366,9 @@ describe("setup device step", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(core.state.snap!.profiles.some((p) => p.name === "Galaxy Buds2 Pro | Auto")).toBe(true));
     expect(core.state.snap!.profiles.find((p) => p.name === "Galaxy Buds2 Pro | Auto")).toMatchObject({
-      capture_mode: "virtual",
-      audio_device_id: "{0.0.0.00000000}.{cable}",
-      audio_device_name: "CABLE Input (VB-Audio Virtual Cable)",
+      capture_mode: "loopback",
+      audio_device_id: "",
+      audio_device_name: "",
     });
   });
 });

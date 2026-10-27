@@ -105,8 +105,9 @@ export function sbcSetup(p: SbcFields, rate: number, caps: SbcCaps | null): SbcS
   return { blocks, subbands, allocation, mode, bitpool, frameBytes, kbps: sbcKbps(frameBytes, rate, blocks, subbands) };
 }
 
-/** The rate the bit rate is shown at: the profile's, or on Auto the highest
- *  the device takes (one figure is enough, issue #86) */
+/** The rate the bit rate is shown at: the profile's, or on Auto 48 kHz,
+ *  44.1 kHz on a device without it, as the core streams it (one figure is
+ *  enough, issue #86) */
 export function sbcRate(p: Pick<Profile, "sample_rate">, caps: SbcCaps | null): number {
   if (p.sample_rate === 44100 || p.sample_rate === 48000) return p.sample_rate;
   return !caps || caps.sample_rates.includes(48000) || !caps.sample_rates.includes(44100) ? 48000 : 44100;

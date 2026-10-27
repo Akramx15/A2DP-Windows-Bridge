@@ -13,10 +13,10 @@ import { carryToCodec, fitToCodec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN, type 
 import { parseAddress } from "./format";
 
 /** What belongs to the audio device rather than the codec: the capture
- *  source, the device its Windows volume follows (developer mode; whether
- *  it syncs at all is Settings.volume_sync, for every device) and the max
- *  media packet size. Set on the Audio Devices screen and kept the same in
- *  all the device's profiles (issue #86). */
+ *  source. Set on the Audio Devices screen and kept the same in all the
+ *  device's profiles (issue #86). The max media packet size is the device's
+ *  too, set on the Developer page; a profile's own Windows Volume Sync is
+ *  no longer used (Settings.volume_sync, for every device). */
 export const DEVICE_FIELDS = [
   "capture_mode",
   "audio_device_id",
@@ -24,10 +24,6 @@ export const DEVICE_FIELDS = [
   "auto_switch_device",
   "app_exe",
   "app_name",
-  "volume_sync",
-  "volume_device_id",
-  "volume_device_name",
-  "max_media_payload",
 ] as const;
 
 export type DeviceFields = Pick<Profile, (typeof DEVICE_FIELDS)[number]>;
@@ -55,21 +51,6 @@ export function deviceDefaults(profiles: readonly Profile[], address: string): D
   return p ? deviceFields(p) : null;
 }
 
-export type CaptureFields = Pick<DeviceFields, "capture_mode" | "audio_device_id" | "audio_device_name">;
-
-/**
- * The capture source of a device none was chosen for yet (issue #86): an
- * installed virtual device (VB-Audio's "CABLE" first, else the first one),
- * else System Loopback
- */
-export function defaultCapture(devices: readonly AudioDevice[]): CaptureFields {
-  const virtual = devices.filter((d) => d.is_virtual);
-  const d = virtual.find((v) => /cable/i.test(v.name)) ?? virtual[0];
-  return d
-    ? { capture_mode: "virtual", audio_device_id: d.id, audio_device_name: d.name }
-    : { capture_mode: "loopback", audio_device_id: "", audio_device_name: "" };
-}
-
 export function newProfile(): Profile {
   return {
     name: "",
@@ -81,6 +62,9 @@ export function newProfile(): Profile {
     codec_fallback: true,
     sample_rate: 0,
     bit_depth: 0,
+    // Every new device captures System Loopback (issue #86: it plays with
+    // nothing installed); a virtual device or one app is chosen on Audio
+    // Devices
     capture_mode: "loopback",
     audio_device_id: "",
     audio_device_name: "",
@@ -159,16 +143,11 @@ export function entryByKey(list: () => AudioEntry[], key: string): () => AudioEn
 }
 
 /** The profile a device entry starts from before it has its own: Auto,
- *  and the capture source and volume sync of its other entry's profile,
- *  else the default capture source of `devices` (Windows' audio devices) */
-export function entryBase(
-  entry: Pick<AudioEntry, "address" | "name" | "le_audio">,
-  profiles: readonly Profile[],
-  devices: readonly AudioDevice[] = [],
-): Profile {
+ *  and the device settings of its other entry's profile, else the defaults
+ *  (System Loopback) */
+export function entryBase(entry: Pick<AudioEntry, "address" | "name" | "le_audio">, profiles: readonly Profile[]): Profile {
   return {
     ...newProfile(),
-    ...defaultCapture(devices),
     device_address: entry.address.toUpperCase(),
     device_name: entry.name,
     le_audio: entry.le_audio,

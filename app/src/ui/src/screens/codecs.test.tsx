@@ -32,8 +32,8 @@ const main = () => within(screen.getByRole("main"));
 /** "Auto-select the codec with the highest quality", for every device */
 const autoName = (n: string) => n.startsWith(t("ui.codecs.auto_select"));
 const autoSwitch = () => main().getByRole("switch", { name: autoName });
-/** "Hide the codecs the audio device does not support": a switch (issue #86) */
-const hideSwitch = () => main().getByRole("switch", { name: t("ui.profile.codecs_hide") });
+/** "Show only supported codecs": a switch, on by default (issue #86) */
+const hideSwitch = () => main().getByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) });
 /** The codec cards' names in a device's section, in order */
 const cardNames = (where: HTMLElement) => [...where.querySelectorAll(".codec-card-name")].map((n) => n.textContent);
 /** "Disable Auto-select?" (issue #86 round 8) */
@@ -75,6 +75,7 @@ describe("the Codecs screen", () => {
     expect(main().queryByRole("button", { name: t("ui.codecs.order_reset") })).toBeNull();
     expect(main().queryAllByRole("checkbox")).toHaveLength(0);
     expect(hideSwitch()).toBeChecked();
+    expect(hideSwitch()).toHaveAccessibleDescription(t("ui.profile.codecs_hide_hint"));
     // A line between the device and its codecs
     expect(wh.querySelector(".device-codecs-head")).not.toBeNull();
   });
@@ -619,11 +620,10 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
     expect(saves(calls)[0].profile).toMatchObject({ codec: "sbc", sbc_bitpool: 39, sbc_min_bitpool: 0 });
   });
 
-  it("aptX Adaptive offers 96 kHz only while Developer's switch is on", async () => {
-    const { core } = start("#/codecs");
-    const xb = await section("SRS-XB13");
-    const rates = async () => {
-      const dialog = await codecSettings(xb, "codec.aptx_adaptive");
+  it("aptX Adaptive offers 96 kHz only to a device that lists it", async () => {
+    start("#/codecs", "capped");
+    const rates = async (device: string) => {
+      const dialog = await codecSettings(await section(device), "codec.aptx_adaptive");
       const list = within(within(dialog).getByLabelText(t("connection.sample_rate")))
         .getAllByRole("option")
         .map((o) => o.textContent);
@@ -631,12 +631,11 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       return list;
     };
-    expect(await rates()).toEqual([t("codec.auto"), "48000 Hz"]);
-    const s = core.state.snap!.settings;
-    await core.request("settings.set", {
-      settings: { ...s, developer_mode: true, dev_overrides: { ...s.dev_overrides, aptxad_96k: true } },
-    });
-    expect(await rates()).toEqual([t("codec.auto"), "48000 Hz", "96000 Hz"]);
+    // A Bose QC Ultra lists 44.1 / 48 kHz only (issue #86); an EarFun Air
+    // Pro 4+ 96 kHz too; a device not connected yet is not offered 96 kHz
+    expect(await rates("QC Ultra Earbuds")).toEqual([t("codec.auto"), "48000 Hz"]);
+    expect(await rates("EarFun Air Pro 4+")).toEqual([t("codec.auto"), "48000 Hz", "96000 Hz"]);
+    expect(await rates("SRS-XB13")).toEqual([t("codec.auto"), "48000 Hz"]);
   });
 });
 
@@ -644,8 +643,8 @@ describe("SBC settings", () => {
   it("offer what the device listed and show the bit rate as it changes", async () => {
     const { calls } = start("#/codecs");
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc");
-    // Auto: 16 blocks, 8 subbands, joint stereo, bitpool 53, at the highest
-    // rate only; read-only where the quality list was (issue #86)
+    // Auto: 16 blocks, 8 subbands, joint stereo, bitpool 53, at 48 kHz
+    // only; read-only where the quality list was (issue #86)
     const rate = within(dialog).getByRole("status");
     expect(rate).toBe(within(dialog).getByLabelText(t("connection.quality")));
     expect(rate).toHaveTextContent(new RegExp(`^${t("ui.profile.sbc_bitrate", 357, "48")}$`));
@@ -734,7 +733,7 @@ describe("SBC settings", () => {
 
   it("SBC XQ keeps its own minimum, within its own range", async () => {
     const { calls } = start("#/codecs");
-    fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
     const low = within(dialog).getByRole("slider", { name: t("ui.profile.sbc_bitpool_min") });
     const high = within(dialog).getByRole("slider", { name: t("ui.profile.sbc_bitpool_max") });
@@ -752,7 +751,7 @@ describe("SBC settings", () => {
   it("SBC XQ has no channel mode of its own", async () => {
     start("#/codecs");
     // Not among what the mock's WH-1000XM5 supported: shown when not hidden
-    fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
     expect(within(dialog).queryByLabelText(t("ui.diag.cd_channel_mode"))).toBeNull();
     // Bitpool 43 per channel at 48 kHz
@@ -770,7 +769,7 @@ describe("SBC settings", () => {
 
   it("SBC's ABR and frame setup do not carry to SBC XQ, nor back (issue #86)", async () => {
     const { calls } = start("#/codecs");
-    fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const wh = await section("WH-1000XM5");
     let dialog = await codecSettings(wh, "codec.sbc");
     fireEvent.click(within(dialog).getByRole("switch", { name: t("connection.abr") }));
@@ -817,6 +816,8 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const warning = entry.querySelector(".field-error")!;
     expect(warning).toHaveTextContent(t("capture.device_format", 48000, 32));
     expect(warning).toHaveTextContent(t("ui.profile.format_differs", t("connection.sample_rate")));
+    // The device, not its profile by name (issue #86)
+    expect(warning).not.toHaveTextContent("WH-1000XM5 (LDAC)");
   });
 
   it("lists System Loopback, the virtual devices and the playing apps in one list", async () => {
@@ -862,11 +863,10 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const entry = await deviceEntry(/moto buds\+/);
     const select = within(entry).getByLabelText(t("capture.mode"));
     await within(select).findByRole("option", { name: "Spotify" });
-    // None chosen yet: the installed VB-Audio cable, not System Loopback
-    // (issue #86); the source it has already: nothing to save
-    const cable = "virtual:{0.0.0.00000000}.{cable}";
-    await waitFor(() => expect(select).toHaveValue(cable));
-    fireEvent.change(select, { target: { value: cable } });
+    // None chosen yet: System Loopback, though a VB-Audio cable is
+    // installed (issue #86); the source it has already: nothing to save
+    await waitFor(() => expect(select).toHaveValue("loopback"));
+    fireEvent.change(select, { target: { value: "loopback" } });
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
     fireEvent.change(select, { target: { value: "app:spotify.exe" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
@@ -910,23 +910,13 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(screen.queryByRole("switch", named("settings.media_keys"))).toBeNull();
   });
 
-  it("lets a device follow another device's volume only in developer mode", async () => {
-    const { calls, core } = start("#/devices");
+  it("has no Volume Sync or packet size of its own, developer mode or not (issue #86)", async () => {
+    const { core } = start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
-    expect(within(entry).queryByLabelText(t("capture.volume_sync"))).toBeNull();
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
-    const select = await within(entry).findByLabelText(t("capture.volume_sync"));
-    expect(select).toHaveValue("auto");
-    const speakers = "{0.0.0.00000000}.{speakers}";
-    await within(select).findByRole("option", { name: "Speakers (Realtek(R) Audio)" });
-    // Off and On are the switch for every device: here the captured device,
-    // or one of Windows' devices
-    const options = within(select).getAllByRole("option");
-    expect(options[0]).toHaveTextContent(t("capture.volume_sync_captured"));
-    expect(options.map((o) => (o as HTMLOptionElement).value).filter((v) => !v.startsWith("device:"))).toEqual(["auto"]);
-    fireEvent.change(select, { target: { value: `device:${speakers}` } });
-    await waitFor(() => expect(saves(calls).length).toBeGreaterThan(0));
-    expect(saves(calls)[0].profile).toMatchObject({ volume_sync: "device", volume_device_id: speakers });
+    await within(entry).findByLabelText(t("capture.mode"));
+    expect(within(entry).queryByLabelText(t("capture.volume_sync"))).toBeNull();
+    expect(within(entry).queryByLabelText(t("advanced.max_packet"))).toBeNull();
   });
 
   it("says what application capture needs when the Windows build is not known", async () => {
@@ -956,33 +946,27 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
   });
 });
 
-describe("the max media packet size (the device's since issue #86)", () => {
-  it("is shown only in developer mode while it has the recommended size", async () => {
-    const { core } = start("#/devices");
-    const entry = await deviceEntry(/WH-1000XM5/);
-    expect(within(entry).queryByLabelText(t("advanced.max_packet"))).toBeNull();
-    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
-    expect(await within(entry).findByLabelText(t("advanced.max_packet"))).toHaveValue(1023);
-  });
-
-  it("is checked, then saved into the device's profile", async () => {
+describe("the max media packet size (each device's, on the Developer page since issue #86)", () => {
+  it("is listed per saved device, checked, then saved into the device's profile", async () => {
     const { calls, core } = start("#/devices");
-    const entry = await deviceEntry(/WH-1000XM5/);
+    await deviceEntry(/WH-1000XM5/);
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
-    const packet = await within(entry).findByLabelText(t("advanced.max_packet"));
+    location.hash = "#/developer";
+    const section = await screen.findByRole("region", { name: t("advanced.max_packet") });
+    // By the device's name, not its profile's
+    const packet = within(section).getByLabelText("WH-1000XM5");
+    expect(within(section).queryByLabelText("WH-1000XM5 (LDAC)")).toBeNull();
     expect(packet).toHaveValue(1023);
     fireEvent.input(packet, { target: { value: "2000" } });
     fireEvent.change(packet, { target: { value: "2000" } });
-    expect(await within(entry).findByText(t("ui.profile.err_packet", 679, 1679))).toBeInTheDocument();
+    expect(await within(section).findByText(t("ui.profile.err_packet", 679, 1679))).toBeInTheDocument();
     expect(calls.some((c) => c.method === "profile.save")).toBe(false);
     fireEvent.input(packet, { target: { value: "800" } });
     fireEvent.change(packet, { target: { value: "800" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0].profile).toMatchObject({ name: "WH-1000XM5 (LDAC)", max_media_payload: 800 });
-    // A size changed earlier stays in sight without developer mode, so it can be set back
-    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: false } });
-    expect(await within(entry).findByLabelText(t("advanced.max_packet"))).toHaveValue(800);
-    // Not on the Codecs screen any more
+    await waitFor(() => expect(within(section).getByLabelText("WH-1000XM5")).toHaveValue(800));
+    // Not on the Codecs screen
     location.hash = "#/codecs";
     await screen.findByRole("heading", { level: 1, name: t("ui.nav.codecs") });
     expect(screen.queryByLabelText(t("advanced.max_packet"))).toBeNull();
@@ -1010,7 +994,7 @@ describe("SBC ABR", () => {
 
   it("SBC XQ offers it too", async () => {
     start("#/codecs");
-    fireEvent.click(await screen.findByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
     expect(within(dialog).getByRole("switch", { name: t("connection.abr") })).not.toBeChecked();
   });

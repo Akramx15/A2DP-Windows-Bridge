@@ -1,5 +1,5 @@
-// The capture source choices of Audio Devices and the profile they save;
-// not chosen in place on Home or in the flyout.
+// The capture source choices (a device's settings on Audio Devices), and
+// neither Home nor the flyout choosing it (issue #86).
 
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
@@ -59,13 +59,14 @@ describe("choices", () => {
   });
 });
 
-describe("in place", () => {
-  it("is not on Home, nor in the flyout: chosen on Audio Devices (issue #86)", async () => {
+describe("not in place", () => {
+  it("is not on Home, which has the codec instead (issue #86)", async () => {
     start("#/home");
-    await screen.findByRole("group", { name: "WH-1000XM5" });
+    await screen.findByRole("combobox", { name: "Codec" });
     expect(screen.queryByRole("combobox", { name: "Capture Source" })).toBeNull();
-    cleanup();
-    mock?.dispose();
+  });
+
+  it("is not in the flyout, kept simple (issue #86)", async () => {
     start("", { window: "flyout" });
     await screen.findByRole("button", { name: /Open app/ });
     expect(screen.queryByRole("combobox", { name: "Capture Source" })).toBeNull();

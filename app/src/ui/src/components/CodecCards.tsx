@@ -287,9 +287,6 @@ export function CodecSettings(props: {
   sbcCaps: SbcCaps | null;
   /** Device.codec_caps (empty: not known) */
   caps?: readonly CodecCaps[];
-  /** Developer > "aptX Adaptive at 96 kHz" (in force in developer mode
-   *  only): off, aptX Adaptive is not offered 96 kHz */
-  aptxad96k?: boolean;
   onApply: (values: CodecChoice) => void;
   onCancel: () => void;
 }) {
@@ -320,11 +317,11 @@ export function CodecSettings(props: {
         const from = carryToCodec(codecChoice(p), s.id);
         // SBC / SBC XQ: no quality to choose, Auto is the highest bitpool
         const fitted = s.bitpool ? { ...from, quality: "hq" } : from;
-        // What the device does not list (or 96 kHz switched off) goes back
+        // What the device does not list goes back
         // to Auto, a bitpool above the device's largest down to it, a
         // quality capped like a higher one to High (issue #86)
         const caps = capsOf(props.caps ?? [], s.id);
-        if (!offeredSampleRates(s.id, caps, props.aptxad96k ?? true).includes(fitted.sample_rate)) fitted.sample_rate = 0;
+        if (!offeredSampleRates(s.id, caps).includes(fitted.sample_rate)) fitted.sample_rate = 0;
         if (!offeredBitDepths(s.id, caps).includes(fitted.bit_depth)) fitted.bit_depth = 0;
         if (s.qualities.length > 0 && !offeredQualities(s.id, fitted.sample_rate, caps?.max_bitrate).some((q) => q.id === fitted.quality))
           fitted.quality = "hq";
@@ -369,7 +366,7 @@ export function CodecSettings(props: {
   const qualities = () => offeredQualities(v.codec, v.sample_rate, maxBitrate(), v.quality);
   const qualityText = (q: { label: string; kbps?: string }) => (q.kbps ? `${t(q.label)} (${q.kbps} kbps)` : t(q.label));
   const rates = () => {
-    const offered = offeredSampleRates(v.codec, caps(), props.aptxad96k ?? true);
+    const offered = offeredSampleRates(v.codec, caps());
     return offered.includes(v.sample_rate) ? offered : [...offered, v.sample_rate];
   };
   const depths = () => {
@@ -394,7 +391,7 @@ export function CodecSettings(props: {
   ];
   // The bit rate it gives, as the core works it out, at the profile's rate
   // (both when Auto)
-  // (on Auto the highest rate the device takes: one figure, issue #86)
+  // (on Auto 48 kHz, 44.1 kHz on a device without it: one figure, issue #86)
   const sbcBitrate = () => {
     if (bitpoolError()) return "";
     const r = sbcRate(v, props.sbcCaps);
@@ -465,7 +462,7 @@ export function CodecSettings(props: {
               value={v.sample_rate}
               options={rates().map((r) => {
                 const label = r === 0 ? t("codec.auto") : `${r} Hz`;
-                const listed = offeredSampleRates(v.codec, caps(), props.aptxad96k ?? true).includes(r);
+                const listed = offeredSampleRates(v.codec, caps()).includes(r);
                 return { value: r, label: listed ? label : t("ui.profile.sbc_not_offered", label) };
               })}
               onChange={(x) => setV("sample_rate", x)}

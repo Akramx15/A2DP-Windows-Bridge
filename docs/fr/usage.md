@@ -22,9 +22,10 @@ Lancez **A2DP Windows Bridge** depuis le menu Démarrer (ou `a2dpwb.exe`). Le me
 
 ### Accueil
 
-- Une carte pour chaque appareil audio enregistré, côte à côte : son état, sa batterie et, pour celui qui diffuse, le codec utilisé et son débit. Lorsqu'un autre codec que celui qui est choisi est utilisé, le badge du codec indique lequel et pourquoi
-- **Connecter** / **Déconnecter** sous chaque carte. Un seul appareil diffuse à la fois : **Connecter** sur un autre appareil arrête la diffusion en cours et connecte celui-là
+- Une carte pour chaque appareil audio enregistré, côte à côte : son état, sa batterie et, pour celui qui est connecté, le codec utilisé et son débit. Lorsqu'un autre codec que celui qui est choisi est utilisé, le badge du codec indique lequel et pourquoi
+- **Connecter** / **Déconnecter** sous chaque carte. Un seul appareil est connecté à la fois : **Connecter** sur un autre appareil déconnecte celui utilisé et connecte celui-là
 - **Volume** : le volume du casque (voir [Volume](#volume))
+- Le codec de l'appareil utilisé, pour en changer vite (par exemple un pour les jeux, un pour la musique) : **Sélection automatique** ou un codec que l'appareil prend en charge, comme dans [Codecs](#codecs), appliqué aussitôt (l'appareil se reconnecte avec lui ; **Sélection automatique** vaut pour tous les appareils, comme là-bas) ; **Plus de réglages du codec** ouvre Codecs
 - Pour l'appareil utilisé, la qualité de liaison et la **Latence de la liaison**, chacune avec un petit graphique : le temps que l'audio attend dans la file d'envoi d'A2DPWB avant de partir en Bluetooth (le casque ajoute sa propre mémoire tampon, qu'A2DPWB ne peut pas voir). Elle augmente quand la liaison radio ne suit pas. La source de capture se choisit dans **Périphériques audio** ; tant qu'une application définie comme source de capture n'est pas encore lancée, la carte de l'appareil l'indique
 - Une erreur s'affiche avec sa cause et, s'il y en a un, le bouton qui la corrige (**Remplacer par le pilote WinUSB**, **Ouvrir la page de téléchargement**, **Redémarrer le Bluetooth**, **Réessayer**, **Codecs**, **Périphériques audio**, ...)
 
@@ -35,7 +36,7 @@ La barre latérale affiche la même chose pour chaque appareil, sur chaque écra
 Le codec de chaque appareil audio enregistré, une section par appareil (nom, adresse, étiquettes **Associé** / **Audio**) avec ses cartes de codec : **Auto** (le meilleur codec que l'appareil prend en charge) et les codecs que l'appareil a proposés lors de sa dernière connexion, chacun avec trois barres (qualité sonore, faible latence, stabilité). Un clic sur une carte choisit le codec de cet appareil ; il est enregistré aussitôt, et un appareil en cours de diffusion se reconnecte avec lui.
 
 - Choisir un autre codec pour l'appareil qui diffuse le reconnecte avec ce codec. Les cartes attendent ensuite 3 secondes (**Changement de codec en cours. Patientez un instant avant d'en choisir un autre.**) avant le choix suivant, pour qu'une rapide série de clics ne lance pas plusieurs connexions les unes par-dessus les autres
-- **Masquer les codecs non pris en charge par l'appareil audio** (activé par défaut) : les codecs qu'un appareil n'a pas proposés sont omis (le nombre de codecs masqués figure entre parenthèses). Avant la première connexion d'un appareil, tous sont affichés
+- **Afficher uniquement les codecs pris en charge** (activé par défaut ; désactivez-le pour afficher les codecs pris en charge et non pris en charge) : les codecs qu'un appareil n'a pas proposés sont omis (le nombre de codecs masqués figure entre parenthèses). Avant la première connexion d'un appareil, tous sont affichés
 - **Sélectionner automatiquement le codec pris en charge de meilleure qualité** (un réglage pour tous les appareils, en haut de la page ; activé par défaut) : chaque appareil utilise le codec pris en charge de meilleure qualité sonore, avec ses meilleurs réglages : haute qualité, 24 bits quand le codec les transporte et la fréquence d'échantillonnage la plus élevée annoncée par l'appareil (par exemple LDAC en 96 kHz, aptX Adaptive en 96 kHz sur un appareil R2, LHDC V5 jusqu'à 192 kHz ; la fréquence de Windows est rééchantillonnée) ; les cartes sont en lecture seule et montrent le codec utilisé (ou celui que la sélection automatique choisira). Désactivez-la pour choisir le codec de chaque appareil et ses réglages (un appareil sans choix garde celui de la sélection automatique). Le codec choisi pour un appareil est conservé tant qu'elle est activée. Si les réglages d'avant 2.0.2 choisissaient un codec pour un appareil, elle démarre désactivée
 - **Ordre de la sélection automatique…** (sous l'interrupteur) : ouvre la liste des codecs dans l'ordre où la sélection automatique les choisit (par défaut, meilleure qualité sonore d'abord). Faites glisser un codec, ou utilisez ses flèches, pour les ordonner ; **Revenir à l'ordre par qualité sonore** le rétablit. La sélection automatique utilise le premier codec de la liste pris en charge par l'appareil, et un codec choisi non pris en charge passe au suivant en dessous dans cet ordre. Les cartes suivent cet ordre. Si le codec d'un flux en cours change, il se reconnecte
 - **Activer les codecs expérimentaux** (activé par défaut) : les codecs expérimentaux (aptX HD, aptX Low Latency, Opus, Opus 05, FastStream) portent l'étiquette **Expérimental** sur leur carte. Si l'option est désactivée, leurs cartes sont masquées, Auto ne les choisit jamais, et un appareil dont le codec choisi en fait partie utilise le codec immédiatement inférieur, dans l'ordre d'Auto, que l'appareil propose ; la page l'indique. Si cela change le codec d'une diffusion en cours, l'appareil se reconnecte. CLI : `--no-experimental`
@@ -43,21 +44,21 @@ Le codec de chaque appareil audio enregistré, une section par appareil (nom, ad
 - **...** sur une carte ouvre les réglages de ce codec ; **OK** choisit le codec avec ces réglages. Chaque codec garde ses propres réglages : si vous choisissez un autre codec puis revenez, ils sont de retour. Seul ce que ce codec permet est proposé :
   - **Qualité** : LDAC HQ (990 kbps) / SQ (660 kbps) / MQ (330 kbps) ; LHDC V5 Haute (1000 kbps) / Moyenne-haute (900 kbps) / Standard (500 kbps) / Mobile (400 kbps), les quatre niveaux proposés par Android ; aptX Adaptive Haute / Standard / Mobile / Faible latence (voir [aptX Adaptive](#aptx-adaptive)) ; AAC a aussi des niveaux de qualité, les autres codecs aptX un débit fixe. SBC et SBC XQ affichent le débit que donnent leur bitpool et leur configuration de trames
   - **ABR (débit adaptatif)** : pour LDAC, LHDC V5, aptX Adaptive, SBC et SBC XQ (voir [ABR](#abr)) ; **VBR** pour AAC
-  - **Fréquence d'échantillonnage** : Auto suit le périphérique de capture
+  - **Fréquence d'échantillonnage** : Auto vaut 48 kHz, ou la meilleure fréquence annoncée par l'appareil s'il n'a pas 48 kHz (le 96 kHz ajoute de la latence et des problèmes de compatibilité sans gain audible, et Windows mixe en 48 kHz) ; choisissez 96 kHz ici pour l'utiliser
   - **Profondeur de bits** : 16 ou 24 bits pour LDAC et LHDC V5 (Auto : 24 bits) ; 16 bits pour les autres
 
 Les valeurs par défaut donnent le meilleur son ; la plupart des appareils n'ont besoin que de **Auto**. Un appareil LE Audio (expérimental) a une seule carte, LC3, et **Faible latence pour casques gaming (GMAP, expérimental)** (voir [LE Audio](#le-audio)).
 
-En coulisses, A2DPWB garde un profil par appareil (« *appareil* | *codec* »), que liste le menu de la zone de notification. Les versions précédentes permettaient de créer plusieurs profils pour un même appareil : au premier démarrage d'une version dotée de l'écran Codecs, celui utilisé en dernier (sinon le premier) est conservé et les autres y sont fusionnés, en gardant leurs réglages de codec (qualité, fréquence d'échantillonnage, profondeur de bits, ABR, configuration SBC) pour leurs codecs. Leurs noms, sources de capture et tailles de paquets ne sont pas conservés ; le `profiles.json` tel qu'il était est enregistré une fois sous `profiles-before-codecs.json` dans le dossier des paramètres.
+En coulisses, A2DPWB garde un profil par appareil dans `profiles.json`, nommé « *appareil* | *codec* » ; la fenêtre et le menu de la zone de notification affichent le nom de l'appareil. Les versions précédentes permettaient de créer plusieurs profils pour un même appareil : au premier démarrage d'une version dotée de l'écran Codecs, celui utilisé en dernier (sinon le premier) est conservé et les autres y sont fusionnés, en gardant leurs réglages de codec (qualité, fréquence d'échantillonnage, profondeur de bits, ABR, configuration SBC) pour leurs codecs. Leurs noms, sources de capture et tailles de paquets ne sont pas conservés ; le `profiles.json` tel qu'il était est enregistré une fois sous `profiles-before-codecs.json` dans le dossier des paramètres.
 
 ### Périphériques audio
 
 Les casques et enceintes vers lesquels A2DPWB peut diffuser, chacun avec ses propres réglages : **Rechercher** trouve les appareils à proximité avec l'adaptateur USB (environ 10 secondes ; mettez le casque en mode d'association). Les appareils déjà associés à A2DPWB portent l'étiquette **Associé**. Si la recherche ne le trouve pas, saisissez l'adresse sous **Manuel :** et cliquez sur **Utiliser** ; les adresses tapées ou collées sont mises en forme au fur et à mesure (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` et `AA BB CC DD EE FF` deviennent toutes `AA:BB:CC:DD:EE:FF`). Un appareil enregistré peut être renommé ou supprimé, et dispose de :
 
-- **Source de capture** : Bouclage système, Périphérique virtuel ou Application (voir [Modes de capture](#capture-modes))
-- **Synchro du volume Windows** (voir [Volume](#volume))
-- **Taille max. des paquets média (octets)**, en mode développeur (voir [Taille max. des paquets média](#max-packet))
-- **Les boutons de l'appareil audio contrôlent la lecture** et **Mémoriser le volume de l'appareil audio**
+- **Source de capture** : Bouclage système (par défaut pour un nouvel appareil), Périphérique virtuel ou Application (voir [Modes de capture](#capture-modes))
+- **Changer auto. la sortie par défaut de Windows**, avec un périphérique virtuel
+
+**Tous les appareils audio**, au-dessus de la liste, regroupe les interrupteurs qui s'appliquent à tous les appareils : **Synchro du volume Windows** (voir [Volume](#volume)), **Contrôle de la lecture par les boutons de l'appareil audio** et **Mémoriser le dernier volume de l'appareil audio Bluetooth**. La **Taille max. des paquets média** de chaque appareil se trouve sur l'écran **Développeur** (voir [Taille max. des paquets média](#max-packet)).
 
 ### Diagnostic
 
@@ -84,7 +85,7 @@ Avec **Paramètres > Mode développeur**, Diagnostic comporte aussi un onglet **
 | Apparence | Langue, thème (Système / Clair / Sombre) |
 | Démarrage | **Démarrer avec Windows** et **Démarrer dans la zone de notification** (voir [Démarrer avec Windows](#autostart)), **Réduire dans la zone de notification** et **Un clic sur l'icône de la zone de notification ouvre la fenêtre principale** (voir [Zone de notification et volet](#tray)) |
 | Mises à jour | **Rechercher des mises à jour**, **Rechercher les mises à jour au démarrage**, **Inclure les préversions dans les mises à jour** (propose aussi les versions bêta), **Mettre à jour maintenant** (voir [Mises à jour](#updates)) |
-| Avancé | **Mode développeur** (ajoute le test du récepteur au diagnostic, la **Taille max. des paquets média** aux périphériques audio et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
+| Avancé | **Mode développeur** (ajoute l'écran **Développeur** avec la **Taille max. des paquets média** de chaque appareil, le test du récepteur au diagnostic et plus de détails au journal ; aucun redémarrage nécessaire), **Dossier des paramètres** avec **Ouvrir le dossier de configuration**, **Lancer la configuration** |
 | À propos d'A2DPWB | Version, licence, licences tierces, **Quitter A2DPWB** |
 
 ### Configuration au premier lancement
@@ -96,8 +97,8 @@ Au premier démarrage (aucun profil, ou aucun adaptateur avec WinUSB), A2DPWB ou
 A2DPWB continue de s'exécuter dans la zone de notification, avec ou sans la fenêtre :
 
 - **Clic gauche** sur l'icône pour ouvrir le volet : l'appareil et son état, **Connecter** / **Déconnecter**, le volume, le sélecteur d'appareil, le codec, la qualité de liaison et **Ouvrir l'application**. Sa hauteur correspond exactement à son contenu. Échap ou un clic ailleurs le masque. Si une erreur nécessite un écran de la fenêtre principale (Codecs, Périphériques audio, l'adaptateur), son bouton ouvre la fenêtre à cet endroit. Avec **Paramètres > Un clic sur l'icône de la zone de notification ouvre la fenêtre principale** activé (désactivé par défaut), un clic gauche ouvre plutôt la fenêtre principale
-- **Clic droit** pour le menu : **Ouvrir A2DPWB**, les 10 premiers appareils par leur profil, « *appareil* | *codec* » (celui qui diffuse est coché ; cliquez sur l'un d'eux pour le connecter), **Déconnecter** et **Quitter**. Le menu s'ouvre immédiatement, sans démarrer la fenêtre
-- L'info-bulle indique si A2DPWB est inactif ou en cours de diffusion
+- **Clic droit** pour le menu : **Ouvrir A2DPWB**, les 10 premiers appareils par leur nom (une entrée LE Audio marquée « (LE Audio) » ; celui qui diffuse est coché ; cliquez sur l'un d'eux pour le connecter), **Déconnecter** et **Quitter**. Le menu s'ouvre immédiatement, sans démarrer la fenêtre
+- L'info-bulle indique si A2DPWB est inactif ou connecté
 
 Avec **Paramètres > Réduire dans la zone de notification** activé (par défaut), réduire ou fermer la fenêtre ne fait que la masquer dans la zone de notification, et la diffusion continue. Désactivé, la fenêtre se réduit dans la barre des tâches, et la fermer quitte A2DPWB. **Quitter** dans le menu de la zone de notification ou **Paramètres > Quitter A2DPWB** arrête la diffusion, libère l'adaptateur et ferme complètement A2DPWB.
 
@@ -130,7 +131,7 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c sbc       # SBC
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5    # LHDC V5
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus      # Opus (expérimental ; 48 kHz, 256 kbps)
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c opus05    # Opus 05 de PipeWire (expérimental ; vers des récepteurs PipeWire)
-a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --aptxad-96k --rate 96000 pour 96 kHz)
+a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad    # aptX Adaptive (48 kHz, --rate 96000 pour 96 kHz)
 ```
 
 Priorité du choix automatique : LHDC V5 > LDAC > aptX Adaptive > Opus (expérimental) > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC (FastStream et Opus 05, tous deux expérimentaux, uniquement s'ils sont choisis)
@@ -204,7 +205,7 @@ A2DPWB propose trois modes de capture audio. Chacun enregistre à un endroit dif
 | Périphérique virtuel | Ce que les applications envoient vers le périphérique choisi (p. ex. VB-CABLE) |
 | Application | Uniquement ce que joue une application (et ses processus enfants), après son propre traitement. Nécessite Windows 11 ou Windows 10 version 2004 (build 19041) ou ultérieure |
 
-**Périphériques audio** affiche la même explication sous **Source de capture**.
+**Périphériques audio** affiche la même explication sous **Source de capture**. Un nouvel appareil capture en Bouclage système, qui fonctionne sans rien installer d'autre ; choisissez-y Périphérique virtuel ou Application pour lui.
 
 Le bouclage système copie l'audio ; il ne le retire pas du périphérique de sortie par défaut. Le son continue d'être joué sur ce périphérique (haut-parleurs, téléviseur HDMI, ...) en plus du casque Bluetooth. Pour ne l'entendre que dans le casque, utilisez le mode Périphérique virtuel avec un périphérique qui ne joue le son nulle part, comme VB-CABLE.
 
@@ -221,7 +222,7 @@ Le mode Application envoie l'audio d'une seule application, par exemple un lecte
 
 - L'application n'a pas besoin d'être lancée. A2DPWB se connecte quand même au casque et commence l'envoi dès qu'elle démarre. Si l'application se ferme pendant la diffusion, A2DPWB reste connecté et la reprend lorsqu'elle est relancée.
 - L'application continue aussi de jouer sur son propre périphérique de sortie. Pour ne l'entendre que dans le casque, coupez le son de ce périphérique de sortie (son volume principal) : cela n'affecte pas ce que capture A2DPWB. En revanche, ne coupez pas le son de l'application dans le mélangeur de volume de Windows, sinon le casque ne reçoit que du silence.
-- Le curseur de l'application dans le mélangeur de volume de Windows modifie le niveau envoyé au casque (et sur son périphérique de sortie). Le volume principal et les touches de volume ne modifient pas l'audio envoyé ; avec **Synchro du volume Windows** de l'appareil sur Auto, ils modifient plutôt le volume du casque (voir [Volume](#volume)).
+- Le curseur de l'application dans le mélangeur de volume de Windows modifie le niveau envoyé au casque (et sur son périphérique de sortie). Le volume principal et les touches de volume ne modifient pas l'audio envoyé ; avec **Synchro du volume Windows** activée, ils modifient plutôt le volume du casque (voir [Volume](#volume)).
 - Windows convertit l'audio à la fréquence d'échantillonnage demandée par A2DPWB : le format du périphérique dans les paramètres Son ne le limite donc pas.
 - Sous Windows 10 avant la version 2004 (build 19041), Windows ne permet pas la capture par application. La connexion d'un appareil réglé sur la capture Application affiche alors une erreur qui demande de choisir une autre source de capture.
 
@@ -229,21 +230,17 @@ Le mode Application envoie l'audio d'une seule application, par exemple un lecte
 
 Pendant la diffusion, Accueil et le volet de la zone de notification affichent un curseur **Volume** lorsque le casque prend en charge le volume absolu AVRCP. Il règle le volume du casque lui-même, si bien que l'audio envoyé garde toute sa résolution. Le curseur suit aussi les boutons de volume et les commandes tactiles du casque.
 
-**Synchro du volume Windows** (un réglage de l'appareil dans **Périphériques audio**) fait d'un volume Windows et du volume du casque un seul et même volume pendant la diffusion :
-
-| Choix | Volume Windows synchronisé |
-|:-------|:----------------------|
-| Auto (par défaut) | Le périphérique capturé par A2DPWB : le périphérique de sortie par défaut en mode Bouclage système et Application, le périphérique choisi en mode Périphérique virtuel |
-| Désactivé | Aucun : le volume Windows et le volume du casque sont indépendants |
-| Un périphérique de sortie | Le volume de ce périphérique |
+**Synchro du volume Windows** (dans **Périphériques audio**, pour tous les appareils ; activée par défaut) fait d'un volume Windows et du volume du casque un seul et même volume pendant la diffusion. Le volume Windows synchronisé est celui du périphérique capturé par A2DPWB : le périphérique de sortie par défaut en mode Bouclage système et Application, le périphérique choisi en mode Périphérique virtuel. Désactivée, le volume Windows et le volume du casque sont indépendants.
 
 - Les boutons et gestes de volume du casque, ainsi que le curseur **Volume**, modifient le volume Windows synchronisé, et le curseur de celui-ci dans les paramètres Son modifie le volume du casque.
-- Les touches de volume et le menu volant de volume de Windows agissent toujours sur le périphérique de sortie par défaut : ils ne modifient donc le volume du casque que si le périphérique de sortie par défaut est celui qui est synchronisé (comme avec Auto, sauf en mode Périphérique virtuel sans **Changer auto. le périphérique par défaut**).
+- Les touches de volume et le menu volant de volume de Windows agissent toujours sur le périphérique de sortie par défaut : ils ne modifient donc le volume du casque que si le périphérique de sortie par défaut est celui qui est synchronisé (toujours, sauf en mode Périphérique virtuel sans **Changer auto. le périphérique par défaut**).
 - Au début de la diffusion, le volume Windows est appliqué au casque ; à l'arrêt de la diffusion, le périphérique retrouve le volume qu'il avait auparavant.
-- Avec Auto, l'audio est capturé avant l'application du volume Windows : il n'est donc atténué qu'une seule fois, sur le casque. Si le volume synchronisé modifie aussi l'audio capturé, le volume s'applique deux fois : choisissez alors Désactivé (voir [Applications d'effets à l'échelle du système](#effects-apps)).
+- L'audio est capturé avant l'application du volume Windows : il n'est donc atténué qu'une seule fois, sur le casque. Si le volume synchronisé modifie aussi l'audio capturé, le volume s'applique deux fois : désactivez alors la synchronisation (voir [Applications d'effets à l'échelle du système](#effects-apps)).
 - La coupure du son n'est pas synchronisée : couper le son du périphérique de sortie rend le PC silencieux sans couper le son du casque.
 
-**Mémoriser le volume de l'appareil audio** (dans **Périphériques audio**, pour chaque appareil ; activé par défaut) enregistre le volume propre à chaque appareil audio et le réapplique dès la connexion, avant tout envoi d'audio : le volume d'un appareil ne se reporte donc pas sur un autre. Désactivez-le pour un appareil pour qu'il démarre à son propre dernier volume, qui peut être bien plus fort que celui utilisé la dernière fois avec A2DPWB (p. ex. après une utilisation avec un téléphone). La mise à jour depuis une version antérieure l'active une fois ; un appareil pour lequel il avait été désactivé le reste.
+Les versions précédentes permettaient à un appareil de suivre le volume d'un autre périphérique de sortie (en mode développeur) ; ce choix n'est plus utilisé.
+
+**Mémoriser le dernier volume de l'appareil audio Bluetooth** (dans **Périphériques audio**, pour tous les appareils ; activé par défaut) enregistre le volume propre à chaque appareil audio et le réapplique dès la connexion, avant tout envoi d'audio : le volume d'un appareil ne se reporte donc pas sur un autre. Désactivez-le pour que chaque appareil démarre à son propre dernier volume, qui peut être bien plus fort que celui utilisé la dernière fois avec A2DPWB (p. ex. après une utilisation avec un téléphone).
 
 ### Boutons du casque {#headphone-buttons}
 
@@ -269,7 +266,7 @@ Une application d'effets à l'échelle du système (égaliseur, amélioration du
 
 En mode Application, le périphérique de sortie de l'application d'effets peut être n'importe lequel : A2DPWB prend ce que joue l'application, et non ce que joue le périphérique, qui ne sert donc que de destination pour l'audio. Pour que le PC ne joue pas le son en même temps, choisissez une sortie que personne n'écoute (p. ex. l'audio HDMI d'un écran) ou coupez le volume principal de ce périphérique. Un périphérique virtuel comme VB-CABLE convient aussi comme destination silencieuse, mais il n'est pas nécessaire. Le périphérique doit être activé et connecté.
 
-Si le périphérique virtuel propre à l'application d'effets est le périphérique de sortie par défaut de Windows, son volume atténue aussi ce que reçoit l'application d'effets. Avec **Synchro du volume Windows** sur Auto, un changement de volume s'applique alors deux fois (à l'entrée de l'application d'effets et sur le casque). Réglez-la sur Désactivé pour cet appareil, et utilisez le volume du casque ou le curseur **Volume**.
+Si le périphérique virtuel propre à l'application d'effets est le périphérique de sortie par défaut de Windows, son volume atténue aussi ce que reçoit l'application d'effets. Avec **Synchro du volume Windows** activée, un changement de volume s'applique alors deux fois (à l'entrée de l'application d'effets et sur le casque). Désactivez-la, et utilisez le volume du casque ou le curseur **Volume**.
 
 #### Pourquoi A2DPWB n'a pas son propre périphérique de sortie virtuel {#no-virtual-device}
 
@@ -284,7 +281,7 @@ Le mode Application, ou un périphérique virtuel gratuit comme VB-CABLE, couvre
 - Windows n'a pas d'API publique pour changer le périphérique par défaut. A2DPWB utilise l'interface non documentée IPolicyConfig, comme d'autres outils de changement de périphérique audio (Windows 10 et 11).
 
 {: .warning }
-Le bouclage système et le périphérique virtuel utilisent le mode partagé de WASAPI : avec la sélection automatique activée, A2DPWB demande la fréquence la plus élevée du codec annoncée par le casque (LDAC en 96 kHz, par exemple) et WASAPI y rééchantillonne le **format par défaut** du périphérique. Avec un codec choisi et sa fréquence d'échantillonnage sur Auto, la capture suit le format par défaut des paramètres Son de Windows (généralement 48 kHz) ; pour utiliser alors LDAC à 96 kHz, choisissez 96 kHz dans les réglages du codec ou réglez le format du périphérique de sortie sur 96 kHz dans **Paramètres Son > Propriétés du périphérique > Avancé > Format par défaut**.
+Le bouclage système et le périphérique virtuel utilisent le mode partagé de WASAPI : avec la fréquence d'échantillonnage sur Auto (sélection automatique comprise), A2DPWB demande 48 kHz, ou la meilleure fréquence annoncée par le casque s'il n'a pas 48 kHz, et WASAPI y rééchantillonne le **format par défaut** du périphérique. Pour utiliser LDAC à 96 kHz, choisissez 96 kHz dans les réglages du codec ; inutile de changer le format par défaut dans **Paramètres Son > Propriétés du périphérique > Avancé**.
 
 ## Comparaison des codecs
 
@@ -320,12 +317,12 @@ A2DPWB prend en charge trois codecs aptX encodés avec [libopenaptx](https://git
 ### aptX Adaptive {#aptx-adaptive}
 
 {: .note }
-**L'aptX Adaptive est confirmé avec un vrai casque en 48 kHz :** un utilisateur l'a diffusé vers des EarFun Air Pro 4+ sur la 2.0.2-beta.6 sans coupure ni saccade, aussi stable que l'aptX classique ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). Il réussit aussi les tests unitaires, la suite de tests bit à bit de l'amont et le test de bout en bout avec le récepteur Bluetooth virtuel (`tools/emu`, qui vérifie l'en-tête RTP, la taille des paquets et les types de trames ; l'audio n'est pas décodé, faute de décodeur ouvert). L'amont indique qu'il fonctionne sous Linux / PipeWire avec les Bose QuietComfort Ultra (1re génération) et B&W Px7 S2e à 48 kHz en Haute et en Faible latence. Le 96 kHz (Haute 646 kbps, Standard 340, Mobile 255) n'est utilisé que s'il est choisi dans ses paramètres (ou avec `--rate 96000`) et que le casque est un récepteur R2 qui l'annonce, jamais en Faible latence ; il n'est vérifié qu'avec le récepteur virtuel, ici comme en amont. [Vos retours sont les bienvenus](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
+**L'aptX Adaptive est confirmé avec un vrai casque en 48 kHz :** un utilisateur l'a diffusé vers des EarFun Air Pro 4+ sur la 2.0.2-beta.6 sans coupure ni saccade, aussi stable que l'aptX classique ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). Il réussit aussi les tests unitaires, la suite de tests bit à bit de l'amont et le test de bout en bout avec le récepteur Bluetooth virtuel (`tools/emu`, qui vérifie l'en-tête RTP, la taille des paquets et les types de trames ; l'audio n'est pas décodé, faute de décodeur ouvert). L'amont indique qu'il fonctionne sous Linux / PipeWire avec les Bose QuietComfort Ultra (1re génération) et B&W Px7 S2e à 48 kHz en Haute et en Faible latence. Le 96 kHz (Haute 646 kbps, Standard 340, Mobile 255) n'est utilisé que s'il est choisi dans ses paramètres (ou avec `--rate 96000`) et que le casque est un récepteur R2 qui l'annonce, jamais en Faible latence ; le 96 kHz est désormais confirmé lui aussi avec un vrai casque ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). Auto, sélection automatique comprise, diffuse en 48 kHz. [Vos retours sont les bienvenus](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11).
 
 L'encodeur est l'encodeur aptX Adaptive en Rust pur d'[AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux) (MIT). L'amont le décrit comme une réimplémentation en salle blanche dont les tables numériques ont été reconstituées à partir de binaires Qualcomm distribués, obtenus légalement, et de captures radio ; aucun code, SDK ni binaire de Qualcomm n'est inclus (voir [Licences](licenses)).
 
 - **Le choisir** : Auto le choisit quand le casque ne propose ni LHDC V5 ni LDAC. Ou choisissez **aptX Adaptive** dans **Codecs**, ou `-c aptxad`.
-- **Format** : 48 kHz stéréo, 24 bits ; 96 kHz en haute qualité vers un appareil qui l'annonce (aptX Adaptive R2), avec la sélection automatique ou s'il est choisi ; une demande en 44,1 kHz est capturée en 48 kHz.
+- **Format** : 48 kHz stéréo, 24 bits ; 96 kHz en haute qualité, s'il est choisi, vers un appareil qui l'annonce (aptX Adaptive R2) ; une demande en 44,1 kHz est capturée en 48 kHz.
 - **Casques** : récepteurs R1 (sans extension de capacités, p. ex. B&W Px7 S2e) et récepteurs R2 (flux binaire R2).
 
 | Qualité (**...** / `-q`) | Récepteurs R1 | Récepteurs R2 | Paquets |
@@ -374,7 +371,7 @@ et l'erreur indique que des endpoints sont utilisés par un autre appareil. Déc
 
 ### Fréquence d'échantillonnage
 
-aptX, aptX HD et aptX LL ne prennent en charge que 44,1 kHz et 48 kHz (aptX Adaptive 48 kHz, ou 96 kHz avec la sélection automatique ou s'il est choisi, si le casque l'annonce). A2DPWB choisit l'une des fréquences annoncées par le casque (avec la sélection automatique, la plus élevée ; sinon de préférence la fréquence actuelle du périphérique Windows, puis 48 kHz) et laisse WASAPI rééchantillonner la capture. Vous n'avez pas besoin de modifier les paramètres Son de Windows pour l'aptX.
+aptX, aptX HD et aptX LL ne prennent en charge que 44,1 kHz et 48 kHz (aptX Adaptive 48 kHz, ou 96 kHz s'il est choisi et que le casque l'annonce). A2DPWB choisit l'une des fréquences annoncées par le casque (sur Auto 48 kHz, sinon 44,1 kHz) et laisse WASAPI rééchantillonner la capture. Vous n'avez pas besoin de modifier les paramètres Son de Windows pour l'aptX.
 
 ### Vérifier ce que propose votre casque
 
@@ -397,7 +394,7 @@ capability discovery complete (LDAC=false aptX HD=false aptX LL=false aptX=true 
 
 ## Taille max. des paquets média (par appareil) {#max-packet}
 
-**Taille max. des paquets média** de chaque appareil (**Périphériques audio** ; CLI : `--max-packet <bytes>`) fixe la limite haute des données audio dans chaque paquet Bluetooth, de 679 à 1679 octets, afin que les appareils audio qui nécessitent une autre valeur puissent avoir la leur. Le champ s'affiche en mode développeur (**Paramètres > Mode développeur**), ou tant qu'un appareil a une valeur autre que 1023, pour pouvoir la rétablir ; la plupart des utilisateurs n'en ont jamais besoin. La limite propre à l'appareil audio (MTU) s'applique toujours aussi ; A2DPWB utilise la plus petite des deux. La modification s'applique à partir de la connexion suivante. C'était auparavant un réglage du profil (sous **Avancé**) : un appareil garde la valeur du profil conservé (voir [Codecs](#codecs)) ; les profils enregistrés par la v1 antérieure à la 1.1 reprennent la valeur qui était alors définie globalement.
+**Taille max. des paquets média** de chaque appareil (écran **Développeur**, un champ par appareil enregistré ; CLI : `--max-packet <bytes>`) fixe la limite haute des données audio dans chaque paquet Bluetooth, de 679 à 1679 octets, afin que les appareils audio qui nécessitent une autre valeur puissent avoir la leur. L'écran Développeur s'affiche en mode développeur (**Paramètres > Mode développeur**) ; la plupart des utilisateurs n'en ont jamais besoin. La limite propre à l'appareil audio (MTU) s'applique toujours aussi ; A2DPWB utilise la plus petite des deux. La modification s'applique à partir de la connexion suivante. C'était auparavant un réglage du profil (sous **Avancé**) : un appareil garde la valeur du profil conservé (voir [Codecs](#codecs)) ; les profils enregistrés par la v1 antérieure à la 1.1 reprennent la valeur qui était alors définie globalement.
 
 **1023 (par défaut) est recommandé.** Cette valeur tient dans un paquet de bande de base Bluetooth (3-DH5). Des valeurs plus grandes n'économisent que 1 à 2 % de surcharge, et chaque paquet perdu fait alors perdre davantage d'audio. 679 tient dans un paquet 2-DH5 et est le minimum accepté par LDAC.
 
@@ -490,7 +487,7 @@ En mode CLI, `--le-audio -d <adresse>` diffuse vers un appareil LE Audio, `--le-
 
 A2DPWB consulte les GitHub Releases au plus une fois par jour (**Paramètres > Rechercher les mises à jour au démarrage** ; **Inclure les préversions dans les mises à jour** propose aussi les versions bêta). Lorsqu'une nouvelle version est disponible, Paramètres l'indique :
 
-- **Copie installée** : **Mettre à jour maintenant** télécharge la mise à jour signée. Pendant une diffusion, elle attend et s'installe à l'arrêt de la diffusion, si bien qu'une mise à jour ne coupe jamais l'audio. A2DPWB se ferme alors, installe la nouvelle version et redémarre tout seul.
+- **Copie installée** : **Mettre à jour maintenant** télécharge la mise à jour signée. Tant qu'un périphérique audio est connecté, elle attend et s'installe à sa déconnexion, si bien qu'une mise à jour ne coupe jamais l'audio. A2DPWB se ferme alors, installe la nouvelle version et redémarre tout seul.
 - **Copie portable** (ou version sans signature des mises à jour) : **Ouvrir la page de téléchargement** ouvre la page de la version.
 
 ## Dépannage

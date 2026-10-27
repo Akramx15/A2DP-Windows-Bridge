@@ -1044,12 +1044,11 @@ impl RemoteCaps {
     }
 
     /// Capture rate for aptX Adaptive: 96 kHz when the profile asks for it
-    /// (`wanted`), 96 kHz is allowed (`allow`: Developer > "aptX Adaptive at
-    /// 96 kHz", off by default, issue #86), the stream is high quality (96
-    /// kHz has no low latency bitstream) and the sink can take it
-    /// ([`Self::aptxad_96k`]); else 48 kHz, the rate every sink takes
-    pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality, allow: bool) -> u32 {
-        let no_96k = self.aptxad_no_96k(quality, allow);
+    /// (`wanted`), the stream is high quality (96 kHz has no low latency
+    /// bitstream) and the sink can take it ([`Self::aptxad_96k`]); else 48
+    /// kHz, the rate every sink takes
+    pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality) -> u32 {
+        let no_96k = self.aptxad_no_96k(quality);
         let rate = if wanted == 96000 && no_96k.is_none() { 96000 } else { 48000 };
         let (r2, rates) = (self.aptxad_r2(), self.aptxad_info.get(6).copied().unwrap_or(0) & 0xF8);
         match no_96k {
@@ -1066,13 +1065,11 @@ impl RemoteCaps {
         rate
     }
 
-    /// Why aptX Adaptive cannot stream at 96 kHz in `quality` (`allow`: 96
-    /// kHz switched on); None when it can
-    pub fn aptxad_no_96k(&self, quality: crate::Quality, allow: bool) -> Option<&'static str> {
+    /// Why aptX Adaptive cannot stream at 96 kHz in `quality`; None when it
+    /// can
+    pub fn aptxad_no_96k(&self, quality: crate::Quality) -> Option<&'static str> {
         if quality == crate::Quality::LowLatency {
             Some("low latency has no 96 kHz bitstream")
-        } else if !allow {
-            Some("96 kHz is off (Developer: aptX Adaptive at 96 kHz)")
         } else if !self.aptxad_r2() {
             Some("the audio device is aptX Adaptive R1 (upstream streams 96 kHz to R2 only)")
         } else if !self.aptxad_96k() {
@@ -1718,7 +1715,7 @@ mod tests {
             assert_eq!(caps.add_vendor(1, &info), VendorCapability::Taken(CodecKind::Ldac));
             caps
         };
-        // Every rate: Auto's 96 kHz and the mix rate as asked
+        // Every rate: as asked (96 kHz chosen, Auto's 48 kHz)
         let all = ldac(LDAC_FREQ_ALL);
         assert_eq!((all.pick_ldac_sample_rate(96000), all.pick_ldac_sample_rate(48000)), (96000, 48000));
         // Not reported: as every rate
@@ -2521,15 +2518,12 @@ mod tests {
         let mut r2 = RemoteCaps::default();
         r2.add_vendor(4, &r2_aptxad(0x0F00_0000)[..30]);
         assert!(r2.aptxad_96k());
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High, true), 96000);
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::Mobile, true), 96000);
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::LowLatency, true), 48000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::Mobile), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::LowLatency), 48000);
         for wanted in [44100, 48000, 88200, 192000] {
-            assert_eq!(r2.pick_aptxad_sample_rate(wanted, Quality::High, true), 48000, "{wanted}");
+            assert_eq!(r2.pick_aptxad_sample_rate(wanted, Quality::High), 48000, "{wanted}");
         }
-        // 96 kHz switched off (the default, issue #86): always 48 kHz
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High, false), 48000);
-        assert!(r2.aptxad_no_96k(Quality::High, false).is_some_and(|w| w.contains("off")));
         let ConfigRequest::Vendor(info) = r2.configuration(CodecKind::AptxAdaptive, 96000, 2, 24).unwrap().request
         else {
             panic!("not a vendor configuration")
@@ -2545,8 +2539,9 @@ mod tests {
             let mut caps = RemoteCaps::default();
             caps.add_vendor(4, &info[..30]);
             assert!(caps.aptxad_96k(), "{byte6:#x}");
-            assert_eq!(caps.aptxad_no_96k(Quality::High, true), None, "{byte6:#x}");
-            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High, true), 96000, "{byte6:#x}");
+            assert_eq!(caps.listed_sample_rates(CodecKind::AptxAdaptive), [48000, 96000], "{byte6:#x}");
+            assert_eq!(caps.aptxad_no_96k(Quality::High), None, "{byte6:#x}");
+            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High), 96000, "{byte6:#x}");
             let ConfigRequest::Vendor(c) = caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24).unwrap().request
             else {
                 panic!("not a vendor configuration")
@@ -2559,14 +2554,16 @@ mod tests {
         no96[6] = 0x51;
         let mut r1_96 = PX7_S2E_APTXAD;
         r1_96[6] |= 0xA0;
-        assert_eq!(r2.aptxad_no_96k(Quality::High, true), None);
-        assert!(r2.aptxad_no_96k(Quality::LowLatency, true).is_some_and(|w| w.contains("low latency")));
+        assert_eq!(r2.aptxad_no_96k(Quality::High), None);
+        assert!(r2.aptxad_no_96k(Quality::LowLatency).is_some_and(|w| w.contains("low latency")));
         for (info, why) in [(&no96[..30], "does not list"), (&r1_96[..], "R1")] {
             let mut caps = RemoteCaps::default();
             caps.add_vendor(4, info);
             assert!(!caps.aptxad_96k());
-            assert!(caps.aptxad_no_96k(Quality::High, true).is_some_and(|w| w.contains(why)), "{why}");
-            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High, true), 48000);
+            // Not offered in the codec's settings either
+            assert_eq!(caps.listed_sample_rates(CodecKind::AptxAdaptive), [48000], "{why}");
+            assert!(caps.aptxad_no_96k(Quality::High).is_some_and(|w| w.contains(why)), "{why}");
+            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High), 48000);
             assert_eq!(
                 caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24),
                 Err(ConfigError::SampleRate(CodecKind::AptxAdaptive, 96000))

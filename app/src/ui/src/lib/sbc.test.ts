@@ -57,7 +57,7 @@ describe("SBC frame length and bit rate", () => {
     expect(sbcRate({ sample_rate: 0 }, { ...caps, sample_rates: [48000] })).toBe(48000);
     expect(sbcRate({ sample_rate: 0 }, { ...caps, sample_rates: [44100] })).toBe(44100);
     expect(sbcRate({ sample_rate: 44100 }, null)).toBe(44100);
-    // Auto: the highest only
+    // Auto: 48 kHz, 44.1 kHz only on a device without it
     expect(sbcRate({ sample_rate: 0 }, null)).toBe(48000);
     expect(sbcKbpsText(sbc({}), null)).toBe(`≈ ${sbcSetup(sbc({}), 48000, null).kbps} kbps`);
   });

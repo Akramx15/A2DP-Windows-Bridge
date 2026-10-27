@@ -54,6 +54,6 @@ Intel, MediaTek and Qualcomm adapters have no reports yet: see [Recommended Adap
 
 ## Not verified yet
 
-- **Codecs on real headphones**: aptX HD, aptX Low Latency, Opus, Opus 05, FastStream, aptX Adaptive at 96 kHz
+- **Codecs on real headphones**: aptX HD, aptX Low Latency, Opus, Opus 05, FastStream
 - **LE Audio**: tested only against the emulator; none of the adapters above has isochronous channels
 - **Windows on ARM64**, and **Windows 10 with v2** (v1 ran on Windows 10 22H2: [#18](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/18), [#30](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/30))

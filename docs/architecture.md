@@ -282,10 +282,10 @@ result. Listing adapters and their driver needs no elevation.
   every device, settings.json's `auto_order`, now ignored.)
 - Picks the aptX-family sample rate (44.1 / 48 kHz from the rates the remote
   advertises; WASAPI resamples the capture); aptX Adaptive uses 48 kHz, or
-  96 kHz when the developer override `aptxad_96k` is on (Developer > aptX
-  Adaptive at 96 kHz, CLI `--aptxad-96k`; off by default since issue #86),
-  96 kHz is chosen or Auto-select is on, the quality is High and the sink is
-  R2 and lists 96 kHz
+  96 kHz when 96 kHz is chosen, the quality is High and the sink is R2 and
+  lists 96 kHz. A rate on Auto (Auto-select too) asks for 48 kHz, each
+  codec's picker taking the best the sink lists without it (issue #86: not
+  the highest rate it lists nor the Windows mix rate)
 - Maps the profile's quality to the ones the codec offers
   (`Quality::for_codec`, issue #86): LDAC and LHDC V5 High / Medium
   (`sq`) / Low (`mq`), aptX Adaptive High / Low Latency, every other codec
@@ -342,7 +342,7 @@ Captures audio in real time using the Windows Audio Session API.
 |---------|---------|---------|----------|
 | LHDC V5 | lhdcv5-enc (C port of the AOSP encoder) | 400/500/1000 kbps (Low/Medium/High; 900 kbps Medium-High no longer offered), at most the sink's listed maximum, ABR 160–400 kbps | 16/24-bit, 5 ms frames, 2-byte media payload header, RTP header |
 | LDAC | libldac (AOSP) | 330/660/990 kbps | High/Medium/Low (HQ/SQ/MQ) modes, ABR |
-| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | 427 kbps High, 265 kbps Low Latency (R2 sinks: 270); ABR steps down to 364/318 (R2: 270/204) | 48 kHz stereo (96 kHz in High to an R2 sink that lists it, only with the `aptxad_96k` override: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; Auto takes it after LHDC V5 and LDAC |
+| aptX Adaptive | aptx-adaptive (pure-Rust encoder of AKS-Logic/aptx-adaptive-linux, MIT) | 427 kbps High, 265 kbps Low Latency (R2 sinks: 270); ABR steps down to 364/318 (R2: 270/204) | 48 kHz stereo (96 kHz in High when chosen, to an R2 sink that lists it: 646/340/255 kbps), 24-bit; one codec packet per media packet behind A2DPWB's own RTP header; ABR in High; Auto takes it after LHDC V5 and LDAC |
 | Opus | libopus 1.5.2 | 256 kbps (stereo; mono half) | Experimental; Android's A2DP Opus: 48 kHz, 20 ms frames (10 ms if the sink has only that), constrained VBR capped to the media payload, one frame per packet, 1-byte media payload header, RTP header |
 | aptX HD | libopenaptx | 576 kbps | 24-bit input, fixed rate, RTP header |
 | aptX | libopenaptx | 352/384 kbps (44.1/48 kHz) | 16-bit stereo, no RTP header |

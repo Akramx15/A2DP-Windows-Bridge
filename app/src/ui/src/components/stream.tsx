@@ -322,26 +322,6 @@ export function sourceText(src: SourceInfo, profile: Profile | null): { icon: Ic
   }
 }
 
-/** The capture source of the stream on screen: the core's while it
- *  streams, otherwise null */
-export function CaptureSource(props: { profile: Profile | null; class?: string }) {
-  const { core } = useApp();
-  const src = () => core.state.snap?.stream.info?.source ?? null;
-  return (
-    <Show when={src()}>
-      {(s) => {
-        const v = () => sourceText(s(), props.profile);
-        return (
-          <span class={`capture-source ${props.class ?? ""}`} classList={{ "st-warn": v().waiting }} title={`${t("capture.mode")}: ${v().text}`}>
-            <Icon name={v().waiting ? "warning" : v().icon} />
-            <span class="ellipsis">{v().text}</span>
-          </span>
-        );
-      }}
-    </Show>
-  );
-}
-
 export type QualityLevel = 0 | 1 | 2 | 3 | 4;
 
 /** Samples (at 4 a second) the quality looks back over for drops: 10 s */

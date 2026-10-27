@@ -1703,8 +1703,13 @@ option {
   padding: var(--s3);
   border: 1px solid var(--border);
   border-radius: var(--r);
+  /* The card's own background: lifted, it hides the cards it passes over */
+  background: var(--surface);
   cursor: pointer;
-  transition: border-color var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    transform var(--t-mid) var(--ease),
+    box-shadow var(--t-mid) var(--ease);
 }
 .codec-card input {
   position: absolute;
@@ -1747,11 +1752,17 @@ option {
 .codec-grid.ordering .codec-card input {
   cursor: grabbing;
 }
+/* The card dragged is lifted over the others (a shadow: it is off the page
+   while held) and lets the pointer through to the card under it; the inline
+   transform moves it with the pointer */
 .codec-cell.dragging {
-  opacity: 0.5;
+  z-index: 2;
+  pointer-events: none;
 }
 .codec-cell.dragging .codec-card {
-  border-style: dashed;
+  border-color: var(--border-strong);
+  transform: scale(1.04);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
 }
 /* The activity dot before the device's icon, as the sidebar's */
 .device-codecs-head > .dot {
