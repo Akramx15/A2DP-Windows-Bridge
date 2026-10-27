@@ -153,6 +153,8 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         le_low_latency: p.le_low_latency,
         sbc_bitpool: p.sbc_bitpool,
         sbcxq_bitpool: p.sbcxq_bitpool,
+        sbc_min_bitpool: p.sbc_min_bitpool,
+        sbcxq_min_bitpool: p.sbcxq_min_bitpool,
         sbc_blocks: p.sbc_blocks,
         sbc_subbands: p.sbc_subbands,
         sbc_allocation: p.sbc_allocation.clone(),
@@ -170,6 +172,8 @@ fn to_ipc_codec_values(v: &profiles::CodecValues) -> ipc::CodecValues {
         abr: v.abr,
         sbc_bitpool: v.sbc_bitpool,
         sbcxq_bitpool: v.sbcxq_bitpool,
+        sbc_min_bitpool: v.sbc_min_bitpool,
+        sbcxq_min_bitpool: v.sbcxq_min_bitpool,
         sbc_blocks: v.sbc_blocks,
         sbc_subbands: v.sbc_subbands,
         sbc_allocation: v.sbc_allocation.clone(),
@@ -185,6 +189,8 @@ fn from_ipc_codec_values(v: &ipc::CodecValues) -> profiles::CodecValues {
         abr: v.abr,
         sbc_bitpool: v.sbc_bitpool,
         sbcxq_bitpool: v.sbcxq_bitpool,
+        sbc_min_bitpool: v.sbc_min_bitpool,
+        sbcxq_min_bitpool: v.sbcxq_min_bitpool,
         sbc_blocks: v.sbc_blocks,
         sbc_subbands: v.sbc_subbands,
         sbc_allocation: v.sbc_allocation.clone(),
@@ -218,6 +224,8 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.le_low_latency = p.le_low_latency;
     c.sbc_bitpool = p.sbc_bitpool;
     c.sbcxq_bitpool = p.sbcxq_bitpool;
+    c.sbc_min_bitpool = p.sbc_min_bitpool;
+    c.sbcxq_min_bitpool = p.sbcxq_min_bitpool;
     c.sbc_blocks = p.sbc_blocks;
     c.sbc_subbands = p.sbc_subbands;
     c.sbc_allocation = p.sbc_allocation.clone();

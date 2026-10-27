@@ -514,6 +514,8 @@ pub fn run(args: &[String]) -> i32 {
         abr: a.abr,
         sbc_bitpool: a.sbc_bitpool,
         sbcxq_bitpool: a.sbc_bitpool,
+        sbc_min_bitpool: 0,
+        sbcxq_min_bitpool: 0,
         sbc: a.sbc,
         sample_rate: a.rate,
         bit_depth: a.bits,
@@ -1031,7 +1033,8 @@ mod tests {
                 blocks: 8,
                 subbands: 4,
                 allocation: Some(Allocation::Snr),
-                channel_mode: Some(ChannelMode::Stereo)
+                channel_mode: Some(ChannelMode::Stereo),
+                min_bitpool: 0,
             }
         );
         assert_eq!(a.sbc_bitpool, 40);

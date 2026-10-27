@@ -135,6 +135,8 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     le_low_latency: true,
     sbc_bitpool: 0,
     sbcxq_bitpool: 0,
+    sbc_min_bitpool: 0,
+    sbcxq_min_bitpool: 0,
     sbc_blocks: 0,
     sbc_subbands: 0,
     sbc_allocation: "",

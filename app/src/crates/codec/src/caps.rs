@@ -1231,8 +1231,11 @@ impl RemoteCaps {
                 // bitpool of the rate, within the sink's range; the encoder's
                 // bitpool (by quality) is never above it.
                 let cap = if kind == CodecKind::SbcXq { sbc::xq_max_bitpool(sample_rate) } else { SBC_MAX_BITPOOL };
+                // The profile's minimum bitpool, when set, raises the
+                // minimum within that range (the encoder never goes below it)
                 let (min_bitpool, max_bitpool) = self.sbc_bitpool_range(cap);
                 let (p, _) = self.sbc_params(kind, sbc);
+                let min_bitpool = p.config_min_bitpool(min_bitpool, max_bitpool);
                 ConfigRequest::Sbc {
                     sampling_frequency: sample_rate as u16,
                     channel_mode: p.channel_mode(kind, channels),
@@ -2001,6 +2004,7 @@ mod tests {
             subbands: 4,
             allocation: Some(Allocation::Snr),
             channel_mode: Some(ChannelMode::Stereo),
+            min_bitpool: 0,
         };
         let c = caps.configuration_with(CodecKind::Sbc, 44100, 2, 16, false, wanted).unwrap();
         assert_eq!(
@@ -2062,6 +2066,7 @@ mod tests {
             subbands: 4,
             allocation: Some(Allocation::Snr),
             channel_mode: Some(ChannelMode::Stereo),
+            min_bitpool: 0,
         };
         let (p, notes) = caps.sbc_params(CodecKind::Sbc, wanted);
         assert!(p.is_default(), "{p:?}");
@@ -2131,6 +2136,40 @@ mod tests {
             let ConfigRequest::Sbc { min_bitpool, max_bitpool, channel_mode, .. } = c.request else { panic!() };
             assert_eq!(((min_bitpool, max_bitpool), channel_mode), (want, ChannelMode::JointStereo), "{smin}-{smax}");
         }
+    }
+
+    #[test]
+    fn sbc_configuration_takes_the_profiles_minimum_bitpool() {
+        let range = |caps: &RemoteCaps, kind: CodecKind, rate: u32, min: u8| {
+            let p = sbc::SbcParams { min_bitpool: min, ..Default::default() };
+            let c = caps.configuration_with(kind, rate, 2, 16, false, p).unwrap();
+            let ConfigRequest::Sbc { min_bitpool, max_bitpool, .. } = c.request else { panic!() };
+            (min_bitpool, max_bitpool)
+        };
+        // (sink min, sink max, profile min) -> configured (min, max)
+        for ((smin, smax), min, want) in [
+            ((2, 53), 0, (2, 53)), // Auto: as before
+            ((2, 53), 30, (30, 53)),
+            ((2, 53), 60, (53, 53)),  // never above the maximum
+            ((10, 40), 5, (10, 40)),  // never below the sink's minimum
+            ((10, 40), 45, (40, 40)), // nor above its maximum
+            ((2, 250), 53, (53, 53)),
+        ] {
+            let mut caps = RemoteCaps::default();
+            caps.add_sbc_caps(1, SbcCapabilities { min_bitpool: smin, max_bitpool: smax, ..sbc_all() });
+            assert_eq!(range(&caps, CodecKind::Sbc, 44100, min), want, "{smin}-{smax} {min}");
+        }
+        // SBC XQ: within its cap of the rate
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        assert_eq!(range(&caps, CodecKind::SbcXq, 48000, 0), (2, 43));
+        assert_eq!(range(&caps, CodecKind::SbcXq, 48000, 30), (30, 43));
+        assert_eq!(range(&caps, CodecKind::SbcXq, 48000, 50), (43, 43));
+        // Capabilities not known: 2..53 and the minimum in it
+        let mut unknown = RemoteCaps::default();
+        unknown.add_sbc(1);
+        assert_eq!(range(&unknown, CodecKind::Sbc, 44100, 0), (2, 53));
+        assert_eq!(range(&unknown, CodecKind::Sbc, 44100, 20), (20, 53));
     }
 
     #[test]
