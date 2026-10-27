@@ -740,6 +740,7 @@
   "ui.codecs.moved": "%s:第 %d 位，共 %d 个",
   "ui.codecs.fallback_to": "音频设备上次连接时不支持此编解码器:将改用其顺序中第一个受支持的编解码器 %s。",
   "ui.profile.sbc_quality_hint": "由下方比特池和帧设置得出的比特率(采样率为 Auto 时按音频设备支持的最高采样率计算)。",
+  "ui.codecs.settling": "正在切换编解码器。请稍候再选择其他编解码器。",
   "ui.devices.none_saved": "还没有音频设备。请在下方扫描或按地址添加。",
   "ui.devices.add_title": "添加音频设备",
   "ui.settings.open_config_folder": "打开设置文件夹",

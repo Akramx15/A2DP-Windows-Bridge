@@ -740,6 +740,7 @@
   "ui.codecs.moved": "%s : place %d sur %d",
   "ui.codecs.fallback_to": "L'appareil audio ne le prenait pas en charge lors de sa dernière connexion : %s, le premier codec pris en charge dans son ordre, est utilisé à la place.",
   "ui.profile.sbc_quality_hint": "Le débit que donnent le bitpool et la configuration de trame ci-dessous (à la fréquence la plus élevée acceptée par l'appareil audio si la fréquence est Auto).",
+  "ui.codecs.settling": "Changement de codec en cours. Patientez un instant avant d'en choisir un autre.",
   "ui.devices.none_saved": "Aucun appareil audio pour l'instant. Recherchez le vôtre ou ajoutez-le par son adresse ci-dessous.",
   "ui.devices.add_title": "Ajouter un appareil audio",
   "ui.settings.open_config_folder": "Ouvrir le dossier des paramètres",

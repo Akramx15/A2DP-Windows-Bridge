@@ -134,6 +134,7 @@ export function CodecCard(props: {
         class="codec-more"
         label={t("ui.profile.codec_settings", name())}
         aria-haspopup="dialog"
+        disabled={props.disabled && !props.readOnly}
         onClick={() => (props.readOnly ? props.onReadOnly?.() : props.onSettings())}
       />
     </div>

@@ -331,22 +331,22 @@ describe("codec cards", () => {
     const { calls } = start("#/codecs");
     const wh = await section("WH-1000XM5");
     const ldac = within(wh).getByRole("radio", { name: /LDAC/ });
-    expect(ldac.closest("label")).toHaveTextContent(t("ui.profile.codec_supported"));
     expect(within(wh).queryByText(t("ui.profile.codecs_unknown"))).toBeNull();
-
+    // The ones it did not support hidden (on by default, issue #86): SBC,
+    // AAC and LDAC are supported, and need no "Supported" tag then
+    expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull();
+    expect(within(wh).getAllByRole("radio")).toHaveLength(3);
+    expect(within(wh).queryByText(t("ui.profile.codec_supported"))).toBeNull();
+    const hide = hideSwitch();
+    expect(hide).toBeChecked();
+    // Shown: with their "Unsupported" tag, the others "Supported"
+    fireEvent.click(hide);
+    const hd = await within(wh).findByRole("radio", { name: /aptX HD/ });
+    expect(ldac.closest("label")).toHaveTextContent(t("ui.profile.codec_supported"));
     // Its mark in green, not the whole tag (issue #86)
     const good = within(ldac.closest("label")!).getByText(t("ui.profile.codec_supported")).closest(".tag")!;
     expect(good).not.toHaveClass("st-good");
     expect(good.querySelector(".icon")).toHaveClass("st-good");
-    // The ones it did not support hidden (on by default, issue #86): SBC,
-    // AAC and LDAC are supported
-    expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull();
-    expect(within(wh).getAllByRole("radio")).toHaveLength(3);
-    const hide = hideSwitch();
-    expect(hide).toBeChecked();
-    // Shown: with their "Unsupported" tag
-    fireEvent.click(hide);
-    const hd = await within(wh).findByRole("radio", { name: /aptX HD/ });
     expect(hd.closest("label")).toHaveTextContent("Unsupported");
     // Its mark in red
     const bad = within(hd.closest("label")!).getByText(t("ui.profile.codec_not_supported")).closest(".tag")!;
@@ -495,6 +495,33 @@ describe("the device's activity (issue #86 round 8)", () => {
     await waitFor(() => expect(dot(wh)).toHaveClass("st-streaming"));
     expect(within(wh).getByRole("img", { name: t("status.connected") })).toBe(dot(wh));
     expect(dot(xb)).toHaveClass("st-idle");
+  });
+
+  it("waits 3 s after the codec of the device streaming changed (issue #86: quick switches crackled)", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(wh.querySelector(".device-codecs-head > .dot")).toHaveClass("st-streaming"));
+    fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    // Every card waits, with the reason said
+    expect(await within(wh).findByText(t("ui.codecs.settling"))).toBeInTheDocument();
+    expect(within(wh).getAllByRole("radio").every((r) => (r as HTMLInputElement).disabled)).toBe(true);
+    expect(within(wh).getByRole("button", { name: t("ui.profile.codec_settings", t("codec.sbc")) })).toBeDisabled();
+    fireEvent.click(within(wh).getByRole("radio", { name: /SBC/ }));
+    expect(saves(calls)).toHaveLength(1);
+    // Then they can be chosen again
+    await waitFor(() => expect(within(wh).queryByText(t("ui.codecs.settling"))).toBeNull(), { timeout: 4000 });
+    await settled(wh);
+  }, 8000);
+
+  it("does not wait after a codec chosen for a device not streaming", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    await settled(wh);
+    expect(within(wh).queryByText(t("ui.codecs.settling"))).toBeNull();
   });
 });
 

@@ -22,6 +22,10 @@
 // Every codec is offered, the experimental ones too (issue #86: they are
 // marked in the README only; the core no longer reads
 // settings.experimental_codecs).
+// A codec chosen while a stream runs starts it again: the cards then wait
+// 3 s before the next choice (issue #86: quick switches left no sound or
+// crackling). With the unsupported codecs hidden, the cards shown need no
+// "Supported" tag (issue #86).
 
 import { createEffect, createSignal, createUniqueId, For, on, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
@@ -63,6 +67,17 @@ import { knownSbcCaps } from "../lib/sbc";
 import { entryState } from "./Home";
 
 const HIDE_KEY = "a2dpwb.codecs.hide_unsupported";
+
+/** How long the codec cards wait after a codec was chosen during a stream */
+export const SETTLE_MS = 3000;
+// For every device and across pages: one stream starts again at a time
+const [settling, setSettling] = createSignal(false);
+let settleTimer: ReturnType<typeof setTimeout> | undefined;
+function settle() {
+  clearTimeout(settleTimer);
+  setSettling(true);
+  settleTimer = setTimeout(() => setSettling(false), SETTLE_MS);
+}
 
 function loadHide(): boolean {
   try {
@@ -239,11 +254,16 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
     return done;
   };
   const choose = async (id: string, values?: Omit<CodecChoice, "codec">) => {
+    if (settling()) return;
+    // The device's stream starts again with the codec: give it time first
+    const running = state() !== "idle" && state() !== "error";
     setBusy(true);
     // An order moved but not back from the core yet goes with it
-    await queued(() => chooseCodec(app, e(), id, values, props.auto ? null : dragOrder()));
+    const saved = await queued(() => chooseCodec(app, e(), id, values, props.auto ? null : dragOrder()));
     setBusy(false);
+    if (saved && running) settle();
   };
+  const locked = () => busy() || settling();
   const titleId = () => `codecs-${e().key.replace(/[^0-9A-Za-z]/g, "")}`;
   const leSupport = () => snap().adapter.le_audio;
   const state = () => entryState(snap(), e());
@@ -293,7 +313,7 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
     return cell && grid?.contains(cell) ? (cell.dataset.codec as CodecId) : null;
   };
   const onPointerDown = (ev: PointerEvent) => {
-    if (props.auto || busy() || ev.button !== 0) return;
+    if (props.auto || locked() || ev.button !== 0) return;
     const target = ev.target as Element;
     const cell = target.closest<HTMLElement>(".codec-cell[data-codec]");
     if (!cell || target.closest(".codec-more")) return;
@@ -371,7 +391,7 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
                     name={`codec-${e().key}`}
                     value="lc3"
                     checked={e().profile !== null}
-                    disabled={busy()}
+                    disabled={locked()}
                     onChange={() => void choose("auto")}
                   />
                   <span class="codec-card-name">{t("ui.codec.lc3")}</span>
@@ -429,9 +449,10 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
                 spec={c}
                 group={`codec-${e().key}`}
                 selected={picked() === c.id}
-                disabled={busy()}
+                disabled={locked()}
                 readOnly={props.auto}
-                support={support(c.id)}
+                // Only supported codecs shown: no "Supported" tag on each
+                support={props.hide && support(c.id) === "offered" ? null : support(c.id)}
                 orderable={!props.auto}
                 dragging={dragging() === c.id}
                 describedBy={hintId}
@@ -443,6 +464,11 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
             )}
           </For>
         </div>
+        <Show when={settling()}>
+          <p class="hint" role="status">
+            {t("ui.codecs.settling")}
+          </p>
+        </Show>
         <span id={hintId} class="sr-only">
           {t("ui.codecs.order_keys")}
         </span>

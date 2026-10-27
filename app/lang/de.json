@@ -740,6 +740,7 @@
   "ui.codecs.moved": "%s: Platz %d von %d",
   "ui.codecs.fallback_to": "Das Audiogerät hat ihn bei der letzten Verbindung nicht unterstützt: Stattdessen wird %s verwendet, der erste unterstützte Codec in seiner Reihenfolge.",
   "ui.profile.sbc_quality_hint": "Die Bitrate, die Bitpool und Frame-Einstellungen unten ergeben (bei Abtastrate Auto die höchste, die das Audiogerät annimmt).",
+  "ui.codecs.settling": "Der Codec wird gewechselt. Einen Moment warten, bevor ein anderer gewählt wird.",
   "ui.devices.none_saved": "Noch keine Audiogeräte. Suchen Sie Ihres unten oder fügen Sie es über seine Adresse hinzu.",
   "ui.devices.add_title": "Audiogerät hinzufügen",
   "ui.settings.open_config_folder": "Einstellungsordner öffnen",

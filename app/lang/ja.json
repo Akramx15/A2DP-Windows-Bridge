@@ -741,6 +741,7 @@
   "ui.codecs.moved": "%s: %d 番目 (全 %d 個)",
   "ui.codecs.fallback_to": "前回の接続時、オーディオデバイスはこのコーデックに対応していませんでした。代わりに、順番で最初の対応コーデック %s を使います。",
   "ui.profile.sbc_quality_hint": "下のビットプールとフレーム設定で決まるビットレートです(サンプルレートがAutoのときは、オーディオデバイスが対応する最高のレートでの値)。",
+  "ui.codecs.settling": "コーデックを切り替えています。少し待ってから次を選んでください。",
   "ui.devices.none_saved": "オーディオデバイスはまだありません。下でスキャンするか、アドレスを入力して追加してください。",
   "ui.devices.add_title": "オーディオデバイスを追加",
   "ui.settings.open_config_folder": "設定フォルダーを開く",

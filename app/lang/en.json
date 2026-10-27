@@ -741,6 +741,7 @@
   "ui.codecs.moved": "%s: place %d of %d",
   "ui.codecs.fallback_to": "The audio device did not support it at its last connection: %s, the first codec in its order that it supports, is used instead.",
   "ui.profile.sbc_quality_hint": "The bit rate the bitpool and frame setup below give (at the highest sample rate the audio device takes when the rate is Auto).",
+  "ui.codecs.settling": "Switching the codec. Wait a moment before choosing another.",
   "ui.devices.none_saved": "No audio devices yet. Scan for yours or add it by its address below.",
   "ui.devices.add_title": "Add an audio device",
   "ui.settings.open_config_folder": "Open Settings Folder",

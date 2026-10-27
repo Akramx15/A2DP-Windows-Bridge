@@ -740,6 +740,7 @@
   "ui.codecs.moved": "%s: %d번째 (전체 %d개)",
   "ui.codecs.fallback_to": "오디오 장치는 마지막 연결 때 이 코덱을 지원하지 않았습니다. 대신 순서에서 첫 번째로 지원하는 코덱인 %s을(를) 사용합니다.",
   "ui.profile.sbc_quality_hint": "아래 비트풀과 프레임 설정으로 정해지는 비트레이트입니다(샘플레이트가 Auto이면 오디오 장치가 지원하는 최고 레이트 기준).",
+  "ui.codecs.settling": "코덱을 전환하는 중입니다. 잠시 후 다른 코덱을 선택하세요.",
   "ui.devices.none_saved": "아직 오디오 장치가 없습니다. 아래에서 검색하거나 주소로 추가하세요.",
   "ui.devices.add_title": "오디오 장치 추가",
   "ui.settings.open_config_folder": "설정 폴더 열기",

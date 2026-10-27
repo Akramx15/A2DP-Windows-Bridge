@@ -740,6 +740,7 @@
   "ui.codecs.moved": "%s: posición %d de %d",
   "ui.codecs.fallback_to": "El dispositivo de audio no lo admitía en su última conexión: se usa en su lugar %s, el primer códec compatible en su orden.",
   "ui.profile.sbc_quality_hint": "La tasa de bits que dan el bitpool y la configuración de trama de abajo (a la frecuencia más alta que acepta el dispositivo de audio si la frecuencia es Auto).",
+  "ui.codecs.settling": "Cambiando el códec. Espera un momento antes de elegir otro.",
   "ui.devices.none_saved": "Aún no hay dispositivos de audio. Busque el suyo o añádalo por su dirección abajo.",
   "ui.devices.add_title": "Añadir un dispositivo de audio",
   "ui.settings.open_config_folder": "Abrir la carpeta de configuración",

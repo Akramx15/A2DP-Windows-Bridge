@@ -740,6 +740,7 @@
   "ui.codecs.moved": "%s:第 %d 位，共 %d 個",
   "ui.codecs.fallback_to": "音訊裝置上次連線時不支援此編解碼器:將改用其順序中第一個受支援的編解碼器 %s。",
   "ui.profile.sbc_quality_hint": "由下方位元池與幀設定得出的位元率(取樣率為 Auto 時按音訊裝置支援的最高取樣率計算)。",
+  "ui.codecs.settling": "正在切換編解碼器。請稍候再選擇其他編解碼器。",
   "ui.devices.none_saved": "還沒有音訊裝置。請在下方掃描或依位址新增。",
   "ui.devices.add_title": "新增音訊裝置",
   "ui.settings.open_config_folder": "開啟設定資料夾",
