@@ -283,20 +283,6 @@ fn to_ipc_controls(c: &a2dpwb_core::spatial::SpatialControls) -> SpatialControls
 }
 
 /// The stage a profile runs through, if it has one
-/// The PC's own speakers: silent while the headphones stream, as if the
-/// sound had moved to them. The capture is a loopback of the mix, which the
-/// endpoint's mute does not empty.
-fn mute_pc_speakers(muted: bool) {
-    match win_sys::audio_policy::EndpointVolume::open(None) {
-        Ok(volume) => {
-            if let Err(e) = volume.set_muted(muted) {
-                tracing::warn!("the PC's speakers: {e}");
-            }
-        }
-        Err(e) => tracing::warn!("the PC's speakers: {e}"),
-    }
-}
-
 fn stage_program(p: &CoreProfile) -> Option<PathBuf> {
     if !p.spatial_engine {
         return None;
@@ -1707,13 +1693,7 @@ impl CoreState {
                 }
                 Ok(json(&controls))
             }
-            Method::StreamStart { profile } => {
-                let started = self.start_profile(&profile);
-                if started.is_ok() {
-                    mute_pc_speakers(true);
-                }
-                started.map(|()| Value::Null)
-            }
+            Method::StreamStart { profile } => self.start_profile(&profile).map(|()| Value::Null),
             Method::StreamStartCustom {
                 device,
                 device_name,
@@ -1746,7 +1726,6 @@ impl CoreState {
             }
             Method::StreamStop => {
                 self.stop();
-                mute_pc_speakers(false);
                 Ok(Value::Null)
             }
             Method::StreamSetVolume { volume } => {

@@ -17,6 +17,7 @@ pub mod paths;
 pub mod profiles;
 mod service;
 pub mod settings;
+pub mod speakers;
 pub mod spatial;
 pub mod stream;
 
