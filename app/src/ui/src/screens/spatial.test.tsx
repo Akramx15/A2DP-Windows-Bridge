@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
 import { setLanguage, t } from "../i18n";
+import type { SpatialControls } from "../ipc/bindings/SpatialControls";
 import type { SpatialEngine } from "../ipc/bindings/SpatialEngine";
 import { MockCore } from "../ipc/mock";
 import { createCore } from "../ipc/store";
@@ -32,31 +33,49 @@ const UPMIXER: SpatialEngine = {
   family: "upmixer",
 };
 
-/** The core's answer to spatial.engines replaced, so an empty folder and a
- *  missing Upmixer can be shown (the mock lists the same three stages) */
-function withEngines(base: MockCore, engines: SpatialEngine[] | Error): MockCore {
+/** The two sliders the Upmixer declares (the mock knows the first one only) */
+const TWO_SLIDERS: SpatialControls = {
+  supported: true,
+  sliders: [
+    { key: "center_focus", label: "Center focus", min: 0, max: 1, step: 0.01, default: 0.5, value: 0.55 },
+    { key: "ambience_spread", label: "Ambience spread", min: 0, max: 1, step: 0.01, default: 0.4, value: 0.45 },
+  ],
+  selects: [],
+};
+
+/** The core's answer to `method` replaced, so an empty folder, a missing
+ *  Upmixer or a stage with both sliders can be shown (the mock lists three
+ *  stages and one slider) */
+function withCall(base: MockCore, method: string, value: unknown): MockCore {
   return new Proxy(base, {
     get(target, key) {
       if (key === "call") {
-        return (method: string, params?: unknown) =>
-          method === "spatial.engines"
-            ? engines instanceof Error
-              ? Promise.reject(engines)
-              : Promise.resolve(engines)
-            : target.call(method, params);
+        return (m: string, params?: unknown) =>
+          m === method
+            ? value instanceof Error
+              ? Promise.reject(value)
+              : Promise.resolve(value)
+            : target.call(m, params);
       }
-      const value = Reflect.get(target, key);
-      return typeof value === "function" ? value.bind(target) : value;
+      const v = Reflect.get(target, key);
+      return typeof v === "function" ? v.bind(target) : v;
     },
   }) as MockCore;
 }
 
-function start(hash: string, engines?: SpatialEngine[] | Error) {
+function withEngines(base: MockCore, engines: SpatialEngine[] | Error): MockCore {
+  return withCall(base, "spatial.engines", engines);
+}
+
+function start(hash: string, engines?: SpatialEngine[] | Error, controls?: SpatialControls) {
   location.hash = hash;
   const calls: { method: string; params: unknown }[] = [];
   const base = new MockCore({ speed: 0, onCall: (method, params) => calls.push({ method, params }) });
   mock = base;
-  const core = createCore(engines ? withEngines(base, engines) : base);
+  let api: MockCore = base;
+  if (engines) api = withEngines(api, engines);
+  if (controls) api = withCall(api, "spatial.controls", controls);
+  const core = createCore(api);
   render(() => <App core={core} />);
   return { calls, core };
 }
@@ -193,7 +212,7 @@ describe("the spatial effect", () => {
     expect(saves(calls)[1].profile).toMatchObject({ spatial_engine_registry: "" });
   });
 
-  it("shows the effect on the device's Home card", async () => {
+  it("shows the effect on the device's Home card, by its family's name", async () => {
     const { calls } = start("#/codecs");
     const block = await effect(await section("WH-1000XM5"));
     const sony = () => within(block).getByRole("radio", { name: t("profile.spatial_sony") });
@@ -203,7 +222,44 @@ describe("the spatial effect", () => {
 
     location.hash = "#/home";
     const card = await screen.findByRole("group", { name: "WH-1000XM5" });
-    expect(await within(card).findByText(SONY.label)).toBeInTheDocument();
+    // The family's name, not the stage manifest's long label (SONY.label)
+    await waitFor(() => expect(card.querySelector(".tag")).toHaveTextContent(t("profile.spatial_sony")));
+    // The same family is chosen in the card's own shortcuts
+    expect(within(card).getByRole("radio", { name: t("profile.spatial_sony") })).toBeChecked();
+  });
+
+  it("runs the effect and its Upmixer sliders from the card itself", async () => {
+    const { calls } = start("#/home", undefined, TWO_SLIDERS);
+    const card = await screen.findByRole("group", { name: "WH-1000XM5" });
+    // No sliders while the profile runs no effect
+    expect(within(card).queryByRole("slider")).toBeNull();
+    const upmixer = () => within(card).getByRole("radio", { name: t("profile.spatial_upmixer") });
+    await waitFor(() => expect(upmixer()).not.toBeDisabled());
+    fireEvent.click(upmixer());
+    await saved(calls, 1);
+    // Saved through the device's profile, as the Codecs screen saves it
+    expect(saves(calls)[0]).toMatchObject({
+      profile: { spatial_engine: true, spatial_engine_path: UPMIXER.path },
+      original_name: "WH-1000XM5 (LDAC)",
+    });
+
+    // The stage's two sliders, in the card, written with spatial.set_controls
+    const focus = () => within(card).getByRole("slider", { name: t("spatial.control_center_focus") });
+    await waitFor(() => expect(within(card).getByRole("slider", { name: t("spatial.control_ambience_spread") })).toBeInTheDocument());
+    fireEvent.input(focus(), { target: { value: "0.8" } });
+    // The card writes when the slider is released, not on every move
+    fireEvent.change(focus(), { target: { value: "0.8" } });
+    await waitFor(() => expect(calls.some((c) => c.method === "spatial.set_controls")).toBe(true), { timeout: 3000 });
+    expect(calls.find((c) => c.method === "spatial.set_controls")?.params).toEqual({
+      profile: "WH-1000XM5 (LDAC)",
+      values: { center_focus: 0.8 },
+    });
+
+    // Off again: the sliders go, the stage stays on the profile
+    fireEvent.click(within(card).getByRole("radio", { name: t("profile.spatial_off") }));
+    await saved(calls, 2);
+    expect(saves(calls)[1].profile).toMatchObject({ spatial_engine: false });
+    await waitFor(() => expect(within(card).queryByRole("slider")).toBeNull());
   });
 
   it("shows the stage's own settings and writes them with spatial.set_controls", async () => {

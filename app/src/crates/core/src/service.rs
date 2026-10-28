@@ -299,6 +299,13 @@ impl Inner {
 
     pub fn notify(&self, state: StreamState, msg: Msg) {
         tracing::info!("state {state:?}: {}", msg.english());
+        // The PC's speakers follow the stream: silent while it reaches the
+        // headphones, back when it ends
+        match state {
+            StreamState::Streaming => crate::speakers::set_muted(true),
+            StreamState::Idle | StreamState::Error => crate::speakers::set_muted(false),
+            _ => {}
+        }
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = state;
         // What went over the air before a failure or a lost connection
         if matches!(state, StreamState::Error | StreamState::Reconnecting) {

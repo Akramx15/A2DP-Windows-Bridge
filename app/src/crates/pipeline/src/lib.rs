@@ -17,7 +17,7 @@ pub mod packetizer;
 pub mod resample;
 pub mod spatial;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
@@ -153,6 +153,27 @@ struct Control {
     /// Captured buffers dropped because the ring was full, since the
     /// encode thread last reported them
     overflows: AtomicU32,
+}
+
+/// What the running stream should do with its spatial engine
+#[derive(Debug, Clone)]
+pub enum StageUpdate {
+    /// The same stage, after its settings file changed
+    Same,
+    /// Another engine, or none: the stream goes on, the stage is replaced
+    Start(Option<SpatialConfig>),
+}
+
+/// The next stage for the running encode thread, if one asked for it. A slot
+/// rather than a channel because the app runs one stream at a time; when
+/// nothing runs, the next start reads the settings anyway.
+static PENDING_STAGE: Mutex<Option<StageUpdate>> = Mutex::new(None);
+
+/// Asks the running stream to reload its stage, without touching the link
+pub fn request_stage(update: StageUpdate) {
+    if let Ok(mut slot) = PENDING_STAGE.lock() {
+        *slot = Some(update);
+    }
 }
 
 impl Control {
@@ -358,6 +379,8 @@ fn encode_thread(
     // The spatial engine, when the profile asks for it: it processes the
     // captured audio before it reaches the encoder. If it cannot run, the
     // audio passes through unchanged rather than the stream dying.
+    let mut spatial_cfg = spatial.clone();
+    let resample_cfg = resample.clone();
     let mut spatial_stage = match spatial {
         Some(cfg) => match SpatialEngine::start(&cfg) {
             Ok(s) => {
@@ -390,6 +413,7 @@ fn encode_thread(
         _ => None,
     };
     // Preallocated so the resampling path allocates nothing once it runs
+    let (stage_tx, stage_rx) = mpsc::channel::<Option<SpatialEngine>>();
     let mut captured: Vec<f32> = Vec::new();
     let mut engine_in: Vec<f32> = Vec::new();
     let mut engine_out: Vec<f32> = Vec::new();
@@ -402,6 +426,67 @@ fn encode_thread(
     }
 
     while !control.stop.load(Ordering::Acquire) {
+        // The stage's settings changed (correction, a slider): start the
+        // engine again, leaving the Bluetooth link and the encoder alone
+        if let Some(update) = PENDING_STAGE.lock().ok().and_then(|mut slot| slot.take()) {
+            let next = match update {
+                StageUpdate::Same => spatial_cfg.clone(),
+                StageUpdate::Start(next) => {
+                    spatial_cfg = next.clone();
+                    next
+                }
+            };
+            match next {
+                Some(cfg) => {
+                    // Starting an engine costs a moment (the Upmixer loads
+                    // Python): it warms up on its own thread while the stage in
+                    // use keeps feeding the stream, then takes over
+                    tracing::info!("spatial engine: warming {} in the background", cfg.exe.display());
+                    let tx = stage_tx.clone();
+                    std::thread::spawn(move || {
+                        let mut engine = match SpatialEngine::start(&cfg) {
+                            Ok(engine) => engine,
+                            Err(e) => {
+                                tracing::error!("spatial engine {}: {e} (the stage in use stays)", cfg.exe.display());
+                                let _ = tx.send(None);
+                                return;
+                            }
+                        };
+                        let silence = vec![0.0f32; 2 * spatial::ENGINE_FRAMES];
+                        let mut out = Vec::new();
+                        let answered = engine.process_f32(&silence, &mut out);
+                        if !answered {
+                            tracing::error!("spatial engine {}: no answer (the stage in use stays)", cfg.exe.display());
+                        }
+                        let _ = tx.send(answered.then_some(engine));
+                    });
+                }
+                None => {
+                    tracing::info!("spatial engine: stopped (the effect is off)");
+                    spatial_stage = None;
+                    resampler = None;
+                    captured.clear();
+                    engine_in.clear();
+                    engine_out.clear();
+                    up_out.clear();
+                }
+            }
+        }
+        // The warmed stage takes over here, with no silent gap
+        if let Ok(received) = stage_rx.try_recv() {
+            if let Some(engine) = received {
+                tracing::info!("spatial engine: the warmed stage takes over");
+                spatial_stage = Some(engine);
+                resampler = match resample_cfg {
+                    Some(_) if input.sample_rate == CAPTURE_RATE => Some((Downsample2::new(), Upsample2::new())),
+                    _ => None,
+                };
+                captured.clear();
+                engine_in.clear();
+                engine_out.clear();
+                up_out.clear();
+            }
+        }
         if control.reset.swap(false, Ordering::AcqRel) {
             tracing::debug!(
                 "encode thread: reset, dropping {} buffered bytes, timestamp {timestamp} -> 0",

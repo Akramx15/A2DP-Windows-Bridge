@@ -291,6 +291,26 @@ fn stage_program(p: &CoreProfile) -> Option<PathBuf> {
     (!path.as_os_str().is_empty()).then_some(path)
 }
 
+/// The stage a profile would run, as the pipeline starts it (the app's copy of
+/// its config): what a live engine switch hands to the running stream
+fn stage_config(dir: &Path, p: &CoreProfile) -> Option<a2dpwb_core::SpatialConfig> {
+    let exe = stage_program(p)?;
+    let command = a2dpwb_core::spatial::command_for(&exe);
+    // The stage's program (not the program its command names: a Python stage
+    // runs python.exe, whose folder holds no manifest)
+    let config = a2dpwb_core::spatial::config_for(dir, p, &exe);
+    let command = match &config {
+        Some(config) => command.with_config(config),
+        None => command,
+    };
+    Some(a2dpwb_core::SpatialConfig {
+        exe,
+        program: command.program,
+        args: command.args,
+        cwd: Some(command.cwd),
+    })
+}
+
 /// The controls of the stage a profile uses
 fn spatial_controls(dir: &Path, name: &str) -> Result<SpatialControls, ErrorInfo> {
     let list = profiles::load(dir);
@@ -1667,11 +1687,18 @@ impl CoreState {
                 let (controls, list) = set_spatial_controls(&dir, &profile, &values)?;
                 let (_, s) = self.snapshot();
                 self.save_profiles(&list, s.active_profile.clone())?;
-                // The stage reads its settings when it starts: the stream
-                // starts again with the new values
+                // The stage reads its settings when it starts: start the
+                // engine again, not the stream (no Bluetooth reconnect)
                 if restart_after_save(&s.stream, &profile) {
-                    tracing::info!("spatial: the controls of \"{profile}\" changed: the stream starts again");
-                    self.start_profile(&profile)?;
+                    // The stage starts again from the profile as it is now: its
+                    // command must name the app's config copy, not the stage's
+                    // own file
+                    let next = list
+                        .iter()
+                        .find(|p| p.name == profile)
+                        .and_then(|p| stage_config(&dir, p));
+                    tracing::info!("spatial: the controls of \"{profile}\" changed: the engine starts again");
+                    a2dpwb_core::request_stage(a2dpwb_core::StageUpdate::Start(next));
                 }
                 Ok(json(&controls))
             }
@@ -1779,6 +1806,18 @@ impl CoreState {
                 });
                 // Under Auto-select the order is not used
                 let order_unused = self.service.settings().auto_codec || merged.le_audio;
+                // Only the spatial engine (its path, its folder) changed: the
+                // engine starts again inside the running stream, so choosing
+                // Sony / Upmixer does not drop the headphones
+                // A different engine (the other family, or off) is a
+                // different program: the stream starts again with it. Only
+                // the settings of the same stage restart the engine alone.
+                let engine_switch = pos.is_some_and(|i| {
+                    list[i].spatial_engine != merged.spatial_engine
+                        || list[i].spatial_engine_path != merged.spatial_engine_path
+                });
+                // Taken before the profile moves into the list
+                let next_stage = stage_config(&dir, &merged);
                 let in_order = merged.clone();
                 // The profile's device joins the saved ones of its kind (as
                 // a connection saves it)
@@ -1817,7 +1856,15 @@ impl CoreState {
                 }
                 // The profile in use starts again with what was saved (v1)
                 let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
-                if restart_after_save(&s.stream, &key) && !order_keeps_codec {
+                if restart_after_save(&s.stream, &key) && engine_switch {
+                    // The other engine (or none) takes over inside the stream;
+                    // the link and the encoder are left alone
+                    tracing::info!(
+                        "profile {} saved while in use: the engine changes (the stream goes on)",
+                        a2dpwb_core::diag::quoted(&key)
+                    );
+                    a2dpwb_core::request_stage(a2dpwb_core::StageUpdate::Start(next_stage.clone()));
+                } else if restart_after_save(&s.stream, &key) && !order_keeps_codec {
                     tracing::info!(
                         "profile {} saved while in use: it starts again as {}",
                         a2dpwb_core::diag::quoted(&key),

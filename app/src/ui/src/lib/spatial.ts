@@ -4,8 +4,60 @@
 // default_registry), so both screens ask without knowing a path.
 
 import { createResource, createRoot, type Resource } from "solid-js";
+import { t } from "../i18n";
 import type { SpatialEngine } from "../ipc/bindings/SpatialEngine";
 import type { Core } from "../ipc/store";
+
+/** The labels of the stage controls the app knows, by their config key */
+const CONTROL_KEYS: Record<string, string> = {
+  center_focus: "spatial.control_center_focus",
+  ambience_spread: "spatial.control_ambience_spread",
+  correction: "spatial.control_correction",
+};
+
+/** The labels of the choices the app knows, by their value */
+const CHOICE_KEYS: Record<string, string> = {
+  none: "spatial.correction_none",
+  "sony-xm6-ba": "spatial.correction_sony_xm6_ba",
+  autoeq: "spatial.correction_autoeq",
+  "autoeq-wh1000xm6": "spatial.correction_autoeq",
+};
+
+/** A control's label: the app's own words for the ones it knows, the stage
+ *  manifest's otherwise */
+export function controlLabel(key: string, label: string): string {
+  const known = CONTROL_KEYS[key];
+  return known ? t(known) : label;
+}
+
+export function choiceLabel(value: string): string {
+  const known = CHOICE_KEYS[value];
+  return known ? t(known) : value;
+}
+
+
+/** The name a stage reads in the picker: the names the Linux app used for
+ *  the same folders, the manifest's label otherwise */
+const STAGE_NAMES: Record<string, string> = {
+  "sony-native-reference": "Sony — المرجع القياسي",
+  "personal-hpp-ba": "Sony XM6 BA",
+  "personal-hpp-no-ba": "Sony HPP (بدون تصحيح)",
+  "personal-hps": "Sony HPS",
+  "experimental-stft": "Upmixer",
+};
+
+export function stageLabel(e: Pick<SpatialEngine, "path" | "label">): string {
+  // The path may name the folder itself or the program inside it
+  const parts = e.path.split(/[\/]/).filter(Boolean);
+  const known = parts.find((part) => STAGE_NAMES[part]);
+  return known ? STAGE_NAMES[known] : e.label;
+}
+
+/** The name a family reads on the cards ("Sony — Reference", "Upmixer"):
+ *  the app's own words for it, not the stage manifest's long label */
+export function familyLabel(e: Pick<SpatialEngine, "family">): string {
+  return t(e.family === "upmixer" ? "profile.spatial_upmixer" : "profile.spatial_sony");
+}
 
 export interface EngineList {
   engines: Resource<SpatialEngine[]>;

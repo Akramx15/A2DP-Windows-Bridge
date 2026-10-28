@@ -25,21 +25,29 @@ afterEach(async () => {
 
 /** A device's card on Home (its button is "Connect" on every card) */
 const homeCard = (name: string) => screen.findByRole("group", { name });
+/** A card reads Connected (the mock goes connecting -> streaming) */
+const connected = (card: HTMLElement) =>
+  waitFor(() => expect(within(card).getByRole("status")).toHaveTextContent(/^Connected$/));
 
 describe("Home", () => {
-  it("connects and disconnects with the device's own button", async () => {
+  it("connects with the device's own button, and has no Disconnect", async () => {
     const { calls } = start("#/home");
     const wh = await homeCard("WH-1000XM5");
     const xb = await homeCard("SRS-XB13");
     fireEvent.click(within(wh).getByRole("button", { name: "Connect" }));
-    // The mock goes connecting -> streaming
-    const disconnect = await within(wh).findByRole("button", { name: "Disconnect" });
     expect(calls.find((c) => c.method === "stream.start")?.params).toEqual({ profile: "WH-1000XM5 (LDAC)" });
+    await connected(wh);
     await waitFor(() => expect(wh).toHaveTextContent("990 kbps"));
-    // The badge on Home has the bit depth too, on the line below the codec (issue #86)
+    // The badge on Home has the bit depth too, on the connection's one line
     expect(wh.querySelector(".codec-badge")).toHaveTextContent("24-bit");
     expect(wh.querySelector(".codec-info > .codec-name")).toHaveTextContent(/^LDAC$/);
     expect(within(wh).getByRole("status")).toHaveTextContent(/^Connected$/);
+    // State, codec and link quality side by side, and no Disconnect button
+    expect(wh.querySelector(".conn-line .codec-info")).not.toBeNull();
+    expect(wh.querySelector(".conn-line .quality")).not.toBeNull();
+    expect(within(wh).queryByRole("button", { name: "Disconnect" })).toBeNull();
+    // A streaming device offers no Connect either: it is stopped from the tray
+    expect(within(wh).queryByRole("button", { name: "Connect" })).toBeNull();
     // The other device: ready, not streaming, its own Connect
     expect(xb).toHaveTextContent("Ready");
     expect(xb).toHaveTextContent("Not streaming");
@@ -48,16 +56,48 @@ describe("Home", () => {
     expect(within(wh).getByRole("slider", { name: "Volume" })).not.toBeDisabled();
     expect(within(xb).queryByRole("slider")).toBeNull();
     expect(screen.getAllByRole("slider", { name: "Volume" })).toHaveLength(1);
-    fireEvent.click(disconnect);
-    await within(wh).findByRole("button", { name: "Connect" });
-    expect(calls.some((c) => c.method === "stream.stop")).toBe(true);
+  });
+
+  it("shows the effect's shortcuts and the profile on the card", async () => {
+    const { calls } = start("#/home");
+    const wh = await homeCard("WH-1000XM5");
+    const radios = () => [...wh.querySelectorAll<HTMLInputElement>(".segmented input")];
+    expect(radios().map((r) => r.value)).toEqual(["sony", "upmixer", "off"]);
+    // The profile's own, one for the device: nothing to pick
+    expect(within(wh).getByRole("combobox", { name: "Profile" })).toBeDisabled();
+
+    const sony = () => within(wh).getByRole("radio", { name: t("profile.spatial_sony") });
+    await waitFor(() => expect(sony()).not.toBeDisabled());
+    fireEvent.click(sony());
+    await waitFor(() => expect(calls.filter((c) => c.method === "profile.save")).toHaveLength(1), { timeout: 4000 });
+    // Saving keeps the device's profile (its name follows the codec)
+    const saved = calls.find((c) => c.method === "profile.save")?.params as {
+      profile: Record<string, unknown>;
+      original_name: string | null;
+    };
+    expect(saved.profile).toMatchObject({ spatial_engine: true });
+    expect(saved.original_name).toBe("WH-1000XM5 (LDAC)");
+    // The card follows the saved profile
+    await waitFor(() => expect(sony()).toBeChecked());
+  });
+
+  it("chooses another of the device's profiles from its card", async () => {
+    const { calls } = start("#/home");
+    const wh = await homeCard("WH-1000XM5");
+    const picker = () => within(wh).getByRole("combobox", { name: "Profile" });
+    const profile = mock!["snap"].profiles.find((p) => p.name === "WH-1000XM5 (LDAC)")!;
+    await mock!.call("profile.save", { profile: { ...profile, name: "WH-1000XM5 (gaming)" }, original_name: null });
+    await waitFor(() => expect(picker()).not.toBeDisabled());
+    fireEvent.change(picker(), { target: { value: "WH-1000XM5 (gaming)" } });
+    await waitFor(() => expect(calls.some((c) => c.method === "profile.set_active")).toBe(true));
+    expect(calls.find((c) => c.method === "profile.set_active")?.params).toEqual({ name: "WH-1000XM5 (gaming)" });
   });
 
   it("shows the battery as unknown, with the reason on hover, when the headphones refuse to report it", async () => {
     start("#/home", { scenario: "battery_refused" });
     const wh = await homeCard("WH-1000XM5");
     fireEvent.click(within(wh).getByRole("button", { name: "Connect" }));
-    await within(wh).findByRole("button", { name: "Disconnect" });
+    await connected(wh);
     const battery = await waitFor(() => {
       const b = wh.querySelector(".battery");
       expect(b).not.toBeNull();
@@ -73,9 +113,9 @@ describe("Home", () => {
     const wh = await homeCard("WH-1000XM5");
     const xb = await homeCard("SRS-XB13");
     fireEvent.click(within(wh).getByRole("button", { name: "Connect" }));
-    await within(wh).findByRole("button", { name: "Disconnect" });
+    await connected(wh);
     fireEvent.click(within(xb).getByRole("button", { name: "Connect" }));
-    await within(xb).findByRole("button", { name: "Disconnect" });
+    await connected(xb);
     expect(calls.filter((c) => c.method === "stream.start").map((c) => c.params)).toEqual([
       { profile: "WH-1000XM5 (LDAC)" },
       { profile: "Desk speaker (AAC)" },
@@ -245,7 +285,7 @@ describe("every screen renders", () => {
     expect(screen.getByRole("button", { name: "Open app" })).toBeInTheDocument();
   });
 
-  it("the flyout looks like Home's card: the device chooser as its title, the codec in two lines (issue #86)", async () => {
+  it("the flyout looks like Home's card: the device chooser as its title, the connection in one line (issue #86)", async () => {
     start("", { window: "flyout" });
     const connect = await screen.findByRole("button", { name: "Connect" });
     // The device once: the chooser in the title's place, no "Device:" row
@@ -257,17 +297,17 @@ describe("every screen renders", () => {
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
     expect(screen.getByText("Not streaming")).toBeInTheDocument();
     fireEvent.click(connect);
-    await screen.findByRole("button", { name: "Disconnect" });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/^Connected$/));
     await waitFor(() => expect(document.querySelector(".fly-title .codec-name")).toHaveTextContent(/^LDAC$/));
-    expect(screen.getByRole("status")).toHaveTextContent(/^Connected$/);
-    // The link quality beside the codec's details
-    const line = document.querySelector(".fly-title .codec-line")!;
+    // One line: the codec's details and the link quality beside the state
+    const line = document.querySelector(".fly-title .conn-line")!;
     expect(line.querySelector(".codec-badge")).toHaveTextContent("990 kbps");
     expect(line.querySelector(".quality")).not.toBeNull();
-    // Then the volume, then Disconnect
-    const slider = screen.getByRole("slider", { name: "Volume" });
-    const disconnect = screen.getByRole("button", { name: "Disconnect" });
-    expect(slider.compareDocumentPosition(disconnect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Then the volume, then the effect's shortcuts; no Disconnect
+    expect(screen.getByRole("slider", { name: "Volume" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: t("profile.spatial_off") })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Disconnect" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
   });
 
   it("in Japanese", async () => {

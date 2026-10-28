@@ -392,6 +392,29 @@ export function QualityIndicator() {
   );
 }
 
+/** The connection in one line, as a device's card on Home and the flyout
+ *  show it: the state, the battery, the codec with its details and the link
+ *  quality side by side, not one under another */
+export function ConnectionLine(props: { state: StreamState; stream: StreamStatus }) {
+  const live = () => props.state !== "idle";
+  return (
+    <div class="conn-line">
+      <div class={`status-line st-${props.state}`} role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true" />
+        {/* An error's text is in the panel above, with its fix */}
+        <span>{live() ? statusText({ state: props.state, message: props.stream.message }) : t("status.ready")}</span>
+      </div>
+      <Show when={live() && showsBattery(props.stream)}>
+        <BatteryLevel percent={props.stream.battery} />
+      </Show>
+      <Show when={live()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
+        <CodecBadge />
+        <QualityIndicator />
+      </Show>
+    </div>
+  );
+}
+
 /** Bandwidth over the last minute, while the caller is on screen */
 export function LinkSparkline() {
   const { core } = useApp();
