@@ -1236,7 +1236,11 @@ fn codec_details(out: &mut String, c: &crate::CodecDetails) {
             "  Device {}: {}; {}; peak {}",
             d.codec,
             if d.sample_rates.is_empty() { "rates not given".to_string() } else { khz(&d.sample_rates) },
-            if d.bit_depths.is_empty() { "bit depth not given".to_string() } else { format!("{}-bit", joined(&d.bit_depths)) },
+            if d.bit_depths.is_empty() {
+                "bit depth not given".to_string()
+            } else {
+                format!("{}-bit", joined(&d.bit_depths))
+            },
             if d.max_bitrate == 0 { "not given".to_string() } else { format!("{} bps", d.max_bitrate) }
         );
     }

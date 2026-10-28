@@ -2474,8 +2474,7 @@ mod tests {
         event(CoreStreamState::Streaming);
         assert!(texts().is_empty());
         info(660);
-        assert_eq!(texts(), ["LDAC
-660 kbps | 96 kHz | 24-bit"]);
+        assert_eq!(texts(), ["LDAC\n660 kbps | 96 kHz | 24-bit"]);
         // A lost link reconnecting (its info again, then Streaming): quiet
         event(CoreStreamState::Reconnecting);
         info(660);
