@@ -1782,17 +1782,12 @@ impl CoreState {
                 // Only the spatial engine (its path, its folder) changed: the
                 // engine starts again inside the running stream, so choosing
                 // Sony / Upmixer does not drop the headphones
-                let engine_only = pos.is_some_and(|i| {
-                    let old = &list[i];
-                    (old.spatial_engine != merged.spatial_engine
-                        || old.spatial_engine_path != merged.spatial_engine_path
-                        || old.spatial_engine_registry != merged.spatial_engine_registry)
-                        && CoreProfile {
-                            spatial_engine: merged.spatial_engine,
-                            spatial_engine_path: merged.spatial_engine_path.clone(),
-                            spatial_engine_registry: merged.spatial_engine_registry.clone(),
-                            ..old.clone()
-                        } == merged
+                // A different engine (the other family, or off) is a
+                // different program: the stream starts again with it. Only
+                // the settings of the same stage restart the engine alone.
+                let engine_switch = pos.is_some_and(|i| {
+                    list[i].spatial_engine != merged.spatial_engine
+                        || list[i].spatial_engine_path != merged.spatial_engine_path
                 });
                 let in_order = merged.clone();
                 // The profile's device joins the saved ones of its kind (as
@@ -1832,10 +1827,7 @@ impl CoreState {
                 }
                 // The profile in use starts again with what was saved (v1)
                 let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
-                if engine_only && restart_after_save(&s.stream, &key) {
-                    tracing::info!("profile {} saved while in use: the engine starts again (the stream goes on)", a2dpwb_core::diag::quoted(&key));
-                    a2dpwb_core::request_stage_reload();
-                } else if restart_after_save(&s.stream, &key) && !order_keeps_codec {
+                if restart_after_save(&s.stream, &key) && (engine_switch || !order_keeps_codec) {
                     tracing::info!(
                         "profile {} saved while in use: it starts again as {}",
                         a2dpwb_core::diag::quoted(&key),
