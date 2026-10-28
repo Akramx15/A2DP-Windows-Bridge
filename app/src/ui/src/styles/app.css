@@ -1445,8 +1445,9 @@ option {
 /* The codec's name and its details side by side, not one under the other */
 .conn-line .codec-info {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--s3);
+  gap: var(--s1) var(--s3);
   min-width: 0;
 }
 
