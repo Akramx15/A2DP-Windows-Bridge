@@ -650,6 +650,12 @@ fn to_ipc_codec_details(d: a2dpwb_core::CodecDetails) -> ipc::CodecDetails {
                 vbr: c.vbr,
             }),
         }),
+        device: d.device.map(|c| ipc::CodecDeviceCaps {
+            codec: c.codec,
+            sample_rates: c.sample_rates,
+            bit_depths: c.bit_depths,
+            max_bitrate: c.max_bitrate,
+        }),
     }
 }
 

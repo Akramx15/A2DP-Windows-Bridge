@@ -161,6 +161,9 @@ pub struct CodecDetails {
     pub frames_per_packet: Option<u32>,
     pub sbc: Option<SbcDetails>,
     pub aac: Option<AacDetails>,
+    /// Any other codec: what the device's endpoint of it lists, as SBC and
+    /// AAC say theirs (issue #86)
+    pub device: Option<CodecDeviceCaps>,
 }
 
 /// SBC, SBC XQ and FastStream frames
@@ -292,6 +295,9 @@ pub fn codec_details(
         }),
         _ => None,
     };
+    let device = (!matches!(kind, CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Aac | CodecKind::FastStream))
+        .then(|| codec_device_caps(remote).into_iter().find(|c| c.codec == kind.key()))
+        .flatten();
     CodecDetails {
         mtu: raw + kind.media_header_len() as u32,
         rtp: kind.uses_rtp(),
@@ -301,6 +307,7 @@ pub fn codec_details(
         frames_per_packet,
         sbc,
         aac,
+        device,
     }
 }
 

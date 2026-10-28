@@ -449,6 +449,7 @@ const SBC_DETAILS: CodecDetails = {
     },
   },
   aac: null,
+  device: null,
 };
 const AAC_DETAILS: CodecDetails = {
   mtu: 894,
@@ -463,6 +464,7 @@ const AAC_DETAILS: CodecDetails = {
     bit_rate: 256000,
     device: { object_types: ["MPEG-2 AAC-LC"], sample_rates: [44100, 48000], channels: [1, 2], max_bitrate: 320000, vbr: true },
   },
+  device: null,
 };
 const LDAC_DETAILS: CodecDetails = {
   mtu: 894,
@@ -473,6 +475,8 @@ const LDAC_DETAILS: CodecDetails = {
   frames_per_packet: null,
   sbc: null,
   aac: null,
+  // What the device's LDAC endpoint lists (issue #86: every codec, as SBC and AAC)
+  device: { codec: "ldac", sample_rates: [44100, 48000, 88200, 96000], bit_depths: [], max_bitrate: 0 },
 };
 
 const CODEC_INFO: Record<string, StreamInfo> = {

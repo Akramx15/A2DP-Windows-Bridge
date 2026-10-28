@@ -62,6 +62,7 @@ const SBC_ABR: CodecDetails = {
     abr_bitpool: [19, 53],
   },
   aac: null,
+  device: null,
 };
 
 const SBC_INFO: StreamInfo = {

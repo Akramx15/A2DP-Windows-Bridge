@@ -288,6 +288,9 @@ pub struct CodecDetails {
     pub frames_per_packet: Option<u32>,
     pub sbc: Option<SbcDetails>,
     pub aac: Option<AacDetails>,
+    /// Any other codec: what the device's endpoint of it lists (issue #86)
+    #[serde(default)]
+    pub device: Option<CodecDeviceCaps>,
 }
 
 /// SBC, SBC XQ and FastStream frames
