@@ -786,5 +786,6 @@
   "spatial.correction_none": "بدون تصحيح",
   "spatial.correction_sony_xm6_ba": "Sony XM6",
   "spatial.correction_autoeq": "AutoEQ",
-  "ui.codec.bars_hint": "The bars compare the codecs with each other: five is the best in that row."
+  "ui.codec.bars_hint": "The bars compare the codecs with each other: five is the best in that row.",
+  "profile.spatial_stage": "المرحلة"
 }

@@ -20,6 +20,7 @@ const CHOICE_KEYS: Record<string, string> = {
   none: "spatial.correction_none",
   "sony-xm6-ba": "spatial.correction_sony_xm6_ba",
   autoeq: "spatial.correction_autoeq",
+  "autoeq-wh1000xm6": "spatial.correction_autoeq",
 };
 
 /** A control's label: the app's own words for the ones it knows, the stage
@@ -32,6 +33,23 @@ export function controlLabel(key: string, label: string): string {
 export function choiceLabel(value: string): string {
   const known = CHOICE_KEYS[value];
   return known ? t(known) : value;
+}
+
+
+/** The name a stage reads in the picker: the names the Linux app used for
+ *  the same folders, the manifest's label otherwise */
+const STAGE_NAMES: Record<string, string> = {
+  "sony-native-reference": "Sony — المرجع القياسي",
+  "personal-hpp-ba": "Sony XM6 BA",
+  "personal-hpp-no-ba": "Sony HPP (بدون تصحيح)",
+  "personal-hps": "Sony HPS",
+  "experimental-stft": "Upmixer",
+};
+
+export function stageLabel(e: Pick<SpatialEngine, "path" | "label">): string {
+  const parts = e.path.split(/[\/]/).filter(Boolean);
+  const folder = parts.length > 1 ? parts[parts.length - 2] : "";
+  return STAGE_NAMES[folder] ?? e.label;
 }
 
 /** The name a family reads on the cards ("Sony — Reference", "Upmixer"):

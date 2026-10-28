@@ -14,7 +14,7 @@ import { t } from "../i18n";
 import type { SpatialEngine } from "../ipc/bindings/SpatialEngine";
 import type { Profile } from "../ipc/types";
 import { profilesOf, registryFolder, type AudioEntry } from "../lib/profile";
-import { controlLabel, spatialEngines } from "../lib/spatial";
+import { choiceLabel, controlLabel, spatialEngines, stageLabel } from "../lib/spatial";
 import { Banner, Button, Segmented, Select, Slider, type Option } from "./controls";
 
 /** What the effect runs: a family of stages, or nothing */
@@ -72,6 +72,15 @@ export function DeviceEffects(props: {
     setSaving(false);
   };
 
+  const stages = (): SpatialEngine[] =>
+    mode() === "off" ? [] : list().filter((e) => inFamily(e, mode() as "sony" | "upmixer"));
+  const chooseStage = async (path: string) => {
+    if (saving() || !path) return;
+    setSaving(true);
+    await props.save((p) => ({ ...p, spatial_engine: true, spatial_engine_path: path }));
+    setSaving(false);
+  };
+
   const options = (): Option<Mode>[] => [
     { value: "sony", label: t("profile.spatial_sony"), disabled: busy() || !stageFor("sony") },
     { value: "upmixer", label: t("profile.spatial_upmixer"), disabled: busy() || !stageFor("upmixer") },
@@ -89,6 +98,17 @@ export function DeviceEffects(props: {
         <Segmented label={t("profile.spatial_engine")} value={mode()} options={options()} onChange={(m) => void choose(m)} />
         <ProfilePick entry={props.entry} />
       </div>
+      {/* The stage that runs inside the family: the Sony chain has several
+          (XM6 BA, HPS, reference), and the Upmixer has its own */}
+      <Show when={stages().length > 1}>
+        <Select
+          label={t("profile.spatial_stage")}
+          value={profile()?.spatial_engine_path ?? ""}
+          disabled={busy()}
+          options={stages().map((e) => ({ value: e.path, label: stageLabel(e) }))}
+          onChange={(path) => void chooseStage(path)}
+        />
+      </Show>
       {/* The Upmixer's own settings: only while it runs, and only when the
           stage declares some (spatial.controls) */}
       <Show when={mode() === "upmixer" && name()}>
@@ -107,8 +127,8 @@ function EffectSliders(props: { profile: string }) {
     () => props.profile,
     (profile) => app.core.request("spatial.controls", { profile }),
   );
-  const [draft, setDraft] = createSignal<Record<string, number>>({});
-  const value = (key: string, fallback: number) => draft()[key] ?? fallback;
+  const [draft, setDraft] = createSignal<Record<string, number | string>>({});
+  const value = (key: string, fallback: number | string) => draft()[key] ?? fallback;
   const [saving, setSaving] = createSignal(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let mounted = true;
@@ -125,6 +145,11 @@ function EffectSliders(props: { profile: string }) {
     setSaving(true);
     await app.run(() => app.core.request("spatial.set_controls", { profile: props.profile, values }));
     setSaving(false);
+  };
+  const putChoice = (key: string, v: string) => {
+    setDraft({ ...draft(), [key]: v });
+    clearTimeout(timer);
+    timer = setTimeout(() => void write(), 400);
   };
   const put = (key: string, v: number) => {
     setDraft({ ...draft(), [key]: v });
@@ -148,6 +173,18 @@ function EffectSliders(props: { profile: string }) {
       </Show>
       <Show when={controls()}>
         {(c) => (
+          <>
+          <For each={c().selects}>
+            {(s) => (
+              <Select
+                label={controlLabel(s.key, s.label)}
+                value={String(draft()[s.key] ?? s.value)}
+                disabled={saving()}
+                options={s.options.map((o) => ({ value: o, label: choiceLabel(o) }))}
+                onChange={(v) => putChoice(s.key, v)}
+              />
+            )}
+          </For>
           <Show when={c().supported && c().sliders.length > 0}>
             <For each={c().sliders}>
               {(s) => (
@@ -163,6 +200,7 @@ function EffectSliders(props: { profile: string }) {
               )}
             </For>
           </Show>
+          </>
         )}
       </Show>
     </div>
