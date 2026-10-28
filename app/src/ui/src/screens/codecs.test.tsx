@@ -832,13 +832,15 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const entry = await deviceEntry(/WH-1000XM5/);
     // Loopback: the default device (the mock's speakers mix 48 kHz, 32-bit)
     const line = await within(entry).findByText(t("capture.device_format", 48000, 32));
-    expect(line).not.toHaveClass("field-error");
+    expect(line).not.toHaveClass("field-warn");
 
     const snap = (await mock!.call("state.snapshot")) as { profiles: { name: string }[] };
     const p = snap.profiles.find((x) => x.name === "WH-1000XM5 (LDAC)")!;
     await mock!.call("profile.save", { profile: { ...p, sample_rate: 96000 }, original_name: p.name });
-    await waitFor(() => expect(entry.querySelector(".field-error")).not.toBeNull());
-    const warning = entry.querySelector(".field-error")!;
+    // A warning in amber, not an error (issue #86)
+    await waitFor(() => expect(entry.querySelector(".field-warn")).not.toBeNull());
+    expect(entry.querySelector(".field-error")).toBeNull();
+    const warning = entry.querySelector(".field-warn")!;
     expect(warning).toHaveTextContent(t("capture.device_format", 48000, 32));
     expect(warning).toHaveTextContent(t("ui.profile.format_differs", t("connection.sample_rate")));
     // The device, not its profile by name (issue #86)

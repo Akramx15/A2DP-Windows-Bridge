@@ -524,12 +524,17 @@ option {
 .capture-source > .select {
   flex: 1;
 }
-.field-error {
+.field-error,
+.field-warn {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--bad-text);
   font-size: var(--fs-12);
+}
+/* A small warning, not an error (issue #86: the capture format) */
+.field-warn {
+  color: var(--warn-text);
 }
 
 .row {
