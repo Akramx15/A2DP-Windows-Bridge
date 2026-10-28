@@ -1,7 +1,7 @@
 // The codecs a profile can ask for and what each allows, as v1's profile
 // dialog (wx_profile_dialog.cpp on the develop branch, update_codec_dependent): quality
 // modes with their bitrates (since issue #86 High / Medium / Low for LDAC
-// and LHDC V5, High / Low Latency for aptX Adaptive, only High, the highest
+// and LHDC V5, LHDC V5's Medium-High too (issue #203), High / Low Latency for aptX Adaptive, only High, the highest
 // bit rate the device takes, for the others; core: Quality::for_codec),
 // ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them; v2 adds SBC / SBC XQ's adaptive bitpool), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
@@ -64,6 +64,7 @@ export const BITPOOL_MAX_XQ = 47;
 export const BITPOOL_MIN = 2;
 
 const HQ = "quality.high";
+const MEDIUM_HIGH = "quality.medium_high";
 const MEDIUM = "quality.medium";
 const LOW = "quality.low";
 const LL = "quality.low_latency";
@@ -93,10 +94,11 @@ export const CODECS: CodecSpec[] = [
     id: "lhdcv5",
     label: "codec.lhdc_v5",
     bars: { quality: 5, latency: 2, stability: 2 },
-    // Three of Android's fixed levels (the sink may cap the maximum; its
-    // 900 kbps Medium-High is gone, issue #86: High there)
+    // Android's four fixed levels (the sink may cap the maximum). Medium-
+    // High was left out in issue #86 and is back since issue #203
     qualities: [
       { id: "hq", label: HQ, kbps: "1000" },
+      { id: "mhq", label: MEDIUM_HIGH, kbps: "900" },
       { id: "sq", label: MEDIUM, kbps: "500" },
       { id: "mq", label: LOW, kbps: "400" },
     ],

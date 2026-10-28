@@ -583,10 +583,11 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
     const dialog = await codecSettings(await section("moto buds+"), "codec.lhdc_v5");
     const rate = within(dialog).getByLabelText(t("connection.sample_rate"));
     expect(within(rate).getAllByRole("option").map((o) => o.textContent)).toEqual([t("codec.auto"), "44100 Hz", "48000 Hz"]);
-    // High, Medium, Low (issue #86)
+    // High, Medium-High (issue #203), Medium, Low (issue #86)
     const quality = within(dialog).getByLabelText(t("connection.quality"));
     expect(within(quality).getAllByRole("option").map((o) => o.textContent)).toEqual([
       `${t("quality.high")} (1000 kbps)`,
+      `${t("quality.medium_high")} (900 kbps)`,
       `${t("quality.medium")} (500 kbps)`,
       `${t("quality.low")} (400 kbps)`,
     ]);

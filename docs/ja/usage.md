@@ -41,7 +41,7 @@ nav_order: 2
 - 自動選択がオフのときは、デバイスのカードをドラッグする（またはカード上で Alt＋矢印キーを押す）と、そのデバイスのコーデックの順番を好きなように並べ替えられます。順番はデバイスごとに保存され、**コーデックの順番をリセット** で元に戻ります。まだコーデックを選んでいないデバイスは、この順番でデバイスが対応する最初のカードを使います。選んだコーデックにデバイスが対応していない場合も同じです（並べ替えていなければ、対応する最も音質の高いコーデック）。FastStream と Opus 05 は、どこに置いても選んだときだけ使います。自動選択がオンの間はこの順番を使いません。使用中のストリームのコーデックが変わる場合は接続し直します
 - 配信中のデバイスで別のコーデックを選ぶと、そのコーデックで接続し直します。そのあとカードは 3 秒間（**コーデックを切り替えています。少し待ってから次を選んでください。**）次の選択を待つので、続けて素早くクリックしても接続がいくつも重なって始まることはありません
 - カードの **...** でそのコーデックの設定が開きます。**OK** でその設定のままコーデックを選びます。コーデックごとに設定を別々に覚えているので、別のコーデックを選んでから戻ると元の設定に戻ります。そのコーデックで使える項目のうち、デバイスが前回の接続で通知したものだけが出ます:
-  - **音質**: LDAC と LHDC V5 は **高音質** / **中音質** / **低音質**（LDAC は 990 / 660 / 330 kbps、LHDC V5 は 1000 / 500 / 400 kbps）。aptX Adaptive は **高音質** / **低遅延**（[aptX Adaptive](#aptx-adaptive)を参照）。AAC、Opus、Opus 05、SBC、SBC XQ は **高音質** の 1 つだけで、選ぶのではなく表示だけです: デバイスが受け付ける最大のビットレート（ABR や VBR がある場合は、それで変動します。SBC と SBC XQ は、ビットプールとフレームの設定で決まるビットレートを表示します）。aptX、aptX HD、aptX LL、FastStream はコーデックでビットレートが決まっています。以前のバージョンで保存した、今はそのコーデックにない品質（LHDC V5 の中高音質、aptX Adaptive の標準 / モバイル、AAC の低い段階など）は高音質として読み込みます
+  - **音質**: LDAC は **高音質** / **中音質** / **低音質**（990 / 660 / 330 kbps）、LHDC V5 は **高音質** / **中高音質** / **中音質** / **低音質**（1000 / 900 / 500 / 400 kbps、Android の 4 段階）。aptX Adaptive は **高音質** / **低遅延**（[aptX Adaptive](#aptx-adaptive)を参照）。AAC、Opus、Opus 05、SBC、SBC XQ は **高音質** の 1 つだけで、選ぶのではなく表示だけです: デバイスが受け付ける最大のビットレート（ABR や VBR がある場合は、それで変動します。SBC と SBC XQ は、ビットプールとフレームの設定で決まるビットレートを表示します）。aptX、aptX HD、aptX LL、FastStream はコーデックでビットレートが決まっています。以前のバージョンで保存した、今はそのコーデックにない品質（aptX Adaptive の標準 / モバイル、AAC の低い段階など）は高音質として読み込みます
   - **ABR（適応ビットレート）**: LDAC、LHDC V5、aptX Adaptive、SBC、SBC XQ（[ABR](#abr)を参照）。AAC は **VBR**
   - **サンプルレート**: 自動は 48 kHz です（デバイスが 48 kHz を通知していなければ、通知した中で最良のレート）。96 kHz は遅延や相性の問題が増えるわりに聞き分けられる差がなく、Windows のミキサーも 48 kHz で動いているためです。96 kHz を使うにはここで選びます。デバイスが通知したレートだけを選べます（aptX Adaptive の 96 kHz は通知したデバイスだけ。[aptX Adaptive](#aptx-adaptive)を参照）
   - **ビット深度**: LDAC と LHDC V5 は 16 / 24 ビット（自動は 24 ビット。デバイスが通知したものだけ）、それ以外は 16 ビット
@@ -156,14 +156,14 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # 高音質 990 kbps�
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # 中音質 660 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # 低音質 330 kbps
 
-# LHDC V5: hq 1000 / sq 500 / mq 400 kbps
+# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q sq   # 中音質 500 kbps
 
 # aptX Adaptive: hq 427 / ll 265 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # 低遅延
 ```
 
-ほかのコーデックには品質の選択がなく、`hq`（ヘッドホンが受け付ける最大のビットレート。aptX、aptX HD、aptX LL、FastStream はコーデックで固定）で動きます。そのコーデックにない段階（`mhq`、aptX Adaptive の `sq` / `mq`、aptX Adaptive 以外の `ll`）は `hq` として扱います。
+ほかのコーデックには品質の選択がなく、`hq`（ヘッドホンが受け付ける最大のビットレート。aptX、aptX HD、aptX LL、FastStream はコーデックで固定）で動きます。そのコーデックにない段階（LHDC V5 以外の `mhq`、aptX Adaptive の `sq` / `mq`、aptX Adaptive 以外の `ll`）は `hq` として扱います。
 
 ### ABR（アダプティブビットレート） {#abr}
 

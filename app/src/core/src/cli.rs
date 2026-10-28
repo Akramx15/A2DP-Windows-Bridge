@@ -35,7 +35,7 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
                         instance ID (USB\\VID_0BDA&PID_8771\\...), device path
                         (\\\\?\\usb#vid_0bda&pid_8771#...) or VID:PID (0bda:8771)
   -c <codec>           ldac, aptxhd, aptxll, aptx, aptxad, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream, auto (default)
-  -q <quality>          hq (default); sq, mq for LDAC and LHDC V5; ll (low latency)
+  -q <quality>          hq (default); sq, mq for LDAC and LHDC V5; mhq for LHDC V5; ll (low latency)
                         for aptX Adaptive (other codecs: hq, their highest bit rate)
   -a                    adaptive bit rate (LDAC, LHDC V5, aptX Adaptive; SBC / SBC XQ: bitpool)
   --fallback            a codec -c the device does not offer falls back to the

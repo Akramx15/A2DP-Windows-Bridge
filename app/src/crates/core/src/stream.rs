@@ -80,6 +80,14 @@ pub enum SourceRequest {
 }
 
 impl SourceRequest {
+    /// The output device a session of this source makes Windows' default
+    pub fn default_switch(&self) -> Option<&str> {
+        match self {
+            SourceRequest::VirtualDevice { id, auto_switch: true, .. } if !id.is_empty() => Some(id),
+            _ => None,
+        }
+    }
+
     /// The source as the UI shows it (not waiting: the session says when
     /// an application is not running)
     pub fn info(&self) -> SourceInfo {
@@ -569,19 +577,83 @@ impl DefaultDeviceGuard {
     /// at the end even when the switch failed: Windows may have switched
     /// one role (Console, Multimedia) before the other failed.
     pub(crate) fn switch_to(id: &str, name: &str) -> DefaultDeviceGuard {
+        // The session before kept it switched for this one: its device to
+        // restore is this one's
+        let handed = handover().restore.take();
         let before = audio_capture::default_render_device();
         let name = crate::diag::quoted(name);
-        tracing::debug!("default output: switching to {name} ({id}), was {before:?}");
+        tracing::debug!("default output: switching to {name} ({id}), was {before:?}, handed over {handed:?}");
         if let Err(e) = audio_capture::set_default_render_device(id) {
             tracing::warn!("failed to make {name} the default output device: {e}");
         }
-        DefaultDeviceGuard(restore_target(before, id))
+        DefaultDeviceGuard(handed.or_else(|| restore_target(before, id)))
     }
 }
 
 /// The device to restore: the one before, unless that is the one switched to
 fn restore_target(before: Option<String>, switched_to: &str) -> Option<String> {
     before.filter(|b| b != switched_to)
+}
+
+/// A session stopped for one that switches the default output to the same
+/// device (its settings changed, issue #203): Windows stays on that device
+/// through the reconnect instead of playing through the speakers for a few
+/// seconds, and the device to restore passes to the new session
+#[derive(Debug, Default, PartialEq)]
+struct DefaultHandover {
+    /// The device the session about to start switches to (set while the
+    /// running one stops)
+    next: Option<String>,
+    /// The device to restore that the stopped session left to the new one
+    restore: Option<String>,
+}
+
+static HANDOVER: Mutex<DefaultHandover> = Mutex::new(DefaultHandover { next: None, restore: None });
+
+fn handover() -> std::sync::MutexGuard<'static, DefaultHandover> {
+    HANDOVER.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+impl DefaultHandover {
+    /// A session ends with `restore` to restore while `current` is the
+    /// default output: kept for the next session when it switches to the
+    /// current one; otherwise the device to restore now
+    fn end(&mut self, current: Option<&str>, restore: String) -> Option<String> {
+        if self.next.is_some() && self.next.as_deref() == current {
+            self.restore = Some(restore);
+            None
+        } else {
+            Some(restore)
+        }
+    }
+
+    /// The device left to restore that no session took over (the new one
+    /// ended before switching)
+    fn unclaimed(&mut self) -> Option<String> {
+        if self.next.is_some() { None } else { self.restore.take() }
+    }
+}
+
+/// The session about to start switches to `next` (None: it does not, or no
+/// session starts): set while the running one stops
+pub(crate) fn expect_default_switch(next: Option<&str>) {
+    handover().next = next.map(str::to_string);
+}
+
+/// After a session ended: restores the device a stopped session left to
+/// one that never switched
+pub(crate) fn restore_unclaimed_default() {
+    let unclaimed = handover().unclaimed();
+    if let Some(id) = unclaimed {
+        restore_default(&id);
+    }
+}
+
+fn restore_default(id: &str) {
+    tracing::debug!("default output: restoring {id}");
+    if let Err(e) = audio_capture::set_default_render_device(id) {
+        tracing::warn!("could not restore the default output device: {e}");
+    }
 }
 
 /// Logs the gaps WASAPI reports in the captured audio as they increase, at
@@ -623,9 +695,13 @@ impl DiscontinuityLog {
 impl Drop for DefaultDeviceGuard {
     fn drop(&mut self) {
         if let Some(id) = self.0.take() {
-            tracing::debug!("default output: restoring {id}");
-            if let Err(e) = audio_capture::set_default_render_device(&id) {
-                tracing::warn!("could not restore the default output device: {e}");
+            let mut h = handover();
+            let current = h.next.is_some().then(audio_capture::default_render_device).flatten();
+            let now = h.end(current.as_deref(), id);
+            drop(h);
+            match now {
+                Some(id) => restore_default(&id),
+                None => tracing::debug!("default output: kept for the next session"),
             }
         }
     }
@@ -1828,6 +1904,36 @@ mod tests {
         assert_eq!(restore_target(Some("{a}".into()), "{b}"), Some("{a}".into()));
         assert_eq!(restore_target(Some("{b}".into()), "{b}"), None);
         assert_eq!(restore_target(None, "{b}"), None);
+    }
+
+    #[test]
+    fn the_default_output_stays_switched_for_a_session_to_the_same_device() {
+        // Settings changed: the next session switches to the same device
+        let mut h = DefaultHandover { next: Some("{cable}".into()), restore: None };
+        assert_eq!(h.end(Some("{cable}"), "{speakers}".into()), None);
+        assert_eq!(h.restore.as_deref(), Some("{speakers}"));
+        // Not left to restore while the next session starts
+        assert_eq!(h.unclaimed(), None);
+        // It never switched (it failed before): restored when it ends
+        h.next = None;
+        assert_eq!(h.unclaimed().as_deref(), Some("{speakers}"));
+        assert_eq!(h, DefaultHandover::default());
+        // Another device next, or no session next: restored now
+        let mut h = DefaultHandover { next: Some("{other}".into()), restore: None };
+        assert_eq!(h.end(Some("{cable}"), "{speakers}".into()).as_deref(), Some("{speakers}"));
+        let mut h = DefaultHandover::default();
+        assert_eq!(h.end(Some("{cable}"), "{speakers}".into()).as_deref(), Some("{speakers}"));
+        assert_eq!(h, DefaultHandover::default());
+    }
+
+    #[test]
+    fn only_an_auto_switched_virtual_device_is_made_the_default() {
+        let virt =
+            |id: &str, auto_switch| SourceRequest::VirtualDevice { id: id.into(), name: "CABLE".into(), auto_switch };
+        assert_eq!(virt("{x}", true).default_switch(), Some("{x}"));
+        assert_eq!(virt("{x}", false).default_switch(), None);
+        assert_eq!(virt("", true).default_switch(), None);
+        assert_eq!(SourceRequest::SystemLoopback.default_switch(), None);
     }
 
     #[test]

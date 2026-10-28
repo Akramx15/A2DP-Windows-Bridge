@@ -1056,7 +1056,11 @@ impl Service {
             if req.le.is_some() { "LE Audio" } else { "A2DP" }
         );
         self.end_scan();
+        // The running session leaves Windows' default output switched when
+        // this one switches it to the same device (issue #203)
+        stream::expect_default_switch(req.source.default_switch());
         self.stop_session();
+        stream::expect_default_switch(None);
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.turned_off.store(false, Ordering::Release);
         self.inner.stop.store(false, Ordering::Release);
@@ -1076,6 +1080,7 @@ impl Service {
                     tracing::error!("the streaming session panicked");
                     inner.notify(StreamState::Error, Msg::new("error.btstack_crash_stream"));
                 }
+                stream::restore_unclaimed_default();
                 inner.running.store(false, Ordering::Release);
             })
             .expect("spawning the session thread");
