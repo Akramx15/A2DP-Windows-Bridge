@@ -231,7 +231,8 @@ function CaptureFormat(props: { fields: DeviceFields; profiles: Profile[]; devic
           <Show when={d().mix_rate !== null && d().mix_bits !== null}>
             <Show when={off()} fallback={<p class="hint">{text()}</p>}>
               {(o) => (
-                <p class="field-error">
+                // Amber: it still streams, resampled (issue #86)
+                <p class="field-warn">
                   <Icon name="warning" />
                   <span>
                     {text()}. {t("ui.profile.format_differs", which(o()))}

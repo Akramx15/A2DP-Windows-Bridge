@@ -81,6 +81,9 @@ export function Setup() {
     );
   });
   const [profileName, setProfileName] = createSignal<string | null>(snap().active_profile);
+  // The device connected on the last step: kept out of its list after Back
+  // and Next too (issue #86)
+  const [added, setAdded] = createSignal<string | null>(null);
 
   const finish = () => {
     app.setSetupActive(false);
@@ -151,7 +154,7 @@ export function Setup() {
             <StepDriver adapter={adapter()} />
           </Match>
           <Match when={step() === 2}>
-            <StepDevice profileName={profileName()} onCreated={setProfileName} />
+            <StepDevice profileName={profileName()} onCreated={setProfileName} added={added()} onAdded={setAdded} />
           </Match>
         </Switch>
       </section>
@@ -218,11 +221,16 @@ function StepAdapter(props: { chosen: AdapterInfo | null; onChoose: (id: string)
         <div class="choice-list" role="radiogroup" aria-label={t("firmware.detected_adapters")}>
           <For each={supportedFirst(adapters())}>
             {(a) => (
-              <label class="choice" classList={{ on: props.chosen?.instance_id === a.instance_id }}>
+              // One A2DPWB cannot use is listed, not chosen (issue #86)
+              <label
+                class="choice"
+                classList={{ on: props.chosen?.instance_id === a.instance_id, ro: !adapterSupported(a) }}
+              >
                 <input
                   type="radio"
                   name="setup-adapter"
                   checked={props.chosen?.instance_id === a.instance_id}
+                  disabled={!adapterSupported(a)}
                   onChange={() => props.onChoose(a.instance_id)}
                 />
                 <AdapterLine adapter={a} />
@@ -396,7 +404,12 @@ function scanEnded(app: AppContext): Promise<void> {
   });
 }
 
-function StepDevice(props: { profileName: string | null; onCreated: (name: string) => void }) {
+function StepDevice(props: {
+  profileName: string | null;
+  onCreated: (name: string) => void;
+  added: string | null;
+  onAdded: (address: string) => void;
+}) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const stream = () => snap().stream;
@@ -404,7 +417,7 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
   const [connecting, setConnecting] = createSignal<string | null>(null);
   // The device connected here: shown above the list, no longer in it, and
   // the scan ends (issue #86)
-  const [added, setAdded] = createSignal<string | null>(null);
+  const added = () => props.added;
   const existing = () => snap().profiles.find((p) => p.name === props.profileName) ?? null;
 
   // One click: the device is saved, gets its "<name> | Auto" profile (the
@@ -415,7 +428,7 @@ function StepDevice(props: { profileName: string | null; onCreated: (name: strin
     try {
       const profile = await saveWithProfile(app, address, name, false);
       if (!profile) return;
-      setAdded(address);
+      props.onAdded(address);
       props.onCreated(profile);
       await app.run(async () => {
         await app.core.request("profile.set_active", { name: profile });

@@ -32,11 +32,12 @@
 ;     settings have none (settings.rs, default_language);
 ;   - an update (of this installation, of the NSIS one or of v1) says so on
 ;     the wizard's title and pages (UpdateWording).
-; Uninstall: the core is closed; one page asks whether the adapters A2DPWB
+; Uninstall: a page of the uninstall wizard asks whether the adapters A2DPWB
 ; put on WinUSB go back to Windows (one UAC prompt) and whether
-; %APPDATA%\A2DPWB (settings, codecs, pairings, firmware) is deleted, both on
-; by default (AskUninstallChoices); the Run value is removed when it points
-; at this installation.
+; %APPDATA%\A2DPWB (settings, codecs, pairings, firmware) and the window's
+; own data (%LOCALAPPDATA%\io.github.seiyafunaokajp.a2dpwb) are deleted,
+; both on by default (InitializeUninstallProgressForm); the core is closed;
+; the Run value is removed when it points at this installation.
 ;
 ; Command line, besides Inno Setup's own (/SILENT, /VERYSILENT, /DIR=, ...):
 ;   /UPDATE  the in-app update (app/src/ui/src-tauri/src/update.rs): starts
@@ -80,6 +81,8 @@
 ; tauri.conf.json's identifier: the windows' notifications and taskbar
 ; button belong to the shortcut with this AppUserModelID
 #define AppUserModelId "io.github.seiyafunaokajp.a2dpwb"
+; Tauri's identifier: the window's WebView2 data is in %LOCALAPPDATA%\<this>
+#define AppIdentifier "io.github.seiyafunaokajp.a2dpwb"
 ; AppId without its braces
 #define AppGuid "DE4C0AE2-6745-4C09-9478-7FA6C48527F4"
 #define RepoUrl "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge"
@@ -176,6 +179,24 @@ ko.UninstallChoices=제거 옵션
 zhcn.UninstallChoices=卸载选项
 zhtw.UninstallChoices=解除安裝選項
 
+en.UninstallChoicesLabel=Choose what is removed together with %1.
+ja.UninstallChoicesLabel=%1 と一緒に元に戻すもの、削除するものを選んでください。
+de.UninstallChoicesLabel=Wählen Sie, was zusammen mit %1 entfernt wird.
+fr.UninstallChoicesLabel=Choisissez ce qui est supprimé avec %1.
+es.UninstallChoicesLabel=Elija qué se quita junto con %1.
+ko.UninstallChoicesLabel=%1와(과) 함께 제거할 항목을 선택하세요.
+zhcn.UninstallChoicesLabel=选择随 %1 一起移除的内容。
+zhtw.UninstallChoicesLabel=選擇隨 %1 一起移除的內容。
+
+en.UninstallButton=&Uninstall
+ja.UninstallButton=アンインストール(&U)
+de.UninstallButton=&Deinstallieren
+fr.UninstallButton=&Désinstaller
+es.UninstallButton=&Desinstalar
+ko.UninstallButton=제거(&U)
+zhcn.UninstallButton=卸载(&U)
+zhtw.UninstallButton=解除安裝(&U)
+
 en.RestoreChoice=Restore the original Bluetooth driver
 ja.RestoreChoice=元の Bluetooth ドライバーに戻す
 de.RestoreChoice=Den ursprünglichen Bluetooth-Treiber wiederherstellen
@@ -185,7 +206,7 @@ ko.RestoreChoice=원래 블루투스 드라이버 복원
 zhcn.RestoreChoice=恢复原来的蓝牙驱动程序
 zhtw.RestoreChoice=還原原本的藍牙驅動程式
 
-en.RestoreChoiceText=Removes the WinUSB driver and gives the Bluetooth adapter back to Windows. Windows asks for administrator permission.
+en.RestoreChoiceText=Removes the WinUSB driver and restores the Bluetooth adapter to Windows (administrator access is required).
 ja.RestoreChoiceText=WinUSB ドライバーを外し、Bluetooth アダプターを Windows に戻します。Windows が管理者の許可を求めます。
 de.RestoreChoiceText=Entfernt den WinUSB-Treiber und gibt den Bluetooth-Adapter an Windows zurück. Windows fragt nach Administratorrechten.
 fr.RestoreChoiceText=Retire le pilote WinUSB et rend l'adaptateur Bluetooth à Windows. Windows demande les droits d'administrateur.
@@ -424,7 +445,7 @@ const
   WebView2Key = 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
 
 var
-  UpdateMode, PassiveMode, KeepV1, CoreWasRunning, RunWasSet, HadDesktopIcon, DeleteData: Boolean;
+  UpdateMode, PassiveMode, KeepV1, CoreWasRunning, RunWasSet, HadDesktopIcon, DeleteData, RestoreChosen: Boolean;
   { Setup replaces an installation: this one, the NSIS one of 2.0.x or v1 }
   IsUpgrade: Boolean;
 
@@ -918,85 +939,102 @@ end;
 
 { Adds a choice of the uninstall page below Top: a bold check box and the
   text under it; returns the box, and Top below the text }
-function AddChoice(Form: TSetupForm; const Caption, Text: String; Checked: Boolean; var Top: Integer): TNewCheckBox;
+function AddChoice(Page: TNewNotebookPage; const Caption, Text: String; Checked: Boolean; var Top: Integer): TNewCheckBox;
 var
   Hint: TNewStaticText;
 begin
-  Result := TNewCheckBox.Create(Form);
-  Result.Parent := Form;
+  Result := TNewCheckBox.Create(Page);
+  Result.Parent := Page;
   Result.Caption := Caption;
   Result.Font.Style := [fsBold];
   Result.Checked := Checked;
-  Result.Left := ScaleX(16);
+  Result.Left := 0;
   Result.Top := Top;
-  Result.Width := Form.ClientWidth - ScaleX(32);
+  Result.Width := Page.ClientWidth;
   Result.Height := ScaleY(20);
-  Hint := TNewStaticText.Create(Form);
-  Hint.Parent := Form;
+  Hint := TNewStaticText.Create(Page);
+  Hint.Parent := Page;
   Hint.AutoSize := False;
   Hint.WordWrap := True;
   Hint.Caption := Text;
-  Hint.Left := ScaleX(36);
+  Hint.Left := ScaleX(20);
   Hint.Top := Top + ScaleY(22);
-  Hint.Width := Form.ClientWidth - ScaleX(52);
+  Hint.Width := Page.ClientWidth - ScaleX(20);
   Hint.AdjustHeight;
   Top := Hint.Top + Hint.Height + ScaleY(14);
 end;
 
-{ The uninstall's choices on one page (issue #86): give the adapters back to
-  Windows (only when A2DPWB put one on WinUSB) and delete the app data, both
-  on by default. v1 (running, or installed) uses the adapter through WinUSB
-  too: then the restore is off, and the page says why. Silent mode chooses
-  neither: nobody to ask, and a silent uninstall must not raise a UAC
-  prompt. }
-procedure AskUninstallChoices(var Restore, Delete: Boolean);
+{ The uninstall's choices on a page of the uninstall wizard itself (issue
+  86: a dialog box of its own looked out of place), before anything is
+  removed: give the adapters back to Windows (only when A2DPWB put one on
+  WinUSB) and delete the user data, both on by default. v1 (running, or
+  installed) uses the adapter through WinUSB too: then the restore is off,
+  and the page says why. Uninstall goes on, Cancel stops the uninstall.
+  Silent mode shows no page and chooses neither: nobody to ask, and a silent
+  uninstall must not raise a UAC prompt. }
+procedure InitializeUninstallProgressForm();
 var
-  Form: TSetupForm;
+  Page, ProgressPage: TNewNotebookPage;
   RestoreBox, DeleteBox: TNewCheckBox;
-  OkButton: TNewButton;
-  Text: String;
-  V1Present, Offer: Boolean;
+  UninstallButton: TNewButton;
+  PageName, PageDescription, Text: String;
+  V1Present: Boolean;
   Top: Integer;
 begin
-  Restore := False;
-  Delete := False;
+  RestoreChosen := False;
+  DeleteData := False;
   if UninstallSilent then
     Exit;
-  Offer := CanRestoreDrivers;
   V1Present := CheckForMutexes(V1Mutex) or RegKeyExists(HKCU, V1UninstKey) or RegKeyExists(HKLM, V1UninstKey);
-  Form := CreateCustomForm(ScaleX(440), ScaleY(200), False, True);
-  try
-    Form.Caption := CustomMessage('UninstallChoices');
-    Top := ScaleY(16);
-    RestoreBox := nil;
-    if Offer then begin
-      Text := CustomMessage('RestoreChoiceText');
-      if V1Present then
-        Text := Text + ' ' + CustomMessage('RestoreV1Note');
-      RestoreBox := AddChoice(Form, CustomMessage('RestoreChoice'), Text, not V1Present, Top);
-    end;
-    { Only the settings folder itself, not one A2DPWB_CONFIG_DIR names }
-    DeleteBox := AddChoice(Form, CustomMessage('DeleteChoice'),
-      FmtMessage(CustomMessage('DeleteChoiceText'), [ExpandConstant('{userappdata}\A2DPWB')]), True, Top);
-    OkButton := TNewButton.Create(Form);
-    OkButton.Parent := Form;
-    OkButton.Caption := SetupMessage(msgButtonOK);
-    OkButton.Width := Form.CalculateButtonWidth([OkButton.Caption]);
-    OkButton.Height := ScaleY(23);
-    OkButton.Left := Form.ClientWidth - OkButton.Width - ScaleX(16);
-    OkButton.Top := Top;
-    OkButton.ModalResult := mrOk;
-    OkButton.Default := True;
-    Form.ClientHeight := OkButton.Top + OkButton.Height + ScaleY(16);
-    Form.ActiveControl := OkButton;
-    Form.FlipAndCenterIfNeeded(True, UninstallProgressForm, False);
-    { Closed with its X button: as chosen, too }
-    Form.ShowModal;
-    Restore := (RestoreBox <> nil) and RestoreBox.Checked;
-    Delete := DeleteBox.Checked;
-  finally
-    Form.Free;
+  ProgressPage := UninstallProgressForm.InnerNotebook.ActivePage;
+  Page := TNewNotebookPage.Create(UninstallProgressForm);
+  Page.Notebook := UninstallProgressForm.InnerNotebook;
+  Page.Parent := UninstallProgressForm.InnerNotebook;
+  Page.Align := alClient;
+  Top := 0;
+  RestoreBox := nil;
+  if CanRestoreDrivers then begin
+    Text := CustomMessage('RestoreChoiceText');
+    if V1Present then
+      Text := Text + ' ' + CustomMessage('RestoreV1Note');
+    RestoreBox := AddChoice(Page, CustomMessage('RestoreChoice'), Text, not V1Present, Top);
   end;
+  { Only the settings folder itself, not one A2DPWB_CONFIG_DIR names }
+  DeleteBox := AddChoice(Page, CustomMessage('DeleteChoice'),
+    FmtMessage(CustomMessage('DeleteChoiceText'), [ExpandConstant('{userappdata}\A2DPWB')]), True, Top);
+
+  UninstallProgressForm.InnerNotebook.ActivePage := Page;
+  PageName := UninstallProgressForm.PageNameLabel.Caption;
+  PageDescription := UninstallProgressForm.PageDescriptionLabel.Caption;
+  UninstallProgressForm.PageNameLabel.Caption := CustomMessage('UninstallChoices');
+  UninstallProgressForm.PageDescriptionLabel.Caption := FmtMessage(CustomMessage('UninstallChoicesLabel'), ['{#AppName}']);
+
+  UninstallButton := TNewButton.Create(UninstallProgressForm);
+  UninstallButton.Parent := UninstallProgressForm;
+  UninstallButton.Caption := CustomMessage('UninstallButton');
+  UninstallButton.Width := UninstallProgressForm.CancelButton.Width;
+  UninstallButton.Height := UninstallProgressForm.CancelButton.Height;
+  UninstallButton.Top := UninstallProgressForm.CancelButton.Top;
+  UninstallButton.Left := UninstallProgressForm.CancelButton.Left - UninstallButton.Width - ScaleX(10);
+  UninstallButton.ModalResult := mrOk;
+  UninstallButton.Default := True;
+  UninstallProgressForm.CancelButton.Enabled := True;
+  UninstallProgressForm.CancelButton.ModalResult := mrCancel;
+  UninstallProgressForm.ActiveControl := UninstallButton;
+
+  if UninstallProgressForm.ShowModal = mrCancel then
+    Abort;
+
+  RestoreChosen := (RestoreBox <> nil) and RestoreBox.Checked;
+  DeleteData := DeleteBox.Checked;
+  Log(Format('Uninstall choices: restore drivers %d, delete user data %d', [Ord(RestoreChosen), Ord(DeleteData)]));
+  { Back to the progress page }
+  UninstallButton.Visible := False;
+  UninstallProgressForm.CancelButton.Enabled := False;
+  UninstallProgressForm.CancelButton.ModalResult := mrNone;
+  UninstallProgressForm.InnerNotebook.ActivePage := ProgressPage;
+  UninstallProgressForm.PageNameLabel.Caption := PageName;
+  UninstallProgressForm.PageDescriptionLabel.Caption := PageDescription;
 end;
 
 { Gives the adapters A2DPWB put on WinUSB back to Windows:
@@ -1025,23 +1063,25 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Cmd: String;
-  Restore: Boolean;
 begin
   case CurUninstallStep of
     usUninstall:
       begin
         CloseCore(ExpandConstant('{app}'));
         WaitForAppExit;
-        AskUninstallChoices(Restore, DeleteData);
-        if Restore then
+        if RestoreChosen then
           RestoreDrivers
         else if CanRestoreDrivers then
           Log('The adapters stay on WinUSB');
       end;
     usPostUninstall:
       begin
-        if DeleteData then
+        { With the window's own data (WebView2: what the pages remember,
+          such as "Show only supported codecs", issue #86) }
+        if DeleteData then begin
           DelTree(ExpandConstant('{userappdata}\A2DPWB'), True, True, True);
+          DelTree(ExpandConstant('{localappdata}\{#AppIdentifier}'), True, True, True);
+        end;
         if RegQueryStringValue(HKCU, RunKey, RunValue, Cmd) and
            (Pos(Lowercase(ExpandConstant('{app}\{#CoreExe}')), Lowercase(Cmd)) > 0) then
           RegDeleteValue(HKCU, RunKey, RunValue);

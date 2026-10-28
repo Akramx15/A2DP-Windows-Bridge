@@ -3,10 +3,10 @@
 // One device streams at a time: Connect on another one switches to it (the
 // core stops the running stream first). The volume is on the card of the
 // device in use, as each device keeps its own (issue #86); its codec
-// (chosen right there, e.g. one for games and one for music), link quality
-// and link latency below. The capture source is chosen on Audio Devices.
+// (chosen right there, e.g. one for games and one for music) and link
+// quality below. The capture source is chosen on Audio Devices.
 
-import { createEffect, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button } from "../components/controls";
@@ -17,7 +17,6 @@ import {
   currentProfile,
   ErrorPanel,
   FirmwareDownload,
-  LinkLatency,
   LinkSparkline,
   openFirmwareFolder,
   QualityIndicator,
@@ -31,7 +30,7 @@ import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
 import { CARD_ORDER, cardOrder, codecSpec } from "../lib/codecs";
 import { audioEntries, entryBase, entryByKey, entryOf, knownCodecs, type AudioEntry } from "../lib/profile";
-import { chooseCodec, codecShown, pickedCodec } from "./Codecs";
+import { chooseCodec, codecShown, pickedCodec, settle, settling } from "./Codecs";
 
 /** Adapters whose firmware files are missing from the settings folder or
  *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
@@ -208,12 +207,6 @@ export function Home() {
                 </div>
                 <LinkSparkline />
               </section>
-              <section class="card mini" aria-labelledby="home-latency">
-                <h2 id="home-latency" class="mini-title">
-                  {t("ui.home.latency")}
-                </h2>
-                <LinkLatency />
-              </section>
             </div>
           )}
         </Show>
@@ -327,19 +320,26 @@ function CodecPicker(props: { entry: AudioEntry }) {
   const codec = () => (e().profile ?? entryBase(e(), snap().profiles)).codec;
   const order = () => (autoAll() ? [...CARD_ORDER] : cardOrder(e().profile?.codec_order));
   const picked = () => pickedCodec(snap(), e(), autoAll(), order());
-  // Auto-select on, or no codec chosen for the device yet: Auto
-  const value = () => (autoAll() || codec() === "auto" ? "auto" : codec());
+  // Auto-select on, or no codec chosen for the device yet: Auto; a codec
+  // it does not offer: the one used instead (issue #86)
+  const value = () => (autoAll() || codec() === "auto" ? "auto" : (picked() ?? codec()));
   // A quick choice: what the device supports, never the codecs Codecs hides
   const choices = () =>
-    order().filter((id) => codecShown(id, codec(), picked(), knownCodecs(snap().devices, e().address), true));
+    order().filter((id) => codecShown(id, picked(), knownCodecs(snap().devices, e().address), true));
   const autoLabel = () => {
     const p = picked();
     return value() === "auto" && p ? t("ui.home.codec_auto_pick", t(codecSpec(p).label)) : t("ui.home.codec_auto");
   };
   const [busy, setBusy] = createSignal(false);
   let select: HTMLSelectElement | undefined;
+  // A save that ends after the card is gone starts no wait
+  let mounted = true;
+  onCleanup(() => (mounted = false));
   const choose = async (id: string) => {
     if (id === value()) return;
+    // The stream starts again with the codec: the next choice waits for it,
+    // as on Codecs (issue #86)
+    const running = entryState(snap(), e()) !== "idle" && entryState(snap(), e()) !== "error";
     setBusy(true);
     // Auto-select is one setting for every device (as on Codecs): turned
     // off before the codec is chosen, so the device connects again with it
@@ -349,6 +349,7 @@ function CodecPicker(props: { entry: AudioEntry }) {
         : (!autoAll() || (await saveSettings(app, { auto_codec: false }))) &&
           (await chooseCodec(app, e(), id)) !== null;
     setBusy(false);
+    if (ok && running && mounted) settle(app);
     // Not saved: back to what the device has
     if (!ok && select) select.value = value();
   };
@@ -367,8 +368,8 @@ function CodecPicker(props: { entry: AudioEntry }) {
           <select
             ref={select}
             aria-label={t("quality.codec")}
-            disabled={busy()}
-            aria-busy={busy() ? "true" : undefined}
+            disabled={busy() || settling()}
+            aria-busy={busy() || settling() ? "true" : undefined}
             onChange={(ev) => void choose(ev.currentTarget.value)}
           >
             <option value="auto" selected={value() === "auto"}>

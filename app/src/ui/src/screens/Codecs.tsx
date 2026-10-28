@@ -12,8 +12,11 @@
 // with Alt+arrow keys) into the device's own order (its profile's
 // codec_order, issue #86 round 8). A codec the device does not offer falls
 // back to the first card it offers in that order (lib/codecs.ts
-// effectiveCodec, as the core), which is also what Auto picks then. The
-// codec chosen stays in the device's profile while Auto-select is on.
+// effectiveCodec, as the core), which is also what Auto picks then: a click
+// on such a card chooses that one instead, and a profile left with one shows
+// that one chosen (issue #86: no note below the cards). The codec chosen
+// stays in the device's profile while Auto-select is on. The device is
+// named without its address (shown on Audio Devices).
 // Choosing changes the device's profile (made when first needed; the core
 // keeps one per device and starts a stream in use again with it). What
 // belongs to the device rather than the codec (capture source, volume sync,
@@ -22,12 +25,13 @@
 // Every codec is offered, the experimental ones too (issue #86: they are
 // marked in the README only; the core no longer reads
 // settings.experimental_codecs).
-// A codec chosen while a stream runs starts it again: the cards then wait
-// 3 s before the next choice (issue #86: quick switches left no sound or
-// crackling). With the unsupported codecs hidden, the cards shown need no
+// A codec chosen while a stream runs starts it again: the cards (and Home's
+// Codec card) then wait until it streams again before the next choice
+// (issue #86: quick switches left no sound or crackling; a fixed 3 s was
+// slow on a quick device and too short on a slow one). With the unsupported codecs hidden, the cards shown need no
 // "Supported" tag (issue #86).
 
-import { batch, createEffect, createSignal, createUniqueId, For, on, Show } from "solid-js";
+import { batch, createEffect, createSignal, createUniqueId, For, on, onCleanup, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
@@ -67,15 +71,48 @@ import { entryState } from "./Home";
 
 const HIDE_KEY = "a2dpwb.codecs.hide_unsupported";
 
-/** How long the codec cards wait after a codec was chosen during a stream */
-export const SETTLE_MS = 3000;
+/** After a codec chosen during a stream, the codec cards wait at least
+ *  this long, and until the stream is no longer starting again... */
+export const SETTLE_MIN_MS = 1000;
+/** ...but never longer than this (a start that hangs) */
+export const SETTLE_MAX_MS = 15000;
 // For every device and across pages: one stream starts again at a time
 const [settling, setSettling] = createSignal(false);
-let settleTimer: ReturnType<typeof setTimeout> | undefined;
-function settle() {
-  clearTimeout(settleTimer);
+export { settling };
+let settleTimer: ReturnType<typeof setInterval> | undefined;
+
+/** The stream is being started (again) */
+export function restarting(snap: Snapshot | null | undefined): boolean {
+  const st = snap?.stream.state;
+  return st === "connecting" || st === "reconnecting";
+}
+
+/** The codec cards wait for the stream started again with a new codec */
+export function settle(app: ReturnType<typeof useApp>) {
+  clearInterval(settleTimer);
+  const since = Date.now();
   setSettling(true);
-  settleTimer = setTimeout(() => setSettling(false), SETTLE_MS);
+  settleTimer = setInterval(() => {
+    const waited = Date.now() - since;
+    if ((waited >= SETTLE_MIN_MS && !restarting(app.core.state.snap)) || waited >= SETTLE_MAX_MS) {
+      clearInterval(settleTimer);
+      setSettling(false);
+    }
+  }, 200);
+}
+
+/** The cards no longer wait (a core gone, the tests) */
+export function endSettle() {
+  clearInterval(settleTimer);
+  setSettling(false);
+}
+
+/** Resolves once the codec cards no longer wait */
+function untilSettled(): Promise<void> {
+  return new Promise((done) => {
+    const check = () => (settling() ? setTimeout(check, 100) : done());
+    check();
+  });
 }
 
 function loadHide(): boolean {
@@ -153,15 +190,24 @@ export function pickedCodec(
   order: readonly CodecId[],
 ): string | null {
   const codec = (entry.profile ?? entryBase(entry, snap.profiles)).codec;
-  if (!autoAll && codec !== "auto") return codec;
   const known = knownCodecs(snap.devices, entry.address);
+  // One the device does not offer: the one used instead (issue #86)
+  if (!autoAll && codec !== "auto") return effectiveCodec(codec, known, true, order) ?? codec;
   return streamingCodec(snap, entry) ?? effectiveCodec("auto", known, true, autoAll ? AUTO_ORDER : order);
 }
 
-/** Whether a codec's card shows: the codec chosen and the one picked
- *  always, the others unless `hide` and the device did not offer them */
-export function codecShown(id: string, codec: string, picked: string | null, known: readonly string[], hide: boolean) {
-  return !hide || id === codec || id === picked || codecSupport(id, known) !== "not_offered";
+/** Whether a codec's card shows: the one picked always, the others unless
+ *  `hide` and the device did not offer them (a codec chosen that it does
+ *  not offer neither: the one used instead is picked) */
+export function codecShown(id: string, picked: string | null, known: readonly string[], hide: boolean) {
+  return !hide || id === picked || codecSupport(id, known) !== "not_offered";
+}
+
+/** Whether `order` puts the cards in `ids` (those shown) in their default
+ *  order; where the hidden ones are does not matter (issue #86) */
+export function shownInDefaultOrder(order: readonly CodecId[], ids: readonly string[]): boolean {
+  const mine = order.filter((c) => ids.includes(c));
+  return CARD_ORDER.filter((c) => ids.includes(c)).every((c, i) => c === mine[i]);
 }
 
 export function Codecs() {
@@ -249,9 +295,6 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
   const [busy, setBusy] = createSignal(false);
   // The profile shown: the device's, or what it would start from
   const shown = (): Profile => e().profile ?? entryBase(e(), snap().profiles);
-  const codec = () => shown().codec;
-  // Auto-select (for every device) on, or no codec chosen for the device yet
-  const auto = () => props.auto || codec() === "auto";
   const known = () => knownCodecs(snap().devices, e().address);
   const support = (id: string) => codecSupport(id, known());
   // The device's order while it is being dragged (null: the saved one)
@@ -262,15 +305,14 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
   // The order Auto and the fallback go by
   const pickOrder = (): readonly string[] => (props.auto ? AUTO_ORDER : order());
   const picked = () => pickedCodec(snap(), e(), props.auto, order());
-  // A chosen codec the device did not offer: the one used instead, the
-  // first card it offers (null: the device's codecs are not known yet)
-  const instead = () =>
-    !auto() && support(codec()) === "not_offered" ? effectiveCodec(codec(), known(), true, pickOrder()) : null;
   const cards = () =>
     order()
-      .filter((id) => codecShown(id, codec(), picked(), known(), props.hide))
+      .filter((id) => codecShown(id, picked(), known(), props.hide))
       .map((id) => codecSpec(id));
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
+  // A save that ends after the screen is gone starts no wait
+  let mounted = true;
+  onCleanup(() => (mounted = false));
   // The device's saves one after the other: a card chosen right after one
   // was moved starts from the profile with the new order
   let saving: Promise<unknown> = Promise.resolve();
@@ -280,14 +322,24 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
     return done;
   };
   const choose = async (id: string, values?: Omit<CodecChoice, "codec">) => {
-    if (settling()) return;
+    // A "..." dialog's OK while the cards wait: applied after (the cards
+    // themselves are disabled meanwhile)
+    if (settling()) await untilSettled();
+    // A card the device does not offer: the first card it offers instead
+    // (issue #86). Settings made for it in its "..." are saved as they are
+    // (the card shown chosen is still the one used).
+    const instead = !values && support(id) === "not_offered" ? effectiveCodec(id, known(), true, pickOrder()) : null;
+    if (instead) id = instead;
     // The device's stream starts again with the codec: give it time first
     const running = state() !== "idle" && state() !== "error";
     setBusy(true);
     // An order moved but not back from the core yet goes with it
     const saved = await queued(() => chooseCodec(app, e(), id, values, props.auto ? null : dragOrder()));
     setBusy(false);
-    if (saved && running) settle();
+    // The card clicked is checked by the browser: back to the one chosen
+    // (another one instead, nothing saved, or the save failed)
+    for (const r of grid?.querySelectorAll<HTMLInputElement>("input[type=radio]") ?? []) r.checked = r.value === picked();
+    if (saved && running && mounted) settle(app);
   };
   const locked = () => busy() || settling();
   const titleId = () => `codecs-${e().key.replace(/[^0-9A-Za-z]/g, "")}`;
@@ -302,6 +354,9 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
   // A saved order replaces the one dragged
   createEffect(on(() => shown().codec_order.join(), () => setDragOrder(null), { defer: true }));
   const saveOrder = async (next: CodecId[]) => {
+    // The cards shown back in their default order: the default order, the
+    // hidden ones too (issue #86: no Reset for an order that changes nothing)
+    if (shownInDefaultOrder(next, cards().map((c) => c.id))) next = [...CARD_ORDER];
     if (next.every((c, i) => c === cardOrder(shown().codec_order)[i])) {
       setDragOrder(null);
       return;
@@ -466,7 +521,6 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
           <h2 id={titleId()} class="ellipsis">
             {e().name || t("device.name_unknown")}
           </h2>
-          <span class="mono muted">{e().address}</span>
         </div>
         <span class="tags">
           <span class="tag">{t("device.tag_saved")}</span>
@@ -575,7 +629,7 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
         <span class="sr-only" role="status" aria-live="polite">
           {said()}
         </span>
-        <Show when={!props.auto && !isDefaultOrder(order())}>
+        <Show when={!props.auto && !shownInDefaultOrder(order(), cards().map((c) => c.id))}>
           <div class="codecs-order">
             <Button
               icon="arrow_reset"
@@ -588,13 +642,6 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
         </Show>
         <Show when={known().length === 0}>
           <p class="hint">{t("ui.profile.codecs_unknown")}</p>
-        </Show>
-        <Show when={instead()}>
-          {(c) => (
-            <Banner kind="warn" title={t("error.codec_not_supported", t(codecSpec(codec()).label))}>
-              {t("ui.codecs.fallback_to", t(codecSpec(c()).label))}
-            </Banner>
-          )}
         </Show>
         <CodecSettings
           spec={settingsOf()}

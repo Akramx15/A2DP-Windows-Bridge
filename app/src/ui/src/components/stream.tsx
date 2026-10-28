@@ -222,14 +222,21 @@ export function codecDetails(info: StreamInfo): string[] {
   return out;
 }
 
-/** Beside the codec's name when it is not the one chosen: "(Opus is not
- *  supported)", in use elsewhere, or experimental and off (issue #86); the
+/** Beside the codec's name when it is not the one chosen: "(Opus is
+ *  unsupported)", in use elsewhere, or experimental and off (issue #86); the
  *  reason is the core's message, the status line just says "Connected" */
 export function fallbackNoteKey(info: StreamInfo, messageKey: string): string | null {
   if (!info.requested_codec) return null;
   if (messageKey === "status.connected_fallback_experimental") return "ui.codec.fallback_experimental";
   return info.requested_in_use ? "ui.codec.fallback_in_use" : "ui.codec.fallback_unsupported";
 }
+
+/** How long the note beside a codec used instead of the one chosen stays
+ *  (issue #86: then only its warning icon, with the reason as its tooltip) */
+export const FALLBACK_NOTE_MS = 5000;
+// The note shown and since when, for every badge: one that comes on screen
+// later (another page) does not show it again
+let noteShown: { key: string; at: number } | null = null;
 
 /** The codec in two lines (issue #86): its name, then what it runs with in
  *  a badge; `aside` goes beside the badge (the flyout's link quality) */
@@ -258,6 +265,23 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
     const req = codecLabelKey(i.requested_codec!);
     return t(key, req ? t(req) : i.requested_codec!);
   };
+  // The note for its first few seconds only (FALLBACK_NOTE_MS)
+  const [now, setNow] = createSignal(Date.now());
+  const noteFresh = createMemo(() => {
+    const note = fallbackNote();
+    if (!note) {
+      noteShown = null;
+      return false;
+    }
+    const key = `${core.state.snap?.stream.profile ?? ""}|${info()!.codec}|${note}`;
+    if (noteShown?.key !== key) noteShown = { key, at: Date.now() };
+    const left = noteShown.at + FALLBACK_NOTE_MS - now();
+    if (left > 0) {
+      const timer = setTimeout(() => setNow(Date.now()), left);
+      onCleanup(() => clearTimeout(timer));
+    }
+    return left > 0;
+  });
   return (
     <Show when={info()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
       {(i) => (
@@ -267,7 +291,7 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
               <Icon name="warning" class="st-warn" title={fallbackHelp()} />
             </Show>
             <strong class="ellipsis">{name()}</strong>
-            <Show when={fallbackNote()}>
+            <Show when={noteFresh()}>
               <span class="codec-note ellipsis">{fallbackNote()}</span>
             </Show>
           </span>
@@ -369,47 +393,6 @@ export function QualityIndicator() {
       </span>
       <span class="quality-label">{label()}</span>
     </span>
-  );
-}
-
-/** How long the audio waits in A2DPWB's send queue before it goes over
- *  Bluetooth (ms): the packets queued at the rate packets go out; null
- *  while nothing goes out. The headphones' own buffer comes on top (the
- *  link cannot tell it). */
-export function queueLatencyMs(s: LinkSample): number | null {
-  if (!(s.bytes_per_second > 0) || !s.avg_packet_bytes) return null;
-  return (s.queue_depth * s.avg_packet_bytes * 1000) / s.bytes_per_second;
-}
-
-/** Samples the latency shown is averaged over (one a second) */
-const LATENCY_SAMPLES = 3;
-
-/** The link's latency (issue #86: beside the link quality on Home): the
- *  send queue's wait over the last few seconds, and over the last minute */
-export function LinkLatency() {
-  const { core } = useApp();
-  const release = core.wantLink();
-  onCleanup(release);
-  const values = createMemo(() => core.link().map((s) => queueLatencyMs(s) ?? 0));
-  const latest = () => {
-    const recent = core
-      .link()
-      .slice(-LATENCY_SAMPLES)
-      .map(queueLatencyMs)
-      .filter((v): v is number => v !== null);
-    return recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : null;
-  };
-  const text = () => (latest() === null ? "–" : t("ui.home.latency_ms", latest()!));
-  return (
-    <>
-      <div class="mini-body">
-        <span class="latency-value num">{text()}</span>
-      </div>
-      <div class="link-mini">
-        <Sparkline values={values()} min={0} label={`${t("ui.home.latency")}: ${text()}`} />
-      </div>
-      <p class="hint">{t("ui.home.latency_hint")}</p>
-    </>
   );
 }
 

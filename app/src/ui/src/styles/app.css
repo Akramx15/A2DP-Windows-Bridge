@@ -524,12 +524,17 @@ option {
 .capture-source > .select {
   flex: 1;
 }
-.field-error {
+.field-error,
+.field-warn {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--bad-text);
   font-size: var(--fs-12);
+}
+/* A small warning, not an error (issue #86: the capture format) */
+.field-warn {
+  color: var(--warn-text);
 }
 
 .row {
@@ -1507,10 +1512,6 @@ option {
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-.latency-value {
-  font-size: var(--fs-12);
-  color: var(--text);
-}
 .link-mini-value {
   font-size: var(--fs-12);
   color: var(--text-2);
@@ -1676,6 +1677,17 @@ option {
 .choice.on {
   background: var(--surface-2);
   box-shadow: inset 3px 0 0 var(--text);
+}
+/* Listed, not chosen: an adapter A2DPWB cannot use (issue #86) */
+.choice.ro,
+.choice.ro input {
+  cursor: default;
+}
+.choice.ro:hover {
+  background: none;
+}
+.choice.ro .choice-text {
+  opacity: 0.6;
 }
 .device-row:has(input:focus-visible),
 .choice:has(input:focus-visible),

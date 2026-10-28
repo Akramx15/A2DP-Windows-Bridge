@@ -288,6 +288,22 @@ describe("setup device step", () => {
     expect(screen.getByRole("button", { name: "Finish" })).not.toBeDisabled();
   });
 
+  it("keeps the device connected out of the list after Back and Next (issue #86)", async () => {
+    const { calls } = await toDeviceStep({ scenario: "normal" });
+    const row = (await screen.findByText("Galaxy Buds2 Pro")).closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    await waitFor(() => expect(screen.queryByText("Galaxy Buds2 Pro", { selector: ".device-row *" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    const next = await screen.findByRole("button", { name: "Next" });
+    await waitFor(() => expect(next).not.toBeDisabled());
+    fireEvent.click(next);
+    await screen.findByRole("heading", { level: 2, name: "Find your audio devices" });
+    // Shown above the list as the one added, not in the list again
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.queryByText("Galaxy Buds2 Pro", { selector: ".device-row *" })).toBeNull();
+  });
+
   it("a device with a profile connects with that one", async () => {
     const { calls, core } = await toDeviceStep();
     const before = core.state.snap!.profiles.length;
@@ -390,7 +406,7 @@ describe("setup device step", () => {
 });
 
 describe("setup adapter step", () => {
-  it("marks the adapters A2DPWB supports, and says so in red for one it does not", async () => {
+  it("marks the adapters A2DPWB supports, and lists one it does not without letting it be chosen (issue #86)", async () => {
     start("#/setup", { scenario: "fresh" });
     await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
     const radios = screen.getAllByRole("radio");
@@ -403,11 +419,14 @@ describe("setup adapter step", () => {
     expect(mtk).toHaveTextContent("MediaTek Bluetooth Adapter");
     expect(mtk).not.toHaveTextContent("[unsupported]");
     expect(within(mtk).getByText("Unsupported")).toHaveClass("st-bad");
-    fireEvent.click(radios[1]);
+    // Read-only: the supported one stays chosen
+    expect(radios[1]).toBeDisabled();
+    expect(mtk).toHaveClass("ro");
+    expect(radios[0]).not.toBeDisabled();
+    expect(radios[0]).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText(t("ui.setup.unsupported_note"))).toBeInTheDocument();
-    // Its driver is not replaced (issue #86)
-    expect(screen.getByRole("button", { name: t("ui.setup.auto_button") })).toBeDisabled();
+    expect(await screen.findByText("TP-Link Bluetooth USB Adapter (RTL8761BU)")).toBeInTheDocument();
+    expect(screen.queryByText(t("ui.setup.unsupported_note"))).toBeNull();
   });
 });
 
