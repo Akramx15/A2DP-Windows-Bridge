@@ -283,12 +283,44 @@ fn to_ipc_controls(c: &a2dpwb_core::spatial::SpatialControls) -> SpatialControls
 }
 
 /// The stage a profile runs through, if it has one
+/// The PC's own speakers: silent while the headphones stream, as if the
+/// sound had moved to them. The capture is a loopback of the mix, which the
+/// endpoint's mute does not empty.
+fn mute_pc_speakers(muted: bool) {
+    match win_sys::audio_policy::EndpointVolume::open(None) {
+        Ok(volume) => {
+            if let Err(e) = volume.set_muted(muted) {
+                tracing::warn!("the PC's speakers: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("the PC's speakers: {e}"),
+    }
+}
+
 fn stage_program(p: &CoreProfile) -> Option<PathBuf> {
     if !p.spatial_engine {
         return None;
     }
     let path = PathBuf::from(p.spatial_engine_path.trim());
     (!path.as_os_str().is_empty()).then_some(path)
+}
+
+/// The stage a profile would run, as the pipeline starts it (the app's copy of
+/// its config): what a live engine switch hands to the running stream
+fn stage_config(dir: &Path, p: &CoreProfile) -> Option<a2dpwb_core::SpatialConfig> {
+    let exe = stage_program(p)?;
+    let command = a2dpwb_core::spatial::command_for(&exe);
+    let config = a2dpwb_core::spatial::config_for(dir, p, &command.program);
+    let command = match &config {
+        Some(config) => command.with_config(config),
+        None => command,
+    };
+    Some(a2dpwb_core::SpatialConfig {
+        exe,
+        program: command.program,
+        args: command.args,
+        cwd: Some(command.cwd),
+    })
 }
 
 /// The controls of the stage a profile uses
@@ -1671,11 +1703,17 @@ impl CoreState {
                 // engine again, not the stream (no Bluetooth reconnect)
                 if restart_after_save(&s.stream, &profile) {
                     tracing::info!("spatial: the controls of \"{profile}\" changed: the engine starts again");
-                    a2dpwb_core::request_stage_reload();
+                    a2dpwb_core::request_stage(a2dpwb_core::StageUpdate::Same);
                 }
                 Ok(json(&controls))
             }
-            Method::StreamStart { profile } => self.start_profile(&profile).map(|()| Value::Null),
+            Method::StreamStart { profile } => {
+                let started = self.start_profile(&profile);
+                if started.is_ok() {
+                    mute_pc_speakers(true);
+                }
+                started.map(|()| Value::Null)
+            }
             Method::StreamStartCustom {
                 device,
                 device_name,
@@ -1708,6 +1746,7 @@ impl CoreState {
             }
             Method::StreamStop => {
                 self.stop();
+                mute_pc_speakers(false);
                 Ok(Value::Null)
             }
             Method::StreamSetVolume { volume } => {
@@ -1789,6 +1828,8 @@ impl CoreState {
                     list[i].spatial_engine != merged.spatial_engine
                         || list[i].spatial_engine_path != merged.spatial_engine_path
                 });
+                // Taken before the profile moves into the list
+                let next_stage = stage_config(&dir, &merged);
                 let in_order = merged.clone();
                 // The profile's device joins the saved ones of its kind (as
                 // a connection saves it)
@@ -1827,7 +1868,15 @@ impl CoreState {
                 }
                 // The profile in use starts again with what was saved (v1)
                 let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
-                if restart_after_save(&s.stream, &key) && (engine_switch || !order_keeps_codec) {
+                if restart_after_save(&s.stream, &key) && engine_switch {
+                    // The other engine (or none) takes over inside the stream;
+                    // the link and the encoder are left alone
+                    tracing::info!(
+                        "profile {} saved while in use: the engine changes (the stream goes on)",
+                        a2dpwb_core::diag::quoted(&key)
+                    );
+                    a2dpwb_core::request_stage(a2dpwb_core::StageUpdate::Start(next_stage.clone()));
+                } else if restart_after_save(&s.stream, &key) && !order_keeps_codec {
                     tracing::info!(
                         "profile {} saved while in use: it starts again as {}",
                         a2dpwb_core::diag::quoted(&key),

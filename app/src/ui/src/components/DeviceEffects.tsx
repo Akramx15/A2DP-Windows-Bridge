@@ -195,7 +195,8 @@ function EffectSliders(props: { profile: string }) {
                   step={s.step}
                   value={Number(value(s.key, s.value))}
                   disabled={saving()}
-                  onChange={(v) => put(s.key, v)}
+                  onChange={(v) => setDraft({ ...draft(), [s.key]: v })}
+                  onCommit={(v) => put(s.key, v)}
                 />
               )}
             </For>

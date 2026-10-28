@@ -17,7 +17,7 @@ pub mod packetizer;
 pub mod resample;
 pub mod spatial;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
@@ -155,15 +155,25 @@ struct Control {
     overflows: AtomicU32,
 }
 
-/// Asks the running encode thread to start the spatial engine again with the
-/// settings it was just given. A flag rather than a channel because the app
-/// runs one stream at a time; when nothing runs, the next start reads the
-/// settings anyway.
-static RELOAD_STAGE: AtomicBool = AtomicBool::new(false);
+/// What the running stream should do with its spatial engine
+#[derive(Debug, Clone)]
+pub enum StageUpdate {
+    /// The same stage, after its settings file changed
+    Same,
+    /// Another engine, or none: the stream goes on, the stage is replaced
+    Start(Option<SpatialConfig>),
+}
 
-/// The stage's settings changed: restart the engine, not the Bluetooth link
-pub fn request_stage_reload() {
-    RELOAD_STAGE.store(true, Ordering::Release);
+/// The next stage for the running encode thread, if one asked for it. A slot
+/// rather than a channel because the app runs one stream at a time; when
+/// nothing runs, the next start reads the settings anyway.
+static PENDING_STAGE: Mutex<Option<StageUpdate>> = Mutex::new(None);
+
+/// Asks the running stream to reload its stage, without touching the link
+pub fn request_stage(update: StageUpdate) {
+    if let Ok(mut slot) = PENDING_STAGE.lock() {
+        *slot = Some(update);
+    }
 }
 
 impl Control {
@@ -369,7 +379,8 @@ fn encode_thread(
     // The spatial engine, when the profile asks for it: it processes the
     // captured audio before it reaches the encoder. If it cannot run, the
     // audio passes through unchanged rather than the stream dying.
-    let spatial_cfg = spatial.clone();
+    let mut spatial_cfg = spatial.clone();
+    let resample_cfg = resample.clone();
     let mut spatial_stage = match spatial {
         Some(cfg) => match SpatialEngine::start(&cfg) {
             Ok(s) => {
@@ -416,22 +427,33 @@ fn encode_thread(
     while !control.stop.load(Ordering::Acquire) {
         // The stage's settings changed (correction, a slider): start the
         // engine again, leaving the Bluetooth link and the encoder alone
-        if RELOAD_STAGE.swap(false, Ordering::AcqRel) {
-            tracing::info!("spatial engine: starting again with its saved settings");
-            spatial_stage = match spatial_cfg.as_ref() {
-                Some(cfg) => match SpatialEngine::start(cfg) {
-                    Ok(s) => Some(s),
-                    Err(e) => {
-                        tracing::error!("spatial engine {}: {e} (audio passes through)", cfg.exe.display());
-                        None
-                    }
-                },
-                None => None,
+        if let Some(update) = PENDING_STAGE.lock().ok().and_then(|mut slot| slot.take()) {
+            let next = match update {
+                StageUpdate::Same => spatial_cfg.clone(),
+                StageUpdate::Start(next) => {
+                    spatial_cfg = next.clone();
+                    next
+                }
             };
-            if let Some((down, up)) = resampler.as_mut() {
-                down.reset();
-                up.reset();
-            }
+            tracing::info!(
+                "spatial engine: {}",
+                match next.as_ref() {
+                    Some(cfg) => format!("starting again with {}", cfg.exe.display()),
+                    None => "stopped (the effect is off)".to_string(),
+                }
+            );
+            spatial_stage = next.as_ref().and_then(|cfg| match SpatialEngine::start(cfg) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    tracing::error!("spatial engine {}: {e} (audio passes through)", cfg.exe.display());
+                    None
+                }
+            });
+            // The 96 kHz transport follows the stage: no stage, no resampling
+            resampler = match (resample_cfg, spatial_stage.is_some()) {
+                (Some(_), true) if input.sample_rate == CAPTURE_RATE => Some((Downsample2::new(), Upsample2::new())),
+                _ => None,
+            };
             captured.clear();
             engine_in.clear();
             engine_out.clear();

@@ -286,7 +286,10 @@ export function Slider(props: {
   disabled?: boolean;
   /** The value as it is read (a unit, a percentage): the number otherwise */
   valueText?: string;
+  /** Every move while dragging */
   onChange: (v: number) => void;
+  /** The value the user settled on (pointer or key released) */
+  onCommit?: (v: number) => void;
 }) {
   const id = createUniqueId();
   return (
@@ -310,6 +313,7 @@ export function Slider(props: {
         disabled={props.disabled}
         aria-valuetext={props.valueText}
         onInput={(e) => props.onChange(Number(e.currentTarget.value))}
+        onChange={(e) => props.onCommit?.(Number(e.currentTarget.value))}
       />
     </div>
   );
