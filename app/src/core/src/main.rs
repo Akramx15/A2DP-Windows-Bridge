@@ -14,6 +14,7 @@ mod driver;
 mod logging;
 mod quit;
 mod resident;
+mod rfcomm;
 mod server;
 mod state;
 mod zip;
@@ -148,6 +149,12 @@ fn core_codec_details(d: ipc::CodecDetails) -> a2dpwb_core::CodecDetails {
                 max_bitrate: c.max_bitrate,
                 vbr: c.vbr,
             }),
+        }),
+        device: d.device.map(|c| a2dpwb_core::CodecDeviceCaps {
+            codec: c.codec,
+            sample_rates: c.sample_rates,
+            bit_depths: c.bit_depths,
+            max_bitrate: c.max_bitrate,
         }),
     }
 }

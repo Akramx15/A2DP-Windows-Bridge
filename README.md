@@ -12,7 +12,7 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 |-------|---------|-------------|-----------|:----------------:|:------:|
 | LHDC V5 | 400–1000 kbps, ABR 160–400 | 44.1–192 kHz | 16/24 bit | ❌ | ✅ |
 | LDAC | 330/660/990 kbps | 44.1–96 kHz | 16/24/32 bit | ❌ | ✅ |
-| aptX Adaptive | 265/427 kbps (96 kHz: 646) | 48 kHz (96 kHz ¹) | 24 bit | ❌ | ✅ ¹ |
+| aptX Adaptive | 265/427 kbps (96 kHz: 646) | 48/96 kHz | 24 bit | ❌ | ✅ ¹ |
 | Opus (Android) | 256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
 | aptX HD | 576 kbps | 44.1/48 kHz | 24 bit | ❌ | 🧪 |
 | aptX | 352/384 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
@@ -26,9 +26,9 @@ Bluetooth A2DP audio streaming for Windows with the codecs Windows lacks: LDAC, 
 
 ✅ supported · 🧪 experimental: passes the encoder tests and the end-to-end test against a virtual Bluetooth sink, but not yet confirmed with real headphones that use it ([reports welcome](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/11)) · ❌ not supported. The app offers every codec, the experimental ones too.
 
-¹ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; confirmed on an EarFun Air Pro 4+ at 48 kHz ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)); 96 kHz, tested only in the emulator, is off unless **Developer > aptX Adaptive at 96 kHz** is on. ² Auto never picks it; choose it on **Codecs**. ³ Only PipeWire (Linux) receivers implement it. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per device (its LE Audio entry on **Codecs**), and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
+¹ Encoded with the MIT-licensed encoder of [AKS-Logic/aptx-adaptive-linux](https://github.com/AKS-Logic/aptx-adaptive-linux), whose tables its authors reconstructed from shipped binaries; confirmed on an EarFun Air Pro 4+ at 48 kHz, and 96 kHz on real headphones ([#86](https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge/issues/86)). ² Auto never picks it; choose it on **Codecs**. ³ Only PipeWire (Linux) receivers implement it. ⁴ Only on PCs whose Bluetooth hardware and driver support LE Audio. ⁵ LE Audio (BAP unicast over isochronous channels), not A2DP: chosen per device (its LE Audio entry on **Codecs**), and needs an adapter with Bluetooth 5.2 isochronous channels; gaming headsets that support GMAP get its low-latency configuration (7.5/10 ms frames, 64–96 kbps per channel, ~30 ms). Tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage#le-audio)).
 
-Auto picks LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/).
+Auto picks LHDC V5 > LDAC > aptX Adaptive > Opus > aptX HD > aptX > aptX LL > AAC > SBC XQ > SBC. Per-codec details, the Ubuntu / PipeWire comparison and the verified hardware are on the [documentation home](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/). Third-party apps that work with A2DPWB (not supported by this project): [Works With](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/works-with).
 
 ## Requirements
 
@@ -63,7 +63,7 @@ a2dpwb-core.exe --cli --scan                                  # Find nearby devi
 a2dpwb-core.exe --cli -h                                      # All options
 ```
 
-To stream LDAC at 96 kHz, set the playback device's format to 96 kHz in Windows Sound settings. Everything else — codecs, capture modes, volume sync, link quality and AFH, diagnostics, start with Windows, troubleshooting — is in the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage).
+The sample rate is 48 kHz unless you choose another in a codec's settings on **Codecs** (96 kHz for LDAC, for example). Everything else — codecs, capture modes, volume sync, link quality and AFH, diagnostics, start with Windows, troubleshooting — is in the [Usage guide](https://seiyafunaokajp.github.io/A2DP-Windows-Bridge/usage).
 
 ## Spatial engine (xm6 360) — fork addition
 

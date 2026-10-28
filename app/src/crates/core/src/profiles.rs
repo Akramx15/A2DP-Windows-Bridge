@@ -79,9 +79,10 @@ pub struct Profile {
     pub auto_switch_device: bool,
     pub app_exe: String,
     pub app_name: String,
-    /// auto, off, device. Streams follow Settings::volume_sync for every
-    /// device (schema 6): off there, none syncs; on, "device" follows
-    /// volume_device_id and the others are Auto (the core's state.rs)
+    /// auto, off, device. Kept as saved, but streams follow
+    /// Settings::volume_sync alone (schema 6; issue #86: no screen sets a
+    /// followed device any more): off, none syncs; on, Auto (the core's
+    /// state.rs)
     #[serde(default = "auto")]
     pub volume_sync: String,
     pub volume_device_id: String,
@@ -108,6 +109,14 @@ pub struct Profile {
     /// The same for SBC XQ (kept apart: XQ is dual channel and goes lower)
     #[serde(skip_serializing_if = "is_zero")]
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: the lowest bitpool to use, the SET_CONFIGURATION's
+    /// minimum and the floor of ABR, within what the device allows (0 =
+    /// Auto, issue #86)
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbc_min_bitpool: u8,
+    /// The same for SBC XQ
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbcxq_min_bitpool: u8,
     /// SBC / SBC XQ: block length 4, 8, 12, 16 (0 = 16)
     #[serde(skip_serializing_if = "is_zero")]
     pub sbc_blocks: u8,
@@ -173,6 +182,8 @@ impl Default for Profile {
             max_media_payload: None,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
+            sbc_min_bitpool: 0,
+            sbcxq_min_bitpool: 0,
             sbc_blocks: 0,
             sbc_subbands: 0,
             sbc_allocation: String::new(),
@@ -200,6 +211,10 @@ pub struct CodecValues {
     #[serde(skip_serializing_if = "is_zero")]
     pub sbcxq_bitpool: u8,
     #[serde(skip_serializing_if = "is_zero")]
+    pub sbc_min_bitpool: u8,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbcxq_min_bitpool: u8,
+    #[serde(skip_serializing_if = "is_zero")]
     pub sbc_blocks: u8,
     #[serde(skip_serializing_if = "is_zero")]
     pub sbc_subbands: u8,
@@ -218,6 +233,8 @@ impl Default for CodecValues {
             abr: false,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
+            sbc_min_bitpool: 0,
+            sbcxq_min_bitpool: 0,
             sbc_blocks: 0,
             sbc_subbands: 0,
             sbc_allocation: String::new(),
@@ -242,6 +259,8 @@ impl Profile {
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,
             sbcxq_bitpool: self.sbcxq_bitpool,
+            sbc_min_bitpool: self.sbc_min_bitpool,
+            sbcxq_min_bitpool: self.sbcxq_min_bitpool,
             sbc_blocks: self.sbc_blocks,
             sbc_subbands: self.sbc_subbands,
             sbc_allocation: self.sbc_allocation.clone(),
@@ -267,6 +286,8 @@ impl Profile {
             abr: d.abr,
             sbc_bitpool: d.sbc_bitpool,
             sbcxq_bitpool: d.sbcxq_bitpool,
+            sbc_min_bitpool: d.sbc_min_bitpool,
+            sbcxq_min_bitpool: d.sbcxq_min_bitpool,
             sbc_blocks: d.sbc_blocks,
             sbc_subbands: d.sbc_subbands,
             sbc_allocation: d.sbc_allocation,
@@ -329,11 +350,14 @@ impl Profile {
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,
             sbcxq_bitpool: self.sbcxq_bitpool,
+            sbc_min_bitpool: self.sbc_min_bitpool,
+            sbcxq_min_bitpool: self.sbcxq_min_bitpool,
             sbc: codec::sbc::SbcParams {
                 blocks: self.sbc_blocks,
                 subbands: self.sbc_subbands,
                 allocation: codec::sbc::Allocation::from_key(&self.sbc_allocation),
                 channel_mode: codec::sbc::ChannelMode::from_key(&self.sbc_channel_mode),
+                min_bitpool: 0,
             },
             sample_rate: (self.sample_rate != 0).then_some(self.sample_rate),
             bit_depth: match self.bit_depth {
@@ -625,6 +649,7 @@ mod tests {
     fn sbc_setup_in_the_request_and_written_only_when_set() {
         use codec::sbc::{Allocation, ChannelMode, SbcParams};
         let text = r#"{"name":"WH","device_address":"00:A2:D0:00:00:02","codec":"sbc","sbc_bitpool":40,
+            "sbc_min_bitpool":20,"sbcxq_min_bitpool":30,
             "sbc_blocks":8,"sbc_subbands":4,"sbc_allocation":"snr","sbc_channel_mode":"stereo"}"#;
         let p: Profile = serde_json::from_str(text).unwrap();
         let r = p.to_request(1023).unwrap();
@@ -635,9 +660,15 @@ mod tests {
                 blocks: 8,
                 subbands: 4,
                 allocation: Some(Allocation::Snr),
-                channel_mode: Some(ChannelMode::Stereo)
+                channel_mode: Some(ChannelMode::Stereo),
+                min_bitpool: 0,
             }
         );
+        // Each codec its own minimum bitpool
+        assert_eq!(r.sbc_params(CodecKind::Sbc), SbcParams { min_bitpool: 20, ..r.sbc });
+        assert_eq!(r.sbc_params(CodecKind::SbcXq).min_bitpool, 30);
+        assert_eq!(r.sbc_params(CodecKind::Aac).min_bitpool, 0);
+        assert_eq!((p.codec_values().sbc_min_bitpool, p.codec_values().sbcxq_min_bitpool), (20, 30));
         // Auto (the defaults) stays out of the file and gives today's setup
         let plain = Profile { device_address: "00:A2:D0:00:00:02".into(), ..Profile::default() };
         let json = serde_json::to_string(&plain).unwrap();

@@ -28,6 +28,10 @@ unsafe extern "C" {
     pub fn a2dpwb_hfp_ag_connect(addr: *const u8) -> u8;
     pub fn a2dpwb_hfp_ag_release(acl_handle: u16) -> u8;
     pub fn a2dpwb_hfp_ag_deinit();
+    pub fn a2dpwb_rfcomm_init();
+    pub fn a2dpwb_rfcomm_deinit();
+    pub fn a2dpwb_rfcomm_create_channel(addr: *const u8, server_channel: u8, out_cid: *mut u16) -> u8;
+    pub fn a2dpwb_sdp_query_rfcomm(addr: *const u8, uuid128: *const u8) -> u8;
 
     // ---- shim.c: GAP, SDP, endpoints, configuration ----
     pub fn a2dpwb_gap_setup(class_of_device: u32, page_timeout: u16);
@@ -74,6 +78,7 @@ unsafe extern "C" {
     pub fn a2dpwb_cmd_read_rssi(con_handle: u16) -> u8;
     pub fn a2dpwb_cmd_read_bd_addr() -> u8;
     pub fn a2dpwb_cmd_read_local_version() -> u8;
+    pub fn a2dpwb_cmd_remote_name_request_cancel(addr: *const u8) -> u8;
     pub fn a2dpwb_hci_get_state() -> c_int;
     pub fn a2dpwb_hci_can_send_command_now() -> c_int;
 
@@ -132,6 +137,11 @@ unsafe extern "C" {
     pub fn avrcp_target_deinit();
     pub fn avrcp_controller_deinit();
     pub fn avrcp_deinit();
+
+    // ---- BTstack: RFCOMM ----
+    pub fn rfcomm_disconnect(rfcomm_cid: u16) -> u8;
+    pub fn rfcomm_request_can_send_now_event(rfcomm_cid: u16) -> u8;
+    pub fn rfcomm_send(rfcomm_cid: u16, data: *mut u8, len: u16) -> u8;
 
     // ---- BTstack: chipsets ----
     pub fn btstack_chipset_realtek_get_num_usb_controllers() -> u16;

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use ipc::{ClientMessage, Event, Method, PROTOCOL_VERSION, ServerMessage, read_frame, write_frame};
+use ipc::{ClientMessage, ErrorInfo, Event, Method, Msg, PROTOCOL_VERSION, ServerMessage, read_frame, write_frame};
 use tokio::net::windows::named_pipe::NamedPipeServer;
 use tokio::sync::{broadcast, mpsc};
 
@@ -59,6 +59,7 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
         &ServerMessage::Welcome {
             protocol: PROTOCOL_VERSION,
             server: format!("a2dpwb-core/{}", env!("CARGO_PKG_VERSION")),
+            features: ipc::FEATURES.iter().map(|f| f.to_string()).collect(),
         },
     )
     .await?;
@@ -75,10 +76,25 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
     // recv never ends
     let (log_tx, mut log_rx) = mpsc::channel::<ipc::LogLine>(1024);
     let mut log_sub: Option<crate::logging::Subscription> = None;
+    // RFCOMM channels this client opened: their events and the answers to
+    // its rfcomm requests, in order
+    let (rfcomm_tx, mut rfcomm_rx) = mpsc::unbounded_channel::<crate::rfcomm::Queued>();
+    let rfcomm = crate::rfcomm::Channels::new(state.clone(), client.clone(), rfcomm_tx);
     let result = loop {
         tokio::select! {
-            msg = read_frame::<_, ClientMessage>(&mut rd) => {
+            msg = read_frame::<_, serde_json::Value>(&mut rd) => {
+                let msg = match msg.map(|m| m.map(|v| parse(&client, v))) {
+                    Ok(Some(Ok(Frame::Message(m)))) => Ok(Some(m)),
+                    Ok(Some(Ok(Frame::Unreadable(answer)))) => {
+                        if let Err(e) = write_frame(&mut wr, &answer).await { break Err(e); }
+                        continue;
+                    }
+                    Ok(Some(Err(e))) => Err(e.into()),
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(e),
+                };
                 match msg {
+                    Ok(Some(ClientMessage::Request { id, call })) if rfcomm.request(id, &call) => {}
                     Ok(Some(ClientMessage::Request { id, call })) => {
                         if let Method::DiagSubscribe { logs: l, link: k, receiver: r } = &call {
                             log_sub = l.map(|level| {
@@ -146,6 +162,10 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
                     Err(broadcast::error::RecvError::Closed) => break Ok(()),
                 }
             }
+            Some(q) = rfcomm_rx.recv() => {
+                if let Err(e) = write_frame(&mut wr, &q.msg).await { break Err(e); }
+                rfcomm.written(&q);
+            }
             Some(line) = log_rx.recv() => {
                 let (rev, _) = state.snapshot();
                 let m = ServerMessage::Event { rev, event: Box::new(Event::Log(line)) };
@@ -154,10 +174,43 @@ async fn session(state: Arc<CoreState>, pipe: NamedPipeServer) -> Result<(), ipc
         }
     };
     drop(log_sub);
+    drop(rfcomm);
     set_subscribed(&state.link_subscribers, &mut link, false);
     set_subscribed(&state.receiver_subscribers, &mut receiver, false);
     tracing::info!("IPC: {client} disconnected");
     result
+}
+
+/// A client's frame after the hello
+enum Frame {
+    Message(ClientMessage),
+    /// A request this core cannot read: the answer to it
+    Unreadable(ServerMessage),
+}
+
+/// A request that does not parse (a method this core does not know, from a
+/// newer client, or bad parameters) is answered with ipc.bad_request rather
+/// than ending the connection. Anything else unreadable ends it.
+fn parse(client: &str, v: serde_json::Value) -> Result<Frame, serde_json::Error> {
+    let id = (v.get("type").and_then(|t| t.as_str()) == Some("request"))
+        .then(|| v.get("id").and_then(|i| i.as_u64()))
+        .flatten();
+    let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("?").to_owned();
+    match serde_json::from_value::<ClientMessage>(v) {
+        Ok(m) => Ok(Frame::Message(m)),
+        Err(e) => {
+            let Some(id) = id else { return Err(e) };
+            // serde lists every method it knows: not for the client
+            let why =
+                if e.to_string().starts_with("unknown variant") { "unknown method".into() } else { e.to_string() };
+            tracing::info!("IPC: {client} #{id} {method} not understood: {why}");
+            let error = ErrorInfo {
+                code: "ipc.bad_request".into(),
+                message: Msg { key: "ipc.error.bad_request".into(), args: vec![method, why] },
+            };
+            Ok(Frame::Unreadable(ServerMessage::Response { id, result: None, error: Some(error) }))
+        }
+    }
 }
 
 /// "stream.start": the method's name on the wire
@@ -197,5 +250,25 @@ mod tests {
         assert!(set_subscribed(&count, &mut a, false));
         assert!(!set_subscribed(&count, &mut a, false));
         assert_eq!(count.load(Ordering::Acquire), 1);
+    }
+
+    /// A request of a method this core does not know is answered, not the
+    /// end of the connection; other unreadable frames still end it
+    #[test]
+    fn unknown_requests_are_answered() {
+        let v = serde_json::json!({"type": "request", "id": 7, "method": "future.thing", "params": {}});
+        let Ok(Frame::Unreadable(ServerMessage::Response { id, result: None, error: Some(e) })) = parse("t", v) else {
+            panic!("not answered");
+        };
+        assert_eq!(
+            (id, e.code.as_str(), e.message.args.as_slice()),
+            (7, "ipc.bad_request", ["future.thing".to_string(), "unknown method".to_string()].as_slice())
+        );
+        let v = serde_json::json!({"type": "request", "id": 8, "method": "rfcomm.close", "params": {}});
+        assert!(matches!(parse("t", v), Ok(Frame::Unreadable(ServerMessage::Response { id: 8, .. }))));
+        let v = serde_json::json!({"type": "request", "id": 9, "method": "state.snapshot"});
+        assert!(matches!(parse("t", v), Ok(Frame::Message(ClientMessage::Request { id: 9, .. }))));
+        assert!(parse("t", serde_json::json!({"type": "goodbye"})).is_err());
+        assert!(parse("t", serde_json::json!({"type": "request", "method": "x"})).is_err());
     }
 }

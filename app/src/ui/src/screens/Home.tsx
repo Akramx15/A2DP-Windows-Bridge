@@ -2,14 +2,15 @@
 // its connection ring, state and codec and its own Connect / Disconnect.
 // One device streams at a time: Connect on another one switches to it (the
 // core stops the running stream first). The volume is on the card of the
-// device in use, as each device keeps its own (issue #86); capture source
-// (chosen right there) and link quality below, for the device in use.
+// device in use, as each device keeps its own (issue #86); its codec
+// (chosen right there, e.g. one for games and one for music) and link
+// quality below. The capture source is chosen on Audio Devices.
 
-import { createEffect, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
+import { saveSettings } from "../app/settings";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
-import { CapturePicker } from "../components/CapturePicker";
 import {
   BatteryLevel,
   CodecBadge,
@@ -21,14 +22,16 @@ import {
   QualityIndicator,
   Ring,
   showsBattery,
+  sourceText,
   statusText,
   VolumeControl,
 } from "../components/stream";
 import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
-import { audioEntries, engineLabelOf, entryByKey, entryOf, registryFolder, type AudioEntry } from "../lib/profile";
+import { CARD_ORDER, cardOrder, codecSpec } from "../lib/codecs";
+import { audioEntries, engineLabelOf, entryBase, entryByKey, entryOf, knownCodecs, registryFolder, type AudioEntry } from "../lib/profile";
 import { spatialEngines } from "../lib/spatial";
-import { chooseCodec } from "./Codecs";
+import { chooseCodec, codecShown, pickedCodec, settle, settling } from "./Codecs";
 
 /** Adapters whose firmware files are missing from the settings folder or
  *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
@@ -136,7 +139,8 @@ export function Home() {
   const snap = () => core.state.snap!;
   const stream = () => snap().stream;
   const entries = () => audioEntries(snap());
-  const profile = () => currentProfile(snap());
+  // The device in use (or last used)
+  const inUse = () => entryOf(entries(), currentProfile(snap()));
   // A failed request (Connect) until the state moves on
   const [reqError, setReqError] = createSignal<IpcError | null>(null);
   createEffect(on(() => stream().state, () => setReqError(null), { defer: true }));
@@ -181,18 +185,18 @@ export function Home() {
           </For>
         </div>
 
-        <Show when={profile()}>
-          {(p) => (
+        <Show when={inUse()}>
+          {(entry) => (
             <div class="home-grid">
-              <section class="card mini" aria-labelledby="home-capture">
-                <h2 id="home-capture" class="mini-title">
-                  {t("capture.mode")}
+              <section class="card mini" aria-labelledby="home-codec">
+                <h2 id="home-codec" class="mini-title">
+                  {t("quality.codec")}
                 </h2>
                 <div class="mini-body">
-                  <CapturePicker profile={p()} />
+                  <CodecPicker entry={entry()} />
                 </div>
-                <button type="button" class="link" onClick={() => navigate({ name: "devices" })}>
-                  {t("ui.home.capture_more")}
+                <button type="button" class="link" onClick={() => navigate({ name: "codecs" })}>
+                  {t("ui.home.codec_more")}
                 </button>
               </section>
               <section class="card mini" aria-labelledby="home-link">
@@ -220,6 +224,10 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
   const state = () => entryState(snap(), props.entry);
   const live = () => state() !== "idle";
   const running = () => state() === "streaming" || state() === "connecting" || state() === "reconnecting";
+  const waiting = () => {
+    const src = stream().info?.source;
+    return src?.waiting ? sourceText(src, props.entry.profile).text : null;
+  };
   const [busy, setBusy] = createSignal(false);
   const press = async () => {
     setBusy(true);
@@ -279,6 +287,16 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
           <Show when={engine()}>
             <span class="tag">{engine()}</span>
           </Show>
+          {/* The application it captures is not playing yet (the source is
+              chosen on Audio Devices) */}
+          <Show when={live() && waiting()}>
+            {(w) => (
+              <span class="capture-source st-warn" title={`${t("capture.mode")}: ${w()}`}>
+                <Icon name="warning" />
+                <span class="ellipsis">{w()}</span>
+              </span>
+            )}
+          </Show>
         </div>
       </section>
       {/* Its own volume, while it is the one in use */}
@@ -296,6 +314,89 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
         <Icon name={running() ? "plug_disconnected" : "power"} />
         <span>{label()}</span>
       </button>
+    </div>
+  );
+}
+
+/** The codec of the device in use, chosen right on Home (issue #86):
+ *  Auto-select or one of the codecs it supports, as on Codecs (the codec
+ *  chosen, and Auto's pick, even when not supported). A choice applies at
+ *  once: the device in use connects again with it (settings.set,
+ *  profile.save in the core). An LE Audio device has LC3 only. */
+function CodecPicker(props: { entry: AudioEntry }) {
+  const app = useApp();
+  const snap = () => app.core.state.snap!;
+  const e = () => props.entry;
+  const autoAll = () => snap().settings.auto_codec;
+  const codec = () => (e().profile ?? entryBase(e(), snap().profiles)).codec;
+  const order = () => (autoAll() ? [...CARD_ORDER] : cardOrder(e().profile?.codec_order));
+  const picked = () => pickedCodec(snap(), e(), autoAll(), order());
+  // Auto-select on, or no codec chosen for the device yet: Auto; a codec
+  // it does not offer: the one used instead (issue #86)
+  const value = () => (autoAll() || codec() === "auto" ? "auto" : (picked() ?? codec()));
+  // A quick choice: what the device supports, never the codecs Codecs hides
+  const choices = () =>
+    order().filter((id) => codecShown(id, picked(), knownCodecs(snap().devices, e().address), true));
+  const autoLabel = () => {
+    const p = picked();
+    return value() === "auto" && p ? t("ui.home.codec_auto_pick", t(codecSpec(p).label)) : t("ui.home.codec_auto");
+  };
+  const [busy, setBusy] = createSignal(false);
+  let select: HTMLSelectElement | undefined;
+  // A save that ends after the card is gone starts no wait
+  let mounted = true;
+  onCleanup(() => (mounted = false));
+  const choose = async (id: string) => {
+    if (id === value()) return;
+    // The stream starts again with the codec: the next choice waits for it,
+    // as on Codecs (issue #86)
+    const running = entryState(snap(), e()) !== "idle" && entryState(snap(), e()) !== "error";
+    setBusy(true);
+    // Auto-select is one setting for every device (as on Codecs): turned
+    // off before the codec is chosen, so the device connects again with it
+    const ok =
+      id === "auto"
+        ? await saveSettings(app, { auto_codec: true })
+        : (!autoAll() || (await saveSettings(app, { auto_codec: false }))) &&
+          (await chooseCodec(app, e(), id)) !== null;
+    setBusy(false);
+    if (ok && running && mounted) settle(app);
+    // Not saved: back to what the device has
+    if (!ok && select) select.value = value();
+  };
+  return (
+    <div class="mini-picker">
+      <Icon name="music_note_2" />
+      <div class="select">
+        <Show
+          when={!e().le_audio}
+          fallback={
+            <select aria-label={t("quality.codec")} disabled>
+              <option>{t("ui.codec.lc3")}</option>
+            </select>
+          }
+        >
+          <select
+            ref={select}
+            aria-label={t("quality.codec")}
+            disabled={busy() || settling()}
+            aria-busy={busy() || settling() ? "true" : undefined}
+            onChange={(ev) => void choose(ev.currentTarget.value)}
+          >
+            <option value="auto" selected={value() === "auto"}>
+              {autoLabel()}
+            </option>
+            <For each={choices()}>
+              {(id) => (
+                <option value={id} selected={value() === id}>
+                  {t(codecSpec(id).label)}
+                </option>
+              )}
+            </For>
+          </select>
+        </Show>
+        <Icon name="chevron_down" class="select-chevron" />
+      </div>
     </div>
   );
 }

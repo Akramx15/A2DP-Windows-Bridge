@@ -37,7 +37,8 @@
 //! Schema 6 (issue #86): Windows Volume Sync, the media keys and "remember
 //! volume" are one setting each for every device. `volume_sync` starts as
 //! the profile in use had it (the last one streamed, else the first; on
-//! without a profile); a profile that follows another device keeps that.
+//! without a profile); a device a profile followed stays in the file but
+//! no longer counts (the core's state.rs).
 //! The per-device overrides of media keys and remember volume
 //! (`device_options`) are dropped: the global values count.
 //!

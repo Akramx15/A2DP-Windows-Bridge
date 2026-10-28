@@ -31,6 +31,7 @@ const SBC: CodecDetails = {
     },
   },
   aac: null,
+  device: null,
 };
 
 const INFO: StreamInfo = {
@@ -113,6 +114,28 @@ describe("codec details", () => {
     expect(c).not.toHaveTextContent("Filled: in use.");
   });
 
+  it("shows what any other codec's endpoint lists, as for SBC and AAC (issue #86)", () => {
+    const ldac: CodecDetails = {
+      ...SBC,
+      frame_bytes: null,
+      frames_per_packet: null,
+      sbc: null,
+      device: { codec: "ldac", sample_rates: [44100, 48000, 96000], bit_depths: [16, 24], max_bitrate: 0 },
+    };
+    const info = { ...INFO, codec: "LDAC", sample_rate: 96000, bits: 24, details: ldac };
+    const c = render(() => <CodecDetailsCard info={info} details={ldac} />).container;
+    expect(c.querySelector("h3")).toHaveTextContent("LDAC");
+    expect([...c.querySelectorAll(".cd-chip")].map((x) => x.textContent)).toEqual([
+      "44.1 kHz",
+      "48 kHz",
+      "96 kHz (in use)",
+      "16-bit",
+      "24-bit (in use)",
+    ]);
+    expect(c).toHaveTextContent("Device's peak bit rateNot given");
+    expect(c).toHaveTextContent("Filled: in use.");
+  });
+
   it("shows AAC's object type, peak bit rate and VBR", () => {
     const aac: CodecDetails = {
       mtu: 894,
@@ -133,6 +156,7 @@ describe("codec details", () => {
           vbr: true,
         },
       },
+      device: null,
     };
     const view = render(() => <CodecDetailsCard info={{ ...INFO, codec: "AAC", sample_rate: 44100, details: aac }} details={aac} />);
     const c = view.container;

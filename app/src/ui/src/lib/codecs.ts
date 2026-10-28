@@ -1,7 +1,7 @@
 // The codecs a profile can ask for and what each allows, as v1's profile
 // dialog (wx_profile_dialog.cpp on the develop branch, update_codec_dependent): quality
 // modes with their bitrates (since issue #86 High / Medium / Low for LDAC
-// and LHDC V5, High / Low Latency for aptX Adaptive, only High, the highest
+// and LHDC V5, LHDC V5's Medium-High too (issue #203), High / Low Latency for aptX Adaptive, only High, the highest
 // bit rate the device takes, for the others; core: Quality::for_codec),
 // ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them; v2 adds SBC / SBC XQ's adaptive bitpool), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
@@ -64,6 +64,7 @@ export const BITPOOL_MAX_XQ = 47;
 export const BITPOOL_MIN = 2;
 
 const HQ = "quality.high";
+const MEDIUM_HIGH = "quality.medium_high";
 const MEDIUM = "quality.medium";
 const LOW = "quality.low";
 const LL = "quality.low_latency";
@@ -93,10 +94,11 @@ export const CODECS: CodecSpec[] = [
     id: "lhdcv5",
     label: "codec.lhdc_v5",
     bars: { quality: 5, latency: 2, stability: 2 },
-    // Three of Android's fixed levels (the sink may cap the maximum; its
-    // 900 kbps Medium-High is gone, issue #86: High there)
+    // Android's four fixed levels (the sink may cap the maximum). Medium-
+    // High was left out in issue #86 and is back since issue #203
     qualities: [
       { id: "hq", label: HQ, kbps: "1000" },
+      { id: "mhq", label: MEDIUM_HIGH, kbps: "900" },
       { id: "sq", label: MEDIUM, kbps: "500" },
       { id: "mq", label: LOW, kbps: "400" },
     ],
@@ -127,8 +129,7 @@ export const CODECS: CodecSpec[] = [
   {
     // aptX Adaptive: High with an R1 sink
     // (an R2 sink: 427 -> 340), 48 kHz; ABR steps down from High; Low
-    // Latency has a fixed bit rate. 96 kHz only while Developer > "aptX
-    // Adaptive at 96 kHz" is on (issue #86), when chosen, to a device that
+    // Latency has a fixed bit rate. 96 kHz when chosen, to a device that
     // lists it (an R2 one), not in Low Latency (48 kHz otherwise; 646
     // kbps). Always 24-bit.
     id: "aptxad",
@@ -394,21 +395,20 @@ export function capsOf(caps: readonly CodecCaps[], codec: string): CodecCaps | n
 }
 
 /** Whether the device lists a sample rate (anything goes while not known;
- *  LHDC V5's 88.2 kHz runs as 96 kHz) */
+ *  LHDC V5's 88.2 kHz runs as 96 kHz). aptX Adaptive's 96 kHz only when
+ *  the device lists it: few do (an R2 one with a 96 kHz bit; issue #86, a
+ *  Bose QC Ultra has none), and the core streams 48 kHz to the others */
 export function rateOffered(codec: string, rate: number, caps: CodecCaps | null): boolean {
-  if (rate === 0 || !caps || caps.sample_rates.length === 0) return true;
+  if (rate === 0) return true;
+  if (codec === "aptxad" && rate === 96000) return caps?.sample_rates.includes(rate) ?? false;
+  if (!caps || caps.sample_rates.length === 0) return true;
   return caps.sample_rates.includes(codec === "lhdcv5" && rate === 88200 ? 96000 : rate);
 }
 
-/**
- * The sample rates the dialog offers (issue #86): the codec's, as far as
- * the device lists them, aptX Adaptive's 96 kHz only while Developer >
- * "aptX Adaptive at 96 kHz" is on (`aptxad96k`)
- */
-export function offeredSampleRates(codec: string, caps: CodecCaps | null, aptxad96k = true): number[] {
-  return sampleRates(codec).filter(
-    (r) => rateOffered(codec, r, caps) && !(codec === "aptxad" && r === 96000 && !aptxad96k),
-  );
+/** The sample rates the dialog offers (issue #86): the codec's, as far as
+ *  the device lists them */
+export function offeredSampleRates(codec: string, caps: CodecCaps | null): number[] {
+  return sampleRates(codec).filter((r) => rateOffered(codec, r, caps));
 }
 
 /** The bit depths the dialog offers: the codec's, as far as the device
@@ -548,6 +548,8 @@ interface CodecFields {
   bit_depth: number;
   sbc_bitpool?: number;
   sbcxq_bitpool?: number;
+  sbc_min_bitpool?: number;
+  sbcxq_min_bitpool?: number;
   sbc_blocks?: number;
   sbc_subbands?: number;
   sbc_allocation?: string;
@@ -569,6 +571,8 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
     bit_depth: bitDepths(p.codec).includes(p.bit_depth) ? p.bit_depth : 0,
     ...(p.sbc_bitpool === undefined ? {} : { sbc_bitpool: p.codec === "sbc" ? p.sbc_bitpool : 0 }),
     ...(p.sbcxq_bitpool === undefined ? {} : { sbcxq_bitpool: p.codec === "sbcxq" ? p.sbcxq_bitpool : 0 }),
+    ...(p.sbc_min_bitpool === undefined ? {} : { sbc_min_bitpool: p.codec === "sbc" ? p.sbc_min_bitpool : 0 }),
+    ...(p.sbcxq_min_bitpool === undefined ? {} : { sbcxq_min_bitpool: p.codec === "sbcxq" ? p.sbcxq_min_bitpool : 0 }),
     ...(p.sbc_blocks === undefined ? {} : { sbc_blocks: sbc ? p.sbc_blocks : 0 }),
     ...(p.sbc_subbands === undefined ? {} : { sbc_subbands: sbc ? p.sbc_subbands : 0 }),
     ...(p.sbc_allocation === undefined ? {} : { sbc_allocation: sbc ? p.sbc_allocation : "" }),

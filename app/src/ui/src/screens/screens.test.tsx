@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
+import { FALLBACK_NOTE_MS } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
+import { endSettle } from "./Codecs";
 
 let mock: MockCore | null = null;
 
@@ -18,6 +20,7 @@ function start(hash: string, opts: MockOptions = {}) {
 
 afterEach(async () => {
   cleanup();
+  endSettle();
   mock?.dispose();
   mock = null;
   await setLanguage("en");
@@ -40,9 +43,9 @@ describe("Home", () => {
     expect(wh.querySelector(".codec-badge")).toHaveTextContent("24-bit");
     expect(wh.querySelector(".codec-info > .codec-name")).toHaveTextContent(/^LDAC$/);
     expect(within(wh).getByRole("status")).toHaveTextContent(/^Connected$/);
-    // The other device: ready, not streaming, its own Connect
-    expect(xb).toHaveTextContent("Ready");
-    expect(xb).toHaveTextContent("Not streaming");
+    // The other device: ready, not connected, its own Connect
+    expect(xb).toHaveTextContent("Disconnected");
+    expect(xb).toHaveTextContent("—");
     expect(within(xb).getByRole("button", { name: "Connect" })).toBeInTheDocument();
     // The volume is the device's own: on its card only (issue #86)
     expect(within(wh).getByRole("slider", { name: "Volume" })).not.toBeDisabled();
@@ -66,6 +69,16 @@ describe("Home", () => {
     expect(battery).toHaveTextContent("Battery unknown");
     expect(battery.getAttribute("title")).toMatch(/Another device \(such as a phone\)/);
     expect(battery).not.toHaveTextContent("%");
+  });
+
+  it("shows the codec and the link quality, not the link latency nor the capture source (issue #86)", async () => {
+    start("#/home");
+    await homeCard("WH-1000XM5");
+    const main = within(screen.getByRole("main"));
+    expect(await main.findByRole("region", { name: t("quality.title") })).toBeInTheDocument();
+    expect(main.getByRole("region", { name: t("quality.codec") })).toBeInTheDocument();
+    expect(main.queryByText("Link latency")).toBeNull();
+    expect(main.queryByLabelText(t("capture.mode"))).toBeNull();
   });
 
   it("switches to another device with its Connect (one device streams at a time)", async () => {
@@ -106,7 +119,7 @@ describe("Home", () => {
     const [wh, xb] = pills();
     expect(wh).toHaveTextContent("WH-1000XM5");
     expect(wh).not.toHaveTextContent("AC:80:0A:12:34:56");
-    expect(wh).toHaveTextContent("Idle");
+    expect(wh).toHaveTextContent("Disconnected");
     expect(xb).toHaveTextContent("SRS-XB13");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(wh.querySelector(".codec-name")).toHaveTextContent(/^LDAC$/));
@@ -119,7 +132,7 @@ describe("Home", () => {
     expect([...badge.children].map((c) => c.textContent)).toEqual(["990 kbps", expect.stringMatching(/^[\d.]+ kHz$/), "24-bit"]);
     expect(wh).toHaveAccessibleName(/^WH-1000XM5, Connected, LDAC 990 kbps/);
     // The other one: idle, no codec
-    expect(xb).toHaveTextContent("Idle");
+    expect(xb).toHaveTextContent("Disconnected");
     expect(xb.querySelector(".codec-info")).toBeNull();
   });
 
@@ -143,6 +156,48 @@ describe("Home", () => {
     }
     expect(within(card).getByRole("status")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
     expect(pill.querySelector(".status-pill-state")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
+    // For a few seconds only, then the icon alone, its tooltip saying why
+    await waitFor(() => expect(card.querySelector(".codec-note")).toBeNull(), { timeout: FALLBACK_NOTE_MS + 2000 });
+    for (const where of [card, pill]) {
+      expect(where.querySelector(".codec-note")).toBeNull();
+      expect(where.querySelector(".codec-name .icon")).not.toBeNull();
+    }
+  }, 15000);
+
+  it("chooses the codec of the device in use right there, the capture source being on Audio Devices (issue #86)", async () => {
+    const { calls } = start("#/home");
+    await homeCard("WH-1000XM5");
+    const card = (await screen.findByRole("heading", { level: 2, name: "Codec" })).closest("section")!;
+    expect(screen.queryByRole("heading", { name: "Capture Source" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "More capture settings" })).toBeNull();
+    const select = within(card).getByRole("combobox", { name: "Codec" }) as HTMLSelectElement;
+    // Auto-select, then the codecs the device supports in its order
+    expect([...select.options].map((o) => o.value)).toEqual(["auto", "ldac", "aac", "sbc"]);
+    expect(select.value).toBe("ldac");
+    // Saved at once, as a card chosen on Codecs
+    fireEvent.change(select, { target: { value: "aac" } });
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "profile.save")?.params).toMatchObject({
+        profile: { codec: "aac" },
+        original_name: "WH-1000XM5 (LDAC)",
+      }),
+    );
+    await waitFor(() => expect(select.value).toBe("aac"));
+    // Auto-select is the one setting for every device; it shows its pick
+    fireEvent.change(select, { target: { value: "auto" } });
+    await waitFor(() => expect(select.selectedOptions[0]).toHaveTextContent(/^Auto-select \(LDAC\)$/));
+    expect(calls.filter((c) => c.method === "settings.set").at(-1)?.params).toMatchObject({ settings: { auto_codec: true } });
+    // A codec chosen under Auto-select turns it off first
+    const before = calls.length;
+    fireEvent.change(select, { target: { value: "sbc" } });
+    const after = () => calls.slice(before).filter((c) => c.method === "settings.set" || c.method === "profile.save");
+    await waitFor(() => expect(after().map((c) => c.method)).toEqual(["settings.set", "profile.save"]));
+    await waitFor(() => expect(select.value).toBe("sbc"));
+    expect(select.selectedOptions[0]).toHaveTextContent(/^SBC$/);
+    expect(after()[0].params).toMatchObject({ settings: { auto_codec: false } });
+    expect(after()[1].params).toMatchObject({ profile: { codec: "sbc" } });
+    fireEvent.click(within(card).getByRole("button", { name: "More codec settings" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Codecs" })).toBeInTheDocument();
   });
 
   it("asks to exit the other A2DPWB (v1, or another v2) while it runs", async () => {
@@ -255,7 +310,7 @@ describe("every screen renders", () => {
     expect(document.querySelector(".fly-title .device-name")).toBeNull();
     // Hidden by Escape and on losing the focus: no close button
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
-    expect(screen.getByText("Not streaming")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
     fireEvent.click(connect);
     await screen.findByRole("button", { name: "Disconnect" });
     await waitFor(() => expect(document.querySelector(".fly-title .codec-name")).toHaveTextContent(/^LDAC$/));
@@ -290,7 +345,7 @@ describe("update", () => {
     await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(mock!["snap"].stream.state).toBe("streaming"));
     fireEvent.click(await screen.findByRole("button", { name: "Update now" }));
-    await screen.findByText(/It is installed when streaming stops/);
+    await screen.findByText(/It is installed when the audio device disconnects/);
     await mock!.call("stream.stop");
     await screen.findByText(/Installing version 2\.0\.0-beta\.1/, {}, { timeout: 3000 });
   });

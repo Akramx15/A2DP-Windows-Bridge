@@ -35,6 +35,8 @@ export interface Transport {
 
   showMain(route?: string): Promise<void>;
   hideWindow(): Promise<void>;
+  /** The flyout's page is this tall (CSS pixels): its window fits it */
+  fitHeight?(height: number): Promise<void>;
   openUrl(url: string): Promise<void>;
   openFolder(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;

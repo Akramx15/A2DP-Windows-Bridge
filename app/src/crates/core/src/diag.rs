@@ -1230,6 +1230,20 @@ fn codec_details(out: &mut String, c: &crate::CodecDetails) {
             );
         }
     }
+    if let Some(d) = &c.device {
+        let _ = writeln!(
+            out,
+            "  Device {}: {}; {}; peak {}",
+            d.codec,
+            if d.sample_rates.is_empty() { "rates not given".to_string() } else { khz(&d.sample_rates) },
+            if d.bit_depths.is_empty() {
+                "bit depth not given".to_string()
+            } else {
+                format!("{}-bit", joined(&d.bit_depths))
+            },
+            if d.max_bitrate == 0 { "not given".to_string() } else { format!("{} bps", d.max_bitrate) }
+        );
+    }
 }
 
 /// Why the bit rate is below the profile's: ABR, or the device's maximum
@@ -1443,18 +1457,9 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
             }
             let payload = p.max_media_payload.map(|v| v.to_string()).unwrap_or_else(|| "not set".into());
             let _ = writeln!(out, ", auto switch {}, max media packet {payload}", on_off(p.auto_switch_device));
-            // As the stream has it: the setting for every device, the device
-            // the profile follows (developer mode)
-            let sync = match (s.volume_sync, p.volume_sync.as_str()) {
-                (false, _) => "off",
-                (true, "device") => "device",
-                _ => "auto",
-            };
-            let _ = write!(out, "  Volume sync: {sync}");
-            if sync == "device" {
-                let _ = write!(out, " {}", quoted(&p.volume_device_name));
-            }
-            out.push('\n');
+            // As the stream has it: the setting for every device alone (the
+            // profile's own is no longer used, issue #86)
+            let _ = writeln!(out, "  Volume sync: {}", if s.volume_sync { "auto" } else { "off" });
         }
         None => out.push_str("  (none selected - receiver measurement or not connected)\n"),
     }
@@ -2178,6 +2183,7 @@ mod tests {
                     }),
                 }),
                 aac: None,
+                device: None,
             })),
         };
         let stats = LinkStats::default();
