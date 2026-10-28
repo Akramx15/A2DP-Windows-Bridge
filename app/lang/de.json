@@ -754,7 +754,6 @@
   "ui.codecs.settling": "Der Codec wird gewechselt. Einen Moment warten, bevor ein anderer gewählt wird.",
   "ui.codecs.order_keys": "Codec-Karten ziehen oder auf einer Karte Alt mit einer Pfeiltaste drücken, um die Reihenfolge für das Audiogerät zu ändern. Ein Codec, den das Gerät nicht unterstützt, fällt auf die erste Karte zurück, die es unterstützt.",
   "ui.codecs.moved": "%s: Platz %d von %d",
-  "ui.codecs.fallback_to": "Das Audiogerät hat ihn bei der letzten Verbindung nicht unterstützt: Stattdessen wird %s verwendet, der erste unterstützte Codec in seiner Reihenfolge.",
   "ui.profile.sbc_quality_hint": "Die Bitrate, die Bitpool und Frame-Einstellungen unten ergeben (bei Abtastrate Auto mit 48 kHz, bei einem Audiogerät ohne 48 kHz mit 44,1 kHz).",
   "ui.devices.none_saved": "Noch keine Audiogeräte. Suchen Sie Ihres unten oder fügen Sie es über seine Adresse hinzu.",
   "ui.devices.add_title": "Audiogerät hinzufügen",

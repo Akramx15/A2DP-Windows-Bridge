@@ -754,7 +754,6 @@
   "ui.codecs.settling": "正在切換編解碼器。請稍候再選擇其他編解碼器。",
   "ui.codecs.order_keys": "拖曳編解碼器卡片，或在卡片上按 Alt 加方向鍵，即可變更音訊裝置的順序。裝置不支援的編解碼器將改用其支援的第一張卡片。",
   "ui.codecs.moved": "%s:第 %d 位，共 %d 個",
-  "ui.codecs.fallback_to": "音訊裝置上次連線時不支援此編解碼器:將改用其順序中第一個受支援的編解碼器 %s。",
   "ui.profile.sbc_quality_hint": "由下方位元池與幀設定得出的位元率(取樣率為 Auto 時按 48 kHz 計算，音訊裝置不支援 48 kHz 時按 44.1 kHz)。",
   "ui.devices.none_saved": "還沒有音訊裝置。請在下方掃描或依位址新增。",
   "ui.devices.add_title": "新增音訊裝置",

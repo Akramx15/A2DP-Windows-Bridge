@@ -57,7 +57,8 @@ describe("the Codecs screen", () => {
     start("#/codecs");
     expect(await screen.findByRole("heading", { level: 1, name: t("ui.nav.codecs") })).toBeInTheDocument();
     const wh = await section("WH-1000XM5");
-    expect(wh).toHaveTextContent("AC:80:0A:12:34:56");
+    // The name only: the address is on Audio Devices (issue #86)
+    expect(wh).not.toHaveTextContent("AC:80:0A:12:34:56");
     expect(wh).toHaveTextContent(t("device.tag_saved"));
     expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked();
     // No Auto card: Auto is one switch for every device (issue #86), off
@@ -217,16 +218,21 @@ describe("the Codecs screen", () => {
     expect(within(wh).getByRole("radio", { name: /AAC/ })).not.toBeDisabled();
   });
 
-  it("falls back to the best supported codec, not the next one below the chosen one (issue #86 round 8)", async () => {
+  it("chooses the best supported codec for an unsupported card, not the next one below it (issue #86)", async () => {
     const { calls } = start("#/codecs");
     const wh = await section("WH-1000XM5");
     fireEvent.click(hideSwitch());
-    // aptX HD: not offered by the WH-1000XM5 (SBC, AAC, LDAC): LDAC, the
-    // best it offers, not AAC below aptX HD
-    fireEvent.click(await within(wh).findByRole("radio", { name: /aptX HD/ }));
+    // AAC first, then aptX HD: not offered by the WH-1000XM5 (SBC, AAC,
+    // LDAC): LDAC, the best it offers, not AAC below aptX HD, and no note
+    fireEvent.click(within(wh).getByRole("radio", { name: /^AAC/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
-    expect(await within(wh).findByText(t("error.codec_not_supported", "aptX HD"))).toBeInTheDocument();
-    expect(within(wh).getByText(t("ui.codecs.fallback_to", t("codec.ldac")))).toBeInTheDocument();
+    await waitFor(() => expect(within(wh).getByRole("radio", { name: /^AAC/ })).toBeChecked());
+    fireEvent.click(await within(wh).findByRole("radio", { name: /aptX HD/ }));
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls).at(-1)?.profile).toMatchObject({ codec: "ldac" });
+    await waitFor(() => expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked());
+    expect(within(wh).getByRole("radio", { name: /aptX HD/ })).not.toBeChecked();
+    expect(within(wh).queryByText(t("error.codec_not_supported", "aptX HD"))).toBeNull();
   });
 
   it("offers every codec, with no Experimental tag (issue #86: the README marks them)", async () => {
@@ -241,11 +247,11 @@ describe("the Codecs screen", () => {
     }
     expect(within(wh).queryByRole("radio", { name: /Opus 05/ })).toBeNull();
     expect(wh).not.toHaveTextContent(/Experimental/);
-    // Chosen: only the fallback the device needs (it does not support it)
+    // Chosen: the device does not support it, LDAC stays (nothing to save)
     fireEvent.click(hd);
-    await waitFor(() => expect(saves(calls)).toHaveLength(1));
-    expect(await within(wh).findByText(t("error.codec_not_supported", "aptX HD"))).toBeInTheDocument();
-    expect(within(wh).getByText(t("ui.codecs.fallback_to", t("codec.ldac")))).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(saves(calls)).toHaveLength(0);
+    expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked();
   });
 });
 
@@ -355,11 +361,11 @@ describe("codec cards", () => {
     expect(bad.querySelector(".icon")).toHaveClass("st-bad");
     expect(hide).not.toBeChecked();
 
-    // A codec it does not offer: said plainly, with what happens instead
+    // A codec it does not offer: LDAC, the best it offers, stays chosen
     fireEvent.click(hd);
-    await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
-    expect(await within(wh).findByText(t("error.codec_not_supported", "aptX HD"))).toBeInTheDocument();
-    expect(within(wh).getByText(t("ui.codecs.fallback_to", t("codec.ldac")))).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.some((c) => c.method === "profile.save")).toBe(false);
+    expect(ldac).toBeChecked();
   });
 
   it("say it is not known before the first connection", async () => {
@@ -403,12 +409,13 @@ describe("codec cards", () => {
     // The other devices keep the default order
     expect(cardNames(await section("SRS-XB13"))[0]).toBe(t("codec.lhdc_v5"));
 
-    // Its fallback: the first card the device supports (AAC for aptX HD)
+    // An unsupported card chooses the first card the device supports (AAC
+    // for aptX HD)
     fireEvent.click(hideSwitch());
     fireEvent.click(await within(wh).findByRole("radio", { name: /aptX HD/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(2));
-    expect(saves(calls)[1].profile.codec_order).toEqual(order);
-    expect(await within(wh).findByText(t("ui.codecs.fallback_to", t("codec.aac")))).toBeInTheDocument();
+    expect(saves(calls)[1].profile).toMatchObject({ codec: "aac", codec_order: order });
+    await waitFor(() => expect(within(wh).getByRole("radio", { name: /AAC/ })).toBeChecked());
 
     // Back to the default order: saved as none
     await settled(wh);
@@ -454,6 +461,21 @@ describe("codec cards", () => {
     fireEvent.click(sbc);
     await waitFor(() => expect(saves(calls)).toHaveLength(2));
     expect(saves(calls)[1].profile).toMatchObject({ codec: "sbc" });
+  });
+
+  it("offer no Reset when the cards shown are back in the default order (issue #86)", async () => {
+    const { calls } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    const reset = () => main().queryByRole("button", { name: t("ui.codecs.order_reset") });
+    // AAC before LDAC, then back after it: the default order, saved as none
+    fireEvent.keyDown(within(wh).getByRole("radio", { name: /AAC/ }), { key: "ArrowLeft", altKey: true });
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    await waitFor(() => expect(reset()).not.toBeNull());
+    fireEvent.keyDown(within(wh).getByRole("radio", { name: /AAC/ }), { key: "ArrowRight", altKey: true });
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1].profile.codec_order).toEqual([]);
+    await waitFor(() => expect(reset()).toBeNull());
+    expect(cardNames(wh)).toEqual([t("codec.ldac"), t("codec.aac"), t("codec.sbc")]);
   });
 
   it("are in the default order and cannot be moved under Auto-select, which ignores the device's order", async () => {

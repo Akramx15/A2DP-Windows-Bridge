@@ -755,7 +755,6 @@
   "ui.codecs.settling": "Switching the codec. Wait a moment before choosing another.",
   "ui.codecs.order_keys": "Drag the codec cards, or press Alt with an arrow key on a card, to change the audio device's order. A codec the device does not support falls back to the first card it supports.",
   "ui.codecs.moved": "%s: place %d of %d",
-  "ui.codecs.fallback_to": "The audio device did not support it at its last connection: %s, the first codec in its order that it supports, is used instead.",
   "ui.profile.sbc_quality_hint": "The bit rate the bitpool and frame setup below give (at 48 kHz when the rate is Auto, or 44.1 kHz on an audio device without 48 kHz).",
   "ui.devices.none_saved": "No audio devices yet. Scan for yours or add it by its address below.",
   "ui.devices.add_title": "Add an audio device",

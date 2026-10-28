@@ -320,11 +320,12 @@ function CodecPicker(props: { entry: AudioEntry }) {
   const codec = () => (e().profile ?? entryBase(e(), snap().profiles)).codec;
   const order = () => (autoAll() ? [...CARD_ORDER] : cardOrder(e().profile?.codec_order));
   const picked = () => pickedCodec(snap(), e(), autoAll(), order());
-  // Auto-select on, or no codec chosen for the device yet: Auto
-  const value = () => (autoAll() || codec() === "auto" ? "auto" : codec());
+  // Auto-select on, or no codec chosen for the device yet: Auto; a codec
+  // it does not offer: the one used instead (issue #86)
+  const value = () => (autoAll() || codec() === "auto" ? "auto" : (picked() ?? codec()));
   // A quick choice: what the device supports, never the codecs Codecs hides
   const choices = () =>
-    order().filter((id) => codecShown(id, codec(), picked(), knownCodecs(snap().devices, e().address), true));
+    order().filter((id) => codecShown(id, picked(), knownCodecs(snap().devices, e().address), true));
   const autoLabel = () => {
     const p = picked();
     return value() === "auto" && p ? t("ui.home.codec_auto_pick", t(codecSpec(p).label)) : t("ui.home.codec_auto");
