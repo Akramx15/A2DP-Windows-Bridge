@@ -859,7 +859,12 @@ fn chip_changed(before: &CoreSettings, after: &CoreSettings) -> bool {
 /// The codec and what it runs with: "LDAC 990 kbps | 96 kHz | 24-bit | ABR"
 /// (AAC's variable bit rate is VBR, as the UI calls it)
 fn tray_codec_line(codec: &str, kbps: u32, sample_rate: u32, bits: u32, abr: bool) -> String {
-    let mut line = format!("{codec} {kbps} kbps | {} kHz", sample_rate as f64 / 1000.0);
+    format!("{codec} {}", codec_params(codec, kbps, sample_rate, bits, abr))
+}
+
+/// The codec's values without its name: "990 kbps | 96 kHz | 24-bit | ABR"
+fn codec_params(codec: &str, kbps: u32, sample_rate: u32, bits: u32, abr: bool) -> String {
+    let mut line = format!("{kbps} kbps | {} kHz", sample_rate as f64 / 1000.0);
     if bits > 0 {
         line.push_str(&format!(" | {bits}-bit"));
     }
@@ -870,10 +875,11 @@ fn tray_codec_line(codec: &str, kbps: u32, sample_rate: u32, bits: u32, abr: boo
 }
 
 /// The balloon of a new connection (issue #86): "WH-1000XM4 connected",
-/// then the codec as the tooltip shows it ([`tray_codec_line`]), the codec
-/// asked for when another one is used (as the UI's note beside the codec),
-/// and the battery when it is known already. None without the stream info:
-/// the codec's values are the negotiated ones, known once it is set up.
+/// then, as the connection info card shows them, the battery when it is
+/// known already, the codec, its values on a line of their own
+/// ([`codec_params`]), and the codec asked for when another one is used
+/// (the UI's note beside the codec). None without the stream info: the
+/// codec's values are the negotiated ones, known once it is set up.
 fn connected_balloon(lang: &str, device: Option<&str>, stream: &StreamStatus) -> Option<BalloonRequest> {
     let i = stream.info.as_ref()?;
     let tr = |key: &str, default: &str| a2dpwb_core::messages::translate(lang, key, default);
@@ -882,19 +888,21 @@ fn connected_balloon(lang: &str, device: Option<&str>, stream: &StreamStatus) ->
         Some(d) => printf(&tr("notify.connected", "%s connected"), &[d.to_string()]),
         None => tr("status.connected", "Connected"),
     };
-    let mut lines = vec![tray_codec_line(&i.codec, i.bitrate_kbps, i.sample_rate, i.bits, i.abr)];
+    let mut lines = Vec::new();
+    if let Some(b) = stream.battery {
+        lines.push(printf(&tr("ui.home.battery", "Battery %d%%"), &[b.to_string()]));
+    }
+    lines.push(i.codec.clone());
+    lines.push(codec_params(&i.codec, i.bitrate_kbps, i.sample_rate, i.bits, i.abr));
     if let Some(req) = &i.requested_codec {
         let (key, default) = if stream.message.key == "status.connected_fallback_experimental" {
             ("ui.codec.fallback_experimental", "(%s is experimental)")
         } else if i.requested_in_use {
             ("ui.codec.fallback_in_use", "(%s is in use)")
         } else {
-            ("ui.codec.fallback_unsupported", "(%s is not supported)")
+            ("ui.codec.fallback_unsupported", "(%s is unsupported)")
         };
         lines.push(printf(&tr(key, default), std::slice::from_ref(req)));
-    }
-    if let Some(b) = stream.battery {
-        lines.push(printf(&tr("ui.home.battery", "Battery %d%%"), &[b.to_string()]));
     }
     Some(BalloonRequest { title, text: lines.join("\n"), url: None })
 }
@@ -2353,27 +2361,27 @@ mod tests {
         let ldac = streaming_with("LDAC", 990, 96000, 24, true, Some(80));
         let b = connected_balloon("en", Some("WH-1000XM4"), &ldac).unwrap();
         assert_eq!(b.title, "WH-1000XM4 connected");
-        assert_eq!(b.text, "LDAC 990 kbps | 96 kHz | 24-bit | ABR\nBattery 80%");
+        assert_eq!(b.text, "Battery 80%\nLDAC\n990 kbps | 96 kHz | 24-bit | ABR");
         assert_eq!(b.url, None);
 
         // Battery not known yet; an address when the device has no name
         let aptx = streaming_with("aptX Adaptive", 420, 48000, 24, true, None);
         let b = connected_balloon("en", Some("C0:11:22:33:44:55"), &aptx).unwrap();
         assert_eq!(b.title, "C0:11:22:33:44:55 connected");
-        assert_eq!(b.text, "aptX Adaptive 420 kbps | 48 kHz | 24-bit | ABR");
+        assert_eq!(b.text, "aptX Adaptive\n420 kbps | 48 kHz | 24-bit | ABR");
 
         // Another codec than the one asked for: the reason, as the UI's note
         let mut aac = streaming_with("AAC", 320, 44100, 16, true, Some(55));
         aac.info.as_mut().unwrap().requested_codec = Some("LDAC".into());
         let b = connected_balloon("en", None, &aac).unwrap();
         assert_eq!(b.title, "Connected");
-        assert_eq!(b.text, "AAC 320 kbps | 44.1 kHz | 16-bit | VBR\n(LDAC is not supported)\nBattery 55%");
+        assert_eq!(b.text, "Battery 55%\nAAC\n320 kbps | 44.1 kHz | 16-bit | VBR\n(LDAC is unsupported)");
         aac.info.as_mut().unwrap().requested_in_use = true;
         assert!(connected_balloon("en", None, &aac).unwrap().text.contains("(LDAC is in use)"));
 
         // Translated; nothing before the codec is set up
         let b = connected_balloon("ja", Some("WH-1000XM4"), &ldac).unwrap();
-        assert_eq!(b.text, "LDAC 990 kbps | 96 kHz | 24-bit | ABR\nバッテリー 80%");
+        assert_eq!(b.text, "バッテリー 80%\nLDAC\n990 kbps | 96 kHz | 24-bit | ABR");
         assert!(connected_balloon("en", Some("WH"), &StreamStatus::default()).is_none());
     }
 
