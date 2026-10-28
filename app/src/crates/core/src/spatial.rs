@@ -142,13 +142,15 @@ fn resolve(dir: &Path, name: &str) -> PathBuf {
 }
 
 /// The engines in `dir`: the folder itself when it holds a program, then every
-/// subfolder with one (alphabetically).
+/// subfolder with one (alphabetically). An empty `dir` is the app's own
+/// engines folder ([`default_registry`]).
 pub fn list(dir: &Path) -> Vec<SpatialEngine> {
+    let dir = registry_dir(dir);
     let mut out = Vec::new();
-    if let Some(engine) = engine_in(dir) {
+    if let Some(engine) = engine_in(&dir) {
         out.push(engine);
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(entries) = std::fs::read_dir(&dir) else {
         return out;
     };
     let mut dirs: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect();
@@ -157,6 +159,40 @@ pub fn list(dir: &Path) -> Vec<SpatialEngine> {
         if let Some(engine) = engine_in(&d) {
             out.push(engine);
         }
+    }
+    out
+}
+
+/// The folder a registry path names: an empty one is the app's own engines
+/// folder. A path copied from a JSON file or a log may carry quotes and the
+/// doubled separators of an escaped path: both go.
+pub fn registry_dir(dir: &Path) -> PathBuf {
+    let clean = clean_path(&dir.to_string_lossy());
+    if clean.is_empty() { default_registry() } else { PathBuf::from(clean) }
+}
+
+/// The app's own engines folder (`engines\` in the settings folder), for a
+/// profile that chose none: the stages are installed there by hand
+pub fn default_registry() -> PathBuf {
+    crate::paths::config_dir().join("engines")
+}
+
+/// A path as it is used: without the quotes a copied one carries and with
+/// the doubled separators of an escaped one ("C:\\engines") made single; a
+/// UNC path keeps its leading "\\"
+fn clean_path(text: &str) -> String {
+    let text = text.trim().trim_matches('"');
+    let unc = text.starts_with("\\\\");
+    let body = if unc { &text[2..] } else { text };
+    let mut out = String::with_capacity(text.len());
+    if unc {
+        out.push_str("\\\\");
+    }
+    for c in body.chars() {
+        if c == '\\' && out.ends_with('\\') {
+            continue;
+        }
+        out.push(c);
     }
     out
 }
@@ -641,6 +677,22 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         assert!(list(&dir).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_registry_is_the_apps_own_folder() {
+        // A profile that chose no folder: `engines\` in the settings folder
+        assert_eq!(registry_dir(Path::new("")), default_registry());
+        assert_eq!(registry_dir(Path::new("   ")), default_registry());
+        assert!(default_registry().ends_with("engines"));
+    }
+
+    #[test]
+    fn a_copied_registry_path_loses_its_quotes_and_doubled_separators() {
+        assert_eq!(registry_dir(Path::new(r"C:\\Engines\\sony")), PathBuf::from(r"C:\Engines\sony"));
+        assert_eq!(registry_dir(Path::new("\"C:\\\\Engines\"")), PathBuf::from(r"C:\Engines"));
+        // A UNC path keeps its two leading separators
+        assert_eq!(registry_dir(Path::new(r"\\server\share\engines")), PathBuf::from(r"\\server\share\engines"));
     }
 
     #[test]
