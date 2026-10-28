@@ -247,6 +247,8 @@ describe("the spatial effect", () => {
     const focus = () => within(card).getByRole("slider", { name: t("spatial.control_center_focus") });
     await waitFor(() => expect(within(card).getByRole("slider", { name: t("spatial.control_ambience_spread") })).toBeInTheDocument());
     fireEvent.input(focus(), { target: { value: "0.8" } });
+    // The card writes when the slider is released, not on every move
+    fireEvent.change(focus(), { target: { value: "0.8" } });
     await waitFor(() => expect(calls.some((c) => c.method === "spatial.set_controls")).toBe(true), { timeout: 3000 });
     expect(calls.find((c) => c.method === "spatial.set_controls")?.params).toEqual({
       profile: "WH-1000XM5 (LDAC)",
