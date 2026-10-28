@@ -1,0 +1,71 @@
+# Watches upstream and opens an issue when a new tag appears.
+# Runs on the default branch, which is why main carries exactly this file.
+name: upstream-watch
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Newest upstream tag
+        id: upstream
+        run: |
+          set -eu
+          latest=$(git ls-remote --tags --refs https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge.git 'v*' \
+            | sed 's#.*refs/tags/##' | sort -V | tail -1)
+          echo "tag=$latest" >> "$GITHUB_OUTPUT"
+          echo "newest upstream tag: $latest"
+      - name: Newest tag this fork has seen
+        id: local
+        run: |
+          set -eu
+          latest=$(git tag --list 'v*' | grep -v -- '-xm6' | sort -V | tail -1 || true)
+          echo "tag=${latest:-none}" >> "$GITHUB_OUTPUT"
+          echo "newest local tag: ${latest:-none}"
+      - name: Open an issue for a new tag
+        if: steps.upstream.outputs.tag != steps.local.outputs.tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.upstream.outputs.tag }}';
+            const title = `Upstream release ${tag} is available`;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100,
+            });
+            if (issues.some((i) => i.title === title)) {
+              core.info('issue already open');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: [
+                `Upstream published \`${tag}\`.`,
+                '',
+                'Merge it with one command on a checkout of `feat/xm6`:',
+                '',
+                '```powershell',
+                `python tools/xm6/sync_upstream.py --tag ${tag}`,
+                '```',
+                '',
+                'The script resolves the mechanical conflicts (language JSON, generated',
+                'bindings), runs the gates and prints the release tag. If it stops on a',
+                'conflict, `docs/UPSTREAM-SYNC.md` has the file-by-file table.',
+              ].join('\n'),
+              labels: ['upstream-sync'],
+            });
+      - name: No new tag
+        if: steps.upstream.outputs.tag == steps.local.outputs.tag
+        run: echo "up to date with ${{ steps.local.outputs.tag }}"

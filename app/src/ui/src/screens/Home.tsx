@@ -26,7 +26,8 @@ import {
 } from "../components/stream";
 import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
-import { audioEntries, entryByKey, entryOf, type AudioEntry } from "../lib/profile";
+import { audioEntries, engineLabelOf, entryByKey, entryOf, registryFolder, type AudioEntry } from "../lib/profile";
+import { spatialEngines } from "../lib/spatial";
 import { chooseCodec } from "./Codecs";
 
 /** Adapters whose firmware files are missing from the settings folder or
@@ -238,6 +239,13 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
         ? t("modal.cancel")
         : t("connection.connect");
   const name = () => props.entry.name || props.entry.address;
+  // The effect the device's profile runs (empty: none, or its engine is not
+  // in the folder any more); the list is the Codecs screen's (lib/spatial.ts)
+  const engine = () => {
+    const p = props.entry.profile;
+    if (!p?.spatial_engine) return "";
+    return engineLabelOf(p, spatialEngines(app.core, registryFolder(p)).engines() ?? []);
+  };
   return (
     // The group names the device for its button ("Connect" on each card)
     <div class="home-device" classList={{ live: live() }} role="group" aria-label={name()}>
@@ -267,6 +275,9 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
           </div>
           <Show when={live()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
             <CodecBadge />
+          </Show>
+          <Show when={engine()}>
+            <span class="tag">{engine()}</span>
           </Show>
         </div>
       </section>

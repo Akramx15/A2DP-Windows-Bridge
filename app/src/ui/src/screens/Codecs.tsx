@@ -31,6 +31,7 @@ import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecC
 import { Banner, Button, Check, Dialog, Toggle } from "../components/controls";
 import { audioDevices } from "../components/DevicePicker";
 import { Icon } from "../components/Icon";
+import { SpatialStage } from "../components/SpatialStage";
 import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
 import type { Profile } from "../ipc/types";
@@ -459,6 +460,8 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
         <Show when={known().length === 0}>
           <p class="hint">{t("ui.profile.codecs_unknown")}</p>
         </Show>
+        {/* The device's effect (the xm6 360 chain), saved with its profile */}
+        <SpatialStage profile={shown()} save={(edit) => saveEntry(app, e(), edit)} />
         <Show when={instead()}>
           {(c) => (
             <Banner kind="warn" title={t("error.codec_not_supported", t(codecSpec(codec()).label))}>

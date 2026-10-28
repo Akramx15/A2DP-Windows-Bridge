@@ -275,6 +275,46 @@ export function Select<T extends string | number>(props: {
   );
 }
 
+/** A range slider on its label and the value it has now (the stages' own
+ *  settings: the app has no other range control) */
+export function Slider(props: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled?: boolean;
+  /** The value as it is read (a unit, a percentage): the number otherwise */
+  valueText?: string;
+  onChange: (v: number) => void;
+}) {
+  const id = createUniqueId();
+  return (
+    <div class="field slider-field">
+      <div class="field-head">
+        <label class="field-label" for={id}>
+          {props.label}
+        </label>
+        <span class="mono slider-value" aria-hidden="true">
+          {props.valueText ?? String(props.value)}
+        </span>
+      </div>
+      <input
+        id={id}
+        type="range"
+        class="slider"
+        min={props.min}
+        max={props.max}
+        step={props.step}
+        value={props.value}
+        disabled={props.disabled}
+        aria-valuetext={props.valueText}
+        onInput={(e) => props.onChange(Number(e.currentTarget.value))}
+      />
+    </div>
+  );
+}
+
 /** A card section with a heading */
 export function Section(props: { title: string; actions?: JSX.Element; children: JSX.Element; class?: string; id?: string }) {
   const id = createUniqueId();

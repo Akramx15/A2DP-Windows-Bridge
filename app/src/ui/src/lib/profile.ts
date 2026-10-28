@@ -422,6 +422,33 @@ export function engineLabelOf(p: Profile, engines: readonly SpatialEngine[]): st
   return engines.find((e) => e.path === p.spatial_engine_path)?.label ?? "";
 }
 
+/**
+ * A folder as the core takes it: without the quotes a copied path carries,
+ * and with the doubled separators of an escaped path ("C:\\engines") made
+ * single ("C:\engines"). A UNC path keeps its leading "\\".
+ */
+export function normalizeFolder(folder: string): string {
+  const text = folder.trim().replace(/^"|"$/g, "");
+  const unc = text.startsWith("\\\\");
+  const body = unc ? text.slice(2) : text;
+  let out = unc ? "\\\\" : "";
+  for (const c of body) {
+    if (c === "\\" && out.endsWith("\\")) continue;
+    out += c;
+  }
+  return out;
+}
+
+/**
+ * The folder a profile's engines are listed in: the folder it chose, else
+ * empty (the core's own engines folder, crates/core/src/spatial.rs
+ * default_registry). Empty is also what the folder's "Use default folder"
+ * button saves.
+ */
+export function registryFolder(p: Pick<Profile, "spatial_engine_registry">): string {
+  return normalizeFolder(p.spatial_engine_registry);
+}
+
 /** stream.start_custom for the core's test tone (left 1 kHz, right
  *  1.5 kHz, as v1's) to a profile's headphones, with its sound settings */
 export function toneParams(p: Profile): ParamsOf<"stream.start_custom"> {

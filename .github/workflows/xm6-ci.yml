@@ -1,0 +1,115 @@
+# The fork's own checks: the feature must survive every merge.
+name: xm6-ci
+
+on:
+  pull_request:
+    branches: [feat/xm6]
+  push:
+    branches: [feat/xm6]
+  workflow_dispatch:
+
+concurrency:
+  group: xm6-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (windows, GNU-free MSVC runner)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Placeholder for the UI build
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force app/src/ui/dist | Out-Null
+      - name: Tags of extern/opus
+        run: git -C extern/opus fetch --depth 1 --tags origin
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Unit tests
+        run: cargo test --workspace
+
+  ui:
+    name: UI (tsc + vitest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app/src/ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: app/src/ui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/src/ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm exec vitest run
+
+  feature-intact:
+    name: The spatial feature is still wired
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Feature files present
+        run: |
+          set -eu
+          for f in \
+            app/src/crates/core/src/spatial.rs \
+            app/src/crates/pipeline/src/spatial.rs \
+            app/src/crates/pipeline/src/resample.rs \
+            app/src/ui/src/components/SpatialStage.tsx
+          do
+            test -f "$f" || { echo "missing feature file: $f"; exit 1; }
+          done
+      - name: The pipeline still calls the stage
+        run: |
+          grep -q "spatial" app/src/crates/pipeline/src/lib.rs || { echo "pipeline lost the spatial hook"; exit 1; }
+      - name: Language keys survive
+        run: |
+          missing=0
+          for f in app/lang/*.json; do
+            for key in profile.spatial_sony profile.spatial_upmixer profile.spatial_off; do
+              grep -q "\"$key\"" "$f" || { echo "$f lost $key"; missing=1; }
+            done
+          done
+          exit $missing
+
+  bindings-fresh:
+    name: Generated bindings are current
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: New-Item -ItemType Directory -Force app/src/ui/dist | Out-Null
+        shell: pwsh
+      - run: git -C extern/opus fetch --depth 1 --tags origin
+      - run: cargo test -p ipc export_bindings
+      - name: No diff in bindings
+        run: git diff --exit-code -- app/src/ui/src/ipc/bindings
+
+  lang:
+    name: Language files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/check_lang.py
