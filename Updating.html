@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>التحديث من upstream — XM6 360</title>
+<style>
+:root { --fg:#1c1e21; --muted:#5b6167; --line:#dfe3e8; --bg:#fbfbfc; --card:#fff; --accent:#0a6cff; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e8eb; --muted:#a0a6ad; --line:#2c3036; --bg:#14161a; --card:#1b1e23; --accent:#6ba6ff; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 16px/1.75 "Segoe UI", Tahoma, "Noto Naskh Arabic", system-ui, sans-serif; }
+header { border-bottom:1px solid var(--line); background:var(--card); }
+nav { max-width:900px; margin:0 auto; padding:14px 20px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+nav .brand { font-weight:700; margin-inline-end:auto; }
+nav a { color:var(--muted); text-decoration:none; font-size:14px; }
+nav a:hover, nav a[aria-current] { color:var(--accent); }
+main { max-width:900px; margin:0 auto; padding:28px 20px 64px; }
+h1 { font-size:30px; line-height:1.3; margin:0 0 18px; }
+h2 { font-size:21px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+h3 { font-size:17px; margin:22px 0 8px; }
+p, li { color:var(--fg); }
+a { color:var(--accent); }
+code { background:rgba(127,127,127,.14); padding:1px 5px; border-radius:4px; font-size:14px; direction:ltr; unicode-bidi:embed; }
+pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+pre code { background:none; padding:0; }
+table { width:100%; border-collapse:collapse; margin:14px 0; font-size:15px; }
+th, td { border:1px solid var(--line); padding:8px 10px; text-align:right; vertical-align:top; }
+th { background:rgba(127,127,127,.08); }
+blockquote { margin:16px 0; padding:2px 16px; border-inline-start:3px solid var(--accent); color:var(--muted); }
+hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
+footer { max-width:900px; margin:0 auto; padding:0 20px 40px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header><nav>
+  <span class="brand">XM6 360</span>
+  <a href="index.html">XM6 360</a>
+  <a href="Install.html">التركيب</a>
+  <a href="Effect.html">استخدام التأثير</a>
+  <a href="Updating.html" aria-current="page">التحديث من upstream</a>
+  <a href="Architecture.html">البنية</a>
+  <a href="Troubleshooting.html">استكشاف الأخطاء</a>
+  <a href="Releases.html">الإصدارات</a>
+</nav></header>
+<main>
+<h1>التحديث من upstream</h1>
+<p>عندما ينشر <code>SeiyaFunaokaJP/A2DP-Windows-Bridge</code> إصداراً جديداً (وسم <code>v2.0.2-beta.N</code>)، لا تُعدّل الميزة يدوياً. أمر واحد:</p>
+<pre><code class="language-powershell">python tools/xm6/sync_upstream.py
+</code></pre>
+<p>بدون <code>--tag</code> يأخذ أحدث وسم. لتحديد وسم:</p>
+<pre><code class="language-powershell">python tools/xm6/sync_upstream.py --tag v2.0.2-beta.11
+</code></pre>
+<h2>ماذا يفعل</h2>
+<ol>
+<li>يتأكد أن الشجرة نظيفة وأنك على <code>feat/xm6</code>.</li>
+<li><code>git fetch upstream --tags</code>.</li>
+<li>ينشئ <code>upstream-sync/&lt;tag&gt;</code> من <code>feat/xm6</code>.</li>
+<li><code>git merge --no-ff --no-commit &lt;tag&gt;</code>.</li>
+<li>يحلّ <strong>التعارضات الميكانيكية فقط</strong>:
+   - <code>app/lang/*.json</code> — دمج ثلاثي لكل مفتاح: نص upstream الجديد يفوز إذا لم نغيّره، ومفاتيحنا تبقى.
+   - <code>app/src/ui/src/ipc/bindings/*.ts</code> — مولّدة بـts-rs: تُعاد توليدها بدل دمجها كنص.</li>
+<li>يترك أي تعارض حقيقي ويوقف، ويطبع الملفات.</li>
+<li>يشغّل البوابات: <code>cargo check</code> + <code>tsc</code> + <code>vitest</code> + <code>check_lang.py</code>.</li>
+<li>يلتزم ويكتب <code>tools/xm6/STATE.json</code>، ويطبع وسم الإصدار التالي <code>v&lt;tag&gt;-xm6.&lt;n&gt;</code>.</li>
+</ol>
+<p>خيارات: <code>--dry-run</code> (يعرض التعارضات بلا تغيير)، <code>--no-gates</code>، <code>--keep</code>، <code>--push</code>.</p>
+<h2>إن توقف على تعارض حقيقي</h2>
+<table>
+<thead>
+<tr>
+<th>الملف</th>
+<th>الحل المعتاد</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ipc/src/lib.rs</code></td>
+<td>خُذ الجانبين (exports الجديدة من الطرفين)</td>
+</tr>
+<tr>
+<td><code>ui/screens/Codecs.tsx</code></td>
+<td>أبقِ هيكل upstream وأعد تركيب <code>&lt;SpatialStage&gt;</code></td>
+</tr>
+<tr>
+<td><code>ui/screens/Home.tsx</code></td>
+<td>ادمج الاستيرادات، وأبقِ شارة التأثير وسطر الاتصال</td>
+</tr>
+<tr>
+<td>bindings</td>
+<td><code>cargo test -p ipc export_bindings</code></td>
+</tr>
+</tbody>
+</table>
+<p>بعد الحل: <code>git add</code>، ثم أكمل الدمج يدوياً وحدّث <code>STATE.json</code>.</p>
+<h2>الفروع</h2>
+<table>
+<thead>
+<tr>
+<th>الفرع</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>main</code></td>
+<td>مرآة <code>upstream/main</code> — ممنوع أي تعديل</td>
+</tr>
+<tr>
+<td><code>feat/xm6</code></td>
+<td>الميزة الدائمة — ممنوع rebase أو force-push</td>
+</tr>
+<tr>
+<td><code>upstream-sync/&lt;tag&gt;</code></td>
+<td>فرع دمج قصير العمر، يُحذف بعد الدمج</td>
+</tr>
+</tbody>
+</table>
+<p>الإصدارات وسوم على merge commit: <code>v2.0.2-beta.10-xm6.1</code>.</p>
+<h2>CI</h2>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th>متى يعمل</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>xm6-ci.yml</code></td>
+<td>PR/push على <code>feat/xm6</code></td>
+<td>Rust (fmt/clippy/test) + UI (tsc/vitest) + <strong>feature-intact</strong> + <strong>bindings-fresh</strong> + مفاتيح اللغة</td>
+</tr>
+<tr>
+<td><code>upstream-watch.yml</code></td>
+<td>كل 6 ساعات</td>
+<td>يفتح Issue عند وسم جديد مع أمر التحديث</td>
+</tr>
+<tr>
+<td><code>xm6-release.yml</code></td>
+<td>دفع وسم <code>v*-xm6.*</code></td>
+<td>يبني zip + SHA256SUMS وينشر prerelease</td>
+</tr>
+</tbody>
+</table>
+<p><code>feat/xm6</code> محمي: ممنوع force-push، والدمج يحتاج الفحوص الخمسة.</p>
+</main>
+<footer>A2DP Windows Bridge — فرع <code>Akramx15/A2DP-Windows-Bridge</code></footer>
+</body>
+</html>

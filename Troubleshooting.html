@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>استكشاف الأخطاء — XM6 360</title>
+<style>
+:root { --fg:#1c1e21; --muted:#5b6167; --line:#dfe3e8; --bg:#fbfbfc; --card:#fff; --accent:#0a6cff; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e8eb; --muted:#a0a6ad; --line:#2c3036; --bg:#14161a; --card:#1b1e23; --accent:#6ba6ff; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 16px/1.75 "Segoe UI", Tahoma, "Noto Naskh Arabic", system-ui, sans-serif; }
+header { border-bottom:1px solid var(--line); background:var(--card); }
+nav { max-width:900px; margin:0 auto; padding:14px 20px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+nav .brand { font-weight:700; margin-inline-end:auto; }
+nav a { color:var(--muted); text-decoration:none; font-size:14px; }
+nav a:hover, nav a[aria-current] { color:var(--accent); }
+main { max-width:900px; margin:0 auto; padding:28px 20px 64px; }
+h1 { font-size:30px; line-height:1.3; margin:0 0 18px; }
+h2 { font-size:21px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+h3 { font-size:17px; margin:22px 0 8px; }
+p, li { color:var(--fg); }
+a { color:var(--accent); }
+code { background:rgba(127,127,127,.14); padding:1px 5px; border-radius:4px; font-size:14px; direction:ltr; unicode-bidi:embed; }
+pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+pre code { background:none; padding:0; }
+table { width:100%; border-collapse:collapse; margin:14px 0; font-size:15px; }
+th, td { border:1px solid var(--line); padding:8px 10px; text-align:right; vertical-align:top; }
+th { background:rgba(127,127,127,.08); }
+blockquote { margin:16px 0; padding:2px 16px; border-inline-start:3px solid var(--accent); color:var(--muted); }
+hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
+footer { max-width:900px; margin:0 auto; padding:0 20px 40px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header><nav>
+  <span class="brand">XM6 360</span>
+  <a href="index.html">XM6 360</a>
+  <a href="Install.html">التركيب</a>
+  <a href="Effect.html">استخدام التأثير</a>
+  <a href="Updating.html">التحديث من upstream</a>
+  <a href="Architecture.html">البنية</a>
+  <a href="Troubleshooting.html" aria-current="page">استكشاف الأخطاء</a>
+  <a href="Releases.html">الإصدارات</a>
+</nav></header>
+<main>
+<h1>استكشاف الأخطاء</h1>
+<h2>لا يتغير الصوت عند تبديل المحرك</h2>
+<p>تحقق من اللوق: <code>%APPDATA%\A2DPWB\logs\a2dpwb-core.&lt;date&gt;.log</code></p>
+<pre><code>spatial engine: warming ... in the background
+spatial engine: the warmed stage takes over
+spatial engine: READY mode=... backend=native-reconstructed   ← Sony
+spatial engine: EXPERIMENTAL_ID config={...}                    ← Upmixer
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>ما تراه</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>لا سطر <code>READY</code></td>
+<td>المحرك لم يبدأ: راجع مسار المرحلة و<code>restore.ps1</code></td>
+</tr>
+<tr>
+<td><code>READY</code> لكن الصوت لا يتغير</td>
+<td>قد يكون المحرك في وضع bypass: راجع <code>correction</code> في <code>config</code></td>
+</tr>
+<tr>
+<td><code>config={"correction":"sony-xm6-ba"}</code> بينما تريد AutoEQ</td>
+<td>نسخة الإعدادات لم تُستخدم — حدّث التطبيق (أُصلح في <code>9f310c7</code>)</td>
+</tr>
+</tbody>
+</table>
+<h2>نافذة CMD سوداء تظهر</h2>
+<p>المحرك يُشغَّل بـ<code>CREATE_NO_WINDOW</code>. إذا ظهرت نافذة فهي غالباً من نسخة <strong>قديمة</strong> شغّالة: التطبيق single-instance، فلا يحمّل ملفات جديدة إن كان يعمل. أغلق <code>a2dpwb.exe</code> و<code>a2dpwb-core.exe</code> من Task Manager ثم افتح التطبيق.</p>
+<h2>الصوت يطلع من اللابتوب والسماعة معاً</h2>
+<p>التطبيق يكتم مخرج الصوت الافتراضي أثناء البث. تحقق:</p>
+<pre><code class="language-powershell"># مكتوم؟
+powershell -File tools\mute-check.ps1   # أو من إعدادات الصوت في ويندوز
+</code></pre>
+<p>إن كان غير مكتوم: تأكد أنك على البناء الذي فيه <code>speakers.rs</code>، وأن الحالة <code>Streaming</code> (لا <code>Reconnecting</code>).</p>
+<blockquote>
+<p>ملاحظة: لو أُغلق التطبيق بالقوة أثناء البث قد يبقى ويندوز مكتوماً — افتح التطبيق وأوقف البث، أو اكتم من إعدادات الصوت.</p>
+</blockquote>
+<h2>تقطيع أو <code>Poor</code> عند تغيير الشريط</h2>
+<ul>
+<li>الشريط يُكتب عند رفع الإصبع، لا أثناء السحب.</li>
+<li>محرك Upmixer ياخذ ~0.9 ثانية ليجهز؛ أثناءها يعمل المحرك القديم. إن سمعت فراغاً فأنت على بناء قديم (قبل <code>77fc9e6</code>).</li>
+</ul>
+<h2>Upmixer لا يعمل بعد التبديل لسوني والعودة</h2>
+<p>كان البق أن <code>config_for</code> تُسأل عن <code>python.exe</code> لا عن مجلد المرحلة، فيضيع التصحيح. أُصلح في <code>9f310c7</code>. تحقق من اللوق أن <code>config</code> يحمل <code>"correction":"autoeq-wh1000xm6"</code>.</p>
+<h2>التصحيح AutoEQ ما يبان أثره</h2>
+<p>AutoEQ يفترض: ANC شغّال، وEQ الداخلي للسماعة مطفي. وهو ليس معايرة شخصية للأذن.</p>
+<h2>المراحل غير موجودة</h2>
+<pre><code class="language-powershell">powershell -ExecutionPolicy Bypass -File tools/xm6/restore.ps1
+</code></pre>
+<p>ثم في التطبيق: <strong>Codecs → Engine folder → Use default folder</strong>.</p>
+<h2>فشل البناء</h2>
+<ul>
+<li>استخدم <code>cargo +stable-x86_64-pc-windows-gnu</code>.</li>
+<li><code>aptx-adaptive</code> يحتاج rustc 1.99؛ MSVC الأقدم يفشل.</li>
+<li>مسافة في مسار المشروع تكسر <code>windres</code> — ابنِ من مسار بلا مسافات.</li>
+</ul>
+<h2>أين الحالة</h2>
+<table>
+<thead>
+<tr>
+<th>الملف</th>
+<th>ماذا يقول</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tools/xm6/STATE.json</code></td>
+<td>من أي وسم upstream بُني هذا</td>
+</tr>
+<tr>
+<td><code>%APPDATA%\A2DPWB\profiles.json</code></td>
+<td>البروفايلات وإعدادات التأثير</td>
+</tr>
+<tr>
+<td><code>%APPDATA%\A2DPWB\spatial\*.json</code></td>
+<td>نسخة إعدادات المرحلة التي يقرأها المحرك</td>
+</tr>
+<tr>
+<td><code>%APPDATA%\A2DPWB\logs\a2dpwb-ui.*.log</code></td>
+<td>بدء الواجهة والأخطاء</td>
+</tr>
+</tbody>
+</table>
+</main>
+<footer>A2DP Windows Bridge — فرع <code>Akramx15/A2DP-Windows-Bridge</code></footer>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>البنية — XM6 360</title>
+<style>
+:root { --fg:#1c1e21; --muted:#5b6167; --line:#dfe3e8; --bg:#fbfbfc; --card:#fff; --accent:#0a6cff; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e8eb; --muted:#a0a6ad; --line:#2c3036; --bg:#14161a; --card:#1b1e23; --accent:#6ba6ff; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 16px/1.75 "Segoe UI", Tahoma, "Noto Naskh Arabic", system-ui, sans-serif; }
+header { border-bottom:1px solid var(--line); background:var(--card); }
+nav { max-width:900px; margin:0 auto; padding:14px 20px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+nav .brand { font-weight:700; margin-inline-end:auto; }
+nav a { color:var(--muted); text-decoration:none; font-size:14px; }
+nav a:hover, nav a[aria-current] { color:var(--accent); }
+main { max-width:900px; margin:0 auto; padding:28px 20px 64px; }
+h1 { font-size:30px; line-height:1.3; margin:0 0 18px; }
+h2 { font-size:21px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+h3 { font-size:17px; margin:22px 0 8px; }
+p, li { color:var(--fg); }
+a { color:var(--accent); }
+code { background:rgba(127,127,127,.14); padding:1px 5px; border-radius:4px; font-size:14px; direction:ltr; unicode-bidi:embed; }
+pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+pre code { background:none; padding:0; }
+table { width:100%; border-collapse:collapse; margin:14px 0; font-size:15px; }
+th, td { border:1px solid var(--line); padding:8px 10px; text-align:right; vertical-align:top; }
+th { background:rgba(127,127,127,.08); }
+blockquote { margin:16px 0; padding:2px 16px; border-inline-start:3px solid var(--accent); color:var(--muted); }
+hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
+footer { max-width:900px; margin:0 auto; padding:0 20px 40px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header><nav>
+  <span class="brand">XM6 360</span>
+  <a href="index.html">XM6 360</a>
+  <a href="Install.html">التركيب</a>
+  <a href="Effect.html">استخدام التأثير</a>
+  <a href="Updating.html">التحديث من upstream</a>
+  <a href="Architecture.html" aria-current="page">البنية</a>
+  <a href="Troubleshooting.html">استكشاف الأخطاء</a>
+  <a href="Releases.html">الإصدارات</a>
+</nav></header>
+<main>
+<h1>البنية</h1>
+<h2>مسار الصوت</h2>
+<pre><code>التقاط (48 kHz أو 96 kHz)
+   → [إعادة عيّنة إلى 48 kHz]   فقط إذا كان الالتقاط 96 kHz
+   → محرك مكاني (عملية فرعية، بلوكات 1024، 48 kHz)
+   → [إعادة عيّنة للخلف]
+   → المشفّر → LDAC / aptX / AAC …
+</code></pre>
+<ul>
+<li>المحرك <strong>عملية فرعية</strong> لا مكتبة: لا يُسقط التطبيق، ويُستبدل بلا إعادة بناء.</li>
+<li>فشل المحرك = مرور الصوت كما هو + سطر في اللوق؛ لا يموت البث.</li>
+<li>المحرك ثابت على 48 kHz / 1024. مسار 96 kHz موجود في <code>resample.rs</code> لكنه غير مفعّل افتراضياً.</li>
+</ul>
+<h2>أين الكود</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>المسؤولية</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/src/crates/core/src/spatial.rs</code></td>
+<td>اكتشاف المراحل، المانيفست، التحكم، أمر التشغيل</td>
+</tr>
+<tr>
+<td><code>app/src/crates/pipeline/src/spatial.rs</code></td>
+<td>العملية الفرعية: PCM داخل/خارج، <code>CREATE_NO_WINDOW</code></td>
+</tr>
+<tr>
+<td><code>app/src/crates/pipeline/src/resample.rs</code></td>
+<td>إعادة العيّنة حول المحرك</td>
+</tr>
+<tr>
+<td><code>app/src/crates/pipeline/src/lib.rs</code></td>
+<td>حقن واحد في <code>encode_thread</code> + قناة <code>PENDING_STAGE</code></td>
+</tr>
+<tr>
+<td><code>app/src/crates/core/src/speakers.rs</code></td>
+<td>كتم سماعات الـPC أثناء البث</td>
+</tr>
+<tr>
+<td><code>app/src/ui/src/components/DeviceEffects.tsx</code></td>
+<td>أزرار التأثير والمرحلة والتصحيح والشريطين</td>
+</tr>
+<tr>
+<td><code>app/src/ui/src/components/stream.tsx</code></td>
+<td>سطر الاتصال الموحّد (<code>ConnectionLine</code>) والشارات</td>
+</tr>
+<tr>
+<td><code>app/src/crates/core/src/service.rs</code></td>
+<td><code>notify()</code>: كتم/رفع السماعات حسب حالة البث</td>
+</tr>
+</tbody>
+</table>
+<h2>تبديل المرحلة بدون قطع</h2>
+<ol>
+<li>طلب التبديل يصل إلى <code>PENDING_STAGE</code> (خانة واحدة، آخر طلب يفوز).</li>
+<li>خيط البث يبني المحرك الجديد في <strong>خيط منفصل</strong> ويسخّنه ببلوك صامت.</li>
+<li>المحرك القديم يظل يعالج الصوت إلى أن يردّ الجديد.</li>
+<li>عندها يتم التبديل عند حدّ بلوك، مع تفريغ المخازن المؤقتة.</li>
+</ol>
+<p>لهذا لا يوجد فراغ عند التبديل: Sony ~50 مللي، Upmixer ~0.9 ثانية.</p>
+<h2>إعدادات المرحلة</h2>
+<ul>
+<li>كل مرحلة تعلن تحكمها في <code>STAGE-MANIFEST.json</code> (<code>controls.sliders</code> و<code>controls.selects</code>).</li>
+<li>قيم المستخدم تُحفظ في البروفايل (<code>spatial_controls</code>) وتُكتب نسخة في
+  <code>%APPDATA%\A2DPWB\spatial\&lt;profile&gt;.json</code> — وهي التي يقرأها المحرك عبر <code>--config</code>.</li>
+<li><code>config_for</code> تُسأل عن <strong>مسار المرحلة</strong> لا عن برنامج الأمر (مرحلة بايثون تشغّل <code>python.exe</code> ومجلده بلا مانيفست — وهذا كان سبب ضياع AutoEQ).</li>
+</ul>
+<h2>المراحل من المانيفست</h2>
+<pre><code class="language-json">{
+  &quot;label&quot;: &quot;Personalized HPP + XM6 BA&quot;,
+  &quot;family&quot;: &quot;sony&quot;,
+  &quot;command&quot;: [&quot;./sony_native_stream.exe&quot;, &quot;-&quot;, &quot;stream&quot;, &quot;1&quot;, &quot;1024&quot;]
+}
+</code></pre>
+<p>إضافة مرحلة = مجلد فيه برنامج ومانيفست. لا تعديل كود.</p>
+</main>
+<footer>A2DP Windows Bridge — فرع <code>Akramx15/A2DP-Windows-Bridge</code></footer>
+</body>
+</html>

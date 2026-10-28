@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>استخدام التأثير — XM6 360</title>
+<style>
+:root { --fg:#1c1e21; --muted:#5b6167; --line:#dfe3e8; --bg:#fbfbfc; --card:#fff; --accent:#0a6cff; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e8eb; --muted:#a0a6ad; --line:#2c3036; --bg:#14161a; --card:#1b1e23; --accent:#6ba6ff; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 16px/1.75 "Segoe UI", Tahoma, "Noto Naskh Arabic", system-ui, sans-serif; }
+header { border-bottom:1px solid var(--line); background:var(--card); }
+nav { max-width:900px; margin:0 auto; padding:14px 20px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+nav .brand { font-weight:700; margin-inline-end:auto; }
+nav a { color:var(--muted); text-decoration:none; font-size:14px; }
+nav a:hover, nav a[aria-current] { color:var(--accent); }
+main { max-width:900px; margin:0 auto; padding:28px 20px 64px; }
+h1 { font-size:30px; line-height:1.3; margin:0 0 18px; }
+h2 { font-size:21px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+h3 { font-size:17px; margin:22px 0 8px; }
+p, li { color:var(--fg); }
+a { color:var(--accent); }
+code { background:rgba(127,127,127,.14); padding:1px 5px; border-radius:4px; font-size:14px; direction:ltr; unicode-bidi:embed; }
+pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+pre code { background:none; padding:0; }
+table { width:100%; border-collapse:collapse; margin:14px 0; font-size:15px; }
+th, td { border:1px solid var(--line); padding:8px 10px; text-align:right; vertical-align:top; }
+th { background:rgba(127,127,127,.08); }
+blockquote { margin:16px 0; padding:2px 16px; border-inline-start:3px solid var(--accent); color:var(--muted); }
+hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
+footer { max-width:900px; margin:0 auto; padding:0 20px 40px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header><nav>
+  <span class="brand">XM6 360</span>
+  <a href="index.html">XM6 360</a>
+  <a href="Install.html">التركيب</a>
+  <a href="Effect.html" aria-current="page">استخدام التأثير</a>
+  <a href="Updating.html">التحديث من upstream</a>
+  <a href="Architecture.html">البنية</a>
+  <a href="Troubleshooting.html">استكشاف الأخطاء</a>
+  <a href="Releases.html">الإصدارات</a>
+</nav></header>
+<main>
+<h1>استخدام التأثير</h1>
+<p>كل شيء في <strong>بطاقة الجهاز</strong> على شاشة Home، ونفسها في نافذة التري الصغيرة.</p>
+<h2>الأزرار الثلاثة</h2>
+<table>
+<thead>
+<tr>
+<th>الزر</th>
+<th>ما يشغّل</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sony — المرجع القياسي</strong></td>
+<td>سلسلة Sony بنمط المرجع (مرحلة <code>sony-native-reference</code> أو التي تختارها)</td>
+</tr>
+<tr>
+<td><strong>Upmixer</strong></td>
+<td>مرحلة <code>experimental-stft</code>: upmix ستيريو → مكاني + معايرة</td>
+</tr>
+<tr>
+<td><strong>إيقاف التأثير</strong></td>
+<td>الصوت يمرّ كما هو إلى المشفّر</td>
+</tr>
+</tbody>
+</table>
+<p>الاختيار يُحفظ في <strong>البروفايل</strong>، فيرجع مع نفس الجهاز في المرة القادمة.</p>
+<h2>المرحلة (Stage)</h2>
+<p>قائمة <code>المرحلة</code> تظهر عندما تكون للعائلة أكثر من مرحلة:</p>
+<table>
+<thead>
+<tr>
+<th>المرحلة</th>
+<th>الاسم في الواجهة</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>personal-hpp-ba</code></td>
+<td>Sony XM6 BA</td>
+</tr>
+<tr>
+<td><code>personal-hpp-no-ba</code></td>
+<td>Sony HPP (بدون تصحيح)</td>
+</tr>
+<tr>
+<td><code>personal-hps</code></td>
+<td>Sony HPS</td>
+</tr>
+<tr>
+<td><code>sony-native-reference</code></td>
+<td>Sony — المرجع القياسي</td>
+</tr>
+<tr>
+<td><code>experimental-stft</code></td>
+<td>Upmixer</td>
+</tr>
+</tbody>
+</table>
+<h2>تصحيح السماعة</h2>
+<p>لكل مرحلة تعلن خيارات تصحيح، يظهر منسدل <strong>تصحيح السماعة</strong>:</p>
+<ul>
+<li><strong>بدون تصحيح</strong></li>
+<li><strong>Sony XM6</strong> (<code>sony-xm6-ba</code>)</li>
+<li><strong>AutoEQ</strong> (<code>autoeq-wh1000xm6</code>) — شغّل ANC وأوقف EQ الداخلي للسماعة، وهو ليس معايرة شخصية للأذن.</li>
+</ul>
+<h2>الشريطان</h2>
+<p>يظهران مع Upmixer:</p>
+<ul>
+<li><strong>تركيز الوسط</strong> — يعيد توزيع طاقة الوسط، وليس عزلًا للغناء.</li>
+<li><strong>انتشار الأجواء</strong> — يستخرج الجوانب والارتفاع من فروق اليمين/اليسار؛ التأثير صغير أو معدوم مع التسجيل الأحادي.</li>
+</ul>
+<p>القيمة تُكتب <strong>عند رفع الإصبع</strong> عن الشريط (لا أثناء السحب)، فيبدأ المحرك الجديد بعدها بقيمته الجديدة.</p>
+<h2>ماذا يحدث تقنياً عند كل تغيير</h2>
+<table>
+<thead>
+<tr>
+<th>التغيير</th>
+<th>ما يعيده التطبيق</th>
+<th>السماعة</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>تصحيح / شريط</td>
+<td>المحرك فقط (يُسخَّن محرك جديد في الخلفية ثم يأخذ مكانه)</td>
+<td>تبقى متصلة</td>
+</tr>
+<tr>
+<td>مرحلة أخرى (Sony ↔ Upmixer)</td>
+<td>المحرك داخل نفس البث</td>
+<td>تبقى متصلة</td>
+</tr>
+<tr>
+<td>كوديك / جهاز / إيقاف البث</td>
+<td>البث كامل</td>
+<td>ينفصل ويعود</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>المحرك ياخذ ~50 مللي لمرحلة Sony و~0.9 ثانية لـUpmixer حتى يجهز. أثناء ذلك الصوت يمرّ من المحرك القديم، فما في فراغ.</p>
+</blockquote>
+<h2>الباقي من الإعدادات</h2>
+<ul>
+<li><strong>Profile picker</strong> — لاختيار بروفايل الجهاز (عادة واحد لكل جهاز).</li>
+<li><strong>Volume</strong> — يتحكم بجهاز الصوت الافتراضي أثناء البث.</li>
+<li><strong>Connect</strong> — يظهر فقط عندما لا يكون الجهاز يبث. الإيقاف من قائمة التري (زر Disconnect أُزيل من البطاقة).</li>
+</ul>
+<h2>الصوت من السماعة فقط</h2>
+<p>أثناء البث، التطبيق <strong>يكتم مخرج الصوت الافتراضي</strong> في ويندوز، فيخرج الصوت من الـXM6 فقط. الكتم يُرفع عند إيقاف البث أو عند خطأ. الالتقاط (System Loopback) لا يتأثر: قيس 99.9% أثناء الكتم.</p>
+</main>
+<footer>A2DP Windows Bridge — فرع <code>Akramx15/A2DP-Windows-Bridge</code></footer>
+</body>
+</html>

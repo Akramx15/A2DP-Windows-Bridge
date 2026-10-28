@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>الإصدارات — XM6 360</title>
+<style>
+:root { --fg:#1c1e21; --muted:#5b6167; --line:#dfe3e8; --bg:#fbfbfc; --card:#fff; --accent:#0a6cff; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e8eb; --muted:#a0a6ad; --line:#2c3036; --bg:#14161a; --card:#1b1e23; --accent:#6ba6ff; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 16px/1.75 "Segoe UI", Tahoma, "Noto Naskh Arabic", system-ui, sans-serif; }
+header { border-bottom:1px solid var(--line); background:var(--card); }
+nav { max-width:900px; margin:0 auto; padding:14px 20px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+nav .brand { font-weight:700; margin-inline-end:auto; }
+nav a { color:var(--muted); text-decoration:none; font-size:14px; }
+nav a:hover, nav a[aria-current] { color:var(--accent); }
+main { max-width:900px; margin:0 auto; padding:28px 20px 64px; }
+h1 { font-size:30px; line-height:1.3; margin:0 0 18px; }
+h2 { font-size:21px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+h3 { font-size:17px; margin:22px 0 8px; }
+p, li { color:var(--fg); }
+a { color:var(--accent); }
+code { background:rgba(127,127,127,.14); padding:1px 5px; border-radius:4px; font-size:14px; direction:ltr; unicode-bidi:embed; }
+pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+pre code { background:none; padding:0; }
+table { width:100%; border-collapse:collapse; margin:14px 0; font-size:15px; }
+th, td { border:1px solid var(--line); padding:8px 10px; text-align:right; vertical-align:top; }
+th { background:rgba(127,127,127,.08); }
+blockquote { margin:16px 0; padding:2px 16px; border-inline-start:3px solid var(--accent); color:var(--muted); }
+hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
+footer { max-width:900px; margin:0 auto; padding:0 20px 40px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header><nav>
+  <span class="brand">XM6 360</span>
+  <a href="index.html">XM6 360</a>
+  <a href="Install.html">التركيب</a>
+  <a href="Effect.html">استخدام التأثير</a>
+  <a href="Updating.html">التحديث من upstream</a>
+  <a href="Architecture.html">البنية</a>
+  <a href="Troubleshooting.html">استكشاف الأخطاء</a>
+  <a href="Releases.html" aria-current="page">الإصدارات</a>
+</nav></header>
+<main>
+<h1>الإصدارات</h1>
+<h2>الوسوم</h2>
+<p><code>v&lt;upstream&gt;-xm6.&lt;n&gt;</code> — مثال: <code>v2.0.2-beta.9-xm6.1</code></p>
+<ul>
+<li>الوسم على <strong>merge commit</strong> الذي دخلت فيه الميزة فوق وسم upstream.</li>
+<li><code>Cargo.toml</code> يبقى على نسخة upstream عمداً (حتى لا يتعارض كل إصدار).</li>
+<li>من أي وسم بُني التطبيق مكتوب في <code>tools/xm6/STATE.json</code>.</li>
+</ul>
+<h2>كيف يُصنع إصدار</h2>
+<pre><code class="language-powershell"># بعد دمج وسم upstream على feat/xm6
+git tag -a v2.0.2-beta.10-xm6.1 -m &quot;xm6 feature on v2.0.2-beta.10&quot;
+git push origin v2.0.2-beta.10-xm6.1
+</code></pre>
+<p>دفع الوسم يشغّل <code>xm6-release.yml</code>: يبني، يضغط <code>a2dpwb-&lt;tag&gt;-win-x64.zip</code>، ويكتب <code>SHA256SUMS.txt</code>، وينشر prerelease.</p>
+<h2>ما داخل الأرشيف</h2>
+<ul>
+<li><code>a2dpwb.exe</code>، <code>a2dpwb-core.exe</code>، <code>a2dpwb-driver.exe</code></li>
+<li><code>README.md</code>، <code>AGENTS.md</code> إن وُجد، وملفات الترخيص</li>
+</ul>
+<p><strong>لا</strong> يحتوي: المراحل (<code>%APPDATA%\A2DPWB\stages</code>) ولا runtime الـUpmixer. هذان يُنزّلان بـ<code>tools/xm6/restore.ps1</code>.</p>
+<h2>الفروع</h2>
+<table>
+<thead>
+<tr>
+<th>الفرع</th>
+<th>الحالة</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>main</code></td>
+<td>مرآة upstream — لا تعديل</td>
+</tr>
+<tr>
+<td><code>feat/xm6</code></td>
+<td>الميزة، محمي، هو المنتج</td>
+</tr>
+<tr>
+<td><code>refactor/*</code>, <code>chore/*</code>, <code>ui/*</code></td>
+<td>قصيرة العمر، تُدمج في <code>feat/xm6</code></td>
+</tr>
+<tr>
+<td><code>upstream-sync/*</code></td>
+<td>دمج وسم جديد، يُحذف بعد الدمج</td>
+</tr>
+</tbody>
+</table>
+<h2>سجل مختصر لهذا الخط</h2>
+<table>
+<thead>
+<tr>
+<th>التاريخ</th>
+<th>الحدث</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2026-10-17 → 22</td>
+<td>تفكيك الملف الشخصي، بناء المحرك، منفذ ويندوز بايت-ببايت</td>
+</tr>
+<tr>
+<td>2026-10-27</td>
+<td>دمج <code>v2.0.2-beta.9</code> + بناء وتثبيت</td>
+</tr>
+<tr>
+<td>2026-10-28</td>
+<td><code>v2.0.2-beta.9-xm6.1</code>: واجهة التأثير، أدوات المزامنة، CI، كتم سماعات الـPC، تبديل المحرك بدون قطع، إصلاح config التصحيح</td>
+</tr>
+</tbody>
+</table>
+</main>
+<footer>A2DP Windows Bridge — فرع <code>Akramx15/A2DP-Windows-Bridge</code></footer>
+</body>
+</html>

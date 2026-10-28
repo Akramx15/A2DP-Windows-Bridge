@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XM6 360 — XM6 360</title>
+<style>
+:root { --fg:#1c1e21; --muted:#5b6167; --line:#dfe3e8; --bg:#fbfbfc; --card:#fff; --accent:#0a6cff; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e8eb; --muted:#a0a6ad; --line:#2c3036; --bg:#14161a; --card:#1b1e23; --accent:#6ba6ff; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font: 16px/1.75 "Segoe UI", Tahoma, "Noto Naskh Arabic", system-ui, sans-serif; }
+header { border-bottom:1px solid var(--line); background:var(--card); }
+nav { max-width:900px; margin:0 auto; padding:14px 20px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+nav .brand { font-weight:700; margin-inline-end:auto; }
+nav a { color:var(--muted); text-decoration:none; font-size:14px; }
+nav a:hover, nav a[aria-current] { color:var(--accent); }
+main { max-width:900px; margin:0 auto; padding:28px 20px 64px; }
+h1 { font-size:30px; line-height:1.3; margin:0 0 18px; }
+h2 { font-size:21px; margin:34px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+h3 { font-size:17px; margin:22px 0 8px; }
+p, li { color:var(--fg); }
+a { color:var(--accent); }
+code { background:rgba(127,127,127,.14); padding:1px 5px; border-radius:4px; font-size:14px; direction:ltr; unicode-bidi:embed; }
+pre { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+pre code { background:none; padding:0; }
+table { width:100%; border-collapse:collapse; margin:14px 0; font-size:15px; }
+th, td { border:1px solid var(--line); padding:8px 10px; text-align:right; vertical-align:top; }
+th { background:rgba(127,127,127,.08); }
+blockquote { margin:16px 0; padding:2px 16px; border-inline-start:3px solid var(--accent); color:var(--muted); }
+hr { border:0; border-top:1px solid var(--line); margin:28px 0; }
+footer { max-width:900px; margin:0 auto; padding:0 20px 40px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header><nav>
+  <span class="brand">XM6 360</span>
+  <a href="index.html" aria-current="page">XM6 360</a>
+  <a href="Install.html">التركيب</a>
+  <a href="Effect.html">استخدام التأثير</a>
+  <a href="Updating.html">التحديث من upstream</a>
+  <a href="Architecture.html">البنية</a>
+  <a href="Troubleshooting.html">استكشاف الأخطاء</a>
+  <a href="Releases.html">الإصدارات</a>
+</nav></header>
+<main>
+<h1>XM6 360 — ويكي هذا الفورك</h1>
+<p>هذا الفورك من <a href="https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge">A2DP Windows Bridge</a> يضيف <strong>محرك صوت مكاني</strong> يشتغل داخل التطبيق: سلسلة Sony 360RA (Upmix → Virtualizer → UPL → Limiter) مع معايرة <code>WH-1000XM6</code>، ومرحلة <strong>Upmixer</strong> بديلة، وتبديل بينها من بطاقة الجهاز بدون انقطاع السماعة.</p>
+<h2>الصفحات</h2>
+<table>
+<thead>
+<tr>
+<th>الصفحة</th>
+<th>ما فيها</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="Install.html">التركيب</a></td>
+<td>تثبيت التطبيق والمراحل على جهاز جديد</td>
+</tr>
+<tr>
+<td><a href="Effect.html">استخدام التأثير</a></td>
+<td>Sony / Upmixer / إيقاف، المراحل، التصحيح، الشريطين</td>
+</tr>
+<tr>
+<td><a href="Updating.html">التحديث من upstream</a></td>
+<td>أمر واحد لكل إصدار جديد</td>
+</tr>
+<tr>
+<td><a href="Architecture.html">البنية</a></td>
+<td>وين يعيش كل جزء في الكود ومسار الصوت</td>
+</tr>
+<tr>
+<td><a href="Troubleshooting.html">استكشاف الأخطاء</a></td>
+<td>لا صوت، نافذة سوداء، الصوت من السماعات، Poor</td>
+</tr>
+<tr>
+<td><a href="Releases.html">الإصدارات</a></td>
+<td>الفروع والوسوم وملفات الإصدار</td>
+</tr>
+</tbody>
+</table>
+<h2>الحالة الحالية</h2>
+<ul>
+<li>الإصدار: <code>2.0.2-beta.9</code> + ميزة xm6، والوسم <code>v2.0.2-beta.9-xm6.1</code>.</li>
+<li>الفرع الدائم: <code>feat/xm6</code> — وفيه كل الميزة.</li>
+<li><code>main</code> مرآة لـ<code>upstream/main</code> تماماً ولا يحمل أي تعديل.</li>
+</ul>
+<blockquote>
+<p>كل ما هنا موصوف من الكود واللوقات على جهاز واحد (Windows 11 + XM6). أرقام مثل <code>990 kbps</code> تعتمد على البيئة.</p>
+</blockquote>
+</main>
+<footer>A2DP Windows Bridge — فرع <code>Akramx15/A2DP-Windows-Bridge</code></footer>
+</body>
+</html>
