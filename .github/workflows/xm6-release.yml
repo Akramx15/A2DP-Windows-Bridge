@@ -1,0 +1,70 @@
+# Builds a release for a fork tag (v<upstream>-xm6.<n>).
+name: xm6-release
+
+on:
+  push:
+    tags:
+      - "v*-xm6.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: app/src/ui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: UI
+        working-directory: app/src/ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Tags of extern/opus
+        run: git -C extern/opus fetch --depth 1 --tags origin
+      - name: Build
+        run: cargo build --release --workspace
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tag || github.ref_name }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $exes = Get-ChildItem -Path app/src -Recurse -Filter *.exe |
+            Where-Object { $_.FullName -match '\\release\\' }
+          foreach ($exe in $exes) { Copy-Item $exe.FullName dist }
+          Copy-Item AGENTS.md, README.md, LICENSE* dist -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist\* -DestinationPath "a2dpwb-$tag-win-x64.zip" -Force
+          Get-FileHash "a2dpwb-$tag-win-x64.zip" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  a2dpwb-$tag-win-x64.zip" } |
+            Set-Content SHA256SUMS.txt
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          prerelease: true
+          files: |
+            a2dpwb-*-win-x64.zip
+            SHA256SUMS.txt
+          body: |
+            The XM6 spatial engine on top of upstream
+            `${{ inputs.tag || github.ref_name }}`.
+
+            The stage binaries and the Upmixer runtime are not in this
+            archive: install them with `tools/xm6/restore.ps1`, then point the
+            profile at `%APPDATA%\A2DPWB\stages`.
