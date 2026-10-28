@@ -25,9 +25,10 @@
 // Every codec is offered, the experimental ones too (issue #86: they are
 // marked in the README only; the core no longer reads
 // settings.experimental_codecs).
-// A codec chosen while a stream runs starts it again: the cards then wait
-// 3 s before the next choice (issue #86: quick switches left no sound or
-// crackling). With the unsupported codecs hidden, the cards shown need no
+// A codec chosen while a stream runs starts it again: the cards (and Home's
+// Codec card) then wait until it streams again before the next choice
+// (issue #86: quick switches left no sound or crackling; a fixed 3 s was
+// slow on a quick device and too short on a slow one). With the unsupported codecs hidden, the cards shown need no
 // "Supported" tag (issue #86).
 
 import { batch, createEffect, createSignal, createUniqueId, For, on, Show } from "solid-js";
@@ -70,15 +71,48 @@ import { entryState } from "./Home";
 
 const HIDE_KEY = "a2dpwb.codecs.hide_unsupported";
 
-/** How long the codec cards wait after a codec was chosen during a stream */
-export const SETTLE_MS = 3000;
+/** After a codec chosen during a stream, the codec cards wait at least
+ *  this long, and until the stream is no longer starting again... */
+export const SETTLE_MIN_MS = 1000;
+/** ...but never longer than this (a start that hangs) */
+export const SETTLE_MAX_MS = 15000;
 // For every device and across pages: one stream starts again at a time
 const [settling, setSettling] = createSignal(false);
-let settleTimer: ReturnType<typeof setTimeout> | undefined;
-function settle() {
-  clearTimeout(settleTimer);
+export { settling };
+let settleTimer: ReturnType<typeof setInterval> | undefined;
+
+/** The stream is being started (again) */
+export function restarting(snap: Snapshot | null | undefined): boolean {
+  const st = snap?.stream.state;
+  return st === "connecting" || st === "reconnecting";
+}
+
+/** The codec cards wait for the stream started again with a new codec */
+export function settle(app: ReturnType<typeof useApp>) {
+  clearInterval(settleTimer);
+  const since = Date.now();
   setSettling(true);
-  settleTimer = setTimeout(() => setSettling(false), SETTLE_MS);
+  settleTimer = setInterval(() => {
+    const waited = Date.now() - since;
+    if ((waited >= SETTLE_MIN_MS && !restarting(app.core.state.snap)) || waited >= SETTLE_MAX_MS) {
+      clearInterval(settleTimer);
+      setSettling(false);
+    }
+  }, 200);
+}
+
+/** The cards no longer wait (a core gone, the tests) */
+export function endSettle() {
+  clearInterval(settleTimer);
+  setSettling(false);
+}
+
+/** Resolves once the codec cards no longer wait */
+function untilSettled(): Promise<void> {
+  return new Promise((done) => {
+    const check = () => (settling() ? setTimeout(check, 100) : done());
+    check();
+  });
 }
 
 function loadHide(): boolean {
@@ -285,7 +319,9 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
     return done;
   };
   const choose = async (id: string, values?: Omit<CodecChoice, "codec">) => {
-    if (settling()) return;
+    // A "..." dialog's OK while the cards wait: applied after (the cards
+    // themselves are disabled meanwhile)
+    if (settling()) await untilSettled();
     // A card the device does not offer: the first card it offers instead
     // (issue #86). Settings made for it in its "..." are saved as they are
     // (the card shown chosen is still the one used).
@@ -300,7 +336,7 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
     // The card clicked is checked by the browser: back to the one chosen
     // (another one instead, nothing saved, or the save failed)
     for (const r of grid?.querySelectorAll<HTMLInputElement>("input[type=radio]") ?? []) r.checked = r.value === picked();
-    if (saved && running) settle();
+    if (saved && running) settle(app);
   };
   const locked = () => busy() || settling();
   const titleId = () => `codecs-${e().key.replace(/[^0-9A-Za-z]/g, "")}`;

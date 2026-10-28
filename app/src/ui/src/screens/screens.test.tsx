@@ -5,6 +5,7 @@ import { FALLBACK_NOTE_MS } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
+import { endSettle } from "./Codecs";
 
 let mock: MockCore | null = null;
 
@@ -19,6 +20,7 @@ function start(hash: string, opts: MockOptions = {}) {
 
 afterEach(async () => {
   cleanup();
+  endSettle();
   mock?.dispose();
   mock = null;
   await setLanguage("en");

@@ -48,6 +48,10 @@ const BATTERY_LOW: u8 = 20;
 /// It is shown again only after the level was back at this (charged)
 const BATTERY_REARM: u8 = 25;
 
+/// How long a restart for a save waits for a newer request to take over
+/// ([`CoreState::restart_profile`])
+const RESTART_COALESCE: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// Whether a battery report shows the low-battery balloon: once when the
 /// level is below [`BATTERY_LOW`] (also the first report of a connection),
 /// again only after it was back at [`BATTERY_REARM`] or more. `warned` is
@@ -116,6 +120,12 @@ pub struct CoreState {
     /// A new connection started: its balloon is shown once it streams with
     /// the codec settled (not after a reconnect of the same connection)
     connect_announce: AtomicBool,
+    /// The session starting is the profile in use started again with what
+    /// was saved ([`CoreState::restart_profile`]): no balloon for it
+    quiet_connect: AtomicBool,
+    /// Set by [`CoreState::restart_profile`] for the [`CoreState::begin_stream`]
+    /// it calls
+    restarting: AtomicBool,
     tray: Box<dyn Fn(TrayView) + Send + Sync>,
     quit: Box<dyn Fn() + Send + Sync>,
     balloon: Box<dyn Fn(BalloonRequest) + Send + Sync>,
@@ -1009,6 +1019,8 @@ impl CoreState {
             starting_profile: Mutex::new(None),
             battery_warned: AtomicBool::new(false),
             connect_announce: AtomicBool::new(false),
+            quiet_connect: AtomicBool::new(false),
+            restarting: AtomicBool::new(false),
             tray,
             quit,
             balloon,
@@ -1180,9 +1192,15 @@ impl CoreState {
                 }
                 // A connection (also the headphones back on after they went
                 // off) is announced; a lost link reconnecting is not, its
-                // dropouts would repeat the same balloon
+                // dropouts would repeat the same balloon; nor is the same
+                // device started again with a new codec (issue #86)
                 match state {
-                    CoreStreamState::Connecting => self.connect_announce.store(true, Ordering::Release),
+                    CoreStreamState::Connecting => {
+                        if !self.quiet_connect.load(Ordering::Acquire) {
+                            self.connect_announce.store(true, Ordering::Release)
+                        }
+                    }
+                    CoreStreamState::Streaming => self.quiet_connect.store(false, Ordering::Release),
                     CoreStreamState::Idle | CoreStreamState::Error => {
                         self.connect_announce.store(false, Ordering::Release)
                     }
@@ -1453,11 +1471,32 @@ impl CoreState {
             battery_refused: false,
         }));
         let service = self.service.clone();
+        // A restart for a save waits a moment: a request right behind it
+        // takes over before the first connection is under way (issue #86)
+        let restart = self.restarting.swap(false, Ordering::AcqRel);
+        self.quiet_connect.store(restart, Ordering::Release);
         // start_streaming joins a running session first: not on a runtime
         // thread. The ticket, taken now, keeps the order of quick switches:
         // only the last one asked for starts (issue #86)
         let ticket = service.ticket();
-        std::thread::spawn(move || service.start_streaming_for(req, ticket));
+        std::thread::spawn(move || {
+            if restart {
+                std::thread::sleep(RESTART_COALESCE);
+            }
+            service.start_streaming_for(req, ticket)
+        });
+    }
+
+    /// Starts the profile in use again with what was saved (a codec chosen,
+    /// Auto-select turned off): the same device, so no "connected" balloon,
+    /// and a second save right behind it (Home turns Auto-select off, then
+    /// saves the codec) is one restart, not two (issue #86: a second restart
+    /// broke off the first one's connection)
+    fn restart_profile(&self, name: &str) -> Result<(), ErrorInfo> {
+        self.restarting.store(true, Ordering::Release);
+        let r = self.start_profile(name);
+        self.restarting.store(false, Ordering::Release);
+        r
     }
 
     pub fn stop(&self) {
@@ -1878,7 +1917,7 @@ impl CoreState {
                         a2dpwb_core::diag::quoted(&key),
                         a2dpwb_core::diag::quoted(&profile.name)
                     );
-                    self.start_profile(&profile.name)?;
+                    self.restart_profile(&profile.name)?;
                 }
                 Ok(Value::Null)
             }
@@ -1931,7 +1970,7 @@ impl CoreState {
                                 if settings.volume_sync { "on" } else { "off" },
                                 a2dpwb_core::diag::quoted(&p.name)
                             );
-                            me.start_profile(&p.name.clone())?;
+                            me.restart_profile(&p.name.clone())?;
                         }
                     }
                     // LE Audio on / off waits for the next scan or connection
@@ -2429,7 +2468,8 @@ mod tests {
         event(CoreStreamState::Streaming);
         assert!(texts().is_empty());
         info(660);
-        assert_eq!(texts(), ["LDAC 660 kbps | 96 kHz | 24-bit"]);
+        assert_eq!(texts(), ["LDAC
+660 kbps | 96 kHz | 24-bit"]);
         // A lost link reconnecting (its info again, then Streaming): quiet
         event(CoreStreamState::Reconnecting);
         info(660);
@@ -2442,7 +2482,20 @@ mod tests {
         assert_eq!(texts().len(), 1);
         event(CoreStreamState::Streaming);
         assert_eq!(texts().len(), 2);
-        assert_eq!(texts()[1], "LDAC 990 kbps | 96 kHz | 24-bit");
+        assert_eq!(texts()[1], "LDAC\n990 kbps | 96 kHz | 24-bit");
+        // Started again for a codec chosen (restart_profile): quiet, and
+        // the next connection is announced again (issue #86)
+        state.quiet_connect.store(true, Ordering::Release);
+        event(CoreStreamState::Idle);
+        event(CoreStreamState::Connecting);
+        info(660);
+        event(CoreStreamState::Streaming);
+        assert_eq!(texts().len(), 2);
+        event(CoreStreamState::Idle);
+        event(CoreStreamState::Connecting);
+        event(CoreStreamState::Streaming);
+        info(660);
+        assert_eq!(texts().len(), 3);
         // The setting off: nothing
         let mut s = state.service.settings();
         s.notify_connected = false;
@@ -2451,7 +2504,7 @@ mod tests {
         event(CoreStreamState::Connecting);
         event(CoreStreamState::Streaming);
         info(990);
-        assert_eq!(texts().len(), 2);
+        assert_eq!(texts().len(), 3);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -30,7 +30,7 @@ import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
 import { CARD_ORDER, cardOrder, codecSpec } from "../lib/codecs";
 import { audioEntries, entryBase, entryByKey, entryOf, knownCodecs, type AudioEntry } from "../lib/profile";
-import { chooseCodec, codecShown, pickedCodec } from "./Codecs";
+import { chooseCodec, codecShown, pickedCodec, settle, settling } from "./Codecs";
 
 /** Adapters whose firmware files are missing from the settings folder or
  *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
@@ -334,6 +334,9 @@ function CodecPicker(props: { entry: AudioEntry }) {
   let select: HTMLSelectElement | undefined;
   const choose = async (id: string) => {
     if (id === value()) return;
+    // The stream starts again with the codec: the next choice waits for it,
+    // as on Codecs (issue #86)
+    const running = entryState(snap(), e()) !== "idle" && entryState(snap(), e()) !== "error";
     setBusy(true);
     // Auto-select is one setting for every device (as on Codecs): turned
     // off before the codec is chosen, so the device connects again with it
@@ -343,6 +346,7 @@ function CodecPicker(props: { entry: AudioEntry }) {
         : (!autoAll() || (await saveSettings(app, { auto_codec: false }))) &&
           (await chooseCodec(app, e(), id)) !== null;
     setBusy(false);
+    if (ok && running) settle(app);
     // Not saved: back to what the device has
     if (!ok && select) select.value = value();
   };
@@ -361,8 +365,8 @@ function CodecPicker(props: { entry: AudioEntry }) {
           <select
             ref={select}
             aria-label={t("quality.codec")}
-            disabled={busy()}
-            aria-busy={busy() ? "true" : undefined}
+            disabled={busy() || settling()}
+            aria-busy={busy() || settling() ? "true" : undefined}
             onChange={(ev) => void choose(ev.currentTarget.value)}
           >
             <option value="auto" selected={value() === "auto"}>

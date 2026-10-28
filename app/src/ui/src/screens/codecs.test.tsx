@@ -10,6 +10,7 @@ import { setLanguage, t } from "../i18n";
 import { MockCore, type MockScenario } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 import { CARD_ORDER } from "../lib/codecs";
+import { endSettle } from "./Codecs";
 
 let mock: MockCore | null = null;
 
@@ -46,6 +47,7 @@ const saves = (calls: { method: string; params: unknown }[]) =>
 
 afterEach(async () => {
   cleanup();
+  endSettle();
   mock?.dispose();
   mock = null;
   localStorage.clear();
@@ -520,8 +522,8 @@ describe("the device's activity (issue #86 round 8)", () => {
     expect(dot(xb)).toHaveClass("st-idle");
   });
 
-  it("waits 3 s after the codec of the device streaming changed (issue #86: quick switches crackled)", async () => {
-    const { calls } = start("#/codecs");
+  it("waits for the stream started again after the codec of the device streaming changed (issue #86)", async () => {
+    const { calls, core } = start("#/codecs");
     const wh = await section("WH-1000XM5");
     await mock!.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(wh.querySelector(".device-codecs-head > .dot")).toHaveClass("st-streaming"));
@@ -533,10 +535,11 @@ describe("the device's activity (issue #86 round 8)", () => {
     expect(within(wh).getByRole("button", { name: t("ui.profile.codec_settings", t("codec.sbc")) })).toBeDisabled();
     fireEvent.click(within(wh).getByRole("radio", { name: /SBC/ }));
     expect(saves(calls)).toHaveLength(1);
-    // Then they can be chosen again
-    await waitFor(() => expect(within(wh).queryByText(t("ui.codecs.settling"))).toBeNull(), { timeout: 4000 });
+    // Then, once it streams again, they can be chosen again
+    await waitFor(() => expect(within(wh).queryByText(t("ui.codecs.settling"))).toBeNull(), { timeout: 5000 });
+    expect(core.state.snap!.stream.state).toBe("streaming");
     await settled(wh);
-  }, 8000);
+  }, 10000);
 
   it("does not wait after a codec chosen for a device not streaming", async () => {
     const { calls } = start("#/codecs");
