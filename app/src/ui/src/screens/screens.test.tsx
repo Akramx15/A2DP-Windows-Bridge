@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
+import { FALLBACK_NOTE_MS } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, type MockOptions } from "../ipc/mock";
 import { createCore } from "../ipc/store";
@@ -153,7 +154,13 @@ describe("Home", () => {
     }
     expect(within(card).getByRole("status")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
     expect(pill.querySelector(".status-pill-state")).toHaveTextContent(new RegExp(`^${t("status.connected")}$`));
-  });
+    // For a few seconds only, then the icon alone, its tooltip saying why
+    await waitFor(() => expect(card.querySelector(".codec-note")).toBeNull(), { timeout: FALLBACK_NOTE_MS + 2000 });
+    for (const where of [card, pill]) {
+      expect(where.querySelector(".codec-note")).toBeNull();
+      expect(where.querySelector(".codec-name .icon")).not.toBeNull();
+    }
+  }, 15000);
 
   it("chooses the codec of the device in use right there, the capture source being on Audio Devices (issue #86)", async () => {
     const { calls } = start("#/home");
