@@ -341,7 +341,7 @@ describe("codec cards", () => {
     // The ones it did not support hidden (on by default, issue #86): SBC,
     // AAC and LDAC are supported
     expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull();
-    expect(within(wh).getAllByRole("radio")).toHaveLength(3);
+    expect(within(wh.querySelector<HTMLElement>(".codec-grid")!).getAllByRole("radio")).toHaveLength(3);
     const hide = hideSwitch();
     expect(hide).toBeChecked();
     // Shown: with their "Unsupported" tag

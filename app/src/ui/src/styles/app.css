@@ -2851,3 +2851,26 @@ html.win-flyout body {
 .battery-icon.st-unknown {
   color: var(--text-2);
 }
+/* The device's spatial effect (components/SpatialStage.tsx) */
+.spatial-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+.spatial-title {
+  margin: 0;
+  font-size: var(--fs-16);
+}
+.spatial-stage .field {
+  max-width: 30rem;
+}
+.slider-field .field-head {
+  justify-content: space-between;
+}
+.slider {
+  width: 100%;
+  accent-color: var(--accent-1);
+}
