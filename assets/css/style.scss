@@ -1,0 +1,7 @@
+---
+---
+@import "{{ site.theme }}";
+
+body { direction: rtl; text-align: right; }
+pre, code, .highlight { direction: ltr; text-align: left; }
+table { direction: rtl; }
