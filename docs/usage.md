@@ -40,7 +40,7 @@ The codec of each saved audio device, one section per device (a dot that is gree
 - Choosing another codec for the device that is streaming connects it again with that codec. The cards then wait 3 seconds (**Switching the codec. Wait a moment before choosing another.**) before the next choice, so a quick series of clicks does not start several connections one over another
 - **Show only supported codecs** (on by default; turn it off to show both supported and unsupported codecs): the codecs a device did not offer are left out. Before a device's first connection, all of them are shown
 - **...** on a card opens that codec's settings; **OK** chooses the codec with them. Each codec keeps its own settings: choosing another codec and coming back brings them back. Only what that codec can do, and what the device listed at its last connection, is offered:
-  - **Quality**: LDAC and LHDC V5 **High** / **Medium** / **Low** (LDAC 990 / 660 / 330 kbps, LHDC V5 1000 / 500 / 400 kbps); aptX Adaptive **High** / **Low Latency** (see [aptX Adaptive](#aptx-adaptive)). AAC, Opus, Opus 05, SBC and SBC XQ have one, **High**, shown rather than chosen: the highest bit rate the device takes (ABR or VBR, where offered, still varies it; SBC and SBC XQ show the bit rate their bitpool and frame setup give). aptX, aptX HD, aptX LL and FastStream have a bit rate fixed by the codec. A quality saved by an earlier version that the codec no longer has (LHDC V5's Medium-High, aptX Adaptive's Standard / Mobile, AAC's lower levels, ...) loads as High
+  - **Quality**: LDAC **High** / **Medium** / **Low** (990 / 660 / 330 kbps), LHDC V5 **High** / **Medium-High** / **Medium** / **Low** (1000 / 900 / 500 / 400 kbps, Android's four levels); aptX Adaptive **High** / **Low Latency** (see [aptX Adaptive](#aptx-adaptive)). AAC, Opus, Opus 05, SBC and SBC XQ have one, **High**, shown rather than chosen: the highest bit rate the device takes (ABR or VBR, where offered, still varies it; SBC and SBC XQ show the bit rate their bitpool and frame setup give). aptX, aptX HD, aptX LL and FastStream have a bit rate fixed by the codec. A quality saved by an earlier version that the codec no longer has (aptX Adaptive's Standard / Mobile, AAC's lower levels, ...) loads as High
   - **ABR (Adaptive Bit Rate)**: for LDAC, LHDC V5, aptX Adaptive, SBC and SBC XQ (see [ABR](#abr)); **VBR** for AAC
   - **Sample Rate**: Auto is 48 kHz, or the best rate the device lists if it has no 48 kHz (96 kHz adds latency and is less compatible, with no audible gain, and Windows mixes at 48 kHz); choose 96 kHz here to use it. Only the rates the device lists are offered (aptX Adaptive's 96 kHz only to a device that lists it, see [aptX Adaptive](#aptx-adaptive))
   - **Bit Depth**: 16 or 24 bit for LDAC and LHDC V5 (Auto: 24 bit), as far as the device lists them; 16 bit for the others
@@ -155,14 +155,14 @@ a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q hq   # High, 990 kbps (def
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q sq   # Medium, 660 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c ldac -q mq   # Low, 330 kbps
 
-# LHDC V5: hq 1000 / sq 500 / mq 400 kbps
+# LHDC V5: hq 1000 / mhq 900 / sq 500 / mq 400 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c lhdcv5 -q sq   # Medium, 500 kbps
 
 # aptX Adaptive: hq 427 / ll 265 kbps
 a2dpwb-core.exe --cli -d AA:BB:CC:DD:EE:FF -c aptxad -q ll   # Low Latency
 ```
 
-The other codecs have no quality choice: they run as `hq`, the highest bit rate the headphones take (aptX, aptX HD, aptX LL and FastStream: fixed by the codec). A level a codec does not have (`mhq`, `sq` / `mq` for aptX Adaptive, `ll` for any codec but aptX Adaptive) runs as `hq`.
+The other codecs have no quality choice: they run as `hq`, the highest bit rate the headphones take (aptX, aptX HD, aptX LL and FastStream: fixed by the codec). A level a codec does not have (`mhq` for any codec but LHDC V5, `sq` / `mq` for aptX Adaptive, `ll` for any codec but aptX Adaptive) runs as `hq`.
 
 ### ABR (Adaptive Bit Rate) {#abr}
 

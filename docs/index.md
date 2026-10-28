@@ -22,7 +22,7 @@ Streams system audio via **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low
 
 | Codec | Bitrate | Sample Rate | Bit Depth | Latency |
 |:------|:--------|:------------|:----------|:--------|
-| LHDC V5 | 400/500/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
+| LHDC V5 | 400/500/900/1000 kbps, ABR 160--400 kbps | 44.1/48/96/192 kHz | 16/24 bit | -- |
 | LDAC | 330/660/990 kbps | 44.1--96 kHz | 16/24/32 bit | ~200 ms |
 | aptX Adaptive | 265/427 kbps (96 kHz: 646) | 48/96 kHz | 24 bit | -- |
 | Opus 🧪 | 256 kbps | 48 kHz | 16 bit | -- |

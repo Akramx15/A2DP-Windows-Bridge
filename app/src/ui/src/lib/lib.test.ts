@@ -284,10 +284,10 @@ describe("profiles", () => {
     expect(qualityIgnored("ldac", true)).toBe(false);
   });
 
-  it("offers High / Medium / Low for LDAC and LHDC V5, High / LL for aptX Adaptive, High elsewhere (issue #86)", () => {
+  it("offers High / Medium / Low for LDAC and LHDC V5 (and its Medium-High), High / LL for aptX Adaptive, High elsewhere (issue #86, #203)", () => {
     const ids = (codec: string) => CODECS.find((c) => c.id === codec)!.qualities.map((q) => q.id);
     expect(ids("ldac")).toEqual(["hq", "sq", "mq"]);
-    expect(ids("lhdcv5")).toEqual(["hq", "sq", "mq"]);
+    expect(ids("lhdcv5")).toEqual(["hq", "mhq", "sq", "mq"]);
     expect(ids("aptxad")).toEqual(["hq", "ll"]);
     for (const c of ["auto", "aac", "opus", "opus05", "sbc", "sbcxq"]) expect(ids(c)).toEqual(["hq"]);
     for (const c of ["aptx", "aptxhd", "aptxll", "faststream"]) expect(ids(c)).toEqual([]);
@@ -308,6 +308,12 @@ describe("profiles", () => {
     expect(qualityKbps("aac", "hq", 0, capsOf(caps, "aac")!.max_bitrate)).toBe("131");
     expect(qualityKbps("aac", "hq", 0, 320000)).toBe("256");
     // LHDC V5 at most 500 kbps: High is 500, Medium the same (left out)
+    expect(offeredQualities("lhdcv5", 48000).map((q) => [q.id, q.kbps])).toEqual([
+      ["hq", "1000"],
+      ["mhq", "900"],
+      ["sq", "500"],
+      ["mq", "400"],
+    ]);
     expect(offeredQualities("lhdcv5", 48000, 500000).map((q) => [q.id, q.kbps])).toEqual([
       ["hq", "500"],
       ["mq", "400"],
@@ -515,8 +521,10 @@ describe("profile list", () => {
     expect(tag({ codec: "ldac", quality: "mq", sample_rate: 88200 })).toBe("Low (303 kbps)");
     expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 44100 })).toBe("Medium (480 kbps)");
     expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 88200 })).toBe("Medium (500 kbps)");
-    // Qualities a codec no longer offers (issue #86) are High
-    expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("High (1000 kbps)");
+    // LHDC V5's Medium-High is back (issue #203); a quality a codec does
+    // not offer is High
+    expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("Medium-High (900 kbps)");
+    expect(tag({ codec: "ldac", quality: "mhq" })).toBe("High (990 kbps)");
     expect(tag({ codec: "aptxad", quality: "ll" })).toBe("Low Latency (265 kbps)");
     expect(tag({ codec: "aptxad", quality: "hq", sample_rate: 96000 })).toBe("High (646 kbps)");
     expect(tag({ codec: "aptxad", quality: "mq", sample_rate: 96000 })).toBe("High (646 kbps)");
