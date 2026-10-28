@@ -17,7 +17,7 @@ pub mod packetizer;
 pub mod resample;
 pub mod spatial;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
@@ -413,6 +413,7 @@ fn encode_thread(
         _ => None,
     };
     // Preallocated so the resampling path allocates nothing once it runs
+    let (stage_tx, stage_rx) = mpsc::channel::<Option<SpatialEngine>>();
     let mut captured: Vec<f32> = Vec::new();
     let mut engine_in: Vec<f32> = Vec::new();
     let mut engine_out: Vec<f32> = Vec::new();
@@ -435,29 +436,56 @@ fn encode_thread(
                     next
                 }
             };
-            tracing::info!(
-                "spatial engine: {}",
-                match next.as_ref() {
-                    Some(cfg) => format!("starting again with {}", cfg.exe.display()),
-                    None => "stopped (the effect is off)".to_string(),
+            match next {
+                Some(cfg) => {
+                    // Starting an engine costs a moment (the Upmixer loads
+                    // Python): it warms up on its own thread while the stage in
+                    // use keeps feeding the stream, then takes over
+                    tracing::info!("spatial engine: warming {} in the background", cfg.exe.display());
+                    let tx = stage_tx.clone();
+                    std::thread::spawn(move || {
+                        let mut engine = match SpatialEngine::start(&cfg) {
+                            Ok(engine) => engine,
+                            Err(e) => {
+                                tracing::error!("spatial engine {}: {e} (the stage in use stays)", cfg.exe.display());
+                                let _ = tx.send(None);
+                                return;
+                            }
+                        };
+                        let silence = vec![0.0f32; 2 * spatial::ENGINE_FRAMES];
+                        let mut out = Vec::new();
+                        let answered = engine.process_f32(&silence, &mut out);
+                        if !answered {
+                            tracing::error!("spatial engine {}: no answer (the stage in use stays)", cfg.exe.display());
+                        }
+                        let _ = tx.send(answered.then_some(engine));
+                    });
                 }
-            );
-            spatial_stage = next.as_ref().and_then(|cfg| match SpatialEngine::start(cfg) {
-                Ok(s) => Some(s),
-                Err(e) => {
-                    tracing::error!("spatial engine {}: {e} (audio passes through)", cfg.exe.display());
-                    None
+                None => {
+                    tracing::info!("spatial engine: stopped (the effect is off)");
+                    spatial_stage = None;
+                    resampler = None;
+                    captured.clear();
+                    engine_in.clear();
+                    engine_out.clear();
+                    up_out.clear();
                 }
-            });
-            // The 96 kHz transport follows the stage: no stage, no resampling
-            resampler = match (resample_cfg, spatial_stage.is_some()) {
-                (Some(_), true) if input.sample_rate == CAPTURE_RATE => Some((Downsample2::new(), Upsample2::new())),
-                _ => None,
-            };
-            captured.clear();
-            engine_in.clear();
-            engine_out.clear();
-            up_out.clear();
+            }
+        }
+        // The warmed stage takes over here, with no silent gap
+        if let Ok(received) = stage_rx.try_recv() {
+            if let Some(engine) = received {
+                tracing::info!("spatial engine: the warmed stage takes over");
+                spatial_stage = Some(engine);
+                resampler = match resample_cfg {
+                    Some(_) if input.sample_rate == CAPTURE_RATE => Some((Downsample2::new(), Upsample2::new())),
+                    _ => None,
+                };
+                captured.clear();
+                engine_in.clear();
+                engine_out.clear();
+                up_out.clear();
+            }
         }
         if control.reset.swap(false, Ordering::AcqRel) {
             tracing::debug!(
