@@ -31,7 +31,7 @@
 // slow on a quick device and too short on a slow one). With the unsupported codecs hidden, the cards shown need no
 // "Supported" tag (issue #86).
 
-import { batch, createEffect, createSignal, createUniqueId, For, on, Show } from "solid-js";
+import { batch, createEffect, createSignal, createUniqueId, For, on, onCleanup, Show } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
@@ -310,6 +310,9 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
       .filter((id) => codecShown(id, picked(), known(), props.hide))
       .map((id) => codecSpec(id));
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);
+  // A save that ends after the screen is gone starts no wait
+  let mounted = true;
+  onCleanup(() => (mounted = false));
   // The device's saves one after the other: a card chosen right after one
   // was moved starts from the profile with the new order
   let saving: Promise<unknown> = Promise.resolve();
@@ -336,7 +339,7 @@ function DeviceCodecs(props: { entry: AudioEntry; hide: boolean; auto: boolean; 
     // The card clicked is checked by the browser: back to the one chosen
     // (another one instead, nothing saved, or the save failed)
     for (const r of grid?.querySelectorAll<HTMLInputElement>("input[type=radio]") ?? []) r.checked = r.value === picked();
-    if (saved && running) settle(app);
+    if (saved && running && mounted) settle(app);
   };
   const locked = () => busy() || settling();
   const titleId = () => `codecs-${e().key.replace(/[^0-9A-Za-z]/g, "")}`;

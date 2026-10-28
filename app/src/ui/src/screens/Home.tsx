@@ -6,7 +6,7 @@
 // (chosen right there, e.g. one for games and one for music) and link
 // quality below. The capture source is chosen on Audio Devices.
 
-import { createEffect, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button } from "../components/controls";
@@ -332,6 +332,9 @@ function CodecPicker(props: { entry: AudioEntry }) {
   };
   const [busy, setBusy] = createSignal(false);
   let select: HTMLSelectElement | undefined;
+  // A save that ends after the card is gone starts no wait
+  let mounted = true;
+  onCleanup(() => (mounted = false));
   const choose = async (id: string) => {
     if (id === value()) return;
     // The stream starts again with the codec: the next choice waits for it,
@@ -346,7 +349,7 @@ function CodecPicker(props: { entry: AudioEntry }) {
         : (!autoAll() || (await saveSettings(app, { auto_codec: false }))) &&
           (await chooseCodec(app, e(), id)) !== null;
     setBusy(false);
-    if (ok && running) settle(app);
+    if (ok && running && mounted) settle(app);
     // Not saved: back to what the device has
     if (!ok && select) select.value = value();
   };
