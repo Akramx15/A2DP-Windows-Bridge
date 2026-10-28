@@ -1,18 +1,20 @@
 // Home: a card per saved audio device, side by side (issue #86), each with
-// its connection ring, state and codec and its own Connect / Disconnect.
-// One device streams at a time: Connect on another one switches to it (the
-// core stops the running stream first). The volume is on the card of the
-// device in use, as each device keeps its own (issue #86); capture source
-// (chosen right there) and link quality below, for the device in use.
+// its connection ring, the connection in one line (state, battery, codec,
+// link quality), the effect's shortcuts and the profile's own settings, and
+// Connect while it does not stream. One device streams at a time: Connect on
+// another one switches to it (the core stops the running stream first). The
+// volume is on the card of the device in use, as each device keeps its own
+// (issue #86); capture source (chosen right there) and link quality below,
+// for the device in use.
 
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
 import { Banner, Button } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { CapturePicker } from "../components/CapturePicker";
+import { DeviceEffects } from "../components/DeviceEffects";
 import {
-  BatteryLevel,
-  CodecBadge,
+  ConnectionLine,
   currentProfile,
   ErrorPanel,
   FirmwareDownload,
@@ -20,15 +22,13 @@ import {
   openFirmwareFolder,
   QualityIndicator,
   Ring,
-  showsBattery,
-  statusText,
   VolumeControl,
 } from "../components/stream";
 import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
-import { audioEntries, engineLabelOf, entryByKey, entryOf, registryFolder, type AudioEntry } from "../lib/profile";
-import { spatialEngines } from "../lib/spatial";
-import { chooseCodec } from "./Codecs";
+import { audioEntries, entryByKey, entryOf, registryFolder, type AudioEntry } from "../lib/profile";
+import { familyLabel, spatialEngines } from "../lib/spatial";
+import { chooseCodec, saveEntry } from "./Codecs";
 
 /** Adapters whose firmware files are missing from the settings folder or
  *  invalid (v1's "Firmware not found!" / "Firmware file is invalid!" bar) */
@@ -212,7 +212,9 @@ export function Home() {
   );
 }
 
-/** One device: ring, name, battery and state, codec, and its own button */
+/** One device: the ring, its name and the connection in one line, the
+ *  effect's shortcuts with the profile, and Connect while it does not
+ *  stream (a streaming device is stopped from the tray) */
 function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
@@ -224,27 +226,22 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
   const press = async () => {
     setBusy(true);
     try {
-      if (running()) await app.core.request("stream.stop");
-      else await connectEntry(app, props.entry);
+      await connectEntry(app, props.entry);
     } catch (e) {
       props.onError(e);
     } finally {
       setBusy(false);
     }
   };
-  const label = () =>
-    state() === "streaming"
-      ? t("connection.disconnect")
-      : state() === "connecting" || state() === "reconnecting"
-        ? t("modal.cancel")
-        : t("connection.connect");
   const name = () => props.entry.name || props.entry.address;
-  // The effect the device's profile runs (empty: none, or its engine is not
-  // in the folder any more); the list is the Codecs screen's (lib/spatial.ts)
+  // The effect the device's profile runs, by its family's name (empty: none,
+  // or its engine is not in the folder any more); the stage manifest's own
+  // long label stays on Codecs
   const engine = () => {
     const p = props.entry.profile;
     if (!p?.spatial_engine) return "";
-    return engineLabelOf(p, spatialEngines(app.core, registryFolder(p)).engines() ?? []);
+    const list = spatialEngines(app.core, registryFolder(p)).engines() ?? [];
+    return familyLabel(list.find((e) => e.path === p.spatial_engine_path) ?? { family: "" });
   };
   return (
     // The group names the device for its button ("Connect" on each card)
@@ -254,28 +251,11 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
           <Icon name="headphones" />
         </Ring>
         <div class="device-info">
-          {/* The device, battery and state, the codec; the sidebar shows the same */}
           <div class="device-name ellipsis" title={name()}>
             {name()}
           </div>
-          <div class="device-state">
-            <Show when={live() && showsBattery(stream())}>
-              <BatteryLevel percent={stream().battery} />
-              <span class="muted state-sep" aria-hidden="true">
-                |
-              </span>
-            </Show>
-            <div class={`status-line st-${state()}`} role="status" aria-live="polite">
-              <span class="dot" aria-hidden="true" />
-              <span>
-                {/* An error's text is in the panel above, with its fix */}
-                {live() ? statusText({ state: state(), message: stream().message }) : t("status.ready")}
-              </span>
-            </div>
-          </div>
-          <Show when={live()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
-            <CodecBadge />
-          </Show>
+          {/* State, battery, codec and link quality on one line */}
+          <ConnectionLine state={state()} stream={stream()} />
           <Show when={engine()}>
             <span class="tag">{engine()}</span>
           </Show>
@@ -285,17 +265,19 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
       <Show when={live()}>
         <VolumeControl />
       </Show>
-      <button
-        type="button"
-        class="connect-btn"
-        classList={{ on: running() }}
-        disabled={busy()}
-        aria-busy={busy() ? "true" : undefined}
-        onClick={press}
-      >
-        <Icon name={running() ? "plug_disconnected" : "power"} />
-        <span>{label()}</span>
-      </button>
+      <DeviceEffects entry={props.entry} save={(edit) => saveEntry(app, props.entry, edit)} />
+      <Show when={!running()}>
+        <button
+          type="button"
+          class="connect-btn"
+          disabled={busy()}
+          aria-busy={busy() ? "true" : undefined}
+          onClick={press}
+        >
+          <Icon name="power" />
+          <span>{t("connection.connect")}</span>
+        </button>
+      </Show>
     </div>
   );
 }

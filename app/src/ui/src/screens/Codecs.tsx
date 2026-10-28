@@ -76,7 +76,7 @@ function loadHide(): boolean {
 /** Saves the device's profile as `edit` changes it (the profile is made
  *  when the device has none yet); its name follows the codec while it is
  *  "<device> | <codec>". The profile's name once saved, None if that failed. */
-async function saveEntry(
+export async function saveEntry(
   app: ReturnType<typeof useApp>,
   entry: AudioEntry,
   edit: (p: Profile) => Profile,
