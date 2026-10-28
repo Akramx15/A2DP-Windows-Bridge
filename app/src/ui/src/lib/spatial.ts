@@ -47,9 +47,10 @@ const STAGE_NAMES: Record<string, string> = {
 };
 
 export function stageLabel(e: Pick<SpatialEngine, "path" | "label">): string {
+  // The path may name the folder itself or the program inside it
   const parts = e.path.split(/[\/]/).filter(Boolean);
-  const folder = parts.length > 1 ? parts[parts.length - 2] : "";
-  return STAGE_NAMES[folder] ?? e.label;
+  const known = parts.find((part) => STAGE_NAMES[part]);
+  return known ? STAGE_NAMES[known] : e.label;
 }
 
 /** The name a family reads on the cards ("Sony — Reference", "Upmixer"):
