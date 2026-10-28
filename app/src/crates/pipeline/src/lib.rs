@@ -155,6 +155,17 @@ struct Control {
     overflows: AtomicU32,
 }
 
+/// Asks the running encode thread to start the spatial engine again with the
+/// settings it was just given. A flag rather than a channel because the app
+/// runs one stream at a time; when nothing runs, the next start reads the
+/// settings anyway.
+static RELOAD_STAGE: AtomicBool = AtomicBool::new(false);
+
+/// The stage's settings changed: restart the engine, not the Bluetooth link
+pub fn request_stage_reload() {
+    RELOAD_STAGE.store(true, Ordering::Release);
+}
+
 impl Control {
     fn new() -> Arc<Control> {
         Arc::new(Control { stop: AtomicBool::new(false), reset: AtomicBool::new(false), overflows: AtomicU32::new(0) })
@@ -358,6 +369,7 @@ fn encode_thread(
     // The spatial engine, when the profile asks for it: it processes the
     // captured audio before it reaches the encoder. If it cannot run, the
     // audio passes through unchanged rather than the stream dying.
+    let spatial_cfg = spatial.clone();
     let mut spatial_stage = match spatial {
         Some(cfg) => match SpatialEngine::start(&cfg) {
             Ok(s) => {
@@ -402,6 +414,29 @@ fn encode_thread(
     }
 
     while !control.stop.load(Ordering::Acquire) {
+        // The stage's settings changed (correction, a slider): start the
+        // engine again, leaving the Bluetooth link and the encoder alone
+        if RELOAD_STAGE.swap(false, Ordering::AcqRel) {
+            tracing::info!("spatial engine: starting again with its saved settings");
+            spatial_stage = match spatial_cfg.as_ref() {
+                Some(cfg) => match SpatialEngine::start(cfg) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        tracing::error!("spatial engine {}: {e} (audio passes through)", cfg.exe.display());
+                        None
+                    }
+                },
+                None => None,
+            };
+            if let Some((down, up)) = resampler.as_mut() {
+                down.reset();
+                up.reset();
+            }
+            captured.clear();
+            engine_in.clear();
+            engine_out.clear();
+            up_out.clear();
+        }
         if control.reset.swap(false, Ordering::AcqRel) {
             tracing::debug!(
                 "encode thread: reset, dropping {} buffered bytes, timestamp {timestamp} -> 0",

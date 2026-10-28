@@ -1667,11 +1667,11 @@ impl CoreState {
                 let (controls, list) = set_spatial_controls(&dir, &profile, &values)?;
                 let (_, s) = self.snapshot();
                 self.save_profiles(&list, s.active_profile.clone())?;
-                // The stage reads its settings when it starts: the stream
-                // starts again with the new values
+                // The stage reads its settings when it starts: start the
+                // engine again, not the stream (no Bluetooth reconnect)
                 if restart_after_save(&s.stream, &profile) {
-                    tracing::info!("spatial: the controls of \"{profile}\" changed: the stream starts again");
-                    self.start_profile(&profile)?;
+                    tracing::info!("spatial: the controls of \"{profile}\" changed: the engine starts again");
+                    a2dpwb_core::request_stage_reload();
                 }
                 Ok(json(&controls))
             }
@@ -1779,6 +1779,21 @@ impl CoreState {
                 });
                 // Under Auto-select the order is not used
                 let order_unused = self.service.settings().auto_codec || merged.le_audio;
+                // Only the spatial engine (its path, its folder) changed: the
+                // engine starts again inside the running stream, so choosing
+                // Sony / Upmixer does not drop the headphones
+                let engine_only = pos.is_some_and(|i| {
+                    let old = &list[i];
+                    (old.spatial_engine != merged.spatial_engine
+                        || old.spatial_engine_path != merged.spatial_engine_path
+                        || old.spatial_engine_registry != merged.spatial_engine_registry)
+                        && CoreProfile {
+                            spatial_engine: merged.spatial_engine,
+                            spatial_engine_path: merged.spatial_engine_path.clone(),
+                            spatial_engine_registry: merged.spatial_engine_registry.clone(),
+                            ..old.clone()
+                        } == merged
+                });
                 let in_order = merged.clone();
                 // The profile's device joins the saved ones of its kind (as
                 // a connection saves it)
@@ -1817,7 +1832,10 @@ impl CoreState {
                 }
                 // The profile in use starts again with what was saved (v1)
                 let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
-                if restart_after_save(&s.stream, &key) && !order_keeps_codec {
+                if engine_only && restart_after_save(&s.stream, &key) {
+                    tracing::info!("profile {} saved while in use: the engine starts again (the stream goes on)", a2dpwb_core::diag::quoted(&key));
+                    a2dpwb_core::request_stage_reload();
+                } else if restart_after_save(&s.stream, &key) && !order_keeps_codec {
                     tracing::info!(
                         "profile {} saved while in use: it starts again as {}",
                         a2dpwb_core::diag::quoted(&key),
