@@ -68,12 +68,13 @@ describe("Home", () => {
     expect(battery).not.toHaveTextContent("%");
   });
 
-  it("shows the link latency beside the link quality, not the capture source (issue #86)", async () => {
+  it("shows the codec and the link quality, not the link latency nor the capture source (issue #86)", async () => {
     start("#/home");
     await homeCard("WH-1000XM5");
     const main = within(screen.getByRole("main"));
-    expect(await main.findByRole("region", { name: t("ui.home.latency") })).toHaveTextContent(t("ui.home.latency_hint"));
-    expect(main.getByRole("region", { name: t("quality.title") })).toBeInTheDocument();
+    expect(await main.findByRole("region", { name: t("quality.title") })).toBeInTheDocument();
+    expect(main.getByRole("region", { name: t("quality.codec") })).toBeInTheDocument();
+    expect(main.queryByText("Link latency")).toBeNull();
     expect(main.queryByLabelText(t("capture.mode"))).toBeNull();
   });
 

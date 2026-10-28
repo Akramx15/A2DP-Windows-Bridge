@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLanguage } from "../i18n";
 import type { CodecDetails, LinkSample, StreamInfo } from "../ipc/types";
-import { abrTooltipKey, codecDetails, fallbackNoteKey, linkQuality, queueLatencyMs } from "./stream";
+import { abrTooltipKey, codecDetails, fallbackNoteKey, linkQuality } from "./stream";
 
 const sample = (i: number, over: Partial<LinkSample> = {}): LinkSample => ({
   time_ms: i * 250,
@@ -19,19 +19,6 @@ const sample = (i: number, over: Partial<LinkSample> = {}): LinkSample => ({
 });
 const run = (n: number, f: (i: number) => Partial<LinkSample> = () => ({})) =>
   Array.from({ length: n }, (_, i) => sample(i, f(i)));
-
-describe("link latency (issue #86)", () => {
-  it("is the send queue's packets at the rate they go out", () => {
-    // 4 packets of 1000 bytes at 125 kB/s: 32 ms
-    expect(queueLatencyMs(sample(0, { queue_depth: 4, avg_packet_bytes: 1000 }))).toBe(32);
-    expect(queueLatencyMs(sample(0, { queue_depth: 0, avg_packet_bytes: 1000 }))).toBe(0);
-  });
-
-  it("is not known while nothing goes out", () => {
-    expect(queueLatencyMs(sample(0, { bytes_per_second: 0, avg_packet_bytes: 1000 }))).toBeNull();
-    expect(queueLatencyMs(sample(0, { queue_depth: 3 }))).toBeNull();
-  });
-});
 
 describe("link quality", () => {
   it("is good on a link that delivers everything, whatever the RSSI", () => {

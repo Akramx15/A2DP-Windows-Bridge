@@ -1507,10 +1507,6 @@ option {
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-.latency-value {
-  font-size: var(--fs-12);
-  color: var(--text);
-}
 .link-mini-value {
   font-size: var(--fs-12);
   color: var(--text-2);

@@ -372,47 +372,6 @@ export function QualityIndicator() {
   );
 }
 
-/** How long the audio waits in A2DPWB's send queue before it goes over
- *  Bluetooth (ms): the packets queued at the rate packets go out; null
- *  while nothing goes out. The headphones' own buffer comes on top (the
- *  link cannot tell it). */
-export function queueLatencyMs(s: LinkSample): number | null {
-  if (!(s.bytes_per_second > 0) || !s.avg_packet_bytes) return null;
-  return (s.queue_depth * s.avg_packet_bytes * 1000) / s.bytes_per_second;
-}
-
-/** Samples the latency shown is averaged over (one a second) */
-const LATENCY_SAMPLES = 3;
-
-/** The link's latency (issue #86: beside the link quality on Home): the
- *  send queue's wait over the last few seconds, and over the last minute */
-export function LinkLatency() {
-  const { core } = useApp();
-  const release = core.wantLink();
-  onCleanup(release);
-  const values = createMemo(() => core.link().map((s) => queueLatencyMs(s) ?? 0));
-  const latest = () => {
-    const recent = core
-      .link()
-      .slice(-LATENCY_SAMPLES)
-      .map(queueLatencyMs)
-      .filter((v): v is number => v !== null);
-    return recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : null;
-  };
-  const text = () => (latest() === null ? "–" : t("ui.home.latency_ms", latest()!));
-  return (
-    <>
-      <div class="mini-body">
-        <span class="latency-value num">{text()}</span>
-      </div>
-      <div class="link-mini">
-        <Sparkline values={values()} min={0} label={`${t("ui.home.latency")}: ${text()}`} />
-      </div>
-      <p class="hint">{t("ui.home.latency_hint")}</p>
-    </>
-  );
-}
-
 /** Bandwidth over the last minute, while the caller is on screen */
 export function LinkSparkline() {
   const { core } = useApp();
