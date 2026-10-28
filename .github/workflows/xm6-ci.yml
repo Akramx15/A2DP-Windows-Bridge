@@ -54,6 +54,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: app/src/ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec vitest run
