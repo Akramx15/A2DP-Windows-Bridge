@@ -2,7 +2,8 @@
 // As Home's card (issue #86): the ring, and beside it the device chooser
 // in the title's place, battery and state, the codec and link quality;
 // then the volume, the big Connect / Disconnect and "Open app". No close
-// button: the flyout hides on Escape and when it loses the focus.
+// button: the flyout hides on Escape and when it loses the focus. Its
+// window is as tall as the page (issue #86: no empty space).
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -44,6 +45,14 @@ export function Flyout() {
   };
   onMount(() => document.addEventListener("keydown", onKey));
   onCleanup(() => document.removeEventListener("keydown", onKey));
+  let page: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!page || !core.transport.fitHeight || typeof ResizeObserver === "undefined") return;
+    const fit = () => void core.transport.fitHeight!(Math.ceil(page!.getBoundingClientRect().height)).catch(() => {});
+    const observer = new ResizeObserver(fit);
+    observer.observe(page);
+    onCleanup(() => observer.disconnect());
+  });
 
   const error = () => {
     const e = reqError();
@@ -55,7 +64,7 @@ export function Flyout() {
   const openMain = (route?: string) => core.transport.showMain(route).catch(() => {});
 
   return (
-    <div class="flyout">
+    <div class="flyout" ref={page}>
       <header class="fly-head">
         <Ring state={stream().state} volume={stream().volume} size="small">
           <Icon name="headphones" />
@@ -70,7 +79,7 @@ export function Flyout() {
           </Show>
           {/* As on Home and in the sidebar: battery | state, the codec (issue #86) */}
           <div class="fly-state">
-            <Show when={showsBattery(stream())}>
+            <Show when={stream().state !== "idle" && showsBattery(stream())}>
               <BatteryLevel class="fly-battery" percent={stream().battery} />
               <span class="muted" aria-hidden="true">
                 |

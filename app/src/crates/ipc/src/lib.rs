@@ -128,5 +128,6 @@ mod tests {
         SpatialControls::export_all(&cfg).unwrap();
         SpatialSlider::export_all(&cfg).unwrap();
         SpatialSelect::export_all(&cfg).unwrap();
+        RfcommOpened::export_all(&cfg).unwrap();
     }
 }

@@ -1,7 +1,7 @@
-// Settings: the general ones only: language, theme, startup, updates,
-// developer mode, the settings folder. (A device's buttons and remembered
-// volume are on Audio Devices; LE Audio and its GMAP low latency are chosen
-// per profile.)
+// Settings: the general ones only: language, theme, startup, notifications,
+// updates, developer mode, the settings folder. (A device's buttons and
+// remembered volume are on Audio Devices; LE Audio and its GMAP low latency
+// are chosen per profile.)
 
 import { createSignal, Match, onMount, Show, Switch } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -87,6 +87,21 @@ export function Settings() {
           onChange={(v) => set({ start_minimized: v })}
         />
         <Toggle label={t("settings.minimize_to_tray")} checked={s().minimize_to_tray} onChange={(v) => set({ minimize_to_tray: v })} />
+        <Toggle
+          label={t("ui.settings.tray_click_opens_window")}
+          hint={t("ui.settings.tray_click_opens_window_hint")}
+          checked={s().tray_click_opens_window}
+          onChange={(v) => set({ tray_click_opens_window: v })}
+        />
+      </Section>
+
+      <Section title={t("ui.settings.notifications")}>
+        <Toggle
+          label={t("ui.settings.notify_connected")}
+          hint={t("ui.settings.notify_connected_hint")}
+          checked={s().notify_connected}
+          onChange={(v) => set({ notify_connected: v })}
+        />
       </Section>
 
       <Section

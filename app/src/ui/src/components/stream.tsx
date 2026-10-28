@@ -222,14 +222,21 @@ export function codecDetails(info: StreamInfo): string[] {
   return out;
 }
 
-/** Beside the codec's name when it is not the one chosen: "(Opus is not
- *  supported)", in use elsewhere, or experimental and off (issue #86); the
+/** Beside the codec's name when it is not the one chosen: "(Opus is
+ *  unsupported)", in use elsewhere, or experimental and off (issue #86); the
  *  reason is the core's message, the status line just says "Connected" */
 export function fallbackNoteKey(info: StreamInfo, messageKey: string): string | null {
   if (!info.requested_codec) return null;
   if (messageKey === "status.connected_fallback_experimental") return "ui.codec.fallback_experimental";
   return info.requested_in_use ? "ui.codec.fallback_in_use" : "ui.codec.fallback_unsupported";
 }
+
+/** How long the note beside a codec used instead of the one chosen stays
+ *  (issue #86: then only its warning icon, with the reason as its tooltip) */
+export const FALLBACK_NOTE_MS = 5000;
+// The note shown and since when, for every badge: one that comes on screen
+// later (another page) does not show it again
+let noteShown: { key: string; at: number } | null = null;
 
 /** The codec in two lines (issue #86): its name, then what it runs with in
  *  a badge; `aside` goes beside the badge (the flyout's link quality) */
@@ -258,6 +265,23 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
     const req = codecLabelKey(i.requested_codec!);
     return t(key, req ? t(req) : i.requested_codec!);
   };
+  // The note for its first few seconds only (FALLBACK_NOTE_MS)
+  const [now, setNow] = createSignal(Date.now());
+  const noteFresh = createMemo(() => {
+    const note = fallbackNote();
+    if (!note) {
+      noteShown = null;
+      return false;
+    }
+    const key = `${core.state.snap?.stream.profile ?? ""}|${info()!.codec}|${note}`;
+    if (noteShown?.key !== key) noteShown = { key, at: Date.now() };
+    const left = noteShown.at + FALLBACK_NOTE_MS - now();
+    if (left > 0) {
+      const timer = setTimeout(() => setNow(Date.now()), left);
+      onCleanup(() => clearTimeout(timer));
+    }
+    return left > 0;
+  });
   return (
     <Show when={info()} fallback={<span class="codec-badge idle">{t("ui.codec.none")}</span>}>
       {(i) => (
@@ -267,7 +291,7 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element }) {
               <Icon name="warning" class="st-warn" title={fallbackHelp()} />
             </Show>
             <strong class="ellipsis">{name()}</strong>
-            <Show when={fallbackNote()}>
+            <Show when={noteFresh()}>
               <span class="codec-note ellipsis">{fallbackNote()}</span>
             </Show>
           </span>
@@ -320,26 +344,6 @@ export function sourceText(src: SourceInfo, profile: Profile | null): { icon: Ic
     default:
       return { icon: "speaker_2", text: t("capture.loopback"), waiting: false };
   }
-}
-
-/** The capture source of the stream on screen: the core's while it
- *  streams, otherwise null */
-export function CaptureSource(props: { profile: Profile | null; class?: string }) {
-  const { core } = useApp();
-  const src = () => core.state.snap?.stream.info?.source ?? null;
-  return (
-    <Show when={src()}>
-      {(s) => {
-        const v = () => sourceText(s(), props.profile);
-        return (
-          <span class={`capture-source ${props.class ?? ""}`} classList={{ "st-warn": v().waiting }} title={`${t("capture.mode")}: ${v().text}`}>
-            <Icon name={v().waiting ? "warning" : v().icon} />
-            <span class="ellipsis">{v().text}</span>
-          </span>
-        );
-      }}
-    </Show>
-  );
 }
 
 export type QualityLevel = 0 | 1 | 2 | 3 | 4;

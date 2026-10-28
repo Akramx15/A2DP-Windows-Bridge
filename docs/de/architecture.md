@@ -69,7 +69,8 @@ flowchart TB
   Fenster.
 - **Der Infobereich gehört zum Kern.** Sein Rechtsklickmenü (Öffnen, die ersten 10
   Profile, Trennen, Beenden) öffnet sich sofort, ohne das Fenster zu starten. Ein
-  Linksklick startet das Flyout des Fensters.
+  Linksklick startet das Flyout des Fensters (oder das Hauptfenster, je nach
+  Einstellungen).
 - **Das Fenster zeigt nur an.** Es erhält eine Momentaufnahme des Kernzustands
   und danach die Änderungen; das Schließen oder ein Absturz des Fensters stoppt
   das Audio nicht. Das Schließen eines Fensters blendet es nur aus, daher öffnet es sich

@@ -35,19 +35,17 @@ Usage: a2dpwb-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
                         instance ID (USB\\VID_0BDA&PID_8771\\...), device path
                         (\\\\?\\usb#vid_0bda&pid_8771#...) or VID:PID (0bda:8771)
   -c <codec>           ldac, aptxhd, aptxll, aptx, aptxad, sbcxq, sbc, aac, lhdcv5, opus, opus05, faststream, auto (default)
-  -q <quality>          hq (default); sq, mq for LDAC and LHDC V5; ll (low latency)
+  -q <quality>          hq (default); sq, mq for LDAC and LHDC V5; mhq for LHDC V5; ll (low latency)
                         for aptX Adaptive (other codecs: hq, their highest bit rate)
   -a                    adaptive bit rate (LDAC, LHDC V5, aptX Adaptive; SBC / SBC XQ: bitpool)
   --fallback            a codec -c the device does not offer falls back to the
                         best one it offers (as the app does), instead of an error
-  --aptxad-96k          aptX Adaptive may stream at 96 kHz (Developer > aptX
-                        Adaptive at 96 kHz; off: 48 kHz only)
   --no-experimental     never use the experimental codecs (aptX HD, aptX LL, Opus,
                         Opus 05, FastStream: experimental in the README)
   -m <mode>             capture: loopback (default), virtual, app
   --audio-device <id>   render device for -m virtual
   --app <exe>           executable for -m app
-  --rate <hz>           capture sample rate (default: the device's)
+  --rate <hz>           capture sample rate (default: 48 kHz, or the best the device lists)
   --bits <16|24>        bit depth (default: 24 where the codec carries it)
   --max-packet <bytes>  max media packet size (679-1679, default 1023)
   --sbc-blocks <n>      SBC / SBC XQ block length: 4, 8, 12, 16 (default)
@@ -107,8 +105,6 @@ struct Args {
     fallback: bool,
     /// --no-experimental: settings experimental_codecs off
     no_experimental: bool,
-    /// --aptxad-96k: the developer override aptxad_96k on for this run
-    aptxad_96k: bool,
     mode: String,
     audio_device: String,
     app: String,
@@ -182,7 +178,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
         abr: false,
         fallback: false,
         no_experimental: false,
-        aptxad_96k: false,
         mode: "loopback".into(),
         audio_device: String::new(),
         app: String::new(),
@@ -231,7 +226,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "-a" => a.abr = true,
             "--fallback" => a.fallback = true,
             "--no-experimental" => a.no_experimental = true,
-            "--aptxad-96k" => a.aptxad_96k = true,
             "-m" => a.mode = value(&mut it, "-m")?.to_lowercase(),
             "--audio-device" => a.audio_device = value(&mut it, "--audio-device")?,
             "--app" => a.app = value(&mut it, "--app")?,
@@ -382,9 +376,6 @@ pub fn run(args: &[String]) -> i32 {
         },
         tx,
     );
-    if a.aptxad_96k {
-        codec::dev::set_overrides(codec::dev::DevOverrides { aptxad_96k: true, ..codec::dev::overrides() });
-    }
 
     if a.le.on {
         // LE Audio (experimental): its own flow (v1 le_audio_cli.cpp)
@@ -522,6 +513,8 @@ pub fn run(args: &[String]) -> i32 {
         abr: a.abr,
         sbc_bitpool: a.sbc_bitpool,
         sbcxq_bitpool: a.sbc_bitpool,
+        sbc_min_bitpool: 0,
+        sbcxq_min_bitpool: 0,
         sbc: a.sbc,
         sample_rate: a.rate,
         bit_depth: a.bits,
@@ -643,6 +636,7 @@ fn stream_session(
             Ok(ServiceEvent::Volume(v)) => println!("Headphone volume: {v} ({}%)", v as u32 * 100 / 127),
             Ok(ServiceEvent::Battery(v)) => println!("Headphone battery: {v}%"),
             Ok(ServiceEvent::BatteryRefused) => println!("Headphone battery: unknown (HFP refused)"),
+            Ok(ServiceEvent::OtherDeviceBack(a)) => println!("Another device connected: {}", bt_host::addr_str(&a)),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return false,
         }
@@ -1042,7 +1036,8 @@ mod tests {
                 blocks: 8,
                 subbands: 4,
                 allocation: Some(Allocation::Snr),
-                channel_mode: Some(ChannelMode::Stereo)
+                channel_mode: Some(ChannelMode::Stereo),
+                min_bitpool: 0,
             }
         );
         assert_eq!(a.sbc_bitpool, 40);

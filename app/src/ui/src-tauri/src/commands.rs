@@ -79,6 +79,12 @@ pub async fn show_flyout(app: AppHandle) -> Result<(), String> {
     windows::show_flyout(&app).map_err(|e| e.to_string())
 }
 
+/// The flyout's page height (logical pixels): the flyout window fits it
+#[tauri::command]
+pub async fn fit_flyout(window: WebviewWindow, height: f64) -> Result<(), String> {
+    windows::fit_flyout(&window, height).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn set_theme(app: AppHandle, theme: String) {
     windows::set_theme(&app, &theme);

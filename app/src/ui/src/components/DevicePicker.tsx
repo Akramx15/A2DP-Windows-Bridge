@@ -7,13 +7,12 @@
 // name an entry). Once one is picked, the others are folded away until asked
 // for or a new scan. Used by the profile editor and the first-run setup.
 
-import { createMemo, createSignal, createUniqueId, For, Show, type JSX } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
 import { t } from "../i18n";
-import type { AudioDevice, Device } from "../ipc/types";
+import type { Device } from "../ipc/types";
 import { parseAddress } from "../lib/format";
 import {
-  defaultCapture,
   defaultProfileName,
   deviceKey,
   deviceProfile,
@@ -27,12 +26,9 @@ import { Icon } from "./Icon";
 
 /** How long a scan looks for devices (issue #86: 10 s found too few) */
 export const SCAN_SECONDS = 30;
-
-/** Windows' audio devices (none when they cannot be read), for the capture
- *  source of a device's first profile */
-export function audioDevices(app: AppContext): Promise<AudioDevice[]> {
-  return app.core.request("audio.devices").catch((): AudioDevice[] => []);
-}
+/** The first-run setup looks until a device is added (issue #86): scans of
+ *  the core's longest, one after another */
+export const SETUP_SCAN_SECONDS = 600;
 
 export function sortDevices(devices: readonly Device[]): Device[] {
   // Saved first, then audio devices by signal; other kinds (keyboards...) last
@@ -68,9 +64,8 @@ export async function saveWithProfile(app: AppContext, address: string, name: st
   const base = defaultProfileName(saved, address, false, t("codec.auto"));
   let profileName = base;
   for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
-  // Captured from a virtual device if one is installed (issue #86)
-  const capture = defaultCapture(await audioDevices(app));
-  const profile = normalizeProfile({ ...newProfile(), ...capture, name: profileName, device_address: address, device_name: saved });
+  // Captured by System Loopback, as every new device (issue #86)
+  const profile = normalizeProfile({ ...newProfile(), name: profileName, device_address: address, device_name: saved });
   const made = await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
   return made ? profileName : null;
 }
@@ -98,6 +93,11 @@ export function DevicePicker(props: {
   connecting?: string | null;
   /** With onConnect: no connection now (another A2DPWB holds the adapter) */
   connectDisabled?: boolean;
+  /** With onConnect: the device already added, no longer listed (issue #86) */
+  hidden?: string;
+  /** The first-run setup: the scan starts by itself and goes on until a
+   *  device is added, Stop is pressed or the step is left (issue #86) */
+  continuous?: boolean;
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
@@ -107,7 +107,10 @@ export function DevicePicker(props: {
     snap().adapter.le_audio === true &&
     !props.classicOnly;
   const devices = createMemo(() => {
-    const all = sortDevices(listedDevices(snap().devices, leListed()));
+    const hidden = props.hidden?.toUpperCase();
+    const all = sortDevices(listedDevices(snap().devices, leListed())).filter(
+      (d) => !hidden || d.le_audio || d.address.toUpperCase() !== hidden,
+    );
     return props.savedOnly ? all.filter((d) => d.saved) : all;
   });
   const chosen = (d: Device) =>
@@ -125,12 +128,32 @@ export function DevicePicker(props: {
   };
   const [manual, setManual] = createSignal("");
   const scanning = () => snap().scanning;
-  const scan = () => {
+  // Stop pressed, or the picker gone: a continuous scan ends there
+  let stopped = false;
+  let gone = false;
+  const scan = async () => {
     setFolded(false);
-    return app.run(() =>
-      app.core.request("device.scan", { seconds: SCAN_SECONDS }),
-    );
+    stopped = false;
+    for (;;) {
+      const ok = await app.run(() =>
+        app.core.request("device.scan", { seconds: props.continuous ? SETUP_SCAN_SECONDS : SCAN_SECONDS }),
+      );
+      // A refused scan (a device streams) is not tried again
+      if (!ok || !props.continuous || stopped || gone || props.connecting) return ok;
+    }
   };
+  // The devices show up as they answer: the user stops once theirs is there
+  const stopScan = () => {
+    stopped = true;
+    return app.run(() => app.core.request("device.scan_stop"));
+  };
+  onMount(() => {
+    if (props.continuous && !scanning()) void scan();
+  });
+  onCleanup(() => {
+    gone = true;
+    if (props.continuous && scanning()) void app.core.request("device.scan_stop").catch(() => {});
+  });
   const name = "device-pick";
   const uid = createUniqueId();
 
@@ -314,8 +337,11 @@ export function DevicePicker(props: {
           </Button>
         }
       >
-        <Button icon="search" busy={scanning()} onClick={scan}>
-          {scanning() ? t("connection.scanning") : t("connection.scan")}
+        <Button
+          icon={scanning() ? "stop" : "search"}
+          onClick={() => void (scanning() ? stopScan() : scan())}
+        >
+          {scanning() ? t("connection.scan_stop") : t("connection.scan")}
         </Button>
       </Show>
     </div>

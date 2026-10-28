@@ -304,13 +304,15 @@ impl Quality {
     }
 
     /// The quality a `kind` stream runs with (issue #86): LDAC and LHDC V5
-    /// offer High, Medium (Standard) and Low (Mobile), aptX Adaptive High
+    /// offer High, Medium (Standard) and Low (Mobile), LHDC V5 also
+    /// Medium-High (900 kbps, as Android; issue #203), aptX Adaptive High
     /// and Low Latency, every other codec High only (its highest bit rate
     /// the device takes; ABR / VBR does the rest). A quality the codec no
     /// longer offers (a profile saved before, the CLI's -q) is High.
     pub fn for_codec(self, kind: CodecKind) -> Quality {
         match (kind, self) {
             (CodecKind::Ldac | CodecKind::LhdcV5, Quality::Standard | Quality::Mobile) => self,
+            (CodecKind::LhdcV5, Quality::MediumHigh) => self,
             (CodecKind::AptxAdaptive, Quality::LowLatency) => self,
             _ => Quality::High,
         }
@@ -558,8 +560,9 @@ mod tests {
             assert_eq!(q.for_codec(CodecKind::Ldac), q);
             assert_eq!(q.for_codec(CodecKind::LhdcV5), q);
         }
-        // LHDC V5's Medium-High is gone (issue #86): High
-        assert_eq!(MediumHigh.for_codec(CodecKind::LhdcV5), High);
+        // LHDC V5's Medium-High is back (issue #203); LDAC has none
+        assert_eq!(MediumHigh.for_codec(CodecKind::LhdcV5), MediumHigh);
+        assert_eq!(MediumHigh.for_codec(CodecKind::Ldac), High);
         assert_eq!(LowLatency.for_codec(CodecKind::AptxAdaptive), LowLatency);
         for q in [Standard, Mobile, MediumHigh] {
             assert_eq!(q.for_codec(CodecKind::AptxAdaptive), High, "{q:?}");

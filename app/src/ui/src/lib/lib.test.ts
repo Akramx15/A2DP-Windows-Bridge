@@ -240,6 +240,9 @@ describe("profiles", () => {
     expect(fitToCodec({ ...p, codec: "ldac", sbc_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0 });
     // SBC and SBC XQ keep their own bitpool
     expect(fitToCodec({ ...p, codec: "sbcxq", sbc_bitpool: 53, sbcxq_bitpool: 40 })).toMatchObject({ sbc_bitpool: 0, sbcxq_bitpool: 40 });
+    // ... and their own minimum (issue #86)
+    expect(fitToCodec({ ...p, codec: "sbcxq", sbc_min_bitpool: 20, sbcxq_min_bitpool: 30 })).toMatchObject({ sbc_min_bitpool: 0, sbcxq_min_bitpool: 30 });
+    expect(fitToCodec({ ...p, codec: "aac", sbc_min_bitpool: 20 })).toMatchObject({ sbc_min_bitpool: 0 });
     // The frame setup is both's; the channel mode SBC's only
     const frame = { sbc_blocks: 8, sbc_subbands: 4, sbc_allocation: "snr", sbc_channel_mode: "stereo" };
     expect(fitToCodec({ ...p, ...frame, codec: "sbc" })).toMatchObject(frame);
@@ -281,10 +284,10 @@ describe("profiles", () => {
     expect(qualityIgnored("ldac", true)).toBe(false);
   });
 
-  it("offers High / Medium / Low for LDAC and LHDC V5, High / LL for aptX Adaptive, High elsewhere (issue #86)", () => {
+  it("offers High / Medium / Low for LDAC and LHDC V5 (and its Medium-High), High / LL for aptX Adaptive, High elsewhere (issue #86, #203)", () => {
     const ids = (codec: string) => CODECS.find((c) => c.id === codec)!.qualities.map((q) => q.id);
     expect(ids("ldac")).toEqual(["hq", "sq", "mq"]);
-    expect(ids("lhdcv5")).toEqual(["hq", "sq", "mq"]);
+    expect(ids("lhdcv5")).toEqual(["hq", "mhq", "sq", "mq"]);
     expect(ids("aptxad")).toEqual(["hq", "ll"]);
     for (const c of ["auto", "aac", "opus", "opus05", "sbc", "sbcxq"]) expect(ids(c)).toEqual(["hq"]);
     for (const c of ["aptx", "aptxhd", "aptxll", "faststream"]) expect(ids(c)).toEqual([]);
@@ -305,14 +308,25 @@ describe("profiles", () => {
     expect(qualityKbps("aac", "hq", 0, capsOf(caps, "aac")!.max_bitrate)).toBe("131");
     expect(qualityKbps("aac", "hq", 0, 320000)).toBe("256");
     // LHDC V5 at most 500 kbps: High is 500, Medium the same (left out)
+    expect(offeredQualities("lhdcv5", 48000).map((q) => [q.id, q.kbps])).toEqual([
+      ["hq", "1000"],
+      ["mhq", "900"],
+      ["sq", "500"],
+      ["mq", "400"],
+    ]);
     expect(offeredQualities("lhdcv5", 48000, 500000).map((q) => [q.id, q.kbps])).toEqual([
       ["hq", "500"],
       ["mq", "400"],
     ]);
     expect(offeredQualities("lhdcv5", 48000, 500000, "sq").map((q) => q.id)).toEqual(["hq", "sq", "mq"]);
-    // aptX Adaptive's 96 kHz only while switched on (Developer)
-    expect(offeredSampleRates("aptxad", null, false)).toEqual([0, 48000]);
-    expect(offeredSampleRates("aptxad", null, true)).toEqual([0, 48000, 96000]);
+    // aptX Adaptive's 96 kHz only when the device lists it (issue #86: a
+    // Bose QC Ultra, 0x51, does not; an EarFun Air Pro 4+ does), also
+    // while not known
+    const aptxad = (sample_rates: number[]) => ({ codec: "aptxad", sample_rates, bit_depths: [], max_bitrate: 0 });
+    expect(offeredSampleRates("aptxad", aptxad([48000]))).toEqual([0, 48000]);
+    expect(offeredSampleRates("aptxad", aptxad([48000, 96000]))).toEqual([0, 48000, 96000]);
+    expect(offeredSampleRates("aptxad", null)).toEqual([0, 48000]);
+    expect(offeredSampleRates("aptxad", aptxad([]))).toEqual([0, 48000]);
   });
 
   it("says why the bit rate is below the profile's", () => {
@@ -507,8 +521,10 @@ describe("profile list", () => {
     expect(tag({ codec: "ldac", quality: "mq", sample_rate: 88200 })).toBe("Low (303 kbps)");
     expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 44100 })).toBe("Medium (480 kbps)");
     expect(tag({ codec: "lhdcv5", quality: "sq", sample_rate: 88200 })).toBe("Medium (500 kbps)");
-    // Qualities a codec no longer offers (issue #86) are High
-    expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("High (1000 kbps)");
+    // LHDC V5's Medium-High is back (issue #203); a quality a codec does
+    // not offer is High
+    expect(tag({ codec: "lhdcv5", quality: "mhq" })).toBe("Medium-High (900 kbps)");
+    expect(tag({ codec: "ldac", quality: "mhq" })).toBe("High (990 kbps)");
     expect(tag({ codec: "aptxad", quality: "ll" })).toBe("Low Latency (265 kbps)");
     expect(tag({ codec: "aptxad", quality: "hq", sample_rate: 96000 })).toBe("High (646 kbps)");
     expect(tag({ codec: "aptxad", quality: "mq", sample_rate: 96000 })).toBe("High (646 kbps)");

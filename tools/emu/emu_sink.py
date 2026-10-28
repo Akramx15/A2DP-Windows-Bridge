@@ -55,6 +55,37 @@ SINK_ADDRESS = '00:A2:D0:00:00:02'
 log = logging.getLogger('emu_sink')
 
 
+# A BR/EDR + LE dual-mode controller's features. Bumble's default controller
+# is LE only (BR/EDR Not Supported): BTstack then never inquires.
+DUAL_MODE_FEATURES = (
+    hci.LmpFeatureMask.LMP_3_SLOT_PACKETS
+    | hci.LmpFeatureMask.LMP_5_SLOT_PACKETS
+    | hci.LmpFeatureMask.ENCRYPTION
+    | hci.LmpFeatureMask.ROLE_SWITCH
+    | hci.LmpFeatureMask.SNIFF_MODE
+    | hci.LmpFeatureMask.ENHANCED_DATA_RATE_ACL_2_MBPS_MODE
+    | hci.LmpFeatureMask.ENHANCED_DATA_RATE_ACL_3_MBPS_MODE
+    | hci.LmpFeatureMask.LMP_3_SLOT_ENHANCED_DATA_RATE_ACL_PACKETS
+    | hci.LmpFeatureMask.LMP_5_SLOT_ENHANCED_DATA_RATE_ACL_PACKETS
+    | hci.LmpFeatureMask.LE_SUPPORTED_CONTROLLER
+    | hci.LmpFeatureMask.SIMULTANEOUS_LE_AND_BR_EDR_TO_SAME_DEVICE_CAPABLE_CONTROLLER
+    | hci.LmpFeatureMask.SECURE_SIMPLE_PAIRING_CONTROLLER_SUPPORT
+    | hci.LmpFeatureMask.EXTENDED_INQUIRY_RESPONSE
+    | hci.LmpFeatureMask.EXTENDED_FEATURES
+)
+
+
+def strip_names(eir):
+    """The EIR without its (shortened or complete) local name."""
+    out, i = b'', 0
+    while i < len(eir) and eir[i]:
+        length = eir[i]
+        if eir[i + 1] not in (0x08, 0x09):
+            out += eir[i:i + 1 + length]
+        i += 1 + length
+    return out
+
+
 class EmuController(Controller):
     """Bumble virtual controller plus the classic HCI commands BTstack needs.
 
@@ -66,6 +97,78 @@ class EmuController(Controller):
     # 1021 bytes); Bumble's default of 27 bytes is the LE minimum.
     acl_data_packet_length = 1021
     total_num_acl_data_packets = 8
+
+    # Inquiry, which Bumble's controller lacks: every other controller of the
+    # link with inquiry scan on answers, the first time after
+    # INQUIRY_FIRST_ANSWER and then again every INQUIRY_REPEAT (a real
+    # controller hears a device many times per inquiry); the format follows
+    # the inquiry mode the host wrote
+    INQUIRY_FIRST_ANSWER = 1.0
+    INQUIRY_REPEAT = 2.0
+    class_of_device = 0
+    inquiry_mode = 0
+    eir = b''
+    # False: the EIR it answers with leaves the name out (a name request
+    # gets it)
+    eir_name = True
+    inquiry_task = None
+
+    def on_hci_write_class_of_device_command(self, command):
+        self.class_of_device = command.class_of_device
+        return hci.HCI_StatusReturnParameters(hci.HCI_ErrorCode.SUCCESS)
+
+    def on_hci_write_extended_inquiry_response_command(self, command):
+        self.eir = bytes(command.extended_inquiry_response)
+        return hci.HCI_StatusReturnParameters(hci.HCI_ErrorCode.SUCCESS)
+
+    def on_hci_write_inquiry_mode_command(self, command):
+        self.inquiry_mode = command.inquiry_mode
+        return hci.HCI_StatusReturnParameters(hci.HCI_ErrorCode.SUCCESS)
+
+    def on_hci_inquiry_command(self, command):
+        if self.inquiry_task is not None:
+            self._send_hci_command_status(hci.HCI_ErrorCode.COMMAND_DISALLOWED_ERROR, command.op_code)
+            return None
+        self._send_hci_command_status(hci.HCI_COMMAND_STATUS_PENDING, command.op_code)
+        log.info('inquiry for %.2f s (mode %d)', command.inquiry_length * 1.28, self.inquiry_mode)
+        self.inquiry_task = asyncio.get_running_loop().create_task(
+            self.run_inquiry(command.inquiry_length * 1.28))
+        return None
+
+    def on_hci_inquiry_cancel_command(self, _command):
+        # No Inquiry Complete after a cancel (Core Vol 4 Part E 7.1.2)
+        if self.inquiry_task is not None:
+            self.inquiry_task.cancel()
+            self.inquiry_task = None
+        return hci.HCI_StatusReturnParameters(hci.HCI_ErrorCode.SUCCESS)
+
+    async def run_inquiry(self, length):
+        loop = asyncio.get_running_loop()
+        end = loop.time() + length
+        await asyncio.sleep(min(self.INQUIRY_FIRST_ANSWER, length))
+        while loop.time() < end:
+            for peer in list(self.link.controllers):
+                if peer is not self and isinstance(peer, EmuController) and peer.classic_scan_enable & 0x01:
+                    self.send_hci_packet(self.inquiry_result(peer))
+            await asyncio.sleep(max(0.0, min(self.INQUIRY_REPEAT, end - loop.time())))
+        self.inquiry_task = None
+        self.send_hci_packet(hci.HCI_Inquiry_Complete_Event(status=hci.HCI_ErrorCode.SUCCESS))
+
+    def inquiry_result(self, peer):
+        address, cod, psrm, clock, rssi = peer.public_address, peer.class_of_device, 1, 0x1234, -55
+        if self.inquiry_mode == 2:
+            eir = peer.eir if peer.eir_name else strip_names(peer.eir)
+            return hci.HCI_Extended_Inquiry_Result_Event(
+                num_responses=1, bd_addr=address, page_scan_repetition_mode=psrm, reserved=0,
+                class_of_device=cod, clock_offset=clock, rssi=rssi,
+                extended_inquiry_response=eir.ljust(240, b'\0')[:240])
+        if self.inquiry_mode == 1:
+            return hci.HCI_Inquiry_Result_With_RSSI_Event(
+                bd_addr=[address], page_scan_repetition_mode=[psrm], reserved=[0],
+                class_of_device=[cod], clock_offset=[clock], rssi=[rssi])
+        return hci.HCI_Inquiry_Result_Event(
+            bd_addr=[address], page_scan_repetition_mode=[psrm], reserved_0=[0], reserved_1=[0],
+            class_of_device=[cod], clock_offset=[clock])
 
     def on_hci_write_secure_connections_host_support_command(self, command):
         return hci.HCI_StatusReturnParameters(hci.HCI_ErrorCode.SUCCESS)
@@ -243,14 +346,17 @@ def refuse_dual_channel(sink):
 async def main(args):
     link = LocalLink()
     transport = await open_transport(f'tcp-server:127.0.0.1:{args.port}')
-    EmuController(
+    a2dpwb_controller = EmuController(
         'A2DPWB',
         host_source=transport.source,
         host_sink=transport.sink,
         link=link,
         public_address=A2DPWB_ADDRESS,
     )
+    if args.dual_mode:
+        a2dpwb_controller.lmp_features = DUAL_MODE_FEATURES
     sink_controller = EmuController('SINK', link=link, public_address=SINK_ADDRESS)
+    sink_controller.eir_name = not args.no_eir_name
     host = Host(sink_controller, AsyncPipeSink(sink_controller))
     if args.capture:
         host.snooper = PacketLoggerSnooper(args.capture)
@@ -312,6 +418,10 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=9001, help='TCP port for A2DPWB (H4)')
     parser.add_argument('--capture', help='PacketLogger capture of the sink HCI traffic')
     parser.add_argument('--log-level', default='WARNING')
+    parser.add_argument('--no-eir-name', action='store_true',
+                        help='answer inquiries without the name in the EIR (A2DPWB asks for it)')
+    parser.add_argument('--dual-mode', action='store_true',
+                        help="report BR/EDR support on A2DPWB's controller (BTstack inquires only then)")
     parser.add_argument('--in-use', nargs='*', default=[], choices=CODEC_NAMES, metavar='CODEC',
                         help='report the SEP of these codecs as in use by another device (multipoint)')
     parser.add_argument('--codecs', nargs='+', choices=CODEC_NAMES, metavar='CODEC',

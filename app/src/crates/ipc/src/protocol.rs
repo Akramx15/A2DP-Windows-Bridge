@@ -6,9 +6,17 @@
 //!    [`ServerMessage::Snapshot`] of its whole state with a revision.
 //! 3. Then [`ServerMessage::Event`]s, each replacing one part of the state,
 //!    with the next revision. A gap in the revisions means a lost event: the
-//!    client asks for a new snapshot ([`Method::StateSnapshot`]).
+//!    client asks for a new snapshot ([`Method::StateSnapshot`]). Events
+//!    that are not state (link, log, receiver, rfcomm_data, rfcomm_closed)
+//!    carry the current revision: they are not compared with it.
 //! 4. Requests ([`ClientMessage::Request`]) are answered by a
-//!    [`ServerMessage::Response`] with the same id.
+//!    [`ServerMessage::Response`] with the same id. A request this core
+//!    cannot read (a method it does not know, or bad parameters) is
+//!    answered with the error `ipc.bad_request`.
+//!
+//! Additions within protocol 1 are listed in the Welcome's `features`
+//! ([`FEATURES`]). Older cores close the connection on a request they do
+//! not know, so a client checks the list before using one.
 //!
 //! Errors and status texts are translation keys of app/lang ([`Msg`]): the
 //! UI translates them.
@@ -19,6 +27,13 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub const PROTOCOL_VERSION: u32 = 1;
+
+/// The Welcome's `features`: "rfcomm" for rfcomm.open / send / close and
+/// their events (2.0.2)
+pub const FEATURES: &[&str] = &["rfcomm"];
+
+/// The longest `device.scan` (seconds); a longer one is cut to it
+pub const MAX_SCAN_SECONDS: u32 = 600;
 
 /// A message of app/lang: key and printf-style arguments
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
@@ -275,6 +290,9 @@ pub struct CodecDetails {
     pub frames_per_packet: Option<u32>,
     pub sbc: Option<SbcDetails>,
     pub aac: Option<AacDetails>,
+    /// Any other codec: what the device's endpoint of it lists (issue #86)
+    #[serde(default)]
+    pub device: Option<CodecDeviceCaps>,
 }
 
 /// SBC, SBC XQ and FastStream frames
@@ -441,9 +459,8 @@ pub struct Profile {
     pub auto_switch_device: bool,
     pub app_exe: String,
     pub app_name: String,
-    /// auto, device (the Windows volume of volume_device_id; set in
-    /// developer mode); "off" from before Settings.volume_sync counts as
-    /// auto. Only while Settings.volume_sync is on.
+    /// auto, off, device: kept as saved, but not used (issue #86): streams
+    /// follow Settings.volume_sync alone.
     pub volume_sync: String,
     pub volume_device_id: String,
     pub volume_device_name: String,
@@ -476,6 +493,14 @@ pub struct Profile {
     /// The same for SBC XQ
     #[serde(default)]
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: the lowest bitpool to use (the SET_CONFIGURATION's
+    /// minimum and the floor of ABR), within what the device allows and
+    /// never above the bitpool (0 = Auto)
+    #[serde(default)]
+    pub sbc_min_bitpool: u8,
+    /// The same for SBC XQ
+    #[serde(default)]
+    pub sbcxq_min_bitpool: u8,
     /// SBC / SBC XQ: block length 4, 8, 12, 16 (0 = auto: 16)
     #[serde(default)]
     pub sbc_blocks: u8,
@@ -513,6 +538,8 @@ pub struct CodecValues {
     pub abr: bool,
     pub sbc_bitpool: u8,
     pub sbcxq_bitpool: u8,
+    pub sbc_min_bitpool: u8,
+    pub sbcxq_min_bitpool: u8,
     pub sbc_blocks: u8,
     pub sbc_subbands: u8,
     pub sbc_allocation: String,
@@ -528,6 +555,8 @@ impl Default for CodecValues {
             abr: false,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
+            sbc_min_bitpool: 0,
+            sbcxq_min_bitpool: 0,
             sbc_blocks: 0,
             sbc_subbands: 0,
             sbc_allocation: String::new(),
@@ -552,8 +581,6 @@ pub struct DevOverrides {
     pub aac_no_peak: bool,
     pub aac_no_afterburner: bool,
     pub aac_latm_v0: bool,
-    /// aptX Adaptive may stream at 96 kHz; off (the default), 48 kHz only
-    pub aptxad_96k: bool,
 }
 
 /// Developer mode's logging (a2dpwb_core::settings::DevLog), in force while
@@ -650,6 +677,13 @@ pub struct Settings {
     pub start_with_windows: bool,
     pub start_minimized: bool,
     pub minimize_to_tray: bool,
+    /// A click on the tray icon opens the main window, not the flyout
+    #[serde(default)]
+    pub tray_click_opens_window: bool,
+    /// A notification when a device connects: its codec, what the codec
+    /// runs with, the battery (on by default)
+    #[serde(default = "yes")]
+    pub notify_connected: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
     /// The headphones' buttons act as Windows media keys (every device)
@@ -658,9 +692,8 @@ pub struct Settings {
     pub remember_volume: bool,
     /// Windows Volume Sync for every device (on by default): the audio
     /// device's volume and the captured device's Windows volume follow each
-    /// other; a profile can follow another device instead (its volume_sync
-    /// "device", set in developer mode). Off: no stream syncs. A change
-    /// starts the profile in use again.
+    /// other. Off: no stream syncs. A change starts the profile in use
+    /// again.
     #[serde(default = "yes")]
     pub volume_sync: bool,
     /// Developer mode: receiver test, HCI capture, debug details
@@ -722,6 +755,10 @@ pub struct UpdateInfo {
     /// The updater manifest attached to the release (latest.json): the UI
     /// installs from it when it is an installed copy with an updater key
     pub manifest_url: String,
+    /// A few lines on what is new, shown with the update (the release's
+    /// in-app notes); empty when it has none
+    #[serde(default)]
+    pub notes: String,
 }
 
 /// The whole state
@@ -1041,6 +1078,12 @@ pub enum Event {
     /// Subscription (diag.subscribe receiver): the receiver test, once a
     /// second and on every change
     Receiver(Box<ReceiverState>),
+    /// Data an RFCOMM channel received (to the connection that opened it
+    /// only, not part of the state)
+    RfcommData(RfcommData),
+    /// An RFCOMM channel closed without its connection's rfcomm.close (to
+    /// that connection only); its last event
+    RfcommClosed(RfcommClosed),
     /// The core is shutting down
     Bye,
 }
@@ -1102,9 +1145,13 @@ pub enum Method {
     /// AVRCP absolute volume 0..127
     #[serde(rename = "stream.set_volume")]
     StreamSetVolume { volume: u8 },
-    /// -> Device[] (also as an event)
+    /// -> Device[] (also as an event). `seconds` from 3 to
+    /// [`MAX_SCAN_SECONDS`] (the setup looks until a device is added)
     #[serde(rename = "device.scan")]
     DeviceScan { seconds: u32 },
+    /// Ends a running scan early: device.scan answers with what it found
+    #[serde(rename = "device.scan_stop")]
+    DeviceScanStop,
     /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
     /// or false: the classic one)
     #[serde(rename = "device.forget")]
@@ -1239,6 +1286,33 @@ pub enum Method {
     /// -> ReceiverState
     #[serde(rename = "receiver.status")]
     ReceiverStatus,
+    /// Opens an RFCOMM channel to the service `uuid` ("0000xxxx-0000-1000-
+    /// 8000-00805F9B34FB", or "xxxx" on the Bluetooth base UUID) of the
+    /// device at `address`, the device being streamed to, over the link
+    /// the core has to it: the core never connects or pairs for this
+    /// (error rfcomm.not_connected). Its data comes as rfcomm_data events
+    /// to this connection only, which owns the channel; it closes when this
+    /// connection ends, the A2DP connection ends (rfcomm_closed
+    /// "disconnected"), or the device closes it ("remote"). Answered within
+    /// 20 s, also behind other opens: wait at least 25 s. -> RfcommOpened.
+    /// Errors: rfcomm.not_connected, rfcomm.service_not_found,
+    /// rfcomm.open_failed (also when out of time: a channel that opens
+    /// later is closed), rfcomm.busy (too many channels, or out of time
+    /// behind other opens).
+    #[serde(rename = "rfcomm.open")]
+    RfcommOpen { address: String, uuid: String },
+    /// Sends `data` (base64) on a channel of this connection, in frames of
+    /// at most its `mtu`, in the order of the requests -> null. At most
+    /// 64 KiB at once (else rfcomm.bad_request). Errors: rfcomm.no_channel,
+    /// rfcomm.busy (send queue full: not sent), rfcomm.timeout (sent or
+    /// not, unknown: not to be repeated; reopen the channel).
+    #[serde(rename = "rfcomm.send")]
+    RfcommSend { channel_id: u32, data: String },
+    /// Closes a channel of this connection after the data sent before; no
+    /// rfcomm_closed follows -> null. Errors: rfcomm.no_channel,
+    /// rfcomm.timeout.
+    #[serde(rename = "rfcomm.close")]
+    RfcommClose { channel_id: u32 },
     /// -> UpdateState; error update.failed (update.error) when the check
     /// failed
     #[serde(rename = "app.check_update")]
@@ -1481,6 +1555,34 @@ pub struct ReceiverState {
     pub stream_starts: u32,
 }
 
+/// rfcomm.open's result
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct RfcommOpened {
+    pub channel_id: u32,
+    /// Largest frame the channel sends and receives (bytes)
+    pub mtu: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct RfcommData {
+    pub channel_id: u32,
+    /// base64 (standard alphabet, padded)
+    pub data: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct RfcommClosed {
+    pub channel_id: u32,
+    /// "remote": the device closed it or the link went down;
+    /// "disconnected": the A2DP connection ended; "stopped": the Bluetooth
+    /// stack stopped; "overflow": this connection did not read the data
+    /// (over 1 MiB waiting)
+    pub reason: String,
+}
+
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
@@ -1508,6 +1610,10 @@ pub enum ServerMessage {
         protocol: u32,
         /// "a2dpwb-core/2.0.0"
         server: String,
+        /// Additions to the protocol this core has ([`FEATURES`]): a client
+        /// checks for one before using it. Absent from older cores.
+        #[serde(default)]
+        features: Vec<String>,
     },
     Reject {
         reason: String,
@@ -1728,6 +1834,44 @@ mod tests {
         let j = serde_json::to_value(&e).unwrap();
         assert_eq!(j, serde_json::json!({"type": "event", "rev": 4, "event": {"kind": "le_scanning", "value": true}}));
         assert_eq!(serde_json::from_value::<ServerMessage>(j).unwrap(), e);
+    }
+
+    /// RFCOMM passthrough: the requests and the per-connection events
+    #[test]
+    fn rfcomm_wire_format() {
+        let m = |j: serde_json::Value| serde_json::from_value::<Method>(j).unwrap();
+        assert_eq!(
+            m(serde_json::json!({"method": "rfcomm.open", "params": {"address": "A", "uuid": "1101"}})),
+            Method::RfcommOpen { address: "A".into(), uuid: "1101".into() }
+        );
+        assert_eq!(
+            m(serde_json::json!({"method": "rfcomm.send", "params": {"channel_id": 3, "data": "AQI="}})),
+            Method::RfcommSend { channel_id: 3, data: "AQI=".into() }
+        );
+        assert_eq!(
+            m(serde_json::json!({"method": "rfcomm.close", "params": {"channel_id": 3}})),
+            Method::RfcommClose { channel_id: 3 }
+        );
+        assert_eq!(
+            serde_json::to_value(RfcommOpened { channel_id: 3, mtu: 990 }).unwrap(),
+            serde_json::json!({"channel_id": 3, "mtu": 990})
+        );
+        let e = ServerMessage::Event {
+            rev: 5,
+            event: Box::new(Event::RfcommData(RfcommData { channel_id: 3, data: "AQI=".into() })),
+        };
+        let j = serde_json::to_value(&e).unwrap();
+        assert_eq!(
+            j,
+            serde_json::json!({"type": "event", "rev": 5,
+                "event": {"kind": "rfcomm_data", "value": {"channel_id": 3, "data": "AQI="}}})
+        );
+        assert_eq!(serde_json::from_value::<ServerMessage>(j).unwrap(), e);
+        let closed = Event::RfcommClosed(RfcommClosed { channel_id: 3, reason: "remote".into() });
+        assert_eq!(
+            serde_json::to_value(&closed).unwrap(),
+            serde_json::json!({"kind": "rfcomm_closed", "value": {"channel_id": 3, "reason": "remote"}})
+        );
     }
 
     #[test]

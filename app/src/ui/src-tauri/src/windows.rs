@@ -1,4 +1,4 @@
-//! The two windows: the main window (960×640) and the tray flyout (360×440,
+//! The two windows: the main window (960×640) and the tray flyout (360 wide, as tall as its page,
 //! frameless, near the notification area), and the rule that ends the UI
 //! process: closing a window only hides it, so that reopening it from the
 //! tray is instant, and the process exits after everything was hidden for
@@ -12,7 +12,8 @@ use std::time::{Duration, Instant};
 use tauri::utils::config::WindowEffectsConfig;
 use tauri::window::{Effect, EffectState};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
 };
 
 pub const MAIN: &str = "main";
@@ -22,6 +23,13 @@ pub const FLYOUT: &str = "flyout";
 const HIDDEN_EXIT_AFTER: Duration = Duration::from_secs(180);
 /// Gap between the flyout and the screen edge / taskbar (logical pixels)
 const FLYOUT_MARGIN: f64 = 12.0;
+/// The flyout's width, and its height until its page says how tall it is
+/// (`fit_flyout`, issue #86: no empty space under the controls)
+const FLYOUT_WIDTH: f64 = 360.0;
+const FLYOUT_HEIGHT: f64 = 340.0;
+/// The heights `fit_flyout` takes (logical pixels)
+const FLYOUT_MIN_HEIGHT: f64 = 160.0;
+const FLYOUT_MAX_HEIGHT: f64 = 560.0;
 /// How long the flyout counts as opening after it was shown (or its page
 /// appeared) (#140). Meanwhile another click on the tray icon (a double
 /// click, or a second click while a cold start is still loading the page)
@@ -89,7 +97,7 @@ fn flyout_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         return Ok(w);
     }
     let w = builder(app, FLYOUT)
-        .inner_size(360.0, 440.0)
+        .inner_size(FLYOUT_WIDTH, FLYOUT_HEIGHT)
         .decorations(false)
         .resizable(false)
         .maximizable(false)
@@ -125,6 +133,17 @@ pub fn show_main(app: &AppHandle, route: Option<String>) -> tauri::Result<()> {
 /// area, where the taskbar's tray is in the default layout)
 pub fn show_flyout(app: &AppHandle) -> tauri::Result<()> {
     let w = flyout_window(app)?;
+    place_flyout(&w)?;
+    flyout_opened_now();
+    w.show()?;
+    w.set_focus()?;
+    tracing::info!("[{FLYOUT}] shown");
+    crate::logging::probe(app, &w);
+    Ok(())
+}
+
+/// Bottom right of the work area, above the notification area
+fn place_flyout(w: &WebviewWindow) -> tauri::Result<()> {
     let monitor = w.primary_monitor()?.or(w.current_monitor()?);
     if let Some(m) = monitor {
         let area = m.work_area();
@@ -134,12 +153,23 @@ pub fn show_flyout(app: &AppHandle) -> tauri::Result<()> {
         let y = area.position.y + area.size.height as i32 - size.height as i32 - margin;
         w.set_position(PhysicalPosition::new(x.max(area.position.x), y.max(area.position.y)))?;
     }
-    flyout_opened_now();
-    w.show()?;
-    w.set_focus()?;
-    tracing::info!("[{FLYOUT}] shown");
-    crate::logging::probe(app, &w);
     Ok(())
+}
+
+/// The flyout's page is `height` tall (logical pixels): the window takes
+/// that height, its bottom staying above the notification area
+pub fn fit_flyout(w: &WebviewWindow, height: f64) -> tauri::Result<()> {
+    if w.label() != FLYOUT || !height.is_finite() {
+        return Ok(());
+    }
+    let height = height.clamp(FLYOUT_MIN_HEIGHT, FLYOUT_MAX_HEIGHT).ceil();
+    let scale = w.scale_factor()?;
+    let now = w.inner_size()?.to_logical::<f64>(scale);
+    if (now.height - height).abs() < 1.0 {
+        return Ok(());
+    }
+    w.set_size(LogicalSize::new(FLYOUT_WIDTH, height))?;
+    place_flyout(w)
 }
 
 pub fn toggle_flyout(app: &AppHandle) -> tauri::Result<()> {

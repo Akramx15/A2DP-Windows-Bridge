@@ -101,7 +101,9 @@ def stage_blob(path: str, stage: int) -> str | None:
 
 
 def merge_language_file(path: str) -> bool:
-    """Union the keys of ours and theirs; ours wins on a shared key."""
+    """Three-way, key by key: a value upstream changed and we did not takes
+    upstream's; a value we changed keeps ours; a real clash keeps ours."""
+    base_raw = stage_blob(path, 1)
     ours_raw = stage_blob(path, 2)
     theirs_raw = stage_blob(path, 3)
     if ours_raw is None or theirs_raw is None:
@@ -109,16 +111,24 @@ def merge_language_file(path: str) -> bool:
     try:
         ours = json.loads(ours_raw)
         theirs = json.loads(theirs_raw)
+        base = json.loads(base_raw) if base_raw else {}
     except json.JSONDecodeError:
         return False
     if not isinstance(ours, dict) or not isinstance(theirs, dict):
         return False
 
-    # Keep upstream's key order, then append the keys only this fork has.
-    merged = dict(theirs)
-    merged.update(ours)
-    # Values that exist in both but were changed by us must survive: ours.update
-    # already did that. Upstream-only keys are in theirs and not in ours.
+    merged = {}
+    for key, their_value in theirs.items():
+        if key in ours:
+            if ours[key] == base.get(key):
+                merged[key] = their_value          # untouched here: upstream's value
+            else:
+                merged[key] = ours[key]            # ours, changed or not
+        else:
+            merged[key] = their_value              # upstream only
+    for key, our_value in ours.items():
+        merged.setdefault(key, our_value)          # ours only
+
     text = json.dumps(merged, ensure_ascii=False, indent=2) + "\n"
     Path(path).write_text(text, encoding="utf-8", newline="\n")
     git("add", path)
