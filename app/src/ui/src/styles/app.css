@@ -1678,6 +1678,17 @@ option {
   background: var(--surface-2);
   box-shadow: inset 3px 0 0 var(--text);
 }
+/* Listed, not chosen: an adapter A2DPWB cannot use (issue #86) */
+.choice.ro,
+.choice.ro input {
+  cursor: default;
+}
+.choice.ro:hover {
+  background: none;
+}
+.choice.ro .choice-text {
+  opacity: 0.6;
+}
 .device-row:has(input:focus-visible),
 .choice:has(input:focus-visible),
 .codec-card:has(input:focus-visible) {
