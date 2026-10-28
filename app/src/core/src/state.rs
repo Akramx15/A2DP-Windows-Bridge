@@ -296,7 +296,9 @@ fn stage_program(p: &CoreProfile) -> Option<PathBuf> {
 fn stage_config(dir: &Path, p: &CoreProfile) -> Option<a2dpwb_core::SpatialConfig> {
     let exe = stage_program(p)?;
     let command = a2dpwb_core::spatial::command_for(&exe);
-    let config = a2dpwb_core::spatial::config_for(dir, p, &command.program);
+    // The stage's program (not the program its command names: a Python stage
+    // runs python.exe, whose folder holds no manifest)
+    let config = a2dpwb_core::spatial::config_for(dir, p, &exe);
     let command = match &config {
         Some(config) => command.with_config(config),
         None => command,
@@ -1688,8 +1690,15 @@ impl CoreState {
                 // The stage reads its settings when it starts: start the
                 // engine again, not the stream (no Bluetooth reconnect)
                 if restart_after_save(&s.stream, &profile) {
+                    // The stage starts again from the profile as it is now: its
+                    // command must name the app's config copy, not the stage's
+                    // own file
+                    let next = list
+                        .iter()
+                        .find(|p| p.name == profile)
+                        .and_then(|p| stage_config(&dir, p));
                     tracing::info!("spatial: the controls of \"{profile}\" changed: the engine starts again");
-                    a2dpwb_core::request_stage(a2dpwb_core::StageUpdate::Same);
+                    a2dpwb_core::request_stage(a2dpwb_core::StageUpdate::Start(next));
                 }
                 Ok(json(&controls))
             }
