@@ -52,6 +52,22 @@ bluecaster-core.exe --cli --scan lists it:
     not at the scan's end; its name from the inquiry result within 3 s, or
     from a name request after the first inquiry
 Outputs go to tools/emu/out/scan-<case>/.
+
+    python tools/emu/run_test.py --voice [cvsd msbc lc3swb]
+
+runs the HFP audio cases instead (developer: bluecaster-core --voice-probe):
+emu_sink.py --hfp <case> adds a hands-free unit (cvsd: without codec
+negotiation, msbc / lc3swb: offering those codecs) and carries SCO between
+the virtual controllers (hfp_audio.py); BlueCaster streams SBC with the test
+tone and, once the HFP service level connection is up, opens the audio
+connection, sends a 1 kHz tone (16-bit PCM) and counts what comes back:
+  - the audio connection is established with the expected codec (BlueCaster's
+    log; the sink's log for the negotiated codec)
+  - SCO packets in both directions in both HCI captures, at about the air
+    rate (CVSD 16-bit: 267/s, transparent: 133/s, each way)
+  - both sides received SCO packets; cvsd: the sink finds the 1 kHz tone in
+    the PCM it received
+Outputs go to tools/emu/out/voice-<case>/.
 """
 
 import argparse
@@ -1060,6 +1076,115 @@ def run_link_case(args, case, port):
     return failures, ''
 
 
+# HFP audio cases: the codec BlueCaster's log names, SCO packets per second
+# each way (60-byte packets: CVSD with 16-bit samples 16 kB/s, transparent
+# 8 kB/s)
+VOICE_CASES = {
+    'cvsd': ('CVSD', 16000 / 60),
+    'msbc': ('mSBC', 8000 / 60),
+    'lc3swb': ('LC3-SWB', 8000 / 60),
+}
+
+
+def pklg_counts(path):
+    """Records of a PacketLogger capture by type"""
+    counts = {}
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+    except OSError:
+        return counts
+    i = 0
+    while i + 13 <= len(data):
+        length, = struct.unpack_from('>I', data, i)
+        counts[data[i + 12]] = counts.get(data[i + 12], 0) + 1
+        i += 4 + length
+    return counts
+
+
+def run_voice_case(args, case, port):
+    """bluecaster-core --voice-probe against emu_sink.py --hfp <case>"""
+    codec, rate = VOICE_CASES[case]
+    out = os.path.join(args.out, 'voice-' + case)
+    shutil.rmtree(out, ignore_errors=True)
+    os.makedirs(out)
+    failures = []
+    duration = max(args.duration, 6)
+    port = free_port(port)
+    src_capture, sink_capture = os.path.join(out, 'bluecaster.pklg'), os.path.join(out, 'sink.pklg')
+    sink = start_sink(port, sink_capture, os.path.join(out, 'sink.log'), extra=['--hfp', case])
+    try:
+        env = dict(os.environ, BLUECASTER_CONFIG_DIR=os.path.join(out, 'config'), BLUECASTER_LOG='debug')
+        with open(os.path.join(out, 'bluecaster.log'), 'w', encoding='utf-8', errors='replace') as log:
+            try:
+                rc = subprocess.run(
+                    [args.bluecaster, '--cli', '--hci-tcp', f'127.0.0.1:{port}', '-d', SINK_ADDRESS, '-c', 'sbc',
+                     '--test-tone', '--voice-probe', '--duration', str(duration), '--hci-capture', src_capture],
+                    stdout=log, stderr=subprocess.STDOUT, env=env, timeout=duration + 90).returncode
+            except subprocess.TimeoutExpired:
+                rc = 'timeout'
+    finally:
+        sink.terminate()
+        sink.wait(10)
+    if rc != 0:
+        failures.append(f'BlueCaster exited with {rc} (see bluecaster.log)')
+    bc_log, sink_log = read_text(os.path.join(out, 'bluecaster.log')), read_text(os.path.join(out, 'sink.log'))
+    m = re.search(r'HFP: audio connection established, codec (\S+)', bc_log)
+    if not m:
+        failures.append('bluecaster.log: no audio connection')
+    elif m.group(1) != codec:
+        failures.append(f'audio connection with {m.group(1)}, not {codec}')
+    if case != 'cvsd' and f'HFP: codec negotiated {case}' not in sink_log:
+        failures.append(f'sink.log: codec {case} not negotiated')
+    if re.search(r'Traceback|HFP-HF protocol failed', sink_log):
+        failures.append('sink.log: a Python error')
+    # Both captures: SCO out (0x08) and in (0x09), at about the air rate for
+    # the time the link was up (at least a second of it)
+    detail = []
+    for side, capture in (('bluecaster', src_capture), ('sink', sink_capture)):
+        c = pklg_counts(capture)
+        sent, received = c.get(0x08, 0), c.get(0x09, 0)
+        detail.append(f'{side} SCO out {sent} in {received}')
+        if sent < rate or received < rate:
+            failures.append(f'{side}.pklg: SCO out {sent}, in {received} (less than a second of audio)')
+    probe = re.findall(r'voice probe: (\d+) packets, (\d+) bytes', bc_log)
+    if not probe or int(probe[-1][0]) == 0:
+        failures.append('bluecaster.log: the voice probe received nothing')
+    rx = re.findall(r'HFP rx: (\d+) packets \d+ bytes codec (\S+) status (.*?) tone (.*?) \| tx: (\d+)', sink_log)
+    if not rx:
+        failures.append('sink.log: no HFP rx summary')
+    else:
+        packets, sink_codec, status, tone, tx = rx[-1]
+        detail.append(f'sink rx {packets} tx {tx} status {status} tone {tone}')
+        if int(packets) == 0:
+            failures.append('the sink received no SCO packets')
+        if sink_codec != case:
+            failures.append(f'sink codec {sink_codec}, not {case}')
+        if case == 'cvsd' and not tone.startswith('ok'):
+            failures.append(f'sink: 1 kHz tone not found ({tone})')
+    if 'dropped an incoming HCI packet' in bc_log:
+        failures.append('bluecaster.log: incoming HCI packets dropped')
+    return failures, ' | '.join(detail)
+
+
+def main_voice(args):
+    wanted = args.voice or list(VOICE_CASES)
+    unknown = [n for n in wanted if n not in VOICE_CASES]
+    if unknown:
+        sys.exit(f'Unknown voice case(s) {unknown}; known: {list(VOICE_CASES)}')
+    results = []
+    for index, case in enumerate(wanted):
+        print(f'--- voice {case} ...', flush=True)
+        failures, detail = run_voice_case(args, case, args.base_port + 400 + index)
+        results.append((case, failures))
+        print(f'    {"PASS" if not failures else "FAIL"}  {detail}')
+        for failure in failures:
+            print(f'      - {failure}')
+    passed = sum(1 for _, f in results if not f)
+    print(f'\n{passed}/{len(results)} voice cases passed. Details: {args.out}')
+    sys.exit(0 if passed == len(results) else 1)
+
+
 def main_link(args):
     wanted = args.link or list(LINK_CASES)
     unknown = [n for n in wanted if n not in LINK_CASES]
@@ -1089,6 +1214,8 @@ def main():
                         help=f'run the device scan cases instead ({", ".join(SCAN_CASES)}; default: all of them)')
     parser.add_argument('--link', nargs='*', metavar='CASE',
                         help=f'run the link cases instead ({", ".join(LINK_CASES)}; default: all of them)')
+    parser.add_argument('--voice', nargs='*', metavar='CASE',
+                        help=f'run the HFP audio cases instead ({", ".join(VOICE_CASES)}; default: all of them)')
     parser.add_argument('--duration', type=int, default=5, help='seconds of streaming per codec')
     parser.add_argument('--max-packet', type=int, help='passed to BlueCaster --max-packet (default: its own)')
     parser.add_argument('--build-dir', default=os.path.join(REPO, 'build'),
@@ -1104,8 +1231,8 @@ def main():
     args.decoder = args.decoder or os.path.join(args.build_dir, 'a2dp_decode', args.config, 'bluecaster_decode.exe')
     for path, hint in ((VENV_PYTHON, 'run: python tools/emu/setup_env.py'),
                        (args.bluecaster, 'build BlueCaster'), (args.decoder, 'build bluecaster_decode')):
-        if path == args.decoder and (args.scan is not None or args.link is not None):
-            continue  # a scan streams nothing, a link case decodes nothing
+        if path == args.decoder and (args.scan is not None or args.link is not None or args.voice is not None):
+            continue  # a scan streams nothing, a link or voice case decodes nothing
         if not os.path.exists(path):
             sys.exit(f'Missing {path} ({hint})')
     if args.le_audio is not None:
@@ -1114,6 +1241,8 @@ def main():
         main_scan(args)
     if args.link is not None:
         main_link(args)
+    if args.voice is not None:
+        main_voice(args)
 
     results = []
     for index, codec in enumerate(args.codecs):
