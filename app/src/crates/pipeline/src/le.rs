@@ -824,6 +824,20 @@ mod tests {
         assert_eq!(silence_set(&bad), vec![vec![0u8; 200]]);
     }
 
+    #[test]
+    fn a_source_only_cis_gets_no_sdu() {
+        // A conversational plan: CIS 2 carries a microphone only
+        let mic = cis(2, &[]);
+        let p = plan(preset(48000, 10000, 100), vec![cis(1, &[L, R]), mic, cis(3, &[MONO])]);
+        let layout = SduLayout::from_plan(&p).unwrap();
+        assert_eq!(layout.sdu_lens, [200, 100]);
+        assert_eq!(layout.channels.iter().map(|c| c.cis).collect::<Vec<_>>(), [0, 0, 1]);
+        assert_eq!(silence_set(&p).len(), 2);
+        // Microphones only: nothing to send
+        let p = plan(preset(48000, 10000, 100), vec![cis(2, &[])]);
+        assert!(SduLayout::from_plan(&p).is_err());
+    }
+
     /// The thread: captured audio in, SDU sets out, stop joins
     #[test]
     fn encode_thread_runs() {
