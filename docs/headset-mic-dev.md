@@ -277,6 +277,47 @@ carries `VoiceStatus`.
   `bluecaster_decode --le-audio` learns ASE direction so the mic stream
   decodes separately.
 
+As implemented (W4, branch `feat/headset-mic-w4`), where it differs from or
+adds to the above:
+
+- The request flags live in bt-host's `LeRequest` (`headset_mic: bool`,
+  `mic_output: Option<String>`), which core's `StreamRequest::le` carries;
+  core's `StreamRequest` (stream.rs) is unchanged. Still to wire: the
+  profile's `headset_mic_in_force()` into `LeRequest::headset_mic` where
+  the LE request is built (`profiles.rs` / `state.rs`), and
+  `StreamStatus::voice` (`VoiceStatus { codec: "lc3", link: "le", rate:
+  LeMicPath::rate() }`) in `le_stream.rs`'s `report`.
+- `SourceDir { ase_id, channels: u8, allocation: u32, octets: u16 }`; the
+  plan has `StreamPlan::source: Option<SourcePlan>` (preset, contexts,
+  presentation delay) and `source_note` (why a requested microphone is
+  missing: the stream then plays without it). The source preset order is
+  `32_2_1, 32_1_1, 24_2_1, 24_1_1, 16_2_1, 16_1_1`, those with the sink
+  preset's frame duration first; GMAP (UGTs with the Source feature) puts
+  `32_1_gs, 32_2_gs, 48_1_gs, 48_2_gs` first. A conversational plan also
+  asks for Conversational on the sink ASEs (next to Media, where
+  available); source ASEs ask for Conversational (GMAP: Game +
+  Conversational).
+- `IsoRx` is bt-host's ring producer (a struct, `le/iso_recv.rs`), created
+  per stream in `le_start_stream`; `LeStreamStarted::rx:
+  Option<LeRxHandle>` holds the consumer, the streams and the LC3
+  parameters.
+- The decoded PCM goes to `pipeline::le_rx::PcmOut` (`fn push(&mut self,
+  mono_i16: &[i16])`), one frame per call, data driven (no clock of its own:
+  the renderer's drift control has to absorb the headset's clock). Outputs
+  now: `WavOut` (`--mic-output x.wav`; a stream set up again writes
+  `x-2.wav`, ...) and `CountingOut`. A device name (`--mic-output CABLE`)
+  is only counted so far: the coordinator adds `impl PcmOut for
+  voice_link::PcmProducer` and opens the `Renderer` in
+  `core::le_stream::LeMicPath::start` (`MicOutput::Device`).
+- TMAS claims Call Gateway + UMS (0x0005) and GMAS UGG Features 0x07
+  (Multisink added) always: the TMAP / GMAP roles are static GATT values.
+- Emulator: `--mic [SINKS]` (1-based sink numbers, default all) and
+  `--mic-rates`; the frames come from the ignored test `mic_frames` in
+  `app/src/crates/codec/src/lc3.rs` (no `bluecaster_decode --lc3-encode`).
+  `bluecaster_decode` reports a microphone as "=== Microphone N" with
+  "Mic ..." labels (one per CIS, mono WAV `<prefix>.mic.<n>.lc3.wav`), so
+  run_test's existing stream counters do not see it.
+
 ## Emulator for HFP audio (tools/emu)
 
 `emu_sink.py --hfp [cvsd|msbc|lc3swb]` adds an HF role (Bumble `HfProtocol`,
