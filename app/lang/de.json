@@ -945,5 +945,16 @@
   "ui.settings.open_config_folder": "Einstellungsordner öffnen",
   "status.device_back": "Das Audiogerät ist wieder an, verbinde...",
   "ui.update.later": "Später",
-  "ui.update.release_notes": "Vollständige Versionshinweise"
+  "ui.update.release_notes": "Vollständige Versionshinweise",
+  "ui.headset_mic": "Headset-Mikrofon",
+  "ui.headset_mic_hint": "Macht das Mikrofon des Kopfhörers über die unten gewählte Ausgabe für Apps nutzbar.",
+  "ui.mic_output": "Mikrofonausgabe",
+  "ui.mic_output_hint": "Apps erhalten das Mikrofon von der Aufnahmeseite dieses Geräts (bei VB-CABLE: CABLE Output).",
+  "ui.headset_mic_quality": "Solange dies an ist, ist die Wiedergabe Mono in Telefonqualität.",
+  "ui.headset_mic_no_output": "Keine Mikrofonausgabe gewählt: Das Headset-Mikrofon bleibt aus.",
+  "status.voice_codec": "Sprache: %s",
+  "codec.cvsd": "CVSD",
+  "codec.msbc": "mSBC",
+  "codec.lc3_swb": "LC3-SWB",
+  "error.headset_mic_loop": "Die Mikrofonausgabe ist das Gerät, dessen Ton an den Kopfhörer geht. Wähle unter Codecs eine andere Mikrofonausgabe."
 }

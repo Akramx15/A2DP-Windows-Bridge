@@ -76,6 +76,7 @@ The sample rate is 48 kHz unless you choose another in a codec's settings on **C
 - **Updates**: daily check, in-app update of the installed version
 - **8 languages**: English, Japanese, Chinese (Simplified / Traditional), Korean, German, French, Spanish
 - **LE Audio (experimental)**: LC3 to LE Audio headphones and earbuds, tested only against the Bluetooth emulator ([details](https://seiyafunaokajp.github.io/BlueCaster/usage#le-audio))
+- **Headset microphone (experimental, developer mode)**: the headphones' microphone as a Windows microphone through a virtual audio cable such as VB-CABLE; classic devices play at call quality meanwhile, LE Audio keeps its quality ([details](https://seiyafunaokajp.github.io/BlueCaster/usage#codecs))
 
 ## Building
 

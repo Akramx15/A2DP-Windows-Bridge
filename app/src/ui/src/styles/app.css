@@ -1676,6 +1676,14 @@ option {
 .live-bitpool {
   flex-basis: 100%;
 }
+/* The headset microphone's voice codec; a classic link's in the warning colour */
+.voice-codec {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.voice-codec.st-warn {
+  color: var(--st-text);
+}
 .codec-line {
   display: flex;
   flex-wrap: wrap;
@@ -2097,6 +2105,18 @@ option {
 }
 .device-codecs .toggle-row {
   padding: 0;
+}
+/* Headset microphone (developer mode): the switch, its output and notes */
+.headset-mic {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-width: 0;
+}
+.headset-mic .field {
+  align-self: stretch;
+  max-width: 28rem;
 }
 .codec-card-name {
   font-weight: 600;

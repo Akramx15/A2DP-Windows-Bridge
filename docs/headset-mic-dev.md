@@ -59,9 +59,21 @@ pub struct VoiceStatus {
 Idle / Error / Reconnecting like the battery.
 
 The settings count only in developer mode (`settings.rs` gate helper
-`headset_mic_in_force()`, same pattern as `capture_source()`). Changing
-`headset_mic` of the profile in use switches **in place** (no stream restart)
-for classic devices; for LE Audio entries it restarts the LE stream.
+`Settings::headset_mic_in_force(profile_flag)`, same pattern as
+`capture_source()`); headset mode also stays off while `mic_device_id` is
+empty. Changing `headset_mic` or the mic device of the profile in use
+switches **in place** (no stream restart) for classic devices streaming
+(`state.rs` `headset_change` → `HeadsetChange::InPlace`, `TODO(W3)` hook in
+`profile.save`); for LE Audio entries it restarts the LE stream. Outside
+developer mode, or a mic device changed while headset mode is off, the save
+changes nothing in the stream.
+
+Feedback loop check (pure, in `profiles.rs`):
+`Profile::mic_device_conflicts(&self, default_output_id: &str) ->
+Option<&'static str>` returns `"error.headset_mic_loop"` when the mic device
+is the captured virtual/output device, or the default output while the
+profile captures System Loopback; None otherwise (also with no device
+chosen). The caller (W3) passes the current default render endpoint id.
 
 CLI (`app/src/core/src/cli.rs`): `--headset-mic` (on), `--mic-output <name>`
 (render device by friendly-name substring; the emulator runs pass the Windows
@@ -71,10 +83,13 @@ configuration.
 
 Language keys (all 8 files): `ui.headset_mic` ("Headset microphone"),
 `ui.headset_mic_hint`, `ui.mic_output` ("Microphone output"),
+`ui.mic_output_hint` (apps use the cable's recording side),
 `ui.headset_mic_quality` (the call-quality warning, shown only for classic
 devices), `ui.headset_mic_no_output` (no output device chosen),
-`status.voice_codec` ("Voice: %s") and codec names `codec.cvsd`,
-`codec.msbc`, `codec.lc3_swb`. Hints stay under 120 characters.
+`status.voice_codec` ("Voice: %s"), codec names `codec.cvsd`,
+`codec.msbc`, `codec.lc3_swb` ("lc3" shows as plain "LC3"), and
+`error.headset_mic_loop` (the feedback-loop refusal, a status message).
+Hints stay under 120 characters.
 
 ## Voice audio plumbing (new crate `app/src/crates/voice-link`)
 

@@ -184,6 +184,9 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         max_media_payload: p.max_media_payload.unwrap_or(legacy),
         le_audio: p.le_audio,
         le_low_latency: p.le_low_latency,
+        headset_mic: p.headset_mic,
+        mic_device_id: p.mic_device_id.clone(),
+        mic_device_name: p.mic_device_name.clone(),
         sbc_bitpool: p.sbc_bitpool,
         sbcxq_bitpool: p.sbcxq_bitpool,
         sbc_min_bitpool: p.sbc_min_bitpool,
@@ -259,6 +262,9 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.max_media_payload = Some(bt_host::media::clamp_media_payload_limit(p.max_media_payload as u32));
     c.le_audio = p.le_audio;
     c.le_low_latency = p.le_low_latency;
+    c.headset_mic = p.headset_mic;
+    c.mic_device_id = p.mic_device_id.clone();
+    c.mic_device_name = p.mic_device_name.clone();
     c.sbc_bitpool = p.sbc_bitpool;
     c.sbcxq_bitpool = p.sbcxq_bitpool;
     c.sbc_min_bitpool = p.sbc_min_bitpool;
@@ -1211,6 +1217,20 @@ fn tray_tooltip(base: &str, device: Option<&str>, lines: &[String]) -> String {
     t
 }
 
+/// The headset microphone's line in the tray tooltip: "Voice: mSBC"
+/// (StreamStatus.voice codec key)
+fn voice_line(lang: &str, codec: &str) -> String {
+    let tr = |key: &str, default: &str| bluecaster_core::messages::translate(lang, key, default);
+    let name = match codec {
+        "cvsd" => tr("codec.cvsd", "CVSD"),
+        "msbc" => tr("codec.msbc", "mSBC"),
+        "lc3_swb" => tr("codec.lc3_swb", "LC3-SWB"),
+        "lc3" => "LC3".to_string(),
+        other => other.to_string(),
+    };
+    bluecaster_core::messages::format_printf(&tr("status.voice_codec", "Voice: %s"), &[name])
+}
+
 /// A tray menu item: the device, its LE Audio entry tagged as in the
 /// flyout ("WF-1000XM5 (LE Audio)")
 fn tray_label(device: &str, le_audio: bool, le_tag: &str) -> String {
@@ -1229,6 +1249,38 @@ fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
 /// starts again, as a restart already on its way shows as connecting too.
 fn source_changes_in_place(stream: &StreamStatus, before: Option<&CoreProfile>, saved: &CoreProfile) -> bool {
     stream.state == StreamState::Streaming && !saved.le_audio && before.is_some_and(|b| b.only_source_differs(saved))
+}
+
+/// What a save that changed only the headset mode or the microphone output
+/// of the profile in use does to its stream
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeadsetChange {
+    /// Nothing the stream uses: outside developer mode, or the microphone
+    /// output changed while headset mode is off
+    Unused,
+    /// A classic stream switches its voice link on or off itself
+    InPlace,
+    /// An LE Audio stream sets up its streams again (or a classic one still
+    /// connecting starts again)
+    Restart,
+}
+
+/// The save changed only `headset_mic` / `mic_device_*` (None: something else
+/// changed as well, or nothing)
+fn headset_change(
+    stream: &StreamStatus,
+    before: Option<&CoreProfile>,
+    saved: &CoreProfile,
+    developer_mode: bool,
+) -> Option<HeadsetChange> {
+    let before = before.filter(|b| b.only_headset_mic_differs(saved))?;
+    Some(if !developer_mode || (!before.headset_mic && !saved.headset_mic) {
+        HeadsetChange::Unused
+    } else if stream.state == StreamState::Streaming && !saved.le_audio {
+        HeadsetChange::InPlace
+    } else {
+        HeadsetChange::Restart
+    })
 }
 
 /// The save changed only the bitpools of an A2DP SBC / SBC XQ profile
@@ -1503,6 +1555,9 @@ impl CoreState {
             if let Some(i) = &s.stream.info {
                 lines.push(tray_codec_line(&i.codec, i.bitrate_kbps, i.sample_rate, i.bits, i.abr));
             }
+            if let Some(v) = &s.stream.voice {
+                lines.push(voice_line(&lang, &v.codec));
+            }
             if let Some(b) = s.stream.battery {
                 let template = bluecaster_core::messages::translate(&lang, "ui.home.battery", "Battery %d%%");
                 lines.push(bluecaster_core::messages::format_printf(&template, &[b.to_string()]));
@@ -1567,15 +1622,18 @@ impl CoreState {
                 }
                 // A lost link's battery is stale until the device reports
                 // again (issue #86: a battery shown while disconnected)
+                // The voice link goes with it (W3 reports it again)
                 if state == CoreStreamState::Reconnecting {
                     stream.battery = None;
                     stream.battery_refused = false;
+                    stream.voice = None;
                 }
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error) {
                     stream.info = None;
                     stream.volume = None;
                     stream.battery = None;
                     stream.battery_refused = false;
+                    stream.voice = None;
                     if state == CoreStreamState::Idle {
                         stream.profile = None;
                     }
@@ -1910,6 +1968,19 @@ impl CoreState {
         if auto.is_some() && settings.debug_mode {
             req.codec_values = p.all_codec_values();
         }
+        // Headset mode (developer mode): on only with an output chosen
+        let headset_mic = settings.headset_mic_in_force(p.headset_mic) && !p.mic_device_id.is_empty();
+        if headset_mic {
+            tracing::debug!(
+                "profile {}: headset microphone to {}",
+                bluecaster_core::diag::quoted(&p.name),
+                bluecaster_core::diag::quoted(&p.mic_device_name)
+            );
+        }
+        // TODO(W3): pass headset_mic / mic_device_id into the StreamRequest
+        // (and refuse with p.mic_device_conflicts(<default output id>) as the
+        // status message when the output would feed the capture)
+        let _ = headset_mic;
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -1949,6 +2020,7 @@ impl CoreState {
             volume: None,
             battery: None,
             battery_refused: false,
+            voice: None,
         }));
         let service = self.service.clone();
         // A restart for a save waits a moment: a request right behind it
@@ -2506,7 +2578,24 @@ impl CoreState {
                 // The profile in use starts again with what was saved (v1),
                 // but for another source, which needs nothing of the link
                 let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
-                if restart_after_save(&s.stream, &key) && !order_keeps_codec && !kept_only {
+                let headset = headset_change(&s.stream, before.as_ref(), &in_order, self.service.settings().debug_mode);
+                let headset_kept = match headset {
+                    Some(HeadsetChange::Unused) => true,
+                    Some(HeadsetChange::InPlace) => {
+                        tracing::info!(
+                            "profile {} saved while in use: headset microphone {} in place",
+                            bluecaster_core::diag::quoted(&key),
+                            if in_order.headset_mic { "on" } else { "off" }
+                        );
+                        // TODO(W3): switch the voice link of the stream in
+                        // place (headset_mic_in_force(in_order.headset_mic),
+                        // in_order.mic_device_id, refused when
+                        // in_order.mic_device_conflicts(..) says so)
+                        true
+                    }
+                    Some(HeadsetChange::Restart) | None => false,
+                };
+                if restart_after_save(&s.stream, &key) && !order_keeps_codec && !kept_only && !headset_kept {
                     let in_place = source_changes_in_place(&s.stream, before.as_ref(), &in_order)
                         && self.service.change_source(self.service.settings().capture_source(in_order.source()));
                     let bitpools_in_place = !self.service.settings().auto_codec
@@ -3327,6 +3416,50 @@ mod tests {
     }
 
     #[test]
+    fn headset_mode_switches_in_place_for_classic_and_restarts_le_audio() {
+        let before = CoreProfile { name: "WH".into(), ..CoreProfile::default() };
+        let on = CoreProfile {
+            headset_mic: true,
+            mic_device_id: "{cable}".into(),
+            mic_device_name: "CABLE Input".into(),
+            ..before.clone()
+        };
+        let stream = |state| StreamStatus { state, profile: Some("WH".into()), ..StreamStatus::default() };
+        let streaming = stream(StreamState::Streaming);
+        assert_eq!(headset_change(&streaming, Some(&before), &on, true), Some(HeadsetChange::InPlace));
+        assert_eq!(headset_change(&streaming, Some(&on), &before, true), Some(HeadsetChange::InPlace));
+        // Another output while on: the classic stream takes it in place too
+        let other = CoreProfile { mic_device_id: "{cable 2}".into(), ..on.clone() };
+        assert_eq!(headset_change(&streaming, Some(&on), &other, true), Some(HeadsetChange::InPlace));
+        // Nothing the stream uses: outside developer mode, or an output
+        // chosen while headset mode is off
+        assert_eq!(headset_change(&streaming, Some(&before), &on, false), Some(HeadsetChange::Unused));
+        let output_only = CoreProfile { headset_mic: false, ..on.clone() };
+        assert_eq!(headset_change(&streaming, Some(&before), &output_only, true), Some(HeadsetChange::Unused));
+        // LE Audio sets its streams up again, as does a classic one connecting
+        let le = CoreProfile { le_audio: true, ..before.clone() };
+        let le_on = CoreProfile { le_audio: true, ..on.clone() };
+        assert_eq!(headset_change(&streaming, Some(&le), &le_on, true), Some(HeadsetChange::Restart));
+        assert_eq!(
+            headset_change(&stream(StreamState::Connecting), Some(&before), &on, true),
+            Some(HeadsetChange::Restart)
+        );
+        // Saved with something else, or nothing changed
+        let codec = CoreProfile { codec: "aac".into(), ..on.clone() };
+        assert_eq!(headset_change(&streaming, Some(&before), &codec, true), None);
+        assert_eq!(headset_change(&streaming, Some(&before), &before, true), None);
+        assert_eq!(headset_change(&streaming, None, &on, true), None);
+    }
+
+    #[test]
+    fn the_tray_names_the_voice_codec() {
+        assert_eq!(voice_line("en", "msbc"), "Voice: mSBC");
+        assert_eq!(voice_line("en", "cvsd"), "Voice: CVSD");
+        assert_eq!(voice_line("en", "lc3_swb"), "Voice: LC3-SWB");
+        assert_eq!(voice_line("en", "lc3"), "Voice: LC3");
+    }
+
+    #[test]
     fn another_source_changes_in_place_only_alone_and_while_streaming() {
         let before = CoreProfile { name: "WH".into(), ..CoreProfile::default() };
         let app = CoreProfile { capture_mode: "app".into(), app_exe: "Spotify.exe".into(), ..before.clone() };
@@ -3897,6 +4030,18 @@ mod tests {
         // The UI turns it off: the stored profile follows
         let classic = Profile { le_audio: false, ..ui };
         assert!(!merge_profile(Some(&core), &classic).le_audio);
+        // Headset mode and its output, both ways
+        assert!(!classic.headset_mic && classic.mic_device_id.is_empty());
+        let mic = Profile {
+            headset_mic: true,
+            mic_device_id: "{cable}".into(),
+            mic_device_name: "CABLE Input".into(),
+            ..classic
+        };
+        let stored = merge_profile(Some(&core), &mic);
+        assert!(stored.headset_mic);
+        assert_eq!((stored.mic_device_id.as_str(), stored.mic_device_name.as_str()), ("{cable}", "CABLE Input"));
+        assert_eq!(to_ipc_profile(&stored, 679), mic);
 
         let base = CoreSettings::default();
         let ui = to_ipc_settings(&base);

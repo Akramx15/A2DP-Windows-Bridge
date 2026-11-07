@@ -945,5 +945,16 @@
   "ui.settings.open_config_folder": "開啟設定資料夾",
   "status.device_back": "音訊裝置已重新開啟,正在連線...",
   "ui.update.later": "稍後",
-  "ui.update.release_notes": "完整版本資訊"
+  "ui.update.release_notes": "完整版本資訊",
+  "ui.headset_mic": "耳機麥克風",
+  "ui.headset_mic_hint": "透過下方選擇的輸出，讓應用程式可以使用耳機的麥克風。",
+  "ui.mic_output": "麥克風輸出",
+  "ui.mic_output_hint": "應用程式從此裝置的錄音端取得麥克風（使用 VB-CABLE 時為 CABLE Output）。",
+  "ui.headset_mic_quality": "開啟期間，播放為通話音質的單聲道。",
+  "ui.headset_mic_no_output": "未選擇麥克風輸出：耳機麥克風保持關閉。",
+  "status.voice_codec": "語音：%s",
+  "codec.cvsd": "CVSD",
+  "codec.msbc": "mSBC",
+  "codec.lc3_swb": "LC3-SWB",
+  "error.headset_mic_loop": "麥克風輸出與正在向耳機傳送聲音的裝置相同。請在「編解碼器」中選擇其他麥克風輸出。"
 }
