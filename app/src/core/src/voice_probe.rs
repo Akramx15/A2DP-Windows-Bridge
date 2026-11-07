@@ -20,9 +20,9 @@ struct ToneTx {
 
 impl VoiceTx for ToneTx {
     fn fill(&mut self, out: &mut [u8]) {
-        for pair in out.chunks_exact_mut(2) {
+        for pair in out.as_chunks_mut::<2>().0 {
             let v = (std::f64::consts::TAU * self.phase as f64 / 8.0).sin() * 8000.0;
-            pair.copy_from_slice(&(v as i16).to_le_bytes());
+            *pair = (v as i16).to_le_bytes();
             self.phase = (self.phase + 1) % 8;
         }
     }
@@ -93,7 +93,7 @@ mod tests {
         let mut tx = ToneTx { phase: 0 };
         let mut out = [0u8; 32];
         tx.fill(&mut out);
-        let s: Vec<i16> = out.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+        let s: Vec<i16> = out.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes(*b)).collect();
         // One period is 8 samples
         assert_eq!(s[0], 0);
         assert_eq!(s[2], 8000);
