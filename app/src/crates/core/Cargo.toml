@@ -38,5 +38,9 @@ windows = { version = "0.62", features = ["Foundation", "ApplicationModel", "Med
 # firmware.rs: checks the Realtek files fetched from linux-firmware
 sha2 = "0.10"
 
+[dev-dependencies]
+# le_stream.rs tests: a microphone ring without a stack
+rtrb.workspace = true
+
 [lints]
 workspace = true

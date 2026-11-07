@@ -15,6 +15,12 @@
 //! The session ([`crate::stream`]) runs [`HeadsetMode::tick`] on every tick
 //! of a link that is fine, [`HeadsetMode::link_lost`] when the link drops and
 //! [`HeadsetMode::end`] when the session ends.
+//!
+//! Where the microphone goes is decided here for both kinds of device:
+//! [`resolve_mic_output`] (a render endpoint by id or name, a WAV file, the
+//! default output), [`mic_conflict`] (the feedback-loop refusal) and
+//! [`MicOutput`] (the [`Renderer`] or the [`WavSink`]); the LE Audio session
+//! ([`crate::le_stream`]) uses them for its microphone too.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -28,7 +34,8 @@ use crate::messages::Msg;
 use crate::service::{Inner, VoiceChange};
 use crate::stream::{SourceRequest, StreamState};
 
-/// The microphone render's prefill
+/// The microphone render's prefill (HFP and LE Audio alike: the renderer's
+/// drift control absorbs the headset's clock around it)
 const RENDER_PREFILL_MS: u32 = 40;
 /// The uplink queue (capture to encoder)
 const UPLINK_CAPACITY_MS: u32 = 200;
@@ -52,9 +59,36 @@ pub(crate) trait A2dp {
 
 /// Where the microphone goes
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MicTarget {
+pub enum MicTarget {
+    /// A Windows render endpoint (a virtual cable's playback side)
     Device { id: String, name: String },
+    /// A mono 16-bit WAV file (developer CLI, emulator tests)
     Wav(PathBuf),
+}
+
+impl MicTarget {
+    /// The render endpoint's id for [`ipc::VoiceStatus::mic_device_id`];
+    /// empty for a file
+    pub fn device_id(&self) -> &str {
+        match self {
+            MicTarget::Device { id, .. } => id,
+            MicTarget::Wav(_) => "",
+        }
+    }
+
+    /// The target of the `n`th microphone of a session (1: as given). A
+    /// file gets "-2", "-3", ... before its extension, so an LE stream set
+    /// up again does not overwrite what the previous one wrote.
+    pub fn nth(&self, n: u32) -> MicTarget {
+        match self {
+            MicTarget::Wav(path) if n > 1 => {
+                let stem = path.file_stem().map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+                let ext = path.extension().map_or_else(String::new, |e| format!(".{}", e.to_string_lossy()));
+                MicTarget::Wav(path.with_file_name(format!("{stem}-{n}{ext}")))
+            }
+            other => other.clone(),
+        }
+    }
 }
 
 impl std::fmt::Display for MicTarget {
@@ -66,11 +100,11 @@ impl std::fmt::Display for MicTarget {
     }
 }
 
-/// The microphone output of a request ([`crate::StreamRequest::mic_output`]):
-/// a path ending in ".wav"; a render endpoint by id, or (command line) by a
-/// part of its friendly name; none or empty: the default output. None when
-/// there is no output device at all.
-pub(crate) fn resolve_mic_output(spec: Option<&str>) -> Option<MicTarget> {
+/// The microphone output of a request ([`crate::StreamRequest::mic_output`],
+/// `bt_host::LeRequest::mic_output`): a path ending in ".wav"; a render
+/// endpoint by id, or (command line) by a part of its friendly name; none
+/// or empty: the default output. None when there is no output device at all.
+pub fn resolve_mic_output(spec: Option<&str>) -> Option<MicTarget> {
     let spec = spec.unwrap_or("").trim();
     if spec.to_ascii_lowercase().ends_with(".wav") {
         return Some(MicTarget::Wav(PathBuf::from(spec)));
@@ -98,7 +132,7 @@ pub(crate) fn resolve_mic_output(spec: Option<&str>) -> Option<MicTarget> {
 
 /// Why headset mode must not render to `target` while `source` is captured
 /// (the message key): the microphone would come back into the stream
-pub(crate) fn conflict(target: &MicTarget, source: &SourceRequest) -> Option<&'static str> {
+pub fn mic_conflict(target: &MicTarget, source: &SourceRequest) -> Option<&'static str> {
     match target {
         MicTarget::Device { id, .. } => {
             let default = audio_capture::default_render_device().unwrap_or_default();
@@ -165,32 +199,54 @@ impl VoiceRx for ShellRx {
     }
 }
 
-enum MicOutput {
+/// The open microphone output: mono 16-bit PCM at the voice rate pushed
+/// through its [`PcmProducer`]
+pub enum MicOutput {
+    /// Rendered (40 ms prefill, drift control)
     Device(Renderer),
     Wav(WavSink),
 }
 
 impl MicOutput {
-    fn open(target: &MicTarget, rate: u32) -> Result<MicOutput, String> {
+    /// Opens `target` for PCM at `rate` Hz
+    pub fn open(target: &MicTarget, rate: u32) -> Result<MicOutput, String> {
         match target {
             MicTarget::Device { id, .. } => {
                 Renderer::open(id, rate, RENDER_PREFILL_MS).map(MicOutput::Device).map_err(|e| e.to_string())
             }
-            MicTarget::Wav(path) => WavSink::create(path, rate).map(MicOutput::Wav).map_err(|e| e.to_string()),
+            MicTarget::Wav(path) => {
+                WavSink::create(path, rate).map(MicOutput::Wav).map_err(|e| format!("{}: {e}", path.display()))
+            }
         }
     }
 
-    fn producer(&mut self) -> Option<PcmProducer> {
+    /// Its producer (once)
+    pub fn producer(&mut self) -> Option<PcmProducer> {
         match self {
             MicOutput::Device(r) => Some(r.producer()),
             MicOutput::Wav(w) => w.producer(),
         }
     }
 
-    fn ended(&self) -> Option<String> {
+    /// The render device went away or failed: why
+    pub fn ended(&self) -> Option<String> {
         match self {
             MicOutput::Device(r) if r.ended() => Some(r.end_error().unwrap_or("ended").to_string()),
             _ => None,
+        }
+    }
+
+    /// The render's counters, for a summary line
+    pub fn describe(&self) -> String {
+        match self {
+            MicOutput::Device(r) => {
+                let s = r.stats();
+                format!(
+                    "render {} frames, {} underruns, {} overflow, {} dropped / {} repeated",
+                    s.frames_written, s.underruns, s.overflow, s.dropped, s.duplicated
+                )
+            }
+            MicOutput::Wav(_) => "to a file".into(),
         }
     }
 }
@@ -315,10 +371,7 @@ impl VoiceLink {
             codec: codec.name().into(),
             link: "hfp".into(),
             rate: codec.rate(),
-            mic_device_id: match &self.target {
-                MicTarget::Device { id, .. } => id.clone(),
-                MicTarget::Wav(_) => String::new(),
-            },
+            mic_device_id: self.target.device_id().to_string(),
         })
     }
 
@@ -332,14 +385,7 @@ impl VoiceLink {
         let up =
             self.tx.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| (p.encoder.stats(), p.uplink.stats()));
         let down = self.rx.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.decoder.stats());
-        let render = match &self.output {
-            Some(MicOutput::Device(r)) => {
-                let s = r.stats();
-                format!("render {} frames, {} underruns, {} overflow", s.frames_written, s.underruns, s.overflow)
-            }
-            Some(MicOutput::Wav(_)) => "to a file".into(),
-            None => "no output".into(),
-        };
+        let render = self.output.as_ref().map_or_else(|| "no output".into(), MicOutput::describe);
         tracing::debug!(
             "voice: {} up {} s; uplink {:?}; downlink {:?}; {render}; capture {}",
             codec.name(),
@@ -558,7 +604,7 @@ impl HeadsetMode {
         let target = (self.wanted && !self.held_off)
             .then(|| resolve_mic_output(self.mic_output.as_deref()))
             .flatten()
-            .filter(|t| conflict(t, source).is_none());
+            .filter(|t| mic_conflict(t, source).is_none());
         let Some(target) = target else {
             tracing::info!("voice: the headphones opened an audio connection ({}), closing it", codec.name());
             let _ = host.voice_stop();
@@ -593,7 +639,7 @@ impl HeadsetMode {
             tracing::warn!("voice: no output device for the microphone");
             return self.give_up(inner, Msg::new("status.headset_mic_output_failed"));
         };
-        if let Some(key) = conflict(&target, source) {
+        if let Some(key) = mic_conflict(&target, source) {
             tracing::warn!("voice: the microphone output {target} feeds the stream ({source}), headset mode refused");
             return self.give_up(inner, Msg::new(key));
         }
@@ -706,7 +752,19 @@ mod tests {
     fn a_wav_path_is_written_not_rendered() {
         assert_eq!(resolve_mic_output(Some("out\\mic.wav")), Some(MicTarget::Wav("out\\mic.wav".into())));
         assert_eq!(resolve_mic_output(Some("C:/x/MIC.WAV")), Some(MicTarget::Wav("C:/x/MIC.WAV".into())));
-        assert_eq!(conflict(&MicTarget::Wav("m.wav".into()), &SourceRequest::SystemLoopback), None);
+        assert_eq!(mic_conflict(&MicTarget::Wav("m.wav".into()), &SourceRequest::SystemLoopback), None);
+    }
+
+    #[test]
+    fn later_microphones_of_a_session_get_files_of_their_own() {
+        use std::path::Path;
+        let wav = MicTarget::Wav("a/mic.wav".into());
+        assert_eq!(wav.nth(1), wav);
+        assert_eq!(wav.nth(3), MicTarget::Wav(Path::new("a").join("mic-3.wav")));
+        assert_eq!(wav.device_id(), "");
+        let cable = MicTarget::Device { id: "{cable}".into(), name: "CABLE Input".into() };
+        assert_eq!(cable.nth(2), cable);
+        assert_eq!(cable.device_id(), "{cable}");
     }
 
     #[test]
@@ -719,8 +777,8 @@ mod tests {
     fn the_captured_device_is_a_conflict() {
         let cable = MicTarget::Device { id: "{cable}".into(), name: "CABLE Input".into() };
         let virt = SourceRequest::VirtualDevice { id: "{cable}".into(), name: "CABLE".into(), auto_switch: true };
-        assert_eq!(conflict(&cable, &virt), Some("error.headset_mic_loop"));
-        assert_eq!(conflict(&cable, &SourceRequest::TestTone), None);
+        assert_eq!(mic_conflict(&cable, &virt), Some("error.headset_mic_loop"));
+        assert_eq!(mic_conflict(&cable, &SourceRequest::TestTone), None);
     }
 
     #[test]

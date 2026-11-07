@@ -338,6 +338,7 @@ dependencies = [
  "ipc",
  "le-audio",
  "pipeline",
+ "rtrb",
  "semver",
  "serde",
  "serde_json",

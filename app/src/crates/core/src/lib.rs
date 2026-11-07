@@ -23,7 +23,7 @@ pub mod vendor;
 mod voice;
 
 pub use le_stream::{
-    BROADCAST_PRESET_HQ, BROADCAST_PRESET_SQ, LeAudioPath, LeMicPath, LeStreamDetails, MicOutput, broadcast_config,
+    BROADCAST_PRESET_HQ, BROADCAST_PRESET_SQ, LeAudioPath, LeMicPath, LeStreamDetails, broadcast_config, le_mic_target,
     le_silence_set, le_stats_line, start_mic,
 };
 pub use messages::Msg;
@@ -33,6 +33,7 @@ pub use stream::{
     SourceRequest, StreamInfo, StreamRequest, StreamState, VolumeSync,
 };
 pub use vendor::huawei::is_huawei;
+pub use voice::{MicOutput, MicTarget, mic_conflict, resolve_mic_output};
 pub mod diag;
 pub mod firmware;
 pub mod mute_output;

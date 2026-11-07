@@ -2,9 +2,8 @@
 //! "le-decode" thread.
 //!
 //! BTstack thread --[bt-host's `LeRxHandle`: a lock-free ring of `RxSdu`]-->
-//! le-decode thread --[`PcmOut`]--> the microphone's output (a WAV file
-//! with `--mic-output x.wav`, a counting stub, or the Windows render endpoint
-//! of the voice link)
+//! le-decode thread --[`PcmOut`]--> the microphone's output (core puts the
+//! voice link's queue there: its renderer, or its WAV file)
 //!
 //! Per source stream (a CIS with a source ASE) a sequence-number jitter
 //! buffer ([`JitterBuffer`]): it holds the SDUs of the last
@@ -18,12 +17,8 @@
 //! mono (the average), e.g. the microphones of two earbuds.
 //!
 //! No allocation per frame once the thread runs: the slots, decoders and
-//! PCM buffers are made at start; the WAV writer writes through a
-//! preallocated buffer.
+//! PCM buffers are made at start.
 
-use std::fs::File;
-use std::io::{BufWriter, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
@@ -507,122 +502,6 @@ fn run(
     tracing::info!("{}", stats.snapshot().message());
 }
 
-// ---------------------------------------------------------------------------
-// Outputs
-// ---------------------------------------------------------------------------
-
-/// A WAV file (16-bit mono PCM at the source rate); the sizes in the header
-/// are written when it is dropped (and every second, so that a killed
-/// process leaves a readable file)
-pub struct WavOut {
-    file: BufWriter<File>,
-    path: PathBuf,
-    rate: u32,
-    frames: u64,
-    since_header: u64,
-}
-
-impl WavOut {
-    pub fn create(path: &Path, rate: u32) -> std::io::Result<WavOut> {
-        let file = BufWriter::with_capacity(64 * 1024, File::create(path)?);
-        let mut w = WavOut { file, path: path.to_path_buf(), rate, frames: 0, since_header: 0 };
-        w.write_header()?;
-        tracing::info!("LE Audio: microphone: writing {} ({rate} Hz, 16-bit mono)", path.display());
-        Ok(w)
-    }
-
-    /// Frames (samples) written
-    pub fn frames(&self) -> u64 {
-        self.frames
-    }
-
-    fn write_header(&mut self) -> std::io::Result<()> {
-        let data = (self.frames * 2).min(u64::from(u32::MAX - 36)) as u32;
-        let mut h = [0u8; 44];
-        h[0..4].copy_from_slice(b"RIFF");
-        h[4..8].copy_from_slice(&(36 + data).to_le_bytes());
-        h[8..16].copy_from_slice(b"WAVEfmt ");
-        h[16..20].copy_from_slice(&16u32.to_le_bytes());
-        h[20..22].copy_from_slice(&1u16.to_le_bytes()); // PCM
-        h[22..24].copy_from_slice(&1u16.to_le_bytes()); // mono
-        h[24..28].copy_from_slice(&self.rate.to_le_bytes());
-        h[28..32].copy_from_slice(&(self.rate * 2).to_le_bytes());
-        h[32..34].copy_from_slice(&2u16.to_le_bytes());
-        h[34..36].copy_from_slice(&16u16.to_le_bytes());
-        h[36..40].copy_from_slice(b"data");
-        h[40..44].copy_from_slice(&data.to_le_bytes());
-        let end = 44 + self.frames * 2;
-        self.file.seek(SeekFrom::Start(0))?;
-        self.file.write_all(&h)?;
-        self.file.seek(SeekFrom::Start(end))?;
-        Ok(())
-    }
-}
-
-impl PcmOut for WavOut {
-    fn push(&mut self, mono_i16: &[i16]) {
-        for &x in mono_i16 {
-            if self.file.write_all(&x.to_le_bytes()).is_err() {
-                return;
-            }
-        }
-        self.frames += mono_i16.len() as u64;
-        self.since_header += mono_i16.len() as u64;
-        if self.since_header >= u64::from(self.rate) {
-            self.since_header = 0;
-            let _ = self.write_header();
-        }
-    }
-}
-
-impl Drop for WavOut {
-    fn drop(&mut self) {
-        let r = self.write_header().and_then(|_| self.file.flush());
-        match r {
-            Ok(()) => tracing::info!(
-                "LE Audio: microphone: {} written, {} frames ({:.2} s)",
-                self.path.display(),
-                self.frames,
-                self.frames as f64 / f64::from(self.rate.max(1))
-            ),
-            Err(e) => tracing::warn!("LE Audio: microphone: {}: {e}", self.path.display()),
-        }
-    }
-}
-
-/// Counts what arrives and drops it (no output chosen yet): frames and the
-/// peak level, logged when dropped
-#[derive(Debug, Default)]
-pub struct CountingOut {
-    pub frames: Arc<AtomicU64>,
-    peak: i16,
-}
-
-impl CountingOut {
-    pub fn new() -> CountingOut {
-        CountingOut::default()
-    }
-}
-
-impl PcmOut for CountingOut {
-    fn push(&mut self, mono_i16: &[i16]) {
-        self.frames.fetch_add(mono_i16.len() as u64, Ordering::Relaxed);
-        for &x in mono_i16 {
-            self.peak = self.peak.max(x.saturating_abs());
-        }
-    }
-}
-
-impl Drop for CountingOut {
-    fn drop(&mut self) {
-        tracing::info!(
-            "LE Audio: microphone: {} frames counted (no output), peak {:.1} dBFS",
-            self.frames.load(Ordering::Relaxed),
-            20.0 * (f64::from(self.peak.max(1)) / 32768.0).log10()
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -772,35 +651,6 @@ mod tests {
             dec.process(&mut o);
         }
         assert!(stats.snapshot().frames_out >= 8 + 10 - MIX_AHEAD_FRAMES as u64, "{:?}", stats.snapshot());
-    }
-
-    #[test]
-    fn wav_out_writes_a_readable_file() {
-        let path = std::env::temp_dir().join(format!("bluecaster-le-rx-{}.wav", std::process::id()));
-        {
-            let mut w = WavOut::create(&path, 16000).unwrap();
-            w.push(&[1, -1, 2]);
-            w.push(&[3]);
-            assert_eq!(w.frames(), 4);
-        }
-        let bytes = std::fs::read(&path).unwrap();
-        let _ = std::fs::remove_file(&path);
-        assert_eq!(bytes.len(), 44 + 8);
-        assert_eq!(&bytes[0..4], b"RIFF");
-        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 36 + 8);
-        assert_eq!(u16::from_le_bytes(bytes[22..24].try_into().unwrap()), 1);
-        assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 16000);
-        assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), 8);
-        assert_eq!(&bytes[44..], [1, 0, 0xFF, 0xFF, 2, 0, 3, 0]);
-    }
-
-    #[test]
-    fn counting_out_counts() {
-        let mut c = CountingOut::new();
-        let frames = c.frames.clone();
-        c.push(&[0; 160]);
-        c.push(&[0; 160]);
-        assert_eq!(frames.load(Ordering::Relaxed), 320);
     }
 
     #[test]

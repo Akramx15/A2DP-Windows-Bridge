@@ -1149,8 +1149,18 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
         return 1;
     }
 
+    // The headset microphone (--headset-mic): its output resolved and
+    // checked as in the app, before the stream asks for it
+    let source = le_source(a);
+    let mic_target = match bluecaster_core::le_mic_target(a.headset_mic, a.mic_output.as_deref(), &source) {
+        Ok(t) => t,
+        Err(m) => {
+            println!("Microphone: not used ({m})");
+            None
+        }
+    };
     let (mut request, low_latency, note) = le.request();
-    request.conversational = a.headset_mic;
+    request.conversational = mic_target.is_some();
     host.le_set_low_latency(low_latency);
     if let Some(note) = note {
         println!("{note}");
@@ -1171,7 +1181,6 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
     println!("\nStreaming LE Audio: {}", started.status.summary);
 
     // Audio at the LC3 rate (WASAPI converts to it)
-    let source = le_source(a);
     let mut rc = 0;
     let start_audio = |started: &bt_host::LeStreamStarted| match bluecaster_core::LeAudioPath::start(
         &source,
@@ -1200,17 +1209,24 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
     }
     // The headset microphone (--headset-mic)
     let mut started = started;
-    let mic_output = bluecaster_core::MicOutput::parse(a.mic_output.as_deref());
     let mut mic_streams = 1;
     let start_mic = |started: &mut bt_host::LeStreamStarted, n: u32| {
-        let mic = bluecaster_core::start_mic(started, &mic_output, n);
-        if let Some(m) = &mic {
-            println!("Microphone: LC3 at {} Hz -> {}", m.rate(), mic_output_text(&mic_output));
-        } else if a.headset_mic {
-            let note = &started.status.plan.source_note;
-            println!("Microphone: none in the stream ({})", if note.is_empty() { "not set up" } else { note });
+        let target = mic_target.as_ref()?;
+        match bluecaster_core::start_mic(started, target, n) {
+            Ok(Some(m)) => {
+                println!("Microphone: LC3 at {} Hz -> {}", m.rate(), m.target());
+                Some(m)
+            }
+            Ok(None) => {
+                let note = &started.status.plan.source_note;
+                println!("Microphone: none in the stream ({})", if note.is_empty() { "not set up" } else { note });
+                None
+            }
+            Err(e) => {
+                println!("Microphone: the output did not open ({e})");
+                None
+            }
         }
-        mic
     };
     let mut mic = start_mic(&mut started, mic_streams);
 
@@ -1301,15 +1317,6 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
     service.shutdown();
     println!("Done.");
     rc
-}
-
-/// The --mic-output of the console line
-fn mic_output_text(o: &bluecaster_core::MicOutput) -> String {
-    match o {
-        bluecaster_core::MicOutput::Wav(p) => p.display().to_string(),
-        bluecaster_core::MicOutput::Device(name) => format!("\"{name}\" (not supported yet: counted only)"),
-        bluecaster_core::MicOutput::None => "counted only (no --mic-output)".into(),
-    }
 }
 
 /// v1's listing of the Windows-paired devices (BtDeviceDiscovery::
