@@ -464,7 +464,9 @@ interoperability feature.
 
 - **Where**: all three programs. The crates and their exact versions are in
   `Cargo.lock`; BlueCaster's own crates (`app/src/crates/*`, `app/src/core`,
-  `app/src/ui/src-tauri`, `app/src/driver`) are `Apache-2.0 OR MIT` (§13)
+  `app/src/ui/src-tauri`, `app/src/driver`) are `Apache-2.0 OR MIT` (§13),
+  except the vendored `app/src/crates/aptx-adaptive` (§19) and
+  `app/src/crates/nusb` (below)
 - **License texts**: `licenses/third-party/rust-crates.txt`, generated for each release by
   [cargo-about](https://github.com/EmbarkStudios/cargo-about)
   (`installer/build-release.ps1` with `about.toml` and `installer/about.hbs`):
@@ -481,7 +483,10 @@ Most crates are Apache-2.0 and / or MIT: among them Tauri 2.12 and its plugins
 tray-icon and muda (the tray), tokio, serde and serde_json, tracing, the
 `windows` crates (Microsoft's Win32 bindings), `nusb` (USB), `wasapi` (audio
 capture), rtrb (lock-free rings), ureq and rustls (the update check), semver,
-ts-rs. Crates under other licenses:
+ts-rs. `nusb` 0.2.8 (Apache-2.0 OR MIT, Kevin Mehall) is built from a vendored copy,
+`app/src/crates/nusb`, with one added accessor (the WinUSB interface handle, for the
+isochronous SCO pipes); `app/src/crates/nusb/SOURCE.txt` says what was changed, and its
+license files are unchanged. Crates under other licenses:
 
 | License | Crates (at the time of writing) | Note |
 |---------|----------------------------------|------|
