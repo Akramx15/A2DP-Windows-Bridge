@@ -176,8 +176,12 @@ def check(case, ctx):
         failures.append('no "LE Audio: microphone: N frames out" statistics in bluecaster.log')
     else:
         frames_out, decoded, concealed, sdus, late, resyncs, errors = (int(x) for x in out.groups())
-        if not 0 <= received - frames_out <= PREFILL + SDU_TOLERANCE:
-            failures.append(f'BlueCaster decoded {frames_out} microphone frames of {received} SDUs it received')
+        # The capture also holds SDUs still in flight when the stream stopped, and the jitter buffer keeps
+        # PREFILL of those the decode thread got: compare each stage with the one before it.
+        if not 0 <= received - sdus <= SDU_TOLERANCE + PREFILL:
+            failures.append(f'the decode thread got {sdus} microphone SDUs of {received} in the capture')
+        if not 0 <= sdus - frames_out <= PREFILL:
+            failures.append(f'BlueCaster decoded {frames_out} microphone frames of {sdus} SDUs it received')
         if concealed > MAX_CONCEALED or late or resyncs or errors:
             failures.append(f'microphone: {concealed} concealed, {late} late, {resyncs} resyncs, {errors} errors')
     wav_failures, desc = check_wav(os.path.join(ctx['out'], 'mic.wav'), rate, frames_out, rate // 100)
