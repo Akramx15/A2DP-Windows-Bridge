@@ -189,7 +189,7 @@ impl UplinkConsumer {
         let s = &self.shared;
         s.popped.fetch_add(r.got as u64, Ordering::Relaxed);
         s.zeros.fetch_add(r.zeros as u64, Ordering::Relaxed);
-        s.underruns.fetch_add(u64::from(r.underrun), Ordering::Relaxed);
+        s.underruns.fetch_add(u64::from(r.underrun || r.reprimed), Ordering::Relaxed);
         s.dropped.fetch_add(r.dropped as u64, Ordering::Relaxed);
         s.duplicated.fetch_add(r.duplicated as u64, Ordering::Relaxed);
         r.got

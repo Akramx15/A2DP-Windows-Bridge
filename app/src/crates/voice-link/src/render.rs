@@ -226,7 +226,7 @@ impl Feeder {
         let s = &queue.shared;
         s.frames_written.fetch_add(r.got as u64, Ordering::Relaxed);
         s.silence_frames.fetch_add(r.zeros as u64, Ordering::Relaxed);
-        s.underruns.fetch_add(u64::from(r.underrun), Ordering::Relaxed);
+        s.underruns.fetch_add(u64::from(r.underrun || r.reprimed), Ordering::Relaxed);
         s.dropped.fetch_add(r.dropped as u64, Ordering::Relaxed);
         s.duplicated.fetch_add(r.duplicated as u64, Ordering::Relaxed);
         s.queued.store(queue.queue.slots() as u64, Ordering::Relaxed);
