@@ -945,5 +945,16 @@
   "ui.pairing.le_keys_hint": "対応するデバイスは、次の接続時にこれらのキーを渡します。",
   "ui.settings.open_config_folder": "設定フォルダーを開く",
   "ui.update.later": "後で",
-  "ui.update.release_notes": "リリースノート全文"
+  "ui.update.release_notes": "リリースノート全文",
+  "ui.headset_mic": "ヘッドセットマイク",
+  "ui.headset_mic_hint": "下で選んだ出力先を通して、ヘッドホンのマイクをアプリで使えるようにします。",
+  "ui.mic_output": "マイクの出力先",
+  "ui.mic_output_hint": "アプリはこのデバイスの録音側（VB-CABLE なら CABLE Output）をマイクとして使います。",
+  "ui.headset_mic_quality": "オンの間、再生は通話品質のモノラルになります。",
+  "ui.headset_mic_no_output": "マイクの出力先が選ばれていないため、ヘッドセットマイクはオフのままです。",
+  "status.voice_codec": "音声: %s",
+  "codec.cvsd": "CVSD",
+  "codec.msbc": "mSBC",
+  "codec.lc3_swb": "LC3-SWB",
+  "error.headset_mic_loop": "マイクの出力先が、ヘッドホンへ音を送っているデバイスと同じです。コーデック画面で別のマイクの出力先を選んでください。"
 }

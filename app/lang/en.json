@@ -945,5 +945,16 @@
   "ui.pairing.le_keys_hint": "A device that supports it gives these keys at its next connection.",
   "ui.settings.open_config_folder": "Open Settings Folder",
   "ui.update.later": "Later",
-  "ui.update.release_notes": "Full release notes"
+  "ui.update.release_notes": "Full release notes",
+  "ui.headset_mic": "Headset microphone",
+  "ui.headset_mic_hint": "Lets apps use the headphones' microphone through the output chosen below.",
+  "ui.mic_output": "Microphone output",
+  "ui.mic_output_hint": "Apps get the microphone from this device's recording side (with VB-CABLE: CABLE Output).",
+  "ui.headset_mic_quality": "While this is on, playback is mono call quality.",
+  "ui.headset_mic_no_output": "No microphone output chosen: the headset microphone stays off.",
+  "status.voice_codec": "Voice: %s",
+  "codec.cvsd": "CVSD",
+  "codec.msbc": "mSBC",
+  "codec.lc3_swb": "LC3-SWB",
+  "error.headset_mic_loop": "The microphone output is the device whose sound goes to the headphones. Choose another microphone output on Codecs."
 }
