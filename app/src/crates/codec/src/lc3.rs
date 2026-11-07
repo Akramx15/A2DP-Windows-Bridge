@@ -84,6 +84,49 @@ impl Lc3ChannelEncoder {
     }
 }
 
+/// The decoder of one LC3 channel (the headset microphone of an LE Audio
+/// conversational stream), with liblc3's packet loss concealment
+#[derive(Debug)]
+pub struct Lc3ChannelDecoder {
+    dec: lc3_sys::Lc3Decoder,
+    octets: usize,
+}
+
+impl Lc3ChannelDecoder {
+    pub fn new(params: Lc3Params) -> Result<Lc3ChannelDecoder, Lc3Error> {
+        params.frame_samples()?;
+        tracing::debug!(
+            "LC3: decoder {} Hz, {} us, {} octets ({} kbps)",
+            params.sample_rate,
+            params.frame_us,
+            params.octets,
+            params.kbps()
+        );
+        let dec = lc3_sys::Lc3Decoder::new(params.frame_us, params.sample_rate)?;
+        Ok(Lc3ChannelDecoder { dec, octets: usize::from(params.octets) })
+    }
+
+    /// PCM samples of one frame
+    pub fn frame_samples(&self) -> usize {
+        self.dec.frame_samples()
+    }
+
+    /// Octets of one encoded frame
+    pub fn octets(&self) -> usize {
+        self.octets
+    }
+
+    /// Decodes one frame into `pcm` (`frame_samples()` samples, mono 16-bit);
+    /// `None` conceals a lost frame. Ok(true) when concealment ran. No
+    /// allocation.
+    pub fn decode(&mut self, frame: Option<&[u8]>, pcm: &mut [i16]) -> Result<bool, Lc3Error> {
+        if pcm.len() != self.frame_samples() {
+            return Err(Lc3Error::BadLength);
+        }
+        self.dec.decode(frame, pcm, 1)
+    }
+}
+
 /// One frame of digital silence, encoded by a fresh encoder (v1 encoded the
 /// silence SDUs once per stream with separate encoder instances); `out` is
 /// `params.octets` long
@@ -121,6 +164,21 @@ mod tests {
         assert!(out.iter().any(|&b| b != 0));
         assert_eq!(enc.encode(&pcm[..479], &mut out), Err(Lc3Error::BadLength));
         assert_eq!(enc.encode(&pcm, &mut out[..99]), Err(Lc3Error::BadLength));
+    }
+
+    #[test]
+    fn decodes_and_conceals() {
+        let p = Lc3Params { sample_rate: 32000, frame_us: 10000, octets: 80 };
+        let mut enc = Lc3ChannelEncoder::new(p).unwrap();
+        let mut dec = Lc3ChannelDecoder::new(p).unwrap();
+        assert_eq!((dec.frame_samples(), dec.octets()), (320, 80));
+        let pcm: Vec<i16> = (0..320).map(|n| ((n as f64 * 0.2).sin() * 8000.0) as i16).collect();
+        let mut frame = [0u8; 80];
+        enc.encode(&pcm, &mut frame).unwrap();
+        let mut out = [0i16; 320];
+        assert_eq!(dec.decode(Some(&frame), &mut out), Ok(false));
+        assert_eq!(dec.decode(None, &mut out), Ok(true));
+        assert_eq!(dec.decode(None, &mut out[..319]), Err(Lc3Error::BadLength));
     }
 
     #[test]
