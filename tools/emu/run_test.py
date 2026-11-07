@@ -347,10 +347,15 @@ LOG_CHECKS = {
                              ('bluecaster.log', CTKD_ASKING, 1), ('bluecaster.log', CTKD_GIVEN, 1),
                              ('sink.log', 'CTKD: keys LTK', 1), ('bluecaster.log', PAIRED, 1)],
     'ctkd-unlisted': [('sink.log', 'SMP over BR/EDR not listed', True), ('bluecaster.log', CTKD_GIVEN, False),
-                      ('sink.log', 'CTKD:', False)],
+                      ('sink.log', 'CTKD:', False),
+                      ('bluecaster.log', f'CTKD: {SINK_ADDRESS} does not take SMP over BR/EDR', True)],
     'ctkd-refused': [('sink.log', 'CTKD: refusing', 1), ('bluecaster.log', CTKD_GIVEN, False),
-                     ('sink.log', 'CTKD: keys LTK', False)],
-    'ctkd-silent': [('sink.log', 'CTKD: ignoring SMP PDU', True), ('bluecaster.log', CTKD_GIVEN, False)],
+                     ('sink.log', 'CTKD: keys LTK', False),
+                     ('bluecaster.log', f'CTKD: no LE keys from {SINK_ADDRESS} (Refused', 1)],
+    'ctkd-silent': [('sink.log', 'CTKD: ignoring SMP PDU', True), ('bluecaster.log', CTKD_GIVEN, False),
+                    # NoAnswer after SM's 30 s (--duration 35), else the link ends
+                    # first and the next connection asks again (NotAsked)
+                    ('bluecaster.log', f'CTKD: no LE keys from {SINK_ADDRESS} (', 1)],
     'ctkd-developer-off': [('sink.log', 'SMP over BR/EDR listed', True), ('sink.log', 'CTKD:', False),
                            ('bluecaster.log', 'CTKD', False)],
 }

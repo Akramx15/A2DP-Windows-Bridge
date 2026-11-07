@@ -79,8 +79,19 @@ describe("device pairing", () => {
     expect(within(dialog).getByText(t("ui.pairing.ltk"))).toBeInTheDocument();
     expect(within(dialog).getByText(t("ui.pairing.irk"))).toBeInTheDocument();
     expect(within(dialog).getAllByText(t("ui.pairing.not_available"))).toHaveLength(2);
-    expect(within(dialog).getByText(t("ui.pairing.le_keys_hint"))).toBeInTheDocument();
+    // Why, in place of a bare "not available"
+    expect(within(dialog).getByText(t("ui.pairing.le_missing.not_asked"))).toBeInTheDocument();
     expect(within(dialog).queryByText(t("ui.pairing.identity_address"))).toBeNull();
+  });
+
+  it("says why there are no LE keys (issue #86)", async () => {
+    await open("#/devices", true);
+    mock!.leKeysMissing = "no_support";
+    const [tag] = await screen.findAllByRole("button", { name: t("ui.pairing.services") });
+    fireEvent.click(tag);
+    const dialog = await screen.findByRole("dialog", { name: t("ui.pairing.services") });
+    expect(await within(dialog).findByText(t("ui.pairing.le_missing.no_support"))).toBeInTheDocument();
+    expect(within(dialog).queryByText(t("ui.pairing.le_missing.not_asked"))).toBeNull();
   });
 
   it("shows the LE keys derived from the link key (issue #86)", async () => {
@@ -102,7 +113,7 @@ describe("device pairing", () => {
     expect(within(dialog).getByText(t("ui.pairing.random"))).toBeInTheDocument();
     expect(within(dialog).getAllByRole("button", { name: t("ui.pairing.copy_key") })).toHaveLength(3);
     expect(within(dialog).queryByText(t("ui.pairing.not_available"))).toBeNull();
-    expect(within(dialog).queryByText(t("ui.pairing.le_keys_hint"))).toBeNull();
+    expect(within(dialog).queryByText(t("ui.pairing.le_missing.not_asked"))).toBeNull();
   });
 
   it("reverses every key's byte order with one switch (issue #86)", async () => {
