@@ -398,6 +398,8 @@ pub struct BtHost {
     capture: HciCapture,
     /// LE Audio is configured (HostConfig::le_audio was Some)
     le_on: bool,
+    /// HFP audio is offered (HostConfig::voice)
+    voice_on: bool,
     /// What the LE worker API reads without a round trip
     le: Arc<le::core::LeShared>,
 }
@@ -515,6 +517,7 @@ impl BtHost {
         let tcp = matches!(config.transport, TransportConfig::Tcp(_));
         let capture = config.capture.clone();
         let le_on = config.le_audio.is_some();
+        let voice_on = config.voice;
         let le_shared = Arc::new(le::core::LeShared::default());
         tracing::debug!(
             "host start: transport {:?}, realtek pid 0x{:04X} files {:?}, intel loader {}, mediatek loader {}, qualcomm loader {}, broadcom {:04X?}, payload limit {}, le audio {}, battery {}",
@@ -661,6 +664,7 @@ impl BtHost {
             last: Mutex::new(None),
             capture,
             le_on,
+            voice_on,
             le: le_shared,
         };
         Ok(host)
@@ -1577,6 +1581,25 @@ impl BtHost {
             app.voice.start(s, enabled, acl, tx, rx)
         })
         .unwrap_or(Err(HostError::NoAnswer))
+    }
+
+    /// The stack offers HFP audio ([`HostConfig::voice`])
+    pub fn voice_enabled(&self) -> bool {
+        self.voice_on
+    }
+
+    /// What [`BtHost::voice_start`] would answer now, without opening
+    /// anything: Ok when the audio connection can be asked for
+    pub fn voice_check(&self) -> Result<(), HostError> {
+        self.call(JOB_TIMEOUT, |app, _| app.voice.check(app.setup.voice, app.hfp_acl)).unwrap_or(Err(HostError::NoAnswer))
+    }
+
+    /// Takes over an audio connection the headphones opened themselves
+    /// ([`VoiceEvent::Established`] with [`BtHost::voice_start`] answering
+    /// Busy): `tx` and `rx` carry it from now on. NotConnected when none is
+    /// open, Busy when it already has its `tx` / `rx`.
+    pub fn voice_attach(&self, tx: Box<dyn VoiceTx>, rx: Box<dyn VoiceRx>) -> Result<(), HostError> {
+        self.call(JOB_TIMEOUT, move |app, s| app.voice.attach(s, tx, rx)).unwrap_or(Err(HostError::NoAnswer))
     }
 
     /// Closes the HFP audio connection (if any); `tx` and `rx` are dropped
