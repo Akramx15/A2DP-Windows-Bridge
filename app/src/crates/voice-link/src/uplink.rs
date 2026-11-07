@@ -14,7 +14,7 @@ use crate::resample::Resampler;
 /// a 10 ms capture packet, a 7.5 ms SCO pull and scheduling jitter
 pub(crate) const PREFILL_MS: u32 = 30;
 /// How far the queue may stray from the prefill before the drift control acts
-const TOLERANCE_MS: u32 = 10;
+pub(crate) const TOLERANCE_MS: u32 = 10;
 
 /// Counters of an uplink
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

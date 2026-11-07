@@ -31,9 +31,10 @@ pub(crate) struct Drift {
     pulled: usize,
     trough: usize,
     /// The first window after priming: the level is brought to the target
-    /// in one step (where the priming left it depends on when the input's
-    /// blocks came, often at the tolerance's edge, which the slow steps
-    /// would take seconds of repeated samples to leave)
+    /// plus half the tolerance in one step (where the priming left it
+    /// depends on when the input's blocks came, often at the tolerance's
+    /// edge, which the slow steps would take seconds of repeated samples to
+    /// leave, and where jitter would cross it again and again)
     fresh: bool,
 }
 
@@ -74,11 +75,17 @@ impl Drift {
         let trough = self.trough;
         self.reset();
         if std::mem::take(&mut self.fresh) && trough + 2 * self.tolerance >= self.target {
-            // To the target, at most a tolerance's worth
-            return if trough > self.target + self.tolerance {
-                Adjust::Drop((trough - self.target).min(self.tolerance))
-            } else if trough + self.tolerance < self.target {
-                Adjust::Duplicate((self.target - trough).min(self.tolerance))
+            // To the target plus half the tolerance, at most a tolerance's
+            // worth: a late input block lowers the trough, nothing raises
+            // it but the clocks, so the level keeps its room below where
+            // the jitter of a loaded machine would otherwise cross the
+            // tolerance now and then (one small step each time)
+            let aim = self.target + self.tolerance / 2;
+            let slack = self.tolerance / 4;
+            return if trough > aim + slack {
+                Adjust::Drop((trough - aim).min(self.tolerance))
+            } else if trough + slack < aim {
+                Adjust::Duplicate((aim - trough).min(self.tolerance))
             } else {
                 Adjust::None
             };
@@ -247,17 +254,66 @@ mod tests {
 
     #[test]
     fn the_first_window_after_priming_corrects_in_one_step() {
-        // Primed at the tolerance's edge: one repeat of the whole shortfall
+        // Aim: the target plus half the tolerance (720). Primed past the
+        // tolerance's edge: one repeat of a tolerance's worth at most
         let mut d = Drift::new(16_000, 640, 160);
         d.restart();
         let adj: Vec<_> = (0..30).map(|_| d.observe(400, 120)).filter(|a| *a != Adjust::None).collect();
         assert_eq!(adj[0], Adjust::Duplicate(160));
         // Then the slow steps again
         assert!(adj[1..].iter().all(|a| matches!(a, Adjust::Duplicate(1..=8))), "{adj:?}");
-        // Inside the tolerance: nothing
+        // At the target: brought up to the aim once, then left alone
         let mut d = Drift::new(16_000, 640, 160);
         d.restart();
-        assert!((0..30).all(|_| d.observe(560, 120) == Adjust::None));
+        let adj: Vec<_> = (0..30).map(|_| d.observe(640, 120)).filter(|a| *a != Adjust::None).collect();
+        assert_eq!(adj, [Adjust::Duplicate(80)]);
+        // Too full: down to the aim
+        let mut d = Drift::new(16_000, 640, 160);
+        d.restart();
+        assert_eq!((0..27).map(|_| d.observe(900, 120)).find(|a| *a != Adjust::None), Some(Adjust::Drop(160)));
+        // Near the aim already: nothing
+        let mut d = Drift::new(16_000, 640, 160);
+        d.restart();
+        assert!((0..30).all(|_| d.observe(700, 120) == Adjust::None));
+        assert!((0..30).all(|_| d.observe(750, 120) == Adjust::None));
+    }
+
+    #[test]
+    fn a_late_block_now_and_then_needs_no_step_after_priming() {
+        // The uplink at 16 kHz (prefill 30 ms, tolerance 10 ms): 10 ms
+        // capture blocks, 7.5 ms pulls, and every 25th block comes 10 ms
+        // late, with the next one (a loaded machine)
+        let (mut producer, mut consumer) = rtrb::RingBuffer::<i16>::new(4000);
+        let mut primed = Primed::new(16_000, 480, 160);
+        let mut out = [0i16; 120];
+        let block = [1i16; 160];
+        let (mut credit, mut blocks, mut held) = (0.0, 0u32, 0usize);
+        let (mut steps, mut first_window) = (0, 0);
+        for i in 0..8000 {
+            credit += 120.0;
+            while credit >= 160.0 {
+                credit -= 160.0;
+                blocks += 1;
+                if blocks.is_multiple_of(25) {
+                    held += 1;
+                    continue;
+                }
+                for _ in 0..=held {
+                    assert_eq!(push_from(&mut producer, &block), 160);
+                }
+                held = 0;
+            }
+            let r = primed.pull(&mut consumer, &mut out);
+            assert!(!r.underrun && !r.reprimed || i < 10, "pull {i}: {r:?}");
+            // The first window after priming may take one step
+            if i < 40 {
+                first_window += r.dropped + r.duplicated;
+            } else {
+                steps += r.dropped + r.duplicated;
+            }
+        }
+        assert!(first_window <= 160, "{first_window}");
+        assert_eq!(steps, 0, "corrective steps after the first window");
     }
 
     #[test]

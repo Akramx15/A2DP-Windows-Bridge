@@ -417,8 +417,13 @@ mod tests {
         };
         let total = ((pcm.len() - rate as usize / 25) as f64 * bytes_per_sample) as usize;
         while stream.len() < total {
-            // To the prefill: then the drift control has nothing to do
-            while uplink.queued() < (rate * crate::uplink::PREFILL_MS / 1000) as usize && pos < pcm.len() {
+            // To where the drift control keeps the level after priming
+            // (prefill + half the tolerance): then it has nothing to do. A
+            // packet longer than a frame takes two frames now and then, the
+            // second one a frame lower.
+            let extra = if codec != VoiceCodec::Cvsd && packet > h2::FRAME_LEN { codec.frame_samples() } else { 0 };
+            let level = (rate * (crate::uplink::PREFILL_MS + crate::uplink::TOLERANCE_MS / 2) / 1000) as usize + extra;
+            while uplink.queued() < level && pos < pcm.len() {
                 let end = (pos + block).min(pcm.len());
                 let bytes: Vec<u8> = pcm[pos..end].iter().flat_map(|s| s.to_le_bytes()).collect();
                 sink.audio(&bytes, end - pos, fmt);
