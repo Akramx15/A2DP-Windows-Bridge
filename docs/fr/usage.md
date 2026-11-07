@@ -221,7 +221,7 @@ Mettez d'abord le casque en mode d'association.
 | `--audio-device <id>` | Périphérique de rendu pour `-m virtual` |
 | `--app <exe>` | Exécutable pour `-m app` (p. ex. `spotify.exe`) |
 | `--headset-mic` | Micro du casque (voir [Codecs](#codecs)) : le micro du casque est joué dans `--mic-output` ; un appareil classique joue pendant ce temps en qualité d'appel. Avec `--le-audio`, la configuration LE Audio qui transporte aussi le micro |
-| `--mic-output <nom>` | Le périphérique de sortie dans lequel le micro est joué, par une partie de son nom (p. ex. `"CABLE Input"`) |
+| `--mic-output <nom>` | Le périphérique de sortie dans lequel le micro est joué, par une partie de son nom (p. ex. `"CABLE Input"` ; par défaut : la sortie par défaut de Windows), ou un fichier `.wav` à écrire |
 | `--rate <hz>` | Fréquence d'échantillonnage de la capture (par défaut : 48 kHz, ou une autre fréquence annoncée par l'appareil s'il n'a pas 48 kHz) |
 | `--bits <16\|24>` | Profondeur de bits (par défaut : 24 lorsque le codec la prend en charge) |
 | `--max-packet <bytes>` | Taille max. des paquets média, 679-1679, 1023 par défaut (voir [Taille max. des paquets média](#max-packet)) |

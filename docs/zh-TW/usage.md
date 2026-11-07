@@ -221,7 +221,7 @@ bluecaster-core.exe --cli --scan
 | `--audio-device <id>` | `-m virtual` 使用的播放裝置 |
 | `--app <exe>` | `-m app` 使用的執行檔（例如 `spotify.exe`） |
 | `--headset-mic` | 耳機麥克風（請參閱 [編解碼器](#codecs)）：把耳機的麥克風播放到 `--mic-output`；在此期間傳統裝置以通話音質播放。與 `--le-audio` 一起使用時，採用同時傳輸麥克風的 LE Audio 設定 |
-| `--mic-output <名稱>` | 播放麥克風的輸出裝置，以其名稱的一部分指定（例如 `"CABLE Input"`） |
+| `--mic-output <名稱>` | 播放麥克風的輸出裝置，以其名稱的一部分指定（例如 `"CABLE Input"`；預設：Windows 的預設輸出），或要寫入的 `.wav` 檔案 |
 | `--rate <hz>` | 擷取取樣率（預設：48 kHz；裝置未列出 48 kHz 時，使用其列出的其他取樣率） |
 | `--bits <16\|24>` | 位元深度（預設：轉碼器支援時為 24） |
 | `--max-packet <bytes>` | 媒體封包大小上限，679-1679，預設 1023（請參閱 [媒體封包大小上限](#max-packet)） |

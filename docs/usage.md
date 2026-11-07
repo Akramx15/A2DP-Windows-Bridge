@@ -220,7 +220,7 @@ Put the headphones into pairing mode first.
 | `--audio-device <id>` | Render device for `-m virtual` |
 | `--app <exe>` | Executable for `-m app` (e.g. `spotify.exe`) |
 | `--headset-mic` | Headset microphone (see [Codecs](#codecs)): the headphones' microphone plays into `--mic-output`; a classic device plays at call quality meanwhile. With `--le-audio`, the LE Audio setup that carries the microphone too |
-| `--mic-output <name>` | The output device the microphone plays into, by part of its name (e.g. `"CABLE Input"`) |
+| `--mic-output <name>` | The output device the microphone plays into, by part of its name (e.g. `"CABLE Input"`; default: the Windows default output), or a `.wav` file to write |
 | `--rate <hz>` | Capture sample rate (default: 48 kHz, or another rate the device lists if it has no 48 kHz) |
 | `--bits <16\|24>` | Bit depth (default: 24 where the codec carries it) |
 | `--max-packet <bytes>` | Max media packet size, 679-1679, default 1023 (see [Max Media Packet Size](#max-packet)) |

@@ -221,7 +221,7 @@ Ponga antes los auriculares en modo de emparejamiento.
 | `--audio-device <id>` | Dispositivo de reproducción para `-m virtual` |
 | `--app <exe>` | Ejecutable para `-m app` (p. ej. `spotify.exe`) |
 | `--headset-mic` | Micrófono del auricular (consulte [Códecs](#codecs)): el micrófono de los auriculares se reproduce en `--mic-output`; mientras tanto un dispositivo clásico reproduce con calidad de llamada. Con `--le-audio`, la configuración LE Audio que también lleva el micrófono |
-| `--mic-output <nombre>` | El dispositivo de salida en el que se reproduce el micrófono, por parte de su nombre (p. ej. `"CABLE Input"`) |
+| `--mic-output <nombre>` | El dispositivo de salida en el que se reproduce el micrófono, por parte de su nombre (p. ej. `"CABLE Input"`; predeterminado: la salida predeterminada de Windows), o un archivo `.wav` que se escribe |
 | `--rate <hz>` | Frecuencia de muestreo de captura (predeterminado: 48 kHz, u otra frecuencia que anuncie el dispositivo si no tiene 48 kHz) |
 | `--bits <16\|24>` | Profundidad de bits (predeterminado: 24 si el códec la admite) |
 | `--max-packet <bytes>` | Tamaño máximo del paquete multimedia, 679-1679, predeterminado 1023 (consulte [Tamaño máximo del paquete multimedia](#max-packet)) |

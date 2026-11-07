@@ -221,7 +221,7 @@ bluecaster-core.exe --cli --scan
 | `--audio-device <id>` | `-m virtual`에 사용할 렌더링 장치 |
 | `--app <exe>` | `-m app`에 사용할 실행 파일 (예: `spotify.exe`) |
 | `--headset-mic` | 헤드셋 마이크([코덱](#codecs) 참조): 헤드폰의 마이크를 `--mic-output`으로 재생합니다. 그동안 클래식 장치는 통화 품질로 재생합니다. `--le-audio`와 함께 쓰면 마이크도 전달하는 LE 오디오 구성을 사용합니다 |
-| `--mic-output <이름>` | 마이크를 재생할 출력 장치, 이름의 일부로 지정 (예: `"CABLE Input"`) |
+| `--mic-output <이름>` | 마이크를 재생할 출력 장치, 이름의 일부로 지정 (예: `"CABLE Input"`, 기본값: Windows 기본 출력), 또는 기록할 `.wav` 파일 |
 | `--rate <hz>` | 캡처 샘플링 속도 (기본값: 48 kHz. 장치가 48 kHz를 알리지 않으면 알린 다른 속도) |
 | `--bits <16\|24>` | 비트 심도 (기본값: 코덱이 지원하면 24) |
 | `--max-packet <bytes>` | 최대 미디어 패킷 크기, 679-1679, 기본값 1023 ([최대 미디어 패킷 크기](#max-packet) 참조) |

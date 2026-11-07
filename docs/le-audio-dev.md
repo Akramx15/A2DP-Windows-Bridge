@@ -34,8 +34,8 @@ for reference (`git show b819893:app/src/le_audio/<file>`).
 | `app/src/crates/bt-host/src/le/` | The LE core: `mod.rs` (public types), `api.rs` (`BtHost::le_*`, worker side), `core.rs` (`LeCore`, `LeCtx`, scan / connect / SM / discovery, module dispatch), `gatt_client.rs` (per-connection queue), `gatt_server.rs` (the PC's GATT server), `bap.rs` (PACS / ASCS client, `Unicast` state machine), `iso_send.rs` (`IsoSender`), `iso_recv.rs` (ISO data of source ASEs: parser, `IsoRx`, `LeRxHandle`), `module.rs` (hook traits) |
 | `app/src/crates/bt-host/src/le/modules/` | The profiles: `csip.rs`, `vcp.rs`, `mcp.rs`, `ccp.rs`, `tmap_gmap.rs`, `bas.rs`; `mod.rs` registers them (v1's order: CSIP, VCP, MCP, CCP, TMAP / GMAP, then BAS) |
 | `app/src/crates/pipeline/src/le.rs` | The LE encode thread: capture -> stereo downmix -> linear resampling to the LC3 rate -> LC3 per channel -> SDU set per frame into the `LeSduSink` |
-| `app/src/crates/pipeline/src/le_rx.rs` | The headset microphone: the "le-decode" thread (jitter buffer by sequence number, LC3 decoding with PLC, mono mix), `PcmOut`, `WavOut`, `CountingOut` |
-| `app/src/crates/core/src/le_stream.rs` | The session of an LE Audio profile (v1 `a2dp_service_le_audio.cpp`): connect, start, VolumeSync, re-setup after a loss (3 times), the `error.le_audio_*` messages |
+| `app/src/crates/pipeline/src/le_rx.rs` | The headset microphone: the "le-decode" thread (jitter buffer by sequence number, LC3 decoding with PLC, mono mix) and its output trait `PcmOut` |
+| `app/src/crates/core/src/le_stream.rs` | The session of an LE Audio profile (v1 `a2dp_service_le_audio.cpp`): connect, start, VolumeSync, re-setup after a loss (3 times), the `error.le_audio_*` messages; the headset microphone (`LeMicPath`) into the output `voice.rs` resolves |
 | `app/src/crates/core/src/le_media.rs` | MCP's Windows backend (System Media Transport Controls, media keys) |
 | `app/src/crates/core/src/service.rs` | `HostConfig.le_audio` from the setting or the CLI, the deferred toggle, `scan_devices` (classic + LE entries), `le_stream()` |
 | `app/src/crates/core/src/devices.rs` | `le_audio_devices.txt` (`load_le` / `save_le` / `remove_le`) |
@@ -286,10 +286,25 @@ jitter buffer of 16 sequence numbers that releases an SDU once two newer
 ones were seen (out-of-order SDUs are put back in order; a missing or
 invalid one is concealed by liblc3's PLC; a jump past the buffer starts it
 over), one LC3 decoder per channel, all channels of all streams mixed to
-mono, frame by frame into a `PcmOut` (the coordinator's voice-link
-renderer; for now `WavOut` with `--mic-output x.wav`, else `CountingOut`).
-No allocation per frame. At the end: "LE Audio: microphone: N frames out (D
-decoded, C concealed), S SDUs, L late, R resyncs, E errors".
+mono, frame by frame into a `PcmOut`. No allocation per frame. At the
+end: "LE Audio: microphone: N frames out (D decoded, C concealed), S SDUs,
+L late, R resyncs, E errors".
+
+The output (core `le_stream.rs`, `LeMicPath`): the `PcmOut` pushes into the
+queue of voice-link's `Renderer` (the render endpoint the request names,
+opened at the source rate, 40 ms prefill; its drift control absorbs the
+headset's clock, the decode thread has none) or `WavSink` (`--mic-output
+x.wav`; a stream set up again writes `x-2.wav`, ...). The output is
+resolved and checked as for a classic device (`crates/core/src/voice.rs`:
+`resolve_mic_output`, `mic_conflict`) before the stream asks for the
+conversational configuration: no output device, or one the stream captures
+(feedback loop), and the stream plays without the microphone, with
+`status.headset_mic_output_failed` / `error.headset_mic_loop` as the
+status. While it runs the session reports `VoiceStatus { codec: "lc3",
+link: "le", rate, mic_device_id }` (`StreamStatus::voice`), None when it
+stops. A profile's request gets `LeRequest::headset_mic` / `mic_output`
+from the same decision as a classic one (developer mode, the profile's
+switch, an output chosen); changing them restarts the LE stream.
 
 ## Audio path
 
@@ -565,8 +580,8 @@ Users with the setting off get the behaviour of a build without LE:
 ## Known limitations
 
 - The headset microphone (source ASEs) is verified only against the
-  emulator; it goes to a WAV file or is counted (the voice-link renderer is
-  wired in by the coordinator); one mono source direction per device; the
+  emulator, which writes it to a WAV file (the render to a real cable is
+  not exercised there); one mono source direction per device; the
   source preset is fixed by the plan (no renegotiation when the headset
   changes its available contexts); the mix of two earbuds' microphones
   aligns them by arrival, not by time stamp.
@@ -616,10 +631,11 @@ Verification
 - [ ] The aarch64 build (`cargo check --target aarch64-pc-windows-msvc`).
 
 Missing features
-- [ ] Source ASEs (microphone): real headsets; the voice-link renderer as
-  the output; GMAP `_gs` values checked against the spec; CCP calls with
-  the microphone (the conversational stream does not follow CCP's call
-  state yet).
+- [ ] Source ASEs (microphone): real headsets; the render to a real
+  virtual cable over hours (the drift control against a headset's clock);
+  GMAP `_gs` values checked against the spec; CCP calls with the
+  microphone (the conversational stream does not follow CCP's call state
+  yet).
 - [ ] Broadcast: emulator cases in `run_test.py`, BIS in `bluecaster_decode`,
   real hardware; TMAP BMS / GMAP BGS roles.
 - [ ] CSIP: SIRK / size / rank change notifications, OOB-only SIRK; after a

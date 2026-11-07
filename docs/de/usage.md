@@ -221,7 +221,7 @@ Versetzen Sie die Kopfhörer vorher in den Kopplungsmodus.
 | `--audio-device <id>` | Wiedergabegerät für `-m virtual` |
 | `--app <exe>` | Ausführbare Datei für `-m app` (z. B. `spotify.exe`) |
 | `--headset-mic` | Headset-Mikrofon (siehe [Codecs](#codecs)): Das Mikrofon des Kopfhörers spielt in `--mic-output`; ein klassisches Gerät spielt währenddessen in Telefonqualität. Mit `--le-audio` die LE-Audio-Konfiguration, die auch das Mikrofon überträgt |
-| `--mic-output <Name>` | Das Ausgabegerät, in das das Mikrofon spielt, nach einem Teil seines Namens (z. B. `"CABLE Input"`) |
+| `--mic-output <Name>` | Das Ausgabegerät, in das das Mikrofon spielt, nach einem Teil seines Namens (z. B. `"CABLE Input"`; Standard: die Standardausgabe von Windows), oder eine `.wav`-Datei, die geschrieben wird |
 | `--rate <hz>` | Abtastrate der Aufnahme (Standard: 48 kHz, oder eine andere Rate, die das Gerät meldet, wenn es kein 48 kHz hat) |
 | `--bits <16\|24>` | Bittiefe (Standard: 24, wo der Codec sie überträgt) |
 | `--max-packet <bytes>` | Max. Mediapaketgröße, 679-1679, Standard 1023 (siehe [Max. Mediapaketgröße](#max-packet)) |

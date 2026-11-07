@@ -25,7 +25,7 @@ HfSide is the HF: Bumble's HfProtocol (the service level connection, codec
 negotiation with the codecs of the case), an HF SDP record, accepting the
 AG's audio connection, and SCO both ways. What arrives is checked: CVSD, the 1 kHz
 tone in the 16-bit PCM (BlueCaster's test tone mixed to mono: 1 kHz and
-1.5 kHz, or --voice-probe's 1 kHz); mSBC and LC3-SWB, which have no decoder
+1.5 kHz, or 1 kHz alone); mSBC and LC3-SWB, which have no decoder
 here, the H2 headers and their sequence (BlueCaster's encoder output is
 checked in voice-link/tests/emu_frames.rs). What goes back is a 1.5 kHz
 tone: CVSD as 16-bit PCM, mSBC / LC3-SWB as frames encoded by BlueCaster's
