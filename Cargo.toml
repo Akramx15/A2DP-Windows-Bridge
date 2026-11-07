@@ -17,6 +17,7 @@ members = [
     "app/src/crates/pipeline",
     "app/src/crates/core",
     "app/src/crates/ipc",
+    "app/src/crates/voice-link",
     "app/src/core",
     "app/src/driver",
     "app/src/ui/src-tauri",
@@ -48,6 +49,7 @@ ipc = { path = "app/src/crates/ipc" }
 le-audio = { path = "app/src/crates/le-audio" }
 lc3-sys = { path = "app/src/crates/lc3-sys" }
 aptx-adaptive = { path = "app/src/crates/aptx-adaptive" }
+voice-link = { path = "app/src/crates/voice-link" }
 
 cc = "1.2"
 tracing = "0.1"
