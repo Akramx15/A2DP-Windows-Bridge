@@ -318,10 +318,37 @@ impl Stack {
     }
 
     /// The SCO packet length (3 header bytes included) BTstack wants for
-    /// this connection; 0 for an unknown handle
+    /// this connection; 0 for an unknown handle. On an H2 transport
+    /// ([`Stack::transport_is_h2`]) BTstack asserts that the controller's SCO
+    /// data packet length holds 3 ms of audio (48 bytes CVSD, 24
+    /// transparent): check that first.
     pub fn sco_packet_length(&self, handle: u16) -> u16 {
         // SAFETY: on the BTstack thread; unknown handles give 0.
         unsafe { ffi::bluecaster_sco_packet_length(handle) }
+    }
+
+    /// The installed transport is an H2 one (SCO over USB isochronous,
+    /// [`crate::HciBackend::is_h2`])
+    pub fn transport_is_h2(&self) -> bool {
+        transport::kind() == transport::TransportKind::H2
+    }
+
+    /// Whether the transport can carry SCO data now
+    /// ([`crate::HciBackend::sco_ready`])
+    pub fn sco_ready(&self) -> bool {
+        transport::sco_ready()
+    }
+
+    /// Hides the SCO commands of HCI init from BTstack (the default of every
+    /// run; see crate::transport): off when the stack offers voice. Takes
+    /// effect only before [`Stack::hci_init`] / [`Stack::install_transport`]:
+    /// false afterwards.
+    pub fn set_sco_hidden(&self, hidden: bool) -> bool {
+        let ok = transport::set_sco_hidden(hidden);
+        if !ok {
+            tracing::warn!(target: "hci", "SCO hidden: can only be changed before hci_init");
+        }
+        ok
     }
 
     /// SDP records: A2DP source (player), AVRCP controller and target with
@@ -990,6 +1017,9 @@ impl Stack {
 fn log_le_hidden() {
     if transport::le_hidden() {
         tracing::info!(target: "hci", "LE hidden: not using the controller's LE support (LE Audio off)");
+    }
+    if transport::sco_hidden() {
+        tracing::debug!(target: "hci", "SCO hidden: no SCO flow control / erroneous data reporting at init (no voice)");
     }
 }
 

@@ -73,9 +73,12 @@
 //! token again while fewer than [`SCO_OUT_SLOTS`] packets are queued or in
 //! flight; otherwise the thread does when a write completes.
 //!
-//! Every USB backend is H2 (is_h2 is read before open): without a usable
-//! interface 1, `can_send` refuses SCO and SCO packets sent anyway are
-//! dropped (and reported sent, so BTstack's buffer is free again).
+//! Only a backend made [`UsbTransport::with_sco`] (the stack offers voice)
+//! is H2 and claims interface 1 (is_h2 is read before open); otherwise SCO
+//! is left to BTstack's plain path, which nothing uses. Without a usable
+//! interface 1, `can_send` refuses SCO, SCO packets sent anyway are dropped
+//! (and reported sent, so BTstack's buffer is free again) and
+//! [`HciBackend::sco_ready`] is false, so bt-host gives the link up.
 //!
 //! Full speed (the usual Bluetooth adapter) has one isochronous packet per
 //! 1 ms frame: a read is 3 packets, a write of one SCO packet is as many
@@ -980,11 +983,21 @@ fn sco_loop(input: IsochIn, mut output: IsochOut, out_packet_len: usize, shared:
 pub struct UsbTransport {
     selector: UsbSelector,
     opened: Option<Opened>,
+    /// SCO over interface 1 wanted (the stack offers voice): an H2
+    /// transport, interface 1 claimed at open
+    sco: bool,
 }
 
 impl UsbTransport {
     pub fn new(selector: UsbSelector) -> UsbTransport {
-        UsbTransport { selector, opened: None }
+        UsbTransport { selector, opened: None, sco: false }
+    }
+
+    /// SCO audio over interface 1 (module docs, SCO); off by default. Set
+    /// before the transport is installed: BTstack reads `is_h2` then.
+    pub fn with_sco(mut self, sco: bool) -> UsbTransport {
+        self.sco = sco;
+        self
     }
 
     /// The WinUSB adapters the selector takes, in enumeration order
@@ -1287,7 +1300,8 @@ impl HciBackend for UsbTransport {
                 None => tracing::debug!("USB: {name} pipe not halted, left as it is"),
             }
         }
-        let sco = Sco::claim(&device);
+        // Interface 1 only when the stack offers voice
+        let sco = if self.sco { Sco::claim(&device) } else { None };
         STATS.take();
         tracing::info!(
             target: "hci",
@@ -1469,8 +1483,12 @@ impl HciBackend for UsbTransport {
     }
 
     fn is_h2(&self) -> bool {
-        // Decided before open: every USB adapter (module docs, SCO)
-        true
+        // Decided before open: with SCO wanted (module docs, SCO)
+        self.sco
+    }
+
+    fn sco_ready(&self) -> bool {
+        self.opened.as_ref().and_then(|o| o.sco.as_ref()).is_some_and(Sco::running)
     }
 
     fn set_sco_config(&mut self, voice_setting: u16, connections: u8) {

@@ -42,8 +42,14 @@
 #define HCI_INCOMING_PRE_BUFFER_SIZE 14
 
 /* HFP audio (headset microphone, developer mode): SCO data over HCI (the H4
- * transport, or USB isochronous on interface 1), mSBC and LC3-SWB. Inert
- * unless the HFP audio gateway offers them (Stack::hfp_ag_init(true)). */
+ * transport, or USB isochronous on interface 1), mSBC and LC3-SWB. The codecs
+ * are offered only by the voice AG (Stack::hfp_ag_init(true)), and USB is an
+ * H2 transport only then. NOT inert at HCI init: ENABLE_SCO_OVER_HCI makes
+ * hci.c send Write Synchronous Flow Control Enable and Write Default
+ * Erroneous Data Reporting to every controller listing them; without voice
+ * the transport clears those supported-commands bits (Stack::set_sco_hidden,
+ * crate::transport), so only Broadcom controllers still get the extra
+ * vendor command (BCM Write SCO PCM Int: SCO routed over HCI). */
 #define ENABLE_SCO_OVER_HCI
 #define ENABLE_HFP_WIDE_BAND_SPEECH
 #define ENABLE_HFP_SUPER_WIDE_BAND_SPEECH
