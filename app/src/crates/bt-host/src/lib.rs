@@ -408,7 +408,9 @@ pub struct BtHost {
     le: Arc<le::core::LeShared>,
 }
 
-fn backend(transport: &TransportConfig) -> Box<dyn HciBackend> {
+/// The transport; `voice` (HostConfig::voice): USB carries SCO over
+/// interface 1 (an H2 transport), otherwise it has no SCO path at all
+fn backend(transport: &TransportConfig, voice: bool) -> Box<dyn HciBackend> {
     match transport {
         TransportConfig::Tcp(addr) => Box::new(TcpH4::new(addr.clone())),
         TransportConfig::Usb(sel) => {
@@ -417,7 +419,7 @@ fn backend(transport: &TransportConfig) -> Box<dyn HciBackend> {
             // that do not identify as Bluetooth class
             sel.known.extend(btstack_sys::realtek_usb_ids());
             sel.known.extend([(0x0A12, 0x0001), (0x8087, 0x0029), (0x8087, 0x0032)]);
-            Box::new(UsbTransport::new(sel))
+            Box::new(UsbTransport::new(sel).with_sco(voice))
         }
     }
 }
@@ -570,6 +572,11 @@ impl BtHost {
                         if le_audio.is_some() {
                             stack.set_le_hidden(false);
                         }
+                        // HFP audio: HCI init's SCO commands (flow control,
+                        // erroneous data reporting) only for a stack with voice
+                        if voice {
+                            stack.set_sco_hidden(false);
+                        }
                         let le = le_audio.map(|cfg| {
                             let poster = le::core::LePoster::new(le_jobs, remote);
                             le::core::LeCore::new(
@@ -613,7 +620,7 @@ impl BtHost {
                             afh,
                             le,
                         );
-                        let backend = backend(&transport);
+                        let backend = backend(&transport, voice);
                         if let Some(make) = tool {
                             // A tool, no HCI init (also over TCP: the
                             // emulator's controller)
@@ -1593,24 +1600,32 @@ impl BtHost {
     }
 
     /// What [`BtHost::voice_start`] would answer now, without opening
-    /// anything: Ok when the audio connection can be asked for
+    /// anything: Ok when the audio connection can be asked for; Refused
+    /// when the controller cannot carry SCO over the transport
     pub fn voice_check(&self) -> Result<(), HostError> {
-        self.call(JOB_TIMEOUT, |app, _| app.voice.check(app.setup.voice, app.hfp_acl))
+        self.call(JOB_TIMEOUT, |app, s| app.voice.check(app.setup.voice, app.hfp_acl, s.transport_is_h2()))
             .unwrap_or(Err(HostError::NoAnswer))
     }
 
     /// Takes over an audio connection the headphones opened themselves
     /// ([`VoiceEvent::Established`] with [`BtHost::voice_start`] answering
     /// Busy): `tx` and `rx` carry it from now on. NotConnected when none is
-    /// open, Busy when it already has its `tx` / `rx`.
+    /// open, Busy when it already has its `tx` / `rx`, Refused when SCO
+    /// cannot flow on it.
     pub fn voice_attach(&self, tx: Box<dyn VoiceTx>, rx: Box<dyn VoiceRx>) -> Result<(), HostError> {
         self.call(JOB_TIMEOUT, move |app, s| app.voice.attach(s, tx, rx)).unwrap_or(Err(HostError::NoAnswer))
     }
 
     /// Closes the HFP audio connection (if any); `tx` and `rx` are dropped
-    /// on the BTstack thread
+    /// on the BTstack thread. [`VoiceEvent::Released`] follows (at once
+    /// when BTstack refuses the release).
     pub fn voice_stop(&self) -> Result<(), HostError> {
-        self.call(JOB_TIMEOUT, |app, s| app.voice.stop(s)).ok_or(HostError::NoAnswer)
+        self.call(JOB_TIMEOUT, |app, s| {
+            if let Some(e) = app.voice.stop(s) {
+                let _ = app.events.send(e);
+            }
+        })
+        .ok_or(HostError::NoAnswer)
     }
 
     pub fn disconnect(&self) {

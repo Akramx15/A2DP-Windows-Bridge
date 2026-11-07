@@ -1064,6 +1064,11 @@ impl HostApp {
         if ev == HCI_EVENT_NUMBER_OF_COMPLETED_PACKETS {
             tracing::trace!("HCI completed packets: {:02X?}", p.get(2..));
         }
+        // The controller's SCO buffer length, which BTstack's H2 path
+        // asserts on (crate::voice)
+        if let Some(b) = btstack_sys::events::read_buffer_size(p) {
+            self.voice.on_buffer_size(&b);
+        }
         match ev {
             BTSTACK_EVENT_STATE => match u8_at(p, 2) {
                 Some(state @ (1 | 3..)) => tracing::debug!("HCI state {state} ({:?})", stack.hci_state()),
@@ -1316,6 +1321,13 @@ impl HostApp {
                     "HCI disconnection (handle 0x{handle:04x}, reason 0x{reason:02x}: {})",
                     hci_error_string(reason)
                 );
+                // The audio connection's SCO link: released even if HFP
+                // never says so
+                if u8_at(p, 2) == Some(0)
+                    && let Some(e) = self.voice.on_disconnected(handle)
+                {
+                    let _ = self.events.send(e);
+                }
                 let lost = self.shared.update(|s| {
                     s.acl_down = true;
                     s.acl_links.retain(|&(h, _, _)| h != handle);
@@ -1842,7 +1854,9 @@ impl HostApp {
                     self.avrcp_cid = 0;
                 }
                 if let Some(acl) = self.hfp_acl.take() {
-                    self.voice.stop(stack);
+                    if let Some(e) = self.voice.stop(stack) {
+                        let _ = self.events.send(e);
+                    }
                     stack.hfp_ag_release(acl);
                 }
                 if let Some(addr) = self.remote_addr {
@@ -2333,7 +2347,9 @@ impl App for HostApp {
         }
         // SCO data as well as HCI_EVENT_SCO_CAN_SEND_NOW
         if source == Source::Sco {
-            self.voice.on_sco(stack, packet_type, packet);
+            if let Some(e) = self.voice.on_sco(stack, packet_type, packet) {
+                let _ = self.events.send(e);
+            }
             return;
         }
         // LE Audio's ISO data (a headset microphone) as well as its events
