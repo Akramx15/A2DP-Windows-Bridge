@@ -435,6 +435,12 @@ impl Settings {
         }
     }
 
+    /// Whether a profile's headset mode (`Profile::headset_mic`) is in
+    /// force: developer mode only; the profile keeps its choice
+    pub fn headset_mic_in_force(&self, profile_flag: bool) -> bool {
+        profile_flag && self.debug_mode
+    }
+
     /// The media packet size limit of a settings file from before v1.1, for
     /// profiles saved without one
     pub fn legacy_max_media_payload(&self) -> u16 {
@@ -496,6 +502,16 @@ mod tests {
         s.debug_mode = true;
         assert_eq!(s.capture_source(output.clone()), output);
         assert_eq!(s.capture_source(virt.clone()), virt);
+    }
+
+    #[test]
+    fn headset_mic_counts_only_in_developer_mode() {
+        let mut s = Settings::default();
+        assert!(!s.headset_mic_in_force(true));
+        assert!(!s.headset_mic_in_force(false));
+        s.debug_mode = true;
+        assert!(s.headset_mic_in_force(true));
+        assert!(!s.headset_mic_in_force(false));
     }
 
     #[test]

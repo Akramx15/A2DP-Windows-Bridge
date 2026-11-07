@@ -131,6 +131,20 @@ pub struct Profile {
     /// configuration either way.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub le_low_latency: bool,
+    /// Headset mode (developer mode only, [`Settings::headset_mic_in_force`]):
+    /// the headphones' microphone is rendered to `mic_device_id`; classic
+    /// devices play over the voice link meanwhile, LE Audio keeps its preset
+    ///
+    /// [`Settings::headset_mic_in_force`]: crate::settings::Settings::headset_mic_in_force
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub headset_mic: bool,
+    /// The render endpoint id that receives the microphone (a virtual
+    /// cable's input). Empty: none chosen, headset mode stays off
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mic_device_id: String,
+    /// Its friendly name, for display while the device is missing
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mic_device_name: String,
     /// The settings of the other codecs, by codec key, as they were last
     /// chosen: choosing one of them again brings them back (the codec in
     /// use has its own in the fields above)
@@ -181,6 +195,9 @@ impl Default for Profile {
             sbc_channel_mode: String::new(),
             le_audio: false,
             le_low_latency: true,
+            headset_mic: false,
+            mic_device_id: String::new(),
+            mic_device_name: String::new(),
             codec_settings: BTreeMap::new(),
             codec_order: Vec::new(),
             other: BTreeMap::new(),
@@ -394,6 +411,39 @@ impl Profile {
             ..self.clone()
         };
         same == *new && self.bitpools() != new.bitpools()
+    }
+
+    /// `new` is this profile with another headset mode or microphone output
+    /// and nothing else changed
+    pub fn only_headset_mic_differs(&self, new: &Profile) -> bool {
+        let same = Profile {
+            headset_mic: new.headset_mic,
+            mic_device_id: new.mic_device_id.clone(),
+            mic_device_name: new.mic_device_name.clone(),
+            ..self.clone()
+        };
+        same == *new
+            && (self.headset_mic, &self.mic_device_id, &self.mic_device_name)
+                != (new.headset_mic, &new.mic_device_id, &new.mic_device_name)
+    }
+
+    /// Why headset mode must not run with this profile's microphone output:
+    /// it would feed the microphone back into the stream. The output is the
+    /// virtual or output device the profile captures, or the Windows
+    /// default output (`default_output_id`) while it captures System
+    /// Loopback. Returns the message key, None when there is no loop (or no
+    /// output chosen, which the UI notes on its own).
+    pub fn mic_device_conflicts(&self, default_output_id: &str) -> Option<&'static str> {
+        let mic = self.mic_device_id.as_str();
+        if mic.is_empty() {
+            return None;
+        }
+        let looped = match self.source() {
+            SourceRequest::VirtualDevice { id, .. } | SourceRequest::OutputDevice { id, .. } => id == mic,
+            SourceRequest::SystemLoopback => !default_output_id.is_empty() && default_output_id == mic,
+            _ => false,
+        };
+        looped.then_some("error.headset_mic_loop")
     }
 
     /// What to stream for this profile. An LE Audio (experimental) profile
@@ -886,6 +936,51 @@ mod tests {
         // A bad address is refused as for A2DP
         let bad = Profile { device_address: "nope".into(), ..p.clone() };
         assert_eq!(bad.to_request(1023), Err(ProfileError::Address("nope".into())));
+    }
+
+    #[test]
+    fn headset_mic_round_trips_and_is_written_only_when_set() {
+        let p = Profile::default();
+        let out = serde_json::to_value(&p).unwrap();
+        for key in ["headset_mic", "mic_device_id", "mic_device_name"] {
+            assert!(out.get(key).is_none(), "{key}");
+        }
+        let on = Profile {
+            headset_mic: true,
+            mic_device_id: "{cable}".into(),
+            mic_device_name: "CABLE Input".into(),
+            ..p.clone()
+        };
+        let out = serde_json::to_value(&on).unwrap();
+        assert_eq!(out["headset_mic"], true);
+        assert_eq!(out["mic_device_id"], "{cable}");
+        assert_eq!(serde_json::from_value::<Profile>(out).unwrap(), on);
+        assert!(p.only_headset_mic_differs(&on));
+        assert!(!p.only_headset_mic_differs(&p));
+        assert!(!p.only_headset_mic_differs(&Profile { codec: "sbc".into(), ..on.clone() }));
+        assert!(p.only_headset_mic_differs(&Profile { headset_mic: true, ..p.clone() }));
+    }
+
+    #[test]
+    fn mic_device_feeding_the_capture_is_refused() {
+        let loop_key = Some("error.headset_mic_loop");
+        let p = Profile { headset_mic: true, mic_device_id: "{cable}".into(), ..Profile::default() };
+        // System Loopback: only when the cable is the default output
+        assert_eq!(p.mic_device_conflicts("{speakers}"), None);
+        assert_eq!(p.mic_device_conflicts(""), None);
+        assert_eq!(p.mic_device_conflicts("{cable}"), loop_key);
+        // The captured virtual or output device
+        let virt = Profile { capture_mode: "virtual".into(), audio_device_id: "{cable}".into(), ..p.clone() };
+        assert_eq!(virt.mic_device_conflicts("{speakers}"), loop_key);
+        let other = Profile { audio_device_id: "{cable 2}".into(), ..virt.clone() };
+        assert_eq!(other.mic_device_conflicts("{cable}"), None);
+        let output = Profile { capture_mode: "output".into(), ..virt.clone() };
+        assert_eq!(output.mic_device_conflicts(""), loop_key);
+        // An application, and no output chosen
+        let app = Profile { capture_mode: "app".into(), app_exe: "game.exe".into(), ..p.clone() };
+        assert_eq!(app.mic_device_conflicts("{cable}"), None);
+        let none = Profile { mic_device_id: String::new(), ..p.clone() };
+        assert_eq!(none.mic_device_conflicts(""), None);
     }
 
     fn of(name: &str, address: &str, codec: &str) -> Profile {

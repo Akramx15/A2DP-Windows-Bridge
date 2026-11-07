@@ -55,6 +55,21 @@ le_audio: boolean,
  */
 le_low_latency: boolean, 
 /**
+ * Headset mode (developer mode only): the headphones' microphone is
+ * rendered to mic_device_id. Classic devices switch playback to the
+ * voice link (mono call quality); LE Audio keeps its media quality
+ */
+headset_mic: boolean, 
+/**
+ * Render endpoint id that receives the microphone (a virtual cable's
+ * input). Empty = none chosen: headset mode stays off
+ */
+mic_device_id: string, 
+/**
+ * Its friendly name, for display when the device is missing
+ */
+mic_device_name: string, 
+/**
  * SBC / SBC XQ: the bitpool to encode with, within what the device
  * allows (0 = by quality)
  */
