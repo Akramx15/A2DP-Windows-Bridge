@@ -28,6 +28,7 @@ pub mod script;
 pub mod sdp_services;
 mod shared;
 pub mod stats;
+pub mod voice;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
@@ -58,6 +59,7 @@ pub use stats::{
     EncodeTiming, EncodeTotals, LinkDetails, LinkMode, LinkRadio, LinkStats, LiveCodec, MaxGauge, RemoteFeatures,
     RemoteVersion, StreamTiming,
 };
+pub use voice::{HostError, VoiceEvent, VoiceRx, VoiceTx};
 
 const INIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// No HCI event at all this long after power on: the controller does not
@@ -171,6 +173,11 @@ pub struct HostConfig {
     /// service level connection, where the headphones report it (and the LE
     /// Battery Service). Off: no HFP at all.
     pub battery: bool,
+    /// Headset microphone (developer mode): the HFP audio gateway offers
+    /// codec negotiation (LC3-SWB, mSBC, CVSD) and eSCO S4, and
+    /// [`BtHost::voice_start`] opens the audio connection. Off: the
+    /// battery-only audio gateway.
+    pub voice: bool,
     /// Told where a chip loader (Intel's download) is while the adapter
     /// starts, for the Adapters screen
     pub on_loader: Option<bringup::LoaderHook>,
@@ -216,6 +223,7 @@ impl HostConfig {
             afh: None,
             le_audio: None,
             battery: false,
+            voice: false,
             on_loader: None,
             local_name: APP_LOCAL_NAME.into(),
         }
@@ -295,6 +303,8 @@ pub enum HostEvent {
     MediaKey(MediaKey),
     /// The HCI transport stopped working for good
     TransportFailed,
+    /// The HFP audio connection ([`BtHost::voice_start`])
+    Voice(VoiceEvent),
 }
 
 /// Settings and readings shared with the BTstack thread without locks
@@ -542,6 +552,7 @@ impl BtHost {
                         afh,
                         le_audio,
                         battery,
+                        voice,
                         on_loader,
                         local_name,
                     } = config;
@@ -578,6 +589,7 @@ impl BtHost {
                             realtek_files,
                             broadcom_ids,
                             battery,
+                            voice,
                             on_loader,
                             probe,
                             local_name,
@@ -1550,6 +1562,27 @@ impl BtHost {
         tracing::debug!("stop stream: suspending");
         self.call(JOB_TIMEOUT, |app, s| app.pause_stream(s));
         self.shared.update(|s| s.streaming = false);
+    }
+
+    /// Opens the HFP audio connection on the current service level
+    /// connection (needs [`HostConfig::voice`]). `tx` supplies payload bytes
+    /// on the BTstack thread, `rx` receives payloads there, from
+    /// [`VoiceEvent::Established`] until [`VoiceEvent::Released`] or
+    /// [`BtHost::voice_stop`]. The result of the connection comes as
+    /// [`HostEvent::Voice`].
+    pub fn voice_start(&self, tx: Box<dyn VoiceTx>, rx: Box<dyn VoiceRx>) -> Result<(), HostError> {
+        self.call(JOB_TIMEOUT, move |app, s| {
+            let enabled = app.setup.voice;
+            let acl = app.hfp_acl;
+            app.voice.start(s, enabled, acl, tx, rx)
+        })
+        .unwrap_or(Err(HostError::NoAnswer))
+    }
+
+    /// Closes the HFP audio connection (if any); `tx` and `rx` are dropped
+    /// on the BTstack thread
+    pub fn voice_stop(&self) -> Result<(), HostError> {
+        self.call(JOB_TIMEOUT, |app, s| app.voice.stop(s)).ok_or(HostError::NoAnswer)
     }
 
     pub fn disconnect(&self) {
