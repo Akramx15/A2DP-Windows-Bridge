@@ -46,6 +46,16 @@ const SLC_WAIT: Duration = Duration::from_secs(20);
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 /// The session's own summary while the voice link is up
 const SUMMARY_EVERY: Duration = Duration::from_secs(10);
+/// How often an application source the uplink does not capture is looked
+/// for while the voice link is up
+const APP_RECHECK: Duration = Duration::from_secs(1);
+
+/// Whether the uplink looks for its application again now: the link is
+/// armed, the source is an application, and the last look is
+/// [`APP_RECHECK`] ago
+fn app_recheck_due(source: &SourceRequest, armed: bool, last: Instant, now: Instant) -> bool {
+    armed && matches!(source, SourceRequest::Application { .. }) && now.duration_since(last) >= APP_RECHECK
+}
 
 /// What the session does to its A2DP stream around the voice link
 pub(crate) trait A2dp {
@@ -261,6 +271,12 @@ struct VoiceLink {
     codec: Option<(VoiceCodec, Instant)>,
     output: Option<MicOutput>,
     capture: Option<Running>,
+    /// The process the uplink captures (an application source)
+    uplink_pid: Option<u32>,
+    /// The application looked for last ([`app_recheck_due`]), and a
+    /// process whose capture failed (not tried again)
+    app_checked: Instant,
+    app_failed_pid: Option<u32>,
     summary_at: Instant,
 }
 
@@ -276,6 +292,9 @@ impl VoiceLink {
             codec: None,
             output: None,
             capture: None,
+            uplink_pid: None,
+            app_checked: now,
+            app_failed_pid: None,
             summary_at: now,
         };
         (link, Box::new(ShellTx(tx)), Box::new(ShellRx(rx)))
@@ -313,9 +332,15 @@ impl VoiceLink {
         if let Some(r) = self.capture.take() {
             r.stop();
         }
+        self.uplink_pid = None;
+        self.app_checked = Instant::now();
         let (sink, consumer) = UplinkSink::new(rate, UPLINK_CAPACITY_MS);
         match uplink_source(source) {
             Some((src, fill_silence)) => {
+                let pid = match &src {
+                    Source::Application { process_id } => Some(*process_id),
+                    _ => None,
+                };
                 let options = CaptureOptions { preferred_rate: Some(rate), fill_silence };
                 match Capture::open(&src, &options).and_then(|c| {
                     let f = c.format();
@@ -329,8 +354,13 @@ impl VoiceLink {
                             f.sample_format
                         );
                         self.capture = Some(r);
+                        self.uplink_pid = pid;
+                        self.app_failed_pid = None;
                     }
-                    Err(e) => tracing::warn!("voice: cannot capture {source} for the headphones, sending silence: {e}"),
+                    Err(e) => {
+                        tracing::warn!("voice: cannot capture {source} for the headphones, sending silence: {e}");
+                        self.app_failed_pid = pid;
+                    }
                 }
             }
             None => tracing::info!("voice: {source} is not running, sending silence to the headphones"),
@@ -344,6 +374,34 @@ impl VoiceLink {
         let uplink = self.start_uplink(codec.rate(), source);
         if let Some(parts) = self.tx.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
             parts.uplink = uplink;
+        }
+    }
+
+    /// An application source the uplink does not capture (not running when
+    /// the link came up, or exited since): looked for at most once a
+    /// second, and captured again once it runs
+    fn recheck_app(&mut self, source: &SourceRequest) {
+        let now = Instant::now();
+        if !app_recheck_due(source, self.codec.is_some(), self.app_checked, now) {
+            return;
+        }
+        self.app_checked = now;
+        let exited = self.uplink_pid.is_some_and(audio_capture::process_exited);
+        if self.capture.as_ref().is_some_and(|r| !r.ended()) && !exited {
+            return;
+        }
+        if let Some(r) = self.capture.take() {
+            tracing::info!("voice: {source} exited, sending silence to the headphones until it runs again");
+            r.stop();
+            self.uplink_pid = None;
+        }
+        let SourceRequest::Application { exe } = source else { return };
+        match audio_capture::find_process(exe) {
+            Some(pid) if self.app_failed_pid != Some(pid) => {
+                tracing::info!("voice: {source} runs (PID {pid}), capturing it for the headphones");
+                self.change_source(source);
+            }
+            _ => {}
         }
     }
 
@@ -443,11 +501,14 @@ pub(crate) struct HeadsetMode {
     /// Until when a missing service level connection is waited for
     slc_deadline: Option<Instant>,
     link: Option<VoiceLink>,
+    /// An audio connection of the headphones' own was left alone (logged
+    /// once per session)
+    foreign_logged: bool,
 }
 
 impl HeadsetMode {
     pub fn new(wanted: bool, mic_output: Option<String>) -> HeadsetMode {
-        HeadsetMode { wanted, mic_output, held_off: false, slc_deadline: None, link: None }
+        HeadsetMode { wanted, mic_output, held_off: false, slc_deadline: None, link: None, foreign_logged: false }
     }
 
     /// The voice link carries the stream (A2DP is suspended)
@@ -479,6 +540,7 @@ impl HeadsetMode {
         }
         if let Some(link) = self.link.as_mut() {
             link.summary();
+            link.recheck_app(source);
             if let Some(why) = link.output.as_ref().and_then(MicOutput::ended) {
                 tracing::warn!("voice: the microphone output ended ({why}), back to A2DP");
                 self.held_off = true;
@@ -544,12 +606,17 @@ impl HeadsetMode {
         match event {
             VoiceEvent::Established { codec: id, .. } => {
                 let Some(codec) = VoiceCodec::from_hfp_id(id) else {
-                    tracing::warn!("voice: audio connection with an unknown codec {id}, closing it");
-                    self.held_off = true;
                     if self.link.is_some() {
+                        tracing::warn!("voice: audio connection with an unknown codec {id}, closing it");
+                        self.held_off = true;
                         return self.leave(true, inner, host, a2dp, Some(Msg::new("status.headset_mic_failed")));
                     }
-                    let _ = host.voice_stop();
+                    // The headphones' own: as in adopt
+                    if host.voice_enabled() {
+                        tracing::warn!("voice: the headphones opened an audio connection with codec {id}, closing it");
+                        self.held_off = true;
+                        let _ = host.voice_stop();
+                    }
                     return Ok(());
                 };
                 match self.link.as_mut() {
@@ -581,18 +648,25 @@ impl HeadsetMode {
                 self.leave(false, inner, host, a2dp, None)
             }
             VoiceEvent::Failed { status } => {
-                if self.link.as_ref().is_none_or(|l| l.codec.is_some()) {
-                    return Ok(());
-                }
-                tracing::warn!("voice: the audio connection failed (0x{status:02x}), back to A2DP");
+                let Some(link) = self.link.as_ref() else { return Ok(()) };
+                // Up already (SCO stopped flowing): bt-host leaves closing
+                // it to us; not up: it is closed (or never opened)
+                let up = link.codec.is_some();
+                tracing::warn!(
+                    "voice: the audio connection {} (0x{status:02x}), back to A2DP",
+                    if up { "stopped working" } else { "failed" }
+                );
                 self.held_off = true;
-                self.leave(false, inner, host, a2dp, Some(Msg::new("status.headset_mic_failed")))
+                self.leave(up, inner, host, a2dp, Some(Msg::new("status.headset_mic_failed")))
             }
         }
     }
 
     /// The headphones opened the audio connection themselves: taken over in
-    /// headset mode, closed otherwise
+    /// headset mode, closed otherwise by a stack that offers voice. A stack
+    /// without voice (every user outside developer mode) leaves it alone,
+    /// as before headset mode existed: a voice assistant button on the
+    /// headphones opens one.
     fn adopt(
         &mut self,
         codec: VoiceCodec,
@@ -601,6 +675,16 @@ impl HeadsetMode {
         source: &SourceRequest,
         a2dp: &mut dyn A2dp,
     ) -> Result<(), Msg> {
+        if !host.voice_enabled() {
+            if !self.foreign_logged {
+                self.foreign_logged = true;
+                tracing::info!(
+                    "voice: the headphones opened an audio connection ({}); no headset mode, left alone",
+                    codec.name()
+                );
+            }
+            return Ok(());
+        }
         let target = (self.wanted && !self.held_off)
             .then(|| resolve_mic_output(self.mic_output.as_deref()))
             .flatten()
@@ -633,16 +717,10 @@ impl HeadsetMode {
     }
 
     /// Headset mode asked for and no voice link: A2DP is suspended and the
-    /// audio connection asked for, once the service level connection is up
+    /// audio connection asked for, once the service level connection is up.
+    /// The output is resolved (a device enumeration) and checked against
+    /// the capture only then, not on every tick of the wait.
     fn enter(&mut self, inner: &Inner, host: &BtHost, source: &SourceRequest, a2dp: &mut dyn A2dp) -> Result<(), Msg> {
-        let Some(target) = resolve_mic_output(self.mic_output.as_deref()) else {
-            tracing::warn!("voice: no output device for the microphone");
-            return self.give_up(inner, Msg::new("status.headset_mic_output_failed"));
-        };
-        if let Some(key) = mic_conflict(&target, source) {
-            tracing::warn!("voice: the microphone output {target} feeds the stream ({source}), headset mode refused");
-            return self.give_up(inner, Msg::new(key));
-        }
         match host.voice_check() {
             Ok(()) => {}
             Err(HostError::NotConnected) => {
@@ -659,6 +737,15 @@ impl HeadsetMode {
                 tracing::warn!("voice: the audio connection cannot be asked for: {e:?}");
                 return self.give_up(inner, Msg::new("status.headset_mic_failed"));
             }
+        }
+        // Before A2DP is suspended: no output, or one that feeds the capture
+        let Some(target) = resolve_mic_output(self.mic_output.as_deref()) else {
+            tracing::warn!("voice: no output device for the microphone");
+            return self.give_up(inner, Msg::new("status.headset_mic_output_failed"));
+        };
+        if let Some(key) = mic_conflict(&target, source) {
+            tracing::warn!("voice: the microphone output {target} feeds the stream ({source}), headset mode refused");
+            return self.give_up(inner, Msg::new(key));
         }
         tracing::info!("voice: headset mode on, suspending A2DP and asking for the audio connection");
         a2dp.suspend();
@@ -779,6 +866,21 @@ mod tests {
         let virt = SourceRequest::VirtualDevice { id: "{cable}".into(), name: "CABLE".into(), auto_switch: true };
         assert_eq!(mic_conflict(&cable, &virt), Some("error.headset_mic_loop"));
         assert_eq!(mic_conflict(&cable, &SourceRequest::TestTone), None);
+    }
+
+    #[test]
+    fn an_application_uplink_is_looked_for_once_a_second_while_armed() {
+        let app = SourceRequest::Application { exe: "game.exe".into() };
+        let t0 = Instant::now();
+        let later = |ms| t0 + Duration::from_millis(ms);
+        assert!(!app_recheck_due(&app, true, t0, later(200)));
+        assert!(!app_recheck_due(&app, true, t0, later(999)));
+        assert!(app_recheck_due(&app, true, t0, later(1000)));
+        // Not armed yet (no codec): the capture starts with the link
+        assert!(!app_recheck_due(&app, false, t0, later(5000)));
+        // Other sources reopen nothing here
+        assert!(!app_recheck_due(&SourceRequest::SystemLoopback, true, t0, later(5000)));
+        assert!(!app_recheck_due(&SourceRequest::TestTone, true, t0, later(5000)));
     }
 
     #[test]
