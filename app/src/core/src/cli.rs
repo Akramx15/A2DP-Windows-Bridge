@@ -85,11 +85,13 @@ LE Audio (experimental, LC3 over LE isochronous channels):
   --auracast-mono       one mono channel instead of left and right
 
 Headset microphone (developer mode):
-  --headset-mic         use the headphones' microphone (LE Audio: the
-                        conversational configuration)
-  --mic-output <path.wav|name>
-                        where the microphone goes: a WAV file, or a render
-                        device by name
+  --headset-mic         headset mode: once streaming, the headphones'
+                        microphone goes to --mic-output; classic devices switch
+                        to the voice link (call quality), LE Audio devices use
+                        the conversational configuration
+  --mic-output <name|path.wav>
+                        the microphone's output device (a part of its name;
+                        default: the default output), or a WAV file to write
 
 Development / testing:
   --hci-tcp <host:port> H4 over TCP to a virtual controller (tools/emu)
@@ -104,12 +106,6 @@ Development / testing:
                         streaming, opens it and sends a 1 kHz tone (CVSD),
                         counts the packets that come back; not the headset
                         microphone
-  --headset-mic         headset mode (developer): once streaming, the
-                        headphones' microphone goes to --mic-output and the
-                        audio to the headphones over the voice link
-  --mic-output <name|path.wav>
-                        the microphone's output device (a part of its name;
-                        default: the default output), or a WAV file to write
   --headset-mic-toggle <on_s>,<off_s>
                         headset mode on <on_s> seconds after streaming starts
                         and off at <off_s> (the voice link and back to A2DP)
@@ -185,10 +181,6 @@ struct Args {
     restart_on_link: bool,
     /// --wait-off: headphones turned off do not end the run
     wait_off: bool,
-    /// --headset-mic: the headphones' microphone (LE Audio: conversational)
-    headset_mic: bool,
-    /// --mic-output: a ".wav" file or a render device name
-    mic_output: Option<String>,
     le: LeArgs,
 }
 
@@ -274,8 +266,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
         restart: false,
         restart_on_link: false,
         wait_off: false,
-        headset_mic: false,
-        mic_output: None,
         le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
@@ -391,8 +381,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--restart" => a.restart = true,
             "--restart-on-link" => a.restart_on_link = true,
             "--wait-off" => a.wait_off = true,
-            "--headset-mic" => a.headset_mic = true,
-            "--mic-output" => a.mic_output = Some(value(&mut it, "--mic-output")?),
             "--le-audio" => a.le.on = true,
             "--le-device" => {
                 a.le.on = true;
