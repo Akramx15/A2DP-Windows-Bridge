@@ -346,6 +346,7 @@ dependencies = [
  "time",
  "tracing",
  "ureq",
+ "voice-link",
  "win-sys",
  "windows",
 ]

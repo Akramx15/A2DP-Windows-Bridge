@@ -1591,7 +1591,8 @@ impl BtHost {
     /// What [`BtHost::voice_start`] would answer now, without opening
     /// anything: Ok when the audio connection can be asked for
     pub fn voice_check(&self) -> Result<(), HostError> {
-        self.call(JOB_TIMEOUT, |app, _| app.voice.check(app.setup.voice, app.hfp_acl)).unwrap_or(Err(HostError::NoAnswer))
+        self.call(JOB_TIMEOUT, |app, _| app.voice.check(app.setup.voice, app.hfp_acl))
+            .unwrap_or(Err(HostError::NoAnswer))
     }
 
     /// Takes over an audio connection the headphones opened themselves

@@ -234,6 +234,18 @@ pub enum ServiceEvent {
     OtherDeviceBack([u8; 6]),
     /// A firmware loader's step, percent or end while the adapter starts
     Loader(bt_host::bringup::LoaderProgress),
+    /// Headset mode: the voice link carries audio (Some), or no longer
+    /// (None)
+    Voice(Option<ipc::VoiceStatus>),
+}
+
+/// Headset mode switched on or off for the running classic stream
+/// ([`Service::set_headset_mic`])
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceChange {
+    pub on: bool,
+    /// As [`StreamRequest::mic_output`]
+    pub mic_output: Option<String>,
 }
 
 pub struct ServiceOptions {
@@ -286,6 +298,13 @@ pub(crate) struct Inner {
     le_cli: Mutex<Option<LeCliOptions>>,
     /// The developer CLI's --voice-probe: stacks offer HFP audio
     voice_probe: AtomicBool,
+    /// The session asks for headset mode (its request's `headset_mic`):
+    /// stacks offer HFP audio
+    voice_wanted: AtomicBool,
+    /// Headset mode switched for the running session's next tick
+    voice_change: Mutex<Option<VoiceChange>>,
+    /// The HFP audio connection's events, for the session
+    voice_events: Mutex<Vec<bt_host::VoiceEvent>>,
     /// The running stack was started with LE Audio
     le_active: AtomicBool,
     /// A device scan runs
@@ -322,6 +341,20 @@ impl Inner {
 
     pub fn take_bitpool_change(&self) -> Option<stream::Bitpools> {
         self.bitpool_change.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    pub fn take_voice_change(&self) -> Option<VoiceChange> {
+        self.voice_change.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    /// The HFP audio connection's events since the last call, oldest first
+    pub fn take_voice_events(&self) -> Vec<bt_host::VoiceEvent> {
+        std::mem::take(&mut *self.voice_events.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// Headset mode's voice link carries audio (Some) or no longer
+    pub fn voice_status(&self, status: Option<ipc::VoiceStatus>) {
+        let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::Voice(status));
     }
 
     /// The session waits for headphones that were turned off
@@ -415,8 +448,9 @@ impl Inner {
         let cli = self.le_cli.lock().unwrap_or_else(|e| e.into_inner()).clone();
         c.le_audio = le_config(le_on, cli.as_ref(), &self.opts);
         c.battery = true;
-        // Headset microphone: only the developer CLI's --voice-probe for now
-        c.voice = self.voice_probe.load(Ordering::Acquire);
+        // Headset microphone: the session's request, or the developer
+        // CLI's --voice-probe
+        c.voice = self.voice_wanted.load(Ordering::Acquire) || self.voice_probe.load(Ordering::Acquire);
         // The computer's name, as Windows' own Bluetooth (issue #86)
         c.local_name = bt_host::local_name(&win_sys::computer::computer_name().unwrap_or_default());
         // The Adapters screen shows a loader's progress while the adapter
@@ -564,9 +598,13 @@ impl Inner {
                     HostEvent::ConnectionLost | HostEvent::TransportFailed => {
                         tracing::debug!("host event: {e:?}");
                     }
-                    // The headset microphone (W3 wires the session to it)
+                    // The headset microphone: the session acts on it
                     HostEvent::Voice(v) => {
                         tracing::debug!("host event: voice {v:?}");
+                        if let Some(inner) = weak.upgrade() {
+                            inner.voice_events.lock().unwrap_or_else(|e| e.into_inner()).push(v);
+                            inner.tick.1.notify_all();
+                        }
                     }
                 }
             }
@@ -593,6 +631,8 @@ impl Inner {
                 } else {
                     "LE Audio (experimental) was turned off"
                 })
+            } else if self.voice_wanted.load(Ordering::Acquire) && !h.voice_enabled() {
+                Some("headset mode needs the stack with voice")
             } else if !h.controller_responds(CONTROLLER_PROBE) {
                 Some("the Bluetooth adapter stopped answering")
             } else {
@@ -902,6 +942,9 @@ impl Service {
             reload: AtomicBool::new(false),
             le_cli: Mutex::new(None),
             voice_probe: AtomicBool::new(false),
+            voice_wanted: AtomicBool::new(false),
+            voice_change: Mutex::new(None),
+            voice_events: Mutex::new(Vec::new()),
             le_active: AtomicBool::new(false),
             scanning: AtomicBool::new(false),
             le_stream: Mutex::new(None),
@@ -1089,6 +1132,34 @@ impl Service {
             _ => return false,
         }
         *self.inner.source_change.lock().unwrap_or_else(|e| e.into_inner()) = Some(source);
+        self.inner.tick.1.notify_all();
+        true
+    }
+
+    /// Headset mode on or off for the classic stream running, the link kept
+    /// (the session's next tick). False when none streams, LE Audio runs,
+    /// or the stack was started without voice (on): the caller starts the
+    /// stream again instead.
+    pub fn set_headset_mic(&self, on: bool, mic_output: Option<String>) -> bool {
+        let Ok(_control) = self.control.try_lock() else { return false };
+        if !self.is_running() || self.state() != StreamState::Streaming {
+            return false;
+        }
+        if on && !self.host().is_some_and(|h| h.voice_enabled()) {
+            tracing::debug!("headset mode: the stack has no voice, starting the stream again");
+            return false;
+        }
+        match self.last_request.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            Some(req) if req.le.is_none() => {
+                req.headset_mic = on;
+                req.mic_output = mic_output.clone();
+            }
+            _ => return false,
+        }
+        if on {
+            self.inner.voice_wanted.store(true, Ordering::Release);
+        }
+        *self.inner.voice_change.lock().unwrap_or_else(|e| e.into_inner()) = Some(VoiceChange { on, mic_output });
         self.inner.tick.1.notify_all();
         true
     }
@@ -1295,6 +1366,10 @@ impl Service {
         // that ended before it took it
         self.inner.take_source_change();
         self.inner.take_bitpool_change();
+        self.inner.take_voice_change();
+        self.inner.take_voice_events();
+        // Before the stack starts: one that offers HFP audio
+        self.inner.voice_wanted.store(req.headset_mic && req.le.is_none(), Ordering::Release);
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.turned_off.store(false, Ordering::Release);
         self.inner.stop.store(false, Ordering::Release);

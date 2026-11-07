@@ -956,5 +956,7 @@
   "codec.cvsd": "CVSD",
   "codec.msbc": "mSBC",
   "codec.lc3_swb": "LC3-SWB",
-  "error.headset_mic_loop": "La sortie du micro est le périphérique dont le son part vers le casque. Choisissez une autre sortie du micro dans Codecs."
+  "error.headset_mic_loop": "La sortie du micro est le périphérique dont le son part vers le casque. Choisissez une autre sortie du micro dans Codecs.",
+  "status.headset_mic_failed": "Le casque n'a pas ouvert son micro. La lecture continue comme avant.",
+  "status.headset_mic_output_failed": "Impossible d'ouvrir la sortie du micro. La lecture continue comme avant."
 }

@@ -956,5 +956,7 @@
   "codec.cvsd": "CVSD",
   "codec.msbc": "mSBC",
   "codec.lc3_swb": "LC3-SWB",
-  "error.headset_mic_loop": "麥克風輸出與正在向耳機傳送聲音的裝置相同。請在「編解碼器」中選擇其他麥克風輸出。"
+  "error.headset_mic_loop": "麥克風輸出與正在向耳機傳送聲音的裝置相同。請在「編解碼器」中選擇其他麥克風輸出。",
+  "status.headset_mic_failed": "耳機沒有開啟麥克風。播放照常繼續。",
+  "status.headset_mic_output_failed": "無法開啟麥克風輸出。播放照常繼續。"
 }

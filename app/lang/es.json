@@ -956,5 +956,7 @@
   "codec.cvsd": "CVSD",
   "codec.msbc": "mSBC",
   "codec.lc3_swb": "LC3-SWB",
-  "error.headset_mic_loop": "La salida del micrófono es el dispositivo cuyo sonido va a los auriculares. Elige otra salida del micrófono en Códecs."
+  "error.headset_mic_loop": "La salida del micrófono es el dispositivo cuyo sonido va a los auriculares. Elige otra salida del micrófono en Códecs.",
+  "status.headset_mic_failed": "Los auriculares no abrieron su micrófono. La reproducción sigue como antes.",
+  "status.headset_mic_output_failed": "No se puede abrir la salida del micrófono. La reproducción sigue como antes."
 }
