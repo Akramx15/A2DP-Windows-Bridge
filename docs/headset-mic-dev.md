@@ -206,6 +206,21 @@ small adapter around the `PcmProducer`).
 `btstack_config.h` has `ENABLE_SCO_OVER_HCI`, `ENABLE_HFP_WIDE_BAND_SPEECH`,
 `ENABLE_HFP_SUPER_WIDE_BAND_SPEECH`.
 
+`ENABLE_SCO_OVER_HCI` is not inert: BTstack's HCI init then sends Write
+Synchronous Flow Control Enable and Write Default Erroneous Data Reporting to
+every controller that lists them (hci.c, the init step
+`HCI_INIT_WRITE_SYNCHRONOUS_FLOW_CONTROL_ENABLE` and the one after it), and
+BCM Write SCO PCM Int (SCO routed
+over HCI) to Broadcom controllers. BTstack has no switch for it at run time.
+**SCO hidden** (`btstack-sys/src/transport.rs`, the default of every run):
+the transport clears those two supported-commands bits (octet 10 bit 4,
+octet 18 bit 3) in the controller's Read Local Supported Commands answer
+before BTstack sees it, as LE hidden does for LE, so a stack without voice
+initializes as before the feature. `Stack::set_sco_hidden(false)` (bt-host,
+before HCI init, when `HostConfig::voice`) shows them. extern/btstack is not
+patched. The Broadcom command depends only on the manufacturer and is still
+sent (see the hardware checklist).
+
 `HciBackend` (`btstack-sys/src/transport.rs`):
 
 ```rust
@@ -215,7 +230,16 @@ fn set_sco_config(&mut self, voice_setting: u16, connections: u8) {}
 /// An "H2" (USB isochronous) transport: BTstack then sizes SCO payloads to
 /// 3 ms of audio and uses the transport's HCI_EVENT_SCO_CAN_SEND_NOW.
 fn is_h2(&self) -> bool { false }
+/// SCO data can flow now (USB: interface 1 claimed and its pipes run);
+/// read when an audio connection comes up, after set_sco_config
+fn sco_ready(&self) -> bool { true }
 ```
+
+USB is an H2 transport **only when the stack offers voice**:
+`UsbTransport::with_sco(HostConfig::voice)` (bt-host `backend()`); without
+it interface 1 is not claimed and the backend is a plain async one, as
+before the feature. `Stack::transport_is_h2()`, `Stack::sco_ready()` expose
+both to bt-host.
 
 shim.c keeps `transport_sync` / `transport_async` for non-H2 backends and adds
 `transport_h2` (`"H2_BLUECASTER"`), chosen by `is_h2()` at install; it
@@ -263,11 +287,42 @@ pub enum HostError { NotEnabled, NotConnected, Busy, Refused(u8), NoAnswer }
 
 `voice_start` fails with `NotConnected` until the service level connection
 is up (callers retry), `NotEnabled` without `HostConfig::voice`, `Busy`
-while the headphones' own audio connection is open. `VoiceTx::fill` gets
-`sco_packet_length - 3` bytes on every SCO can-send-now (TCP / emulator: 60;
-USB H2: 48 / 24), `VoiceRx::packet` every received payload. `Released` comes
-after `voice_stop`, a release by the headphones, or the service level
-connection going down.
+while the headphones' own audio connection is open, `Refused(0xFF)`
+(`NO_SCO_PATH`) when the controller cannot carry SCO over the transport
+(below). `VoiceTx::fill` gets `sco_packet_length - 3` bytes on every SCO
+can-send-now (TCP / emulator: 60; USB H2: 48 / 24), `VoiceRx::packet` every
+received payload. `Released` comes after `voice_stop`, a release by the
+headphones, the SCO link's HCI Disconnection Complete, or the service level
+connection going down (once: whichever comes first).
+
+**The SCO path is checked before BTstack sizes a packet.** On an H2
+transport `hci_get_sco_packet_length_for_connection` asserts that the
+controller's SCO data packet length holds 3 ms of audio (24 samples × 2
+bytes for 16-bit CVSD = 48, 24 for transparent mSBC / LC3-SWB), and
+`HAVE_ASSERT` aborts the process. bt-host reads the length from the Read
+Buffer Size answer (`btstack_sys::events::read_buffer_size`, seen by
+`HostApp::handle_hci` during HCI init; the emulator reports 60 × 8) and
+`voice::sco_fits(h2, codec, len)` decides:
+
+- `voice_start` / `voice_check`: `Refused(NO_SCO_PATH)` when no codec fits
+  (length below 24, 0, or Read Buffer Size not seen) on H2; HeadsetMode
+  gives up with `status.headset_mic_failed`.
+- `Established` of ours: when the negotiated codec does not fit, or
+  `sco_ready()` is false (the pipes did not start), the audio connection is
+  released and `Failed { status: NO_SCO_PATH }` sent; `sco_packet_length`
+  and `sco_send` are never called for it.
+- `Established` of the headphones' own: reported as before but marked not
+  usable: nothing is sent, `voice_attach` answers `Refused`.
+- Ten failed `sco_send`s in a row (or a packet length of 3 or less):
+  `Failed { status }` once and no more can-send-now requests; the caller
+  closes it (HeadsetMode: back to A2DP).
+- `voice_stop` whose release BTstack refuses (status != 0): no RELEASED
+  would follow, so the state is cleared and `Released` sent at once (also
+  for the release on the A2DP signaling release).
+
+Not covered: the USB SCO thread stopping later (unplug, I/O errors) stops
+the transport's send tokens without a failed send; the link then stays
+silent until it is switched off or the adapter fails as a whole.
 
 ## LE Audio source ASEs (crates `le-audio`, `bt-host/src/le`, `pipeline`, core `le_stream.rs`)
 
@@ -318,9 +373,12 @@ Compile-tested only. `UsbTransport` is an H2 transport and ports BTstack's
   setting 0 is selected;
 - the WinUSB calls are in `win-sys/src/usb_isoch.rs`; their OVERLAPPEDs set
   the low bit of `hEvent`, so nusb's completion port never sees them;
-- every USB adapter is H2 (`is_h2` is read at install, before open): without
-  a claimable interface 1, SCO is refused (`can_send`) and dropped (`send`,
-  still reported as sent so BTstack's buffer is freed);
+- only a stack with voice gets an H2 USB transport (`with_sco`; `is_h2` is
+  read at install, before open) and claims interface 1; without a
+  claimable interface 1, SCO is refused (`can_send`) and dropped (`send`,
+  still reported as sent so BTstack's buffer is freed), and `sco_ready()`
+  is false, so bt-host gives the audio connection up at Established
+  instead of letting it stall without send tokens;
 - high speed adapters: one packet per 2^(bInterval-1) microframes, rounded
   to whole 1 ms frames (bInterval 1: 24 packets per 3 ms read); full speed
   (most adapters): 3 packets per read; unknown speed counts as full speed.
@@ -359,13 +417,15 @@ for both speeds.
   `ServiceEvent::Voice(Option<ipc::VoiceStatus>)`; `on_service_event` sets
   `StreamStatus.voice` from it.
 - On (each tick of a link that is fine, until it works or is given up):
-  resolve the output; refuse with `error.headset_mic_loop` (a Streaming
-  status message, the stream goes on) when `mic_conflict` says so;
-  `host.voice_check()`: NotConnected is retried for up to 20 s (the service
-  level connection comes after A2DP), Busy waits for the headphones' own
-  Established; then stop the capture and the encode thread,
-  `host.stop_stream()` (AVDTP Suspend, link kept), `host.voice_start(tx,
-  rx)`.
+  `host.voice_check()` first: NotConnected is retried for up to 20 s (the
+  service level connection comes after A2DP), Busy waits for the headphones'
+  own Established, anything else (NotEnabled, Refused: no SCO path) gives
+  up with `status.headset_mic_failed`; only then resolve the output (a
+  device enumeration, not on every tick of the wait) and refuse with
+  `error.headset_mic_loop` (a Streaming status message, the stream goes
+  on) when `mic_conflict` says so; then stop the capture and the encode
+  thread, `host.stop_stream()` (AVDTP Suspend, link kept),
+  `host.voice_start(tx, rx)`.
 - tx / rx are shells around `Arc<Mutex<Option<..>>>` slots: silence /
   dropped packets until armed. On `Established{codec}` the session thread
   opens the `MicOutput` at the codec rate, a capture of the current source
@@ -373,8 +433,10 @@ for both speeds.
   installs encoder + uplink and decoder + producer under the lock. The
   BTstack thread only `try_lock`s (contended only while arming / disarming:
   one packet of silence), and the armed path allocates nothing.
-- Off, `Released`, `Failed`, no Established within 10 s, the render device
-  ending, an output that does not open: `voice_stop` (when asked for),
+- Off, `Released`, `Failed` (before Established: bt-host closed it
+  already; after Established, SCO stopped flowing: `voice_stop`), no
+  Established within 10 s, the render device ending, an output that does
+  not open: `voice_stop` (when asked for),
   disarm, then `host.start_stream()` + a fresh encoder and pipeline + the
   A2DP capture again (`A2dpSide::resume`, the steps a reconnect takes). A
   resume that fails ends the session with its error. Failures give
@@ -383,9 +445,17 @@ for both speeds.
 - Released by the headphones while on: back to A2DP and the request is
   cleared (as if switched off), so a headset that hangs up is not reopened
   in a loop; saving the setting again or a new stream opens it again.
-- The headphones open the audio connection themselves: with headset mode
-  on (and no conflict) it is taken over (`voice_attach`) and armed;
-  otherwise `voice_stop` closes it.
+- The headphones open the audio connection themselves (a voice assistant
+  or call button): with headset mode on (and no conflict) it is taken over
+  (`voice_attach`) and armed. Otherwise the decision depends on the stack:
+  - started **with voice** (developer headset mode, `host.voice_enabled()`):
+    `voice_stop` closes it, as nothing would carry it;
+  - started **without voice** (every user outside developer mode, and a
+    developer with headset mode off): it is **left alone** and logged once
+    per session ("no headset mode, left alone"). Before this branch BTstack
+    accepted such links and BlueCaster ignored them; closing them would
+    break the headphones' own button for every user. Without voice the
+    transport is not H2, so BTstack's SCO length assert cannot fire for it.
 - Link loss while on: the voice link is dropped, the A2DP capture started
   again and the normal reconnect builds the pipeline; headset mode stays
   requested, so the reconnected stream opens the voice link again (stale
@@ -393,7 +463,20 @@ for both speeds.
   no resume.
 - While on, a source change restarts only the uplink capture, a bitpool
   change only updates the encoder config A2DP resumes with, and the A2DP
-  capture's reopen / app-attach logic is paused.
+  capture's reopen / app-attach logic is paused. An Application source
+  that was not running when the link came up, or exited since (its process
+  gone or the capture ended), is looked for at most once a second
+  (`app_recheck_due`) and the uplink captures it again once it runs
+  (silence until then; a process whose capture failed is not retried).
+- `Service::set_headset_mic` waits for the service's `control` lock (a
+  short holder, such as another in-place change, no longer turns the save
+  into a profile restart); without a stream streaming it answers false at
+  once, so a start or stop under way, which holds `control` until the old
+  session ended, is waited for only when it begins between that check and
+  the lock (the session thread itself never takes `control`, so there is
+  no deadlock with it). Off clears `voice_wanted`: the running
+  stack keeps offering voice (`ensure_host` restarts only when voice is
+  wanted and missing), a stack started later goes without it.
 - Logs: "voice: ..." (switching, codec, "A2DP suspended / resumed", a 10 s
   summary, "voice: <codec> link down after N s: ..."), plus voice-link's
   own summaries.
@@ -428,10 +511,17 @@ tone back (mSBC / LC3-SWB: four frames of it from BlueCaster's own encoders,
 emu_voice_frames`, checked by `voice-link/tests/emu_frames.rs`).
 
 - BTstack's non-H2 SCO path on TCP: the emulated controller lists Write
-  Synchronous Flow Control Enable, BTstack turns it on and counts its 8 SCO
-  buffers by Number Of Completed Packets, which the controller sends as it
-  carries each packet in its 7.5 ms interval. Packets per second each way:
-  267 (CVSD), 133 (mSBC, LC3-SWB).
+  Synchronous Flow Control Enable (`hfp_audio.py` would turn it on and send
+  Number Of Completed Packets per SCO packet), but its features say "no
+  BR/EDR" (octet 4 bit 5, Bumble's default), so `hci_classic_supported()`
+  is false during HCI init and BTstack skips its classic init steps, the
+  SCO commands included (the HCI captures have no 0x0C2F / 0x0C5B with or
+  without voice). BTstack then paces SCO by the packets it receives
+  (`sco_tx_ready`), which the controller sends in its 7.5 ms interval.
+  Packets per second each way: 267 (CVSD), 133 (mSBC, LC3-SWB). The
+  emulator therefore cannot show the SCO init commands; its captures do
+  show SCO hidden at work (octet 10 of Read Local Supported Commands as
+  BTstack saw it: 0xF4 with voice, 0xE4 without).
 - eSCO only on the bus; Synchronous Connection Complete reports interval
   12 slots, window 2, 60-byte packets. BTstack picks S4 (CVSD) and T2
   (mSBC, LC3-SWB).
@@ -479,9 +569,36 @@ control (a late capture block every 250 ms needs no step after priming).
   `oppo-drop` showed RTP timestamp steps once and passed on their retry);
   `--scan` 2/2; `--link` 8/8.
 
+After the review fixes (H2 only with voice, SCO length check, SCO hidden,
+release / failure paths, the headphones' own link left alone without
+voice), 2026-11-08: `--voice` 4/4 (cvsd ~1568 SCO packets each way, 0 send
+errors; msbc / lc3swb 789 H2 frames in sequence; cvsd-roundtrip A2DP
+resumed, both tones in the last second; "controller buffers: ACL 8 x 1021
+bytes, SCO 8 x 60 bytes" parsed in every run), `--le-audio mic-stereo
+stereo` 2/2, `--codecs sbc` 1/1, `--link` 8/8. `cargo test --workspace`
+covers the Read Buffer Size parser, `sco_fits` / `check` decisions, the SCO
+link's disconnection, SCO hidden's bits, the uplink's application look-up
+timing and `set_headset_mic` waiting for `control`. None of the new failure
+paths (short SCO buffer, pipes not running, failed sends, refused release)
+can be reached on the emulator.
+
 ## Not verified / hardware checklist
 
 Nothing of this has run on real hardware. To check, in this order:
+
+HCI init (every user, `ENABLE_SCO_OVER_HCI` is compiled in):
+
+0. The user's adapters still initialize and stream A2DP, each **without**
+   developer headset mode (SCO hidden: the init must be the one of
+   3.0.0-beta.3, no Write Synchronous Flow Control Enable / Write Default
+   Erroneous Data Reporting in the HCI capture) and **with** it (both
+   commands sent if listed; a Command Complete with an error is fine, a
+   controller that does not answer stalls init): RTL8761BU, Intel,
+   MediaTek. A Broadcom adapter gets BCM Write SCO PCM Int (0xFC1C) in
+   both cases: check one still initializes. Headphones that open an
+   audio connection themselves (a voice assistant button) with headset mode
+   off: BlueCaster does not close it (logs "left alone" once), the button
+   works as with 3.0.0-beta.3.
 
 USB SCO (`hci-transport/src/usb.rs`):
 
@@ -503,7 +620,10 @@ USB SCO (`hci-transport/src/usb.rs`):
 6. High speed adapters: the read packet counts and especially writes
    (WinUSB may reject writes that are not whole frames).
 7. Unplug during SCO ends the thread cleanly.
-8. BTstack's H2 assert that the controller's SCO buffer length is >= 48.
+8. The controller's SCO buffer length ("controller buffers: ... SCO N x L
+   bytes" debug line): L >= 48 for CVSD, >= 24 for mSBC / LC3-SWB, or
+   headset mode is refused / the link given up (`NO_SCO_PATH`) instead of
+   BTstack's H2 assert aborting the process.
 9. Latency of the 20-slot OUT ring (60 ms); lower `SCO_OUT_SLOTS` if too
    high.
 10. Whether controllers align SCO IN to 3-packet boundaries (how fast the
