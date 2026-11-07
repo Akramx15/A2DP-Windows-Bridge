@@ -44,6 +44,10 @@ use app::{HostApp, Job, Setup};
 pub use btstack_sys::{LeKeys, expect_transport_loss, set_ctkd};
 pub use capture::HciCapture;
 pub use events::{addr_str, parse_addr};
+pub use le::iso_recv::{
+    ISO_STATUS_LOST, ISO_STATUS_POSSIBLY_INVALID, ISO_STATUS_VALID, LeRxHandle, LeRxStats, LeRxStream, MAX_RX_SDU,
+    RxSdu,
+};
 pub use le::{
     LeAddr, LeBroadcast, LeConfig, LeDeviceId, LeDeviceInfo, LeRequest, LeScanResult, LeSduSink, LeStreamRequest,
     LeStreamStarted, LeStreamStats, LeStreamStatus,

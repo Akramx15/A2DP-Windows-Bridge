@@ -84,6 +84,13 @@ LE Audio (experimental, LC3 over LE isochronous channels):
                         encrypt the broadcast with this code (4-16 bytes)
   --auracast-mono       one mono channel instead of left and right
 
+Headset microphone (developer mode):
+  --headset-mic         use the headphones' microphone (LE Audio: the
+                        conversational configuration)
+  --mic-output <path.wav|name>
+                        where the microphone goes: a WAV file, or a render
+                        device by name
+
 Development / testing:
   --hci-tcp <host:port> H4 over TCP to a virtual controller (tools/emu)
   --hci-capture <path>  HCI capture (.pklg) of the whole run
@@ -164,6 +171,10 @@ struct Args {
     restart_on_link: bool,
     /// --wait-off: headphones turned off do not end the run
     wait_off: bool,
+    /// --headset-mic: the headphones' microphone (LE Audio: conversational)
+    headset_mic: bool,
+    /// --mic-output: a ".wav" file or a render device name
+    mic_output: Option<String>,
     le: LeArgs,
 }
 
@@ -246,6 +257,8 @@ fn parse(args: &[String]) -> Result<Args, String> {
         restart: false,
         restart_on_link: false,
         wait_off: false,
+        headset_mic: false,
+        mic_output: None,
         le: LeArgs::default(),
     };
     let mut it = args.iter().peekable();
@@ -350,6 +363,8 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--restart" => a.restart = true,
             "--restart-on-link" => a.restart_on_link = true,
             "--wait-off" => a.wait_off = true,
+            "--headset-mic" => a.headset_mic = true,
+            "--mic-output" => a.mic_output = Some(value(&mut it, "--mic-output")?),
             "--le-audio" => a.le.on = true,
             "--le-device" => {
                 a.le.on = true;
@@ -1092,7 +1107,8 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
         return 1;
     }
 
-    let (request, low_latency, note) = le.request();
+    let (mut request, low_latency, note) = le.request();
+    request.conversational = a.headset_mic;
     host.le_set_low_latency(low_latency);
     if let Some(note) = note {
         println!("{note}");
@@ -1140,6 +1156,21 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
     if audio.is_none() {
         rc = 1;
     }
+    // The headset microphone (--headset-mic)
+    let mut started = started;
+    let mic_output = bluecaster_core::MicOutput::parse(a.mic_output.as_deref());
+    let mut mic_streams = 1;
+    let start_mic = |started: &mut bt_host::LeStreamStarted, n: u32| {
+        let mic = bluecaster_core::start_mic(started, &mic_output, n);
+        if let Some(m) = &mic {
+            println!("Microphone: LC3 at {} Hz -> {}", m.rate(), mic_output_text(&mic_output));
+        } else if a.headset_mic {
+            let note = &started.status.plan.source_note;
+            println!("Microphone: none in the stream ({})", if note.is_empty() { "not set up" } else { note });
+        }
+        mic
+    };
+    let mut mic = start_mic(&mut started, mic_streams);
 
     // Test only: the headset volume synced with a simulated Windows volume
     let mut sim_volume = None;
@@ -1178,6 +1209,10 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
                 p.stop();
             }
             host.le_stop_stream();
+            // After the stream stopped: what arrived until then is decoded
+            if let Some(m) = mic.take() {
+                m.stop();
+            }
             let mut again = None;
             while again.is_none() && restarts < LE_RESTORE_ATTEMPTS && is_running() {
                 restarts += 1;
@@ -1192,13 +1227,15 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
                     }
                 }
             }
-            let Some(started) = again else {
+            let Some(mut started) = again else {
                 eprintln!("LE Audio: could not restore the stream");
                 rc = 1;
                 break;
             };
             println!("*** LE Audio stream restored: {} ***", started.status.summary);
             audio = start_audio(&started);
+            mic_streams += 1;
+            mic = start_mic(&mut started, mic_streams);
             if audio.is_none() {
                 rc = 1;
             }
@@ -1212,10 +1249,25 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
     std::thread::sleep(Duration::from_millis(100));
     le_print_stats(&host);
     host.le_stop_stream();
+    // After the stream stopped (Disable ends the receiving): every SDU that
+    // arrived is decoded
+    if let Some(m) = mic.take() {
+        let c = m.stop();
+        println!("{}", c.message());
+    }
     host.le_disconnect_all();
     service.shutdown();
     println!("Done.");
     rc
+}
+
+/// The --mic-output of the console line
+fn mic_output_text(o: &bluecaster_core::MicOutput) -> String {
+    match o {
+        bluecaster_core::MicOutput::Wav(p) => p.display().to_string(),
+        bluecaster_core::MicOutput::Device(name) => format!("\"{name}\" (not supported yet: counted only)"),
+        bluecaster_core::MicOutput::None => "counted only (no --mic-output)".into(),
+    }
 }
 
 /// v1's listing of the Windows-paired devices (BtDeviceDiscovery::
@@ -1360,6 +1412,13 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(a.le.ccp_sim.as_deref(), Some("1:incoming tel:+1555|Alice|tel:+1666;4:hangup"));
+        assert!(!a.headset_mic && a.mic_output.is_none());
+
+        // The headset microphone (run_test.py's mic-* cases)
+        let a = parse(&args("--cli --le-audio -d 00:A2:D0:00:00:12 --headset-mic --mic-output out\\mic.wav")).unwrap();
+        assert!(a.le.on && a.headset_mic);
+        assert_eq!(a.mic_output.as_deref(), Some("out\\mic.wav"));
+        assert_eq!(parse(&args("--cli --mic-output")).err().as_deref(), Some("--mic-output needs a value"));
 
         assert_eq!(parse(&args("--cli --le-device")).err().as_deref(), Some("--le-device needs a value"));
         assert_eq!(parse(&args("--cli --le-preset")).err().as_deref(), Some("--le-preset needs a value"));

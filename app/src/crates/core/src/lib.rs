@@ -22,8 +22,8 @@ pub mod stream;
 pub mod vendor;
 
 pub use le_stream::{
-    BROADCAST_PRESET_HQ, BROADCAST_PRESET_SQ, LeAudioPath, LeStreamDetails, broadcast_config, le_silence_set,
-    le_stats_line,
+    BROADCAST_PRESET_HQ, BROADCAST_PRESET_SQ, LeAudioPath, LeMicPath, LeStreamDetails, MicOutput, broadcast_config,
+    le_silence_set, le_stats_line, start_mic,
 };
 pub use messages::Msg;
 pub use service::{LeCliOptions, ScannedDevice, Service, ServiceEvent, ServiceOptions};

@@ -2336,6 +2336,13 @@ impl App for HostApp {
             self.voice.on_sco(stack, packet_type, packet);
             return;
         }
+        // LE Audio's ISO data (a headset microphone) as well as its events
+        if source == Source::Iso {
+            if let Some(le) = self.le.as_mut() {
+                le.on_iso(stack, packet_type, packet);
+            }
+            return;
+        }
         if packet_type != HCI_EVENT_PACKET {
             return;
         }
@@ -2377,11 +2384,7 @@ impl App for HostApp {
                     le.on_att_event(packet);
                 }
             }
-            Source::Iso => {
-                if let Some(le) = self.le.as_mut() {
-                    le.on_iso(stack, packet);
-                }
-            }
+            Source::Iso => {}
         }
     }
 
