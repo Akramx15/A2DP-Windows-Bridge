@@ -41,6 +41,13 @@
 #define HCI_ACL_PAYLOAD_SIZE (1691 + 4)
 #define HCI_INCOMING_PRE_BUFFER_SIZE 14
 
+/* HFP audio (headset microphone, developer mode): SCO data over HCI (the H4
+ * transport, or USB isochronous on interface 1), mSBC and LC3-SWB. Inert
+ * unless the HFP audio gateway offers them (Stack::hfp_ag_init(true)). */
+#define ENABLE_SCO_OVER_HCI
+#define ENABLE_HFP_WIDE_BAND_SPEECH
+#define ENABLE_HFP_SUPER_WIDE_BAND_SPEECH
+
 /* Link key storage for paired devices */
 #define NVM_NUM_DEVICE_DB_ENTRIES  16
 #define NVM_NUM_LINK_KEYS          16
