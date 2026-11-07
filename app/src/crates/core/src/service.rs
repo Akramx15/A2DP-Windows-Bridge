@@ -284,6 +284,8 @@ pub(crate) struct Inner {
     reload: AtomicBool,
     /// LE Audio forced on by the command line
     le_cli: Mutex<Option<LeCliOptions>>,
+    /// The developer CLI's --voice-probe: stacks offer HFP audio
+    voice_probe: AtomicBool,
     /// The running stack was started with LE Audio
     le_active: AtomicBool,
     /// A device scan runs
@@ -413,6 +415,8 @@ impl Inner {
         let cli = self.le_cli.lock().unwrap_or_else(|e| e.into_inner()).clone();
         c.le_audio = le_config(le_on, cli.as_ref(), &self.opts);
         c.battery = true;
+        // Headset microphone: only the developer CLI's --voice-probe for now
+        c.voice = self.voice_probe.load(Ordering::Acquire);
         // The computer's name, as Windows' own Bluetooth (issue #86)
         c.local_name = bt_host::local_name(&win_sys::computer::computer_name().unwrap_or_default());
         // The Adapters screen shows a loader's progress while the adapter
@@ -559,6 +563,10 @@ impl Inner {
                     }
                     HostEvent::ConnectionLost | HostEvent::TransportFailed => {
                         tracing::debug!("host event: {e:?}");
+                    }
+                    // The headset microphone (W3 wires the session to it)
+                    HostEvent::Voice(v) => {
+                        tracing::debug!("host event: voice {v:?}");
                     }
                 }
             }
@@ -893,6 +901,7 @@ impl Service {
             codecs: Mutex::new(codecs),
             reload: AtomicBool::new(false),
             le_cli: Mutex::new(None),
+            voice_probe: AtomicBool::new(false),
             le_active: AtomicBool::new(false),
             scanning: AtomicBool::new(false),
             le_stream: Mutex::new(None),
@@ -1000,6 +1009,12 @@ impl Service {
                 self.inner.shutdown_host();
             }
         }
+    }
+
+    /// HFP audio for every stack this service starts (the developer CLI's
+    /// --voice-probe; before the first stack starts)
+    pub fn set_voice_probe(&self, on: bool) {
+        self.inner.voice_probe.store(on, Ordering::Release);
     }
 
     /// LE Audio (experimental) for every stack this service starts, whatever

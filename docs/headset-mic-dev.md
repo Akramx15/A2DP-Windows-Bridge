@@ -213,7 +213,7 @@ framing/sync in Rust (`voice_link::h2`).
 ```rust
 /// BTstack's set_sco_config: voice setting and number of SCO connections.
 /// The USB backend starts/stops the isochronous pipes here.
-fn set_sco_config(&self, voice_setting: u16, connections: u8) {}
+fn set_sco_config(&mut self, voice_setting: u16, connections: u8) {}
 /// Whether this backend is an "H2" (USB isochronous) transport: BTstack then
 /// sizes SCO payloads to 3 ms of audio and uses the transport's
 /// HCI_EVENT_SCO_CAN_SEND_NOW. TCP returns false.
@@ -242,6 +242,9 @@ Rust API (`btstack-sys/src/stack.rs`):
 
 ```rust
 impl Stack {
+    /// voice: codec negotiation (LC3-SWB, mSBC, CVSD) and eSCO S4;
+    /// false: the battery-only AG (CVSD, no negotiation)
+    pub fn hfp_ag_init(&self, voice: bool);
     pub fn sco_send(&self, handle: u16, payload: &[u8]) -> u8;
     pub fn sco_request_can_send_now(&self, handle: u16);
     pub fn sco_packet_length(&self, handle: u16) -> u16;
@@ -253,6 +256,68 @@ impl Stack {
 `Source::Sco` packets reach `App::on_packet`: `HCI_SCO_DATA_PACKET` with
 handle (12 bits) + packet status flag (bits 12-13) + length + payload, and
 `HCI_EVENT_SCO_CAN_SEND_NOW`.
+
+`sco_send` copies the payload into HCI's outgoing buffer
+(`hci_reserve_packet_buffer` / `hci_send_sco_packet_buffer`); call it only
+on `HCI_EVENT_SCO_CAN_SEND_NOW`. The SDP record of the voice AG gets its
+wide band speech / LC3-SWB bits although `hfp_ag_create_sdp_record_with_codecs`
+tests the HF's codec negotiation bit (7) instead of the AG's (9): shim.c
+adds bit 7 to the features it passes to the record builder only (bits 5-13
+of the AG features never reach the record).
+
+### USB: state (W1)
+
+Done, compile-tested only. `UsbTransport` is an H2 transport and ports
+BTstack's `platform/windows/hci_transport_h2_winusb.c`:
+
+- interface 1 is claimed through nusb at open (nusb vendored as 0.2.8 plus
+  `Interface::winusb_handle()`, see `app/src/crates/nusb/SOURCE.txt`);
+- `set_sco_config` selects alternate setting 1/2/3 (8-bit voice) or 2/4/5
+  (16-bit) for one to three links and starts a `usb-sco` thread, which keeps
+  8 isochronous reads of 3 ms in flight (`WinUsb_ReadIsochPipeAsap`,
+  continuing the stream) and reassembles the IN byte stream into SCO
+  packets; each outgoing SCO packet is one `WinUsb_WriteIsochPipeAsap`, up to
+  20 queued or in flight (60 ms); `HCI_EVENT_SCO_CAN_SEND_NOW` is handed out
+  while there is room; with no link left the thread stops and alternate
+  setting 0 is selected;
+- the WinUSB calls are in `win-sys/src/usb_isoch.rs`, their OVERLAPPEDs set
+  the low bit of `hEvent`, so nusb's completion port never sees them;
+- every USB adapter is H2 (`is_h2` is read at install, before open): without
+  a claimable interface 1, SCO is refused (`can_send`) and dropped (`send`,
+  still reported as sent so BTstack's buffer is freed);
+- high speed adapters: one packet per 2^(bInterval-1) microframes, rounded
+  to whole 1 ms frames (bInterval 1: 24 packets per 3 ms read); full speed
+  (most adapters): 3 packets per read; unknown speed counts as full speed.
+
+Unit tests: alternate setting choice, packet sizes, SCO reassembly (also
+across failed isochronous packets), send token accounting, packet counts
+for both speeds.
+
+To verify on real hardware:
+
+1. Interface 1 can be claimed (debug line "interface 1 claimed for SCO");
+   adapters whose WinUSB sits on a usbccgp child are unknown.
+2. SetCurrentAlternateSetting(1/2) and RegisterIsochBuffer after it succeed
+   ("USB: SCO on interface 1 alt N" with the pipe sizes); WinUSB's
+   MaximumBytesPerInterval is 9 / 17.
+3. IN: about 333 SCO packets/s per link (the 10 s "USB: SCO last ..." debug
+   line) with the right handle and length (24 bytes transparent, 48 CVSD
+   16-bit), the microphone decodes cleanly; failed isochronous packets and
+   gaps (stream continuation falling back to ASAP).
+4. OUT: a 3+24 / 3+48 byte write takes 3 frames ("USB: SCO out:"), writes
+   complete without ERROR_INVALID_PARAMETER, the headset hears the PC without
+   underruns or overruns, tokens come about every 3 ms.
+5. Link up / down several times, two links (alt 2 to 4), close during SCO:
+   no "did not return" errors, alt 0 selected, the next open works (no
+   error 5).
+6. High speed adapters: the read packet counts and especially writes
+   (WinUSB may reject writes that are not whole frames).
+7. Unplug during SCO ends the thread cleanly.
+8. BTstack's H2 assert that the controller's SCO buffer length is >= 48.
+9. Latency of the 20-slot OUT ring (60 ms); lower `SCO_OUT_SLOTS` if too
+   high.
+10. Whether controllers align SCO IN to 3-packet boundaries (how fast the
+    reassembly recovers after a lost packet).
 
 ## HFP audio (crate `bt-host`, core `stream.rs`)
 
@@ -278,7 +343,29 @@ impl BtHost {
 }
 pub trait VoiceTx: Send { fn fill(&mut self, out: &mut [u8]); }
 pub trait VoiceRx: Send { fn packet(&mut self, payload: &[u8], status: u8); }
+/// bt_host::voice::HostError
+pub enum HostError { NotEnabled, NotConnected, Busy, Refused(u8), NoAnswer }
 ```
+
+State (W1): implemented in `bt-host/src/voice.rs`. `voice_start` fails with
+`NotConnected` until the service level connection is up (callers retry),
+`NotEnabled` without `HostConfig::voice`. `VoiceTx::fill` gets a buffer of
+`sco_packet_length - 3` bytes on every SCO can-send-now (TCP / emulator: 60
+bytes, CVSD 16-bit and transparent alike; USB H2: 48 / 24), `VoiceRx::packet`
+every received payload. `Established` is also reported when the headphones
+open the audio connection themselves; nothing is sent then and
+`voice_start` returns `Busy` while it is open (W3 decides what to do).
+`Released` comes after `voice_stop`, a release by the headphones, or the
+service level connection going down. The core sets `HostConfig::voice` only
+for the developer CLI's `--voice-probe` (`Service::set_voice_probe`); W3
+replaces that with `headset_mic_in_force()`.
+
+`--voice-probe` (`app/src/core/src/voice_probe.rs`, developer CLI, USAGE
+"Development / testing"): once streaming, retries `voice_start` until the
+service level connection is up, sends a 1 kHz 16-bit tone (CVSD only makes
+sense), prints "voice probe: N packets, M bytes, status counts ..." every
+second. A2DP keeps streaming meanwhile (the session takes no part). W3
+removes it with the real voice link.
 
 The session (`crates/core/src/stream.rs`) gets `take_voice_change()`, polled
 in the tick loop like `take_source_change()`. Voice on: stop the capture and
@@ -342,10 +429,47 @@ commands. The snooper writes SCO as PacketLogger 0x08/0x09. `run_test.py
 checks: audio connection established with the expected codec, SCO packets in
 both directions in both captures, no decoder errors in the sink log.
 
+State (W1): `tools/emu/hfp_audio.py` (`HfpEmuController`, `HfSide`).
+
+- BTstack's non-H2 SCO path on TCP: the emulated controller lists Write
+  Synchronous Flow Control Enable, BTstack turns it on and then counts its 8
+  SCO buffers by Number Of Completed Packets, which the controller sends as
+  it carries each packet in its 7.5 ms interval (CVSD 16-bit: 120 HCI bytes
+  per interval = two 60-byte packets, transparent: one). Bumble's host (the
+  HF) does not enable it; it sends paced itself, a full queue drops the
+  oldest. Packets per second each way: 267 (CVSD), 133 (mSBC, LC3-SWB).
+- eSCO only on the bus (`LmpEscoLinkReq` for both setup commands; the link
+  type follows the packet types); Synchronous Connection Complete reports
+  interval 12 slots, window 2, 60-byte packets, air mode CVSD / transparent
+  from the AG's voice setting. BTstack picks S4 (CVSD) and T2 (mSBC,
+  LC3-SWB).
+- The `cvsd` HF has no codec negotiation (CVSD without `+BCS`), `msbc` offers
+  CVSD + mSBC, `lc3swb` CVSD + mSBC + LC3-SWB. It accepts with Bumble's
+  `ESCO_PARAMETERS` S4 / T2. It sends a 1.5 kHz 16-bit tone (cvsd) or an H2
+  header + zero frame (others, not decodable), checks the 1 kHz tone of
+  `--voice-probe` with a Goertzel ratio (cvsd) and prints
+  "HFP rx: N packets ... tone ok 1000 Hz ratio R | tx: M packets" every second.
+- `run_test.py --voice` (base port + 400) runs `--voice-probe`, not
+  `--headset-mic` (W3 switches it when the session drives the voice link),
+  and checks the codec in bluecaster.log ("HFP: audio connection
+  established, codec X") and sink.log ("codec negotiated"), SCO out / in
+  in both captures (at least a second's worth each), the probe received
+  packets, the sink received packets, and for cvsd the tone verdict. No
+  decoder runs on the voice payloads yet (W2's `voice_link` would be the
+  place; the emulator's mSBC / LC3-SWB frames are dummies).
+
+Verified on the emulator (2026-11-08): `--voice cvsd msbc lc3swb` pass (cvsd:
+tone ratio 1.000, ~1540 SCO packets each way in 6 s; msbc / lc3swb: ~770),
+`--codecs sbc` and `--le-audio stereo two-ase` still pass.
+
 ## Open questions / risks
 
 - WinUSB isochronous on real adapters (full vs high speed, alt setting 6 on
-  Intel/Realtek) is unverified; the emulator covers only the TCP transport.
+  Intel/Realtek) is unverified; the emulator covers only the TCP transport
+  (see "USB: state (W1)" for the list).
+- The HFP AG with voice on real headphones is untested: codec negotiation,
+  eSCO S4 / T2 acceptance, mSBC / LC3-SWB fallback to CVSD
+  (`sco_for_msbc_failed`).
 - Opening HFP audio without a call: some headphones may refuse or show a call
   UI. The AG uses `hfp_ag_establish_audio_connection` with no call state.
 - Feedback loop: the microphone render device must never be the capture

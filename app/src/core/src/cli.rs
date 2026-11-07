@@ -93,6 +93,10 @@ Development / testing:
                         Disconnect / Connect in the app (A2DP)
   --wait-off            headphones turned off: wait for them, as the app does
   --services            once streaming, list the services the device gives in SDP
+  --voice-probe         probe of the HFP audio connection (emulator): once
+                        streaming, opens it and sends a 1 kHz tone (CVSD),
+                        counts the packets that come back; not the headset
+                        microphone
   --restart-on-link     start the session again as soon as its link is up, as
                         a setting changed while connecting does
   --restart             with --sessions: between sessions restart Bluetooth
@@ -142,6 +146,8 @@ struct Args {
     probe: bool,
     /// --services: once streaming, the services the device lists in SDP
     services: bool,
+    /// --voice-probe: the HFP audio connection's probe (voice_probe.rs)
+    voice_probe: bool,
     script: Option<PathBuf>,
     allow_writes: bool,
     hci_tcp: Option<String>,
@@ -229,6 +235,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         scan: None,
         probe: false,
         services: false,
+        voice_probe: false,
         script: None,
         allow_writes: false,
         hci_tcp: None,
@@ -327,6 +334,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
             "--probe" => a.probe = true,
             "--services" => a.services = true,
+            "--voice-probe" => a.voice_probe = true,
             "--script" => a.script = Some(value(&mut it, "--script")?.into()),
             "--allow-writes" => a.allow_writes = true,
             "--hci-tcp" => a.hci_tcp = Some(value(&mut it, "--hci-tcp")?),
@@ -433,6 +441,9 @@ pub fn run(args: &[String]) -> i32 {
         },
         tx,
     );
+    if a.voice_probe {
+        service.set_voice_probe(true);
+    }
 
     if a.le.broadcast.is_some() {
         let code = le_broadcast(&a, &service, &rx, &running);
@@ -749,6 +760,11 @@ fn stream_session(
                         streaming_since = Some(Instant::now());
                         if a.services {
                             print_services(service, a.device.as_deref());
+                        }
+                        if a.voice_probe
+                            && let Some(host) = service.host()
+                        {
+                            crate::voice_probe::start(host);
                         }
                     }
                     StreamState::Error => {

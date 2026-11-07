@@ -87,6 +87,9 @@ pub enum Source {
     SdpClient,
     /// Results of [`Stack::sdp_query_services`]
     SdpServices,
+    /// SCO data (HCI_SCO_DATA_PACKET: handle and packet status flag,
+    /// length, payload) and HCI_EVENT_SCO_CAN_SEND_NOW (event packets)
+    Sco,
 }
 
 impl Source {
@@ -105,6 +108,7 @@ impl Source {
             11 => Source::Rfcomm,
             12 => Source::SdpClient,
             13 => Source::SdpServices,
+            14 => Source::Sco,
             _ => Source::Hci,
         }
     }

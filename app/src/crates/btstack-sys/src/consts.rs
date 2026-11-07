@@ -35,6 +35,9 @@ pub const HCI_EVENT_VENDOR_SPECIFIC: u8 = 0xFF;
 // ---- BTstack events ----
 pub const BTSTACK_EVENT_STATE: u8 = 0x60;
 pub const HCI_EVENT_TRANSPORT_PACKET_SENT: u8 = 0x6E;
+/// SCO: a packet can be sent now ([`crate::Stack::sco_request_can_send_now`]);
+/// the H2 transport sends it too, as its send token
+pub const HCI_EVENT_SCO_CAN_SEND_NOW: u8 = 0x6F;
 pub const GAP_EVENT_INQUIRY_RESULT: u8 = 0xDC;
 pub const GAP_EVENT_INQUIRY_COMPLETE: u8 = 0xDD;
 pub const HCI_EVENT_AVDTP_META: u8 = 0xEB;
@@ -42,6 +45,13 @@ pub const HCI_EVENT_AVRCP_META: u8 = 0xEC;
 pub const HCI_EVENT_HFP_META: u8 = 0xE9;
 pub const HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_ESTABLISHED: u8 = 0x01;
 pub const HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_RELEASED: u8 = 0x02;
+/// Format 1H1HB1222: acl handle, status, sco handle, address, negotiated
+/// codec, packet types, rx packet length, tx packet length
+pub const HFP_SUBEVENT_AUDIO_CONNECTION_ESTABLISHED: u8 = 0x03;
+pub const HFP_SUBEVENT_AUDIO_CONNECTION_RELEASED: u8 = 0x04;
+pub const HFP_CODEC_CVSD: u8 = 0x01;
+pub const HFP_CODEC_MSBC: u8 = 0x02;
+pub const HFP_CODEC_LC3_SWB: u8 = 0x03;
 pub const HFP_SUBEVENT_HF_INDICATOR: u8 = 0x27;
 pub const HFP_SUBEVENT_APPLE_BATTERY_LEVEL: u8 = 0x2C;
 /// HF indicator: remaining battery, 0..100

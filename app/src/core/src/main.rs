@@ -18,6 +18,7 @@ mod resident;
 mod rfcomm;
 mod server;
 mod state;
+mod voice_probe;
 mod zip;
 
 fn main() {
