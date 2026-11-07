@@ -37,6 +37,7 @@ mod le;
 mod stack;
 mod timer_resolution;
 mod transport;
+pub mod voice;
 
 pub use att::AttWriteRequest;
 pub use ctkd::{LeKeys, ctkd_enabled, set_ctkd};
