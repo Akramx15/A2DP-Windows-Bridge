@@ -1686,6 +1686,8 @@ impl CoreState {
                 devices_changed = true;
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
+            // Headset mode: the voice link carries audio, or no longer
+            ServiceEvent::Voice(v) => stream.voice = v,
             // The Adapters screen shows the loader while the adapter starts
             ServiceEvent::Loader(p) => {
                 self.publish(Event::Adapter(AdapterState {
@@ -1977,10 +1979,11 @@ impl CoreState {
                 bluecaster_core::diag::quoted(&p.mic_device_name)
             );
         }
-        // TODO(W3): pass headset_mic / mic_device_id into the StreamRequest
-        // (and refuse with p.mic_device_conflicts(<default output id>) as the
-        // status message when the output would feed the capture)
-        let _ = headset_mic;
+        // Classic devices: the session switches to the voice link once
+        // streaming, and refuses (a status message) an output that would
+        // feed the capture (voice.rs); LE Audio: the LE session's
+        req.headset_mic = headset_mic;
+        req.mic_output = headset_mic.then(|| p.mic_device_id.clone());
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -2587,11 +2590,13 @@ impl CoreState {
                             bluecaster_core::diag::quoted(&key),
                             if in_order.headset_mic { "on" } else { "off" }
                         );
-                        // TODO(W3): switch the voice link of the stream in
-                        // place (headset_mic_in_force(in_order.headset_mic),
-                        // in_order.mic_device_id, refused when
-                        // in_order.mic_device_conflicts(..) says so)
-                        true
+                        // The session refuses an output that would feed the
+                        // capture; false (no stream, or a stack without
+                        // voice): it starts again instead
+                        let settings = self.service.settings();
+                        let on =
+                            settings.headset_mic_in_force(in_order.headset_mic) && !in_order.mic_device_id.is_empty();
+                        self.service.set_headset_mic(on, on.then(|| in_order.mic_device_id.clone()))
                     }
                     Some(HeadsetChange::Restart) | None => false,
                 };

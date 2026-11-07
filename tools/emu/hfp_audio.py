@@ -23,9 +23,13 @@ Connection Complete carries no link parameters. HfpEmuController adds that:
 
 HfSide is the HF: Bumble's HfProtocol (the service level connection, codec
 negotiation with the codecs of the case), an HF SDP record, accepting the
-AG's audio connection, and SCO both ways: what arrives is checked (CVSD: a 1
-kHz tone in the 16-bit PCM; others: counted) and a tone (CVSD: 1.5 kHz) or
-fixed frames go back. It prints a summary line every second:
+AG's audio connection, and SCO both ways. What arrives is checked: CVSD, the 1 kHz
+tone in the 16-bit PCM (BlueCaster's test tone mixed to mono: 1 kHz and
+1.5 kHz, or --voice-probe's 1 kHz); mSBC and LC3-SWB, which have no decoder
+here, the H2 headers and their sequence (BlueCaster's encoder output is
+checked in voice-link/tests/emu_frames.rs). What goes back is a 1.5 kHz
+tone: CVSD as 16-bit PCM, mSBC / LC3-SWB as frames encoded by BlueCaster's
+codecs (voice_frames.py). It prints a summary line every second:
 
   HFP rx: <n> packets <bytes> bytes codec <name> tone <verdict> | tx: <n> packets
 """
@@ -44,6 +48,7 @@ from bumble.rfcomm import Server
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from emu_sink import EmuController  # noqa: E402
+import voice_frames  # noqa: E402
 
 log = logging.getLogger('emu_hfp')
 
@@ -307,6 +312,7 @@ CODEC_CASES = {
 }
 CODEC_NAMES = {hfp.AudioCodec.CVSD: 'cvsd', hfp.AudioCodec.MSBC: 'msbc', hfp.AudioCodec.LC3_SWB: 'lc3swb'}
 RX_TONE_HZ = 1000
+H2_SEQUENCE = (0x08, 0x38, 0xC8, 0xF8)
 TX_TONE_HZ = 1500
 CVSD_RATE = 8000
 
@@ -352,6 +358,8 @@ class HfSide:
         self.rx_packets = self.rx_bytes = self.tx_packets = 0
         self.rx_status = collections.Counter()
         self.pcm = []           # CVSD: received 16-bit samples
+        self.h2_good = self.h2_bad = 0   # mSBC / LC3-SWB: packets with / without the next H2 header
+        self.h2_seq = None
         self.sco = None
         self.sender = None
         self.reporter = None
@@ -396,9 +404,18 @@ class HfSide:
         self.rx_packets += 1
         self.rx_bytes += len(packet.data)
         self.rx_status[int(packet.packet_status)] += 1
-        if self.codec == hfp.AudioCodec.CVSD and len(self.pcm) < 10 * CVSD_RATE:
-            data = bytes(packet.data)
-            self.pcm.extend(struct.unpack(f'<{len(data) // 2}h', data[:len(data) // 2 * 2]))
+        data = bytes(packet.data)
+        if self.codec == hfp.AudioCodec.CVSD:
+            if len(self.pcm) < 10 * CVSD_RATE:
+                self.pcm.extend(struct.unpack(f'<{len(data) // 2}h', data[:len(data) // 2 * 2]))
+            return
+        # 60-byte packets, each one H2 frame: header 0x01 + sequence
+        seq = H2_SEQUENCE.index(data[1]) if len(data) >= 2 and data[0] == 0x01 and data[1] in H2_SEQUENCE else None
+        if seq is not None and (self.h2_seq is None or seq == (self.h2_seq + 1) % 4):
+            self.h2_good += 1
+        elif self.h2_good:
+            self.h2_bad += 1    # silence before the encoder runs is not counted
+        self.h2_seq = seq if seq is not None else self.h2_seq
 
     async def send_loop(self, handle):
         """60-byte packets at the link's HCI rate: CVSD 16-bit 16 kB/s (one
@@ -408,9 +425,9 @@ class HfSide:
         period = ESCO_INTERVAL / 2 if cvsd else ESCO_INTERVAL
         phase = 0
         due = loop.time()
-        # mSBC / LC3-SWB: H2 header + a fixed frame (an all-zero frame body;
-        # the AG's side only counts them here)
-        h2 = [b'\x01\x08', b'\x01\x38', b'\x01\xc8', b'\x01\xf8']
+        # mSBC / LC3-SWB: H2 header + a frame of the 1.5 kHz tone (and
+        # mSBC's padding byte)
+        frames = voice_frames.MSBC_FRAMES if self.codec == hfp.AudioCodec.MSBC else voice_frames.LC3_SWB_FRAMES
         seq = 0
         while True:
             if cvsd:
@@ -419,7 +436,7 @@ class HfSide:
                 phase += len(samples)
                 data = struct.pack(f'<{len(samples)}h', *samples)
             else:
-                data = (h2[seq % 4] + bytes(58))[:SCO_PACKET_LENGTH]
+                data = (bytes([0x01, H2_SEQUENCE[seq % 4]]) + frames[seq % 4]).ljust(SCO_PACKET_LENGTH, b'\x00')
                 seq += 1
             self.device.host.send_sco_sdu(handle, data)
             self.tx_packets += 1
@@ -428,12 +445,26 @@ class HfSide:
 
     def verdict(self):
         if self.codec != hfp.AudioCodec.CVSD:
-            return 'n/a'
+            ok = self.h2_good >= 100 and self.h2_bad <= self.h2_good // 50
+            return f'{"ok" if ok else "FAIL"} h2 {self.h2_good} in sequence, {self.h2_bad} not'
         samples = self.pcm[CVSD_RATE // 5:]     # skip the first 200 ms
         if len(samples) < CVSD_RATE // 2:
             return f'pending ({len(samples)} samples)'
-        ratio = goertzel_ratio(samples[:4 * CVSD_RATE], CVSD_RATE, RX_TONE_HZ)
-        return f'{"ok" if ratio > 0.9 else "FAIL"} {RX_TONE_HZ} Hz ratio {ratio:.3f}'
+        # In blocks of 20 ms (whole periods of both tones) over the last 3 s:
+        # the 1 kHz tone, alone or with the test tone's 1.5 kHz, and nothing
+        # else. The sender's drift control repeats a few samples now and
+        # then while its queue settles after the start, which breaks the
+        # phase of a block, not the tone: 90 % of the blocks.
+        block = CVSD_RATE // 50
+        samples = samples[-3 * CVSD_RATE:]
+        blocks = [samples[i:i + block] for i in range(0, len(samples) - block + 1, block)]
+        ratios = [(goertzel_ratio(b, CVSD_RATE, RX_TONE_HZ), goertzel_ratio(b, CVSD_RATE, TX_TONE_HZ)) for b in blocks]
+        good = sum(1 for a, b in ratios if a > 0.4 and a + b > 0.9)
+        ratio = sum(a for a, _ in ratios) / len(ratios)
+        other = sum(b for _, b in ratios) / len(ratios)
+        ok = good >= 0.9 * len(ratios)
+        return (f'{"ok" if ok else "FAIL"} {RX_TONE_HZ} Hz ratio {ratio:.3f} (+{TX_TONE_HZ} Hz {other:.3f}) '
+                f'in {good}/{len(ratios)} blocks')
 
     def report(self):
         status = ' '.join(f'{k}:{v}' for k, v in sorted(self.rx_status.items()))

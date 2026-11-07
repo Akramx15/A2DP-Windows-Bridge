@@ -8,6 +8,8 @@
 //! - [`VoiceEncoder`] / [`VoiceDecoder`]: the HFP voice codecs (CVSD, mSBC,
 //!   LC3-SWB) between PCM and SCO payload bytes, with H2 framing ([`h2`]) and
 //!   packet loss concealment.
+//! - [`WavSink`]: the microphone into a WAV file instead (developer CLI,
+//!   emulator tests).
 //!
 //! The codec primitives are in `btstack-sys` (mSBC, CVSD PLC) and `lc3-sys`;
 //! this crate itself has no `unsafe`.
@@ -20,10 +22,12 @@ pub mod h2;
 mod render;
 mod resample;
 mod uplink;
+mod wav;
 
 pub use codec::{DecoderStats, EncoderStats, VoiceCodec, VoiceDecoder, VoiceEncoder};
 pub use render::{PcmConsumer, PcmProducer, RenderError, RenderStats, Renderer, pcm_channel};
 pub use uplink::{UplinkConsumer, UplinkSink, UplinkStats};
+pub use wav::WavSink;
 
 /// How often the parts log their debug summary
 pub(crate) const SUMMARY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);

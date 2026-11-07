@@ -956,5 +956,7 @@
   "codec.cvsd": "CVSD",
   "codec.msbc": "mSBC",
   "codec.lc3_swb": "LC3-SWB",
-  "error.headset_mic_loop": "マイクの出力先が、ヘッドホンへ音を送っているデバイスと同じです。コーデック画面で別のマイクの出力先を選んでください。"
+  "error.headset_mic_loop": "マイクの出力先が、ヘッドホンへ音を送っているデバイスと同じです。コーデック画面で別のマイクの出力先を選んでください。",
+  "status.headset_mic_failed": "ヘッドホンがマイクを開きませんでした。再生はそのまま続きます。",
+  "status.headset_mic_output_failed": "マイクの出力先を開けません。再生はそのまま続きます。"
 }

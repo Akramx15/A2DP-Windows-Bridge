@@ -434,16 +434,7 @@ impl Profile {
     /// Loopback. Returns the message key, None when there is no loop (or no
     /// output chosen, which the UI notes on its own).
     pub fn mic_device_conflicts(&self, default_output_id: &str) -> Option<&'static str> {
-        let mic = self.mic_device_id.as_str();
-        if mic.is_empty() {
-            return None;
-        }
-        let looped = match self.source() {
-            SourceRequest::VirtualDevice { id, .. } | SourceRequest::OutputDevice { id, .. } => id == mic,
-            SourceRequest::SystemLoopback => !default_output_id.is_empty() && default_output_id == mic,
-            _ => false,
-        };
-        looped.then_some("error.headset_mic_loop")
+        mic_output_conflicts(&self.source(), &self.mic_device_id, default_output_id)
     }
 
     /// What to stream for this profile. An LE Audio (experimental) profile
@@ -512,8 +503,27 @@ impl Profile {
             le: self
                 .le_audio
                 .then(|| bt_host::LeRequest { low_latency: self.le_low_latency, ..bt_host::LeRequest::default() }),
+            // Developer mode only: whoever starts the stream decides
+            // (Settings::headset_mic_in_force)
+            headset_mic: false,
+            mic_output: None,
         })
     }
+}
+
+/// [`Profile::mic_device_conflicts`] for a stream capturing `source` with
+/// the microphone on render endpoint `mic` (the session checks the source
+/// it captures now, which may stand in for the profile's)
+pub fn mic_output_conflicts(source: &SourceRequest, mic: &str, default_output_id: &str) -> Option<&'static str> {
+    if mic.is_empty() {
+        return None;
+    }
+    let looped = match source {
+        SourceRequest::VirtualDevice { id, .. } | SourceRequest::OutputDevice { id, .. } => id == mic,
+        SourceRequest::SystemLoopback => !default_output_id.is_empty() && default_output_id == mic,
+        _ => false,
+    };
+    looped.then_some("error.headset_mic_loop")
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

@@ -103,13 +103,8 @@ impl Voice {
         tx: Box<dyn VoiceTx>,
         rx: Box<dyn VoiceRx>,
     ) -> Result<(), HostError> {
-        if !enabled {
-            return Err(HostError::NotEnabled);
-        }
+        self.check(enabled, acl)?;
         let Some(acl) = acl else { return Err(HostError::NotConnected) };
-        if self.opening.is_some() || self.sco.is_some() {
-            return Err(HostError::Busy);
-        }
         let status = stack.hfp_ag_audio_connect(acl);
         if status != 0 {
             tracing::info!("HFP: audio connection refused by BTstack (0x{status:02x})");
@@ -122,6 +117,34 @@ impl Voice {
         self.sent = 0;
         self.send_errors = 0;
         self.received = 0;
+        Ok(())
+    }
+
+    /// What [`Voice::start`] would answer, opening nothing
+    pub fn check(&self, enabled: bool, acl: Option<u16>) -> Result<(), HostError> {
+        if !enabled {
+            return Err(HostError::NotEnabled);
+        }
+        if acl.is_none() {
+            return Err(HostError::NotConnected);
+        }
+        if self.opening.is_some() || self.sco.is_some() {
+            return Err(HostError::Busy);
+        }
+        Ok(())
+    }
+
+    /// [`crate::BtHost::voice_attach`] on the BTstack thread: an audio
+    /// connection the headphones opened gets its `tx` / `rx`
+    pub fn attach(&mut self, stack: &Stack, tx: Box<dyn VoiceTx>, rx: Box<dyn VoiceRx>) -> Result<(), HostError> {
+        let Some((sco_handle, _)) = self.sco else { return Err(HostError::NotConnected) };
+        if self.tx.is_some() {
+            return Err(HostError::Busy);
+        }
+        tracing::info!("HFP: taking over the audio connection the headphones opened");
+        self.tx = Some(tx);
+        self.rx = Some(rx);
+        stack.sco_request_can_send_now(sco_handle);
         Ok(())
     }
 

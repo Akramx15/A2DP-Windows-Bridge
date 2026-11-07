@@ -15,6 +15,10 @@ pub(crate) enum Adjust {
     Drop(usize),
     /// Repeat a sample this many times (the queue is running low)
     Duplicate(usize),
+    /// Far below the target (more than twice the tolerance, e.g. after the
+    /// consumer's first burst): silence until the prefill is queued again,
+    /// one short gap instead of seconds of repeated samples
+    Reprime,
 }
 
 #[derive(Debug)]
@@ -26,6 +30,11 @@ pub(crate) struct Drift {
     max_step: usize,
     pulled: usize,
     trough: usize,
+    /// The first window after priming: the level is brought to the target
+    /// in one step (where the priming left it depends on when the input's
+    /// blocks came, often at the tolerance's edge, which the slow steps
+    /// would take seconds of repeated samples to leave)
+    fresh: bool,
 }
 
 impl Drift {
@@ -39,7 +48,14 @@ impl Drift {
             max_step: (rate / 2000).max(1),
             pulled: 0,
             trough: usize::MAX,
+            fresh: false,
         }
+    }
+
+    /// Primed (again): a new window, the first one corrects in one step
+    pub fn restart(&mut self) {
+        self.reset();
+        self.fresh = true;
     }
 
     /// Starts a new window (after a re-prime: the old trough says nothing)
@@ -57,9 +73,21 @@ impl Drift {
         }
         let trough = self.trough;
         self.reset();
+        if std::mem::take(&mut self.fresh) && trough + 2 * self.tolerance >= self.target {
+            // To the target, at most a tolerance's worth
+            return if trough > self.target + self.tolerance {
+                Adjust::Drop((trough - self.target).min(self.tolerance))
+            } else if trough + self.tolerance < self.target {
+                Adjust::Duplicate((self.target - trough).min(self.tolerance))
+            } else {
+                Adjust::None
+            };
+        }
         if trough > self.target + self.tolerance {
             let excess = trough - self.target - self.tolerance;
             Adjust::Drop((excess / 2).clamp(1, self.max_step))
+        } else if trough + 2 * self.tolerance < self.target {
+            Adjust::Reprime
         } else if trough + self.tolerance < self.target {
             let short = self.target - self.tolerance - trough;
             Adjust::Duplicate((short / 2).clamp(1, self.max_step))
@@ -80,6 +108,8 @@ pub(crate) struct Pulled {
     pub underrun: bool,
     pub dropped: usize,
     pub duplicated: usize,
+    /// Far below the target: primed again ([`Adjust::Reprime`])
+    pub reprimed: bool,
 }
 
 /// The consumer side of a jittery queue: silence until `prefill` samples
@@ -91,11 +121,14 @@ pub(crate) struct Primed {
     primed: bool,
     drift: Drift,
     last: i16,
+    /// Repeats the drift control asked for beyond one pull (the step after
+    /// priming may be larger than a pull)
+    owed: usize,
 }
 
 impl Primed {
     pub fn new(rate: u32, prefill: usize, tolerance: usize) -> Primed {
-        Primed { prefill, primed: false, drift: Drift::new(rate, prefill, tolerance), last: 0 }
+        Primed { prefill, primed: false, drift: Drift::new(rate, prefill, tolerance), last: 0, owed: 0 }
     }
 
     /// Fills all of `out`
@@ -109,10 +142,15 @@ impl Primed {
                 return r;
             }
             self.primed = true;
-            self.drift.reset();
+            self.owed = 0;
+            self.drift.restart();
         }
         let mut want = out.len();
-        match self.drift.observe(level, out.len()) {
+        let adjust = match self.drift.observe(level, out.len()) {
+            Adjust::None if self.owed > 0 => Adjust::Duplicate(0),
+            a => a,
+        };
+        match adjust {
             Adjust::None => {}
             Adjust::Drop(n) => {
                 let n = n.min(level.saturating_sub(want));
@@ -124,8 +162,18 @@ impl Primed {
                 r.dropped = n;
             }
             Adjust::Duplicate(n) => {
+                let n = n + std::mem::take(&mut self.owed);
                 r.duplicated = n.min(want);
+                self.owed = n - r.duplicated;
                 want -= r.duplicated;
+            }
+            Adjust::Reprime => {
+                self.primed = false;
+                self.owed = 0;
+                out.fill(0);
+                r.zeros = out.len();
+                r.reprimed = true;
+                return r;
             }
         }
         r.got = pop_into(queue, &mut out[..want]);
@@ -138,6 +186,7 @@ impl Primed {
             r.duplicated = 0;
             r.underrun = true;
             self.primed = false;
+            self.owed = 0;
         } else if r.duplicated > 0 {
             out[want..].fill(self.last);
         }
@@ -188,8 +237,27 @@ mod tests {
         let adj: Vec<_> = (0..100).map(|_| d.observe(1200, 120)).filter(|a| *a != Adjust::None).collect();
         assert!(!adj.is_empty() && adj.iter().all(|a| matches!(a, Adjust::Drop(1..=8))), "{adj:?}");
         let mut d = Drift::new(16_000, 640, 160);
-        let adj: Vec<_> = (0..100).map(|_| d.observe(100, 120)).filter(|a| *a != Adjust::None).collect();
+        let adj: Vec<_> = (0..100).map(|_| d.observe(400, 120)).filter(|a| *a != Adjust::None).collect();
         assert!(!adj.is_empty() && adj.iter().all(|a| matches!(a, Adjust::Duplicate(1..=8))), "{adj:?}");
+        // Far below: primed again at once
+        let mut d = Drift::new(16_000, 640, 160);
+        let adj: Vec<_> = (0..100).map(|_| d.observe(100, 120)).filter(|a| *a != Adjust::None).collect();
+        assert!(!adj.is_empty() && adj.iter().all(|a| *a == Adjust::Reprime), "{adj:?}");
+    }
+
+    #[test]
+    fn the_first_window_after_priming_corrects_in_one_step() {
+        // Primed at the tolerance's edge: one repeat of the whole shortfall
+        let mut d = Drift::new(16_000, 640, 160);
+        d.restart();
+        let adj: Vec<_> = (0..30).map(|_| d.observe(400, 120)).filter(|a| *a != Adjust::None).collect();
+        assert_eq!(adj[0], Adjust::Duplicate(160));
+        // Then the slow steps again
+        assert!(adj[1..].iter().all(|a| matches!(a, Adjust::Duplicate(1..=8))), "{adj:?}");
+        // Inside the tolerance: nothing
+        let mut d = Drift::new(16_000, 640, 160);
+        d.restart();
+        assert!((0..30).all(|_| d.observe(560, 120) == Adjust::None));
     }
 
     #[test]

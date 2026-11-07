@@ -956,5 +956,7 @@
   "codec.cvsd": "CVSD",
   "codec.msbc": "mSBC",
   "codec.lc3_swb": "LC3-SWB",
-  "error.headset_mic_loop": "Die Mikrofonausgabe ist das Gerät, dessen Ton an den Kopfhörer geht. Wähle unter Codecs eine andere Mikrofonausgabe."
+  "error.headset_mic_loop": "Die Mikrofonausgabe ist das Gerät, dessen Ton an den Kopfhörer geht. Wähle unter Codecs eine andere Mikrofonausgabe.",
+  "status.headset_mic_failed": "Der Kopfhörer hat sein Mikrofon nicht geöffnet. Die Wiedergabe läuft wie bisher weiter.",
+  "status.headset_mic_output_failed": "Die Mikrofonausgabe lässt sich nicht öffnen. Die Wiedergabe läuft wie bisher weiter."
 }

@@ -956,5 +956,7 @@
   "codec.cvsd": "CVSD",
   "codec.msbc": "mSBC",
   "codec.lc3_swb": "LC3-SWB",
-  "error.headset_mic_loop": "麦克风输出与正在向耳机发送声音的设备相同。请在“编解码器”中选择其他麦克风输出。"
+  "error.headset_mic_loop": "麦克风输出与正在向耳机发送声音的设备相同。请在“编解码器”中选择其他麦克风输出。",
+  "status.headset_mic_failed": "耳机没有打开麦克风。播放照常继续。",
+  "status.headset_mic_output_failed": "无法打开麦克风输出。播放照常继续。"
 }

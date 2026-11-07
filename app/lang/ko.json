@@ -956,5 +956,7 @@
   "codec.cvsd": "CVSD",
   "codec.msbc": "mSBC",
   "codec.lc3_swb": "LC3-SWB",
-  "error.headset_mic_loop": "마이크 출력이 헤드폰으로 소리를 보내는 장치와 같습니다. 코덱에서 다른 마이크 출력을 선택하세요."
+  "error.headset_mic_loop": "마이크 출력이 헤드폰으로 소리를 보내는 장치와 같습니다. 코덱에서 다른 마이크 출력을 선택하세요.",
+  "status.headset_mic_failed": "헤드폰이 마이크를 열지 않았습니다. 재생은 그대로 계속됩니다.",
+  "status.headset_mic_output_failed": "마이크 출력을 열 수 없습니다. 재생은 그대로 계속됩니다."
 }
