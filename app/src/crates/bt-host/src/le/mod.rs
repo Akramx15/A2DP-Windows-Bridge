@@ -26,6 +26,8 @@
 //! - [`broadcast`]: the broadcast source (Auracast, developer mode):
 //!   advertising and the BIG
 //! - [`iso_send`]: ISO SDU sending on HCI_EVENT_CIS/BIS_CAN_SEND_NOW
+//! - [`iso_recv`]: ISO data of source ASEs (the headset microphone) into
+//!   a lock-free ring for the decode thread
 //! - [`modules`]: CSIP, VCP, MCP, CCP, TMAP / GMAP (registered in that
 //!   order)
 
@@ -35,6 +37,7 @@ pub mod broadcast;
 pub mod core;
 pub mod gatt_client;
 pub mod gatt_server;
+pub mod iso_recv;
 pub mod iso_send;
 pub mod module;
 pub mod modules;
@@ -123,6 +126,12 @@ pub struct LeRequest {
     /// Broadcast instead (Auracast source, developer mode): no device;
     /// `preset` is a broadcast preset (`le_audio::broadcast::presets`)
     pub broadcast: Option<LeBroadcast>,
+    /// Headset microphone: the conversational configuration (a source ASE
+    /// sends the microphone; `--headset-mic`)
+    pub headset_mic: bool,
+    /// Where the microphone goes (`--mic-output`): a path ending in ".wav"
+    /// (a WAV file), else a render device's name; None: counted only
+    pub mic_output: Option<String>,
 }
 
 /// What a broadcast was asked for (`stream.start_broadcast`, `--auracast`)
@@ -218,6 +227,11 @@ pub struct LeDeviceInfo {
     pub sink_ases: usize,
     /// Short summary of the sink PAC records
     pub pacs: String,
+    pub source_locations: u32,
+    /// Source ASEs (a microphone)
+    pub source_ases: usize,
+    /// Short summary of the source PAC records (empty without any)
+    pub source_pacs: String,
     /// TMAP / GMAP roles as read ("TMAP: UMR, GMAP: UGT (...)"); empty
     /// while unknown or without TMAS / GMAS
     pub roles: String,
@@ -254,4 +268,7 @@ pub struct LeStreamStarted {
     pub status: LeStreamStatus,
     /// Push the encoded SDU sets here (pipeline's LE encode thread)
     pub sink: LeSduSink,
+    /// The microphone's SDUs (a conversational stream with a source
+    /// direction; pipeline's le_rx decodes them)
+    pub rx: Option<iso_recv::LeRxHandle>,
 }
