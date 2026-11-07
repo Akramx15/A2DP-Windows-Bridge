@@ -44,7 +44,7 @@ import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
-import { Banner, Button, Check, Dialog, Toggle } from "../components/controls";
+import { Banner, Button, Check, Dialog, Field, Select, Toggle, type Option } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
@@ -267,14 +267,15 @@ export function Codecs() {
   // A card, or its "...", clicked under Auto-select (issue #86 round 8):
   // what follows once it is turned off (null: the dialog is closed)
   const [locked, setLocked] = createSignal<(() => void) | null>(null);
-  // The PC's output formats, read while Auto matches them (developer mode),
-  // again when the window comes back (changed in Windows meanwhile)
-  const matchSource = () => snap().settings.developer_mode && snap().settings.dev_overrides.match_source;
+  // The PC's output devices with their formats, read in developer mode
+  // (Auto matching them, the headset microphone's output), again when the
+  // window comes back (changed in Windows meanwhile)
+  const developer = () => snap().settings.developer_mode;
   const [audioDevices, setAudioDevices] = createSignal<AudioDevice[]>([]);
   const loadDevices = () => {
-    if (matchSource()) void core.request("audio.devices").then(setAudioDevices, () => {});
+    if (developer()) void core.request("audio.devices").then(setAudioDevices, () => {});
   };
-  createEffect(on(matchSource, loadDevices));
+  createEffect(on(developer, loadDevices));
   window.addEventListener("focus", loadDevices);
   onCleanup(() => window.removeEventListener("focus", loadDevices));
 
@@ -761,6 +762,76 @@ function DeviceCodecs(props: {
           }}
         />
       </Show>
+      <Show when={snap().settings.developer_mode}>
+        <HeadsetMic entry={e()} audioDevices={props.audioDevices} />
+      </Show>
     </section>
+  );
+}
+
+/** Headset mode of a device (developer mode): its microphone rendered to
+ *  an output device of the PC, a virtual cable whose recording side apps
+ *  use as a microphone (the virtual devices listed first). A classic device
+ *  plays in call quality meanwhile; LE Audio keeps its own. */
+function HeadsetMic(props: { entry: AudioEntry; audioDevices: readonly AudioDevice[] }) {
+  const app = useApp();
+  const snap = () => app.core.state.snap!;
+  const shown = (): Profile => props.entry.profile ?? entryBase(props.entry, snap().profiles);
+  const [busy, setBusy] = createSignal(false);
+  const save = async (patch: Partial<Profile>) => {
+    setBusy(true);
+    await saveEntry(app, props.entry, (base) => ({ ...base, ...patch }));
+    setBusy(false);
+  };
+  const outputs = (): Option<string>[] => {
+    const p = shown();
+    const list = [...props.audioDevices].sort((a, b) => Number(b.is_virtual) - Number(a.is_virtual));
+    const options: Option<string>[] = list.map((d) => ({
+      value: d.id,
+      label: d.name,
+      group: d.is_virtual ? t("capture.virtual") : t("capture.output"),
+    }));
+    // One chosen before and not there now: by its name
+    if (p.mic_device_id && !list.some((d) => d.id === p.mic_device_id)) {
+      options.unshift({ value: p.mic_device_id, label: p.mic_device_name || p.mic_device_id });
+    }
+    if (!p.mic_device_id) options.unshift({ value: "", label: t("ui.codec.none"), disabled: true });
+    return options;
+  };
+  const chooseOutput = (id: string) => {
+    const d = props.audioDevices.find((x) => x.id === id);
+    if (!d || id === shown().mic_device_id) return;
+    void save({ mic_device_id: d.id, mic_device_name: d.name });
+  };
+  return (
+    <div class="headset-mic">
+      <Check
+        label={t("ui.headset_mic")}
+        title={t("ui.headset_mic_hint")}
+        checked={shown().headset_mic}
+        disabled={busy()}
+        onChange={(v) => void save({ headset_mic: v })}
+      />
+      <Show when={shown().headset_mic}>
+        <Field label={t("ui.mic_output")} hint={t("ui.mic_output_hint")} stacked>
+          {(id, describedBy) => (
+            <Select
+              id={id}
+              describedBy={describedBy}
+              value={shown().mic_device_id}
+              options={outputs()}
+              disabled={busy()}
+              onChange={chooseOutput}
+            />
+          )}
+        </Field>
+        <Show when={!shown().mic_device_id}>
+          <p class="field-warn">{t("ui.headset_mic_no_output")}</p>
+        </Show>
+        <Show when={!props.entry.le_audio}>
+          <p class="field-warn">{t("ui.headset_mic_quality")}</p>
+        </Show>
+      </Show>
+    </div>
   );
 }
