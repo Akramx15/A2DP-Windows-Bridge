@@ -113,6 +113,16 @@ impl MicCounters {
 // Jitter buffer
 // ---------------------------------------------------------------------------
 
+/// What became of an SDU given to the jitter buffer
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pushed {
+    Stored,
+    /// Stored, after a jump past what the buffer holds: it started over
+    Resync,
+    /// Its sequence number was released already: dropped
+    Late,
+}
+
 /// What the jitter buffer releases for the next sequence number
 #[derive(Debug, PartialEq, Eq)]
 pub enum Released<'a> {
@@ -152,10 +162,8 @@ impl JitterBuffer {
         }
     }
 
-    /// An SDU arrived: Err(()) when it is late (its sequence number was
-    /// already released); Ok(true) when the buffer started over (a jump
-    /// past what it holds)
-    pub fn push(&mut self, seq: u16, valid: bool, sdu: &[u8]) -> Result<bool, ()> {
+    /// An SDU arrived
+    pub fn push(&mut self, seq: u16, valid: bool, sdu: &[u8]) -> Pushed {
         let mut resync = false;
         match self.next {
             None => {
@@ -165,7 +173,7 @@ impl JitterBuffer {
             Some(next) => {
                 let ahead = seq.wrapping_sub(next) as i16;
                 if ahead < 0 {
-                    return Err(());
+                    return Pushed::Late;
                 }
                 if ahead as usize >= JITTER_SLOTS {
                     // A long gap (or the sender started over): begin anew,
@@ -188,7 +196,7 @@ impl JitterBuffer {
         s.valid = valid && n > 0;
         s.len = n as u16;
         s.data[..n].copy_from_slice(&sdu[..n]);
-        Ok(resync)
+        if resync { Pushed::Resync } else { Pushed::Stored }
     }
 
     /// The next sequence number's SDU, once `prefill` newer ones were seen;
@@ -309,11 +317,11 @@ impl MicDecoder {
         self.stats.sdus.fetch_add(1, Ordering::Relaxed);
         let Some(s) = self.streams.get_mut(usize::from(sdu.stream)) else { return };
         match s.jitter.push(sdu.sequence, sdu.status == ISO_STATUS_VALID, sdu.sdu()) {
-            Ok(false) => {}
-            Ok(true) => {
+            Pushed::Stored => {}
+            Pushed::Resync => {
                 self.stats.resyncs.fetch_add(1, Ordering::Relaxed);
             }
-            Err(()) => {
+            Pushed::Late => {
                 self.stats.late.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -643,26 +651,26 @@ mod tests {
     fn jitter_buffer_waits_for_the_prefill_and_reorders() {
         let mut j = JitterBuffer::new(2);
         assert_eq!(j.pop(), None);
-        assert_eq!(j.push(10, true, &[10]), Ok(false));
+        assert_eq!(j.push(10, true, &[10]), Pushed::Stored);
         assert_eq!(j.pop(), None);
         // 12 before 11
-        j.push(12, true, &[12]).unwrap();
+        j.push(12, true, &[12]);
         assert_eq!(j.pop(), Some(Released::Sdu(&[10])));
         assert_eq!(j.pop(), None, "11 may still come");
-        j.push(11, true, &[11]).unwrap();
+        j.push(11, true, &[11]);
         assert_eq!(j.pop(), None);
-        j.push(13, true, &[13]).unwrap();
+        j.push(13, true, &[13]);
         assert_eq!(j.pop(), Some(Released::Sdu(&[11])));
         assert_eq!(j.pop(), None);
         // A late duplicate of 11
-        assert_eq!(j.push(11, true, &[11]), Err(()));
+        assert_eq!(j.push(11, true, &[11]), Pushed::Late);
     }
 
     #[test]
     fn jitter_buffer_conceals_lost_and_invalid_sdus() {
         let mut j = JitterBuffer::new(2);
         for seq in [0xFFFE, 0xFFFF, 1, 2, 3] {
-            j.push(seq, seq != 2, &[seq as u8]).unwrap();
+            j.push(seq, seq != 2, &[seq as u8]);
         }
         // 0 never came (seq wraps), 2 had a bad status
         assert_eq!(j.pop(), Some(Released::Sdu(&[0xFE])));
@@ -670,17 +678,17 @@ mod tests {
         assert_eq!(j.pop(), Some(Released::Lost));
         assert_eq!(j.pop(), Some(Released::Sdu(&[1])));
         assert_eq!(j.pop(), None);
-        j.push(4, true, &[]).unwrap();
+        j.push(4, true, &[]);
         assert_eq!(j.pop(), Some(Released::Lost), "2 had a bad status");
-        j.push(5, true, &[5]).unwrap();
-        j.push(6, true, &[6]).unwrap();
+        j.push(5, true, &[5]);
+        j.push(6, true, &[6]);
         assert_eq!(j.pop(), Some(Released::Sdu(&[3])));
         assert_eq!(j.pop(), Some(Released::Lost), "4: valid, but no data");
         // A jump past the buffer: it starts over
-        assert_eq!(j.push(100, true, &[100]), Ok(true));
+        assert_eq!(j.push(100, true, &[100]), Pushed::Resync);
         assert_eq!(j.pop(), None);
-        j.push(101, true, &[101]).unwrap();
-        j.push(102, true, &[102]).unwrap();
+        j.push(101, true, &[101]);
+        j.push(102, true, &[102]);
         assert_eq!(j.pop(), Some(Released::Sdu(&[100])));
     }
 

@@ -531,10 +531,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if let Some(a) = audio.take() {
             a.stop();
         }
+        host.le_stop_stream();
         if let Some(m) = mic.take() {
             m.stop();
         }
-        host.le_stop_stream();
         let mut lost_state = StreamState::Reconnecting;
         if off {
             // As the A2DP stream: nothing to retry until they advertise again
@@ -608,9 +608,6 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     tracing::info!("LE Audio streaming stopped, cleaning up");
-    if let Some(m) = mic.take() {
-        m.stop();
-    }
     tracing::debug!(
         "le stream: ended after {} s (stop requested {}, lost for good {lost_for_good}), {}",
         session_start.elapsed().as_secs(),
@@ -621,6 +618,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         a.stop();
     }
     host.le_stop_stream();
+    // After the stream stopped: what arrived until then is decoded
+    if let Some(m) = mic.take() {
+        m.stop();
+    }
     host.le_disconnect_all();
     if let Some(mut v) = volume.take() {
         v.stop();

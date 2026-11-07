@@ -1192,10 +1192,11 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
             if let Some(p) = audio.take() {
                 p.stop();
             }
+            host.le_stop_stream();
+            // After the stream stopped: what arrived until then is decoded
             if let Some(m) = mic.take() {
                 m.stop();
             }
-            host.le_stop_stream();
             let mut again = None;
             while again.is_none() && restarts < LE_RESTORE_ATTEMPTS && is_running() {
                 restarts += 1;
@@ -1229,13 +1230,15 @@ fn le_run(a: &Args, service: &Service, running: &Arc<AtomicBool>) -> i32 {
     if let Some(p) = audio.take() {
         p.stop();
     }
+    std::thread::sleep(Duration::from_millis(100));
+    le_print_stats(&host);
+    host.le_stop_stream();
+    // After the stream stopped (Disable ends the receiving): every SDU that
+    // arrived is decoded
     if let Some(m) = mic.take() {
         let c = m.stop();
         println!("{}", c.message());
     }
-    std::thread::sleep(Duration::from_millis(100));
-    le_print_stats(&host);
-    host.le_stop_stream();
     host.le_disconnect_all();
     service.shutdown();
     println!("Done.");
