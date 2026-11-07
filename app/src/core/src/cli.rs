@@ -102,10 +102,6 @@ Development / testing:
                         Disconnect / Connect in the app (A2DP)
   --wait-off            headphones turned off: wait for them, as the app does
   --services            once streaming, list the services the device gives in SDP
-  --voice-probe         probe of the HFP audio connection (emulator): once
-                        streaming, opens it and sends a 1 kHz tone (CVSD),
-                        counts the packets that come back; not the headset
-                        microphone
   --headset-mic-toggle <on_s>,<off_s>
                         headset mode on <on_s> seconds after streaming starts
                         and off at <off_s> (the voice link and back to A2DP)
@@ -158,8 +154,6 @@ struct Args {
     probe: bool,
     /// --services: once streaming, the services the device lists in SDP
     services: bool,
-    /// --voice-probe: the HFP audio connection's probe (voice_probe.rs)
-    voice_probe: bool,
     /// --headset-mic, --mic-output: headset mode once streaming
     headset_mic: bool,
     mic_output: Option<String>,
@@ -252,7 +246,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
         scan: None,
         probe: false,
         services: false,
-        voice_probe: false,
         headset_mic: false,
         mic_output: None,
         headset_mic_toggle: None,
@@ -354,7 +347,6 @@ fn parse(args: &[String]) -> Result<Args, String> {
             }
             "--probe" => a.probe = true,
             "--services" => a.services = true,
-            "--voice-probe" => a.voice_probe = true,
             "--headset-mic" => a.headset_mic = true,
             "--mic-output" => a.mic_output = Some(value(&mut it, "--mic-output")?),
             "--headset-mic-toggle" => {
@@ -474,8 +466,8 @@ pub fn run(args: &[String]) -> i32 {
     );
     // --headset-mic-toggle: the stack offers HFP audio from the start, as
     // a stream started in headset mode would
-    if a.voice_probe || a.headset_mic_toggle.is_some() {
-        service.set_voice_probe(true);
+    if a.headset_mic_toggle.is_some() {
+        service.set_voice_offered(true);
     }
 
     if a.le.broadcast.is_some() {
@@ -810,11 +802,6 @@ fn stream_session(
                         streaming_since = Some(Instant::now());
                         if a.services {
                             print_services(service, a.device.as_deref());
-                        }
-                        if a.voice_probe
-                            && let Some(host) = service.host()
-                        {
-                            crate::voice_probe::start(host);
                         }
                     }
                     StreamState::Error => {

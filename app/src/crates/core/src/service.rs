@@ -296,8 +296,9 @@ pub(crate) struct Inner {
     reload: AtomicBool,
     /// LE Audio forced on by the command line
     le_cli: Mutex<Option<LeCliOptions>>,
-    /// The developer CLI's --voice-probe: stacks offer HFP audio
-    voice_probe: AtomicBool,
+    /// The developer CLI's --headset-mic-toggle: stacks offer HFP audio
+    /// from the start, for headset mode switched on later
+    voice_offered: AtomicBool,
     /// The session asks for headset mode (its request's `headset_mic`):
     /// stacks offer HFP audio
     voice_wanted: AtomicBool,
@@ -449,8 +450,8 @@ impl Inner {
         c.le_audio = le_config(le_on, cli.as_ref(), &self.opts);
         c.battery = true;
         // Headset microphone: the session's request, or the developer
-        // CLI's --voice-probe
-        c.voice = self.voice_wanted.load(Ordering::Acquire) || self.voice_probe.load(Ordering::Acquire);
+        // CLI's --headset-mic-toggle
+        c.voice = self.voice_wanted.load(Ordering::Acquire) || self.voice_offered.load(Ordering::Acquire);
         // The computer's name, as Windows' own Bluetooth (issue #86)
         c.local_name = bt_host::local_name(&win_sys::computer::computer_name().unwrap_or_default());
         // The Adapters screen shows a loader's progress while the adapter
@@ -941,7 +942,7 @@ impl Service {
             codecs: Mutex::new(codecs),
             reload: AtomicBool::new(false),
             le_cli: Mutex::new(None),
-            voice_probe: AtomicBool::new(false),
+            voice_offered: AtomicBool::new(false),
             voice_wanted: AtomicBool::new(false),
             voice_change: Mutex::new(None),
             voice_events: Mutex::new(Vec::new()),
@@ -1054,10 +1055,11 @@ impl Service {
         }
     }
 
-    /// HFP audio for every stack this service starts (the developer CLI's
-    /// --voice-probe; before the first stack starts)
-    pub fn set_voice_probe(&self, on: bool) {
-        self.inner.voice_probe.store(on, Ordering::Release);
+    /// HFP audio for every stack this service starts, so that headset mode
+    /// can be switched on in place later (the developer CLI's
+    /// --headset-mic-toggle; before the first stack starts)
+    pub fn set_voice_offered(&self, on: bool) {
+        self.inner.voice_offered.store(on, Ordering::Release);
     }
 
     /// LE Audio (experimental) for every stack this service starts, whatever
