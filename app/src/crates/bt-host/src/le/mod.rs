@@ -129,8 +129,9 @@ pub struct LeRequest {
     /// Headset microphone: the conversational configuration (a source ASE
     /// sends the microphone; `--headset-mic`)
     pub headset_mic: bool,
-    /// Where the microphone goes (`--mic-output`): a path ending in ".wav"
-    /// (a WAV file), else a render device's name; None: counted only
+    /// Where the microphone goes (the profile's `mic_device_id`,
+    /// `--mic-output`): a path ending in ".wav" (a WAV file), else a render
+    /// device's id or part of its name; None: the default output
     pub mic_output: Option<String>,
 }
 
