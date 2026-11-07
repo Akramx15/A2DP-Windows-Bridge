@@ -19,17 +19,22 @@
 //! `le_stop_stream` and `le_disconnect_all`.
 //!
 //! [`LeAudioPath`] (capture -> LE encode thread -> the stream's SDU sink) is
-//! shared with the command line's LE Audio flow (cli.rs).
+//! shared with the command line's LE Audio flow (cli.rs), as is
+//! [`LeMicPath`] (the headset microphone of a conversational stream:
+//! `LeRequest::headset_mic`; the stream's received SDUs -> pipeline's
+//! le-decode thread -> a WAV file with `--mic-output x.wav`, else counted
+//! until the voice link's renderer is wired in).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use audio_capture::{Capture, CaptureOptions, Format, Running, Sink, Source};
-use bt_host::{BtHost, LeAddr, LeDeviceId, LeRequest, LeStreamRequest, LeStreamStarted, LinkStats};
+use bt_host::{BtHost, LeAddr, LeDeviceId, LeRequest, LeRxHandle, LeStreamRequest, LeStreamStarted, LinkStats};
 use le_audio::broadcast::{self, BroadcastConfig};
 use le_audio::plan::StreamPlan;
 use le_audio::sdu_queue::SduSet;
 use pipeline::le::{LePipeline, LePipelineConfig};
+use pipeline::le_rx::{CountingOut, LeRxPipeline, MicCounters, PcmOut, WavOut};
 use pipeline::{BufferPreset, CaptureInput};
 
 use crate::messages::Msg;
@@ -226,14 +231,106 @@ impl Drop for LeAudioPath {
     }
 }
 
+/// Where the headset microphone of an LE Audio stream goes
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MicOutput {
+    /// A WAV file (`--mic-output x.wav`)
+    Wav(std::path::PathBuf),
+    /// A render device by name (the voice link's renderer; until it is
+    /// wired in, counted only)
+    Device(String),
+    /// Nothing chosen: counted only
+    None,
+}
+
+impl MicOutput {
+    /// `--mic-output`: a value ending in ".wav" is a file, anything else a
+    /// device name
+    pub fn parse(value: Option<&str>) -> MicOutput {
+        match value.map(str::trim).filter(|v| !v.is_empty()) {
+            Some(v) if v.to_ascii_lowercase().ends_with(".wav") => MicOutput::Wav(v.into()),
+            Some(v) => MicOutput::Device(v.into()),
+            None => MicOutput::None,
+        }
+    }
+
+    /// The file of the `n`th stream of a session (1: the name as given; a
+    /// stream set up again gets "-2", "-3", ... before the extension)
+    pub fn wav_path(path: &std::path::Path, n: u32) -> std::path::PathBuf {
+        if n <= 1 {
+            return path.to_path_buf();
+        }
+        let stem = path.file_stem().map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+        let ext = path.extension().map_or_else(String::new, |e| format!(".{}", e.to_string_lossy()));
+        path.with_file_name(format!("{stem}-{n}{ext}"))
+    }
+}
+
+/// The headset microphone of a running LE stream: the received SDUs
+/// decoded on pipeline's le-decode thread into the [`MicOutput`]
+pub struct LeMicPath {
+    pipeline: Option<LeRxPipeline>,
+    rate: u32,
+}
+
+impl LeMicPath {
+    /// Starts decoding the stream's microphone (`stream` counts the
+    /// streams of the session, for the WAV name)
+    pub fn start(rx: LeRxHandle, output: &MicOutput, stream: u32) -> Result<LeMicPath, String> {
+        let rate = rx.sample_rate;
+        let out: Box<dyn PcmOut> = match output {
+            MicOutput::Wav(path) => {
+                let path = MicOutput::wav_path(path, stream);
+                Box::new(WavOut::create(&path, rate).map_err(|e| format!("{}: {e}", path.display()))?)
+            }
+            MicOutput::Device(name) => {
+                tracing::warn!("LE Audio: microphone: output device \"{name}\" is not supported yet, counted only");
+                Box::new(CountingOut::new())
+            }
+            MicOutput::None => Box::new(CountingOut::new()),
+        };
+        let pipeline = LeRxPipeline::start(rx, out)?;
+        Ok(LeMicPath { pipeline: Some(pipeline), rate })
+    }
+
+    /// The microphone's sampling rate
+    pub fn rate(&self) -> u32 {
+        self.rate
+    }
+
+    pub fn stats(&self) -> MicCounters {
+        self.pipeline.as_ref().map(LeRxPipeline::stats).unwrap_or_default()
+    }
+
+    /// Ends the decode thread (a WAV file is finished)
+    pub fn stop(mut self) -> MicCounters {
+        self.pipeline.take().map(LeRxPipeline::stop).unwrap_or_default()
+    }
+}
+
+/// The microphone of a just started stream, if it has one; a stream without
+/// it (none asked for, or the plan found none) logs why
+pub fn start_mic(started: &mut LeStreamStarted, output: &MicOutput, stream: u32) -> Option<LeMicPath> {
+    let rx = started.rx.take()?;
+    match LeMicPath::start(rx, output, stream) {
+        Ok(m) => Some(m),
+        Err(e) => {
+            tracing::error!("LE Audio: microphone: {e}");
+            None
+        }
+    }
+}
+
 /// The stream request of an [`LeRequest`]: an explicit preset is the only
 /// one tried. GMAP low latency: the request's flag or (from a profile) the
-/// setting, not with an explicit preset.
+/// setting, not with an explicit preset. The headset microphone asks for
+/// the conversational configuration.
 pub(crate) fn stream_request(le: &LeRequest) -> (LeStreamRequest, bool) {
     let mut request = LeStreamRequest::default();
     if let Some(p) = &le.preset {
         request.preset_order = vec![p.clone()];
     }
+    request.conversational = le.headset_mic;
     // The profile's choice (or --le-low-latency); an explicit preset wins
     let low_latency = le.low_latency && le.preset.is_none();
     (request, low_latency)
@@ -350,6 +447,16 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             return inner.notify(StreamState::Error, Msg::new("error.wasapi_init"));
         }
     };
+    // The headset microphone (a conversational stream)
+    let mic_output = MicOutput::parse(le.mic_output.as_deref());
+    let mut mic_streams = 1;
+    let mut mic = start_mic(&mut started, &mic_output, mic_streams);
+    if le.headset_mic && mic.is_none() {
+        tracing::warn!(
+            "LE Audio: headset microphone asked for, none in the stream: {}",
+            if started.status.plan.source_note.is_empty() { "?" } else { &started.status.plan.source_note }
+        );
+    }
 
     let report = |started: &LeStreamStarted, audio: Option<&LeAudioPath>| {
         inner.notify(StreamState::Streaming, Msg::new("status.connected"));
@@ -424,6 +531,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if let Some(a) = audio.take() {
             a.stop();
         }
+        if let Some(m) = mic.take() {
+            m.stop();
+        }
         host.le_stop_stream();
         let mut lost_state = StreamState::Reconnecting;
         if off {
@@ -479,6 +589,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         };
         started = s;
         tracing::info!("LE Audio stream restored: {}", started.status.summary);
+        mic_streams += 1;
+        mic = start_mic(&mut started, &mic_output, mic_streams);
         audio = match LeAudioPath::start(&req.source, &started, host.stats().clone()) {
             Ok(a) => Some(a),
             Err(e) => {
@@ -496,6 +608,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     tracing::info!("LE Audio streaming stopped, cleaning up");
+    if let Some(m) = mic.take() {
+        m.stop();
+    }
     tracing::debug!(
         "le stream: ended after {} s (stop requested {}, lost for good {lost_for_good}), {}",
         session_start.elapsed().as_secs(),
@@ -800,6 +915,22 @@ mod tests {
         let (r, ll) = stream_request(&le);
         assert_eq!(r.preset_order, ["48_2_2"]);
         assert!(!ll);
+        assert!(!r.conversational);
+        // The headset microphone: the conversational configuration
+        let (r, _) = stream_request(&LeRequest { headset_mic: true, ..LeRequest::default() });
+        assert!(r.conversational);
+    }
+
+    #[test]
+    fn mic_outputs() {
+        use std::path::{Path, PathBuf};
+        assert_eq!(MicOutput::parse(Some("out\\mic.wav")), MicOutput::Wav(PathBuf::from("out\\mic.wav")));
+        assert_eq!(MicOutput::parse(Some("M.WAV")), MicOutput::Wav(PathBuf::from("M.WAV")));
+        assert_eq!(MicOutput::parse(Some("CABLE Input")), MicOutput::Device("CABLE Input".into()));
+        assert_eq!(MicOutput::parse(Some(" ")), MicOutput::None);
+        assert_eq!(MicOutput::parse(None), MicOutput::None);
+        assert_eq!(MicOutput::wav_path(Path::new("a/mic.wav"), 1), PathBuf::from("a/mic.wav"));
+        assert_eq!(MicOutput::wav_path(Path::new("a/mic.wav"), 3), PathBuf::from("a/mic-3.wav"));
     }
 
     #[test]
