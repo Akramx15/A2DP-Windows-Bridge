@@ -1142,8 +1142,18 @@ impl Service {
     /// (the session's next tick). False when none streams, LE Audio runs,
     /// or the stack was started without voice (on): the caller starts the
     /// stream again instead.
+    ///
+    /// Unlike the source and bitpool changes it waits for `control`: a
+    /// short holder (another change) must not cost a restart of the
+    /// profile. A start or stop under way holds it until the old session
+    /// has ended (never the session thread itself, which takes no
+    /// `control`), and the stream is then not Streaming; so without a
+    /// stream streaming it answers at once.
     pub fn set_headset_mic(&self, on: bool, mic_output: Option<String>) -> bool {
-        let Ok(_control) = self.control.try_lock() else { return false };
+        if !self.is_running() || self.state() != StreamState::Streaming {
+            return false;
+        }
+        let _control = self.control.lock().unwrap_or_else(|e| e.into_inner());
         if !self.is_running() || self.state() != StreamState::Streaming {
             return false;
         }
@@ -1158,9 +1168,10 @@ impl Service {
             }
             _ => return false,
         }
-        if on {
-            self.inner.voice_wanted.store(true, Ordering::Release);
-        }
+        // What the request wants now. Off: the running stack keeps offering
+        // voice (ensure_host restarts only for voice wanted and missing), a
+        // stack started later goes without it.
+        self.inner.voice_wanted.store(on, Ordering::Release);
         *self.inner.voice_change.lock().unwrap_or_else(|e| e.into_inner()) = Some(VoiceChange { on, mic_output });
         self.inner.tick.1.notify_all();
         true
@@ -1766,6 +1777,38 @@ mod tests {
         assert!(s.last_request.lock().unwrap().is_none());
         assert!(s.device_codecs().is_empty());
         assert!(bt_host::link_keys::FileLinkKeyStore::open(&crate::paths::link_keys_file(&dir)).entries().is_empty());
+    }
+
+    #[test]
+    fn headset_mode_waits_for_a_short_control_holder_and_follows_off() {
+        let s = std::sync::Arc::new(service());
+        *s.last_request.lock().unwrap() = Some(StreamRequest { headset_mic: true, ..request() });
+        // No session: at once
+        assert!(!s.set_headset_mic(false, None));
+        s.inner.running.store(true, Ordering::Release);
+        s.inner.notify(StreamState::Streaming, Msg::new("status.connected"));
+        s.inner.voice_wanted.store(true, Ordering::Release);
+        // Another change holds control for a moment: waited for, not a restart
+        let holder = {
+            let s = s.clone();
+            let (held_tx, held_rx) = std::sync::mpsc::channel();
+            let t = std::thread::spawn(move || {
+                let _control = s.control.lock().unwrap();
+                held_tx.send(()).unwrap();
+                std::thread::sleep(Duration::from_millis(100));
+            });
+            held_rx.recv().unwrap();
+            t
+        };
+        assert!(s.set_headset_mic(false, None));
+        holder.join().unwrap();
+        // Off: no longer wanted (the running stack keeps its voice)
+        assert!(!s.inner.voice_wanted.load(Ordering::Acquire));
+        assert_eq!(s.inner.take_voice_change(), Some(VoiceChange { on: false, mic_output: None }));
+        assert!(!s.last_request.lock().unwrap().as_ref().unwrap().headset_mic);
+        // On needs a stack with voice: none runs here
+        assert!(!s.set_headset_mic(true, Some("{cable}".into())));
+        assert!(!s.inner.voice_wanted.load(Ordering::Acquire));
     }
 
     #[test]
