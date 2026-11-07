@@ -97,6 +97,15 @@ Development / testing:
                         streaming, opens it and sends a 1 kHz tone (CVSD),
                         counts the packets that come back; not the headset
                         microphone
+  --headset-mic         headset mode (developer): once streaming, the
+                        headphones' microphone goes to --mic-output and the
+                        audio to the headphones over the voice link
+  --mic-output <name|path.wav>
+                        the microphone's output device (a part of its name;
+                        default: the default output), or a WAV file to write
+  --headset-mic-toggle <on_s>,<off_s>
+                        headset mode on <on_s> seconds after streaming starts
+                        and off at <off_s> (the voice link and back to A2DP)
   --restart-on-link     start the session again as soon as its link is up, as
                         a setting changed while connecting does
   --restart             with --sessions: between sessions restart Bluetooth
@@ -148,6 +157,11 @@ struct Args {
     services: bool,
     /// --voice-probe: the HFP audio connection's probe (voice_probe.rs)
     voice_probe: bool,
+    /// --headset-mic, --mic-output: headset mode once streaming
+    headset_mic: bool,
+    mic_output: Option<String>,
+    /// --headset-mic-toggle: headset mode on and off at these seconds
+    headset_mic_toggle: Option<(u64, u64)>,
     script: Option<PathBuf>,
     allow_writes: bool,
     hci_tcp: Option<String>,
@@ -236,6 +250,9 @@ fn parse(args: &[String]) -> Result<Args, String> {
         probe: false,
         services: false,
         voice_probe: false,
+        headset_mic: false,
+        mic_output: None,
+        headset_mic_toggle: None,
         script: None,
         allow_writes: false,
         hci_tcp: None,
@@ -335,6 +352,17 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--probe" => a.probe = true,
             "--services" => a.services = true,
             "--voice-probe" => a.voice_probe = true,
+            "--headset-mic" => a.headset_mic = true,
+            "--mic-output" => a.mic_output = Some(value(&mut it, "--mic-output")?),
+            "--headset-mic-toggle" => {
+                let v = value(&mut it, "--headset-mic-toggle")?;
+                let (on, off) = v
+                    .split_once(',')
+                    .and_then(|(on, off)| Some((on.trim().parse::<u64>().ok()?, off.trim().parse::<u64>().ok()?)))
+                    .filter(|(on, off)| on < off)
+                    .ok_or("--headset-mic-toggle takes <on_s>,<off_s> with on before off")?;
+                a.headset_mic_toggle = Some((on, off));
+            }
             "--script" => a.script = Some(value(&mut it, "--script")?.into()),
             "--allow-writes" => a.allow_writes = true,
             "--hci-tcp" => a.hci_tcp = Some(value(&mut it, "--hci-tcp")?),
@@ -441,7 +469,9 @@ pub fn run(args: &[String]) -> i32 {
         },
         tx,
     );
-    if a.voice_probe {
+    // --headset-mic-toggle: the stack offers HFP audio from the start, as
+    // a stream started in headset mode would
+    if a.voice_probe || a.headset_mic_toggle.is_some() {
         service.set_voice_probe(true);
     }
 
@@ -653,6 +683,8 @@ pub fn run(args: &[String]) -> i32 {
         mute_output: false,
         max_media_payload: a.max_packet,
         le: None,
+        headset_mic: a.headset_mic && a.headset_mic_toggle.is_none(),
+        mic_output: a.mic_output.clone(),
     };
 
     let mut code = 0;
@@ -737,7 +769,22 @@ fn stream_session(
 ) -> bool {
     let mut streaming_since: Option<Instant> = None;
     let mut last_summary = Instant::now();
+    // --headset-mic-toggle: the steps still to take
+    let mut toggles: Vec<(u64, bool)> =
+        a.headset_mic_toggle.map_or(Vec::new(), |(on, off)| vec![(on, true), (off, false)]);
     loop {
+        if let Some(since) = streaming_since
+            && let Some(&(at, on)) = toggles.first()
+            && since.elapsed() >= Duration::from_secs(at)
+        {
+            toggles.remove(0);
+            let taken = service.set_headset_mic(on, a.mic_output.clone());
+            println!(
+                "Headset mode {} at {at} s{}",
+                if on { "on" } else { "off" },
+                if taken { "" } else { " (not taken)" }
+            );
+        }
         if a.remote_sink.is_some() && streaming_since.is_some() && last_summary.elapsed() >= Duration::from_secs(5) {
             last_summary = Instant::now();
             println!("{}", receiver.summary());
@@ -786,6 +833,13 @@ fn stream_session(
             Ok(ServiceEvent::OtherDeviceBack(a)) => println!("Another device connected: {}", bt_host::addr_str(&a)),
             // The loader's own log lines say it
             Ok(ServiceEvent::Loader(_)) => {}
+            Ok(ServiceEvent::Voice(Some(v))) => println!(
+                "Voice: {} at {} Hz, microphone to {}",
+                v.codec,
+                v.rate,
+                if v.mic_device_id.is_empty() { a.mic_output.as_deref().unwrap_or("-") } else { &v.mic_device_id }
+            ),
+            Ok(ServiceEvent::Voice(None)) => println!("Voice: off"),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return false,
         }
