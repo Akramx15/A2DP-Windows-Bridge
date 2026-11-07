@@ -79,7 +79,8 @@ devices), `ui.headset_mic_no_output` (no output device chosen),
 ## Voice audio plumbing (new crate `app/src/crates/voice-link`)
 
 `#![forbid(unsafe_code)]`; deps: `wasapi`, `audio-capture` (for `Format`,
-`Sink`, `render_devices`), `rtrb`, `tracing`. Add `voice_link` to
+`Sink`, `render_devices`), `rtrb`, `tracing`, and `btstack-sys` / `lc3-sys`
+(codecs), `win-sys` (COM apartment, MMCSS), `thiserror`. `voice_link` is in
 `OWN_TARGETS` in `app/src/core/src/logging.rs`.
 
 ```rust
@@ -144,12 +145,48 @@ impl VoiceDecoder {
 }
 ```
 
-The codec primitives come from `btstack-sys` (safe wrappers in
-`btstack-sys/src/voice.rs`): the Bluedroid mSBC encoder (`btstack_sbc_encoder_bluedroid`,
-`SBC_MODE_mSBC`), the Bluedroid SBC decoder with `btstack_sbc_plc`
-(`btstack_sbc_decoder_bluedroid`, mSBC mode; it does H2 sync and PLC itself),
-and `btstack_cvsd_plc`. LC3-SWB uses `lc3_sys::{Lc3Encoder, Lc3Decoder}`
-(32 kHz, 7.5 ms, 58 octets) with H2 framing/sync in Rust (`voice_link::h2`).
+As implemented, beyond the sketch above:
+
+- `Renderer::open("")` opens the default output device. `producer()` hands
+  out the queue's one producer on the first call; a later call returns a
+  detached producer that only counts its pushes as overflow. Also
+  `rate()`, `ended()` / `end_error()` (device removed or failed: the thread
+  has stopped). `RenderStats { frames_written, silence_frames, underruns,
+  overflow, dropped, duplicated, queued }` (frames = mono samples at the
+  voice rate; `dropped` / `duplicated` are the drift control's). The queue
+  holds max(4 x prefill, 250 ms).
+- `pcm_channel(capacity) -> (PcmProducer, PcmConsumer)`: the same queue
+  without a device, for tests and tools (`PcmConsumer::pop`, `queued`,
+  `stats`).
+- `UplinkConsumer` sends zeros until 30 ms are queued (at the start and
+  after an underrun) and has the same drift control as the renderer (the
+  trough of the queue level over 200 ms against the prefill, ±10 ms; at
+  most 0.25 % correction). `queued()`, `stats() -> UplinkStats`, `rate()`.
+- `VoiceCodec` is `Copy`, with `hfp_id()` and `name()` ("cvsd", "msbc",
+  "lc3_swb", for `VoiceStatus::codec`). `VoiceEncoder::stats()`,
+  `VoiceDecoder::stats() -> DecoderStats { packets, bad_packets, frames,
+  concealed, samples, overflow }`. Any packet status flag other than 0
+  is concealed.
+- `voice_link::h2`: `H2Framer::next_header()`, `H2Sync::push(bad, bytes,
+  |frame: H2Frame|)` with `H2Frame::Good(&[u8])` (60 bytes) or
+  `H2Frame::Bad` (a port of BTstack's `hfp_h2_sync`: bad or unsynchronised
+  bytes come out as one `Bad` per 60), `is_header`, `sequence_of`,
+  `SEQUENCE`.
+- The 10 s debug summaries: "voice link: render ...", "voice link: uplink
+  ...", "voice link: downlink ...".
+
+The codec primitives come from `btstack-sys` (`btstack_sys::voice`, C glue in
+`csrc/voice_codecs.c`): `MsbcEncoder::encode(&[i16; 120]) -> [u8; 57]` (the
+Bluedroid encoder through BTstack's instance API
+`btstack_sbc_encoder_bluedroid_init_instance`, `SBC_MODE_mSBC`),
+`MsbcDecoder::decode(status, bytes, |pcm: &[i16]|)` (the Bluedroid SBC
+decoder through `btstack_sbc_decoder_bluedroid_init_instance`, mSBC mode; it
+does H2 sync and `btstack_sbc_plc` itself, concealing only after its first
+good frame) and `CvsdPlc::process(bad, input, out)` (`btstack_cvsd_plc`, in
+pieces of at most 60 samples). The Bluedroid encoder is now always compiled
+(feature `sbc-reference` adds only `csrc/sbc_reference.c`). LC3-SWB uses
+`lc3_sys::{Lc3Encoder, Lc3Decoder}` (32 kHz, 7.5 ms, 58 octets) with H2
+framing/sync in Rust (`voice_link::h2`).
 
 ## SCO transport (crates `hci-transport`, `win-sys`, `btstack-sys`)
 
