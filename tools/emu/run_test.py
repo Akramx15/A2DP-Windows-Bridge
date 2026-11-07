@@ -38,7 +38,9 @@ bluecaster_decode --le-audio on both sides:
     says "late SDU"), no underrun in BlueCaster's counters, audio (not counting
     inserted silence) for most of the duration
   - the checks of le_audio_tests/<profile>.py (core.py: each CIS's channel
-    allocation within the PACS locations of the sink it goes to)
+    allocation within the PACS locations of the sink it goes to; mic.py: the
+    headset microphone of the mic-* cases, run with --headset-mic
+    --mic-output <out>/le-<case>/mic.wav)
 Outputs go to tools/emu/out/le-<case>/.
 
     python tools/emu/run_test.py --scan [case ...]
@@ -712,6 +714,7 @@ def run_le_case(args, case, port):
             cmd += ['--le-device', a]
         duration = case.duration or args.duration
         cmd += ['--test-tone', '--duration', str(duration), '--hci-capture', src_capture] + case.bluecaster_args
+        cmd += le_audio_tests.mic.bluecaster_args(case, out)   # --headset-mic --mic-output <out>/mic.wav
         with open(os.path.join(out, 'bluecaster.log'), 'w', encoding='utf-8', errors='replace') as log:
             try:
                 rc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env,
@@ -817,6 +820,8 @@ def run_le_case(args, case, port):
     ctx = dict(out=out, bluecaster_log=bluecaster_log, sink_log=read_text(os.path.join(out, 'sink.log')),
                sent=sent, received=received, sink_addresses=addresses)
     failures.extend(le_audio_tests.check(case, ctx))
+    if ctx.get('mic_detail'):
+        detail += f" | {ctx['mic_detail']}"
     return failures, detail
 
 
