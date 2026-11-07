@@ -165,6 +165,7 @@ BlueCaster 会检测适配器的芯片组，并显示需要哪些固件文件。
 | 芯片组 | 产品示例 | 说明 |
 |:--------|:-----------------|:------|
 | Realtek | TP-Link UB500、RTL8761BU | 需要下载固件（见上文）。测试最充分 |
+| Realtek | 笔记本电脑内置的 RTL8852BD（`0BDA:B853`） | *实验性。* linux-firmware 中没有它的固件：BlueCaster 从 Realtek 的 Windows 蓝牙驱动程序中读取 `rtl8852bd_mp_chip_new.dat`，因此请勿卸载该驱动程序（或将该文件放入固件文件夹）。尚未在实际硬件上测试 |
 | CSR | 通用 CSR8510 适配器 | 开箱即用，无需固件 |
 | Barrot | Bluetooth 5.4 / 6.0 适配器（`33FA:0010`、`33FA:0012`） | 使用 ROM 固件运行，无需固件。目前仅有一份用户报告 |
 | Marvell | Microsoft Surface Pro / Surface Book 内置（88W8897） | *实验性。* 无需固件文件：Wi-Fi 驱动也会加载蓝牙固件，请保持 Wi-Fi 开启。尚未在实际硬件上测试 |

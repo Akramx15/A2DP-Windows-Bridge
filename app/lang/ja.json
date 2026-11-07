@@ -124,6 +124,7 @@
   "firmware.vendor_intel": "Intel アダプタ（試験的）。ブートローダーモードで起動する場合は、セットアップガイドを見てください。",
   "firmware.vendor_mediatek": "MediaTek アダプタ（試験的）。ファームウェアは MediaTek の Windows ドライバーから読み込みます。",
   "firmware.vendor_qualcomm": "Qualcomm アダプタ（試験的）。ファームウェアは Qualcomm の Windows ドライバーから読み込みます。",
+  "firmware.vendor_realtek_driver": "Realtek RTL8852BD アダプタ（試験的）。ファームウェアは Realtek の Windows ドライバーから読み込むため、そのドライバーは削除しないでください。",
   "firmware.vendor_broadcom": "Broadcom アダプタ（試験的）: Realtek ファイルは不要です。",
   "firmware.vendor_csr": "CSR アダプタ: ファームウェアファイルは不要です。",
   "firmware.vendor_barrot": "Barrot アダプタ: ファームウェアファイルは不要です。",

@@ -124,6 +124,7 @@
   "firmware.vendor_intel": "Intel 适配器（实验性）。如果它以引导加载程序模式启动，请参阅设置指南。",
   "firmware.vendor_mediatek": "MediaTek 适配器（实验性）。其固件从 MediaTek 的 Windows 驱动程序中读取。",
   "firmware.vendor_qualcomm": "Qualcomm 适配器（实验性）。其固件从 Qualcomm 的 Windows 驱动程序中读取。",
+  "firmware.vendor_realtek_driver": "Realtek RTL8852BD 适配器（实验性）。其固件从 Realtek 的 Windows 驱动程序中读取，请勿卸载该驱动程序。",
   "firmware.vendor_broadcom": "Broadcom 适配器（实验性）：无需 Realtek 文件。",
   "firmware.vendor_csr": "CSR 适配器：无需固件文件。",
   "firmware.vendor_barrot": "Barrot 适配器：无需固件文件。",

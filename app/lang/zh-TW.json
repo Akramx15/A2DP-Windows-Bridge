@@ -124,6 +124,7 @@
   "firmware.vendor_intel": "Intel 介面卡 (實驗性)。若以開機載入程式模式啟動，請參閱設定指南。",
   "firmware.vendor_mediatek": "MediaTek 介面卡 (實驗性)。其韌體從 MediaTek 的 Windows 驅動程式讀取。",
   "firmware.vendor_qualcomm": "Qualcomm 介面卡 (實驗性)。其韌體從 Qualcomm 的 Windows 驅動程式讀取。",
+  "firmware.vendor_realtek_driver": "Realtek RTL8852BD 介面卡 (實驗性)。其韌體從 Realtek 的 Windows 驅動程式讀取，請勿解除安裝該驅動程式。",
   "firmware.vendor_broadcom": "Broadcom 介面卡 (實驗性): 不需要 Realtek 檔案。",
   "firmware.vendor_csr": "CSR 介面卡: 不需要韌體檔案。",
   "firmware.vendor_barrot": "Barrot 介面卡: 不需要韌體檔案。",

@@ -165,6 +165,7 @@ Welche Adapter und Kopfhörer tatsächlich mit BlueCaster verwendet wurden, mit 
 | Chipsatz | Beispielprodukte | Hinweise |
 |:---------|:-----------------|:---------|
 | Realtek | TP-Link UB500, RTL8761BU | Firmware-Download erforderlich (siehe oben). Am besten getestet |
+| Realtek | In Notebooks eingebauter RTL8852BD (`0BDA:B853`) | *Experimentell.* linux-firmware hat keine Firmware dafür: BlueCaster liest `rtl8852bd_mp_chip_new.dat` aus dem Windows-Bluetooth-Treiber von Realtek, lassen Sie diesen Treiber also installiert (oder legen Sie die Datei in den Firmware-Ordner). Noch nicht auf der Hardware getestet |
 | CSR | Generische CSR8510-Dongles | Funktioniert sofort, keine Firmware nötig |
 | Barrot | Bluetooth-5.4-/6.0-Dongles (`33FA:0010`, `33FA:0012`) | Läuft mit ROM-Firmware, keine Firmware nötig. Bisher ein Nutzerbericht |
 | Marvell | Eingebaut in Microsoft Surface Pro / Surface Book (88W8897) | *Experimentell.* Keine Firmwaredateien: Der WLAN-Treiber lädt auch die Bluetooth-Firmware, daher WLAN eingeschaltet lassen. Noch nicht auf der Hardware getestet |

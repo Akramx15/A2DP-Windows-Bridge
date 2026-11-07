@@ -165,6 +165,7 @@ Quels adaptateurs et casques ont réellement été utilisés avec BlueCaster, av
 | Puce | Exemples de produits | Remarques |
 |:--------|:-----------------|:------|
 | Realtek | TP-Link UB500, RTL8761BU | Nécessite le téléchargement du firmware (voir ci-dessus). Le mieux testé |
+| Realtek | RTL8852BD intégré aux portables (`0BDA:B853`) | *Expérimental.* linux-firmware n'a pas de firmware pour lui : BlueCaster lit `rtl8852bd_mp_chip_new.dat` dans le pilote Bluetooth Windows de Realtek, gardez donc ce pilote installé (ou placez le fichier dans le dossier du firmware). Pas encore testé sur le matériel |
 | CSR | Dongles CSR8510 génériques | Fonctionne d'emblée, sans firmware |
 | Barrot | Dongles Bluetooth 5.4 / 6.0 (`33FA:0010`, `33FA:0012`) | Fonctionne sur son firmware en ROM, sans firmware. Un seul retour d'utilisateur pour l'instant |
 | Marvell | Intégré aux Microsoft Surface Pro / Surface Book (88W8897) | *Expérimental.* Aucun fichier firmware : le pilote Wi-Fi charge aussi le firmware Bluetooth, laissez donc le Wi-Fi activé. Pas encore testé sur le matériel |

@@ -23,6 +23,7 @@ pub mod media;
 pub mod mediatek;
 pub mod probe;
 pub mod qualcomm;
+pub mod realtek_btnic;
 pub mod rfcomm;
 pub mod script;
 pub mod sdp_services;
@@ -159,6 +160,10 @@ pub struct HostConfig {
     pub mediatek_loader: bool,
     /// Run the Qualcomm rampatch and NVM download first (experimental)
     pub qualcomm_loader: bool,
+    /// Run the download of a Realtek chip whose firmware comes from
+    /// Realtek's Windows driver first (crate::realtek_btnic, experimental):
+    /// its VID:PID
+    pub realtek_driver_chip: Option<(u16, u16)>,
     /// VID:PID of present Broadcom adapters (PatchRAM file names)
     pub broadcom_ids: Vec<(u16, u16)>,
     /// Upper limit of the media payload (clamped)
@@ -210,6 +215,7 @@ impl HostConfig {
             intel_loader: false,
             mediatek_loader: false,
             qualcomm_loader: false,
+            realtek_driver_chip: None,
             broadcom_ids: Vec::new(),
             media_payload_limit: media::MEDIA_PAYLOAD_LIMIT_DEFAULT,
             capture: HciCapture::new(),
@@ -507,13 +513,14 @@ impl BtHost {
         let le_on = config.le_audio.is_some();
         let le_shared = Arc::new(le::core::LeShared::default());
         tracing::debug!(
-            "host start: transport {:?}, realtek pid 0x{:04X} files {:?}, intel loader {}, mediatek loader {}, qualcomm loader {}, broadcom {:04X?}, payload limit {}, le audio {}, battery {}",
+            "host start: transport {:?}, realtek pid 0x{:04X} files {:?}, intel loader {}, mediatek loader {}, qualcomm loader {}, realtek driver chip {:04X?}, broadcom {:04X?}, payload limit {}, le audio {}, battery {}",
             config.transport,
             config.realtek_pid,
             config.realtek_files,
             config.intel_loader,
             config.mediatek_loader,
             config.qualcomm_loader,
+            config.realtek_driver_chip,
             config.broadcom_ids,
             config.media_payload_limit,
             le_on,
@@ -536,6 +543,7 @@ impl BtHost {
                         intel_loader,
                         mediatek_loader,
                         qualcomm_loader,
+                        realtek_driver_chip,
                         broadcom_ids,
                         media_payload_limit: _,
                         capture,
@@ -616,6 +624,13 @@ impl BtHost {
                             // with USB requests) before it is used
                             stack.install_transport(backend);
                             app.start_qualcomm_loader(stack);
+                        } else if let Some((vid, pid)) = realtek_driver_chip.filter(|_| !tcp)
+                            && let Some((chip, file)) = realtek_btnic::chip(vid, pid)
+                        {
+                            // Its ROM needs the firmware of Realtek's Windows
+                            // driver, sent in the driver's own sequence
+                            stack.install_transport(backend);
+                            app.start_realtek_driver_loader(stack, chip, file);
                         } else {
                             app.setup_hci_and_power_on(stack, Some(backend));
                         }

@@ -124,6 +124,7 @@
   "firmware.vendor_intel": "Adaptador Intel (experimental). Si se inicia en modo bootloader, consulte la guía de configuración.",
   "firmware.vendor_mediatek": "Adaptador MediaTek (experimental). Su firmware se lee del controlador de Windows de MediaTek.",
   "firmware.vendor_qualcomm": "Adaptador Qualcomm (experimental). Su firmware se lee del controlador de Windows de Qualcomm.",
+  "firmware.vendor_realtek_driver": "Adaptador Realtek RTL8852BD (experimental). Su firmware se lee del controlador de Windows de Realtek: no desinstale ese controlador.",
   "firmware.vendor_broadcom": "Adaptador Broadcom (experimental): no necesita archivos de Realtek.",
   "firmware.vendor_csr": "Adaptador CSR: no necesita archivos de firmware.",
   "firmware.vendor_barrot": "Adaptador Barrot: no necesita archivos de firmware.",
