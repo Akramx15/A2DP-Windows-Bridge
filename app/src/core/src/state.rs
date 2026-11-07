@@ -1251,6 +1251,18 @@ fn source_changes_in_place(stream: &StreamStatus, before: Option<&CoreProfile>, 
     stream.state == StreamState::Streaming && !saved.le_audio && before.is_some_and(|b| b.only_source_differs(saved))
 }
 
+/// Headset mode in force (`on`: developer mode, the profile's flag and an
+/// output chosen) into a profile's request, for classic and LE Audio
+/// devices alike (not a broadcast)
+fn set_headset_mic(req: &mut StreamRequest, on: bool, mic_device_id: &str) {
+    req.headset_mic = on;
+    req.mic_output = on.then(|| mic_device_id.to_string());
+    if let Some(le) = req.le.as_mut().filter(|le| le.broadcast.is_none()) {
+        le.headset_mic = on;
+        le.mic_output = req.mic_output.clone();
+    }
+}
+
 /// What a save that changed only the headset mode or the microphone output
 /// of the profile in use does to its stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1981,9 +1993,10 @@ impl CoreState {
         }
         // Classic devices: the session switches to the voice link once
         // streaming, and refuses (a status message) an output that would
-        // feed the capture (voice.rs); LE Audio: the LE session's
-        req.headset_mic = headset_mic;
-        req.mic_output = headset_mic.then(|| p.mic_device_id.clone());
+        // feed the capture (voice.rs); LE Audio: the LE session asks for the
+        // conversational configuration and renders the microphone, with the
+        // same refusal (le_stream.rs)
+        set_headset_mic(&mut req, headset_mic, &p.mic_device_id);
         self.set_active_profile(Some(name.to_string()));
         self.begin_stream(req, Some(name.to_string()));
         Ok(())
@@ -3454,6 +3467,29 @@ mod tests {
         assert_eq!(headset_change(&streaming, Some(&before), &codec, true), None);
         assert_eq!(headset_change(&streaming, Some(&before), &before, true), None);
         assert_eq!(headset_change(&streaming, None, &on, true), None);
+    }
+
+    #[test]
+    fn le_audio_requests_carry_headset_mode() {
+        let le_profile = CoreProfile {
+            name: "Buds".into(),
+            device_address: "00:A2:D0:00:00:12".into(),
+            le_audio: true,
+            ..CoreProfile::default()
+        };
+        let mut req = le_profile.to_request(1000).unwrap();
+        set_headset_mic(&mut req, true, "{cable}");
+        let le = req.le.as_ref().unwrap();
+        assert!(req.headset_mic && le.headset_mic);
+        assert_eq!(le.mic_output.as_deref(), Some("{cable}"));
+        set_headset_mic(&mut req, false, "{cable}");
+        let le = req.le.as_ref().unwrap();
+        assert!(!req.headset_mic && !le.headset_mic && le.mic_output.is_none());
+        // Classic: the request only
+        let mut classic = CoreProfile { le_audio: false, ..le_profile }.to_request(1000).unwrap();
+        set_headset_mic(&mut classic, true, "{cable}");
+        assert!(classic.le.is_none() && classic.headset_mic);
+        assert_eq!(classic.mic_output.as_deref(), Some("{cable}"));
     }
 
     #[test]
