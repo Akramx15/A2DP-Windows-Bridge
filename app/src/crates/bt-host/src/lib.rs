@@ -1963,7 +1963,10 @@ impl BtHost {
     pub fn request_volume(&self, volume: u8) {
         tracing::debug!("volume request: {volume}");
         self.controls.volume_request.store(volume.min(127) as i32, Ordering::Release);
-        self.post(|app, s| app.send_pending_volume(s));
+        self.post(move |app, s| {
+            app.sync_speaker_gain(s, Some(volume));
+            app.send_pending_volume(s)
+        });
     }
 
     /// Volume to set as soon as AVRCP connects, before any audio (None: keep

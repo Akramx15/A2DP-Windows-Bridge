@@ -518,6 +518,26 @@ pub struct VoiceStatus {
     pub mic_device_id: String,
 }
 
+/// The microphone test (mic_test.*)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS, Default)]
+
+pub struct MicTestState {
+    /// "idle" | "starting" (the voice link opens) | "recording" |
+    /// "recorded" | "playing"
+    pub phase: String,
+    /// Peak level 0..1 since the last answer: the microphone, or the
+    /// recording while it plays
+    pub level: f32,
+    /// Length of the recording so far
+    pub recorded_ms: u32,
+    /// Longest recording
+    pub max_ms: u32,
+    /// Position of the playback
+    pub played_ms: u32,
+    /// Why the test stopped (a message key), None while fine
+    pub error: Option<String>,
+}
+
 /// A connection profile, as in profiles.json
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
@@ -1709,6 +1729,25 @@ pub enum Method {
     /// -> ReceiverState
     #[serde(rename = "receiver.status")]
     ReceiverStatus,
+    /// The microphone test: records the headset microphone of the classic
+    /// stream (the voice link opens for it, the stream first starts again
+    /// on a stack without voice) -> MicTestState. Errors
+    /// "mic_test.not_streaming", "mic_test.le_audio".
+    #[serde(rename = "mic_test.record")]
+    MicTestRecord,
+    /// Stops the recording or the playback -> MicTestState
+    #[serde(rename = "mic_test.stop")]
+    MicTestStop,
+    /// Plays the recording to the headphones -> MicTestState
+    #[serde(rename = "mic_test.play")]
+    MicTestPlay,
+    /// -> MicTestState. Also keeps the test alive: one not asked about for
+    /// a few seconds ends (the voice link closes unless headset mode wants it)
+    #[serde(rename = "mic_test.status")]
+    MicTestStatus,
+    /// Ends the test -> null
+    #[serde(rename = "mic_test.end")]
+    MicTestEnd,
     /// Opens an RFCOMM channel to the service `uuid` ("0000xxxx-0000-1000-
     /// 8000-00805F9B34FB", or "xxxx" on the Bluetooth base UUID) of the
     /// device at `address`, the device being streamed to, over the link

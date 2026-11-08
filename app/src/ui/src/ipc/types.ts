@@ -41,6 +41,7 @@ import type { VendorMode as BVendorMode } from "./bindings/VendorMode";
 import type { VendorOverride as BVendorOverride } from "./bindings/VendorOverride";
 import type { ReceiverInfo as BReceiverInfo } from "./bindings/ReceiverInfo";
 import type { ReceiverState as BReceiverState } from "./bindings/ReceiverState";
+import type { MicTestState as BMicTestState } from "./bindings/MicTestState";
 import type { ReceiverStats as BReceiverStats } from "./bindings/ReceiverStats";
 import type { ServerMessage as BServerMessage } from "./bindings/ServerMessage";
 import type { Settings as BSettings } from "./bindings/Settings";
@@ -108,6 +109,7 @@ export type VendorMode = BVendorMode;
 export type VendorOverride = Wire<BVendorOverride>;
 export type ReceiverInfo = Wire<BReceiverInfo>;
 export type ReceiverState = Wire<BReceiverState>;
+export type MicTestState = Wire<BMicTestState>;
 export type ReceiverStats = Wire<BReceiverStats>;
 export type ServerMessage = Wire<BServerMessage>;
 export type Settings = Wire<BSettings>;
@@ -161,6 +163,10 @@ interface Results {
   "receiver.discover": ReceiverInfo[];
   "receiver.connect": ReceiverState;
   "receiver.status": ReceiverState;
+  "mic_test.record": MicTestState;
+  "mic_test.stop": MicTestState;
+  "mic_test.play": MicTestState;
+  "mic_test.status": MicTestState;
   "app.check_update": UpdateState;
   "settings.set": SettingsApplied;
 }

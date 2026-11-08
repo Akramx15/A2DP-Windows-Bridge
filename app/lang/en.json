@@ -994,5 +994,12 @@
   "codec.lc3_swb": "LC3-SWB",
   "error.headset_mic_loop": "The microphone output is the device whose sound goes to the headphones. Choose another microphone output on Codecs.",
   "status.headset_mic_failed": "The headphones did not open their microphone. Playback goes on as before.",
-  "status.headset_mic_output_failed": "The microphone output cannot be opened. Playback goes on as before."
+  "status.headset_mic_output_failed": "The microphone output cannot be opened. Playback goes on as before.",
+  "ui.diag.tab_mic": "Microphone",
+  "ui.mic_test.record": "Record",
+  "ui.mic_test.stop": "Stop",
+  "ui.mic_test.play": "Play",
+  "ui.mic_test.hint": "Record a few seconds, then play them back on the headphones. Audio is call quality during the test.",
+  "error.mic_test_not_streaming": "Connect the headphones first.",
+  "error.mic_test_le_audio": "The microphone test does not work with LE Audio yet."
 }

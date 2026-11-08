@@ -33,6 +33,7 @@ import type {
   LogLine,
   Profile,
   ReceiverInfo,
+  MicTestState,
   ReceiverState,
   ServerMessage,
   Settings,
@@ -691,6 +692,8 @@ export class MockCore implements Transport {
   private streamStart: LinkTotals = { ...ZERO };
   private streamStarts = 0;
   private lastTick = 0;
+  /** The microphone test: what the core would answer, simulated in time */
+  private mic = { phase: "idle", since: 0, recorded: 0, error: null as string | null };
   private receiver: ReceiverState = {
     connection: "off",
     detail: "",
@@ -1020,6 +1023,30 @@ export class MockCore implements Transport {
       }
       case "receiver.status":
         return this.receiverState();
+      case "mic_test.record": {
+        const st = this.snap.stream;
+        if (st.state !== "streaming") throw errorInfo("mic_test.not_streaming", "error.mic_test_not_streaming");
+        if (st.info?.codec === "LC3 (LE Audio)") throw errorInfo("mic_test.le_audio", "error.mic_test_le_audio");
+        this.mic = { phase: "starting", since: Date.now(), recorded: 0, error: null };
+        return this.micState();
+      }
+      case "mic_test.stop": {
+        const m = this.micState();
+        if (m.phase === "starting") this.mic.phase = "idle";
+        else if (m.phase === "recording" || m.phase === "playing") {
+          this.mic.recorded = m.recorded_ms;
+          this.mic.phase = "recorded";
+        }
+        return this.micState();
+      }
+      case "mic_test.play":
+        if (this.mic.recorded > 0) this.mic = { ...this.mic, phase: "playing", since: Date.now() };
+        return this.micState();
+      case "mic_test.status":
+        return this.micState();
+      case "mic_test.end":
+        this.mic = { phase: "idle", since: 0, recorded: 0, error: null };
+        return null;
       case "app.check_update": {
         this.snap.update = { ...this.snap.update, checking: true };
         this.emit({ kind: "update", value: this.snap.update });
@@ -1660,6 +1687,30 @@ export class MockCore implements Transport {
     });
     this.ensureSlowTimer();
     return this.receiverState();
+  }
+
+  /** The link takes 1.5 s, a recording at most 10 s; a voice-like level */
+  private micState(): MicTestState {
+    const max = 10000;
+    const m = this.mic;
+    const age = Date.now() - m.since;
+    if (m.phase === "starting" && age >= 1500 * this.speed) {
+      m.phase = "recording";
+      m.since = Date.now();
+    } else if (m.phase === "recording" && age >= max) {
+      m.phase = "recorded";
+      m.recorded = max;
+    } else if (m.phase === "playing" && age >= m.recorded) m.phase = "recorded";
+    const now = Date.now() - m.since;
+    const voice = () => Math.max(0, 0.35 * Math.sin(Date.now() / 180) + 0.25 * Math.random());
+    return {
+      phase: m.phase,
+      level: m.phase === "idle" || m.phase === "starting" ? 0 : voice(),
+      recorded_ms: m.phase === "recording" ? Math.min(now, max) : m.recorded,
+      max_ms: max,
+      played_ms: m.phase === "playing" ? Math.min(now, m.recorded) : 0,
+      error: m.error,
+    };
   }
 
   private receiverState(): ReceiverState {
