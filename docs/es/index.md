@@ -11,7 +11,7 @@ has_toc: false
 Transmisión de audio Bluetooth A2DP para Windows con compatibilidad completa de códecs.
 {: .fs-6 .fw-300 }
 
-Transmite el audio del sistema mediante **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC** y (de forma experimental) **Opus** y el **Opus 05** de PipeWire a través de un adaptador Bluetooth corriente: un adaptador USB económico o, en muchos portátiles, el integrado. BlueCaster configura el adaptador por sí mismo y lo devuelve a Windows con un clic ([cómo funciona](architecture)).
+Convierte un adaptador Bluetooth corriente -- un adaptador USB económico o, en muchos portátiles, el integrado -- de los códecs básicos que le da Windows en un transmisor Hi-Fi: **LHDC V5, LDAC y aptX Adaptive** hasta 96 kHz (LHDC V5 hasta 192 kHz), además de **aptX, AAC, SBC XQ y SBC**. Experimentales: **aptX HD, aptX Low Latency, Opus, FastStream y LE Audio (LC3)**. BlueCaster configura el adaptador por sí mismo y lo devuelve a Windows con un clic ([cómo funciona](architecture)).
 
 ![BlueCaster's Codecs screen, streaming LDAC 990 kbps / 48 kHz to Sony WH-1000XM4](../images/app_sample.png)
 
@@ -143,7 +143,7 @@ BlueCaster omite por completo la pila Bluetooth de Windows. Se comunica directam
 
 ## Funciones
 
-- **Varios códecs**: LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC XQ, SBC y (de forma experimental) Opus / Opus 05 / FastStream con negociación automática
+- **Varios códecs**: LHDC V5, LDAC, aptX Adaptive, aptX, AAC, SBC XQ, SBC y (de forma experimental) aptX HD / aptX Low Latency / Opus / Opus 05 / FastStream con negociación automática
 - **LE Audio (experimental)**: LC3 hacia auriculares y auriculares de botón LE Audio (BAP unicast, los dos auriculares de un par, volumen del auricular, botones multimedia, baja latencia GMAP). Necesita un adaptador con canales isócronos de Bluetooth 5.2; solo probado con el emulador de Bluetooth, todavía no con auriculares LE Audio reales ([Uso](usage#le-audio))
 - **Tres modos de captura**: loopback del sistema, enrutamiento a través de un dispositivo de audio virtual o la salida de una sola aplicación
 - **Ventana, bandeja y CLI**: una ventana para la configuración y el diagnóstico, un panel desplegable y un menú en la bandeja para conectarse en el día a día, y una línea de comandos (consulte [Uso](usage))

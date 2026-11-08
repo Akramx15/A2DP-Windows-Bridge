@@ -11,7 +11,7 @@ has_toc: false
 Bluetooth-A2DP-Audiostreaming für Windows mit voller Codec-Unterstützung.
 {: .fs-6 .fw-300 }
 
-Streamt das Systemaudio über **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC** und (experimentell) **Opus** sowie PipeWires **Opus 05** über einen gewöhnlichen Bluetooth-Adapter: einen günstigen USB-Stick oder bei vielen Laptops den eingebauten. BlueCaster richtet den Adapter selbst ein und gibt ihn mit einem Klick an Windows zurück ([so funktioniert es](architecture)).
+Macht aus einem gewöhnlichen Bluetooth-Adapter -- einem günstigen USB-Stick oder bei vielen Laptops dem eingebauten -- statt der einfachen Codecs von Windows einen Hi-Fi-Sender: **LHDC V5, LDAC und aptX Adaptive** mit bis zu 96 kHz (LHDC V5 bis 192 kHz), dazu **aptX, AAC, SBC XQ und SBC**. Experimentell: **aptX HD, aptX Low Latency, Opus, FastStream und LE Audio (LC3)**. BlueCaster richtet den Adapter selbst ein und gibt ihn mit einem Klick an Windows zurück ([so funktioniert es](architecture)).
 
 ![BlueCaster's Codecs screen, streaming LDAC 990 kbps / 48 kHz to Sony WH-1000XM4](../images/app_sample.png)
 
@@ -143,7 +143,7 @@ BlueCaster umgeht den Bluetooth-Stack von Windows vollständig. Es kommuniziert 
 
 ## Funktionen
 
-- **Mehrere Codecs**: LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC XQ, SBC und (experimentell) Opus / Opus 05 / FastStream mit automatischer Aushandlung
+- **Mehrere Codecs**: LHDC V5, LDAC, aptX Adaptive, aptX, AAC, SBC XQ, SBC und (experimentell) aptX HD / aptX Low Latency / Opus / Opus 05 / FastStream mit automatischer Aushandlung
 - **LE Audio (experimentell)**: LC3 an LE-Audio-Kopfhörer und -Ohrhörer (BAP Unicast, beide Ohrhörer eines Paars, Headset-Lautstärke, Medientasten, GMAP mit niedriger Latenz). Benötigt einen Adapter mit isochronen Bluetooth-5.2-Kanälen; nur mit dem Bluetooth-Emulator getestet, noch nicht mit echten LE-Audio-Kopfhörern ([Verwendung](usage#le-audio))
 - **Drei Aufnahmemodi**: System-Loopback, Umleitung über ein virtuelles Audiogerät oder die Ausgabe einer einzelnen Anwendung
 - **Fenster, Infobereich und CLI**: ein Fenster für Einrichtung und Diagnose, ein Flyout und ein Menü im Infobereich für das alltägliche Verbinden sowie eine Kommandozeile (siehe [Verwendung](usage))

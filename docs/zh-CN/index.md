@@ -11,7 +11,7 @@ has_toc: false
 适用于 Windows 的 Bluetooth A2DP 音频串流工具，支持全部主流编解码器。
 {: .fs-6 .fw-300 }
 
-使用普通的 Bluetooth 适配器（廉价的 USB 适配器，或许多笔记本电脑的内置适配器），以 **LHDC V5、LDAC、aptX Adaptive、aptX HD、aptX、aptX Low Latency、AAC、SBC** 以及（实验性的）**Opus** 和 PipeWire 的 **Opus 05** 串流系统音频。BlueCaster 会自行设置适配器，一键即可交还给 Windows（[工作原理](architecture)）。
+把普通的 Bluetooth 适配器（廉价的 USB 适配器，或许多笔记本电脑的内置适配器）从 Windows 只给的基础编解码器，变成 Hi-Fi 发射器：**LHDC V5、LDAC 和 aptX Adaptive** 最高 96 kHz（LHDC V5 最高 192 kHz），以及 **aptX、AAC、SBC XQ 和 SBC**。实验性：**aptX HD、aptX Low Latency、Opus、FastStream 和 LE Audio（LC3）**。BlueCaster 会自行设置适配器，一键即可交还给 Windows（[工作原理](architecture)）。
 
 ![BlueCaster's Codecs screen, streaming LDAC 990 kbps / 48 kHz to Sony WH-1000XM4](../images/app_sample.png)
 
@@ -143,7 +143,7 @@ BlueCaster 完全绕过 Windows 的 Bluetooth 堆栈。它通过 WinUSB 直接�
 
 ## 功能
 
-- **多编解码器**：LHDC V5、LDAC、aptX Adaptive、aptX HD、aptX、aptX Low Latency、AAC、SBC XQ、SBC 以及（实验性的）Opus / Opus 05 / FastStream，自动协商
+- **多编解码器**：LHDC V5、LDAC、aptX Adaptive、aptX、AAC、SBC XQ、SBC 以及（实验性的）aptX HD / aptX Low Latency / Opus / Opus 05 / FastStream，自动协商
 - **LE Audio（实验性）**：通过 LC3 向 LE Audio 耳机传输（BAP 单播、一对耳机的左右两只、耳机音量、媒体按键、GMAP 低延迟）。需要支持 Bluetooth 5.2 等时通道的适配器；只在 Bluetooth 模拟器上测试过，尚未在真实的 LE Audio 耳机上验证（请参阅[使用方法](usage#le-audio)）
 - **三种捕获模式**：系统环回、虚拟音频设备路由，或单个应用的输出
 - **窗口、托盘和 CLI**：用于设置和诊断的窗口、用于日常连接的托盘浮出窗口和菜单，以及命令行（请参阅[使用方法](usage)）
