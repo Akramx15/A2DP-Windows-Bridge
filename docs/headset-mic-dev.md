@@ -586,7 +586,7 @@ can be reached on the emulator.
 
 The first real run, with `bluecaster-core --cli -u 2357:0604 -d <XM4> -c sbc
 --test-tone --headset-mic --mic-output ...` (logs and `.pklg` captures in
-`C:\BC-mic-target\hwun5..run10`):
+`C:\BC-mic-target\hw\run5..run10`):
 
 - HCI init with voice: interface 1 claimed, "controller buffers: ACL 6 x
   1021 bytes, SCO 12 x 255 bytes"; without voice the same adapter and
