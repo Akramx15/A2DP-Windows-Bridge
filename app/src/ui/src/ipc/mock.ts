@@ -1155,6 +1155,24 @@ export class MockCore implements Transport {
           this.servicesBusy -= 1;
           throw errorInfo("device.busy", "ipc.error.services_busy");
         }
+        // An LE Audio entry: the GATT services kept at its last connection
+        if (p.le_audio === true) {
+          return {
+            services: [
+              "1800",
+              "1801",
+              "184e",
+              "1850",
+              "1844",
+              "1846",
+              "180f",
+            ].map((u) => ({
+              uuids: [`0000${u}-0000-1000-8000-00805f9b34fb`],
+              name: null,
+            })),
+            from_last_connection: true,
+          };
+        }
         return {
           services: [
             {
@@ -1186,7 +1204,9 @@ export class MockCore implements Transport {
           adapter_found: true,
           classic: { same: 1, differ: 0, only_bluecaster: 0, only_windows: 0 },
           le: { same: 0, differ: 1, only_bluecaster: 0, only_windows: 0 },
-          radio_values: [{ name: "CentralIRK", kind: "binary", size: 16, count: 1 }],
+          radio_values: [
+            { name: "CentralIRK", kind: "binary", size: 16, count: 1 },
+          ],
           le_values: [
             { name: "LTK", kind: "binary", size: 16, count: 1 },
             { name: "ERand", kind: "QWORD", size: 8, count: 1 },

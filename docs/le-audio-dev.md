@@ -44,12 +44,14 @@ for reference (`git show b819893:app/src/le_audio/<file>`).
 | `app/src/ui/src/` | The Codecs screen's LC3 card and GMAP low-latency check box (the profile's `le_low_latency`), DevicePicker's LE tags, Diagnostics' ISO counters; `?mock=le` mocks LE |
 | `tools/a2dp_decode/le_audio_decode.cpp` | `bluecaster_decode --le-audio` |
 | `tools/emu/emu_le_audio_sink.py`, `tools/emu/le_audio/` | Bumble LE Audio sink(s); `le_audio/<profile>.py` = the sink side of each profile; `le_audio/mic.py` + `mic_frames.py` the headset microphone (`--mic`) |
-| `tools/emu/le_audio_tests/` | `run_test.py --le-audio` cases and checks, one file per profile (`core.py`, `privacy.py`, `csip.py`, `vcp.py`, `mcp.py`, `ccp.py`, `tmap_gmap.py`, `bas.py`, `mic.py`) |
+| `tools/emu/le_audio_tests/` | `run_test.py --le-audio` cases and checks, one file per profile (`core.py`, `privacy.py`, `csip.py`, `vcp.py`, `mcp.py`, `ccp.py`, `tmap_gmap.py`, `bas.py`, `mic.py`, `gatt_cache.py`) |
 
 Files in the config folder (the formats are the same as v1; the paths are
 in [Settings and Files](architecture#settings-and-files)):
 `pairing\le_audio_bonds.tlv` (LE bonds and the GATT server's persistent CCC
 values), `pairing\le_audio_csip.txt` (coordinated sets),
+`pairing\le_gatt_cache.txt` (each bonded device's GATT services with its
+Database Hash, `le/gatt_cache.rs`; also what the Services tag lists),
 `devices\le_audio_devices.txt` (LE Audio entries of the device list).
 
 ## Threads - the one rule that matters
@@ -99,7 +101,8 @@ the GATT client or the GATT server runs on the **BTstack thread**, through an
 4. `le_connect(addr, name, timeout)`: `gap_connect` -> **`on_connected`** ->
    SM pairing / re-encryption (a bond the device lost is deleted and pairing
    repeated once) -> **`on_encrypted`** -> GATT discovery into
-   `LeDevice::services` -> PACS / ASCS reads and notifications ->
+   `LeDevice::services` (skipped when the device's Database Hash matches the
+   one kept with its services in `le_gatt_cache.txt`) -> PACS / ASCS reads and notifications ->
    **`on_gatt_ready`** -> the device id. On timeout / cancel the connect is
    cancelled; a link that still comes up afterwards is disconnected.
 5. `le_start_stream(devices, request, silence)`: **`prepare_group`** (worker)
