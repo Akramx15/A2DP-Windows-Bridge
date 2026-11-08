@@ -1326,6 +1326,32 @@ fn source_changes_in_place(stream: &StreamStatus, before: Option<&CoreProfile>, 
     stream.state == StreamState::Streaming && !saved.le_audio && before.is_some_and(|b| b.only_source_differs(saved))
 }
 
+/// The save named the codec an Auto profile streams with, as a codec card's
+/// "..." dialog does on its first change, its name following the codec, the
+/// rest as before but "Show only options it supports" (issue #86: the first
+/// turn of that switch connected again, the later ones did not). The stream
+/// is already that codec with these values: it goes on.
+fn codec_named_in_place(stream: &StreamStatus, before: Option<&CoreProfile>, saved: &CoreProfile) -> bool {
+    let Some(b) = before else { return false };
+    let Some(info) = stream.info.as_ref() else { return false };
+    if stream.state != StreamState::Streaming
+        || saved.le_audio
+        || b.codec != "auto"
+        || info.requested_codec.is_some()
+        || codec::CodecKind::from_key(&saved.codec).map(|k| k.name()) != Some(info.codec.as_str())
+    {
+        return false;
+    }
+    let as_before = CoreProfile {
+        name: b.name.clone(),
+        codec: b.codec.clone(),
+        codec_forced: b.codec_forced,
+        unlisted_options: b.unlisted_options,
+        ..saved.clone()
+    };
+    as_before == *b
+}
+
 /// A new classic profile left on Auto without a microphone output gets
 /// VB-CABLE's (issue #86), unless its capture source is that cable (the
 /// microphone would loop into the stream). LE Audio takes Auto as On, so
@@ -2155,6 +2181,16 @@ impl CoreState {
         Ok(())
     }
 
+    /// The stream running goes on under its profile's new name (a save that
+    /// renamed it and kept the stream)
+    fn rename_stream_profile(&self, name: &str) {
+        *self.starting_profile.lock().unwrap_or_else(|e| e.into_inner()) = Some(name.to_string());
+        let stream = self.with_snapshot(|s| s.stream.clone());
+        if stream.profile.as_deref() != Some(name) {
+            self.publish(Event::Stream(StreamStatus { profile: Some(name.to_string()), ..stream }));
+        }
+    }
+
     fn begin_stream(&self, req: StreamRequest, profile: Option<String>) {
         *self.starting_profile.lock().unwrap_or_else(|e| e.into_inner()) = profile.clone();
         self.publish(Event::Stream(StreamStatus {
@@ -2755,7 +2791,20 @@ impl CoreState {
                         && !in_place
                         && before.as_ref().is_some_and(|b| b.only_unlisted_differs(&in_order))
                         && self.service.change_unlisted(in_order.unlisted_options);
-                    if unlisted_in_place {
+                    let named_in_place = !bitpools_in_place
+                        && !in_place
+                        && !unlisted_in_place
+                        && codec_named_in_place(&s.stream, before.as_ref(), &in_order)
+                        && (before.as_ref().is_some_and(|b| b.unlisted_options == in_order.unlisted_options)
+                            || self.service.change_unlisted(in_order.unlisted_options));
+                    if named_in_place {
+                        tracing::info!(
+                            "profile {} saved while in use as {}: it names the codec it streams with, the stream stays",
+                            bluecaster_core::diag::quoted(&key),
+                            bluecaster_core::diag::quoted(&profile.name)
+                        );
+                        self.rename_stream_profile(&profile.name);
+                    } else if unlisted_in_place {
                         tracing::info!(
                             "profile {} saved while in use: the stream stays as it is",
                             bluecaster_core::diag::quoted(&key)
@@ -4034,6 +4083,29 @@ mod tests {
             }
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn naming_the_codec_an_auto_profile_streams_keeps_the_stream() {
+        let before = CoreProfile { name: "WH | Auto".into(), codec: "auto".into(), ..CoreProfile::default() };
+        let streaming =
+            StreamStatus { state: StreamState::Streaming, info: Some(sbc_abr_info()), ..StreamStatus::default() };
+        let named =
+            CoreProfile { name: "WH | SBC".into(), codec: "sbc".into(), unlisted_options: true, ..before.clone() };
+        assert!(codec_named_in_place(&streaming, Some(&before), &named));
+        // Another codec than the one streaming, or other values: connect again
+        let aac = CoreProfile { codec: "aac".into(), ..named.clone() };
+        assert!(!codec_named_in_place(&streaming, Some(&before), &aac));
+        let other = CoreProfile { quality: "sq".into(), ..named.clone() };
+        assert!(!codec_named_in_place(&streaming, Some(&before), &other));
+        // A codec already named, a fallback, no stream yet
+        assert!(!codec_named_in_place(&streaming, Some(&named), &named));
+        let mut fell_back = streaming.clone();
+        fell_back.info.as_mut().unwrap().requested_codec = Some("LDAC".into());
+        assert!(!codec_named_in_place(&fell_back, Some(&before), &named));
+        let connecting = StreamStatus { state: StreamState::Connecting, ..streaming.clone() };
+        assert!(!codec_named_in_place(&connecting, Some(&before), &named));
+        assert!(!codec_named_in_place(&streaming, None, &named));
     }
 
     #[test]

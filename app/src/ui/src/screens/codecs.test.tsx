@@ -94,6 +94,11 @@ describe("the Codecs screen", () => {
     // Auto-select off its cards can be chosen
     await mock!.call("device.rename", { address: "54:2F:04:4B:29:DC", name: "moto buds+" });
     const moto = await section("moto buds+");
+    // Never connected: SBC alone until every codec is shown (issue #86)
+    expect(cardNames(moto)).toEqual([t("codec.sbc")]);
+    // every device has it: not "Unconfirmed"
+    expect(within(moto).queryByText(t("ui.profile.codec_support_unknown"))).toBeNull();
+    fireEvent.click(hideSwitch());
     expect(within(moto).getByRole("radio", { name: /AAC/ })).not.toBeDisabled();
     // One click on a card chooses it
     fireEvent.click(within(moto).getByRole("radio", { name: /AAC/ }));
@@ -121,7 +126,8 @@ describe("the Codecs screen", () => {
     const { calls } = start("#/codecs");
     await mock!.call("device.rename", { address: "54:2F:04:4B:29:DC", name: "moto buds+" });
     const moto = await section("moto buds+");
-    // Its codecs are not known yet: LHDC V5 is offered
+    // Its codecs are not known yet: LHDC V5 is offered with every codec shown
+    fireEvent.click(hideSwitch());
     fireEvent.click(within(moto).getByRole("radio", { name: /LHDC V5/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0].profile).toMatchObject({ device_address: "54:2F:04:4B:29:DC", codec: "lhdcv5" });
@@ -187,7 +193,7 @@ describe("the Codecs screen", () => {
     expect(ldac).toBeChecked();
     // The card chosen is enough: no "In use" line (issue #86)
     expect(wh).not.toHaveTextContent(/In use/);
-    expect(within(await section("SRS-XB13")).getByRole("radio", { name: /AAC/ })).toBeDisabled();
+    expect(within(await section("SRS-XB13")).getByRole("radio", { name: /SBC/ })).toBeDisabled();
     // No profile changed: off again, the codec chosen is back
     fireEvent.click(autoSwitch());
     await waitFor(() => expect(within(wh).getByRole("radio", { name: /AAC/ })).toBeChecked());
@@ -519,8 +525,9 @@ describe("codec cards", () => {
     // An arrow key alone is the radio group's
     fireEvent.keyDown(within(wh).getByRole("radio", { name: /SBC/ }), { key: "ArrowLeft" });
     expect(saves(calls)).toHaveLength(1);
-    // The other devices keep the default order
-    expect(cardNames(await section("SRS-XB13"))[0]).toBe(t("codec.lhdc_v5"));
+    // The other devices keep the default order (one never connected shows
+    // its codec chosen and SBC alone)
+    expect(cardNames(await section("SRS-XB13"))).toEqual([t("codec.aac"), t("codec.sbc")]);
 
     // Back to the default order: saved as none
     await settled(wh);
@@ -724,8 +731,9 @@ describe("codec settings", () => {
 
   it("LHDC V5 offers 192 kHz and greys out the quality while ABR is on", async () => {
     start("#/codecs");
-    // A device whose codecs are not known yet: all of them offered
+    // A device whose codecs are not known yet: all of them offered once shown
     const xb = await section("SRS-XB13");
+    fireEvent.click(hideSwitch());
     const dialog = await codecSettings(xb, "codec.lhdc_v5");
     const rate = within(dialog).getByLabelText(t("connection.sample_rate"));
     expect(within(rate).getByRole("option", { name: /192/ })).toBeInTheDocument();
@@ -882,6 +890,7 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
     // Pro 4+ 96 kHz too; a device not connected yet is not offered 96 kHz
     expect(await rates("QC Ultra Earbuds")).toEqual(["48000 Hz"]);
     expect(await rates("EarFun Air Pro 4+")).toEqual([t("codec.auto_value", "48000 Hz"), "48000 Hz", "96000 Hz"]);
+    fireEvent.click(hideSwitch());
     expect(await rates("SRS-XB13")).toEqual(["48000 Hz"]);
   });
 });
@@ -1150,11 +1159,11 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(within(virtual).getByRole("option", { name: "CABLE Input (VB-Audio Virtual Cable)" })).toBeInTheDocument();
     const apps = await within(select).findByRole("group", { name: t("capture.app") });
     expect(within(apps).getByRole("option", { name: "Spotify" })).toBeInTheDocument();
-    // The default output it records first among the sound devices, no "Loopback" (issue #86)
-    const loopback = within(select).getByRole("group", { name: t("capture.sound_devices") });
-    expect(
-      within(loopback).getByRole("option", { name: t("capture.loopback_default", "Speakers (Realtek(R) Audio)") }),
-    ).toBeInTheDocument();
+    // Windows' default output first, in no group (it may be a virtual
+    // device too), no "Loopback" (issue #86)
+    const first = within(select).getAllByRole("option")[0];
+    expect(first).toHaveTextContent(t("capture.loopback_default", "Speakers (Realtek(R) Audio)"));
+    expect(first.closest("optgroup")).toBeNull();
     // What the source does, below it, with no info button (issue #86)
     expect(within(entry).queryByRole("button", { name: t("ui.more_info", t("capture.mode")) })).toBeNull();
     expect(within(entry).getByText(t("capture.hint_loopback"))).toBeInTheDocument();
@@ -1165,12 +1174,9 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const entry = await deviceEntry(/WH-1000XM5/);
     const select = within(entry).getByLabelText(t("capture.mode"));
     const output = () => within(select).getByRole("group", { name: t("capture.sound_devices") });
-    // Each device once after the default: the virtual ones stay under Virtual Device
+    // Each device once: the virtual ones stay under Virtual Device
     await waitFor(() =>
-      expect(within(output()).getAllByRole("option").map((o) => o.textContent)).toEqual([
-        t("capture.loopback_default", "Speakers (Realtek(R) Audio)"),
-        "Speakers (Realtek(R) Audio)",
-      ]),
+      expect(within(output()).getAllByRole("option").map((o) => o.textContent)).toEqual(["Speakers (Realtek(R) Audio)"]),
     );
     calls.length = 0;
     fireEvent.change(select, { target: { value: "output:{0.0.0.00000000}.{speakers}" } });

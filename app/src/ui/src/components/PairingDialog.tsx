@@ -104,21 +104,6 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
                     value={p().le?.identity_resolving_key}
                     copy={copy}
                   />
-                  <Show when={p().le}>
-                    {(le) => (
-                      <tr>
-                        <th scope="row">{t("ui.pairing.identity_address")}</th>
-                        <td>
-                          <span class="pairing-key-row">
-                            <span class="mono pairing-key">{le().identity_address}</span>
-                            <Show when={le().identity_random}>
-                              <span class="tag">{t("ui.pairing.random")}</span>
-                            </Show>
-                          </span>
-                        </td>
-                      </tr>
-                    )}
-                  </Show>
                   </tbody>
                 </table>
                 {/* Why there are no LE keys (issue #86) */}

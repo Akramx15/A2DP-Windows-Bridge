@@ -75,17 +75,22 @@ describe("Input Source on Audio Devices", () => {
     expect(micSelect(wh).value).toBe(CABLE);
   });
 
-  it("names the 16-channel cable by its own name in developer mode, not a second CABLE Output", async () => {
+  it("adds the 16-channel cable's own name in developer mode, not a second CABLE Output", async () => {
     const { core } = start("#/devices", "voice");
     const wh = await deviceEntry(/WH-1000XM5/);
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
     await waitFor(() => {
       const labels = [...micSelect(wh).options].map((o) => o.textContent);
-      expect(labels).toContain("CABLE In 16ch (VB-Audio Virtual Cable)");
+      expect(labels).toContain("CABLE Output (VB-Audio Virtual Cable) · CABLE In 16ch");
       expect(labels.filter((l) => l === "CABLE Output (VB-Audio Virtual Cable)")).toHaveLength(1);
     });
     const output = [...micSelect(wh).options].find((o) => o.textContent === "CABLE Output (VB-Audio Virtual Cable)");
     expect(output?.value).toBe(CABLE);
+    // Speakers only play the microphone: under Monitoring, not with the
+    // devices apps record from (issue #86)
+    const speakers = [...micSelect(wh).options].find((o) => o.value === "{0.0.0.00000000}.{speakers}");
+    expect(speakers?.closest("optgroup")?.label).toBe(t("capture.mic_monitoring"));
+    expect(output?.closest("optgroup")?.label).toBe(t("capture.virtual"));
   });
 
   it("saves the mode and the device with the device's profile", async () => {
@@ -134,6 +139,23 @@ describe("Input Source on Audio Devices", () => {
     fireEvent.change(source, { target: { value: `virtual:${CABLE}` } });
     await waitFor(() => expect([...micSelect(wh).options].find((o) => o.value === CABLE)?.disabled).toBe(true));
     await within(wh).findByText(t("error.headset_mic_loop"));
+    // Why it cannot be chosen, on the entry itself (issue #86)
+    const cable = [...micSelect(wh).options].find((o) => o.value === CABLE);
+    expect(cable?.textContent).toBe(t("capture.mic_used_by_source", "CABLE Output (VB-Audio Virtual Cable)"));
+  });
+
+  it("refuses the other side of the cable the output source plays to", async () => {
+    const { core } = start("#/devices", "voice");
+    const wh = await deviceEntry(/WH-1000XM5/);
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    const source = within(wh).getByLabelText(t("capture.mode")) as HTMLSelectElement;
+    await waitFor(() => expect([...source.options].some((o) => o.value === `virtual:${CABLE}`)).toBe(true));
+    fireEvent.change(source, { target: { value: `virtual:${CABLE}` } });
+    // "CABLE In 16ch" records into the same CABLE Output: mixed with what plays
+    await waitFor(() =>
+      expect([...micSelect(wh).options].find((o) => o.value === "{0.0.0.00000000}.{cable16}")?.disabled).toBe(true),
+    );
+    expect([...micSelect(wh).options].find((o) => o.value === VOICEMEETER)?.disabled).toBe(false);
   });
 
   it("warns of call quality only for a classic device", async () => {
@@ -209,17 +231,21 @@ describe("headset chip", () => {
     expect(wh.querySelector(".headset-chip")).toBeNull();
   });
 
-  it("is only on the cards of devices with a microphone output", async () => {
-    start("#/home", "voice");
+  it("is only on the cards of devices in use with a microphone output", async () => {
+    const { core } = start("#/home", "voice");
     const wh = await homeCard("WH-1000XM5");
+    // Not while the device is not connected (issue #86)
+    expect(wh.querySelector(".headset-chip")).toBeNull();
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await within(wh).findByRole("button", { name: MUTE() });
     const xb = await homeCard("SRS-XB13");
     expect(xb.querySelector(".headset-chip")).toBeNull();
   });
 
   it("mutes and unmutes on Home, an icon alone, keeping the mode", async () => {
-    const { saves } = start("#/home", "voice");
+    const { saves, core } = start("#/home", "voice");
     const wh = await homeCard("WH-1000XM5");
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     const on = await within(wh).findByRole("button", { name: MUTE() });
     expect(on).toHaveTextContent("");
     expect(on).toHaveClass("on");
@@ -238,9 +264,10 @@ describe("headset chip", () => {
   });
 
   it("shows Auto waiting with no app recording, and is gone for Off", async () => {
-    start("#/devices", "voice");
+    const { core } = start("#/devices", "voice");
     const entry = await deviceEntry(/WH-1000XM5/);
     await waitFor(() => expect(mode(entry, "on")).toBeChecked());
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     fireEvent.click(mode(entry, "auto"));
     await waitFor(() => expect(mode(entry, "auto")).toBeChecked());
     location.hash = "#/home";
