@@ -13,7 +13,7 @@ use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
 use pipeline::{BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType};
 
 use crate::health::{CaptureReading, StreamHealth};
-use crate::messages::Msg;
+use crate::messages::{CodecStopKind, Msg};
 use crate::mute_output::OutputMute;
 use crate::service::Inner;
 use crate::vendor;
@@ -1625,9 +1625,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             host.disconnect();
             let msg = match why {
                 None => Msg::new("error.no_compatible_codec"),
-                Some((codec, Unavailable::SepInUse { .. })) => Msg::with("error.codec_sep_in_use", &[&codec.name()]),
-                Some((codec, Unavailable::AdaptiveOnly)) => Msg::with("error.codec_adaptive_only", &[&codec.name()]),
-                Some((codec, Unavailable::NotSupported)) => Msg::with("error.codec_not_supported", &[&codec.name()]),
+                Some((codec, Unavailable::SepInUse { .. })) => {
+                    Msg::codec_stop("error.codec_sep_in_use", codec, CodecStopKind::InUse)
+                }
+                Some((codec, Unavailable::AdaptiveOnly)) => {
+                    Msg::codec_stop("error.codec_adaptive_only", codec, CodecStopKind::Unsupported)
+                }
+                Some((codec, Unavailable::NotSupported)) => {
+                    Msg::codec_stop("error.codec_not_supported", codec, CodecStopKind::Unsupported)
+                }
                 Some((codec, Unavailable::Experimental)) => Msg::with("error.codec_experimental_off", &[&codec.name()]),
                 Some((codec, Unavailable::DeveloperMode)) => Msg::with("error.codec_developer_only", &[&codec.name()]),
             };
@@ -1844,9 +1850,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             // What the user chose beyond what the device lists: say so, and
             // how to get sound back (issue #86)
             let msg = if forced.is_some() {
-                Msg::with("error.codec_unsupported_refused", &[&kind.name()])
+                Msg::codec_stop("error.codec_unsupported_refused", kind, CodecStopKind::Unsupported)
             } else if unlisted.is_some() {
-                Msg::with("error.codec_unlisted_refused", &[&kind.name()])
+                Msg::codec_stop("error.codec_unlisted_refused", kind, CodecStopKind::SettingsUnsupported)
+            } else if matches!(e, ConfigFailure::Host(ConfigureError::Refused)) {
+                // The device (or BTstack) refused a codec it lists
+                Msg::codec_stop("error.codec_configure", kind, CodecStopKind::Refused)
             } else {
                 Msg::new("error.codec_configure")
             };
@@ -2445,7 +2454,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             );
             if !stopped() {
                 if codec_gone {
-                    inner.notify(StreamState::Error, Msg::with("error.codec_not_supported", &[&kind.name()]));
+                    inner.notify(
+                        StreamState::Error,
+                        Msg::codec_stop("error.codec_not_supported", kind, CodecStopKind::Unsupported),
+                    );
                 } else if restart_why.is_none() {
                     // The adapter works, the headphones never answered: off
                     // or out of range, not an error of BlueCaster

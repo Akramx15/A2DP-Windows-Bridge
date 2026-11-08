@@ -41,10 +41,20 @@ const PLAIN_STATUS: Record<string, string> = {
   "status.connected_fallback_developer": "status.connected",
 };
 
+/** An error the codec caused, in a few words ("LDAC is unsupported", issue
+ *  #86); null in any other state or for another error */
+export function codecStopText(s: Pick<StreamStatus, "state" | "codec_stop">): string | null {
+  const c = s.state === "error" ? s.codec_stop : null;
+  if (!c) return null;
+  const key = codecLabelKey(c.codec);
+  return t(`status.codec_stop_${c.kind}`, key ? t(key) : c.codec);
+}
+
 /** The device's status line: the core's message, else the state; an error's
- *  text is in its panel, with the fix */
-export function statusText(s: Pick<StreamStatus, "state" | "message">): string {
-  if (s.state === "error") return t("status.error");
+ *  text is in its panel, with the fix (one the codec caused named in a few
+ *  words) */
+export function statusText(s: Pick<StreamStatus, "state" | "message" | "codec_stop">): string {
+  if (s.state === "error") return codecStopText(s) ?? t("status.error");
   const plain = PLAIN_STATUS[s.message.key];
   return plain ? t(plain) : tm(s.message) || stateLabel(s.state);
 }

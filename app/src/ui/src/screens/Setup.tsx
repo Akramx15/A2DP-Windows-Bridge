@@ -485,7 +485,7 @@ function StepDevice() {
       const entry = entries().find((e) => e.key === key);
       return entry ? entryState(snap(), entry) : "idle";
     };
-    const label = () => (state() === "idle" ? t("status.ready") : statusText({ state: state(), message: stream().message }));
+    const label = () => (state() === "idle" ? t("status.ready") : statusText({ ...stream(), state: state() }));
     return (
       <>
         <span class={`dot st-${state()}`} aria-hidden="true" title={label()} />
