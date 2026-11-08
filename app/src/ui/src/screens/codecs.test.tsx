@@ -6,7 +6,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
-import { ICONS } from "../components/icons";
 import { setLanguage, t } from "../i18n";
 import { MockCore, type MockScenario } from "../ipc/mock";
 import type { Device } from "../ipc/types";
@@ -406,25 +405,18 @@ describe("saved devices on the Audio Devices screen", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
   });
 
-  it("offers Windows' pairing of a device paired through this adapter (issue #86)", async () => {
+  it("only warns of a device Windows paired through this adapter: importing is the setup's (issue #86)", async () => {
     const { calls } = start("#/devices");
     mock!.windowsPaired = ["f4:4e:fd:00:11:22"];
     fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
     const row = (await screen.findByText(/Galaxy Buds2 Pro/)).closest(".device-row") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: t("ui.devices.add") }));
     const dialog = await screen.findByRole("dialog", { name: t("ui.devices.windows_paired_title") });
-    expect(dialog).toHaveTextContent(t("ui.devices.windows_import_text", "Galaxy Buds2 Pro"));
-    // Only the import asks for administrator rights: only it has the shield
-    const shield = (name: string) =>
-      within(dialog).getByRole("button", { name }).querySelector("svg.icon path")?.getAttribute("d") === ICONS.shield;
-    expect(shield(t("ui.devices.add_new"))).toBe(false);
-    expect(shield(t("ui.devices.import_one"))).toBe(true);
-    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.devices.import_one") }));
-    // That device's key only, then added as usual
+    expect(dialog).toHaveTextContent(t("ui.devices.windows_paired_text", "Galaxy Buds2 Pro"));
+    expect(within(dialog).queryByRole("button", { name: t("ui.devices.import_one") })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.devices.add_anyway") }));
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
-    const imported = calls.find((c) => c.method === "device.import_windows_pairings");
-    expect(imported?.params).toMatchObject({ address: expect.stringMatching(/^f4:4e:fd:00:11:22$/i) });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls.some((c) => c.method === "device.import_windows_pairings")).toBe(false);
   });
 
   it("makes a profile that picks the best codec for a device added without one", async () => {
@@ -836,7 +828,7 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
     fireEvent.input(bitpool, { target: { value: "53" } });
     expect(bitpool).toHaveValue("39");
     // Bitpool 39, 16 blocks, 8 subbands, joint stereo at 48 kHz
-    await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent("≈ 273 kbps"));
+    await waitFor(() => expect(within(dialog).getByLabelText(t("connection.quality"))).toHaveTextContent("≈ 273 kbps"));
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.close") }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0].profile).toMatchObject({ codec_settings: { sbc: { sbc_bitpool: 39, sbc_min_bitpool: 0 } } });
@@ -860,7 +852,7 @@ describe("codec settings within what the device lists (issue #86: moto buds+)", 
       // One rate: shown fixed, not Auto and that rate to choose between
       const field = within(dialog).getByLabelText(t("connection.sample_rate"));
       const list =
-        field instanceof HTMLInputElement ? [field.value] : within(field).getAllByRole("option").map((o) => o.textContent);
+        field instanceof HTMLOutputElement ? [field.textContent] : within(field).getAllByRole("option").map((o) => o.textContent);
       fireEvent.click(within(dialog).getByRole("button", { name: t("modal.close") }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       return list;
@@ -879,7 +871,7 @@ describe("SBC settings", () => {
     const wh = await section("WH-1000XM5");
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
     const dialog = await codecSettings(wh, "codec.sbc");
-    const rate = within(dialog).getByRole("status");
+    const rate = within(dialog).getByLabelText(t("connection.quality"));
     expect(rate).toHaveTextContent("≈ 357 kbps");
 
     // The WH-1000XM5 lists 8 subbands and loudness only (the mock's
@@ -926,7 +918,8 @@ describe("SBC settings", () => {
     const dialog = await codecSettings(wh, "codec.sbc_xq");
     expect(within(dialog).getByLabelText(t("ui.diag.cd_blocks"))).toBeInTheDocument();
     expect(within(dialog).getByLabelText(t("ui.diag.cd_channel_mode"))).toHaveValue(t("ui.diag.cd_mode.dual_channel"));
-    expect(within(dialog).getByLabelText(t("ui.diag.cd_channel_mode"))).toHaveAttribute("readonly");
+    // Shown as the Quality value is: not a field to type in (issue #86)
+    expect(within(dialog).getByLabelText(t("ui.diag.cd_channel_mode")).tagName).toBe("OUTPUT");
     // One bit depth: a value, not a list (issue #86)
     expect(within(dialog).getByLabelText(t("connection.bit_depth"))).toHaveValue(t("bitdepth.16"));
     expect(within(dialog).queryByRole("combobox", { name: t("connection.bit_depth") })).toBeNull();
@@ -937,7 +930,7 @@ describe("SBC settings", () => {
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc");
     // Auto: 16 blocks, 8 subbands, joint stereo, bitpool 53, at 48 kHz
     // only; read-only where the quality list was (issue #86)
-    const rate = within(dialog).getByRole("status");
+    const rate = within(dialog).getByLabelText(t("connection.quality"));
     expect(rate).toBe(within(dialog).getByLabelText(t("connection.quality")));
     expect(rate).toHaveTextContent("≈ 357 kbps");
 
@@ -982,7 +975,7 @@ describe("SBC settings", () => {
     // The highest down to 30: the bit rate follows it (73-byte frames at 48 kHz)
     fireEvent.input(high, { target: { value: "30" } });
     expect(high).toHaveAttribute("aria-valuetext", "30");
-    const rate = within(dialog).getByRole("status");
+    const rate = within(dialog).getByLabelText(t("connection.quality"));
     await waitFor(() => expect(rate).toHaveTextContent("≈ 219 kbps"));
     expect(auto).toBeEnabled();
     // The lowest never passes the highest, nor the highest the lowest
@@ -1049,7 +1042,7 @@ describe("SBC settings", () => {
     await waitFor(() => expect(high).toHaveAttribute("max", "47"));
     fireEvent.input(high, { target: { value: "47" } });
     // 47 per channel at 44.1 kHz
-    await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent("≈ 551 kbps"));
+    await waitFor(() => expect(within(dialog).getByLabelText(t("connection.quality"))).toHaveTextContent("≈ 551 kbps"));
     // Back at 48 kHz the bitpool comes down with the range
     fireEvent.change(rate, { target: { value: "48000" } });
     await waitFor(() => expect(high).toHaveValue("43"));
@@ -1061,7 +1054,7 @@ describe("SBC settings", () => {
     fireEvent.click(await screen.findByRole("switch", { name: (n) => n.startsWith(t("ui.profile.codecs_hide")) }));
     const dialog = await codecSettings(await section("WH-1000XM5"), "codec.sbc_xq");
     // Bitpool 43 per channel at 48 kHz
-    expect(within(dialog).getByRole("status")).toHaveTextContent("≈ 552 kbps");
+    expect(within(dialog).getByLabelText(t("connection.quality"))).toHaveTextContent("≈ 552 kbps");
   });
 
   it("SBC's ABR does not carry to SBC XQ, nor back (issue #86)", async () => {
@@ -1128,7 +1121,7 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(box).not.toHaveClass("st-warn");
   });
 
-  it("lists System Loopback, the virtual devices and the playing apps in one list", async () => {
+  it("lists the sound devices, the virtual devices and the playing apps in one list", async () => {
     start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
     const select = within(entry).getByLabelText(t("capture.mode"));
@@ -1136,8 +1129,8 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(within(virtual).getByRole("option", { name: "CABLE Input (VB-Audio Virtual Cable)" })).toBeInTheDocument();
     const apps = await within(select).findByRole("group", { name: t("capture.app") });
     expect(within(apps).getByRole("option", { name: "Spotify" })).toBeInTheDocument();
-    // With the default output it records, in its own group as the others (issue #86)
-    const loopback = within(select).getByRole("group", { name: t("capture.loopback") });
+    // The default output it records first among the sound devices, no "Loopback" (issue #86)
+    const loopback = within(select).getByRole("group", { name: t("capture.sound_devices") });
     expect(
       within(loopback).getByRole("option", { name: t("capture.loopback_default", "Speakers (Realtek(R) Audio)") }),
     ).toBeInTheDocument();
@@ -1150,9 +1143,14 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     const { calls } = start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
     const select = within(entry).getByLabelText(t("capture.mode"));
-    const output = await within(select).findByRole("group", { name: t("capture.output") });
-    // Each device once: the virtual ones stay under Virtual Device
-    expect(within(output).getAllByRole("option").map((o) => o.textContent)).toEqual(["Speakers (Realtek(R) Audio)"]);
+    const output = () => within(select).getByRole("group", { name: t("capture.sound_devices") });
+    // Each device once after the default: the virtual ones stay under Virtual Device
+    await waitFor(() =>
+      expect(within(output()).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        t("capture.loopback_default", "Speakers (Realtek(R) Audio)"),
+        "Speakers (Realtek(R) Audio)",
+      ]),
+    );
     calls.length = 0;
     fireEvent.change(select, { target: { value: "output:{0.0.0.00000000}.{speakers}" } });
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
@@ -1182,7 +1180,7 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     await waitFor(() => expect(document.querySelector(".device-entry")).not.toBeNull());
     const entry = await deviceEntry(/WH-1000XM5/);
     const select = within(entry).getByLabelText(t("capture.mode"));
-    const output = await within(select).findByRole("group", { name: t("capture.output") });
+    const output = await within(select).findByRole("group", { name: t("capture.sound_devices") });
     await waitFor(() => expect(select).toHaveValue("output:{gone}"));
     expect(within(output).getByRole("option", { name: t("capture.volume_sync_missing", "USB Speakers") })).toBeInTheDocument();
   });

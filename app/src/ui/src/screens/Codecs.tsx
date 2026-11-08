@@ -44,7 +44,7 @@ import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
-import { Banner, Button, Check, Dialog, Field, Segmented, Select, Toggle, type Option } from "../components/controls";
+import { Banner, Button, Check, Dialog, Toggle } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
@@ -70,9 +70,6 @@ import {
 } from "../lib/codecs";
 import {
   audioEntries,
-  HEADSET_MODES,
-  headsetMode,
-  type HeadsetMode,
   captureDevice,
   codecsOnRequest,
   entryBase,
@@ -782,83 +779,6 @@ function DeviceCodecs(props: {
           }}
         />
       </Show>
-      <HeadsetMic entry={e()} audioDevices={props.audioDevices} />
     </section>
-  );
-}
-
-/** Headset mode of a device: its microphone rendered to
- *  an output device of the PC, a virtual cable whose recording side apps
- *  use as a microphone (the virtual devices listed first). Off, Auto (only
- *  while an app records from it) or On. A classic device plays in call
- *  quality while the microphone is open; LE Audio keeps its own. */
-function HeadsetMic(props: { entry: AudioEntry; audioDevices: readonly AudioDevice[] }) {
-  const app = useApp();
-  const snap = () => app.core.state.snap!;
-  const shown = (): Profile => props.entry.profile ?? entryBase(props.entry, snap().profiles);
-  const mode = () => headsetMode(shown());
-  const [busy, setBusy] = createSignal(false);
-  const save = async (patch: Partial<Profile>) => {
-    setBusy(true);
-    await saveHeadsetMic(app, props.entry, patch);
-    setBusy(false);
-  };
-  const outputs = (): Option<string>[] => {
-    const p = shown();
-    const list = [...props.audioDevices].sort((a, b) => Number(b.is_virtual) - Number(a.is_virtual));
-    const options: Option<string>[] = list.map((d) => ({
-      value: d.id,
-      label: d.name,
-      group: d.is_virtual ? t("capture.virtual") : t("capture.output"),
-    }));
-    // One chosen before and not there now: by its name
-    if (p.mic_device_id && !list.some((d) => d.id === p.mic_device_id)) {
-      options.unshift({ value: p.mic_device_id, label: p.mic_device_name || p.mic_device_id });
-    }
-    if (!p.mic_device_id) options.unshift({ value: "", label: t("ui.codec.none"), disabled: true });
-    return options;
-  };
-  const chooseOutput = (id: string) => {
-    const d = props.audioDevices.find((x) => x.id === id);
-    if (!d || id === shown().mic_device_id) return;
-    void save({ mic_device_id: d.id, mic_device_name: d.name });
-  };
-  return (
-    <div class="headset-mic">
-      <div class="headset-mic-mode">
-        <span class="row-label" title={t("ui.headset_mic_hint")}>
-          {t("ui.headset_mic")}
-        </span>
-        <Segmented<HeadsetMode>
-          label={t("ui.headset_mic")}
-          value={mode()}
-          options={HEADSET_MODES.map((m) => ({ value: m, label: t(`ui.headset_mic_${m}`), disabled: busy() }))}
-          onChange={(m) => void save({ headset_mic: m, mic_muted: false })}
-        />
-      </div>
-      <Show when={mode() === "auto"}>
-        <span class="hint">{t("ui.headset_mic_auto_hint")}</span>
-      </Show>
-      <Show when={mode() !== "off"}>
-        <Field label={t("ui.mic_output")} hint={t("ui.mic_output_hint")} stacked>
-          {(id, describedBy) => (
-            <Select
-              id={id}
-              describedBy={describedBy}
-              value={shown().mic_device_id}
-              options={outputs()}
-              disabled={busy()}
-              onChange={chooseOutput}
-            />
-          )}
-        </Field>
-        <Show when={!shown().mic_device_id}>
-          <p class="field-warn">{t("ui.headset_mic_no_output")}</p>
-        </Show>
-        <Show when={!props.entry.le_audio}>
-          <p class="field-warn">{t("ui.headset_mic_quality")}</p>
-        </Show>
-      </Show>
-    </div>
   );
 }

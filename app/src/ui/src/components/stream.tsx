@@ -41,6 +41,15 @@ const PLAIN_STATUS: Record<string, string> = {
   "status.connected_fallback_developer": "status.connected",
 };
 
+/** What the core says when the headset microphone does not open: the
+ *  stream plays on, so the status line stays plain and the microphone's
+ *  chip shows it (issue #86: Home was full of text) */
+export const MIC_NOTES: readonly string[] = [
+  "error.headset_mic_loop",
+  "status.headset_mic_failed",
+  "status.headset_mic_output_failed",
+];
+
 /** An error the codec caused, in a few words ("LDAC is unsupported", issue
  *  #86); null in any other state or for another error */
 export function codecStopText(s: Pick<StreamStatus, "state" | "codec_stop">): string | null {
@@ -55,6 +64,7 @@ export function codecStopText(s: Pick<StreamStatus, "state" | "codec_stop">): st
  *  words) */
 export function statusText(s: Pick<StreamStatus, "state" | "message" | "codec_stop">): string {
   if (s.state === "error") return codecStopText(s) ?? t("status.error");
+  if (MIC_NOTES.includes(s.message.key)) return stateLabel(s.state);
   const plain = PLAIN_STATUS[s.message.key];
   return plain ? t(plain) : tm(s.message) || stateLabel(s.state);
 }
@@ -283,7 +293,9 @@ let noteShown: { key: string; at: number } | null = null;
  *  a badge; `aside` goes beside the badge (the flyout's link quality).
  *  `picker` takes the name's place: the codec chosen right there (Home,
  *  the flyout). */
-export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; picker?: JSX.Element }) {
+/** `voice` false: the headset microphone's codec is on its chip beside
+ *  (Home's card, the flyout), so the line does not grow as it opens */
+export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; picker?: JSX.Element; voice?: boolean }) {
   const { core } = useApp();
   const info = () => core.state.snap?.stream.info ?? null;
   const name = () => {
@@ -370,7 +382,9 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; pick
                 )}
               </Show>
             </span>
-            <VoiceCodec />
+            <Show when={props.voice !== false}>
+              <VoiceCodec />
+            </Show>
             {props.aside}
           </div>
         </div>
@@ -808,7 +822,11 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
   // is not (BluetoothFindFirstDevice fails, the list came back empty).
   const [windowsPaired] = createResource(
     () => (props.adapter && props.mode === "restore" ? props.adapter.address : null),
-    (adapter) => app.core.request("device.windows_paired_through", { adapter }).catch(() => [] as string[]),
+    (adapter) =>
+      app.core
+        .request("device.windows_paired_through", { adapter })
+        .then((list) => list.map((d) => d.address))
+        .catch(() => [] as string[]),
   );
   const repair = () => {
     const paired = new Set((windowsPaired() ?? []).map((a) => a.toUpperCase()));

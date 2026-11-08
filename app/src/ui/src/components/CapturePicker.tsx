@@ -6,6 +6,7 @@
 // Home chose it too until issue #86 put the codec and the link latency there.
 
 import { t } from "../i18n";
+import { multichannelCable } from "../lib/profile";
 import type { AudioApp, AudioDevice, Profile } from "../ipc/types";
 import type { IconName } from "./icons";
 
@@ -38,14 +39,17 @@ export function captureValue(p: Profile): string {
 
 /** The choices: virtual devices, every output device, and playing apps, the profile's own also when it is not there now.
  *  No apps for LE Audio (error.le_audio_capture) or on a Windows that cannot
- *  capture one app. */
+ *  capture one app. The 16-channel cable only in developer mode (issue #86). */
 export function captureChoices(
   p: Profile,
   devices: readonly AudioDevice[],
   apps: readonly AudioApp[],
   appsOk: boolean,
+  developer = false,
 ): { virtual: Choice[]; output: Choice[]; apps: Choice[] } {
-  const virtual = devices.filter((d) => d.is_virtual).map((d) => ({ value: `virtual:${d.id}`, label: d.name }));
+  const virtual = devices
+    .filter((d) => d.is_virtual && (developer || !multichannelCable(d) || captureValue(p) === `virtual:${d.id}`))
+    .map((d) => ({ value: `virtual:${d.id}`, label: d.name }));
   if (p.capture_mode === "virtual" && p.audio_device_id && !virtual.some((c) => c.value === captureValue(p))) {
     virtual.unshift({
       value: captureValue(p),

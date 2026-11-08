@@ -181,5 +181,6 @@ mod tests {
         DeviceService::export_all(&cfg).unwrap();
         ServiceList::export_all(&cfg).unwrap();
         WindowsImport::export_all(&cfg).unwrap();
+        WindowsPairedDevice::export_all(&cfg).unwrap();
     }
 }

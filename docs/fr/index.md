@@ -111,13 +111,13 @@ BlueCaster capture l'audio via WASAPI et propose trois modes :
 
 | Mode | Description | Utilisation |
 |:-----|:------------|:---------|
-| **Bouclage système** | Capture toute la sortie audio du système depuis le périphérique de lecture par défaut, via le bouclage WASAPI | Configuration simple -- tous les sons sont diffusés |
+| **Périphérique par défaut** | Capture toute la sortie audio du système depuis le périphérique de lecture par défaut | Configuration simple -- tous les sons sont diffusés |
 | **Périphérique virtuel** | Capture depuis un périphérique audio virtuel choisi (p. ex. VB-CABLE, VoiceMeeter) | Envoyer certaines applications vers le Bluetooth en gardant le reste de l'audio sur les haut-parleurs |
 | **Application** | Capture uniquement ce que lit une application, après son propre traitement (Windows 11 / Windows 10 2004+) | Envoyer une seule application, ou la sortie d'une application d'effets à l'échelle du système (égaliseur, amélioration du son) |
 
 En mode **Périphérique virtuel**, BlueCaster peut faire du périphérique virtuel choisi le périphérique de lecture par défaut de Windows (**Définir comme sortie par défaut de Windows pendant la connexion**), puis capture sa sortie en bouclage. Les applications qui envoient leur son vers ce périphérique virtuel sont diffusées en Bluetooth. À l'arrêt de la diffusion, le périphérique par défaut précédent est rétabli.
 
-Le bouclage système ne retire pas l'audio du périphérique de lecture par défaut : le son y est joué en plus d'être envoyé en Bluetooth. Si le périphérique virtuel choisi ne peut pas être ouvert, la connexion envoie l'audio du système à la place et le signale. Voir [Modes de capture](usage#capture-modes).
+La source **Périphérique par défaut** ne retire pas l'audio du périphérique de lecture par défaut : le son y est joué en plus d'être envoyé en Bluetooth. Si le périphérique virtuel choisi ne peut pas être ouvert, la connexion envoie l'audio du système à la place et le signale. Voir [Modes de capture](usage#capture-modes).
 
 ## Fonctionnement
 
