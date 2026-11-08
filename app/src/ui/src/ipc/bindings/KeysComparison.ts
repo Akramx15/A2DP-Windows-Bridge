@@ -16,7 +16,7 @@ adapter_found: boolean,
  */
 classic: KeyCounts, 
 /**
- * LE keys; None: BlueCaster's could not be read (Bluetooth is running)
+ * LE keys; None: BlueCaster's could not be read
  */
 le?: KeyCounts | null, 
 /**
