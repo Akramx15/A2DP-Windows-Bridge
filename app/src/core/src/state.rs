@@ -2615,7 +2615,10 @@ impl CoreState {
             }
             Method::StreamSetVolume { volume } => {
                 if let Some(h) = self.service.host() {
-                    h.request_volume(volume.min(127));
+                    // LE Audio: through VCP, not AVRCP (issue #86)
+                    if self.service.le_stream().is_none() || !h.le_request_volume(volume.min(127)) {
+                        h.request_volume(volume.min(127));
+                    }
                 }
                 Ok(Value::Null)
             }

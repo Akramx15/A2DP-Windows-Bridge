@@ -1836,7 +1836,7 @@ pub struct AudioDevice {
     pub mix_bits: Option<u16>,
     /// The recording side apps pick as a microphone when the headset
     /// microphone is rendered here ("CABLE Output" for "CABLE Input");
-    /// None: it has none
+    /// None: it has none or is not a virtual device
     #[serde(default)]
     pub capture_name: Option<String>,
 }
