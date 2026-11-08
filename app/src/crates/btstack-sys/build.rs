@@ -266,7 +266,8 @@ fn replace_n(source: &mut String, file: &str, from: &str, to: &str, n: usize) {
 /// response for another signal is logged and ignored.
 fn patched_avdtp_initiator(btstack: &Path) -> PathBuf {
     const FILE: &str = "avdtp_initiator.c";
-    let mut source = std::fs::read_to_string(btstack.join("src/classic").join(FILE)).unwrap();
+    // LF patterns: a checkout with core.autocrlf (CI) has CRLF
+    let mut source = std::fs::read_to_string(btstack.join("src/classic").join(FILE)).unwrap().replace("\r\n", "\n");
     replace_once(
         &mut source,
         FILE,
