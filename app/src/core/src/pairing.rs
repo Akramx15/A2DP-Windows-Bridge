@@ -13,8 +13,10 @@
 //! Windows' one.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use bluecaster_core::paths;
 use bt_host::ServicesError;
 use bt_host::link_keys::FileLinkKeyStore;
 use ipc::{
@@ -104,12 +106,55 @@ fn le_keys_info(k: bt_host::LeKeys) -> LeKeysInfo {
     }
 }
 
-/// Each device's services from its last answer since the core started (by
-/// address), shown while it is not connected (issue #86)
-static SEEN: Mutex<BTreeMap<[u8; 6], Vec<DeviceService>>> = Mutex::new(BTreeMap::new());
+/// Each device's services from its last answer (by upper-case address),
+/// shown while it is not connected; kept in the settings folder so a
+/// restart keeps them too (issue #86)
+type Seen = BTreeMap<String, Vec<DeviceService>>;
 
-fn seen() -> std::sync::MutexGuard<'static, BTreeMap<[u8; 6], Vec<DeviceService>>> {
-    SEEN.lock().unwrap_or_else(|e| e.into_inner())
+/// One reader or writer of the file at a time (each request runs on a
+/// thread of its own)
+static SEEN_FILE: Mutex<()> = Mutex::new(());
+
+fn load_seen(config: &Path) -> Seen {
+    std::fs::read_to_string(paths::device_services_file(config))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn save_seen(config: &Path, seen: &Seen) {
+    let path = paths::device_services_file(config);
+    let written = serde_json::to_string_pretty(seen).map_err(std::io::Error::other).and_then(|text| {
+        std::fs::create_dir_all(paths::devices_dir(config))?;
+        std::fs::write(&path, text)
+    });
+    if let Err(e) = written {
+        tracing::warn!("cannot keep the services in {}: {e}", path.display());
+    }
+}
+
+fn last_services(config: &Path, addr: &[u8; 6]) -> Option<Vec<DeviceService>> {
+    let _one = SEEN_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    load_seen(config).remove(&bt_host::addr_str(addr).to_uppercase())
+}
+
+fn keep_services(config: &Path, addr: &[u8; 6], services: &[DeviceService]) {
+    let _one = SEEN_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut seen = load_seen(config);
+    let key = bt_host::addr_str(addr).to_uppercase();
+    if seen.get(&key).map(Vec::as_slice) != Some(services) {
+        seen.insert(key, services.to_vec());
+        save_seen(config, &seen);
+    }
+}
+
+/// A forgotten device's services go with it
+pub fn forget_services(config: &Path, address: &str) {
+    let _one = SEEN_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut seen = load_seen(config);
+    if seen.remove(&address.to_uppercase()).is_some() {
+        save_seen(config, &seen);
+    }
 }
 
 fn list(services: Vec<DeviceService>, from_last_connection: bool) -> Value {
@@ -121,8 +166,9 @@ fn list(services: Vec<DeviceService>, from_last_connection: bool) -> Value {
 /// #86: the tag is out of the way, the keys stay in developer mode)
 pub fn services(state: &CoreState, addr: &str) -> Result<Value, ErrorInfo> {
     let addr = address(addr)?;
-    let not_connected = || match seen().get(&addr) {
-        Some(last) => Ok(list(last.clone(), true)),
+    let config = state.config_dir();
+    let not_connected = || match last_services(&config, &addr) {
+        Some(last) => Ok(list(last, true)),
         None => Err(err("device.not_connected", "ipc.error.services_not_connected")),
     };
     let Some(host) = state.service.host() else {
@@ -139,7 +185,7 @@ pub fn services(state: &CoreState, addr: &str) -> Result<Value, ErrorInfo> {
     };
     let services: Vec<DeviceService> =
         records.into_iter().map(|r| DeviceService { uuids: r.classes, name: r.name }).collect();
-    seen().insert(addr, services.clone());
+    keep_services(&config, &addr, &services);
     Ok(list(services, false))
 }
 
@@ -419,6 +465,22 @@ mod tests {
         assert_eq!(classic_of([0xC0, 1, 1, 1, 1, 1], &classic, &pairs), Some([0x58, 1, 1, 1, 1, 1]));
         assert_eq!(classic_of([0xC0, 3, 3, 3, 3, 3], &classic, &pairs), None);
         assert_eq!(classic_of([0xC0, 9, 9, 9, 9, 9], &classic, &pairs), None);
+    }
+
+    #[test]
+    fn last_services_outlive_the_core_until_forgotten() {
+        let config = std::env::temp_dir().join(format!("bluecaster-services-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&config);
+        let addr = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0F];
+        let services = vec![DeviceService { uuids: vec!["0000110b-0000-1000-8000-00805f9b34fb".into()], name: None }];
+        assert_eq!(last_services(&config, &addr), None);
+        keep_services(&config, &addr, &services);
+        // Read back from the file, as after a restart
+        assert_eq!(last_services(&config, &addr), Some(services));
+        forget_services(&config, "aa:bb:cc:dd:ee:0f");
+        let left = last_services(&config, &addr);
+        let _ = std::fs::remove_dir_all(&config);
+        assert_eq!(left, None);
     }
 
     #[test]
