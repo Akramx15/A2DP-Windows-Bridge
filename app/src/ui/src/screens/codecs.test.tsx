@@ -781,15 +781,16 @@ describe("codec cards", () => {
       .closest(".tag")!;
     expect(tag).not.toHaveClass("st-good");
     expect(tag).not.toHaveClass("st-bad");
-    // SBC, which every device has, without it: unsupported codecs hidden or not
-    const sbcTag = () =>
-      within(xb.querySelector<HTMLElement>('[data-codec="sbc"]')!).queryByText(
-        t("ui.profile.codec_support_unknown"),
-      );
-    expect(sbcTag()).toBeNull();
+    // SBC, which every device has, supported: no tag while only supported
+    // codecs show, "Supported" with all of them; SBC XQ not known yet
+    const card = (id: string) => within(xb.querySelector<HTMLElement>(`[data-codec="${id}"]`)!);
+    expect(card("sbc").queryByText(t("ui.profile.codec_support_unknown"))).toBeNull();
+    expect(card("sbc").queryByText(t("ui.profile.codec_supported"))).toBeNull();
     fireEvent.click(hideSwitch());
     await within(xb).findByRole("radio", { name: /aptX HD/ });
-    expect(sbcTag()).toBeNull();
+    expect(card("sbc").getByText(t("ui.profile.codec_supported"))).toBeInTheDocument();
+    expect(card("sbc").queryByText(t("ui.profile.codec_support_unknown"))).toBeNull();
+    expect(card("sbcxq").getByText(t("ui.profile.codec_support_unknown"))).toBeInTheDocument();
   });
 
   it("are put in the device's own order with Alt+arrow keys, kept in its profile (issue #86 round 8)", async () => {
