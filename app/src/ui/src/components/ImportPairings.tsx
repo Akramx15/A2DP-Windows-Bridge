@@ -42,7 +42,7 @@ export function ImportPairings() {
     <Show when={adapter() && unsaved() > 0 ? adapter() : null}>
       {(address) => (
         <div class="import-pairings">
-          <Button icon="arrow_download" busy={busy()} onClick={() => importNow(address())}>
+          <Button icon="shield" busy={busy()} onClick={() => importNow(address())}>
             {t("ui.adapter.import_windows")}
           </Button>
           <p class="hint">{t("ui.devices.import_hint")}</p>

@@ -38,6 +38,7 @@ const PLAIN_STATUS: Record<string, string> = {
   "status.connected_fallback": "status.connected",
   "status.connected_fallback_in_use": "status.connected",
   "status.connected_fallback_experimental": "status.connected",
+  "status.connected_fallback_developer": "status.connected",
 };
 
 /** The device's status line: the core's message, else the state; an error's
@@ -257,6 +258,7 @@ export function codecDetails(info: StreamInfo): string[] {
 export function fallbackNoteKey(info: StreamInfo, messageKey: string): string | null {
   if (!info.requested_codec) return null;
   if (messageKey === "status.connected_fallback_experimental") return "ui.codec.fallback_experimental";
+  if (messageKey === "status.connected_fallback_developer") return "ui.codec.fallback_developer";
   return info.requested_in_use ? "ui.codec.fallback_in_use" : "ui.codec.fallback_unsupported";
 }
 
@@ -287,7 +289,13 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; pick
     const i = info();
     if (!i?.requested_codec) return "";
     const req = codecLabelKey(i.requested_codec);
-    return t("tooltip.codec_fallback_help", req ? t(req) : i.requested_codec, name());
+    // Not the device's doing: developer mode is off (issue #86)
+    const developer = core.state.snap?.stream.message.key === "status.connected_fallback_developer";
+    return t(
+      developer ? "tooltip.codec_fallback_developer" : "tooltip.codec_fallback_help",
+      req ? t(req) : i.requested_codec,
+      name(),
+    );
   };
   const fallbackNote = () => {
     const i = info();
@@ -828,6 +836,7 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
       open={props.adapter !== null}
       title={props.mode === "assign" ? t("ui.adapter.assign_title") : t("ui.adapter.restore_title")}
       confirm={props.mode === "assign" ? t("ui.adapter.assign_winusb") : t("ui.adapter.restore_driver")}
+      confirmIcon="shield"
       cancel={t("modal.cancel")}
       busy={busy()}
       danger={props.mode === "restore"}

@@ -703,6 +703,8 @@ pub fn run(args: &[String]) -> i32 {
         codec_forced: a.force_codec,
         unlisted_options: a.unlisted_options,
         experimental_codecs: !a.no_experimental,
+        // The command line is a developer's: every codec, as asked
+        developer_codecs: true,
         auto_order: codec::AutoOrder::default(),
         quality: a.quality,
         abr: a.abr,

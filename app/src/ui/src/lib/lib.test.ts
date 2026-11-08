@@ -22,8 +22,10 @@ import {
   carryToCodec,
   codecLabelKey,
   CODECS,
+  developerOnly,
   effectiveCodec,
   fitToCodec,
+  offeredCodecs,
   isDefaultOrder,
   isExperimental,
   fixedBitDepth,
@@ -633,6 +635,14 @@ describe("Auto's order and the fallback (issue #86)", () => {
     expect(effectiveCodec("ldac", pw)).toBe("opus");
     expect(effectiveCodec("ldac", pw, false)).toBe("aac");
     expect(effectiveCodec("auto", ["sbc", "faststream"], false)).toBe("sbc");
+  });
+
+  it("offers PipeWire's Opus only in developer mode (issue #86)", () => {
+    expect(CODECS.filter((c) => developerOnly(c.id)).map((c) => c.id)).toEqual(["opus05"]);
+    expect(offeredCodecs(CARD_ORDER, true)).toEqual([...CARD_ORDER]);
+    expect(offeredCodecs(CARD_ORDER, false)).toEqual(CARD_ORDER.filter((c) => c !== "opus05"));
+    // Unknown keys are not dropped
+    expect(offeredCodecs(["sbc", "lc3"], false)).toEqual(["sbc", "lc3"]);
   });
 });
 

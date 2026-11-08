@@ -29,7 +29,7 @@ import {
 } from "../components/stream";
 import { t } from "../i18n";
 import { IpcError, type AdapterInfo, type Snapshot, type StreamState } from "../ipc/types";
-import { CARD_ORDER, cardOrder, codecSpec } from "../lib/codecs";
+import { CARD_ORDER, cardOrder, codecSpec, offeredCodecs } from "../lib/codecs";
 import {
   audioEntries,
   codecsOnRequest,
@@ -415,12 +415,17 @@ export function CodecPicker(props: { entry: AudioEntry }) {
   const picked = () => pickedCodec(snap(), e(), autoAll(), order());
   // What it streams with; else Auto's pick, or the one used instead of a
   // codec it does not offer
-  const value = () => streamingCodec(snap(), e()) ?? picked() ?? (codec() === "auto" ? null : codec());
+  const value = () =>
+    streamingCodec(snap(), e()) ??
+    picked() ??
+    (codec() === "auto" || offeredCodecs([codec()], snap().settings.developer_mode).length === 0 ? null : codec());
   // A quick choice: what the device supports, never the codecs Codecs hides
   const choices = () => {
     const known = knownCodecs(snap().devices, e().address);
     const onRequest = codecsOnRequest(snap().devices, e().address);
-    const ids: string[] = order().filter((id) => codecShown(id, picked(), known, true, onRequest));
+    const ids: string[] = offeredCodecs(order(), snap().settings.developer_mode).filter((id) =>
+      codecShown(id, picked(), known, true, onRequest),
+    );
     const v = value();
     return v && !ids.includes(v) ? [v, ...ids] : ids;
   };

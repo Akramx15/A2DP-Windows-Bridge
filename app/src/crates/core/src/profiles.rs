@@ -516,6 +516,8 @@ impl Profile {
             unlisted_options: self.unlisted_options,
             // The setting's, filled in by whoever starts the stream
             experimental_codecs: true,
+            // Settings' developer_mode, filled in the same way
+            developer_codecs: false,
             auto_order: self.order(),
             quality: Quality::from_key(&self.quality),
             abr: self.abr,

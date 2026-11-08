@@ -1196,6 +1196,8 @@ fn connected_balloon(lang: &str, device: Option<&str>, stream: &StreamStatus) ->
     if let Some(req) = &i.requested_codec {
         let (key, default) = if stream.message.key == "status.connected_fallback_experimental" {
             ("ui.codec.fallback_experimental", "(%s is experimental)")
+        } else if stream.message.key == "status.connected_fallback_developer" {
+            ("ui.codec.fallback_developer", "(%s needs developer mode)")
         } else if i.requested_in_use {
             ("ui.codec.fallback_in_use", "(%s is in use)")
         } else {
@@ -1333,6 +1335,15 @@ fn bitpools_change_in_place(stream: &StreamStatus, before: Option<&CoreProfile>,
 /// way). Not LE Audio (LC3).
 fn restart_for_auto(stream: &StreamStatus, p: &CoreProfile) -> bool {
     restart_after_save(stream, &p.name) && !p.le_audio && (p.codec != "auto" || !p.order().is_default())
+}
+
+/// A profile streams (or connects) with a codec of developer mode
+/// ([`codec::CodecKind::developer_only`]): it starts again when developer
+/// mode is turned off (issue #86)
+fn streams_developer_codec(stream: &StreamStatus) -> bool {
+    let developer = |name: &str| codec::CodecKind::ALL.into_iter().any(|k| k.developer_only() && k.name() == name);
+    stream.profile.as_deref().is_some_and(|p| restart_after_save(stream, p))
+        && stream.info.as_ref().is_some_and(|i| developer(&i.codec))
 }
 
 /// Auto-select just turned `auto_now`: whether the profile streaming would
@@ -1983,6 +1994,7 @@ impl CoreState {
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
+        req.developer_codecs = settings.debug_mode;
         req.volume_sync = effective_volume_sync(settings.volume_sync, req.volume_sync);
         req.mute_output = settings.mutes_output();
         req.sbc = settings.sbc_frame(req.sbc);
@@ -2016,6 +2028,7 @@ impl CoreState {
         let settings = self.service.settings();
         let mut req = custom_request(c, settings.legacy_max_media_payload())?;
         req.experimental_codecs = settings.experimental_codecs;
+        req.developer_codecs = settings.debug_mode;
         req.mute_output = settings.mutes_output();
         tracing::info!("custom stream to {}: codec {}, source {}", c.device, c.codec, req.source);
         self.begin_stream(req, None);
@@ -2683,6 +2696,7 @@ impl CoreState {
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
+                    let developer_off = base.debug_mode && !merged.debug_mode;
                     let sync_toggled =
                         base.volume_sync != merged.volume_sync || base.mutes_output() != merged.mutes_output();
                     me.save_settings(merged)?;
@@ -2726,6 +2740,18 @@ impl CoreState {
                             me.restart_profile(&p.name.clone())?;
                         }
                     }
+                    // Developer mode off while one of its codecs streams
+                    // (issue #86): the profile starts again without it
+                    if developer_off {
+                        let (_, s) = me.snapshot();
+                        if let Some(name) = s.stream.profile.clone().filter(|_| streams_developer_codec(&s.stream)) {
+                            tracing::info!(
+                                "developer mode off: profile {} streams a codec of developer mode, starts again",
+                                bluecaster_core::diag::quoted(&name)
+                            );
+                            me.restart_profile(&name)?;
+                        }
+                    }
                     // LE Audio on / off waits for the next scan or connection
                     // while the stack is in use (v1's deferred text)
                     let le_audio_deferred = le_toggled && me.service.le_audio_deferred();
@@ -2753,7 +2779,9 @@ impl CoreState {
                     // The device streamed before connects again on the new
                     // stack, with the same profile (issue #86)
                     if let Some(mut req) = again {
-                        req.experimental_codecs = me.service.settings().experimental_codecs;
+                        let settings = me.service.settings();
+                        req.experimental_codecs = settings.experimental_codecs;
+                        req.developer_codecs = settings.debug_mode;
                         let profile = me.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         me.begin_stream(req, profile);
                     }
@@ -3604,6 +3632,20 @@ mod tests {
         assert!(!restart_for_auto(&streaming, &CoreProfile { name: "Buds".into(), ..profile("aac") }));
         assert!(!restart_for_auto(&StreamStatus::default(), &profile("aac")));
         assert!(!restart_for_auto(&streaming, &CoreProfile { le_audio: true, ..profile("aac") }));
+    }
+
+    #[test]
+    fn developer_mode_off_restarts_a_stream_on_opus05() {
+        let streaming = |codec: &str| StreamStatus {
+            state: StreamState::Streaming,
+            profile: Some("WH".into()),
+            info: Some(ipc::StreamInfo { codec: codec.into(), requested_codec: None, ..sbc_abr_info() }),
+            ..StreamStatus::default()
+        };
+        assert!(streams_developer_codec(&streaming("Opus 05")));
+        assert!(!streams_developer_codec(&streaming("Opus")));
+        assert!(!streams_developer_codec(&StreamStatus { state: StreamState::Idle, ..streaming("Opus 05") }));
+        assert!(!streams_developer_codec(&StreamStatus { profile: None, ..streaming("Opus 05") }));
     }
 
     #[test]

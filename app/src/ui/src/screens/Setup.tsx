@@ -350,7 +350,7 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
                 <div>
                   <Button
                     kind="strong"
-                    icon="checkmark"
+                    icon={needsDriver() ? "shield" : "checkmark"}
                     disabled={!!core.state.snap?.v1_running || !adapterSupported(a())}
                     onClick={() => setUp(a())}
                   >

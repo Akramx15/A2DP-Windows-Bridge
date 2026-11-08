@@ -58,7 +58,9 @@ import {
   codecLabelKey,
   codecSpec,
   codecSupport,
+  developerOnly,
   effectiveCodec,
+  offeredCodecs,
   capsForSettings,
   sbcCapsForSettings,
   isDefaultOrder,
@@ -233,12 +235,17 @@ export function pickedCodec(
 ): string | null {
   const p = entry.profile ?? entryBase(entry, snap.profiles);
   const codec = p.codec;
-  const known = knownCodecs(snap.devices, entry.address);
+  // Outside developer mode its codecs are left out, as the core does: one
+  // chosen is used as one the device does not offer, never asked for anyway
+  const developer = snap.settings.developer_mode;
+  const known = offeredCodecs(knownCodecs(snap.devices, entry.address), developer);
+  const blocked = !developer && developerOnly(codec);
   // One it may offer once chosen stays chosen (issue #30)
-  if (!autoAll && codecsOnRequest(snap.devices, entry.address).includes(codec)) return codec;
+  if (!autoAll && !blocked && codecsOnRequest(snap.devices, entry.address).includes(codec)) return codec;
   // One chosen on its card though the device does not offer it: that one;
   // one it no longer offers: the one used instead (issue #86)
   if (!autoAll && codec !== "auto") {
+    if (blocked) return effectiveCodec(codec, known, true, order);
     return p.codec_forced ? codec : (effectiveCodec(codec, known, true, order) ?? codec);
   }
   return streamingCodec(snap, entry) ?? effectiveCodec("auto", known, true, autoAll ? AUTO_ORDER : order);
@@ -396,8 +403,10 @@ function DeviceCodecs(props: {
   // quality first), read-only
   const order = (): CodecId[] => (props.auto ? [...CARD_ORDER] : (dragOrder() ?? cardOrder(shown().codec_order)));
   const picked = () => pickedCodec(snap(), e(), props.auto, order());
+  // Opus 05's card only in developer mode (issue #86); hidden, it keeps its
+  // place in the order
   const cards = () =>
-    order()
+    offeredCodecs(order(), snap().settings.developer_mode)
       .filter((id) => codecShown(id, picked(), known(), props.hide, onRequest()))
       .map((id) => codecSpec(id));
   const [settingsOf, setSettingsOf] = createSignal<CodecSpec | null>(null);

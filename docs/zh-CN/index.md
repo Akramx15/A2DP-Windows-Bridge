@@ -54,7 +54,7 @@ has_toc: false
 | SBC XQ | ❌ | ❌ | ✅ | ✅（SBC 允许双声道且 bitpool ≥ 29 的接收端） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 实验性（仅音乐，需明确选择） |
-| Opus 05（PipeWire 自有的 Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57+（`opus_05`，仅限 PipeWire 设备） | 🧪 实验性（需明确选择） |
+| Opus 05（PipeWire 自有的 Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57+（`opus_05`，仅限 PipeWire 设备） | 🧪 实验性（需明确选择，仅限开发者模式） |
 | LC3（LE Audio，BAP 单播） | ❌ | ✅ 仅限 Bluetooth 硬件和驱动支持 LE Audio 的 PC | ✅ PipeWire BAP `lc3`（BlueZ LE Audio） | 🧪 实验性（设备的 LE Audio 条目；游戏耳机使用 GMAP 低延迟；需要支持 ISO 的 Bluetooth 5.2 适配器，[使用方法](usage#le-audio)） |
 
 ✅ 支持 · 🧪 实验性 · ❌ 不支持。所有列均指发送端（PC → 耳机）。“内置”指不使用 BlueCaster 时操作系统自带的 Bluetooth 音频；Ubuntu 一列为 Ubuntu 26.04 的 PipeWire 编解码器集（`libspa-0.2-bluetooth`）。
