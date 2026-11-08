@@ -984,7 +984,6 @@
   "ui.update.release_notes": "전체 릴리스 노트",
   "ui.headset_mic": "헤드셋 마이크",
   "ui.mic_output": "앱용 마이크",
-  "ui.mic_output_hint": "앱에서 이것을 마이크로 선택하세요. 자동은 앱이 녹음하는 동안에만 엽니다.",
   "ui.headset_mic_quality": "마이크를 사용하는 동안 재생은 통화 품질의 모노가 됩니다.",
   "ui.headset_mic_no_output": "마이크 출력이 선택되지 않아 헤드셋 마이크가 꺼진 상태로 유지됩니다.",
   "ui.headset_mic_off": "끄기",

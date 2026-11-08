@@ -984,7 +984,6 @@
   "ui.update.release_notes": "リリースノート全文",
   "ui.headset_mic": "ヘッドセットマイク",
   "ui.mic_output": "アプリ用のマイク",
-  "ui.mic_output_hint": "アプリでこれをマイクとして選んでください。自動ではアプリが録音している間だけ開きます。",
   "ui.headset_mic_quality": "マイクを使っている間、再生は通話品質のモノラルになります。",
   "ui.headset_mic_no_output": "マイクの出力先が選ばれていないため、ヘッドセットマイクはオフのままです。",
   "ui.headset_mic_off": "オフ",

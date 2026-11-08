@@ -984,7 +984,6 @@
   "ui.update.release_notes": "完整发行说明",
   "ui.headset_mic": "耳机麦克风",
   "ui.mic_output": "供应用使用的麦克风",
-  "ui.mic_output_hint": "在应用中将其选为麦克风。自动模式仅在应用录音时打开。",
   "ui.headset_mic_quality": "麦克风开启期间，播放为通话音质的单声道。",
   "ui.headset_mic_no_output": "未选择麦克风输出：耳机麦克风保持关闭。",
   "ui.headset_mic_off": "关",

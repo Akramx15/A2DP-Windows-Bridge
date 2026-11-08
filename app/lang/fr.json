@@ -984,7 +984,6 @@
   "ui.update.release_notes": "Notes de version complètes",
   "ui.headset_mic": "Micro du casque",
   "ui.mic_output": "Micro pour les applis",
-  "ui.mic_output_hint": "Choisissez-le comme micro dans vos applis. Auto ne l'ouvre que pendant qu'une appli enregistre.",
   "ui.headset_mic_quality": "Tant que le micro est ouvert, la lecture est en mono, qualité d'appel.",
   "ui.headset_mic_no_output": "Aucune sortie du micro choisie : le micro du casque reste désactivé.",
   "ui.headset_mic_off": "Désactivé",

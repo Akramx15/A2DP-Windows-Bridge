@@ -113,7 +113,6 @@ stack offer voice from the start).
 
 Language keys (all 8 files): `ui.headset_mic` ("Headset microphone"),
 `ui.headset_mic_hint`, `ui.mic_output` ("Microphone output"),
-`ui.mic_output_hint` (apps use the cable's recording side),
 `ui.headset_mic_quality` (the call-quality warning, shown only for classic
 devices), `ui.headset_mic_no_output` (no output device chosen),
 `status.voice_codec` ("Voice: %s"), codec names `codec.cvsd`,
@@ -815,7 +814,7 @@ UI:
   `profile.save` of the device's profile. The mock opens no voice link for
   Auto (no app records from the cable there).
 - Keys: `capture.input_source`, `ui.headset_mic_off` / `_auto` / `_on`,
-  `ui.mic_output` (the picker's name), `ui.mic_output_hint`,
+  `ui.mic_output` (the picker's name),
   `ui.headset_mic_mute` / `_unmute` (the chip's name and tooltip).
 
 ## Volume on the voice link (bt-host `app.rs`, `voice.rs`)
