@@ -2857,6 +2857,44 @@ option {
   min-width: 0;
 }
 
+/* Microphone tab: the mic test's buttons and a segmented level bar */
+.mic-test {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.mic-test-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.mic-meter {
+  flex: 1 1 16rem;
+  display: flex;
+  gap: 3px;
+  height: 2rem;
+  align-items: stretch;
+  min-width: 0;
+}
+.mic-meter span {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background-color 60ms linear;
+}
+.mic-meter span.on {
+  background: var(--accent-fill);
+}
+.mic-meter.playing span.on {
+  background: var(--good-text);
+}
+.mic-time {
+  min-width: 7.5em;
+  color: var(--text-2);
+}
+
 /* Link tab: v1's link quality figures */
 .lq-groups {
   display: grid;

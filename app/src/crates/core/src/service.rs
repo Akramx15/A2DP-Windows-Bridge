@@ -325,6 +325,8 @@ pub(crate) struct Inner {
     voice_change: Mutex<Option<VoiceChange>>,
     /// The HFP audio connection's events, for the session
     voice_events: Mutex<Vec<bt_host::VoiceEvent>>,
+    /// The microphone test (Diagnostics)
+    pub mic_test: crate::mic_test::MicTest,
     /// The running stack was started with LE Audio
     le_active: AtomicBool,
     /// A device scan runs
@@ -478,7 +480,9 @@ impl Inner {
         c.battery = true;
         // Headset microphone: the session's request, or the developer
         // CLI's --headset-mic-toggle
-        c.voice = self.voice_wanted.load(Ordering::Acquire) || self.voice_offered.load(Ordering::Acquire);
+        c.voice = self.voice_wanted.load(Ordering::Acquire)
+            || self.voice_offered.load(Ordering::Acquire)
+            || self.mic_test.needs_voice();
         // The computer's name, as Windows' own Bluetooth (issue #86)
         c.local_name = bt_host::local_name(&win_sys::computer::computer_name().unwrap_or_default());
         // The Adapters screen shows a loader's progress while the adapter
@@ -660,7 +664,7 @@ impl Inner {
                 } else {
                     "LE Audio (experimental) was turned off"
                 })
-            } else if self.voice_wanted.load(Ordering::Acquire) && !h.voice_enabled() {
+            } else if (self.voice_wanted.load(Ordering::Acquire) || self.mic_test.needs_voice()) && !h.voice_enabled() {
                 Some("headset mode needs the stack with voice")
             } else if !h.controller_responds(CONTROLLER_PROBE) {
                 Some("the Bluetooth adapter stopped answering")
@@ -974,6 +978,7 @@ impl Service {
             voice_wanted: AtomicBool::new(false),
             voice_change: Mutex::new(None),
             voice_events: Mutex::new(Vec::new()),
+            mic_test: Default::default(),
             le_active: AtomicBool::new(false),
             scanning: AtomicBool::new(false),
             le_stream: Mutex::new(None),
@@ -1205,6 +1210,48 @@ impl Service {
         *self.inner.voice_change.lock().unwrap_or_else(|e| e.into_inner()) = Some(VoiceChange { mode, mic_output });
         self.inner.tick.1.notify_all();
         true
+    }
+
+    /// The microphone test records (Diagnostics): the classic stream's
+    /// session opens the voice link for it. Ok(true): the running stack has
+    /// no voice, the caller starts the stream again. Err: the message key
+    /// (no classic stream streaming).
+    pub fn mic_test_record(&self) -> Result<bool, &'static str> {
+        if !self.is_running() || self.state() != StreamState::Streaming {
+            return Err("mic_test.not_streaming");
+        }
+        match self.last_request.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            Some(req) if req.le.is_none() => {}
+            Some(_) => return Err("mic_test.le_audio"),
+            None => return Err("mic_test.not_streaming"),
+        }
+        let restart = !self.host().is_some_and(|h| h.voice_enabled());
+        self.inner.mic_test.record(restart);
+        self.inner.tick.1.notify_all();
+        Ok(restart)
+    }
+
+    /// The microphone test: stops its recording or playback
+    pub fn mic_test_stop(&self) {
+        self.inner.mic_test.stop();
+        self.inner.tick.1.notify_all();
+    }
+
+    /// The microphone test: plays the recording to the headphones
+    pub fn mic_test_play(&self) {
+        self.inner.mic_test.play();
+    }
+
+    /// The microphone test ends: the voice link closes unless headset mode
+    /// wants it
+    pub fn mic_test_end(&self) {
+        self.inner.mic_test.end();
+        self.inner.tick.1.notify_all();
+    }
+
+    /// The microphone test's state (keeps it alive)
+    pub fn mic_test_status(&self) -> ipc::MicTestState {
+        self.inner.mic_test.status()
     }
 
     /// Other bitpools for the A2DP stream running, without touching the link

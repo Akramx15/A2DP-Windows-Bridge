@@ -994,5 +994,12 @@
   "codec.lc3_swb": "LC3-SWB",
   "error.headset_mic_loop": "麥克風輸出與正在向耳機傳送聲音的裝置相同。請在「編解碼器」中選擇其他麥克風輸出。",
   "status.headset_mic_failed": "耳機沒有開啟麥克風。播放照常繼續。",
-  "status.headset_mic_output_failed": "無法開啟麥克風輸出。播放照常繼續。"
+  "status.headset_mic_output_failed": "無法開啟麥克風輸出。播放照常繼續。",
+  "ui.diag.tab_mic": "麥克風",
+  "ui.mic_test.record": "錄音",
+  "ui.mic_test.stop": "停止",
+  "ui.mic_test.play": "播放",
+  "ui.mic_test.hint": "錄幾秒鐘，然後在耳機上播放。測試期間為通話音質。",
+  "error.mic_test_not_streaming": "請先連接耳機。",
+  "error.mic_test_le_audio": "麥克風測試尚不支援 LE Audio。"
 }
