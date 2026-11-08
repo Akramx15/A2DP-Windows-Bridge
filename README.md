@@ -1,6 +1,6 @@
 # BlueCaster (formerly A2DP-Windows-Bridge)
 
-Advanced Bluetooth Audio Transmitter for Windows. It adds the codecs Windows lacks, such as LDAC, LHDC V5, aptX Adaptive and aptX HD, by running its own Bluetooth stack on a USB Bluetooth adapter through WinUSB. No kernel driver or test signing is needed.
+High-resolution Bluetooth audio transmitter for Windows. It streams to your headphones in LDAC, LHDC V5 and aptX Adaptive at up to 96 kHz (LHDC V5 up to 192 kHz), plus AAC and SBC XQ; Windows itself offers none of the first three. All it needs is a Bluetooth adapter: a cheap USB dongle, or on many laptops the built-in one. BlueCaster sets the adapter up by itself and gives it back to Windows with one click ([how it works](https://seiyafunaokajp.github.io/BlueCaster/architecture)).
 
 ![BlueCaster streaming LDAC 990 kbps / 96 kHz to Sony WH-1000XM4 (Home screen)](docs/images/app_sample.png)
 
