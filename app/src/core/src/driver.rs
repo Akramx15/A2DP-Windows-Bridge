@@ -59,12 +59,82 @@ pub(crate) fn run(config: &Path, args: &[&str]) -> Result<(u32, Value), ErrorInf
     let json: Option<Value> =
         std::fs::read_to_string(&out).ok().and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok());
     let _ = std::fs::remove_file(&out);
-    // The result of windows-keys holds link keys: not for the log
-    match json.as_ref().and_then(|j| j.get("keys")).and_then(Value::as_array) {
-        Some(keys) => tracing::info!("driver helper {} -> exit {code}: {} key(s)", args.join(" "), keys.len()),
-        None => tracing::info!("driver helper {} -> exit {code}: {json:?}", args.join(" ")),
-    }
+    // windows-keys and restore give link keys back: not for the log
+    let shown = json.as_ref().map(without_keys);
+    tracing::info!("driver helper {} -> exit {code}: {shown:?}", args.join(" "));
     Ok((code, json.unwrap_or(Value::Null)))
+}
+
+/// A helper's result as the log may show it: lists of keys by their number
+fn without_keys(result: &Value) -> Value {
+    let mut shown = result.clone();
+    for field in ["keys", "le_keys", "replaced_keys"] {
+        if let Some(list) = result.get(field).and_then(Value::as_array) {
+            shown[field] = Value::String(format!("{} key(s)", list.len()));
+        }
+    }
+    shown
+}
+
+/// For `restore --keys`: the adapter's address and BlueCaster's link keys,
+/// written to the pairing folder (never in a bundle); None without either
+fn keys_for_windows(state: &CoreState, instance_id: &str) -> Option<PathBuf> {
+    let (_, s) = state.snapshot();
+    let radio = s.adapter.adapters.iter().find(|a| a.instance_id == instance_id)?.address.clone()?;
+    let config = state.config_dir();
+    let store = bt_host::link_keys::FileLinkKeyStore::open(&bluecaster_core::paths::link_keys_file(&config));
+    if store.entries().is_empty() {
+        return None;
+    }
+    let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let keys: Vec<Value> = store
+        .entries()
+        .iter()
+        .map(|e| serde_json::json!({ "address": bt_host::addr_str(&e.addr), "key": hex(&e.key) }))
+        .collect();
+    let path = bluecaster_core::paths::keys_for_windows_file(&config);
+    let text = serde_json::to_vec(&serde_json::json!({ "radio": radio, "keys": keys })).ok()?;
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    match std::fs::write(&path, text) {
+        Ok(()) => Some(path),
+        Err(e) => {
+            tracing::warn!("cannot write {}: {e}; Windows keeps its own keys", path.display());
+            None
+        }
+    }
+}
+
+/// Windows' keys that BlueCaster's replaced, added to the backup in the
+/// pairing folder (per device the one replaced last)
+fn keep_replaced_keys(config: &Path, instance_id: &str, result: &Value) {
+    if let Some(e) = result.get("keys_error").and_then(Value::as_str) {
+        tracing::warn!("driver: link keys not written to Windows: {e}");
+    }
+    let written = result.get("keys_written").and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+    let same = result.get("keys_same").and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+    if result.get("keys_written").is_some() {
+        tracing::info!("driver: {written} link key(s) written to Windows for {instance_id}, {same} the same already");
+    }
+    let Some(replaced) = result.get("replaced_keys").and_then(Value::as_array).filter(|r| !r.is_empty()) else {
+        return;
+    };
+    let path = bluecaster_core::paths::replaced_windows_keys_file(config);
+    let mut backup: Vec<Value> =
+        std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let date = bluecaster_core::paths::today();
+    for k in replaced {
+        let address = k.get("address").and_then(Value::as_str).unwrap_or_default();
+        backup.retain(|b| b.get("address").and_then(Value::as_str) != Some(address));
+        let mut entry = k.clone();
+        entry["adapter"] = Value::String(instance_id.to_string());
+        entry["date"] = Value::String(date.clone());
+        backup.push(entry);
+    }
+    if let Err(e) = std::fs::write(&path, serde_json::to_vec_pretty(&backup).unwrap_or_default()) {
+        tracing::warn!("cannot keep Windows' replaced keys in {}: {e}", path.display());
+    }
 }
 
 pub fn assign(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, ErrorInfo> {
@@ -108,7 +178,19 @@ pub fn restore(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, Error
     if let Some(p) = previous.as_deref() {
         args.extend(["--previous", p]);
     }
-    let (code, _) = run(&state.config_dir(), &args)?;
+    // BlueCaster's pairings go to Windows too: the devices it paired since
+    // gave up Windows' older keys (issue #86)
+    let keys = keys_for_windows(state, instance_id);
+    let keys_arg = keys.as_ref().map(|p| p.to_string_lossy().into_owned());
+    if let Some(k) = keys_arg.as_deref() {
+        args.extend(["--keys", k]);
+    }
+    let ran = run(&state.config_dir(), &args);
+    if let Some(k) = &keys {
+        let _ = std::fs::remove_file(k);
+    }
+    let (code, result) = ran?;
+    keep_replaced_keys(&state.config_dir(), instance_id, &result);
     state.refresh_adapters();
     match code {
         0 => {
@@ -171,6 +253,35 @@ mod tests {
 
     const TPLINK: &str = r"USB\VID_2357&PID_0604\E848B8C82000";
     const INTEL: &str = r"USB\VID_8087&PID_0033\5&3B72E4CF&0&14";
+
+    #[test]
+    fn replaced_windows_keys_are_kept_but_never_logged() {
+        let config = std::env::temp_dir().join(format!("bluecaster-replaced-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&config);
+        std::fs::create_dir_all(bluecaster_core::paths::pairing_dir(&config)).unwrap();
+        let result = |key: &str| {
+            serde_json::json!({
+                "ok": true,
+                "keys_written": ["AA:BB:CC:DD:EE:FF"],
+                "keys_same": [],
+                "replaced_keys": [{ "address": "AA:BB:CC:DD:EE:FF", "key": key }],
+            })
+        };
+        let shown = without_keys(&result("11").clone()).to_string();
+        assert!(!shown.contains("\"11\""), "{shown}");
+        assert!(shown.contains("1 key(s)"));
+        keep_replaced_keys(&config, TPLINK, &result("11"));
+        // Replaced again: the one replaced last is kept
+        keep_replaced_keys(&config, TPLINK, &result("22"));
+        // Nothing replaced: the backup stays
+        keep_replaced_keys(&config, TPLINK, &serde_json::json!({ "keys_written": [] }));
+        let path = bluecaster_core::paths::replaced_windows_keys_file(&config);
+        let backup: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let _ = std::fs::remove_dir_all(&config);
+        assert_eq!(backup.len(), 1);
+        assert_eq!(backup[0]["key"], "22");
+        assert_eq!(backup[0]["adapter"], TPLINK);
+    }
 
     #[test]
     fn another_radio_keeps_the_restored_adapter_off() {

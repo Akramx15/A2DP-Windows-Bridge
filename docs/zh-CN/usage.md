@@ -101,7 +101,7 @@ BlueCaster 还会一直记录一些内容，这样即使问题只发生过一次
 ### 适配器
 
 - 检测到的 USB Bluetooth 适配器及其芯片、地址、USB ID、Bluetooth 版本、**驱动程序**和**固件**；插入或拔出适配器时列表会自动更新。驱动程序为**原始驱动程序**（Windows 或制造商安装的驱动程序；将鼠标悬停其上可查看其名称）或 **WinUSB 驱动程序**（BlueCaster 使用的驱动程序）。Realtek 适配器即使尚未使用过，也会显示其地址（来自其 USB 序列号）；其他适配器的地址和 Bluetooth 版本要在 Windows 的 Bluetooth 或 BlueCaster 使用过该适配器后才会显示（将鼠标悬停在该行上可查看原因）。BlueCaster 无法使用的适配器（部分 MediaTek 和 Qualcomm）保留其驱动程序：其 WinUSB 和固件按钮处于禁用状态。Intel、MediaTek MT79xx、Qualcomm ROME / WCN6855 和 Broadcom 适配器带有**实验性**标记。在开发者模式下仍可为其分配 WinUSB；在使用 WinUSB 的适配器上点 **读取芯片信息**，会把芯片对几条读取命令的应答保存到 `logs\probe\`，供想为它添加支持的人使用（期间蓝牙会停止，下次使用时重新启动）；之后**在 GitHub 上报告**会新建一个已填好这些信息的 issue。由 BlueCaster 自行加载固件的适配器（Intel、MediaTek、Qualcomm）启动期间，此页面会显示加载情况以及是否失败
-- **替换为 WinUSB 驱动程序** / **恢复原始驱动程序**（请参阅[安装与设置](setup#winusb)）；每次操作 Windows 都会请求管理员权限（带盾牌图标的按钮都是如此）。恢复之前，对话框会列出 Windows 也配对过的已保存设备：BlueCaster 的配对为它们生成了新密钥，因此它们可能需要在 Windows 中重新配对
+- **替换为 WinUSB 驱动程序** / **恢复原始驱动程序**（请参阅[安装与设置](setup#winusb)）；每次操作 Windows 都会请求管理员权限（带盾牌图标的按钮都是如此）。恢复时，对于 Windows 也通过此适配器配对过的设备，BlueCaster 会把较新的配对交给 Windows，因此无需在 Windows 中重新配对即可连接。**限制：**不会交出 LE 密钥，因此 Windows 通过 LE（LE Audio）使用的设备需要在 Windows 中重新配对
 - 用于固件的 **Bluetooth 芯片**，以及**下载固件**、**打开下载页面**和**打开固件文件夹**（请参阅[固件](setup#firmware)）。其他厂商的适配器则显示固件的来源，例如**来自 MediaTek 的驱动程序**、**来自固件文件夹**或**不需要**，BlueCaster 加载后显示**已加载**
 - **避开 Wi-Fi 信道**：自动、关或手动，旁边显示 Wi-Fi 信道：自动时为当前避开的信道，关时不显示（两者均为只读），手动时为您输入的信道（请参阅[链路质量与 AFH](#link-quality)）
 - **Bluetooth 堆栈**：已停止（在首次扫描或连接时启动）、正在启动、就绪或错误，以及**重新启动 Bluetooth**
@@ -594,7 +594,7 @@ BlueCaster 每天最多检查一次 GitHub Releases（**设置 > 启动时检查
 - “更改驱动程序失败”：详情请查看**诊断 > 日志**。
 - “适配器未恢复为之前的驱动程序”：如果适配器是用 Zadig 设置的，Windows 可能会再次选择 Zadig 的 WinUSB 驱动程序包。请在设备管理器中删除该驱动程序包（适配器 > 卸载设备，并勾选“尝试删除此设备的驱动程序”），然后拔下并重新插入适配器。
 - “驱动程序已恢复，但 Windows 一次只使用一个蓝牙适配器”：Windows 中正在使用另一个 Bluetooth 适配器（例如 PC 的内置适配器）。要改为在 Windows 中使用此适配器，请在设备管理器中禁用另一个适配器，然后拔下并重新插入此适配器。
-- 适配器恢复其驱动程序后，在 BlueCaster 中配对过的设备可能无法在 Windows 中连接：请在 Windows 设置中删除它们并重新配对。
+- 适配器恢复其驱动程序后，某台设备无法在 Windows 中连接：请在 Windows 设置中删除它并重新配对。BlueCaster 只把 Windows 曾通过此适配器配对过的设备的配对交给 Windows，不包括其 LE 密钥。
 
 ### Bluetooth 适配器无响应 {#adapter-no-answer}
 
