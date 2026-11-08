@@ -45,6 +45,8 @@ const FIRST_CANDIDATE: u8 = 2;
 const OUT_IN_FLIGHT: usize = 8;
 const IN_TRANSFERS: usize = 3;
 const IN_TRANSFER_SIZE: usize = 2048;
+/// Incoming transfers whose first bytes are logged
+const IN_LOGGED: u64 = 3;
 /// Longest padding accepted (an ISO packet header and a 16-bit length)
 pub const PAD_MAX: usize = 4096;
 const POLL: Duration = Duration::from_millis(100);
@@ -138,6 +140,7 @@ struct Counters {
     failed: AtomicU64,
     bytes: AtomicU64,
     padded: AtomicU64,
+    in_transfers: AtomicU64,
     in_packets: AtomicU64,
     in_errors: AtomicU64,
 }
@@ -350,6 +353,9 @@ fn write_loop(ep: &mut Endpoint<Interrupt, Out>, rx: mpsc::Receiver<Buffer>, sto
         let Some(c) = ep.wait_next_complete(POLL) else { continue };
         match c.status {
             Ok(()) => {
+                if Counters::get(&counters.completed) == 0 {
+                    tracing::info!(target: "hci", "USB: first ISO write on 0x{addr:02x} completed ({} bytes)", c.actual_len);
+                }
                 Counters::add(&counters.completed, 1);
                 Counters::add(&counters.bytes, c.actual_len as u64);
             }
@@ -389,6 +395,13 @@ fn read_loop(ep: &mut Endpoint<Interrupt, In>, stop: &AtomicBool, counters: &Cou
         match c.status {
             Ok(()) => {
                 errors = 0;
+                // The first transfers' start (ISO headers: handle, flags,
+                // lengths), for telling what the controller sends here
+                if Counters::get(&counters.in_transfers) < IN_LOGGED {
+                    let head = &c.buffer[..c.actual_len.min(8)];
+                    tracing::info!(target: "hci", "USB: ISO interface in: {} bytes, starting {head:02X?}", c.actual_len);
+                }
+                Counters::add(&counters.in_transfers, 1);
                 iso.push(&c.buffer[..c.actual_len], |p| {
                     if p.len() >= 4 && p[..4] == [0, 0, 0, 0] {
                         return;
