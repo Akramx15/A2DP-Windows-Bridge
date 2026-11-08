@@ -473,6 +473,8 @@
   "ui.dev.keys_le": "Claves LE: %d iguales, %d distintas, %d solo en BlueCaster, %d solo en Windows",
   "ui.dev.keys_le_busy": "Claves LE: no se pueden leer mientras el Bluetooth de BlueCaster está en marcha",
   "ui.dev.keys_no_windows": "Windows no tiene claves para este adaptador.",
+  "ui.dev.keys_le_values": "Valores LE de Windows: %s",
+  "ui.dev.keys_radio_values": "Valores del adaptador en Windows: %s",
   "ui.dev.off": "Desactivado",
   "ui.dev.auracast_intro": "Emite audio al que pueden unirse los auriculares y altavoces cercanos.",
   "ui.dev.auracast_name": "Nombre",

@@ -97,7 +97,7 @@ BlueCaster 也會隨時記錄一些內容，讓只發生過一次的問題仍可
 - **記錄**：記錄檔的保留天數（預設 7 天）、每日大小上限（預設 100 MB）、持續開啟的詳細記錄（沒有 24 小時或 1 小時的限制，從核心啟動時即開啟）、每 10 秒一行的串流狀態，以及 **新增標記**（在記錄中加入一行編號，方便之後找到該時間點）。關閉開發人員模式會還原為預設值
 - **對端接收器測試**：串流到另一台 PC 上的測量用接收器，並比較送出與抵達的內容（請參閱 [對端接收器測試](#receiver)）
 - **晶片**：在使用 WinUSB 的介面卡上執行晶片指令碼，也就是對晶片發出的請求，可直接輸入或從檔案開啟，供想為晶片加入支援的人使用（請參閱 [加入晶片支援](chip-support#chip-scripts)）。可能變更晶片的行，要按 **允許執行** 後才會執行；期間藍牙會停止，下次使用時重新啟動
-- **Debug**：實驗功能，預設全部關閉。**配對金鑰與 Windows**：開啟 **還原原始驅動程式時，也將 LE 金鑰交給 Windows** 後，**還原原始驅動程式** 時會將 BlueCaster 的 LE 金鑰（Long Term Key、EDIV、Rand、金鑰長度、Identity Resolving Key）寫入 Windows，只針對 Windows 已透過該介面卡保存了 LE 金鑰的裝置；Windows 原有的金鑰保留在 `pairing\replaced_windows_keys.json` 中。**與 Windows 比較**（需要系統管理員權限）針對一個介面卡，統計連結金鑰與 LE 金鑰在 BlueCaster 與 Windows 中相同、不同或只存在於一方的裝置數量。顯示與記錄中只有數字，不含位址或金鑰，因此可以直接分享結果。BlueCaster 的藍牙執行期間無法讀取其 LE 金鑰
+- **Debug**：實驗功能，預設全部關閉。**配對金鑰與 Windows**：開啟 **還原原始驅動程式時，也將 LE 金鑰交給 Windows** 後，**還原原始驅動程式** 時會將 BlueCaster 的 LE 金鑰（Long Term Key、EDIV、Rand、金鑰長度、Identity Resolving Key）寫入 Windows，只針對 Windows 已透過該介面卡保存了 LE 金鑰的裝置；Windows 原有的金鑰保留在 `pairing\replaced_windows_keys.json` 中。**與 Windows 比較**（需要系統管理員權限）針對一個介面卡，統計連結金鑰與 LE 金鑰在 BlueCaster 與 Windows 中相同、不同或只存在於一方的裝置數量。顯示與記錄中只有數字，不含位址或金鑰，因此可以直接分享結果。BlueCaster 的藍牙執行期間無法讀取其 LE 金鑰。也會列出 Windows 為該介面卡及其 LE 裝置保存的值的名稱、類型與大小（從不顯示其內容）
 
 ### 介面卡
 

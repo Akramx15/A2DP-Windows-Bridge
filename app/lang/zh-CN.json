@@ -473,6 +473,8 @@
   "ui.dev.keys_le": "LE 密钥：相同 %d，不同 %d，仅 BlueCaster %d，仅 Windows %d",
   "ui.dev.keys_le_busy": "LE 密钥：BlueCaster 的蓝牙运行期间无法读取",
   "ui.dev.keys_no_windows": "Windows 没有此适配器的密钥。",
+  "ui.dev.keys_le_values": "Windows 的 LE 值：%s",
+  "ui.dev.keys_radio_values": "Windows 的适配器值：%s",
   "ui.dev.off": "关",
   "ui.dev.auracast_intro": "广播附近的耳机和音箱可以加入的音频。",
   "ui.dev.auracast_name": "名称",

@@ -324,10 +324,15 @@ pub fn compare_windows_keys(state: &Arc<CoreState>, adapter: &str) -> Result<Val
         let ours: KeyList = le_keys_for_windows(&bonds).iter().filter_map(le_entry).collect();
         count_keys(&ours, &windows_le)
     });
+    let names = |field: &str| -> Vec<ipc::WindowsValueName> {
+        list(field).iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+    };
     let comparison = ipc::KeysComparison {
         adapter_found: result.get("radio_found").and_then(Value::as_bool) == Some(true),
         classic: count_keys(&ours_classic, &windows_classic),
         le,
+        radio_values: names("radio_values"),
+        le_values: names("le_values"),
     };
     tracing::info!("keys compared with Windows: {comparison:?}");
     Ok(serde_json::to_value(comparison).unwrap_or(Value::Null))
