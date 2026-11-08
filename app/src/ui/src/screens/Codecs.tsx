@@ -394,6 +394,9 @@ function DeviceCodecs(props: {
   const known =() => knownCodecs(snap().devices, e().address);
   const onRequest = () => codecsOnRequest(snap().devices, e().address);
   const support = (id: string) => codecSupport(id, known(), onRequest());
+  // On its card, SBC is supported before the first connection too: every
+  // device has it (SBC XQ needs what the device lists, so not it)
+  const shownSupport = (id: string) => (id === "sbc" && known().length === 0 ? "offered" : support(id));
   // The device's order while it is being dragged (null: the saved one)
   const [dragOrder, setDragOrder] = createSignal<CodecId[] | null>(null);
   // Its cards' order, which Auto follows under Auto-select too
@@ -723,13 +726,8 @@ function DeviceCodecs(props: {
                 selected={picked() === c.id}
                 disabled={locked()}
                 readOnly={props.auto}
-                // Only supported codecs shown: no "Supported" tag on each,
-                // nor SBC's "Unconfirmed" on a device never connected (every device has it)
-                support={
-                  props.hide && (support(c.id) === "offered" || (c.id === "sbc" && known().length === 0))
-                    ? null
-                    : support(c.id)
-                }
+                // Only supported codecs shown: no "Supported" tag on each
+                support={props.hide && shownSupport(c.id) === "offered" ? null : shownSupport(c.id)}
                 orderable
                 dragging={dragging() === c.id}
                 // The keys need a card that takes the focus (not under Auto-select)
