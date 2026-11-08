@@ -1014,6 +1014,14 @@ LINK_CASES = {
         ('bluecaster.log', r'supports delay reporting.*device delay report: 187\.5 ms', True),
         ('sink.log', r'delay report sent \(187\.5 ms\)', True),
     ]),
+    # A headset that answers OPEN with a stray REJECT of DISCOVER under the
+    # OPEN's label first: BTstack waits on for the OPEN accept
+    'stray-reject': (['--stray-reject'], ['--duration', '3'], [
+        ('sink.log', r'stray reject: REJECT DISCOVER', True),
+        ('bluecaster.log', r'ignoring a response to signal 1 while waiting for 6', True),
+        ('bluecaster.log', r'streaming started', True),
+        ('bluecaster.log', r'stream configuration timed out', False),
+    ]),
 }
 LOG_TIME =re.compile(r'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3})')
 
