@@ -684,7 +684,7 @@ Two fixes came out of it:
 
 Checked on the UB500 + WH-1000XM4 (mSBC, full speed, one link) so far: 0
 (Realtek with and without voice), 1, 2, 3, 4, 8, 11 (mSBC only), 12
-(accepted, no call UI), 13 (one on/off cycle), 14 (12 s, not an hour).
+(accepted, no call UI), 13 (one on/off cycle, and Auto's two record / stop cycles), 14 (12 s, not an hour).
 Still open, in this order:
 
 HCI init (every user, `ENABLE_SCO_OVER_HCI` is compiled in):
