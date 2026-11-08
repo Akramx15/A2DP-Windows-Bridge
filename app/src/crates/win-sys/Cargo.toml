@@ -1,6 +1,6 @@
 [package]
 name = "win-sys"
-description = "Win32 APIs A2DPWB needs that no Rust library covers (unsafe allowed here)"
+description = "Win32 APIs BlueCaster needs that no Rust library covers (unsafe allowed here)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,11 +12,17 @@ thiserror.workspace = true
 tokio = { version = "1", features = ["net"] }
 # webview.rs: WebView2's ProcessFailed (the version tauri's wry uses)
 webview2-com = "0.39"
+# usb_isoch.rs: the WinUSB handle of an interface claimed through nusb (the
+# vendored copy, root Cargo.toml [patch])
+nusb = "0.2.8"
 
 [dependencies.windows]
 version = "0.62"
 features = [
+    "Devices_Radios",
+    "Foundation_Collections",
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_Globalization",
     "Win32_Security",
     "Win32_Security_Authorization",
@@ -43,11 +49,15 @@ features = [
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_Usb",
     "Win32_NetworkManagement_WiFi",
+    "Win32_UI_Accessibility",
+    "Win32_UI_HiDpi",
     "Win32_UI_Shell",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Storage_FileSystem",
+    "UI",
+    "UI_ViewManagement",
 ]
 
 [lints]

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app/App";
+import { t } from "../i18n";
 import { MockCore, type MockScenario, sampleSnapshot } from "../ipc/mock";
 import { createCore } from "../ipc/store";
 import { adapterExperimental, adapterIds, adapterIdsHint, adapterName, driverText } from "./Adapter";
@@ -21,6 +22,36 @@ afterEach(() => {
   mock?.dispose();
   mock = null;
   vi.restoreAllMocks();
+});
+
+describe("AFH", () => {
+  it("has its mode and channels beside its text: Auto and Off read only, Manual typed (issue #86)", async () => {
+    const { calls, mock } = start();
+    const section = (await screen.findByRole("heading", { level: 2, name: "Avoid Wi-Fi channels" })).closest("section")!;
+    // The text in a block of its own, the controls in another (issue #86)
+    expect(section.querySelector(".afh-text")).toHaveTextContent(t("receiver.afh_tooltip"));
+    const head = section.querySelector(".afh-control") as HTMLElement;
+    const box = within(head).getByRole("textbox", { name: "Wi-Fi ch" }) as HTMLInputElement;
+    // One set of controls only
+    expect(within(section).getAllByRole("radiogroup")).toHaveLength(1);
+    expect(within(section).getAllByRole("textbox")).toHaveLength(1);
+    // Auto: what it avoids now (the mock's stream avoids Wi-Fi channel 6)
+    expect(box.readOnly).toBe(true);
+    await mock.call("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(box.value).toBe("6"), { timeout: 3000 });
+    // Off: nothing, read only
+    fireEvent.click(within(head).getByRole("radio", { name: "Off" }));
+    await waitFor(() => expect(box.value).toBe(""));
+    expect(box.readOnly).toBe(true);
+    // Manual: typed and saved
+    fireEvent.click(within(head).getByRole("radio", { name: "Manual" }));
+    await waitFor(() => expect(box.readOnly).toBe(false));
+    fireEvent.input(box, { target: { value: "11, 6" } });
+    fireEvent.blur(box);
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === "settings.set").at(-1)?.params).toMatchObject({ settings: { afh: "6,11" } }),
+    );
+  });
 });
 
 describe("Adapter firmware", () => {
@@ -44,7 +75,7 @@ describe("Adapter firmware", () => {
       settings: { bt_chip_pid: number; bt_chip_fw_stem: string };
     };
     expect(saved.settings).toMatchObject({ bt_chip_pid: 0xfffe, bt_chip_fw_stem: "" });
-    expect(await screen.findByText(/Realtek initialization is skipped/)).toBeInTheDocument();
+    expect(await screen.findByText(/No Realtek files needed\./)).toBeInTheDocument();
     // The core checks the firmware for the new chip: none needed now
     expect(await screen.findByText("No Realtek files needed")).toBeInTheDocument();
     // The folder is scanned again after the change
@@ -70,7 +101,7 @@ describe("Adapter firmware", () => {
       firmware_present: null,
       vendor_note: { key: "firmware.vendor_intel", args: [] },
       windows_name: null,
-      // Neither Windows' Bluetooth nor a stack of A2DPWB ran it yet
+      // Neither Windows' Bluetooth nor a stack of BlueCaster ran it yet
       address: null,
       bt_version: null,
     };
@@ -91,25 +122,30 @@ describe("Adapter firmware", () => {
     const fw = within(mtk).getByRole("group", { name: "Firmware: Unsupported" });
     expect(within(fw).getByText("Unsupported")).toHaveClass("st-bad");
     expect(within(fw).getByRole("button", { name: "Download not available" })).toBeDisabled();
-    // A vendor's driver is the original one too, its service on hover; A2DPWB
+    // A vendor's driver is the original one too, its service on hover; BlueCaster
     // cannot use the adapter, so it keeps that driver
     const mtkDriver = within(mtk).getByRole("group", { name: "Driver: Original driver" });
     expect(within(mtkDriver).getByText("Original driver")).toHaveAttribute("title", "mtkbtfilterx");
     expect(within(mtkDriver).getByRole("button", { name: "Replace with WinUSB driver" })).toBeDisabled();
-    expect(mtkDriver).toHaveTextContent("A2DP Windows Bridge cannot use this adapter, so its driver stays as it is");
+    expect(mtkDriver).toHaveTextContent("BlueCaster cannot use this adapter, so its driver stays as it is");
     // The chip choice goes with the Realtek adapter only
     expect(within(mtk).queryByLabelText("Bluetooth Chip")).toBeNull();
     expect(within(rtl).getByLabelText("Bluetooth Chip")).toBeInTheDocument();
     // "[experimental]" is a tag beside the name, not part of it
     const intelCard = screen.getByRole("region", { name: "Intel" });
     expect(intelCard).not.toHaveTextContent("[experimental]");
-    expect(within(intelCard).getByText("Experimental")).toHaveClass("st-warn");
+    // Amber (issue #86)
+    expect(within(intelCard).getByText("Experimental")).toHaveClass("st-exp");
+    // Its firmware from the folder, without the Realtek chip choice
+    const intelFw = within(intelCard).getByRole("group", { name: "Firmware: From the firmware folder" });
+    expect(within(intelFw).queryByLabelText("Bluetooth Chip")).toBeNull();
+    expect(intelFw).toHaveTextContent(t("firmware.intel_files"));
     // WinUSB in one name too (issue #86)
     expect(within(intelCard).getByRole("group", { name: "Driver: WinUSB driver" })).toBeInTheDocument();
     // What is known; why the rest is missing on hover
     expect(within(intelCard).getByText("8087:0033")).toHaveAttribute(
       "title",
-      expect.stringContaining("once Windows' Bluetooth or A2DP Windows Bridge has used this adapter"),
+      "Shown once this adapter has been used.",
     );
     expect(within(rtl).getByText("00:1A:7D:DA:71:13 | 2357:0604 | v5.1")).not.toHaveAttribute("title");
   });
@@ -128,6 +164,29 @@ describe("Adapter firmware", () => {
     await waitFor(() => expect(calls.filter((c) => c.method === "adapter.list").length).toBe(2));
   });
 
+  it("names the saved devices Windows has paired too before giving the adapter back", async () => {
+    const { calls, mock } = start();
+    await screen.findByRole("heading", { level: 1, name: "Adapters" });
+    const m = mock as any;
+    const saved = m.snap.devices.filter((d: { saved: boolean; le_audio: boolean }) => d.saved && !d.le_audio);
+    expect(saved.length).toBeGreaterThan(0);
+    m.windowsPaired = [saved[0].address.toLowerCase(), "00:11:22:33:44:55"];
+    fireEvent.click((await screen.findAllByRole("button", { name: "Restore original driver" }))[0]);
+    const dialog = await screen.findByRole("dialog", { name: "Give the adapter back to Windows" });
+    expect(await within(dialog).findByText(new RegExp(`^${saved[0].name} may not connect in Windows`))).toBeInTheDocument();
+    // Asked per adapter: Windows' own list is empty while the adapter is on WinUSB
+    const winusb = m.snap.adapter.adapters.find((a: { driver: string }) => a.driver === "winusb");
+    expect(calls.find((c) => c.method === "device.windows_paired_through")?.params).toEqual({ adapter: winusb.address });
+    expect(calls.some((c) => c.method === "device.windows_paired")).toBe(false);
+    // None of them paired in Windows: nothing to say
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    m.windowsPaired = ["00:11:22:33:44:55"];
+    fireEvent.click(screen.getAllByRole("button", { name: "Restore original driver" })[0]);
+    const again = await screen.findByRole("dialog", { name: "Give the adapter back to Windows" });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(within(again).queryByText(/may not connect in Windows/)).toBeNull();
+  });
+
   it("adapter names", () => {
     const a = { display_name: "RTL8761BU (0x0BDA:0xA729)", vendor: "Realtek", windows_name: null, realtek_chip: "RTL8761BU" };
     // Windows' Bluetooth never ran it: vendor and chip
@@ -143,7 +202,7 @@ describe("Adapter firmware", () => {
     expect(adapterIds({ address: "00:E0:4C:23:99:87", vid: 0x0bda, pid: 0xa729, bt_version: null })).toBe(
       "00:E0:4C:23:99:87 | 0BDA:A729",
     );
-    expect(adapterIdsHint({ address: "00:E0:4C:23:99:87", bt_version: null })).toMatch(/Bluetooth version show once/);
+    expect(adapterIdsHint({ address: "00:E0:4C:23:99:87", bt_version: null })).toMatch(/Shown once this adapter has been used/);
     expect(adapterIdsHint({ address: "00:E0:4C:23:99:87", bt_version: "5.1" })).toBeUndefined();
     // The driver in two names only, whatever the manufacturer
     expect(driverText("bluetooth").text).toBe("Original driver");
@@ -161,7 +220,7 @@ describe("Adapter firmware", () => {
     const { mock } = start();
     const open = vi.spyOn(mock, "openFolder");
     fireEvent.click(await screen.findByRole("button", { name: "Open Firmware Folder" }));
-    await waitFor(() => expect(open).toHaveBeenCalledWith("C:\\Users\\you\\AppData\\Roaming\\A2DPWB\\firmware"));
+    await waitFor(() => expect(open).toHaveBeenCalledWith("C:\\Users\\you\\AppData\\Roaming\\BlueCaster\\firmware"));
   });
 
   it("downloads the missing firmware after the user has read the terms", async () => {
@@ -219,5 +278,70 @@ describe("Adapter firmware", () => {
     answer().reject({ code: "ipc.timeout", message: { key: "ipc.error.timeout", args: ["adapter.download_firmware"] } });
     expect(await screen.findByText(/The download is taking a while/)).toBeInTheDocument();
     expect(screen.queryByText(/not responding/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("Chip probe (developer mode)", () => {
+  it("offers WinUSB for a chip BlueCaster cannot use and reads a WinUSB adapter's chip", async () => {
+    const { calls, mock } = start();
+    await screen.findByRole("heading", { level: 1, name: "Adapters" });
+    const m = mock as any;
+    const [mediatek, realtek] = sampleSnapshot("fresh").adapter.adapters;
+    m.snap.adapter = { ...m.snap.adapter, adapters: [mediatek, { ...realtek, driver: "winusb" }] };
+    m.emit({ kind: "adapter", value: m.snap.adapter });
+    const mtk = await screen.findByRole("region", { name: "MediaTek Bluetooth Adapter" });
+    const assign = within(mtk).getByRole("button", { name: "Replace with WinUSB driver" });
+    // Developer mode off: neither
+    expect(assign).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Read chip info" })).toBeNull();
+
+    await mock.call("settings.set", { settings: { ...m.snap.settings, developer_mode: true } });
+    await waitFor(() => expect(assign).toBeEnabled());
+    expect(within(mtk).getByRole("group", { name: "Driver: Original driver" })).toHaveTextContent(
+      "Replaces the original driver",
+    );
+    // The probe on an adapter with WinUSB only
+    expect(within(mtk).queryByRole("button", { name: "Read chip info" })).toBeNull();
+    const rtl = screen.getByRole("region", { name: "TP-Link Bluetooth USB Adapter (RTL8761BU)" });
+    const reveal = vi.spyOn(mock, "revealPath");
+    fireEvent.click(within(rtl).getByRole("button", { name: "Read chip info" }));
+    expect(await screen.findByText(/^Chip info saved: Intel, Bluetooth 5\.3/)).toBeInTheDocument();
+    expect(calls.find((c) => c.method === "adapter.probe")?.params).toEqual({ instance_id: realtek.instance_id });
+    expect(reveal).toHaveBeenCalledWith(expect.stringMatching(/probe-\d{8}_\d{6}\.json$/));
+    // The summary stays on the card, with a prefilled chip report
+    expect(within(rtl).getByText(/^Intel, Bluetooth 5\.3/)).toBeInTheDocument();
+    const open = vi.spyOn(mock, "openUrl");
+    reveal.mockClear();
+    fireEvent.click(within(rtl).getByRole("button", { name: "Report on GitHub" }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    const url = new URL(open.mock.calls[0][0] as string);
+    expect(url.searchParams.get("template")).toBe("chip_report.yml");
+    expect(url.searchParams.get("chip")).toMatch(/^Intel, Bluetooth 5\.3/);
+    expect(url.searchParams.get("title")).toBe("Chip support: Intel");
+    expect(url.searchParams.get("probe")).toMatch(/^probe-\d{8}_\d{6}\.json\n/);
+    expect(reveal).toHaveBeenCalledWith(expect.stringMatching(/probe-\d{8}_\d{6}\.json$/));
+  });
+});
+
+describe("Firmware loader progress", () => {
+  it("shows a loader while the adapter starts, its failure, and its steps in developer mode", async () => {
+    const { mock } = start();
+    await screen.findByRole("heading", { level: 1, name: "Adapters" });
+    const m = mock as any;
+    const show = (loader: unknown) => {
+      m.snap.adapter = { ...m.snap.adapter, loader };
+      m.emit({ kind: "adapter", value: m.snap.adapter });
+    };
+    show({ vendor: "Intel", step: "Secure Send", percent: 42 });
+    const line = await screen.findByText(/^Intel firmware: loading/);
+    expect(line).toHaveTextContent("Intel firmware: loading 42%");
+    expect(line).not.toHaveTextContent("Secure Send");
+    // Ready: only in developer mode, with the step
+    show({ vendor: "Intel", step: "firmware ibt-0040-0041.sfi loaded", ok: true });
+    await waitFor(() => expect(screen.queryByText(/^Intel firmware/)).toBeNull());
+    await mock.call("settings.set", { settings: { ...m.snap.settings, developer_mode: true } });
+    expect(await screen.findByText(/^Intel firmware: ready/)).toHaveTextContent("(firmware ibt-0040-0041.sfi loaded)");
+    show({ vendor: "Intel", step: "no answer from the controller (Read Version)", ok: false });
+    expect(await screen.findByText(/^Intel firmware could not be loaded/)).toHaveTextContent("(no answer");
   });
 });

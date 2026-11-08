@@ -83,24 +83,38 @@ pub static OEM_TABLE: &[OemChipMapping] = &[
 
 /// The controller vendor, guessed from the USB VID:PID. Decides which
 /// firmware loader (if any) runs before HCI init. Only Realtek is well
-/// tested; Intel and Broadcom loaders are experimental; MediaTek and
-/// Qualcomm need loaders BTstack does not have.
+/// tested; the Intel (crate::intel), MediaTek MT79xx (crate::mediatek),
+/// Qualcomm ROME / WCN6855 (crate::qualcomm) and Broadcom loaders are
+/// experimental. CSR, Barrot and Actions run from ROM; Marvell's firmware
+/// comes from its Wi-Fi driver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChipVendor {
     #[default]
     Unknown,
     /// rtl*_fw.bin + rtl*_config.bin (btstack_chipset_realtek)
     Realtek,
-    /// ibt-*.sfi + ibt-*.ddc, legacy bootloader only (experimental)
+    /// ibt-*.sfi + ibt-*.ddc, legacy and TLV bootloaders (experimental)
     Intel,
     /// optional *.hcd PatchRAM (experimental)
     Broadcom,
     /// ROM firmware, nothing to load
     Csr,
-    /// needs WMT firmware download: not supported
+    /// needs WMT firmware download: the chips in [`LOADER_CHIPS`] only
+    /// (experimental)
     MediaTek,
-    /// needs rampatch/NVM download: not supported
+    /// needs rampatch/NVM download: the chips in [`LOADER_CHIPS`] only
+    /// (experimental)
     Qualcomm,
+    /// ROM firmware, nothing to load: cheap Bluetooth 5.4 / 6.0 dongles
+    Barrot,
+    /// Bluetooth part of a Wi-Fi combo (88W8897 in Surface Pro / Book):
+    /// the Wi-Fi driver downloads one image for both, nothing for us to
+    /// load (experimental, untested)
+    Marvell,
+    /// ROM firmware, nothing to load: the ATS2851 dongle, which lists
+    /// commands it cannot do (hidden from BTstack:
+    /// btstack_sys::transport::broken_command_bits; experimental, untested)
+    Actions,
 }
 
 impl ChipVendor {
@@ -113,17 +127,276 @@ impl ChipVendor {
             ChipVendor::Csr => "CSR",
             ChipVendor::MediaTek => "MediaTek",
             ChipVendor::Qualcomm => "Qualcomm",
+            ChipVendor::Barrot => "Barrot",
+            ChipVendor::Marvell => "Marvell",
+            ChipVendor::Actions => "Actions",
             ChipVendor::Unknown => "Unknown",
         }
     }
 
-    /// Tag shown after the name: loaders that are experimental or missing
+    /// Tag shown after the name: loaders that are experimental or missing,
+    /// for the whole vendor ([`chip_support_tag`] for one adapter)
     pub fn support_tag(self) -> Option<&'static str> {
         match self {
-            ChipVendor::Intel | ChipVendor::Broadcom => Some("experimental"),
+            ChipVendor::Intel | ChipVendor::Broadcom | ChipVendor::Marvell | ChipVendor::Actions => {
+                Some("experimental")
+            }
             ChipVendor::MediaTek | ChipVendor::Qualcomm => Some("unsupported"),
             _ => None,
         }
+    }
+}
+
+/// Chips with a loader of a vendor that has none for its other chips
+/// (vendor, VID, PID): a loader that covers only some of a vendor's chips
+/// lists them here, and only they leave "unsupported" (docs/chip-support.md)
+pub const LOADER_CHIPS: &[(ChipVendor, u16, u16)] = &[
+    // MediaTek MT79xx (crate::mediatek, experimental): the Bluetooth USB IDs
+    // of MediaTek's Windows driver 1.1147.0.616 (MT7902, MT7920, MT7921,
+    // MT7922, MT7925) and the MT7925 section of 26.40.3.69. The loader reads
+    // the chip ID itself and refuses another chip before sending anything.
+    // Only the MT7925 (0E8D:7925) has been seen (#86). Left out: the other IDs
+    // of 26.40.3.69, which also covers the MT6639 (MT7927)
+    (ChipVendor::MediaTek, 0x0489, 0xE0C8),
+    (ChipVendor::MediaTek, 0x0489, 0xE0CD),
+    (ChipVendor::MediaTek, 0x0489, 0xE0D7),
+    (ChipVendor::MediaTek, 0x0489, 0xE0D8),
+    (ChipVendor::MediaTek, 0x0489, 0xE0D9),
+    (ChipVendor::MediaTek, 0x0489, 0xE0E0),
+    (ChipVendor::MediaTek, 0x0489, 0xE0E2),
+    (ChipVendor::MediaTek, 0x0489, 0xE0E4),
+    (ChipVendor::MediaTek, 0x0489, 0xE0E5),
+    (ChipVendor::MediaTek, 0x0489, 0xE0E6),
+    (ChipVendor::MediaTek, 0x0489, 0xE0F1),
+    (ChipVendor::MediaTek, 0x0489, 0xE0F2),
+    (ChipVendor::MediaTek, 0x0489, 0xE0F4),
+    (ChipVendor::MediaTek, 0x0489, 0xE0F5),
+    (ChipVendor::MediaTek, 0x0489, 0xE0F6),
+    (ChipVendor::MediaTek, 0x0489, 0xE102),
+    (ChipVendor::MediaTek, 0x0489, 0xE10B),
+    (ChipVendor::MediaTek, 0x0489, 0xE11D),
+    (ChipVendor::MediaTek, 0x0489, 0xE134),
+    (ChipVendor::MediaTek, 0x0489, 0xE135),
+    (ChipVendor::MediaTek, 0x0489, 0xE139),
+    (ChipVendor::MediaTek, 0x0489, 0xE149),
+    (ChipVendor::MediaTek, 0x0489, 0xE14E),
+    (ChipVendor::MediaTek, 0x0489, 0xE14F),
+    (ChipVendor::MediaTek, 0x0489, 0xE150),
+    (ChipVendor::MediaTek, 0x0489, 0xE151),
+    (ChipVendor::MediaTek, 0x0489, 0xE152),
+    (ChipVendor::MediaTek, 0x0489, 0xE153),
+    (ChipVendor::MediaTek, 0x0489, 0xE156),
+    (ChipVendor::MediaTek, 0x0489, 0xE158),
+    (ChipVendor::MediaTek, 0x0489, 0xE15E),
+    (ChipVendor::MediaTek, 0x0489, 0xE174),
+    (ChipVendor::MediaTek, 0x0489, 0xE18E),
+    (ChipVendor::MediaTek, 0x04CA, 0x3802),
+    (ChipVendor::MediaTek, 0x04CA, 0x3804),
+    (ChipVendor::MediaTek, 0x04CA, 0x3806),
+    (ChipVendor::MediaTek, 0x04CA, 0x3807),
+    (ChipVendor::MediaTek, 0x04CA, 0x3812),
+    (ChipVendor::MediaTek, 0x04CA, 0x38E4),
+    (ChipVendor::MediaTek, 0x0E8D, 0x0608),
+    (ChipVendor::MediaTek, 0x0E8D, 0x0616),
+    (ChipVendor::MediaTek, 0x0E8D, 0x0717),
+    (ChipVendor::MediaTek, 0x0E8D, 0x1EDE),
+    (ChipVendor::MediaTek, 0x0E8D, 0x223C),
+    (ChipVendor::MediaTek, 0x0E8D, 0x7900),
+    (ChipVendor::MediaTek, 0x0E8D, 0x7902),
+    (ChipVendor::MediaTek, 0x0E8D, 0x7920),
+    (ChipVendor::MediaTek, 0x0E8D, 0x7922),
+    (ChipVendor::MediaTek, 0x0E8D, 0x7925),
+    (ChipVendor::MediaTek, 0x0E8D, 0x7961),
+    (ChipVendor::MediaTek, 0x0E8D, 0xA608),
+    (ChipVendor::MediaTek, 0x0E8D, 0xC608),
+    (ChipVendor::MediaTek, 0x0E8D, 0xC616),
+    (ChipVendor::MediaTek, 0x0E8D, 0xD616),
+    (ChipVendor::MediaTek, 0x0E8D, 0xE020),
+    (ChipVendor::MediaTek, 0x0E8D, 0xE02D),
+    (ChipVendor::MediaTek, 0x0E8D, 0xE0CD),
+    (ChipVendor::MediaTek, 0x0E8D, 0xE0D7),
+    (ChipVendor::MediaTek, 0x0E8D, 0xE0D8),
+    (ChipVendor::MediaTek, 0x0E8D, 0xE0D9),
+    (ChipVendor::MediaTek, 0x0E8D, 0xE616),
+    (ChipVendor::MediaTek, 0x13D3, 0x3563),
+    (ChipVendor::MediaTek, 0x13D3, 0x3564),
+    (ChipVendor::MediaTek, 0x13D3, 0x3567),
+    (ChipVendor::MediaTek, 0x13D3, 0x3568),
+    (ChipVendor::MediaTek, 0x13D3, 0x3569),
+    (ChipVendor::MediaTek, 0x13D3, 0x3575),
+    (ChipVendor::MediaTek, 0x13D3, 0x3576),
+    (ChipVendor::MediaTek, 0x13D3, 0x3578),
+    (ChipVendor::MediaTek, 0x13D3, 0x3579),
+    (ChipVendor::MediaTek, 0x13D3, 0x3580),
+    (ChipVendor::MediaTek, 0x13D3, 0x3583),
+    (ChipVendor::MediaTek, 0x13D3, 0x3584),
+    (ChipVendor::MediaTek, 0x13D3, 0x3585),
+    (ChipVendor::MediaTek, 0x13D3, 0x3594),
+    (ChipVendor::MediaTek, 0x13D3, 0x3596),
+    (ChipVendor::MediaTek, 0x13D3, 0x3597),
+    (ChipVendor::MediaTek, 0x13D3, 0x3605),
+    (ChipVendor::MediaTek, 0x13D3, 0x3606),
+    (ChipVendor::MediaTek, 0x13D3, 0x3607),
+    (ChipVendor::MediaTek, 0x13D3, 0x3609),
+    (ChipVendor::MediaTek, 0x13D3, 0x3610),
+    (ChipVendor::MediaTek, 0x13D3, 0x3614),
+    (ChipVendor::MediaTek, 0x13D3, 0x3615),
+    (ChipVendor::MediaTek, 0x13D3, 0x3620),
+    (ChipVendor::MediaTek, 0x13D3, 0x3621),
+    (ChipVendor::MediaTek, 0x13D3, 0x3622),
+    (ChipVendor::MediaTek, 0x13D3, 0x3625),
+    (ChipVendor::MediaTek, 0x13D3, 0x3628),
+    (ChipVendor::MediaTek, 0x13D3, 0x3630),
+    (ChipVendor::MediaTek, 0x13D3, 0x3632),
+    (ChipVendor::MediaTek, 0x13D3, 0x3633),
+    (ChipVendor::MediaTek, 0x13D3, 0x3634),
+    (ChipVendor::MediaTek, 0x1435, 0x0835),
+    (ChipVendor::MediaTek, 0x1435, 0x7902),
+    (ChipVendor::MediaTek, 0x15A9, 0x0047),
+    (ChipVendor::MediaTek, 0x2C7C, 0x7009),
+    (ChipVendor::MediaTek, 0x2C7C, 0x700A),
+    // Qualcomm ROME and WCN6855 (crate::qualcomm, experimental): the USB IDs
+    // of Qualcomm's Windows drivers 10.0.0.1272 (QCA61x4, QCA9377; not its
+    // QCA6290, 0CF3:E400) and 2.0.0.1400 (WCN6855, FastConnect 6900). The
+    // loader reads the ROM version itself and refuses another chip before
+    // sending anything. None has been tried yet.
+    (ChipVendor::Qualcomm, 0x0489, 0xE092),
+    (ChipVendor::Qualcomm, 0x0489, 0xE09C),
+    (ChipVendor::Qualcomm, 0x0489, 0xE09F),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0A2),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0A3),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0A4),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0A8),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0A9),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0C7),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0C9),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0CA),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0CB),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0CC),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0CE),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0D0),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0D6),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0DF),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0E1),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0E3),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0EA),
+    (ChipVendor::Qualcomm, 0x0489, 0xE0EC),
+    (ChipVendor::Qualcomm, 0x0489, 0xE115),
+    (ChipVendor::Qualcomm, 0x04C5, 0x14B2),
+    (ChipVendor::Qualcomm, 0x04C5, 0x14DE),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3011),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3012),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3013),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3015),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3016),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3017),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3019),
+    (ChipVendor::Qualcomm, 0x04CA, 0x301A),
+    (ChipVendor::Qualcomm, 0x04CA, 0x301B),
+    (ChipVendor::Qualcomm, 0x04CA, 0x301C),
+    (ChipVendor::Qualcomm, 0x04CA, 0x301E),
+    (ChipVendor::Qualcomm, 0x04CA, 0x301F),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3020),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3022),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3023),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3024),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3A22),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3A24),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3A26),
+    (ChipVendor::Qualcomm, 0x04CA, 0x3A27),
+    (ChipVendor::Qualcomm, 0x0B05, 0x1825),
+    (ChipVendor::Qualcomm, 0x0B05, 0x182B),
+    (ChipVendor::Qualcomm, 0x0B05, 0x1868),
+    (ChipVendor::Qualcomm, 0x0CF3, 0x3200),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE300),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE301),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE302),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE303),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE360),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE370),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE500),
+    (ChipVendor::Qualcomm, 0x0CF3, 0xE600),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9008),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9108),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9109),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9208),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9209),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9308),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9309),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9408),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9409),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9508),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9509),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9608),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9609),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9801),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9802),
+    (ChipVendor::Qualcomm, 0x10AB, 0x9F09),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3491),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3493),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3496),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3497),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3500),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3501),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3502),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3503),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3506),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3511),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3512),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3513),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3514),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3517),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3519),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3520),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3521),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3522),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3523),
+    (ChipVendor::Qualcomm, 0x13D3, 0x3534),
+    (ChipVendor::Qualcomm, 0x1690, 0x0783),
+    (ChipVendor::Qualcomm, 0x1690, 0x0784),
+    (ChipVendor::Qualcomm, 0x1690, 0x0785),
+    (ChipVendor::Qualcomm, 0x1690, 0x0786),
+    (ChipVendor::Qualcomm, 0x1690, 0x0789),
+    (ChipVendor::Qualcomm, 0x28DE, 0x1401),
+    (ChipVendor::Qualcomm, 0x2C7C, 0x0137),
+    (ChipVendor::Qualcomm, 0x3641, 0x0902),
+    (ChipVendor::Qualcomm, 0x3641, 0x0904),
+];
+/// BlueCaster can bring this adapter up: its vendor needs no loader or has one
+/// for every chip, or the chip is in [`LOADER_CHIPS`]
+pub fn chip_supported(vendor: ChipVendor, vid: u16, pid: u16) -> bool {
+    supported_in(LOADER_CHIPS, vendor, vid, pid)
+}
+
+/// Tag shown after one adapter's name: its vendor's, except "experimental"
+/// for a chip in [`LOADER_CHIPS`] and a Realtek chip whose firmware comes
+/// from Realtek's Windows driver (crate::realtek_btnic)
+pub fn chip_support_tag(vendor: ChipVendor, vid: u16, pid: u16) -> Option<&'static str> {
+    if vendor == ChipVendor::Realtek && crate::realtek_btnic::chip(vid, pid).is_some() {
+        return Some("experimental");
+    }
+    tag_in(LOADER_CHIPS, vendor, vid, pid)
+}
+
+/// Vendor commands a chip script (crate::script) may never send to this
+/// vendor's chips, even when writes are allowed: they can write memory that
+/// survives a power cycle (flash, persistent store, OTP). CSR: BCCMD, whose
+/// persistent-store writes can change the adapter for good.
+pub fn denied_opcodes(vendor: ChipVendor) -> &'static [u16] {
+    match vendor {
+        ChipVendor::Csr => &[0xFC00],
+        _ => &[],
+    }
+}
+
+fn supported_in(table: &[(ChipVendor, u16, u16)], vendor: ChipVendor, vid: u16, pid: u16) -> bool {
+    vendor.support_tag() != Some("unsupported") || table.contains(&(vendor, vid, pid))
+}
+
+fn tag_in(table: &[(ChipVendor, u16, u16)], vendor: ChipVendor, vid: u16, pid: u16) -> Option<&'static str> {
+    match vendor.support_tag() {
+        Some("unsupported") if supported_in(table, vendor, vid, pid) => Some("experimental"),
+        tag => tag,
     }
 }
 
@@ -177,6 +450,11 @@ pub fn vendor_for_usb(vid: u16, pid: u16, realtek_pid: Option<u16>) -> ChipVendo
     if realtek_pid.is_some() {
         return ChipVendor::Realtek;
     }
+    // Modules under their maker's VID (AzureWave, Foxconn, ...), which
+    // other vendors' chips use too: by the exact ID
+    if let Some(&(vendor, _, _)) = LOADER_CHIPS.iter().find(|&&(_, v, p)| v == vid && p == pid) {
+        return vendor;
+    }
     match vid {
         0x0BDA => ChipVendor::Realtek,
         0x8087 => ChipVendor::Intel,
@@ -186,6 +464,15 @@ pub fn vendor_for_usb(vid: u16, pid: u16, realtek_pid: Option<u16>) -> ChipVendo
         0x0CF3 => ChipVendor::Qualcomm, // Qualcomm Atheros
         // OEM adapters with a Broadcom chip under their own VID
         0x0B05 if pid == 0x17CB => ChipVendor::Broadcom, // ASUS BT400
+        // Barrot ROM dongles (Linux btusb's Barrot entries); not the whole
+        // VID: no list says which other devices use it
+        0x33FA if matches!(pid, 0x0010 | 0x0012) => ChipVendor::Barrot,
+        // Marvell AVASTAR Bluetooth of Wi-Fi combos (Linux btusb's Marvell
+        // IDs, 0x204B/0x204C from Windows driver lists); the VID is also on
+        // Marvell's Wi-Fi and other devices
+        0x1286 if matches!(pid, 0x2044 | 0x2046 | 0x204B | 0x204C | 0x204E) => ChipVendor::Marvell,
+        // Actions ATS2851 ("Actions general adapter"); exact ID only
+        0x10D7 if pid == 0xB012 => ChipVendor::Actions,
         _ => ChipVendor::Unknown,
     }
 }
@@ -198,19 +485,71 @@ pub fn is_bluetooth_vendor_vid(vid: u16, pid: u16) -> bool {
     !matches!(vendor_for_usb(vid, pid, None), ChipVendor::Unknown | ChipVendor::Realtek)
 }
 
-/// Name for a Bluetooth SIG company ID from HCI Read Local Version (None if
-/// not one A2DPWB cares about)
+/// Name for a Bluetooth SIG company ID from HCI Read Local / Remote Version
+/// (None if not one BlueCaster lists): adapter chips, and the chip makers and
+/// brands found in headphones
 pub fn company_name(company_id: u16) -> Option<&'static str> {
     Some(match company_id {
+        0x0000 => "Ericsson",
         0x0002 => "Intel",
+        0x0006 => "Microsoft",
         0x000A => "Qualcomm (CSR)",
+        0x000D => "Texas Instruments",
         0x000F => "Broadcom",
         0x001D => "Qualcomm",
+        0x0025 => "NXP",
+        0x0030 => "STMicroelectronics",
         0x0045 => "Atheros",
         0x0046 => "MediaTek",
+        0x0048 => "Marvell",
+        0x004C => "Apple",
+        0x0057 => "Harman",
+        0x0059 => "Nordic Semiconductor",
         0x005D => "Realtek",
+        0x0060 => "RivieraWaves",
+        0x0061 => "RDA Microelectronics",
+        0x0067 => "GN Audio",
+        0x0075 => "Samsung",
+        0x0082 => "DSEA (Sennheiser)",
+        0x0094 => "Airoha",
+        0x009E => "Bose",
+        0x00B8 => "Qualcomm (QuIC)",
+        0x00C4 => "LG",
+        0x00CC => "Beats",
+        0x00CD => "Microchip",
+        0x00D2 => "Dialog Semiconductor",
+        0x00D7 => "Qualcomm",
+        0x00E0 => "Google",
+        0x0103 => "Bang & Olufsen",
+        0x010F => "HiSilicon",
+        0x012D => "Sony",
         0x0131 => "Cypress",
         0x0009 => "Infineon",
+        0x01EC => "Spreadtrum (Unisoc)",
+        0x0211 => "Telink",
+        0x027D => "Huawei",
+        0x02B0 => "Bestechnic (BES)",
+        0x02E5 => "Espressif",
+        0x02FF => "Silicon Labs",
+        0x038F => "Xiaomi",
+        0x03E0 => "Actions",
+        0x0494 => "Sennheiser",
+        0x04F7 => "Goodix",
+        0x05D6 => "Zhuhai Jieli",
+        0x05F0 => "Beken",
+        0x0618 => "Audio-Technica",
+        0x0642 => "Bluetrum",
+        0x06AC => "Ingchips",
+        0x073F => "Unisoc",
+        0x079A => "OPPO",
+        0x07E3 => "Airoha",
+        0x08E7 => "Barrot",
+        0x0A76 => "Synaptics",
+        0x0AC2 => "RealMega",
+        0x0C1B => "Rockchip",
+        0x0C85 => "Amlogic",
+        0x0CC2 => "Anker",
+        0x0CCB => "Nothing",
         _ => return None,
     })
 }
@@ -222,8 +561,13 @@ pub fn display_name(vid: u16, pid: u16, realtek_pid: Option<u16>, vendor: ChipVe
     if let Some(chip) = realtek_pid.and_then(realtek_chip_name) {
         return format!("{chip} (0x{vid:04X}:0x{pid:04X})");
     }
+    if vendor == ChipVendor::Realtek
+        && let Some((chip, _)) = crate::realtek_btnic::chip(vid, pid)
+    {
+        return format!("{chip} (0x{vid:04X}:0x{pid:04X}) [experimental]");
+    }
     if vendor != ChipVendor::Unknown && vendor != ChipVendor::Realtek {
-        let tag = vendor.support_tag().map(|t| format!(" [{t}]")).unwrap_or_default();
+        let tag = chip_support_tag(vendor, vid, pid).map(|t| format!(" [{t}]")).unwrap_or_default();
         return format!("{} (0x{vid:04X}:0x{pid:04X}){tag}", vendor.name());
     }
     format!("0x{vid:04X}:0x{pid:04X}")
@@ -394,4 +738,23 @@ pub fn scan_firmware_files(dir: &Path) -> Vec<FirmwareFileEntry> {
         .collect();
     result.sort_by(|a, b| b.pid.is_some().cmp(&a.pid.is_some()).then_with(|| a.display_name.cmp(&b.display_name)));
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_loader_for_some_chips_leaves_the_others_unsupported() {
+        let table = [(ChipVendor::MediaTek, 0x0E8D, 0x7999)];
+        assert!(supported_in(&table, ChipVendor::MediaTek, 0x0E8D, 0x7999));
+        assert_eq!(tag_in(&table, ChipVendor::MediaTek, 0x0E8D, 0x7999), Some("experimental"));
+        assert!(!supported_in(&table, ChipVendor::MediaTek, 0x0E8D, 0x7925));
+        assert_eq!(tag_in(&table, ChipVendor::MediaTek, 0x0E8D, 0x7925), Some("unsupported"));
+        // Vendors with a loader for all their chips, or none needed
+        assert!(supported_in(&[], ChipVendor::Intel, 0x8087, 0x0033));
+        assert_eq!(tag_in(&[], ChipVendor::Intel, 0x8087, 0x0033), Some("experimental"));
+        assert!(supported_in(&[], ChipVendor::Realtek, 0x0BDA, 0x8771));
+        assert_eq!(tag_in(&[], ChipVendor::Csr, 0x0A12, 0x0001), None);
+    }
 }

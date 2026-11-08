@@ -37,6 +37,9 @@ pub struct DeviceInfo {
     /// Looks like a virtual device (VB-Cable, VoiceMeeter, ...): v1's
     /// heuristic, used to suggest devices for virtual device mode
     pub is_virtual: bool,
+    /// The capture endpoint paired with it ("CABLE Output" for a cable's
+    /// "CABLE Input"), by name: where apps record what is rendered to it
+    pub capture_name: Option<String>,
 }
 
 /// Active render endpoints, in Windows' order
@@ -58,17 +61,24 @@ pub fn render_devices() -> Result<Vec<DeviceInfo>, CaptureError> {
             is_virtual: is_virtual_device(&name, &hints),
             id,
             name,
+            capture_name: None,
         });
+    }
+    let ids: Vec<String> = out.iter().map(|d| d.id.clone()).collect();
+    match audio_policy::paired_capture_names(&ids) {
+        Ok(names) => out.iter_mut().zip(names).for_each(|(d, n)| d.capture_name = n),
+        Err(e) => tracing::debug!("audio devices: capture sides not read: HRESULT 0x{:08x}", e.code().0 as u32),
     }
     if tracing::enabled!(tracing::Level::DEBUG) {
         tracing::debug!("audio devices: {} active render endpoints, default {default_id:?}", out.len());
         for d in &out {
             tracing::debug!(
-                "audio devices: \"{}\" id {}{}{}",
+                "audio devices: \"{}\" id {}{}{}{}",
                 d.name,
                 d.id,
                 if d.is_default { " (default)" } else { "" },
-                if d.is_virtual { " (virtual)" } else { "" }
+                if d.is_virtual { " (virtual)" } else { "" },
+                d.capture_name.as_deref().map(|c| format!(" (records as \"{c}\")")).unwrap_or_default()
             );
         }
     }
@@ -96,6 +106,22 @@ pub fn set_default_render_device(id: &str) -> Result<(), CaptureError> {
             CaptureError::DeviceNotFound(id.to_owned())
         } else {
             CaptureError::windows("SetDefaultEndpoint", e.code().0, e.message())
+        }
+    })
+}
+
+/// Whether an application records from the capture side paired with the
+/// render endpoint `id` (a virtual cable's "CABLE Output" for "CABLE
+/// Input"; [`audio_policy::capture_sessions_active`]): an audio session on
+/// it is active. `Ok(None)`: no capture endpoint pairs with it (same
+/// container, else same adapter name).
+pub fn mic_capture_active(id: &str) -> Result<Option<bool>, CaptureError> {
+    let _com = com()?;
+    audio_policy::capture_sessions_active(id).map_err(|e| {
+        if not_found(e.code().0) {
+            CaptureError::DeviceNotFound(id.to_owned())
+        } else {
+            CaptureError::windows("capture sessions", e.code().0, e.message())
         }
     })
 }
@@ -252,6 +278,11 @@ mod tests {
         form_factor: Some(1), // Speakers
         container_id: Some(0x1234_5678_9abc_def0_1234_5678_9abc_def0),
     };
+
+    #[test]
+    fn an_unknown_output_has_no_capture_side() {
+        assert!(matches!(mic_capture_active("{0.0.0.00000000}.{not-a-device}"), Err(CaptureError::DeviceNotFound(_))));
+    }
 
     #[test]
     fn virtual_by_name() {

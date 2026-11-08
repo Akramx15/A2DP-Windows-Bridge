@@ -1,25 +1,40 @@
 // Adapter: the USB Bluetooth adapters with their driver and firmware,
 // WinUSB assign / restore, the chip for the firmware, and AFH.
 
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+} from "solid-js";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Field, Section, Segmented, Select } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { ErrorPanel, FirmwareDownload, openFirmwareFolder, WinusbDialog } from "../components/stream";
 import { t, tm } from "../i18n";
-import type { AdapterInfo, DriverKind, FirmwareFile } from "../ipc/types";
+import type { AdapterInfo, DriverKind, FirmwareFile, ProbeResult } from "../ipc/types";
 import {
   adapterFirmwareTag,
   buildChipOptions,
+  CHIP_NOT_REALTEK,
   type ChipStatus,
   chipStatus,
   chipTargetIndex,
   isAutoChip,
+  loaderOutcome,
+  vendorFirmware,
 } from "../lib/chips";
-import { LINKS, vendorFirmwareUrl } from "../lib/links";
+import { baseName, chipReportUrl, LINKS, vendorFirmwareUrl } from "../lib/links";
 
-/** The adapters A2DPWB can use first (WinUSB), the ones without a driver
+/** The adapters BlueCaster can use first (WinUSB), the ones without a driver
  *  and then the ones it cannot use at all last */
 export function usableFirst(list: readonly AdapterInfo[]): AdapterInfo[] {
   const rank = (a: AdapterInfo) =>
@@ -56,7 +71,7 @@ export function adapterIds(a: Pick<AdapterInfo, "address" | "vid" | "pid" | "bt_
 }
 
 /** Why adapterIds lacks the address or the Bluetooth version: neither
- *  Windows' Bluetooth (it runs one radio only) nor A2DP Windows Bridge has
+ *  Windows' Bluetooth (it runs one radio only) nor BlueCaster has
  *  used the adapter yet (issue #86); undefined when both are known */
 export function adapterIdsHint(a: Pick<AdapterInfo, "address" | "bt_version">): string | undefined {
   return a.address && a.bt_version ? undefined : t("ui.adapter.ids_unknown");
@@ -68,10 +83,11 @@ export function adapterExperimental(a: Pick<AdapterInfo, "display_name">): boole
   return /\[experimental\]/i.test(a.display_name);
 }
 
-/** A2DPWB can stream through it: not a chip whose firmware loader it lacks
+/** BlueCaster can stream through it: not a chip whose firmware loader it lacks
  *  (MediaTek, Qualcomm). Those need their firmware loaded at every start
  *  before they answer as a Bluetooth controller, so they cannot work at all:
- *  neither WinUSB nor a firmware download is offered for them (issue #86) */
+ *  neither WinUSB nor a firmware download is offered for them (issue #86).
+ *  Developer mode offers WinUSB anyway, for the chip probe */
 export function adapterSupported(a: Pick<AdapterInfo, "vendor_note">): boolean {
   return a.vendor_note?.key !== "firmware.vendor_unsupported";
 }
@@ -104,7 +120,7 @@ export function Adapter() {
   const adapter = () => snap().adapter;
   // The order shown; the chip section goes with its adapter in it
   const sorted = () => usableFirst(adapter().adapters);
-  // The card the chip choice goes in; none for an adapter A2DPWB cannot
+  // The card the chip choice goes in; none for an adapter BlueCaster cannot
   // use, the choice then stands on its own below the cards
   const chipCard = () => {
     const i = chipTargetIndex(sorted());
@@ -112,6 +128,40 @@ export function Adapter() {
   };
   const [dialog, setDialog] = createSignal<{ adapter: AdapterInfo; mode: "assign" | "restore" } | null>(null);
   const [listing, setListing] = createSignal(false);
+  // Developer mode: WinUSB also for a chip BlueCaster cannot use yet, and the
+  // chip probe (read commands only) for whoever adds its loader
+  const developer = () => snap().settings.developer_mode;
+  const [probing, setProbing] = createSignal(false);
+  // The last probe of each adapter (instance ID): its summary and the
+  // report to send stay on the card
+  const [probed, setProbed] = createSignal<Record<string, ProbeResult>>({});
+  const probe = (a: AdapterInfo) => {
+    setProbing(true);
+    void app
+      .run(async () => {
+        const r = await core.request("adapter.probe", { instance_id: a.instance_id });
+        setProbed((p) => ({ ...p, [a.instance_id]: r }));
+        app.notify(t("ui.adapter.probe_saved", r.summary));
+        await core.transport.revealPath(r.path);
+      })
+      .finally(() => setProbing(false));
+  };
+  // Developer mode: the keys Windows kept for this adapter's devices
+  /** A prefilled chip report in the browser, the file shown in Explorer to
+   *  drag into it */
+  const reportChip = (a: AdapterInfo, r: ProbeResult) =>
+    void app.run(async () => {
+      const info = (await core.request("diag.info", { mask: true })).text;
+      const url = chipReportUrl({
+        version: snap().update.current_version,
+        adapter: a.display_name,
+        summary: r.summary,
+        info,
+        file: baseName(r.path),
+      });
+      await core.transport.revealPath(r.path);
+      await core.transport.openUrl(url);
+    });
   // The *_fw.bin files in the settings folder: chips the table lacks
   const [files, setFiles] = createSignal<FirmwareFile[]>([]);
   const loadFiles = async () => {
@@ -166,6 +216,24 @@ export function Adapter() {
         <span class="dot" aria-hidden="true" />
         {t("ui.adapter.stack")}: {t(`ui.adapter.status_${adapter().status}`)}
       </p>
+      {/* A firmware loader while the adapter starts (Intel's download), and
+          how it ended: "ready" and its steps in developer mode only */}
+      <Show when={adapter().loader && (developer() || adapter().loader!.ok !== true) && adapter().loader}>
+        {(l) => (
+          <p class={`status-line st-${l().ok === false ? "error" : l().ok ? "ready" : "initializing"}`} role="status">
+            <span class="dot" aria-hidden="true" />
+            {l().ok === false
+              ? t("ui.adapter.loader_failed", l().vendor)
+              : l().ok
+                ? t("ui.adapter.loader_ok", l().vendor)
+                : t("ui.adapter.loader_running", l().vendor)}
+            {l().ok == null && l().percent != null ? ` ${l().percent}%` : ""}
+            <Show when={developer() && l().step}>
+              <span class="muted mono"> ({l().step})</span>
+            </Show>
+          </p>
+        )}
+      </Show>
       <Show when={adapter().status === "error" && adapter().error}>{(m) => <ErrorPanel message={m()} />}</Show>
 
       <Show
@@ -179,7 +247,13 @@ export function Adapter() {
         <For each={sorted()}>
           {(a, i) => {
             const drv = () => driverText(a.driver);
-            const fw = () => adapterFirmwareTag(a, snap().settings);
+            const fw = () => adapterFirmwareTag(a, snap().settings, adapter().loader);
+            // Another vendor's adapter: where its firmware comes from, in
+            // place of the Realtek chip choice (issue #86) while that is
+            // Auto or Not Realtek
+            const vendorBox = () =>
+              vendorFirmware(a) !== null &&
+              (isAutoChip(snap().settings) || snap().settings.bt_chip_pid === CHIP_NOT_REALTEK);
             const driverHead = createUniqueId();
             const firmwareHead = createUniqueId();
             return (
@@ -192,7 +266,7 @@ export function Adapter() {
                       {adapterName(a)}
                       <Show when={adapterExperimental(a)}>
                         {" "}
-                        <span class="tag st-warn" title={t("ui.adapter.experimental_hint")}>
+                        <span class="tag st-exp" title={t("ui.adapter.experimental_hint")}>
                           {t("ui.adapter.experimental")}
                         </span>
                       </Show>
@@ -220,22 +294,26 @@ export function Adapter() {
                       when={a.driver === "winusb"}
                       fallback={
                         <>
-                          {/* One A2DPWB cannot use keeps its driver (issue #86) */}
+                          {/* One BlueCaster cannot use keeps its driver (issue #86) */}
                           <Button
                             kind="strong"
                             icon="shield"
-                            disabled={!adapterSupported(a)}
+                            disabled={!adapterSupported(a) && !developer()}
                             onClick={() => setDialog({ adapter: a, mode: "assign" })}
                           >
                             {t("ui.adapter.assign_winusb")}
                           </Button>
                           <p class="hint">
-                            {t(adapterSupported(a) ? "ui.adapter.assign_short" : "ui.adapter.assign_unsupported")}
+                            {t(
+                              adapterSupported(a) || developer()
+                                ? "ui.adapter.assign_short"
+                                : "ui.adapter.assign_unsupported",
+                            )}
                           </p>
                         </>
                       }
                     >
-                      <Button icon="arrow_reset" onClick={() => setDialog({ adapter: a, mode: "restore" })}>
+                      <Button icon="shield" onClick={() => setDialog({ adapter: a, mode: "restore" })}>
                         {t("ui.adapter.restore_driver")}
                       </Button>
                       <p class="hint">{t("ui.adapter.restore_short")}</p>
@@ -248,7 +326,8 @@ export function Adapter() {
                     aria-labelledby={firmwareHead}
                   >
                     <h3 id={firmwareHead}>
-                      {t("ui.adapter.firmware")}: <span class={`tag st-${fw().status}`}>{t(fw().key)}</span>
+                      {t("ui.adapter.firmware")}:{" "}
+                      <span class={`tag st-${fw().status}`}>{t(fw().key, ...(fw().args ?? []))}</span>
                       {/* The running stack found it on its ROM code (issue #81) */}
                       <Show when={adapter().rom_firmware && a.realtek_chip && a.driver === "winusb"}>
                         {" "}
@@ -258,14 +337,36 @@ export function Adapter() {
                       </Show>
                     </h3>
                     {/* The chip setting is one for all adapters: with the one it applies to */}
-                    <Show when={i() === chipCard()}>
-                      <ChipSection files={files()} onChanged={loadFiles} adapter={a} />
+                    <Show
+                      when={vendorBox()}
+                      fallback={
+                        <Show when={i() === chipCard()}>
+                          <ChipSection files={files()} onChanged={loadFiles} adapter={a} />
+                        </Show>
+                      }
+                    >
+                      <VendorFirmwareBox adapter={a} />
                     </Show>
                     <Show when={!adapterSupported(a)}>
                       <Button icon="arrow_download" disabled>
                         {t("ui.adapter.firmware_download_unavailable")}
                       </Button>
                       <p class="hint">{t("firmware.vendor_unsupported")}</p>
+                    </Show>
+                    <Show when={developer() && a.driver === "winusb"}>
+                      <Button icon="search" disabled={probing()} onClick={() => probe(a)}>
+                        {t("ui.adapter.probe")}
+                      </Button>
+                      <Show when={probed()[a.instance_id]}>
+                        {(r) => (
+                          <>
+                            <p class="hint">{r().summary}</p>
+                            <Button icon="open" onClick={() => reportChip(a, r())}>
+                              {t("ui.adapter.probe_report")}
+                            </Button>
+                          </>
+                        )}
+                      </Show>
                     </Show>
                   </div>
                 </div>
@@ -298,7 +399,7 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
       auto: t("firmware.chip_auto", detected() ?? t("firmware.chip_auto_none")),
       nonRealtek: t("firmware.chip_non_realtek"),
     });
-  const hint = () => (isAutoChip(settings()) && detected() ? t("firmware.auto_selected") : t("firmware.select_chip"));
+  const hint = () => (isAutoChip(settings()) && detected() ? undefined : t("firmware.select_chip"));
   const choose = async (key: string) => {
     const o = choice().options.find((x) => x.key === key);
     if (!o || (o.pid === settings().bt_chip_pid && o.stem === settings().bt_chip_fw_stem)) return;
@@ -314,7 +415,7 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
   });
   const body = () => (
     <>
-      <Field label={t("settings.bt_chip")} hint={hint()}>
+      <Field label={t("settings.bt_chip")} hint={hint()} stacked>
         {(id, described) => (
           <Select
             id={id}
@@ -356,6 +457,55 @@ function ChipSection(props: { files: FirmwareFile[]; onChanged: () => Promise<vo
     >
       {body()}
     </Show>
+  );
+}
+
+/** Another vendor's adapter (issue #86): what to do about its firmware, and
+ *  only where there is something to do. Its vendor's driver or none needed:
+ *  nothing, unless loading failed; Intel's files (and Broadcom's optional
+ *  ones) in the firmware folder: where to get them; Marvell: Wi-Fi on */
+function VendorFirmwareBox(props: { adapter: AdapterInfo }) {
+  const app = useApp();
+  const a = () => props.adapter;
+  const source = () => vendorFirmware(a());
+  const outcome = () => loaderOutcome(a(), app.core.state.snap!.adapter.loader);
+  const url = () => vendorFirmwareUrl(a().vendor);
+  const actions = (guide: boolean) => (
+    <div class="inline wrap">
+      <Show when={url()}>
+        {(u) => (
+          <Button icon="open" onClick={() => app.core.transport.openUrl(u())}>
+            {t("firmware.open_download_page")}
+          </Button>
+        )}
+      </Show>
+      <Button icon="folder_open" kind="subtle" onClick={() => void openFirmwareFolder(app)}>
+        {t("firmware.open_folder")}
+      </Button>
+      <Show when={guide}>
+        <Button icon="open" kind="subtle" onClick={() => app.core.transport.openUrl(LINKS.setupGuide)}>
+          {t("ui.setup.guide")}
+        </Button>
+      </Show>
+    </div>
+  );
+  return (
+    <Switch>
+      <Match when={outcome() === "failed"}>
+        <p class="hint">
+          {source() === "driver" ? t("firmware.from_vendor_driver", a().vendor) : t("firmware.intel_files")}
+        </p>
+        {actions(source() === "folder")}
+      </Match>
+      <Match when={source() === "folder" && outcome() !== "ok"}>
+        <p class="hint">{t("firmware.intel_files")}</p>
+        {actions(true)}
+      </Match>
+      <Match when={source() === "optional"}>{actions(false)}</Match>
+      <Match when={source() === "wifi"}>
+        <p class="hint">{t("ui.adapter.firmware_keep_wifi")}</p>
+      </Match>
+    </Switch>
   );
 }
 
@@ -424,10 +574,13 @@ function FirmwareStatus(props: { status: ChipStatus; embedded?: boolean }): JSX.
         </Banner>
       );
     case "vendor": {
-      const url = vendorFirmwareUrl(st.vendor);
+      // Per chip: a vendor's chips without a loader get no firmware page,
+      // even when its other chips have one
+      const unsupported = st.note.key === "firmware.vendor_unsupported";
+      const url = unsupported ? null : vendorFirmwareUrl(st.vendor);
       return (
         <Banner
-          kind={st.note.key === "firmware.vendor_unsupported" ? "warn" : "info"}
+          kind={unsupported ? "warn" : "info"}
           actions={url ? download(url) : undefined}
         >
           {tm(st.note)}
@@ -460,7 +613,12 @@ const FIRMWARE_SECTION = "adapter-firmware";
 function AfhSection() {
   const app = useApp();
   const afh = () => app.core.state.snap!.settings.afh;
-  const mode = () => (afh() === "auto" || afh() === "off" ? afh() : "manual");
+  const developer = () => app.core.state.snap!.settings.developer_mode;
+  // "blend-mild" / "-medium" / "-strong": experimental, developer mode
+  // only; without it the stack runs Auto, and so it shows
+  const strictness = () => (afh().startsWith("blend-") ? afh().slice("blend-".length) : null);
+  const mode = () =>
+    afh() === "auto" || afh() === "off" ? afh() : strictness() ? (developer() ? "blend" : "auto") : "manual";
   const [channels, setChannels] = createSignal(mode() === "manual" ? afh() : "");
   const [manual, setManual] = createSignal(mode() === "manual");
   const bad = () => manual() && channels().trim() !== "" && parseAfhChannels(channels()) === null;
@@ -468,40 +626,74 @@ function AfhSection() {
     const c = parseAfhChannels(channels());
     if (c && c !== afh()) void saveSettings(app, { afh: c });
   };
+  // Auto: the Wi-Fi channels the running stack avoids now (empty while none
+  // or no stack runs)
+  onCleanup(app.core.wantLink());
+  const avoided = () => {
+    const l = app.core.link();
+    return l.length ? l[l.length - 1].afh_avoided.replace(/\s+/g, "") : "";
+  };
+  // One box for the channels (issue #86): Auto shows what it chose, Off
+  // nothing, both read only; Manual takes the user's
+  const shown = () => (manual() ? channels() : mode() === "auto" || mode() === "blend" ? avoided() : "");
   return (
     <Section id={AFH_SECTION} title={t("receiver.afh")}>
-      <p class="hint">{t("receiver.afh_tooltip")}</p>
-      <Segmented
-        label={t("receiver.afh")}
-        value={manual() ? "manual" : mode()}
-        options={[
-          { value: "auto", label: t("receiver.afh_auto") },
-          { value: "off", label: t("receiver.afh_off") },
-          { value: "manual", label: t("receiver.afh_manual") },
-        ]}
-        onChange={(v) => {
-          setManual(v === "manual");
-          if (v === "manual") saveChannels();
-          else void saveSettings(app, { afh: v });
-        }}
-      />
-      <Show when={manual()}>
-        <Field label={t("receiver.afh_channels")} hint={t("ui.adapter.afh_channels_hint")} error={bad() ? t("ui.adapter.afh_bad") : null}>
-          {(id, described) => (
+      {/* The text in a block of its own, the controls beside it (issue #86) */}
+      <div class="afh-body">
+        <div class="afh-text">
+          <p class="hint">{t("receiver.afh_tooltip")}</p>
+          <Show when={bad()}>
+            <span class="field-error" id="afh-channels-err" role="alert">
+              <Icon name="error_circle" />
+              {t("ui.adapter.afh_bad")}
+            </span>
+          </Show>
+        </div>
+        <div class="afh-control">
+          <div class="afh-row">
+            <Segmented
+              label={t("receiver.afh")}
+              value={manual() ? "manual" : mode()}
+              options={[
+                { value: "auto", label: t("receiver.afh_auto") },
+                { value: "off", label: t("receiver.afh_off") },
+                { value: "manual", label: t("receiver.afh_manual") },
+                ...(developer() ? [{ value: "blend", label: t("receiver.afh_blend") }] : []),
+              ]}
+              onChange={(v) => {
+                setManual(v === "manual");
+                if (v === "manual") saveChannels();
+                else void saveSettings(app, { afh: v === "blend" ? "blend-medium" : v });
+              }}
+            />
             <input
-              id={id}
-              class="input mono narrow"
-              placeholder="6,11"
-              value={channels()}
-              aria-describedby={described}
+              class="input mono afh-channels"
+              placeholder={manual() ? "6,11" : ""}
+              value={shown()}
+              readOnly={!manual()}
+              aria-label={t("receiver.afh_channels")}
+              aria-describedby="afh-channels-err"
               aria-invalid={bad() ? "true" : undefined}
               onInput={(e) => setChannels(e.currentTarget.value)}
-              onBlur={saveChannels}
-              onKeyDown={(e) => e.key === "Enter" && saveChannels()}
+              onBlur={() => manual() && saveChannels()}
+              onKeyDown={(e) => manual() && e.key === "Enter" && saveChannels()}
             />
-          )}
-        </Field>
-      </Show>
+          </div>
+          {/* The strength on a row of its own, below the mode (issue #86) */}
+          <Show when={!manual() && mode() === "blend"}>
+            <Segmented
+              label={t("receiver.afh_strictness")}
+              value={strictness() ?? "medium"}
+              options={[
+                { value: "mild", label: t("receiver.afh_mild") },
+                { value: "medium", label: t("receiver.afh_medium") },
+                { value: "strong", label: t("receiver.afh_strong") },
+              ]}
+              onChange={(v) => void saveSettings(app, { afh: `blend-${v}` })}
+            />
+          </Show>
+        </div>
+      </div>
     </Section>
   );
 }

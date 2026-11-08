@@ -1,22 +1,41 @@
 // The tray flyout (360×440): everyday control without the main window.
 // As Home's card (issue #86): the ring, and beside it the device chooser
-// in the title's place and the connection in one line (state, battery,
-// codec, link quality); then the volume, the effect's shortcuts with the
-// profile's own settings, Connect while it does not stream, and "Open app".
-// No close button: the flyout hides on Escape and when it loses the focus.
+// in the title's place, battery and state (and headset mode in developer
+// mode), the codec (chosen right there) and link quality;
+// then the volume, the effect's shortcuts, the big Connect with "Open app" beside it. No close
+// button: the flyout hides on Escape and when it loses the focus. Its
+// window is as tall as the page (issue #86: no empty space).
 
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
+import { mixerShown } from "../app/settings";
 import { CaptureSign } from "../app/indicators";
 import { Button, IconButton } from "../components/controls";
 import { DeviceEffects } from "../components/DeviceEffects";
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import { DeviceSwitcher } from "../components/DeviceSwitcher";
-import { ConnectionLine, ConnectButton, copyError, isAppFault, reportError, currentProfile, Ring, useFixes, VolumeControl } from "../components/stream";
+import {
+  adapterDrivers,
+  BatteryLevel,
+  CodecBadge,
+  ConnectButton,
+  copyError,
+  isAppFault,
+  reportError,
+  currentProfile,
+  QualityIndicator,
+  Ring,
+  showsBattery,
+  statusText,
+  useFixes,
+  VolumeControl,
+} from "../components/stream";
+import { MixerList } from "../components/Mixer";
 import { t, tm } from "../i18n";
 import { IpcError } from "../ipc/types";
 import { audioEntries, entryOf } from "../lib/profile";
+import { CodecPicker, HeadsetChip } from "./Home";
 import { saveEntry } from "./Codecs";
 
 export function Flyout() {
@@ -29,7 +48,13 @@ export function Flyout() {
   const entry = () => entryOf(audioEntries(snap()), profile());
   const running = () =>
     stream().state === "streaming" || stream().state === "connecting" || stream().state === "reconnecting";
+  const noDevice = () => audioEntries(snap()).length === 0;
+  /** Connect is shown, with "Open app" beside it */
+  const actionsShown = () => !noDevice() && !!profile();
   const [reqError, setReqError] = createSignal<IpcError | null>(null);
+  // As on Home: until the state moves on or an adapter's driver changes
+  createEffect(on(() => stream().state, () => setReqError(null), { defer: true }));
+  createEffect(on(() => adapterDrivers(snap()), () => setReqError(null), { defer: true }));
   const { fixFor, dialog } = useFixes();
   onCleanup(core.wantLink());
 
@@ -38,6 +63,14 @@ export function Flyout() {
   };
   onMount(() => document.addEventListener("keydown", onKey));
   onCleanup(() => document.removeEventListener("keydown", onKey));
+  let page: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!page || !core.transport.fitHeight || typeof ResizeObserver === "undefined") return;
+    const fit = () => void core.transport.fitHeight!(Math.ceil(page!.getBoundingClientRect().height)).catch(() => {});
+    const observer = new ResizeObserver(fit);
+    observer.observe(page);
+    onCleanup(() => observer.disconnect());
+  });
 
   const error = () => {
     const e = reqError();
@@ -49,39 +82,76 @@ export function Flyout() {
   const openMain = (route?: string) => core.transport.showMain(route).catch(() => {});
 
   return (
-    <div class="flyout">
-      <header class="fly-head">
-        <Ring state={stream().state} volume={stream().volume} size="small">
-          <Icon name="headphones" />
-        </Ring>
-        <div class="fly-title">
-          {/* The device chooser is the title: the device once (issue #86) */}
-          <Show
-            when={profile()}
-            fallback={<div class="device-name ellipsis">{t("profile.none_selected")}</div>}
-          >
-            <DeviceSwitcher />
-          </Show>
-          {/* As on Home: the state, battery, codec and link quality in one line */}
-          <ConnectionLine state={stream().state} stream={stream()} />
-        </div>
-      </header>
+    <div class="flyout" ref={page}>
+      {/* As on Home (issue #86) */}
+      <Show when={noDevice()}>
+        <section class="card empty">
+          <Icon name="headphones" class="empty-icon" />
+          <p>{t("ui.home.no_device")}</p>
+          <Button kind="strong" icon="add" onClick={() => void openMain("devices")}>
+            {t("ui.home.add_device")}
+          </Button>
+        </section>
+      </Show>
+      <Show when={!noDevice()}>
+        <header class="fly-head">
+          <Ring state={stream().state} volume={stream().volume} size="small">
+            <Icon name="headphones" />
+          </Ring>
+          <div class="fly-title">
+            {/* The device chooser is the title: the device once (issue #86) */}
+            <Show
+              when={profile()}
+              fallback={<div class="device-name ellipsis">{t("profile.none_selected")}</div>}
+            >
+              <DeviceSwitcher />
+            </Show>
+            {/* As on Home and in the sidebar: battery | state, the codec (issue #86) */}
+            <div class="fly-state">
+              <Show when={stream().state !== "idle" && showsBattery(stream())}>
+                <BatteryLevel class="fly-battery" percent={stream().battery} />
+                <span class="muted" aria-hidden="true">
+                  |
+                </span>
+              </Show>
+              <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
+                <span class="dot" aria-hidden="true" />
+                <span class="ellipsis">{statusText(stream())}</span>
+              </div>
+              <Show when={entry()}>{(e) => <HeadsetChip entry={e()} />}</Show>
+            </div>
+            <CodecBadge
+              aside={<QualityIndicator />}
+              picker={<Show when={entry()}>{(e) => <CodecPicker entry={e()} />}</Show>}
+              voice={false}
+            />
+          </div>
+        </header>
 
-      <Show when={entry()} fallback={<p class="muted">{t("profile.empty")}</p>}>
-        {(e) => (
-          <>
-            {/* As on Home: the volume while a device is in use */}
-            <Show when={stream().state !== "idle"}>
-              <VolumeControl />
-            </Show>
-            {/* The effect's shortcuts, the Upmixer's sliders and the profile */}
-            <DeviceEffects entry={e()} save={(edit) => saveEntry(app, e(), edit)} />
-            {/* Connect only: a streaming device is stopped from the tray menu */}
+        <Show when={profile()} fallback={<p class="muted">{t("profile.empty")}</p>}>
+          {/* As on Home: the volume while a device is in use */}
+          <Show when={stream().state !== "idle"}>
+            <VolumeControl />
+          </Show>
+          {/* The effect's shortcuts, the Upmixer's sliders and the profile */}
+          <Show when={entry()}>
+            {(e) => <DeviceEffects entry={e()} save={(edit) => saveEntry(app, e(), edit)} />}
+          </Show>
+          {/* "Open app" beside Connect: no row of its own (issue #86).
+              Connect only: a streaming device is stopped from the tray menu */}
+          <div class="fly-actions">
+            <IconButton icon="open" class="fly-open" label={t("ui.flyout.open_app")} onClick={() => void openMain()} />
             <Show when={!running()}>
-              <ConnectButton compact onError={(err) => setReqError(IpcError.from(err))} />
+              <ConnectButton compact onError={(e) => setReqError(IpcError.from(e))} />
             </Show>
-          </>
-        )}
+          </div>
+        </Show>
+      </Show>
+      {/* One click from the taskbar (issue #223) */}
+      <Show when={mixerShown(snap().settings)}>
+        <div class="fly-mixer">
+          <MixerList />
+        </div>
       </Show>
       {/* Kept simple: the capture source is chosen in the main window (issue #86) */}
       <Show when={snap().capture}>
@@ -95,8 +165,12 @@ export function Flyout() {
           const fix = () => fixFor(e().code, e().message.key);
           return (
             <div class="fly-error" role="alert">
-              <Icon name="error_circle" />
-              <span class="fly-error-text">{tm(e().message)}</span>
+              {/* The message has the width to itself, the buttons go below it */}
+              <div class="fly-error-msg">
+                <Icon name="error_circle" />
+                <span class="fly-error-text">{tm(e().message)}</span>
+              </div>
+              <div class="fly-error-actions">
               <IconButton
                 icon="copy"
                 label={t("ui.error.copy_hint")}
@@ -130,22 +204,28 @@ export function Flyout() {
                   </Button>
                 )}
               </Show>
+              </div>
             </div>
           );
         }}
       </Show>
 
-      <footer class="fly-foot">
-        <Show when={snap().update.available}>
-          <Button kind="subtle" icon="arrow_sync" onClick={() => void openMain("settings")}>
-            {t("update.available_title")}
-          </Button>
-          <span class="spacer" />
-        </Show>
-        <Button icon="open" onClick={() => void openMain()}>
-          {t("ui.flyout.open_app")}
-        </Button>
-      </footer>
+      {/* Only when there is something to show: an update, or "Open app" with no Connect beside it */}
+      <Show when={snap().update.available || !actionsShown()}>
+        <footer class="fly-foot">
+          <Show when={snap().update.available}>
+            <Button kind="subtle" icon="arrow_sync" onClick={() => void openMain("settings")}>
+              {t("update.available_title")}
+            </Button>
+            <span class="spacer" />
+          </Show>
+          <Show when={!actionsShown()}>
+            <Button icon="open" onClick={() => void openMain()}>
+              {t("ui.flyout.open_app")}
+            </Button>
+          </Show>
+        </footer>
+      </Show>
       {dialog()}
       <NoticeLine />
     </div>

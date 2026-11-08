@@ -1,5 +1,6 @@
-// The SBC frame setup a profile may ask for (blocks, subbands, allocation,
-// channel mode, bitpool) and the bit rate it gives, as the core works it out
+// The SBC frame setup a profile may ask for (bitpool; in developer mode also
+// blocks, subbands, allocation, channel mode) and the bit rate it gives, as
+// the core works it out
 // (crates/codec/src/sbc/mod.rs, caps.rs RemoteCaps::sbc_params): a value the
 // headphones do not list falls back to the default when connecting, Auto
 // takes the default, the bitpool stays within the headphones' range.
@@ -27,7 +28,8 @@ export type SbcFields = Pick<
   | "sbc_subbands"
   | "sbc_allocation"
   | "sbc_channel_mode"
->;
+> &
+  Partial<Pick<Profile, "sbc_min_bitpool" | "sbcxq_min_bitpool" | "unlisted_options">>;
 
 /** What the device listed when it last connected (null: not known) */
 export function knownSbcCaps(devices: readonly Device[], address: string): SbcCaps | null {
@@ -50,6 +52,13 @@ function qualityBitpool(quality: string): number {
 function xqBitpool(quality: string, rate: number): number {
   const [at44, at48] = quality === "sq" ? [43, 39] : quality === "mq" ? [32, 29] : [47, 43];
   return rate === 44100 ? at44 : at48;
+}
+
+/** SBC XQ's largest bitpool per channel at a rate: 47 at 44.1 kHz, 43 at
+ *  48 kHz (the core's xq_max_bitpool; issue #86: a slider up to 47 at
+ *  48 kHz changed nothing past 43) */
+export function xqMaxBitpool(rate: number): number {
+  return xqBitpool("hq", rate);
 }
 
 /**
@@ -93,18 +102,22 @@ export function sbcSetup(p: SbcFields, rate: number, caps: SbcCaps | null): SbcS
     : SBC_CHANNEL_MODES.includes(p.sbc_channel_mode) && sbcOffered(caps, "channel_modes", p.sbc_channel_mode)
       ? p.sbc_channel_mode
       : "joint_stereo";
-  const max = xq ? xqBitpool("hq", rate) : 53;
+  // SBC XQ not held to the device's list: up to SBC's 53 (issue #86)
+  const max = xq && !p.unlisted_options ? xqMaxBitpool(rate) : 53;
   const asked = xq ? p.sbcxq_bitpool : p.sbc_bitpool;
   const auto = xq ? xqBitpool(p.quality, rate) : qualityBitpool(p.quality);
-  let bitpool = Math.min(asked || auto, max);
+  // Never below the profile's minimum (issue #86)
+  const min = (xq ? p.sbcxq_min_bitpool : p.sbc_min_bitpool) ?? 0;
+  let bitpool = Math.min(Math.max(asked || auto, min), max);
   if (caps && caps.max_bitpool >= 2) bitpool = Math.max(Math.min(bitpool, caps.max_bitpool), Math.min(caps.min_bitpool, caps.max_bitpool), 2);
   const frameBytes = sbcFrameLength(mode, blocks, subbands, bitpool);
   return { blocks, subbands, allocation, mode, bitpool, frameBytes, kbps: sbcKbps(frameBytes, rate, blocks, subbands) };
 }
 
-/** The rate the bit rate is shown at: the profile's, or on Auto the highest
- *  the device takes (one figure is enough, issue #86) */
-export function sbcRate(p: Pick<Profile, "sample_rate">, caps: SbcCaps | null): number {
+/** The rate the bit rate is shown at: the profile's, or on Auto 48 kHz,
+ *  44.1 kHz on a device without it, as the core streams it (one figure is
+ *  enough, issue #86) */
+export function sbcRate(p: Pick<Profile, "sample_rate">, caps: Pick<SbcCaps, "sample_rates"> | null): number {
   if (p.sample_rate === 44100 || p.sample_rate === 48000) return p.sample_rate;
   return !caps || caps.sample_rates.includes(48000) || !caps.sample_rates.includes(44100) ? 48000 : 44100;
 }

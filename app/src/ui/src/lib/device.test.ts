@@ -8,7 +8,6 @@ import { asciiFromFullwidth, parseAddress } from "./format";
 import {
   appCaptureSupportFrom,
   captureDevice,
-  defaultCapture,
   defaultProfileName,
   deviceKey,
   entryBase,
@@ -29,6 +28,7 @@ const dev = (address: string, codecs: string[]): Device => ({
   codecs,
   sbc: null,
   codec_caps: [],
+  codecs_on_request: [],
   le_audio: false,
   le_audio_set: false,
 });
@@ -41,6 +41,7 @@ const audio = (id: string, is_default: boolean, mix_rate: number | null, mix_bit
   mix_rate,
   mix_channels: 2,
   mix_bits,
+  capture_name: null,
 });
 
 describe("addresses", () => {
@@ -73,6 +74,12 @@ describe("codecs a device offers", () => {
     expect(codecSupport("aptxhd", known)).toBe("not_offered");
     expect(codecSupport("auto", known)).toBe("offered");
     expect(codecSupport("LDAC", ["ldac"])).toBe("offered");
+  });
+
+  it("does not call one it may offer once chosen not offered", () => {
+    expect(codecSupport("ldac", ["sbc", "aac"], ["ldac"])).toBe("unknown");
+    expect(codecSupport("aptx", ["sbc", "aac"], ["ldac"])).toBe("not_offered");
+    expect(codecSupport("ldac", ["sbc", "ldac"], ["ldac"])).toBe("offered");
   });
 
   it("finds the profile's device by its address as typed", () => {
@@ -151,26 +158,16 @@ describe("profile defaults and names", () => {
     expect(newProfile().auto_switch_device).toBe(true);
   });
 
-  it("captures a new device from an installed virtual device, VB-Audio's cable first (issue #86)", () => {
-    const speakers = audio("Speakers", true, 48000, 32);
-    const meeter = audio("VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)", false, 48000, 32);
-    const cable = audio("CABLE Input (VB-Audio Virtual Cable)", false, 48000, 24);
-    expect(defaultCapture([])).toEqual({ capture_mode: "loopback", audio_device_id: "", audio_device_name: "" });
-    expect(defaultCapture([speakers])).toMatchObject({ capture_mode: "loopback" });
-    expect(defaultCapture([speakers, meeter])).toMatchObject({ capture_mode: "virtual", audio_device_id: meeter.id });
-    expect(defaultCapture([speakers, meeter, cable])).toEqual({
-      capture_mode: "virtual",
-      audio_device_id: cable.id,
-      audio_device_name: cable.name,
-    });
+  it("captures a new device by System Loopback, a virtual device installed or not (issue #86)", () => {
+    expect(newProfile()).toMatchObject({ capture_mode: "loopback", audio_device_id: "", audio_device_name: "" });
     // The other entry's capture source counts first
     const other = { ...newProfile(), device_address: "AA:BB:CC:DD:EE:FF", capture_mode: "app", app_exe: "x.exe" };
-    expect(entryBase({ address: "aa:bb:cc:dd:ee:ff", name: "X", le_audio: true }, [other], [cable])).toMatchObject({
+    expect(entryBase({ address: "aa:bb:cc:dd:ee:ff", name: "X", le_audio: true }, [other])).toMatchObject({
       capture_mode: "app",
     });
-    expect(entryBase({ address: "11:22:33:44:55:66", name: "Y", le_audio: false }, [other], [cable])).toMatchObject({
-      capture_mode: "virtual",
-      audio_device_id: cable.id,
+    expect(entryBase({ address: "11:22:33:44:55:66", name: "Y", le_audio: false }, [other])).toMatchObject({
+      capture_mode: "loopback",
+      audio_device_id: "",
     });
   });
 

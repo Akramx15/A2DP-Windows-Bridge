@@ -34,7 +34,6 @@ describe("settings", () => {
   it("has no LE Audio or GMAP switch: both are the device's (Codecs)", async () => {
     start("#/settings");
     await screen.findByRole("switch", { name: named(t("ui.settings.developer_mode")) });
-    expect(screen.queryByRole("switch", { name: named(t("settings.le_audio")) })).toBeNull();
     expect(screen.queryByRole("switch", { name: named(t("settings.le_low_latency")) })).toBeNull();
   });
 });
@@ -54,7 +53,7 @@ describe("Codecs screen", () => {
     const le = await screen.findByRole("region", { name: "Galaxy Buds2 Pro" });
     expect(le).toHaveTextContent(t("device.tag_le_audio"));
     expect(within(le).getByRole("radio", { name: named(t("ui.codec.lc3")) })).toBeChecked();
-    expect(within(le).getAllByRole("radio")).toHaveLength(1);
+    expect(within(le).getAllByRole("radio").filter((r) => !r.closest(".headset-mic"))).toHaveLength(1);
     expect(within(le).queryByRole("button", { name: /\.\.\.|settings/i })).toBeNull();
   });
 
@@ -105,7 +104,7 @@ describe("Codecs screen", () => {
       .find((e) => e) as HTMLElement;
     const select = within(entry).getByLabelText(t("capture.mode"));
     await within(select).findByRole("option", { name: "CABLE Input (VB-Audio Virtual Cable)" });
-    expect(within(select).getByRole("option", { name: t("capture.loopback") })).not.toBeDisabled();
+    expect(within(select).getByRole("option", { name: t("capture.loopback_default", "Speakers (Realtek(R) Audio)") })).not.toBeDisabled();
     expect(within(select).queryByRole("group", { name: t("capture.app") })).toBeNull();
     // Nor an A2DP packet size
     expect(within(entry).queryByLabelText(t("advanced.max_packet"))).toBeNull();
@@ -150,6 +149,16 @@ describe("device list", () => {
     expect(screen.queryByText(t("status.le_scanning"))).toBeNull();
   });
 
+  it("stops a running scan with what it found (issue #86)", async () => {
+    // Slow enough to see the scan running
+    const { calls } = start("#/devices", "le", 0.2);
+    fireEvent.click(await screen.findByRole("button", { name: t("connection.scan") }));
+    fireEvent.click(await screen.findByRole("button", { name: t("connection.scan_stop") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "device.scan_stop")).toBe(true));
+    await screen.findByRole("button", { name: t("connection.scan") }, { timeout: 3000 });
+    expect(screen.getAllByText(/MX Keys/).length).toBeGreaterThan(0);
+  });
+
   it("forgets and renames the LE Audio entry by address and kind", async () => {
     const { calls } = start("#/devices", "le");
     const le = (await screen.findByText(t("device.tag_le_audio_set"))).closest(".device-row") as HTMLElement;
@@ -178,7 +187,10 @@ describe("diagnostics", () => {
     await screen.findByRole("heading", { level: 1, name: "Diagnostics" });
     await waitFor(() => expect(core.state.snap).not.toBeNull());
     expect(screen.queryByRole("heading", { name: t("ui.diag.iso_title") })).toBeNull();
-    expect(screen.getByRole("heading", { name: t("quality.section_band") })).toBeInTheDocument();
+    // The BR/EDR band is on the radio tab, the ISO counters on the stream tab
+    fireEvent.click(screen.getByRole("tab", { name: t("ui.diag.tab_radio") }));
+    expect(await screen.findByRole("heading", { name: t("quality.section_band") })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: t("quality.section_stream") }));
 
     await core.request("stream.start", { profile: "Buds (LE Audio)" });
     await waitFor(() => expect(core.state.snap!.stream.state).toBe("streaming"));
@@ -189,9 +201,13 @@ describe("diagnostics", () => {
       expect(within(group).getByText(t(key)).closest(".lq-row")).toHaveTextContent(/\d/);
     }
     expect(within(group).getByText(t("ui.diag.iso_prefill")).closest(".lq-row")).toHaveTextContent(/\d+ frames/);
-    expect(screen.queryByRole("heading", { name: t("quality.section_band") })).toBeNull();
     // The codec row names LC3
     expect(screen.getByText(t("quality.codec")).closest(".lq-row")).toHaveTextContent(t("ui.codec.lc3"));
+    // No BR/EDR figures for LE Audio: neither the band nor the radio charts
+    fireEvent.click(screen.getByRole("tab", { name: t("ui.diag.tab_radio") }));
+    expect(await screen.findByRole("heading", { name: t("quality.title") })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: t("quality.section_band") })).toBeNull();
+    expect(screen.queryByRole("img", { name: new RegExp(`^${t("ui.diag.rssi")}`) })).toBeNull();
   });
 
   it("reports the setting being off when an LE Audio profile starts", async () => {

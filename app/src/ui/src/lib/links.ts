@@ -1,13 +1,19 @@
 // Web pages the UI opens (the same ones v1 opened)
 
-const REPO = "https://github.com/SeiyaFunaokaJP/A2DP-Windows-Bridge";
+const REPO = "https://github.com/SeiyaFunaokaJP/BlueCaster";
 
 export const LINKS = {
   repo: REPO,
   setupGuide: `${REPO}/blob/main/docs/setup.md`,
+  /** The chip script format (docs/chip-support.md, published) */
+  chipScripts: "https://seiyafunaokajp.github.io/BlueCaster/chip-support#chip-scripts",
   /** Realtek firmware: linux-firmware rtl_bt (v1 wx_firmware_dialog.cpp) */
   firmwareRealtek: "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt",
   firmwareIntel: "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/intel",
+  /** MediaTek: read from its Windows driver; linux-firmware has the same files */
+  firmwareMediaTek: "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/mediatek",
+  /** Qualcomm: read from its Windows driver; linux-firmware has the same files */
+  firmwareQualcomm: "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/qca",
   /** linux-firmware has no Broadcom .hcd; this collects them from the Windows drivers */
   firmwareBroadcom: "https://github.com/winterheart/broadcom-bt-firmware",
   releases: `${REPO}/releases`,
@@ -48,9 +54,11 @@ const CODEC_OPTIONS: Record<string, string> = {
   ldac: "LDAC",
   aptxhd: "aptX HD",
   aptxll: "aptX Low Latency",
+  aptxad: "aptX Adaptive",
   aptx: "aptX",
   lhdcv5: "LHDC V5",
   opus: "Opus",
+  opus05: "Opus 05",
   aac: "AAC",
   sbcxq: "SBC XQ",
   sbc: "SBC",
@@ -79,7 +87,7 @@ export function bugReportUrl(r: BugReport): string {
   const capture = r.captureMode && CAPTURE_OPTIONS[r.captureMode];
   if (capture) q.set("capture_mode", capture);
   if (r.whatHappened) q.set("what_happened", r.whatHappened);
-  if (r.bundle) q.set("bundle", `${r.bundle}\n(drag the file here from the Explorer window A2DP Windows Bridge opened)`);
+  if (r.bundle) q.set("bundle", `${r.bundle}\n(drag the file here from the Explorer window BlueCaster opened)`);
   // The field renders as a code block already: without the text's own fence
   let info = r.info.replace(/^```text\n/, "").replace(/\n?```\s*$/, "\n");
   if (encodeURIComponent(info).length > MAX_INFO_CHARS) {
@@ -91,10 +99,45 @@ export function bugReportUrl(r: BugReport): string {
   return `${REPO}/issues/new?${q.toString()}`;
 }
 
+/** "a.zip" of "C:\x\a.zip": the file a report asks to attach */
+export function baseName(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/")) + 1);
+}
+
+/** What a chip report is prefilled with (.github/ISSUE_TEMPLATE/chip_report.yml) */
+export interface ChipReport {
+  version: string;
+  /** "MediaTek (0x0E8D:0x0608) [unsupported]": the user adds where it came from */
+  adapter: string;
+  /** The probe's summary line */
+  summary: string;
+  /** "copy diagnostic info" text: only the Windows build is taken from it */
+  info: string;
+  /** The probe report's file name */
+  file: string;
+}
+
+/** A new chip report with what the probe read; the user attaches the file */
+export function chipReportUrl(r: ChipReport): string {
+  const q = new URLSearchParams({
+    template: "chip_report.yml",
+    title: `Chip support: ${r.summary.split(",")[0]}`,
+    version: r.version,
+    adapter: r.adapter,
+    chip: r.summary,
+    probe: `${r.file}\n(drag the file here from the Explorer window BlueCaster opened)`,
+  });
+  const os = /OS\s*:\s*Windows build (\d+) \(([^)]+)\)/.exec(r.info);
+  if (os) q.set("windows", `Windows build ${os[1]} (${os[2]})`);
+  return `${REPO}/issues/new?${q.toString()}`;
+}
+
 /** The firmware download page for an adapter's vendor */
 export function firmwareUrl(vendor: string): string {
   const v = vendor.toLowerCase();
   if (v.includes("intel")) return LINKS.firmwareIntel;
+  if (v.includes("mediatek")) return LINKS.firmwareMediaTek;
+  if (v.includes("qualcomm")) return LINKS.firmwareQualcomm;
   if (v.includes("broadcom")) return LINKS.firmwareBroadcom;
   return LINKS.firmwareRealtek;
 }
@@ -104,6 +147,8 @@ export function firmwareUrl(vendor: string): string {
 export function vendorFirmwareUrl(vendor: string): string | null {
   const v = vendor.toLowerCase();
   if (v.includes("intel")) return LINKS.firmwareIntel;
+  if (v.includes("mediatek")) return LINKS.firmwareMediaTek;
+  if (v.includes("qualcomm")) return LINKS.firmwareQualcomm;
   if (v.includes("broadcom")) return LINKS.firmwareBroadcom;
   return null;
 }

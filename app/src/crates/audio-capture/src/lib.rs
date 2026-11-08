@@ -1,5 +1,5 @@
-//! Audio sources for A2DPWB: WASAPI loopback of the default output device
-//! or a chosen one (virtual device mode), per-application loopback, and the
+//! Audio sources for BlueCaster: WASAPI loopback of the default output device
+//! or a chosen one (virtual or output device mode), per-application loopback, and the
 //! test tone; plus the device list, endpoint volume and app list the UI and
 //! core need around them.
 //!
@@ -14,7 +14,9 @@
 mod apps;
 mod devices;
 mod format;
+mod gaps;
 mod loopback;
+mod mixer;
 mod silence;
 mod tone;
 
@@ -26,10 +28,11 @@ pub use apps::{
     APP_CAPTURE_MIN_BUILD, AudioApp, app_capture_supported, audio_apps, find_process, process_exited, windows_build,
 };
 pub use devices::{
-    DeviceInfo, EndpointVolume, MixFormat, default_render_device, mix_format, mix_rate, render_devices,
-    set_default_render_device,
+    DeviceInfo, EndpointVolume, MixFormat, default_render_device, mic_capture_active, mix_format, mix_rate,
+    render_devices, set_default_render_device,
 };
 pub use format::{DEFAULT_RATE, Format, SampleFormat};
+pub use mixer::{MixerApp, SYSTEM_SOUNDS, mixer_apps, set_mixer_app};
 pub use tone::RIGHT_HZ as TEST_TONE_RIGHT_HZ;
 pub use tone::{AMPLITUDE as TEST_TONE_AMPLITUDE, LEFT_HZ as TEST_TONE_LEFT_HZ};
 
@@ -40,7 +43,7 @@ pub enum Source {
     /// the capture is opened. A later change of the default device is not
     /// followed; reopen to follow it.
     SystemLoopback,
-    /// Loopback of this render endpoint (virtual device mode)
+    /// Loopback of this render endpoint (virtual or output device mode)
     RenderDevice { id: String },
     /// Process loopback of this process and its child processes (Windows
     /// build >= [`APP_CAPTURE_MIN_BUILD`]). Float stereo at the requested
@@ -73,6 +76,13 @@ pub trait Sink: Send + 'static {
     /// playing (only with fill_silence). Separate so the caller can tell real
     /// audio from fill (AVRCP playback status uses "audio arrives = playing").
     fn silence(&mut self, frames: usize, format: Format);
+    /// Windows reported a gap in the captured audio (a data discontinuity,
+    /// not the expected ones right after the start), before the packet that
+    /// follows it. `lost_frames`: how much audio the gap took, when the
+    /// device position tells (None: not known).
+    fn discontinuity(&mut self, lost_frames: Option<u64>) {
+        let _ = lost_frames;
+    }
 }
 
 /// Why a running capture ended on its own (see [`Running::ended`])
@@ -156,6 +166,8 @@ pub(crate) struct Shared {
     frames: AtomicU64,
     silence_frames: AtomicU64,
     discontinuities: AtomicU64,
+    /// Frames lost in those discontinuities, where the device position told
+    lost_frames: AtomicU64,
     /// Of `silence_frames`: what the silence fill added because no packet
     /// came (not the packets the engine flagged as silent)
     filled_frames: AtomicU64,
@@ -323,6 +335,12 @@ impl Running {
     /// these from the capture thread; here the owner reads and logs them.
     pub fn discontinuities(&self) -> u64 {
         self.shared.discontinuities.load(Ordering::Relaxed)
+    }
+
+    /// Frames lost in [`Running::discontinuities`], from the device
+    /// position (only the ones where it is reliable)
+    pub fn lost_frames(&self) -> u64 {
+        self.shared.lost_frames.load(Ordering::Relaxed)
     }
 
     /// Of [`Running::silence_frames`]: the silence the fill added because

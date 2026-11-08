@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setLanguage } from "../i18n";
 import type { CodecDetails, StreamInfo } from "../ipc/types";
 import { bitpoolBar, chips, frameMs, liveBitpool, packetFill } from "../lib/codecdetails";
+import { bitpoolRange } from "./CodecCards";
 import { CodecDetailsCard } from "./CodecDetails";
 
 const SBC: CodecDetails = {
@@ -31,6 +32,7 @@ const SBC: CodecDetails = {
     },
   },
   aac: null,
+  device: null,
 };
 
 const INFO: StreamInfo = {
@@ -46,6 +48,7 @@ const INFO: StreamInfo = {
   requested_in_use: false,
   abr: false,
   bitrate_capped: false,
+  hi_res_set: false,
   source: null,
   le: null,
   details: SBC,
@@ -113,6 +116,28 @@ describe("codec details", () => {
     expect(c).not.toHaveTextContent("Filled: in use.");
   });
 
+  it("shows what any other codec's endpoint lists, as for SBC and AAC (issue #86)", () => {
+    const ldac: CodecDetails = {
+      ...SBC,
+      frame_bytes: null,
+      frames_per_packet: null,
+      sbc: null,
+      device: { codec: "ldac", sample_rates: [44100, 48000, 96000], bit_depths: [16, 24], max_bitrate: 0 },
+    };
+    const info = { ...INFO, codec: "LDAC", sample_rate: 96000, bits: 24, details: ldac };
+    const c = render(() => <CodecDetailsCard info={info} details={ldac} />).container;
+    expect(c.querySelector("h3")).toHaveTextContent("LDAC");
+    expect([...c.querySelectorAll(".cd-chip")].map((x) => x.textContent)).toEqual([
+      "44.1 kHz",
+      "48 kHz",
+      "96 kHz (in use)",
+      "16-bit",
+      "24-bit (in use)",
+    ]);
+    expect(c).toHaveTextContent("Device's peak bit rateNot given");
+    expect(c).toHaveTextContent("Filled: in use.");
+  });
+
   it("shows AAC's object type, peak bit rate and VBR", () => {
     const aac: CodecDetails = {
       mtu: 894,
@@ -133,6 +158,7 @@ describe("codec details", () => {
           vbr: true,
         },
       },
+      device: null,
     };
     const view = render(() => <CodecDetailsCard info={{ ...INFO, codec: "AAC", sample_rate: 44100, details: aac }} details={aac} />);
     const c = view.container;
@@ -170,7 +196,7 @@ describe("codec details", () => {
     expect(c.querySelector(".bitpool-track")).toHaveAttribute("aria-label", "Device 2–53, Configured 2–53, ABR 19–53, In use 53");
     expect(c.querySelector(".bitpool.live")).not.toBeNull();
     expect(c.querySelector(".bitpool-range.abr")).not.toBeNull();
-    expect(c).toHaveTextContent("Under ABR the bitpool drops by 2");
+    expect(c).toHaveTextContent("ABR lowers it when the send queue backs up");
     // A new stream info moves it
     setBp(41);
     expect(c).toHaveTextContent("Bitpool41 (ABR 19–53)");
@@ -185,5 +211,13 @@ describe("codec details", () => {
     expect(c).not.toHaveTextContent("ABR");
     expect(c.querySelector(".bitpool.live")).toBeNull();
     expect(c.querySelector(".bitpool-range.abr")).toBeNull();
+  });
+});
+
+describe("SBC XQ bitpool range", () => {
+  it("goes up to SBC's 53 when not held to the device's list (issue #86)", () => {
+    expect(bitpoolRange("sbcxq", null, 48000)).toEqual({ min: 2, max: 43 });
+    expect(bitpoolRange("sbcxq", null, 48000, true)).toEqual({ min: 2, max: 53 });
+    expect(bitpoolRange("sbc", null, 48000, true)).toEqual({ min: 2, max: 53 });
   });
 });

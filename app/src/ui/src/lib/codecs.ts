@@ -1,7 +1,7 @@
 // The codecs a profile can ask for and what each allows, as v1's profile
 // dialog (wx_profile_dialog.cpp on the develop branch, update_codec_dependent): quality
 // modes with their bitrates (since issue #86 High / Medium / Low for LDAC
-// and LHDC V5, High / Low Latency for aptX Adaptive, only High, the highest
+// and LHDC V5, LHDC V5's Medium-High too (issue #203), High / Low Latency for aptX Adaptive, only High, the highest
 // bit rate the device takes, for the others; core: Quality::for_codec),
 // ABR only for LDAC / LHDC V5 (and Auto, which may
 // pick them; v2 adds SBC / SBC XQ's adaptive bitpool), 24-bit and 88.2 / 96 kHz only for LDAC and LHDC V5, 192 kHz and
@@ -9,6 +9,9 @@
 // Adaptive) or under LHDC V5 ABR, 48 kHz only for Opus and Opus 05, 48 / 96
 // kHz for aptX Adaptive, whose "ll" quality is its low latency mode.
 // aptX HD and aptX Adaptive always carry 24-bit (no choice).
+
+import type { Settings } from "../ipc/types";
+import type { SbcCaps } from "./sbc";
 
 export type CodecId =
   | "auto"
@@ -45,6 +48,9 @@ export interface CodecSpec {
   hiRes: boolean;
   /** The only capture rates it takes (0 = auto), when not the usual ones */
   rates?: number[];
+  /** Its one bit rate at 44.1 / 48 kHz when it has no qualities (core:
+   *  Encoder::bitrate_kbps) */
+  fixedKbps?: [number, number];
   /** The bit depth it always carries when there is no choice (16 if not set) */
   bits?: number;
   /** Variable bit rate (where the headphones list it), on the "abr" setting */
@@ -55,6 +61,9 @@ export interface CodecSpec {
    *  CodecKind::experimental). The app offers and uses them as any other
    *  (issue #86); only the CLI's --no-experimental leaves them out */
   experimental?: boolean;
+  /** Shown and used only in developer mode (core: CodecKind::developer_only):
+   *  outside it, a device's is left out as if it did not offer it */
+  developer?: boolean;
 }
 
 /** SBC's largest bitpool (the local SEP's) */
@@ -64,6 +73,7 @@ export const BITPOOL_MAX_XQ = 47;
 export const BITPOOL_MIN = 2;
 
 const HQ = "quality.high";
+const MEDIUM_HIGH = "quality.medium_high";
 const MEDIUM = "quality.medium";
 const LOW = "quality.low";
 const LL = "quality.low_latency";
@@ -93,33 +103,45 @@ export const CODECS: CodecSpec[] = [
     id: "lhdcv5",
     label: "codec.lhdc_v5",
     bars: { quality: 5, latency: 2, stability: 2 },
-    // Three of Android's fixed levels (the sink may cap the maximum; its
-    // 900 kbps Medium-High is gone, issue #86: High there)
+    // Android's four fixed levels (the sink may cap the maximum). Medium-
+    // High was left out in issue #86 and is back since issue #203
     qualities: [
       { id: "hq", label: HQ, kbps: "1000" },
+      { id: "mhq", label: MEDIUM_HIGH, kbps: "900" },
       { id: "sq", label: MEDIUM, kbps: "500" },
       { id: "mq", label: LOW, kbps: "400" },
     ],
     abr: true,
     hiRes: true,
-    rates: [0, 44100, 48000, 88200, 96000, 192000],
+    // No 88.2 kHz: the device lists 44.1, 48, 96 and 192 kHz only (issue #86)
+    rates: [0, 44100, 48000, 96000, 192000],
   },
   {
     id: "aptxhd",
     label: "codec.aptx_hd",
     bars: { quality: 4, latency: 3, stability: 3 },
     qualities: [],
+    fixedKbps: [529, 576],
     abr: false,
     hiRes: false,
     bits: 24,
     experimental: true,
   },
-  { id: "aptx", label: "codec.aptx", bars: { quality: 3, latency: 3, stability: 4 }, qualities: [], abr: false, hiRes: false },
+  {
+    id: "aptx",
+    label: "codec.aptx",
+    bars: { quality: 3, latency: 3, stability: 4 },
+    qualities: [],
+    fixedKbps: [352, 384],
+    abr: false,
+    hiRes: false,
+  },
   {
     id: "aptxll",
     label: "codec.aptx_ll",
     bars: { quality: 2, latency: 5, stability: 4 },
     qualities: [],
+    fixedKbps: [352, 384],
     abr: false,
     hiRes: false,
     experimental: true,
@@ -127,8 +149,7 @@ export const CODECS: CodecSpec[] = [
   {
     // aptX Adaptive: High with an R1 sink
     // (an R2 sink: 427 -> 340), 48 kHz; ABR steps down from High; Low
-    // Latency has a fixed bit rate. 96 kHz only while Developer > "aptX
-    // Adaptive at 96 kHz" is on (issue #86), when chosen, to a device that
+    // Latency has a fixed bit rate. 96 kHz when chosen, to a device that
     // lists it (an R2 one), not in Low Latency (48 kHz otherwise; 646
     // kbps). Always 24-bit.
     id: "aptxad",
@@ -193,6 +214,7 @@ export const CODECS: CodecSpec[] = [
     label: "codec.faststream",
     bars: { quality: 1, latency: 4, stability: 4 },
     qualities: [],
+    fixedKbps: [198, 216],
     abr: false,
     hiRes: false,
     experimental: true,
@@ -208,6 +230,7 @@ export const CODECS: CodecSpec[] = [
     hiRes: false,
     rates: [0, 48000],
     experimental: true,
+    developer: true,
   },
 ];
 
@@ -244,15 +267,51 @@ export function codecLabelKey(name: string): string {
 /**
  * Whether a device offers a codec, from the codec keys the core learnt when
  * it last connected (Device.codecs: "ldac", "aac", ...; empty: not known
- * until the first connection). Auto takes what the device offers.
+ * until the first connection). Auto takes what the device offers. One it may
+ * offer only once chosen (`onRequest`, Device.codecs_on_request) is not known
+ * until then (issue #30).
  */
 export type CodecSupport = "offered" | "not_offered" | "unknown";
 
-export function codecSupport(codec: string, known: readonly string[]): CodecSupport {
+export function codecSupport(codec: string, known: readonly string[], onRequest: readonly string[] = []): CodecSupport {
   if (known.length === 0) return "unknown";
   if (codec === "auto") return "offered";
   const id = codec.toLowerCase();
-  return known.some((k) => k.toLowerCase() === id) ? "offered" : "not_offered";
+  if (known.some((k) => k.toLowerCase() === id)) return "offered";
+  return onRequest.includes(id) ? "unknown" : "not_offered";
+}
+
+/** Developer mode's override: each codec's "..." settings apply under
+ *  Auto-select too, and open without turning it off */
+export function autoKeepsCodecSettings(s: Pick<Settings, "developer_mode" | "dev_overrides">): boolean {
+  return s.developer_mode && s.dev_overrides.auto_codec_settings;
+}
+
+/** Developer mode's override: every codec runs at its quality's bit rate,
+ *  whatever maximum the device lists (core: DevOverrides::ignore_sink_max) */
+export function ignoresSinkMax(s: Pick<Settings, "developer_mode" | "dev_overrides">): boolean {
+  return s.developer_mode && s.dev_overrides.ignore_sink_max;
+}
+
+/** What the codec settings go by: without the device's maximum bit rates
+ *  while developer mode's override ignores them, so every quality is offered */
+export function capsForSettings(
+  caps: readonly CodecCaps[],
+  s: Pick<Settings, "developer_mode" | "dev_overrides">,
+): readonly CodecCaps[] {
+  if (!ignoresSinkMax(s)) return caps;
+  return caps.map((c) => (c.max_bitrate > 0 ? { ...c, max_bitrate: 0 } : c));
+}
+
+/** The SBC setup the codec settings go by: no device maximum bitpool while
+ *  the override ignores it (the device's minimum still applies, as in the
+ *  core) */
+export function sbcCapsForSettings(
+  caps: SbcCaps | null,
+  s: Pick<Settings, "developer_mode" | "dev_overrides">,
+): SbcCaps | null {
+  if (!caps || caps.max_bitpool < 2 || !ignoresSinkMax(s)) return caps;
+  return { ...caps, max_bitpool: 255 };
 }
 
 /**
@@ -333,6 +392,16 @@ export function moved<T>(list: readonly T[], from: number, to: number): T[] {
   return next;
 }
 
+/** Shown and used only in developer mode (CodecSpec.developer) */
+export function developerOnly(codec: string): boolean {
+  return codecSpec(codec).developer === true;
+}
+
+/** The codecs of `list` the app offers: those of developer mode only with it on */
+export function offeredCodecs<T extends string>(list: readonly T[], developer: boolean): T[] {
+  return list.filter((c) => developer || !developerOnly(c));
+}
+
 /** Not yet confirmed with real headphones (CodecSpec.experimental) */
 export function isExperimental(codec: string): boolean {
   return codecSpec(codec).experimental === true;
@@ -388,27 +457,92 @@ export interface CodecCaps {
   max_bitrate: number;
 }
 
+/** What a codec's settings go by with its card's "Show only supported
+ *  options" off (issue #86): everything the codec has, as when the device's
+ *  caps are not known (core: RemoteCaps::unlisted). aptX Adaptive's 96 kHz
+ *  stays the device's: it needs an R2 bitstream */
+export function unlistedCaps(codec: string, caps: CodecCaps | null): CodecCaps | null {
+  return codec === "aptxad" ? caps : null;
+}
+
 /** The caps of `codec` among a device's (null: not known) */
 export function capsOf(caps: readonly CodecCaps[], codec: string): CodecCaps | null {
   return caps.find((c) => c.codec.toLowerCase() === codec.toLowerCase()) ?? null;
 }
 
-/** Whether the device lists a sample rate (anything goes while not known;
- *  LHDC V5's 88.2 kHz runs as 96 kHz) */
+/** Whether the device lists a sample rate (anything goes while not known).
+ *  aptX Adaptive's 96 kHz only when
+ *  the device lists it: few do (an R2 one with a 96 kHz bit; issue #86, a
+ *  Bose QC Ultra has none), and the core streams 48 kHz to the others */
 export function rateOffered(codec: string, rate: number, caps: CodecCaps | null): boolean {
-  if (rate === 0 || !caps || caps.sample_rates.length === 0) return true;
-  return caps.sample_rates.includes(codec === "lhdcv5" && rate === 88200 ? 96000 : rate);
+  if (rate === 0) return true;
+  if (codec === "aptxad" && rate === 96000) return caps?.sample_rates.includes(rate) ?? false;
+  if (!caps || caps.sample_rates.length === 0) return true;
+  return caps.sample_rates.includes(rate);
 }
 
-/**
- * The sample rates the dialog offers (issue #86): the codec's, as far as
- * the device lists them, aptX Adaptive's 96 kHz only while Developer >
- * "aptX Adaptive at 96 kHz" is on (`aptxad96k`)
- */
-export function offeredSampleRates(codec: string, caps: CodecCaps | null, aptxad96k = true): number[] {
-  return sampleRates(codec).filter(
-    (r) => rateOffered(codec, r, caps) && !(codec === "aptxad" && r === 96000 && !aptxad96k),
+/** The one value a setting can take when there is nothing to choose (Auto
+ *  could only pick it): shown as a fixed value, without Auto. Undefined when
+ *  there is a choice, or when the value kept is one the device did not list
+ *  (the list stays, to move off it) */
+export function onlyChoice<T>(offered: readonly T[], current: T, auto: T): T | undefined {
+  const values = offered.filter((x) => x !== auto);
+  return values.length === 1 && (current === auto || current === values[0]) ? values[0] : undefined;
+}
+
+/** The sample rates the dialog offers (issue #86): the codec's, as far as
+ *  the device lists them */
+export function offeredSampleRates(codec: string, caps: CodecCaps | null): number[] {
+  return sampleRates(codec).filter((r) => rateOffered(codec, r, caps));
+}
+
+/** The sample rate Auto streams `codec` at, shown beside "Auto" (issue
+ *  #86), as the core picks it (stream.rs): 48 kHz, else what the device
+ *  lists, 44.1 kHz first; SBC, SBC XQ and Opus always 48 kHz */
+export function autoSampleRate(codec: string, caps: CodecCaps | null): number {
+  if (["sbc", "sbcxq", "opus", "opus05"].includes(codec)) return 48000;
+  const listed = offeredSampleRates(codec, caps).filter((r) => r > 0);
+  if (listed.length === 0 || listed.includes(48000)) return 48000;
+  return listed.includes(44100) ? 44100 : listed[0];
+}
+
+/** The bit depth Auto streams `codec` with (stream.rs): 24-bit for LDAC,
+ *  aptX HD and aptX Adaptive, LHDC V5 when the device lists it, else 16 */
+export function autoBitDepth(codec: string, caps: CodecCaps | null): number {
+  if (codec === "ldac" || codec === "aptxhd" || codec === "aptxad") return 24;
+  if (codec === "lhdcv5") {
+    const listed = caps?.bit_depths ?? [];
+    return listed.length === 0 || listed.includes(24) ? 24 : 16;
+  }
+  return 16;
+}
+
+/** Of `listed` (lowest first), the rate nearest the PC's `source` rate, as
+ *  the core picks it (caps.rs nearest_rate): itself, else its family (44.1
+ *  kHz multiples or not) below, then above; else the other family above,
+ *  then below */
+export function nearestRate(listed: readonly number[], source: number): number {
+  const family = (r: number) => r % 11025 === 0;
+  const same = listed.filter((r) => family(r) === family(source));
+  const other = listed.filter((r) => family(r) !== family(source));
+  const below = (rs: number[]) => rs.filter((r) => r <= source).at(-1);
+  const above = (rs: number[]) => rs.find((r) => r >= source);
+  return below(same) ?? above(same) ?? above(other) ?? below(other) ?? source;
+}
+
+/** The sample rate Auto streams `codec` at while it matches the PC's
+ *  output (developer mode), as the core picks it (stream.rs) */
+export function matchedSampleRate(codec: string, caps: CodecCaps | null, source: number): number {
+  return nearestRate(
+    offeredSampleRates(codec, caps).filter((r) => r > 0),
+    source,
   );
+}
+
+/** The bit depth Auto streams `codec` with while it matches the PC's
+ *  output (developer mode): 16-bit from a 16-bit output, else Auto's */
+export function matchedBitDepth(codec: string, caps: CodecCaps | null, source: number): number {
+  return source <= 16 && codec !== "aptxad" ? 16 : autoBitDepth(codec, caps);
 }
 
 /** The bit depths the dialog offers: the codec's, as far as the device
@@ -441,6 +575,8 @@ export function carryToCodec<T extends CodecFields>(p: T, to: string): T {
     ...p,
     codec: to,
     abr: abrCarries(p.codec, to) ? p.abr : false,
+    // Each codec's own: its card's "Show only supported options"
+    ...(same || p.unlisted_options === undefined ? {} : { unlisted_options: false }),
     ...(same || p.sbc_blocks === undefined ? {} : { sbc_blocks: 0 }),
     ...(same || p.sbc_subbands === undefined ? {} : { sbc_subbands: 0 }),
     ...(same || p.sbc_allocation === undefined ? {} : { sbc_allocation: "" }),
@@ -477,6 +613,13 @@ export function qualityKbps(codec: string, quality: string, sampleRate: number, 
   const kbps = table[spec.id]?.[q.id] ?? q.kbps;
   const cap = Math.floor(maxBitrate / 1000);
   return kbps && cap > 0 && /^\d+$/.test(kbps) && Number(kbps) > cap ? String(cap) : kbps;
+}
+
+/** "384 kbps": a codec's one bit rate at a sample rate of 44.1 or 48 kHz, for
+ *  one without qualities (issue #86) */
+export function fixedKbpsText(codec: string, sampleRate: number): string {
+  const kbps = codecSpec(codec).fixedKbps;
+  return kbps ? `${kbps[sampleRate === 44100 ? 0 : 1]} kbps` : "";
 }
 
 /**
@@ -548,10 +691,13 @@ interface CodecFields {
   bit_depth: number;
   sbc_bitpool?: number;
   sbcxq_bitpool?: number;
+  sbc_min_bitpool?: number;
+  sbcxq_min_bitpool?: number;
   sbc_blocks?: number;
   sbc_subbands?: number;
   sbc_allocation?: string;
   sbc_channel_mode?: string;
+  unlisted_options?: boolean;
 }
 
 /** Values the codec cannot use go back to the defaults (v1 did the same when the codec changed) */
@@ -569,6 +715,8 @@ export function fitToCodec<T extends CodecFields>(p: T): T {
     bit_depth: bitDepths(p.codec).includes(p.bit_depth) ? p.bit_depth : 0,
     ...(p.sbc_bitpool === undefined ? {} : { sbc_bitpool: p.codec === "sbc" ? p.sbc_bitpool : 0 }),
     ...(p.sbcxq_bitpool === undefined ? {} : { sbcxq_bitpool: p.codec === "sbcxq" ? p.sbcxq_bitpool : 0 }),
+    ...(p.sbc_min_bitpool === undefined ? {} : { sbc_min_bitpool: p.codec === "sbc" ? p.sbc_min_bitpool : 0 }),
+    ...(p.sbcxq_min_bitpool === undefined ? {} : { sbcxq_min_bitpool: p.codec === "sbcxq" ? p.sbcxq_min_bitpool : 0 }),
     ...(p.sbc_blocks === undefined ? {} : { sbc_blocks: sbc ? p.sbc_blocks : 0 }),
     ...(p.sbc_subbands === undefined ? {} : { sbc_subbands: sbc ? p.sbc_subbands : 0 }),
     ...(p.sbc_allocation === undefined ? {} : { sbc_allocation: sbc ? p.sbc_allocation : "" }),

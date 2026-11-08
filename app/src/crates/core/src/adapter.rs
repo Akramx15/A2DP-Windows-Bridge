@@ -5,6 +5,8 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use bt_host::afh;
 use bt_host::chips::{self, ChipVendor};
@@ -40,8 +42,22 @@ pub fn adapters(probe_winusb: bool) -> Vec<Adapter> {
         .filter_map(|d| {
             let realtek_pid = chips::resolve_realtek_pid(d.vid, d.pid, ids);
             let vendor = chips::vendor_for_usb(d.vid, d.pid, realtek_pid);
-            let bluetooth =
-                d.looks_like_bluetooth() || realtek_pid.is_some() || chips::is_bluetooth_vendor_vid(d.vid, d.pid);
+            // A chip maker's VID alone (a vendor-class adapter without a
+            // driver) unless the device says it is something else: a CSR
+            // headset charging, a MediaTek phone
+            let by_vid = chips::is_bluetooth_vendor_vid(d.vid, d.pid);
+            let bluetooth = d.looks_like_bluetooth() || realtek_pid.is_some() || (by_vid && !d.other_class());
+            if by_vid && !bluetooth {
+                tracing::debug!(
+                    "adapter: {:04X}:{:04X} {:?} skipped: {} VID, but class {:?} / functions {:?}",
+                    d.vid,
+                    d.pid,
+                    d.name,
+                    vendor.name(),
+                    d.usb_class,
+                    d.function_classes
+                );
+            }
             if bluetooth {
                 tracing::debug!(
                     "adapter: {:04X}:{:04X} {:?} driver {:?}, realtek pid {realtek_pid:04X?}, vendor {}, class {:?}, problem {:?}, probe {:?}",
@@ -95,7 +111,7 @@ pub fn usb_known_ids(vendor_class: &[(u16, u16)]) -> Vec<(u16, u16)> {
 /// Fills the chipset part of `config` from the settings and the present
 /// adapters
 pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Path) {
-    config.afh = Some(Box::new(WifiAfh));
+    config.afh = Some(Box::new(WifiAfh::default()));
     if matches!(config.transport, TransportConfig::Tcp(_)) {
         return; // a virtual controller: no chipset, no firmware
     }
@@ -147,7 +163,7 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
         );
         if chip_name.is_none() && settings.bt_chip_fw_stem.is_empty() {
             tracing::warn!(
-                "chip 0x{pid:04X} is not in A2DPWB's chip table: choose its firmware on the Adapter screen (Firmware), else no firmware file is checked or prepared for it"
+                "chip 0x{pid:04X} is not in BlueCaster's chip table: choose its firmware on the Adapter screen (Firmware), else no firmware file is checked or prepared for it"
             );
         }
         config.realtek_pid = pid;
@@ -184,24 +200,52 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
         // One held by another program cannot be loaded either (v1 skipped
         // it too)
         config.intel_loader = winusb.iter().any(|a| a.vendor == ChipVendor::Intel && !a.device.in_use());
-        for a in winusb.iter().filter(|a| a.vendor == ChipVendor::Intel && a.device.in_use()) {
+        for a in winusb.iter().filter(|a| {
+            matches!(a.vendor, ChipVendor::Intel | ChipVendor::MediaTek | ChipVendor::Qualcomm) && a.device.in_use()
+        }) {
             tracing::info!(
-                "Intel adapter {:04X}:{:04X} is in use by another program: no bootloader download for it",
+                "{} adapter {:04X}:{:04X} is in use by another program: no firmware download for it",
+                a.vendor.name(),
                 a.device.vid,
                 a.device.pid
             );
         }
+        // MediaTek: only the chips its loader knows, never one in use
+        config.mediatek_loader = winusb.iter().any(|a| {
+            a.vendor == ChipVendor::MediaTek
+                && chips::chip_supported(a.vendor, a.device.vid, a.device.pid)
+                && !a.device.in_use()
+        });
+        // Qualcomm: the same
+        config.qualcomm_loader = winusb.iter().any(|a| {
+            a.vendor == ChipVendor::Qualcomm
+                && chips::chip_supported(a.vendor, a.device.vid, a.device.pid)
+                && !a.device.in_use()
+        });
+        // A Realtek chip whose firmware comes from Realtek's Windows driver
+        // (the RTL8852BD): the first one present, never one in use
+        config.realtek_driver_chip = winusb
+            .iter()
+            .find(|a| {
+                a.vendor == ChipVendor::Realtek
+                    && bt_host::realtek_btnic::chip(a.device.vid, a.device.pid).is_some()
+                    && !a.device.in_use()
+            })
+            .map(|a| (a.device.vid, a.device.pid));
         config.broadcom_ids =
             winusb.iter().filter(|a| a.vendor == ChipVendor::Broadcom).map(|a| (a.device.vid, a.device.pid)).collect();
         tracing::debug!(
-            "adapter: intel bootloader download {}, broadcom patchram ids {:04X?}",
+            "adapter: intel bootloader download {}, mediatek download {}, qualcomm download {}, realtek driver chip {:04X?}, broadcom patchram ids {:04X?}",
             config.intel_loader,
+            config.mediatek_loader,
+            config.qualcomm_loader,
+            config.realtek_driver_chip,
             config.broadcom_ids
         );
         for a in &winusb {
-            if matches!(a.vendor, ChipVendor::MediaTek | ChipVendor::Qualcomm) {
+            if !chips::chip_supported(a.vendor, a.device.vid, a.device.pid) {
                 tracing::warn!(
-                    "{} adapter {:04X}:{:04X}: firmware loading for this vendor is not implemented; it may not work",
+                    "{} adapter {:04X}:{:04X}: firmware loading for this chip is not implemented; it may not work",
                     a.vendor.name(),
                     a.device.vid,
                     a.device.pid
@@ -212,18 +256,121 @@ pub fn configure(config: &mut HostConfig, settings: &Settings, _config_dir: &Pat
 }
 
 /// AFH host channel classification from the 2.4 GHz channel this PC's Wi-Fi
-/// is connected on ("auto")
-struct WifiAfh;
+/// is connected on ("auto"), and for "blend-*" (developer mode) also from
+/// Wi-Fi scans and the controller's map
+#[derive(Default)]
+struct WifiAfh {
+    scans: Arc<Mutex<BlendScans>>,
+    /// What blend passed last time (its hysteresis)
+    blend_previous: Option<[u8; 10]>,
+}
+
+fn connected_24ghz() -> Vec<u8> {
+    match win_sys::wlan::survey() {
+        Ok(s) => s.connected_channels_24ghz(),
+        Err(e) => {
+            tracing::debug!("Wi-Fi survey failed: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// A fresh Wi-Fi scan this often while "blend" runs. A scan takes the
+/// PC's Wi-Fi off its channel for a moment, so not more often.
+const BLEND_SCAN_EVERY: Duration = Duration::from_secs(120);
+/// How long a scan waits for the access points to answer
+const BLEND_SCAN_WAIT: Duration = Duration::from_secs(4);
+/// A scan older than this no longer counts
+const BLEND_SCAN_MAX_AGE: Duration = Duration::from_secs(600);
+/// The scanning thread stops when "blend" has not asked for this long
+const BLEND_SCAN_IDLE: Duration = Duration::from_secs(180);
+
+/// The latest scans for "blend", filled by a thread of their own: a scan
+/// waits seconds, and the BTstack thread that classifies must not
+#[derive(Default)]
+struct BlendScans {
+    latest: Option<(Instant, Vec<afh::ApReading>)>,
+    asked: Option<Instant>,
+    running: bool,
+    /// The last scan failure logged (logged once per kind)
+    failed: Option<win_sys::wlan::ScanError>,
+}
+
+/// The latest scan for "blend"; starts the scanning thread when it is not
+/// running. Only "blend" (developer mode, chosen by the user) gets here:
+/// a scan may meet Windows' location setting.
+fn blend_scan(scans: &Arc<Mutex<BlendScans>>) -> Option<Vec<afh::ApReading>> {
+    let mut s = scans.lock().unwrap_or_else(|e| e.into_inner());
+    s.asked = Some(Instant::now());
+    if !s.running {
+        s.running = true;
+        let scans = Arc::clone(scans);
+        let spawned = std::thread::Builder::new().name("afh-scan".into()).spawn(move || blend_scan_loop(&scans));
+        if let Err(e) = spawned {
+            tracing::warn!("AFH blend: no scanning thread ({e})");
+            s.running = false;
+        }
+    }
+    s.latest.as_ref().filter(|(at, _)| at.elapsed() < BLEND_SCAN_MAX_AGE).map(|(_, aps)| aps.clone())
+}
+
+fn blend_scan_loop(scans: &Mutex<BlendScans>) {
+    tracing::debug!("AFH blend: Wi-Fi scans every {} s", BLEND_SCAN_EVERY.as_secs());
+    loop {
+        let result = win_sys::wlan::scan_24ghz(BLEND_SCAN_WAIT);
+        {
+            let mut s = scans.lock().unwrap_or_else(|e| e.into_inner());
+            match result {
+                Ok(aps) => {
+                    tracing::debug!(
+                        "AFH blend: scan heard {}",
+                        aps.iter().map(|a| format!("ch {} {} dBm", a.channel, a.rssi)).collect::<Vec<_>>().join(", ")
+                    );
+                    let aps = aps.iter().map(|a| afh::ApReading { channel: a.channel, rssi: a.rssi }).collect();
+                    s.latest = Some((Instant::now(), aps));
+                    s.failed = None;
+                }
+                Err(e) => {
+                    if s.failed != Some(e) {
+                        tracing::info!("AFH blend: no Wi-Fi scan ({e:?}), the controller's map alone decides");
+                    }
+                    s.failed = Some(e);
+                    s.latest = None;
+                }
+            }
+        }
+        std::thread::sleep(BLEND_SCAN_EVERY);
+        let mut s = scans.lock().unwrap_or_else(|e| e.into_inner());
+        if s.asked.is_none_or(|t| t.elapsed() > BLEND_SCAN_IDLE) {
+            tracing::debug!("AFH blend: Wi-Fi scans stopped");
+            s.running = false;
+            s.latest = None;
+            return;
+        }
+    }
+}
 
 impl AfhSource for WifiAfh {
-    fn classify(&mut self, policy: &str) -> Option<AfhClassification> {
-        let c = afh::classify(policy, || match win_sys::wlan::survey() {
-            Ok(s) => s.connected_channels_24ghz(),
-            Err(e) => {
-                tracing::debug!("Wi-Fi survey failed: {e}");
-                Vec::new()
+    fn classify(&mut self, policy: &str, controller: &afh::ControllerHistory) -> Option<AfhClassification> {
+        let c = match afh::Policy::parse(policy) {
+            afh::Policy::Blend(strictness) => {
+                let connected = connected_24ghz();
+                let aps = blend_scan(&self.scans);
+                let c = afh::blend(&afh::BlendInput {
+                    strictness,
+                    connected: &connected,
+                    aps: aps.as_deref(),
+                    controller,
+                    previous: self.blend_previous.as_ref(),
+                });
+                self.blend_previous = c.passed.then_some(c.map);
+                c
             }
-        });
+            _ => {
+                self.blend_previous = None;
+                afh::classify(policy, connected_24ghz)
+            }
+        };
         tracing::debug!(
             "afh: policy {policy:?}: passed {}, usable {}, avoided Wi-Fi {:?}",
             c.passed,
@@ -240,9 +387,17 @@ impl AfhSource for WifiAfh {
 
 // ---- What a stack learnt about an adapter (adapter_caps.json) ----
 
-const CAPS_FILE: &str = "adapter_caps.json";
+/// Writes adapter_caps.json (in `adapters\`)
+fn write_caps(dir: &Path, caps: &BTreeMap<String, AdapterCaps>) {
+    let text = serde_json::to_string_pretty(caps).unwrap_or_default();
+    let path = crate::paths::adapter_caps_file(dir);
+    if let Err(e) = std::fs::create_dir_all(crate::paths::adapters_dir(dir)).and_then(|()| std::fs::write(&path, text))
+    {
+        tracing::warn!("cannot write {}: {e}", path.display());
+    }
+}
 
-/// What A2DPWB learnt about an adapter when a stack ran on it
+/// What BlueCaster learnt about an adapter when a stack ran on it
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct AdapterCaps {
     /// LE Audio's isochronous channels (issue #86)
@@ -264,7 +419,10 @@ fn caps_key(vid: u16, pid: u16) -> String {
 }
 
 fn load_caps(dir: &Path) -> BTreeMap<String, AdapterCaps> {
-    std::fs::read_to_string(dir.join(CAPS_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    std::fs::read_to_string(crate::paths::adapter_caps_file(dir))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
 }
 
 /// Whether the adapter with this VID:PID has LE Audio's isochronous
@@ -281,11 +439,8 @@ pub fn save_le_audio(dir: &Path, vid: u16, pid: u16, capable: bool) {
         return;
     }
     entry.le_audio = Some(capable);
-    tracing::debug!("adapter caps: {} LE Audio {capable}, saving {CAPS_FILE}", caps_key(vid, pid));
-    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
-    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
-        tracing::warn!("cannot write {CAPS_FILE}: {e}");
-    }
+    tracing::debug!("adapter caps: {} LE Audio {capable}, saving adapter_caps.json", caps_key(vid, pid));
+    write_caps(dir, &caps);
 }
 
 /// The adapter's own Bluetooth address, as a stack running on it read it
@@ -301,11 +456,8 @@ pub fn save_address(dir: &Path, vid: u16, pid: u16, address: &str) {
         return;
     }
     entry.address = Some(address.to_owned());
-    tracing::debug!("adapter caps: {} address {address}, saving {CAPS_FILE}", caps_key(vid, pid));
-    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
-    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
-        tracing::warn!("cannot write {CAPS_FILE}: {e}");
-    }
+    tracing::debug!("adapter caps: {} address {address}, saving adapter_caps.json", caps_key(vid, pid));
+    write_caps(dir, &caps);
 }
 
 /// The HCI version the controller on this VID:PID reported, as a stack
@@ -322,11 +474,8 @@ pub fn save_hci_version(dir: &Path, vid: u16, pid: u16, version: u8) {
         return;
     }
     entry.hci_version = Some(version);
-    tracing::debug!("adapter caps: {} HCI version {version}, saving {CAPS_FILE}", caps_key(vid, pid));
-    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
-    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
-        tracing::warn!("cannot write {CAPS_FILE}: {e}");
-    }
+    tracing::debug!("adapter caps: {} HCI version {version}, saving adapter_caps.json", caps_key(vid, pid));
+    write_caps(dir, &caps);
 }
 
 /// Device Manager's name for the adapter's radio, as Windows' Bluetooth
@@ -336,7 +485,7 @@ pub fn windows_name(dir: &Path, vid: u16, pid: u16) -> Option<String> {
 }
 
 /// What Windows' Bluetooth tells about the adapter while it runs it: its
-/// name, and the address and version a stack of A2DPWB would read
+/// name, and the address and version a stack of BlueCaster would read
 pub fn save_windows_radio(dir: &Path, vid: u16, pid: u16, name: &str, address: Option<&str>, hci_version: Option<u8>) {
     let mut caps = load_caps(dir);
     let entry = caps.entry(caps_key(vid, pid)).or_default();
@@ -354,13 +503,10 @@ pub fn save_windows_radio(dir: &Path, vid: u16, pid: u16, name: &str, address: O
         return;
     }
     tracing::debug!(
-        "adapter caps: {} Windows radio {name:?} {address:?} HCI {hci_version:?}, saving {CAPS_FILE}",
+        "adapter caps: {} Windows radio {name:?} {address:?} HCI {hci_version:?}, saving adapter_caps.json",
         caps_key(vid, pid)
     );
-    let text = serde_json::to_string_pretty(&caps).unwrap_or_default();
-    if let Err(e) = std::fs::write(dir.join(CAPS_FILE), text) {
-        tracing::warn!("cannot write {CAPS_FILE}: {e}");
-    }
+    write_caps(dir, &caps);
 }
 
 /// The Bluetooth address a Realtek adapter reports as its USB serial number
@@ -412,6 +558,7 @@ mod tests {
             hardware_ids: Vec::new(),
             compatible_ids: Vec::new(),
             usb_class: None,
+            function_classes: Vec::new(),
             driver: DriverInfo::default(),
             driver_kind: DriverKind::WinUsb,
             problem_code: None,
@@ -421,7 +568,7 @@ mod tests {
 
     #[test]
     fn le_audio_remembered_per_adapter() {
-        let dir = std::env::temp_dir().join(format!("a2dpwb-caps-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bluecaster-caps-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), None);
         save_le_audio(&dir, 0x0BDA, 0xA729, false);
@@ -432,7 +579,7 @@ mod tests {
         save_address(&dir, 0x0BDA, 0xA729, "00:11:22:33:44:55");
         assert_eq!(address(&dir, 0x0BDA, 0xA729).as_deref(), Some("00:11:22:33:44:55"));
         assert_eq!(le_audio(&dir, 0x0BDA, 0xA729), Some(false));
-        assert!(std::fs::read_to_string(dir.join(CAPS_FILE)).unwrap().contains("\"0BDA:A729\""));
+        assert!(std::fs::read_to_string(crate::paths::adapter_caps_file(&dir)).unwrap().contains("\"0BDA:A729\""));
         assert_eq!(hci_version(&dir, 0x0BDA, 0xA729), None);
         save_hci_version(&dir, 0x0BDA, 0xA729, 10);
         assert_eq!(hci_version(&dir, 0x0BDA, 0xA729), Some(10));

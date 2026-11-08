@@ -9,6 +9,8 @@ import { captureRunningText } from "./indicators";
 import { errorCopyText, isAppFault, sourceText, stateLabel, statusText } from "../components/stream";
 import { setLanguage, t } from "../i18n";
 import { MockCore, sampleProfile, type MockOptions } from "../ipc/mock";
+import type { UpdatePhase } from "../ipc/transport";
+import type { CodecStopKind } from "../ipc/bindings/CodecStopKind";
 import { createCore } from "../ipc/store";
 import { LINKS } from "../lib/links";
 import { toneParams } from "../lib/profile";
@@ -56,31 +58,39 @@ describe("update check", () => {
     expect(document.querySelector(".notice-error")).toBeNull();
   });
 
-  it("a newer release shows on every screen, with the way to Settings", async () => {
-    start("#/home", { scenario: "update" });
-    const notice = await screen.findByText("Version 2.0.0-beta.1 is available (current: 2.0.0-alpha.1).");
-    const banner = notice.closest(".banner") as HTMLElement;
-    fireEvent.click(within(banner).getByRole("button", { name: t("ui.update.show") }));
+  it("a newer release opens a dialog with its short notes; Update now installs it on Settings (issue #86)", async () => {
+    const { mock } = start("#/home", { scenario: "update" });
+    const install = vi.spyOn(mock, "updateInstall");
+    const dialog = await screen.findByRole("dialog", { name: "Update Available" });
+    expect(dialog).toHaveTextContent("Version 2.0.0-beta.1 is available (current: 2.0.0-alpha.1).");
+    // Markdown as plain lines
+    const notes = within(dialog).getAllByRole("listitem").map((li) => li.textContent);
+    expect(notes).toEqual(["Faster scan: devices show up as they answer", "A notification when a device connects (#86)"]);
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Update now" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
-    // Settings has its own banner with the install button: one, not two
-    expect(screen.getAllByText(/Version 2\.0\.0-beta\.1 is available/)).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+    expect(install).toHaveBeenCalledWith(expect.stringContaining("v2.0.0-beta.1/latest.json"));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("the update notice can be closed", async () => {
-    start("#/profiles", { scenario: "update" });
-    const banner = (await screen.findByText(/is available \(current/)).closest(".banner") as HTMLElement;
-    fireEvent.click(within(banner).getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(screen.queryByText(/is available \(current/)).toBeNull());
+  it("Later closes the update dialog for that version; a portable copy opens the download page", async () => {
+    localStorage.removeItem("bluecaster.update_later");
+    const { mock } = start("#/codecs", { scenario: "update" });
+    (mock as unknown as { updatePhase: UpdatePhase }).updatePhase = { state: "unavailable", reason: "portable" };
+    const dialog = await screen.findByRole("dialog", { name: "Update Available" });
+    expect(within(dialog).getByRole("button", { name: "Open download page" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Later" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(localStorage.getItem("bluecaster.update_later")).toBe("2.0.0-beta.1");
+    localStorage.removeItem("bluecaster.update_later");
   });
 
-  it("a crash of A2DPWB shows on every screen, ready to report, until closed", async () => {
+  it("a crash of BlueCaster shows on every screen, ready to report, until closed", async () => {
     const { mock } = start("#/profiles", { scenario: "crash" });
     const open = vi.spyOn(mock, "openUrl").mockResolvedValue();
     const write = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText: write }, configurable: true });
     const banner = (await screen.findByText(t("ui.crash.title"))).closest(".banner") as HTMLElement;
-    expect(banner).toHaveTextContent("a2dpwb-core, 2026-10-22 01:23:38");
+    expect(banner).toHaveTextContent("bluecaster-core, 2026-10-22 01:23:38");
     expect(banner).toHaveTextContent("panic in thread encode");
 
     fireEvent.click(within(banner).getByRole("button", { name: t("ui.diag.report_github") }));
@@ -89,8 +99,8 @@ describe("update check", () => {
     expect(url.searchParams.get("what_happened")).toContain("panic in thread encode");
     // The backtrace first, then the diagnostic info
     const logs = url.searchParams.get("logs")!;
-    expect(logs).toContain("a2dpwb_core::encode::run");
-    expect(logs.indexOf("a2dpwb_core::encode::run")).toBeLessThan(logs.indexOf("A2DP Windows Bridge"));
+    expect(logs).toContain("bluecaster_core::encode::run");
+    expect(logs.indexOf("bluecaster_core::encode::run")).toBeLessThan(logs.indexOf("BlueCaster"));
     expect(write.mock.calls[0][0]).toContain("```text\n");
 
     const seen = vi.spyOn(mock, "call");
@@ -116,6 +126,41 @@ describe("tray", () => {
     expect(toggle).not.toBeDisabled();
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, start_with_windows: false } });
     await waitFor(() => expect(toggle).toBeDisabled());
+  });
+
+  it("the tray window opens from nowhere, the tray icon or Quick Settings (issue #86)", async () => {
+    const { core } = start("#/settings");
+    const select = (await screen.findByLabelText(t("ui.settings.flyout_from"))) as HTMLSelectElement;
+    expect(select.value).toBe("tray");
+    // Not on Windows 10, and it says why
+    expect((screen.getByRole("option", { name: t("ui.settings.flyout_from_quick") }) as HTMLOptionElement).disabled).toBe(true);
+    expect(screen.getByText(t("ui.settings.flyout_from_win11"))).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "none" } });
+    await waitFor(() => expect(core.state.snap!.settings.tray_click_opens_window).toBe(true));
+    expect(core.state.snap!.settings.flyout_with_quick_settings).toBe(false);
+    expect(select.value).toBe("none");
+    expect(await screen.findByText(new RegExp(t("ui.settings.flyout_from_hint")))).toBeInTheDocument();
+  });
+
+  it("turns the notification of a connection off and on (issue #86)", async () => {
+    const { core } = start("#/settings");
+    const toggle = await screen.findByRole("switch", { name: new RegExp(t("ui.settings.notify_connected")) });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(core.state.snap!.settings.notify_connected).toBe(false));
+    expect(toggle).not.toBeChecked();
+  });
+
+  it("chooses when the low battery is notified, or never (issue #86)", async () => {
+    const { core } = start("#/settings");
+    const select = (await screen.findByRole("combobox", { name: t("ui.settings.battery_low") })) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.text)).toEqual(["Below 20%", "Below 10%", "Below 5%", "Never"]);
+    expect(select).toHaveDisplayValue("Below 20%");
+    fireEvent.change(select, { target: { value: "5" } });
+    await waitFor(() => expect(core.state.snap!.settings.battery_low_percent).toBe(5));
+    fireEvent.change(select, { target: { value: "0" } });
+    await waitFor(() => expect(core.state.snap!.settings.battery_low_percent).toBe(0));
+    expect(select).toHaveDisplayValue("Never");
   });
 });
 
@@ -147,7 +192,7 @@ describe("Home", () => {
     await waitFor(() => expect(write).toHaveBeenCalled());
     const text = write.mock.calls[0][0] as string;
     expect(text.startsWith(`${t("error.connect_no_answer")}\n\n`)).toBe(true);
-    expect(text).toContain("A2DP Windows Bridge");
+    expect(text).toContain("BlueCaster");
     expect(await screen.findByText(t("ui.error.copied"))).toBeInTheDocument();
   });
 
@@ -160,11 +205,11 @@ describe("Home", () => {
     expect(isAppFault("error.connect_no_answer")).toBe(false);
     expect(isAppFault("error.encoder_init", "stream.bad_codec")).toBe(false);
     expect(isAppFault("error.encoder_init")).toBe(true);
-    // Not known to be the user's: A2DPWB's own
+    // Not known to be the user's: BlueCaster's own
     expect(isAppFault("error.something_new")).toBe(true);
   });
 
-  it("reports an error of A2DPWB itself on GitHub with the form filled in", async () => {
+  it("reports an error of BlueCaster itself on GitHub with the form filled in", async () => {
     const { mock } = start("#/home", { scenario: "error" });
     const open = vi.spyOn(mock, "openUrl").mockResolvedValue();
     const write = vi.fn().mockResolvedValue(undefined);
@@ -178,7 +223,7 @@ describe("Home", () => {
     const url = new URL(open.mock.calls[0][0]);
     expect(url.searchParams.get("template")).toBe("bug_report.yml");
     expect(url.searchParams.get("what_happened")).toContain(t("error.encoder_init"));
-    expect(url.searchParams.get("logs")).toContain("A2DP Windows Bridge");
+    expect(url.searchParams.get("logs")).toContain("BlueCaster");
     // No bundle was saved: its field stays empty
     expect(url.searchParams.has("bundle")).toBe(false);
     expect(write).toHaveBeenCalled();
@@ -190,7 +235,9 @@ describe("Home", () => {
     await screen.findByRole("heading", { level: 1, name: "Home" });
     await mock.call("stream.start", { profile: "Desk speaker (AAC)" });
     await mock.call("profile.set_active", { name: "Desk speaker (AAC)" });
-    expect(await screen.findByText(t("ui.source.waiting", "Spotify"))).toBeInTheDocument();
+    // On the card of the device streaming (issue #86: no capture source card on Home)
+    const card = await screen.findByRole("group", { name: "SRS-XB13" });
+    expect(await within(card).findByText(t("ui.source.waiting", "Spotify"))).toBeInTheDocument();
   });
 
   it("shows a running HCI capture app-wide", async () => {
@@ -212,14 +259,86 @@ describe("flyout", () => {
     expect(screen.queryByRole("button", { name: "HCI capture running" })).toBeNull();
     await mock.call("diag.capture_start");
     expect(await screen.findByRole("button", { name: "HCI capture running" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Capture Source" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Output Source" })).toBeNull();
+  });
+});
+
+describe("no device", () => {
+  it("the flyout offers to add one, as Home does (issue #86)", async () => {
+    const { core } = start("", { window: "flyout" });
+    await screen.findByRole("button", { name: "Connect" });
+    for (const d of core.state.snap!.devices.filter((x) => x.saved)) {
+      await core.request("device.forget", { address: d.address, le_audio: d.le_audio });
+    }
+    expect(await screen.findByRole("button", { name: t("ui.home.add_device") })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+    // With no Connect, "Open app" keeps its own row
+    expect(screen.getByRole("button", { name: t("ui.flyout.open_app") }).closest(".fly-foot")).not.toBeNull();
+  });
+
+  it("forgetting a device takes its profile with it (issue #86)", async () => {
+    const { core } = start("");
+    await screen.findByRole("group", { name: "WH-1000XM5" });
+    const { address, le_audio } = core.state.snap!.devices.find((x) => x.name === "WH-1000XM5")!;
+    expect(core.state.snap!.profiles.some((p) => p.device_address === address)).toBe(true);
+    await core.request("device.forget", { address, le_audio });
+    await waitFor(() => expect(core.state.snap!.profiles.some((p) => p.device_address === address)).toBe(false));
+  });
+});
+
+describe("another Bluetooth adapter (issue #86)", () => {
+  afterEach(() => localStorage.clear());
+
+  it("is said on Home until dismissed, then no more", async () => {
+    const first = start("");
+    first.mock.setOtherRadio({ name: "MediaTek Bluetooth Adapter", paired: true });
+    await first.core.request("adapter.list");
+    cleanup();
+    const again = new MockCore({ speed: 0 });
+    again.setOtherRadio({ name: "MediaTek Bluetooth Adapter", paired: true });
+    const view = render(() => <App core={createCore(again)} />);
+    const text = t("ui.home.other_adapter_paired", "MediaTek Bluetooth Adapter");
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("modal.close") }));
+    await waitFor(() => expect(screen.queryByText(text)).toBeNull());
+    view.unmount();
+    again.dispose();
+
+    const later = new MockCore({ speed: 0 });
+    later.setOtherRadio({ name: "MediaTek Bluetooth Adapter", paired: true });
+    render(() => <App core={createCore(later)} />);
+    await screen.findByRole("group", { name: "WH-1000XM5" });
+    expect(screen.queryByText(text)).toBeNull();
+    later.dispose();
+  });
+
+  it("recommends disabling one with nothing paired", async () => {
+    const m = new MockCore({ speed: 0 });
+    m.setOtherRadio({ name: "MediaTek Bluetooth Adapter", paired: false });
+    mock = m;
+    render(() => <App core={createCore(m)} />);
+    expect(await screen.findByText(t("ui.home.other_adapter_unpaired", "MediaTek Bluetooth Adapter"))).toBeInTheDocument();
+  });
+});
+
+describe("Audio Devices without a virtual device (issue #86)", () => {
+  it("says why one is wanted, and not once it is installed", async () => {
+    location.hash = "#/devices";
+    const m = new MockCore({ speed: 0 });
+    m.noVirtual = true;
+    mock = m;
+    render(() => <App core={createCore(m)} />);
+    expect(await screen.findByText(t("ui.setup.vbcable_note"))).toBeInTheDocument();
+    m.noVirtual = false;
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(screen.queryByText(t("ui.setup.vbcable_note"))).toBeNull());
   });
 });
 
 describe("setup device step", () => {
   async function toDeviceStep(opts: MockOptions = {}) {
     const r = start("#/setup", opts);
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
+    await screen.findByRole("heading", { level: 1, name: "Setup Wizard" });
     for (let i = 0; i < 2; i++) {
       const next = screen.getByRole("button", { name: "Next" });
       await waitFor(() => expect(next).not.toBeDisabled());
@@ -229,15 +348,47 @@ describe("setup device step", () => {
     return r;
   }
 
-  it("three steps, the last one ends with Finish", async () => {
+  async function connectNew(calls: { method: string }[], name: string) {
+    const row = (await screen.findByText(name)).closest(".device-row") as HTMLElement;
+    const starts = calls.filter((c) => c.method === "stream.start").length;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "stream.start").length).toBe(starts + 1));
+  }
+
+  async function toFinish() {
+    const next = screen.getByRole("button", { name: "Next" });
+    await waitFor(() => expect(next).not.toBeDisabled());
+    fireEvent.click(next);
+    await screen.findByRole("heading", { level: 2, name: "General Settings" });
+  }
+
+  it("four steps, the last one ends with Finish", async () => {
     await toDeviceStep();
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent?.replace(/^\d/, ""))).toEqual([
+    expect(screen.getAllByRole("listitem").slice(0, 4).map((li) => li.textContent?.replace(/^\d/, ""))).toEqual([
       "Choose the adapter",
       "Driver and firmware",
       "Find your audio devices",
+      "General Settings",
     ]);
+    expect(screen.queryByRole("button", { name: "Finish" })).toBeNull();
+    await toFinish();
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Finish" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Set up later" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    expect(await screen.findByRole("heading", { level: 1, name: t("ui.nav.home") })).toBeInTheDocument();
+  });
+
+  it("takes the setup's window size and gives it back (issue #86)", async () => {
+    const { mock: m } = start("#/setup");
+    const sizes: boolean[] = [];
+    m.setupWindow = async (active) => void sizes.push(active);
+    await screen.findByRole("heading", { level: 1, name: "Setup Wizard" });
+    cleanup();
+    expect(sizes).toEqual([true, false]);
+  });
+
+  it("asks for no profile name: Connect makes it", async () => {
+    await toDeviceStep();
     // No profile name to type: Connect makes it
     expect(screen.queryByRole("textbox", { name: "Profile Name" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Create profile" })).toBeNull();
@@ -255,14 +406,87 @@ describe("setup device step", () => {
     expect(saved).toMatchObject({ device_address: "F4:4E:FD:00:11:22", codec: "auto" });
     expect(core.state.snap!.active_profile).toBe("Galaxy Buds2 Pro | Auto");
     expect(core.state.snap!.devices.find((d) => d.address === "F4:4E:FD:00:11:22")?.saved).toBe(true);
-    expect(screen.getByRole("button", { name: "Finish" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled();
+  });
+
+  it("goes on without an audio device: it can be added later (issue #86)", async () => {
+    const { mock: m } = await toDeviceStep({ scenario: "normal" });
+    const raw = m as any;
+    raw.snap.profiles = [];
+    raw.snap.active_profile = null;
+    raw.emit({ kind: "profiles", value: { profiles: [], active_profile: null } });
+    await toFinish();
+  });
+
+  it("keeps the device connected out of the list after Back and Next (issue #86)", async () => {
+    const { calls } = await toDeviceStep({ scenario: "normal" });
+    const row = (await screen.findByText("Galaxy Buds2 Pro")).closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
+    await screen.findByText("Galaxy Buds2 Pro", { selector: ".paired-devices *" });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    const next = await screen.findByRole("button", { name: "Next" });
+    await waitFor(() => expect(next).not.toBeDisabled());
+    fireEvent.click(next);
+    await screen.findByRole("heading", { level: 2, name: "Find your audio devices" });
+    // With the saved ones, not in the scan's list
+    await screen.findByText("Galaxy Buds2 Pro", { selector: ".paired-devices *" });
+    expect(screen.getAllByText("Galaxy Buds2 Pro")).toHaveLength(1);
+  });
+
+  it("adds a second device: the first one stays saved, the scan resumes between them (issue #86)", async () => {
+    const { calls } = await toDeviceStep({ scenario: "normal" });
+    await connectNew(calls, "Galaxy Buds2 Pro");
+    const scans = calls.filter((c) => c.method === "device.scan").length;
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.home.add_device") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.stop")).toBe(true));
+    await waitFor(() => expect(calls.filter((c) => c.method === "device.scan").length).toBeGreaterThan(scans));
+    // Saved above the list, not in it
+    expect(await screen.findByText("Galaxy Buds2 Pro", { selector: ".paired-devices *" })).toBeInTheDocument();
+    expect(screen.getAllByText("Galaxy Buds2 Pro")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Disconnect" })).toBeNull();
+  });
+
+  it("a wrong device is forgotten right there: back in the list", async () => {
+    const { calls } = await toDeviceStep({ scenario: "normal" });
+    await connectNew(calls, "Galaxy Buds2 Pro");
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.home.add_device") }));
+    fireEvent.click(await screen.findByRole("button", { name: `${t("ui.device.forget")}: Galaxy Buds2 Pro` }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.device.forget") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "device.forget")).toBe(true));
+    await waitFor(() => expect(screen.queryByText("Galaxy Buds2 Pro", { selector: ".paired-devices *" })).toBeNull());
+  });
+
+  it("Add a device before the stream has started stops it too", async () => {
+    const { calls } = await toDeviceStep({ scenario: "normal" });
+    const row = (await screen.findByText("Galaxy Buds2 Pro")).closest(".device-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.home.add_device") }));
+    await waitFor(() => expect(calls.some((c) => c.method === "stream.stop")).toBe(true));
+    expect(calls.findIndex((c) => c.method === "stream.start")).toBeLessThan(
+      calls.findIndex((c) => c.method === "stream.stop"),
+    );
+  });
+
+  it("a saved device has a dot for its state, and no Connect or Disconnect (issue #86)", async () => {
+    const { calls } = await toDeviceStep({ scenario: "normal" });
+    await connectNew(calls, "Galaxy Buds2 Pro");
+    const row = (await screen.findByText("Galaxy Buds2 Pro", { selector: ".paired-devices *" })).closest(".device-row") as HTMLElement;
+    await waitFor(() => expect(row.querySelector(".dot")).toHaveClass("st-streaming"));
+    const other = (await screen.findByText("WH-1000XM5", { selector: ".paired-devices *" })).closest(".device-row") as HTMLElement;
+    expect(other.querySelector(".dot")).toHaveClass("st-idle");
+    for (const r of [row, other]) {
+      expect(within(r).queryByRole("button", { name: "Connect" })).toBeNull();
+      expect(within(r).queryByRole("button", { name: "Disconnect" })).toBeNull();
+    }
   });
 
   it("a device with a profile connects with that one", async () => {
     const { calls, core } = await toDeviceStep();
     const before = core.state.snap!.profiles.length;
-    const row = (await screen.findAllByText("WH-1000XM5")).map((e) => e.closest(".device-row")).find((r) => r) as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
+    fireEvent.input(screen.getByRole("textbox", { name: "Manual:" }), { target: { value: "AC:80:0A:12:34:56" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
     await waitFor(() => expect(calls.some((c) => c.method === "stream.start")).toBe(true));
     expect(calls.find((c) => c.method === "stream.start")!.params).toEqual({ profile: "WH-1000XM5 (LDAC)" });
     expect(core.state.snap!.profiles.length).toBe(before);
@@ -276,8 +500,9 @@ describe("setup device step", () => {
     expect(calls.find((c) => c.method === "stream.start")!.params).toEqual({ profile: "11:22:33:44:55:66 | Auto" });
   });
 
-  it("asks whether A2DPWB starts with Windows, and then in the tray (issue #86)", async () => {
+  it("asks whether BlueCaster starts with Windows, and then in the tray (issue #86)", async () => {
     const { core } = await toDeviceStep();
+    await toFinish();
     await core.request("settings.set", {
       settings: { ...core.state.snap!.settings, start_with_windows: false, start_minimized: false },
     });
@@ -293,8 +518,8 @@ describe("setup device step", () => {
   });
 
   it("starts with Windows, in the tray, by default on a first setup (issue #86)", async () => {
-    const { core, mock: m } = start("#/setup");
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
+    const { calls, core, mock: m } = start("#/setup");
+    await screen.findByRole("heading", { level: 1, name: "Setup Wizard" });
     // A first run: no profile yet, both off
     for (const p of [...core.state.snap!.profiles]) await m.call("profile.delete", { name: p.name });
     await core.request("settings.set", {
@@ -306,6 +531,8 @@ describe("setup device step", () => {
       await waitFor(() => expect(next).not.toBeDisabled());
       fireEvent.click(next);
     }
+    await connectNew(calls, "Galaxy Buds2 Pro");
+    await toFinish();
     const withWindows = await screen.findByRole("switch", { name: t("settings.start_with_windows") });
     const inTray = screen.getByRole("switch", { name: new RegExp(t("ui.settings.start_minimized")) });
     await waitFor(() => expect(withWindows).toBeChecked());
@@ -320,8 +547,8 @@ describe("setup device step", () => {
   });
 
   it("also turns on the tray when only Start with Windows was on (issue #86)", async () => {
-    const { core, mock: m } = start("#/setup");
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
+    const { calls, core, mock: m } = start("#/setup");
+    await screen.findByRole("heading", { level: 1, name: "Setup Wizard" });
     for (const p of [...core.state.snap!.profiles]) await m.call("profile.delete", { name: p.name });
     await core.request("settings.set", {
       settings: { ...core.state.snap!.settings, start_with_windows: true, start_minimized: false },
@@ -332,30 +559,60 @@ describe("setup device step", () => {
       await waitFor(() => expect(next).not.toBeDisabled());
       fireEvent.click(next);
     }
+    await connectNew(calls, "Galaxy Buds2 Pro");
+    await toFinish();
     const inTray = await screen.findByRole("switch", { name: new RegExp(t("ui.settings.start_minimized")) });
     await waitFor(() => expect(inTray).toBeChecked());
     expect(core.state.snap!.settings).toMatchObject({ start_with_windows: true, start_minimized: true });
   });
 
-  it("scans for 30 s and captures a new device's profile from the installed cable (issue #86)", async () => {
+  it("without VB-Cable a new device captures System Loopback, and the step says why it is wanted (issue #86)", async () => {
+    const { calls, core, mock: m } = start("#/setup");
+    m.noVirtual = true;
+    await screen.findByRole("heading", { level: 1, name: "Setup Wizard" });
+    for (let i = 0; i < 2; i++) {
+      const next = screen.getByRole("button", { name: "Next" });
+      await waitFor(() => expect(next).not.toBeDisabled());
+      fireEvent.click(next);
+    }
+    expect(await screen.findByText(t("ui.setup.vbcable_note"))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("vbcable.download") }));
+    await connectNew(calls, "Galaxy Buds2 Pro");
+    expect(core.state.snap!.profiles.find((p) => p.name === "Galaxy Buds2 Pro | Auto")).toMatchObject({
+      capture_mode: "loopback",
+      audio_device_id: "",
+    });
+  });
+
+  it("scans until a device is added, then lists it no more; VB-Cable captures it (issue #86)", async () => {
     const { calls, core } = await toDeviceStep({ scenario: "normal" });
+    await waitFor(() => expect(calls.some((c) => c.method === "audio.devices")).toBe(true));
+    expect(screen.queryByText(t("ui.setup.vbcable_note"))).toBeNull();
     await waitFor(() => expect(calls.some((c) => c.method === "device.scan")).toBe(true));
-    expect(calls.find((c) => c.method === "device.scan")!.params).toEqual({ seconds: 30 });
+    expect(calls.find((c) => c.method === "device.scan")!.params).toEqual({ seconds: 600 });
     const row = (await screen.findByText("Galaxy Buds2 Pro")).closest(".device-row") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(core.state.snap!.profiles.some((p) => p.name === "Galaxy Buds2 Pro | Auto")).toBe(true));
+    // The added device is shown with its state; the list is gone while it connects
+    await screen.findByText("Galaxy Buds2 Pro", { selector: ".paired-devices *" });
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Manual:" })).toBeNull());
+    // and the scan is over: no new one starts
+    await waitFor(() => expect(core.state.snap!.scanning).toBe(false));
+    const scans = calls.filter((c) => c.method === "device.scan").length;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.filter((c) => c.method === "device.scan").length).toBe(scans);
     expect(core.state.snap!.profiles.find((p) => p.name === "Galaxy Buds2 Pro | Auto")).toMatchObject({
       capture_mode: "virtual",
-      audio_device_id: "{0.0.0.00000000}.{cable}",
       audio_device_name: "CABLE Input (VB-Audio Virtual Cable)",
+      auto_switch_device: true,
     });
   });
 });
 
 describe("setup adapter step", () => {
-  it("marks the adapters A2DPWB supports, and says so in red for one it does not", async () => {
+  it("marks the adapters BlueCaster supports, and lists one it does not without letting it be chosen (issue #86)", async () => {
     start("#/setup", { scenario: "fresh" });
-    await screen.findByRole("heading", { level: 1, name: "Set up A2DP Windows Bridge" });
+    await screen.findByRole("heading", { level: 1, name: "Setup Wizard" });
     const radios = screen.getAllByRole("radio");
     // The supported one first, and chosen
     const rtl = radios[0].closest(".choice") as HTMLElement;
@@ -366,11 +623,14 @@ describe("setup adapter step", () => {
     expect(mtk).toHaveTextContent("MediaTek Bluetooth Adapter");
     expect(mtk).not.toHaveTextContent("[unsupported]");
     expect(within(mtk).getByText("Unsupported")).toHaveClass("st-bad");
-    fireEvent.click(radios[1]);
+    // Read-only: the supported one stays chosen
+    expect(radios[1]).toBeDisabled();
+    expect(mtk).toHaveClass("ro");
+    expect(radios[0]).not.toBeDisabled();
+    expect(radios[0]).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText(t("ui.setup.unsupported_note"))).toBeInTheDocument();
-    // Its driver is not replaced (issue #86)
-    expect(screen.getByRole("button", { name: t("ui.setup.auto_button") })).toBeDisabled();
+    expect(await screen.findByText("TP-Link Bluetooth USB Adapter (RTL8761BU)")).toBeInTheDocument();
+    expect(screen.queryByText(t("ui.setup.unsupported_note"))).toBeNull();
   });
 });
 
@@ -378,7 +638,7 @@ describe("helpers", () => {
   it("source text", () => {
     const p = sampleProfile({ app_exe: "Spotify.exe", app_name: "Spotify" });
     expect(sourceText({ kind: "tone", name: "", waiting: false }, null).text).toBe("Test tone");
-    expect(sourceText({ kind: "loopback", name: "", waiting: false }, null).text).toBe("System Loopback");
+    expect(sourceText({ kind: "loopback", name: "", waiting: false }, null).text).toBe("Default device");
     expect(sourceText({ kind: "virtual", name: "CABLE Input", waiting: false }, null).text).toBe("CABLE Input");
     expect(sourceText({ kind: "app", name: "spotify.exe", waiting: false }, p).text).toBe("Spotify");
     const waiting = sourceText({ kind: "app", name: "foo.exe", waiting: true }, p);
@@ -393,15 +653,24 @@ describe("helpers", () => {
     // Why another codec is used is on the codec's line (issue #86)
     expect(statusText({ state: "streaming", message: msg("status.connected_fallback", "Opus", "aptX") })).toBe("Connected");
     expect(statusText({ state: "streaming", message: msg("status.connected_fallback_in_use", "LDAC", "AAC") })).toBe("Connected");
-    expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Initializing BTstack...");
+    expect(statusText({ state: "connecting", message: msg("status.initializing_btstack") })).toBe("Starting Bluetooth...");
     expect(statusText({ state: "error", message: msg("error.connect_no_answer") })).toBe("Error");
-    expect(statusText({ state: "idle", message: msg("") })).toBe("Idle");
+    // An error the codec caused names it in a few words (issue #86)
+    const refused = msg("error.codec_unsupported_refused", "LDAC");
+    const stopped = (codec: string, kind: CodecStopKind) =>
+      statusText({ state: "error", message: refused, codec_stop: { codec, kind } });
+    expect(stopped("ldac", "unsupported")).toBe("LDAC is unsupported");
+    expect(stopped("sbcxq", "settings_unsupported")).toBe("Unsupported SBC XQ settings");
+    expect(stopped("opus05", "in_use")).toBe("Opus (PipeWire) is in use");
+    expect(stopped("aac", "refused")).toBe("AAC was refused");
+    expect(statusText({ state: "error", message: refused, codec_stop: null })).toBe("Error");
+    expect(statusText({ state: "idle", message: msg("") })).toBe("Disconnected");
     // Streaming reads "Connected" everywhere (issue #86); the other states keep their words
     expect(statusText({ state: "streaming", message: msg("") })).toBe("Connected");
     expect(stateLabel("streaming")).toBe("Connected");
     expect(stateLabel("connecting")).toBe("Connecting...");
     expect(stateLabel("reconnecting")).toBe("Reconnecting...");
-    expect(stateLabel("idle")).toBe("Idle");
+    expect(stateLabel("idle")).toBe("Disconnected");
   });
 
   it("error copy text", () => {

@@ -1,10 +1,16 @@
 /*
- * A2DPWB v2 UI styles (design.md "ビジュアル言語").
+ * BlueCaster v2 UI styles (design.md "ビジュアル言語").
  *
  * - Dark by default; light from the same tokens (html[data-theme]).
- * - The accent gradient #4F8CFF -> #8B5CF6 appears only on the Connect
- *   button and the streaming ring. Everything else is neutral, so the one
- *   colourful thing on screen is the thing to press.
+ * - Controls take the Windows accent colour, as Windows' own do (issue
+ *   #86): the Connect button, strong buttons, switches, sliders and what is
+ *   selected. --accent-fill is AccentDark1 on light and AccentLight2 on dark
+ *   (theme.ts reads them; the defaults are Windows' blue).
+ * - The bitpool chart keeps two hues of its own (--chart-1, --chart-2).
+ * - States as Windows draws them (issue #86): a control that cannot be used
+ *   now keeps its outline with dimmed text (--disabled-text) and no fill; a
+ *   value that is never chosen is an outlined box without fill or arrow
+ *   (.input.readonly), not a list.
  * - Status colours: good #34D399, warning #FBBF24, error #F87171 (in light
  *   mode text uses darker shades of the same hues for WCAG AA contrast).
  * - Type: 12 / 14 / 16 / 20 / 28 px (in rem, so Windows' 100-200 % scaling
@@ -15,12 +21,13 @@
  */
 
 :root {
-  --accent-1: #4f8cff;
-  --accent-2: #8b5cf6;
-  --accent: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  --chart-1: #4f8cff;
+  --chart-2: #8b5cf6;
   --good: #34d399;
   --warn: #fbbf24;
   --bad: #f87171;
+  /* Experimental: amber, text and border (issue #86) */
+  --exp: #f59e0b;
 
   --fs-12: 0.75rem;
   --fs-14: 0.875rem;
@@ -63,8 +70,12 @@
   --text-3: #8c94a3;
   --strong-bg: #eceef3;
   --strong-fg: #121418;
+  --accent-fill: var(--sys-accent-dark, #60cdff);
+  --on-accent: #000000;
+  --disabled-text: rgb(255 255 255 / 0.36);
   --good-text: var(--good);
   --warn-text: var(--warn);
+  --exp-text: var(--warn);
   --bad-text: var(--bad);
   --focus: #eceef3;
   --overlay: rgb(0 0 0 / 0.55);
@@ -84,8 +95,12 @@
   --text-3: #5d6471;
   --strong-bg: #15171c;
   --strong-fg: #ffffff;
+  --accent-fill: var(--sys-accent-light, #005fb8);
+  --on-accent: #ffffff;
+  --disabled-text: rgb(0 0 0 / 0.36);
   --good-text: #047857;
   --warn-text: #92400e;
+  --exp-text: #b45309;
   --bad-text: #b91c1c;
   --focus: #15171c;
   --overlay: rgb(20 22 28 / 0.35);
@@ -118,6 +133,8 @@ html.mica.win-flyout .flyout {
 html {
   font-size: 100%;
   -webkit-text-size-adjust: 100%;
+  /* Native check boxes and radios */
+  accent-color: var(--accent-fill);
 }
 
 html,
@@ -239,6 +256,11 @@ p {
   --st: var(--warn);
   --st-text: var(--warn-text);
 }
+/* Experimental: amber, the border in full (issue #86) */
+.st-exp {
+  --st: var(--exp);
+  --st-text: var(--exp-text);
+}
 .st-bad,
 .st-error,
 .st-failed {
@@ -316,10 +338,13 @@ p {
   transform: translateY(1px);
 }
 .btn:disabled {
-  opacity: 0.5;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--disabled-text);
   cursor: default;
 }
-.btn-subtle {
+.btn-subtle,
+.btn-subtle:disabled {
   background: transparent;
   border-color: transparent;
 }
@@ -327,12 +352,18 @@ p {
   background: var(--surface-2);
 }
 .btn-strong {
-  background: var(--strong-bg);
-  color: var(--strong-fg);
-  border-color: var(--strong-bg);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: var(--accent-fill);
 }
 .btn-strong:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--strong-bg) 85%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 90%, var(--bg));
+}
+/* As Windows' accent buttons: grey when they cannot be pressed */
+.btn-strong:disabled {
+  background: var(--surface-2);
+  color: var(--disabled-text);
+  border-color: var(--border);
 }
 .btn-danger {
   background: transparent;
@@ -415,7 +446,9 @@ p {
 .input::placeholder {
   color: var(--text-3);
 }
-.input:hover,
+/* Only what can be changed reacts to the pointer (issue #86): not a
+   read-only field, nor a shown value */
+.input:read-write:hover,
 .select select:hover:not(:disabled) {
   border-color: var(--text-3);
 }
@@ -436,9 +469,15 @@ p {
   padding-right: 2rem;
   cursor: pointer;
 }
-.select select:disabled {
-  opacity: 0.6;
+.select select:disabled,
+.input:disabled {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--disabled-text);
   cursor: default;
+}
+.select:has(select:disabled) .select-chevron {
+  color: var(--disabled-text);
 }
 .select-chevron {
   position: absolute;
@@ -460,7 +499,6 @@ option {
   min-width: 0;
 }
 .field-label {
-  font-weight: 600;
   font-size: var(--fs-14);
 }
 /* The label, and an info button that shows the details (issue #86) */
@@ -469,13 +507,33 @@ option {
   align-items: center;
   gap: var(--s1);
 }
+/* Label and hint on the left, control on the right, as a Toggle (issue #86) */
+.field.side {
+  gap: 0;
+}
+.field.side > .row > :last-child {
+  flex: 0 1 auto;
+  max-width: 60%;
+}
+.field.side > .row > .input:not(.narrow) {
+  flex: none;
+  width: 12rem;
+}
+.field + .field.side,
+.row + .field,
+.field.side + .row {
+  border-top: 1px solid var(--border);
+}
+.row + .field:not(.side) {
+  padding-top: var(--s2);
+}
 .field-more-btn {
   width: 1.5rem;
   min-height: 1.5rem;
   color: var(--text-3);
 }
 .field-more-btn.on {
-  color: var(--accent-1);
+  color: var(--accent-fill);
 }
 /* "?" with its text on hover or focus */
 .help-tip {
@@ -524,12 +582,49 @@ option {
 .capture-source > .select {
   flex: 1;
 }
-.field-error {
+/* The capture source's format, read only, beside it (issue #86) */
+.format-box {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  min-height: 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-14);
+  font-variant-numeric: tabular-nums;
+}
+.format-box > * {
+  padding: 0 var(--s3);
+}
+.format-box > .num + .num {
+  border-left: 1px solid var(--border-strong);
+}
+.format-box > .icon {
+  padding-right: 0;
+}
+.format-box.st-warn {
+  border-color: var(--warn);
+  color: var(--warn-text);
+}
+.capture-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  white-space: pre-line;
+}
+.field-error,
+.field-warn {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--bad-text);
   font-size: var(--fs-12);
+}
+/* A small warning, not an error (issue #86: the capture format) */
+.field-warn {
+  color: var(--warn-text);
 }
 
 .row {
@@ -580,12 +675,12 @@ option {
     background-color var(--t-fast) var(--ease);
 }
 .switch:checked {
-  background: var(--strong-bg);
-  border-color: var(--strong-bg);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
 }
 .switch:checked::after {
   left: calc(100% - 0.95rem);
-  background: var(--strong-fg);
+  background: var(--on-accent);
 }
 .switch:disabled {
   opacity: 0.5;
@@ -645,7 +740,7 @@ option {
   margin: 0;
   cursor: pointer;
 }
-.seg:hover {
+.seg:not(.disabled):hover {
   color: var(--text);
 }
 .seg.on {
@@ -686,6 +781,48 @@ option {
 .section-actions {
   display: flex;
   gap: var(--s2);
+}
+/* AFH: the text on the left, the mode and its channels on the right, the
+   controls below the text when narrow (issue #86); Auto and Off show their
+   channels read only */
+.afh-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3) var(--s4);
+}
+.afh-text {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+.afh-control {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+}
+.afh-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s2);
+}
+/* Two channels wide ("6,11"), growing with a longer list */
+.afh-channels {
+  field-sizing: content;
+  width: auto;
+  min-width: 4.5rem;
+  max-width: 12rem;
+}
+.afh-channels:read-only {
+  color: var(--text-2);
+  cursor: default;
 }
 .empty {
   display: flex;
@@ -785,9 +922,22 @@ option {
   gap: var(--s3);
   animation: rise var(--t-mid) var(--ease);
 }
+/* Room for a one-line GUID beside a service name (issue #86) */
+.dialog-wide {
+  width: min(38rem, 100%);
+}
 .dialog > h2,
 .dialog-actions {
   flex: none;
+}
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+.dialog-heading {
+  align-self: center;
 }
 .dialog-body {
   display: flex;
@@ -806,6 +956,18 @@ option {
   justify-content: flex-end;
   gap: var(--s2);
   margin-top: var(--s2);
+}
+/* A release's in-app notes in the update dialog: a few short lines */
+.update-notes {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.update-notes li.plain {
+  list-style: none;
+  margin-left: -1.25rem;
 }
 @keyframes fade {
   from {
@@ -844,11 +1006,95 @@ option {
   color: var(--st-text);
   border-color: color-mix(in srgb, var(--st) 55%, transparent);
 }
+.tag.st-exp {
+  border-color: var(--exp);
+}
 .tags {
   display: flex;
   gap: var(--s1);
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+/* A tag that opens something (a device's services and keys), above
+   the row's full-size radio input */
+.tag-button {
+  position: relative;
+  z-index: 1;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.tag-button:hover {
+  border-color: var(--accent-fill);
+  color: var(--text);
+}
+.tag-button:focus-visible {
+  outline: 2px solid var(--accent-fill);
+  outline-offset: 1px;
+}
+
+/* The keys' heading folds them away (secrets) */
+.pairing-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pairing-fold:focus-visible {
+  outline: 2px solid var(--accent-fill);
+  outline-offset: 2px;
+}
+.pairing-part + .pairing-part {
+  margin-top: var(--s4);
+}
+.pairing-key {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+/* Key, tag and copy button on one line */
+.pairing-key-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: 100%;
+}
+/* Keys and services: one table look (issue #86) */
+.pairing-table {
+  margin-top: var(--s2);
+  font-size: var(--fs-14);
+}
+.pairing-keys {
+  margin-bottom: var(--s2);
+}
+/* The names on one line, the value column takes the rest */
+.pairing-keys th[scope="row"] {
+  width: 1%;
+  white-space: nowrap;
+}
+.pairing-keys th,
+.pairing-keys td {
+  vertical-align: middle;
+}
+.pairing-keys .mono {
+  font-size: var(--fs-12);
+}
+.pairing-services td {
+  vertical-align: top;
+}
+/* A GUID on one line; the name column wraps instead (issue #86) */
+.pairing-services td:last-child {
+  width: 1%;
+}
+.pairing-services .mono {
+  display: block;
+  font-size: var(--fs-12);
+  white-space: nowrap;
 }
 
 .notice-region {
@@ -885,8 +1131,10 @@ option {
 
 .shell {
   display: grid;
-  /* Wide enough for a long device name and the codec line unwrapped (issue #86) */
-  grid-template-columns: 16.5rem 1fr;
+  /* Wide enough for the codec's details unwrapped, ABR included (issue #86) */
+  grid-template-columns: 15rem 1fr;
+  /* The window's height, so a tall navigation can't push the content's end out */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 .nav {
@@ -897,20 +1145,16 @@ option {
   background: var(--bg-nav);
   border-right: 1px solid var(--border);
   min-width: 0;
+  /* Only when even one device block doesn't fit */
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .nav-top {
   display: flex;
   align-items: center;
   gap: var(--s2);
   padding: 0 0 var(--s2);
-}
-.nav-logo {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-.nav-title {
-  font-weight: 600;
-  white-space: nowrap;
 }
 .nav-list {
   list-style: none;
@@ -952,21 +1196,23 @@ option {
   bottom: 25%;
   width: 3px;
   border-radius: 2px;
-  background: var(--text);
+  background: var(--accent-fill);
 }
 .nav-label {
   white-space: nowrap;
 }
 
-/* One block per device (issue #86); many devices scroll */
+/* One block per device (issue #86); many devices scroll, and a low window
+   shrinks them first, so the navigation needs no second scrollbar */
 .status-pills {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
   max-height: 50%;
   overflow-y: auto;
-  min-height: 0;
-  flex: none;
+  scrollbar-width: thin;
+  min-height: 2.25rem;
+  flex: 0 1 auto;
 }
 .status-pill {
   display: flex;
@@ -988,6 +1234,7 @@ option {
 .status-pill-text {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 0.125rem;
   min-width: 0;
   font-size: var(--fs-12);
@@ -1011,6 +1258,21 @@ option {
 .status-pill .codec-name {
   font-size: inherit;
 }
+/* The codec and its details in one box */
+.status-pill .codec-info {
+  align-self: stretch;
+  gap: 0.125rem;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.status-pill .codec-badge {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
 
 /* Collapsed to icons: narrow windows, or by the toggle */
 @media (max-width: 860px) {
@@ -1018,8 +1280,6 @@ option {
     grid-template-columns: 3.5rem 1fr;
   }
   .shell:not(.nav-expanded) .nav-label,
-  .shell:not(.nav-expanded) .nav-title,
-  .shell:not(.nav-expanded) .nav-logo,
   .shell:not(.nav-expanded) .status-pill-text {
     display: none;
   }
@@ -1040,8 +1300,6 @@ option {
   grid-template-columns: 3.5rem 1fr;
 }
 .shell.nav-collapsed .nav-label,
-.shell.nav-collapsed .nav-title,
-.shell.nav-collapsed .nav-logo,
 .shell.nav-collapsed .status-pill-text {
   display: none;
 }
@@ -1200,15 +1458,12 @@ option {
 .ring-error {
   border-color: var(--bad);
 }
-/* Streaming: the gradient ring, glowing a little more at higher volume */
+/* Streaming: the accent ring, glowing a little more at higher volume */
 .ring-streaming {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--surface), var(--surface)) padding-box,
-    var(--accent) border-box;
+  border-color: var(--accent-fill);
   box-shadow:
-    0 0 calc(10px + 18px * var(--glow)) calc(-2px + 4px * var(--glow)) color-mix(in srgb, var(--accent-2) 45%, transparent),
-    0 0 calc(6px * var(--glow)) 0 color-mix(in srgb, var(--accent-1) 50%, transparent);
+    0 0 calc(10px + 18px * var(--glow)) calc(-2px + 4px * var(--glow)) color-mix(in srgb, var(--accent-fill) 45%, transparent),
+    0 0 calc(6px * var(--glow)) 0 color-mix(in srgb, var(--accent-fill) 50%, transparent);
 }
 .ring-streaming .ring-inner {
   color: var(--text);
@@ -1230,8 +1485,8 @@ option {
   min-height: 4rem;
   border: none;
   border-radius: var(--r-card);
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
   font: inherit;
   font-family: var(--font-display);
   font-size: var(--fs-20);
@@ -1247,7 +1502,7 @@ option {
   height: 1.5rem;
 }
 .connect-btn:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--accent-fill) 90%, var(--bg));
 }
 .connect-btn:active:not(:disabled) {
   transform: scale(0.99);
@@ -1257,8 +1512,14 @@ option {
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
+/* Disconnect stays grey on hover: the accent fill under its dark text
+   was hard to read (issue #86) */
+.connect-btn.on:hover:not(:disabled) {
+  background: var(--surface-3);
+}
 .connect-btn:disabled {
-  opacity: 0.55;
+  background: var(--surface-2);
+  color: var(--disabled-text);
   cursor: default;
 }
 .connect-btn.compact {
@@ -1279,6 +1540,48 @@ option {
 .volume.disabled {
   opacity: 0.55;
 }
+.mixer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.mixer-app {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: var(--s1);
+  font-size: var(--fs-12);
+}
+.mixer-notes {
+  margin: 0;
+  padding-left: var(--s5);
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.fly-mixer {
+  max-height: 11rem;
+  overflow-y: auto;
+}
+/* The speaker mutes and unmutes (issue #86) */
+.volume-mute {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: var(--s1);
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.volume-mute:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.volume-mute:disabled {
+  cursor: default;
+}
 .volume input {
   flex: 1;
   appearance: none;
@@ -1290,7 +1593,7 @@ option {
 .volume input::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: linear-gradient(to right, var(--text-2) var(--fill, 0%), var(--surface-3) var(--fill, 0%));
+  background: linear-gradient(to right, var(--accent-fill) var(--fill, 0%), var(--surface-3) var(--fill, 0%));
 }
 .volume input::-webkit-slider-thumb {
   appearance: none;
@@ -1298,7 +1601,7 @@ option {
   height: 1rem;
   margin-top: calc(2px - 0.5rem);
   border-radius: 50%;
-  background: var(--text);
+  background: var(--accent-fill);
   border: 2px solid var(--bg);
 }
 .volume input::-moz-range-track {
@@ -1308,13 +1611,13 @@ option {
 }
 .volume input::-moz-range-progress {
   height: 4px;
-  background: var(--text-2);
+  background: var(--accent-fill);
 }
 .volume input::-moz-range-thumb {
   width: 1rem;
   height: 1rem;
   border-radius: 50%;
-  background: var(--text);
+  background: var(--accent-fill);
   border: 2px solid var(--bg);
 }
 .volume input:disabled {
@@ -1329,7 +1632,8 @@ option {
 .codec-badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--s2);
+  /* A wrapped line (SBC's live bitpool) sits close under the first (issue #86) */
+  gap: 0 var(--s2);
   flex-wrap: wrap;
   align-self: flex-start;
   max-width: 100%;
@@ -1370,6 +1674,72 @@ option {
   font-weight: 400;
   color: var(--text-2);
 }
+.live-bitpool {
+  flex-basis: 100%;
+}
+/* The headset microphone's voice codec; a classic link's in the warning colour */
+.voice-codec {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.voice-codec.st-warn {
+  color: var(--st-text);
+}
+/* Headset mode at one click (Home's card, the flyout): the microphone and
+   Off / Auto / On; outlined in the accent while On or Auto, muted while
+   Auto waits for an app */
+.headset-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  /* An icon alone, one size in every state (issue #86) */
+  width: 1.5rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.headset-chip .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.headset-chip:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.headset-chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.headset-chip.on {
+  border-color: var(--accent-fill);
+  color: var(--text);
+}
+.headset-chip.on .icon {
+  color: var(--accent-fill);
+}
+.headset-chip.waiting {
+  border-style: dashed;
+  color: var(--text-2);
+}
+.headset-chip.waiting .icon {
+  color: inherit;
+}
+.headset-chip.warn {
+  border-color: var(--warn-text);
+  color: var(--warn-text);
+}
+.headset-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 .codec-line {
   display: flex;
   flex-wrap: wrap;
@@ -1378,8 +1748,23 @@ option {
   min-width: 0;
   max-width: 100%;
 }
-.codec-badge.idle {
-  color: var(--text-3);
+/* On a device's card the chooser and the details end on one line (issue #86) */
+.device-card .codec-info,
+.fly-title .codec-info {
+  align-self: stretch;
+  align-items: stretch;
+}
+.device-card .codec-name,
+.fly-title .codec-name {
+  display: flex;
+}
+.device-card .codec-picker,
+.fly-title .codec-picker {
+  flex: 1;
+}
+.device-card .codec-line .codec-badge,
+.fly-title .codec-line .codec-badge {
+  flex: 1;
 }
 
 .quality {
@@ -1409,18 +1794,50 @@ option {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
   gap: var(--s4);
+  max-width: 64rem;
 }
 .home-device {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
+  padding: var(--s5);
   min-width: 0;
 }
 .home-device .device-card {
-  flex: 1;
   min-width: 0;
   gap: var(--s4);
-  padding: var(--s5);
+  padding: 0;
+}
+.home-device .connect-btn {
+  min-height: 2.75rem;
+  margin-top: auto;
+  border-radius: var(--r);
+  font-size: var(--fs-16);
+}
+.home-link {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+  padding: 0 var(--s1);
+}
+.home-link .link-mini {
+  flex: 1;
+  min-width: 0;
+}
+.home-link .sparkline {
+  height: 1.25rem;
+}
+.home-add {
+  min-height: 4rem;
+  padding: var(--s4);
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.home-add:hover {
+  background: var(--surface-2);
+  color: var(--text);
 }
 /* A smaller name and ring than the defaults, so long names ("EarFun Air
    Pro 4+") fit two cards side by side before the ellipsis (issue #86) */
@@ -1503,12 +1920,6 @@ option {
   color: var(--text-2);
   text-transform: none;
 }
-.mini-body {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  min-width: 0;
-}
 .link-mini {
   display: flex;
   align-items: center;
@@ -1551,6 +1962,9 @@ option {
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
+}
+.codecs-order .hint {
+  margin: 0;
 }
 .device-codecs {
   display: flex;
@@ -1640,6 +2054,21 @@ option {
   padding: var(--s3) var(--s4) var(--s4);
   border-top: 1px solid var(--border);
 }
+/* Input Source (the headset microphone, issue #86): its label on the left
+   and Off / Auto / On on the right, the device below it always there */
+.input-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+.input-source .row {
+  padding: 0;
+}
+.input-source .hint {
+  margin: 0;
+}
 .device-global,
 .device-add {
   display: flex;
@@ -1691,7 +2120,18 @@ option {
 .device-row.on,
 .choice.on {
   background: var(--surface-2);
-  box-shadow: inset 3px 0 0 var(--text);
+  box-shadow: inset 3px 0 0 var(--accent-fill);
+}
+/* Listed, not chosen: an adapter BlueCaster cannot use (issue #86) */
+.choice.ro,
+.choice.ro input {
+  cursor: default;
+}
+.choice.ro:hover {
+  background: none;
+}
+.choice.ro .choice-text {
+  opacity: 0.6;
 }
 .device-row:has(input:focus-visible),
 .choice:has(input:focus-visible),
@@ -1731,8 +2171,13 @@ option {
   padding: var(--s3);
   border: 1px solid var(--border);
   border-radius: var(--r);
+  /* The card's own background: lifted, it hides the cards it passes over */
+  background: var(--surface);
   cursor: pointer;
-  transition: border-color var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    transform var(--t-mid) var(--ease),
+    box-shadow var(--t-mid) var(--ease);
 }
 .codec-card input {
   position: absolute;
@@ -1741,11 +2186,11 @@ option {
   margin: 0;
   cursor: pointer;
 }
-.codec-card:hover {
+.codec-card:hover:not(:has(input:disabled)) {
   border-color: var(--border-strong);
 }
 .codec-card.on {
-  border-color: var(--text);
+  border-color: var(--accent-fill);
   background: var(--surface-2);
 }
 /* Auto chooses: the cards only show its pick (a click offers to turn
@@ -1764,22 +2209,32 @@ option {
 .codec-card.ro:hover:not(.on) {
   border-color: var(--border);
 }
-/* Auto-select off: the cards are dragged into the device's order */
+/* The cards are dragged into the device's order. The
+   pointer as on any card; the hand only while the button is held or a card
+   is dragged (issue #86) */
 .codec-card.orderable,
 .codec-card.orderable input {
-  cursor: grab;
+  cursor: pointer;
   user-select: none;
 }
+.codec-card.orderable:active,
+.codec-card.orderable:active input,
 .codec-grid.ordering,
 .codec-grid.ordering .codec-card,
 .codec-grid.ordering .codec-card input {
   cursor: grabbing;
 }
+/* The card dragged is lifted over the others (a shadow: it is off the page
+   while held) and lets the pointer through to the card under it; the inline
+   transform moves it with the pointer */
 .codec-cell.dragging {
-  opacity: 0.5;
+  z-index: 2;
+  pointer-events: none;
 }
 .codec-cell.dragging .codec-card {
-  border-style: dashed;
+  border-color: var(--border-strong);
+  transform: scale(1.04);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
 }
 /* The activity dot before the device's icon, as the sidebar's */
 .device-codecs-head > .dot {
@@ -1788,6 +2243,25 @@ option {
 }
 .device-codecs .toggle-row {
   padding: 0;
+}
+/* Headset microphone (developer mode): the switch, its output and notes */
+.headset-mic {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-width: 0;
+}
+/* Its label and Off / Auto / On on one line, as a toggle row */
+.headset-mic-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.headset-mic .field {
+  align-self: stretch;
+  max-width: 28rem;
 }
 .codec-card-name {
   font-weight: 600;
@@ -1844,6 +2318,128 @@ option {
   margin: 0;
   font-weight: 600;
 }
+/* SBC / SBC XQ bitpool: one track, two handles (lowest and highest, issue
+   #86), two native range inputs on top of each other: the inputs let the
+   pointer through, their thumbs take it. Neutral like the volume slider. */
+.bp-field {
+  flex-wrap: nowrap;
+}
+.bp-slider {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.bp-value {
+  flex: none;
+  min-width: 2.25rem;
+  font-size: var(--fs-14);
+  color: var(--text-2);
+  text-align: center;
+  white-space: nowrap;
+}
+.bp-track {
+  position: relative;
+  flex: 1;
+  min-width: 8rem;
+  height: 1.5rem;
+}
+.bp-track::before,
+.bp-fill {
+  content: "";
+  position: absolute;
+  top: calc(50% - 2px);
+  height: 4px;
+  border-radius: 2px;
+}
+.bp-track::before {
+  left: 0;
+  right: 0;
+  background: var(--surface-3);
+}
+/* Between the handles (--lo, --hi: 0-1 along the range); the thumbs are 1
+   rem wide, so their centres travel from 0.5 rem to 100% - 0.5 rem */
+.bp-fill {
+  left: calc(0.5rem + (100% - 1rem) * var(--lo, 0));
+  right: calc(0.5rem + (100% - 1rem) * (1 - var(--hi, 1)));
+  background: var(--accent-fill);
+}
+.bp-track input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+.bp-track input.bp-low {
+  z-index: 1;
+}
+.bp-track input.bp-high {
+  z-index: 2;
+}
+.bp-track.low-on-top input.bp-low {
+  z-index: 3;
+}
+.bp-track input:focus-visible {
+  outline: none;
+}
+.bp-track input::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+.bp-track input::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  width: 1rem;
+  height: 1rem;
+  margin-top: calc(2px - 0.5rem);
+  border-radius: 50%;
+  background: var(--accent-fill);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+}
+.bp-track input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.bp-track input::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+.bp-track input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--text);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+}
+.bp-track input:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .bp-track::before,
+  .bp-fill,
+  .bp-track input::-webkit-slider-thumb {
+    forced-color-adjust: none;
+  }
+  .bp-track::before {
+    background: GrayText;
+  }
+  .bp-fill {
+    background: Highlight;
+  }
+  .bp-track input::-webkit-slider-thumb {
+    background: ButtonText;
+    border-color: Canvas;
+  }
+}
 .codec-card-desc {
   font-size: var(--fs-12);
 }
@@ -1872,27 +2468,44 @@ option {
   background: var(--text-2);
 }
 .codec-card.on .cbar-fill {
-  background: var(--text);
-}
-
-.advanced-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: var(--s4);
-}
-.advanced-grid .field:has(.input.narrow) {
-  grid-column: 1 / -1;
+  background: var(--accent-fill);
 }
 
 /* ---------------------------------------------------------------- */
 /* Diagnostics                                                       */
 /* ---------------------------------------------------------------- */
 
+.tabs-bar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
 .tabs {
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: var(--s1);
-  border-bottom: 1px solid var(--border);
   overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs-scroll {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  border: none;
+  border-radius: var(--r-ctl, 4px);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.tabs-scroll:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.tabs-scroll.left .icon {
+  transform: scaleX(-1);
 }
 .tab {
   display: inline-flex;
@@ -1912,7 +2525,7 @@ option {
 }
 .tab[aria-selected="true"] {
   color: var(--text);
-  border-bottom-color: var(--text);
+  border-bottom-color: var(--accent-fill);
   font-weight: 600;
 }
 .tab-panel {
@@ -1995,6 +2608,80 @@ option {
   font-size: var(--fs-12);
   color: var(--text-3);
   text-align: right;
+}
+/* Time charts: a legend for more than one series, the time axis, limits
+   and targets as dashed lines, the hover cursor shared by a tab's charts */
+.chart {
+  /* One scale width, so the time axes of a tab line up */
+  grid-template-columns: 1fr 4.5rem;
+  grid-template-rows: auto 6rem auto;
+}
+.chart.multi {
+  grid-template-rows: auto auto 6rem auto;
+}
+.chart-readout {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.chart-legend {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.chart-legend .chart-value {
+  font-size: var(--fs-14);
+  color: var(--text);
+}
+.chart-swatch {
+  width: 0.75rem;
+  height: 0.1875rem;
+  border-radius: 999px;
+  background: var(--text);
+}
+.chart-plot {
+  touch-action: pan-y;
+}
+.chart.multi .chart-plot polyline.s0,
+.chart-legend .s0 .chart-swatch {
+  stroke: var(--chart-1);
+  background: var(--chart-1);
+}
+.chart.multi .chart-plot polyline.s1,
+.chart-legend .s1 .chart-swatch {
+  stroke: var(--chart-2);
+  background: var(--chart-2);
+}
+.chart-plot .ref {
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.chart-plot .ref-limit {
+  stroke: var(--warn-text);
+}
+.chart-plot .ref-target {
+  stroke: var(--text-3);
+}
+.chart-plot .cursor {
+  stroke: var(--text-2);
+  stroke-width: 1;
+}
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-12);
+  color: var(--text-3);
 }
 .stats {
   display: grid;
@@ -2187,10 +2874,10 @@ option {
   cursor: default;
 }
 .log-line.selected {
-  background: color-mix(in srgb, var(--accent-1) 18%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 18%, transparent);
 }
 .log-line.jumped {
-  box-shadow: inset 3px 0 0 var(--accent-1);
+  box-shadow: inset 3px 0 0 var(--accent-fill);
 }
 .log-tools-gap {
   flex: 1;
@@ -2240,6 +2927,44 @@ option {
   min-width: 0;
 }
 
+/* Microphone tab: the mic test's buttons and a segmented level bar */
+.mic-test {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.mic-test-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.mic-meter {
+  flex: 1 1 16rem;
+  display: flex;
+  gap: 3px;
+  height: 2rem;
+  align-items: stretch;
+  min-width: 0;
+}
+.mic-meter span {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background-color 60ms linear;
+}
+.mic-meter span.on {
+  background: var(--accent-fill);
+}
+.mic-meter.playing span.on {
+  background: var(--good-text);
+}
+.mic-time {
+  min-width: 7.5em;
+  color: var(--text-2);
+}
+
 /* Link tab: v1's link quality figures */
 .lq-groups {
   display: grid;
@@ -2255,6 +2980,22 @@ option {
 }
 .lq-group h2 {
   font-size: var(--fs-14);
+}
+.lq-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+}
+.lq-verdict-label {
+  font-size: var(--fs-16);
+  font-weight: 600;
+  color: var(--st-text, var(--text));
+}
+.lq-verdict-causes {
+  font-size: var(--fs-12);
+  color: var(--text-2);
 }
 .lq-group-head {
   display: flex;
@@ -2295,7 +3036,7 @@ option {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--st, var(--accent-1));
+  background: var(--st, var(--accent-fill));
   transition: width var(--t-mid) var(--ease);
 }
 
@@ -2331,10 +3072,9 @@ option {
   white-space: nowrap;
 }
 .cd-chip.cd-used {
-  border-color: var(--accent-1);
-  background: var(--accent-1);
-  /* Dark text: 12 px white on the accent is below 4.5:1 */
-  color: #0b1220;
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
   font-weight: 600;
 }
 .cd-chip.cd-off {
@@ -2363,7 +3103,7 @@ option {
 }
 .bitpool-range.device,
 .bitpool-swatch.device {
-  background: color-mix(in srgb, var(--accent-2) 35%, transparent);
+  background: color-mix(in srgb, var(--chart-2) 35%, transparent);
 }
 .bitpool-range.config {
   top: 0.1875rem;
@@ -2371,7 +3111,7 @@ option {
 }
 .bitpool-range.config,
 .bitpool-swatch.config {
-  background: var(--accent-2);
+  background: var(--chart-2);
 }
 .bitpool-used {
   position: absolute;
@@ -2380,23 +3120,23 @@ option {
   width: 0.25rem;
   margin-left: -0.125rem;
   border-radius: 2px;
-  background: var(--accent-1);
+  background: var(--chart-1);
   box-shadow: 0 0 0 2px var(--surface);
 }
 .bitpool-swatch.used {
-  background: var(--accent-1);
+  background: var(--chart-1);
 }
 /* SBC ABR: the range the bitpool moves in, drawn around the track */
 .bitpool-range.abr {
   top: -0.25rem;
   bottom: -0.25rem;
-  border: 2px dashed var(--accent-1);
+  border: 2px dashed var(--chart-1);
   border-radius: 4px;
   background: transparent;
 }
 .bitpool-swatch.abr {
   box-sizing: border-box;
-  border: 2px dashed var(--accent-1);
+  border: 2px dashed var(--chart-1);
 }
 /* Under ABR the mark moves with the bitpool */
 .bitpool.live .bitpool-used {
@@ -2616,7 +3356,7 @@ option {
   font-size: var(--fs-12);
 }
 .stepper li.on {
-  border-top-color: var(--text);
+  border-top-color: var(--accent-fill);
   color: var(--text);
   font-weight: 600;
 }
@@ -2643,11 +3383,29 @@ option {
   gap: var(--s4);
   padding: var(--s5);
 }
+/* One size for every step's headings (issue #86) */
+.setup-body h2 {
+  font-size: var(--fs-14);
+}
 .setup-body h2:focus {
   outline: none;
 }
 .sub {
   color: var(--text-2);
+}
+.device-note {
+  padding: var(--s4);
+}
+.setup-note {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  color: var(--text-2);
+}
+.setup-general .field {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
 }
 .setup-foot {
   display: flex;
@@ -2667,8 +3425,8 @@ option {
 html.win-flyout body {
   background: var(--bg);
 }
+/* As tall as its content: the window fits it (fit_flyout) */
 .flyout {
-  height: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
@@ -2698,9 +3456,8 @@ html.win-flyout body {
 .fly-title .conn-line {
   font-size: var(--fs-12);
 }
-/* The chooser is the title */
-.fly-title .select select {
-  min-height: 2.25rem;
+/* The chooser is the title, as tall as every other control (issue #86) */
+.fly-title .device-switcher select {
   font-size: var(--fs-16);
   font-weight: 600;
 }
@@ -2714,28 +3471,74 @@ html.win-flyout body {
   font-size: var(--fs-12);
   max-width: 100%;
 }
+/* The state gives way (ellipsis) to the headset chip beside it */
+.fly-state .status-line {
+  min-width: 0;
+}
 .flyout .device-switcher .select {
   width: 100%;
   min-width: 0;
 }
+/* The message on its own line at full width, the buttons below: beside
+   them it was squeezed to a few letters */
 .fly-error {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--s2);
   padding: var(--s2);
   border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent);
   border-radius: var(--r);
   font-size: var(--fs-12);
 }
-.fly-error > .icon {
+.fly-error-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+.fly-error-msg > .icon {
+  flex: none;
+  margin-top: 0.1em;
   color: var(--bad-text);
 }
 .fly-error-text {
   flex: 1;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fly-error-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+/* The fix first, copy and report at the end */
+.fly-error-actions > .btn:not(.btn-icon) {
+  order: -1;
+  margin-inline-end: auto;
+  min-width: 0;
+}
+/* "Open app" beside Connect, as tall as it (issue #86) */
+.fly-actions {
+  display: flex;
+  gap: var(--s2);
+}
+.fly-actions .connect-btn {
+  flex: 1;
+  min-width: 0;
+}
+.btn-icon.fly-open {
+  flex: none;
+  width: 3.25rem;
+  min-height: 3.25rem;
+  border-radius: var(--r-card);
+  border-color: var(--border);
+  background: var(--surface);
+}
+.btn-icon.fly-open .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.btn-icon.fly-open:hover:not(:disabled) {
+  background: var(--surface-2);
 }
 .fly-foot {
   margin-top: auto;
@@ -2744,17 +3547,22 @@ html.win-flyout body {
 }
 
 /* ---------------------------------------------------------------- */
-/* Narrow main window (min 720 px)                                   */
+/* Narrow window (the setup; the main window stays wider)            */
 /* ---------------------------------------------------------------- */
 
 @media (max-width: 760px) {
   .page {
     padding: var(--s4);
   }
-  .device-card,
-  .home-device .device-card {
+  .device-card {
     gap: var(--s4);
     padding: var(--s4);
+  }
+  .home-device {
+    padding: var(--s4);
+  }
+  .home-device .device-card {
+    padding: 0;
   }
   .ring:not(.ring-small) {
     --size: 5.5rem;
@@ -2846,8 +3654,17 @@ html.win-flyout body {
     outline-offset: -2px;
   }
   .sparkline polyline,
-  .chart-plot polyline {
+  .chart-plot polyline,
+  .chart.multi .chart-plot polyline.s0 {
     stroke: CanvasText;
+  }
+  .chart.multi .chart-plot polyline.s1 {
+    stroke: CanvasText;
+    stroke-dasharray: 3 2;
+  }
+  .chart-swatch {
+    forced-color-adjust: none;
+    background: CanvasText;
   }
   :focus-visible {
     outline: 2px solid Highlight;
@@ -2901,4 +3718,117 @@ html.win-flyout body {
 .slider {
   width: 100%;
   accent-color: var(--accent-1);
+}
+
+/* Developer > Chip: the script as typed, and the lines that came back */
+.chip-script {
+  min-height: 10rem;
+  resize: vertical;
+  white-space: pre;
+  margin-block: var(--s2);
+}
+.chip-lines {
+  font-family: var(--mono);
+  font-size: var(--fs-12);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+/* Taking over Windows' pairings (Audio Devices, setup; issue #86) */
+/* The setup's import: what it does on the left, its button on the right */
+.import-pairings > .btn {
+  flex-shrink: 0;
+}
+/* Its list of Windows' pairings, each ticked to import it */
+.import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  padding: var(--s1) 0;
+  cursor: pointer;
+}
+.check-item input {
+  flex-shrink: 0;
+  margin: 0;
+}
+.check-item .mono {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--fs-12);
+}
+
+/* Diagnostics > Radio: the 2.4 GHz band */
+.band {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.band-on {
+  fill: var(--chart-1);
+  background: var(--chart-1);
+}
+.band-off {
+  fill: var(--bad);
+  background: var(--bad);
+  opacity: 0.55;
+}
+.band-none {
+  fill: var(--surface-3);
+}
+.band-asked {
+  stroke: var(--text-2);
+  stroke-width: 1.5;
+}
+.band-ap {
+  fill: var(--chart-2);
+  background: var(--chart-2);
+  fill-opacity: 0.18;
+  stroke: var(--chart-2);
+  stroke-width: 1.5;
+}
+.band-axis {
+  font-size: 14px;
+  fill: var(--text-3);
+}
+.band-axis.strong {
+  fill: var(--text);
+  font-weight: 600;
+}
+.band-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  font-size: var(--fs-12);
+}
+.band-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+.band-legend .swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+}
+.radio-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+.radio-tips {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
 }

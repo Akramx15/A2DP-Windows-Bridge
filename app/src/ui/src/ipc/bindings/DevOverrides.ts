@@ -5,6 +5,24 @@
  */
 export type DevOverrides = { rtp_marker: boolean, packet_dump: boolean, aac_config_bitrate0: boolean, aac_bitrate_kbps: number, aac_no_peak: boolean, aac_no_afterburner: boolean, aac_latm_v0: boolean, 
 /**
- * aptX Adaptive may stream at 96 kHz; off (the default), 48 kHz only
+ * Auto-select uses each codec's own settings
  */
-aptxad_96k: boolean, };
+auto_codec_settings: boolean, 
+/**
+ * Rate and bit depth on Auto follow the captured output's format
+ */
+match_source: boolean, 
+/**
+ * Every codec ignores the maximum bit rate the device lists
+ */
+ignore_sink_max: boolean, 
+/**
+ * Longest a media packet waits in the send queue before it is dropped
+ * (ms, 50..=2000); 0 = the default (350). Applies to the next stream
+ */
+queue_max_wait_ms: number, 
+/**
+ * Audio waits unencoded while the send queue is backed up (ABR then
+ * lowers its bit rate too). Applies to the next stream
+ */
+encode_at_send: boolean, };

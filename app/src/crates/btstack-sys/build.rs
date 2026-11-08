@@ -9,7 +9,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-/// src/*.c not needed by A2DPWB (audio playback helpers, LC3 - LE Audio
+/// src/*.c not needed by BlueCaster (audio playback helpers, LC3 - LE Audio
 /// encodes with crate lc3-sys -, other HCI transports, HID)
 const CORE_EXCLUDE: &[&str] = &[
     "btstack_audio.c",
@@ -57,10 +57,12 @@ const CLASSIC: &[&str] = &[
 ];
 
 /// src/ble/*.c not built: LE bonds are kept in a TLV file
-/// (le_device_db_tlv.c), as in v1
-const BLE_EXCLUDE: &[&str] = &["le_device_db_memory.c"];
+/// (le_device_db_tlv.c), as in v1; sm.c is built from a patched copy
+/// ([`patched_sm`])
+const BLE_EXCLUDE: &[&str] = &["le_device_db_memory.c", "sm.c"];
 
-/// Bluedroid SBC encoder (Apache-2.0), feature "sbc-reference"
+/// Bluedroid SBC encoder (Apache-2.0): mSBC for the headset microphone
+/// ([`add_voice_codecs`]), and the reference of feature "sbc-reference"
 const SBC_ENCODER: &[&str] = &[
     "sbc_analysis.c",
     "sbc_dct.c",
@@ -71,6 +73,40 @@ const SBC_ENCODER: &[&str] = &[
     "sbc_encoder.c",
     "sbc_packing.c",
 ];
+
+/// Headset microphone voice codecs (csrc/voice_codecs.c, src/voice.rs):
+/// BTstack's Bluedroid SBC glue (instance API, mSBC with H2 sync), the SBC
+/// and CVSD packet loss concealment from src/classic, and the Bluedroid SBC
+/// decoder (Apache-2.0) from 3rd-party/bluedroid/decoder/srce
+const VOICE_CLASSIC: &[&str] = &["btstack_sbc_bluedroid.c", "btstack_sbc_plc.c", "btstack_cvsd_plc.c"];
+const SBC_DECODER: &[&str] = &[
+    "alloc.c",
+    "bitalloc.c",
+    "bitalloc-sbc.c",
+    "bitstream-decode.c",
+    "decoder-oina.c",
+    "decoder-private.c",
+    "decoder-sbc.c",
+    "dequant.c",
+    "framing.c",
+    "framing-sbc.c",
+    "oi_codec_version.c",
+    "synthesis-sbc.c",
+    "synthesis-dct8.c",
+    "synthesis-8-generated.c",
+];
+
+/// The voice codec sources and their include paths (the encoder always;
+/// feature "sbc-reference" adds only csrc/sbc_reference.c on top)
+fn add_voice_codecs(build: &mut cc::Build, btstack: &Path, csrc: &Path) {
+    let enc = btstack.join("3rd-party/bluedroid/encoder");
+    let dec = btstack.join("3rd-party/bluedroid/decoder");
+    build.include(enc.join("include")).include(dec.join("include"));
+    build.files(SBC_ENCODER.iter().map(|f| enc.join("srce").join(f)));
+    build.files(SBC_DECODER.iter().map(|f| dec.join("srce").join(f)));
+    build.files(VOICE_CLASSIC.iter().map(|f| btstack.join("src/classic").join(f)));
+    build.file(csrc.join("voice_codecs.c"));
+}
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -93,7 +129,6 @@ fn main() {
         .include(btstack.join("platform/posix"))
         .include(btstack.join("chipset/realtek"))
         .include(btstack.join("chipset/bcm"))
-        .include(btstack.join("chipset/intel"))
         .include(btstack.join("3rd-party/tinydir"))
         .include(btstack.join("3rd-party/rijndael"))
         .include(btstack.join("3rd-party/micro-ecc"))
@@ -134,6 +169,7 @@ fn main() {
         .collect();
     ble.sort();
     build.files(&ble);
+    build.file(patched_sm(&btstack));
     build.files(CLASSIC.iter().map(|f| match *f {
         "a2dp.c" => patched_a2dp(&btstack),
         f => btstack.join("src/classic").join(f),
@@ -145,17 +181,16 @@ fn main() {
     // Software P-256 for LE Secure Connections (ENABLE_MICRO_ECC_P256)
     build.file(btstack.join("3rd-party/micro-ecc/uECC.c"));
     build.file(btstack.join("chipset/bcm/btstack_chipset_bcm.c"));
-    build.file(btstack.join("chipset/intel/btstack_chipset_intel_firmware.c"));
     build.file(btstack.join("3rd-party/rijndael/rijndael.c"));
     build.file(csrc.join("shim.c"));
 
     if env::var_os("CARGO_FEATURE_SBC_REFERENCE").is_some() {
-        let enc = btstack.join("3rd-party/bluedroid/encoder");
-        build.include(enc.join("include"));
-        build.files(SBC_ENCODER.iter().map(|f| enc.join("srce").join(f)));
+        // The encoder sources come with the voice codecs below
         build.file(csrc.join("sbc_reference.c"));
-        build.define("A2DPWB_SBC_REFERENCE", None);
+        build.define("BLUECASTER_SBC_REFERENCE", None);
     }
+
+    add_voice_codecs(&mut build, &btstack, &csrc);
 
     build.compile("btstack");
 
@@ -174,7 +209,7 @@ fn main() {
 ///
 /// BTstack 1.8.1 keeps the free sink SEPs a headset lists in a static array
 /// of AVDTP_MAX_SEP_NUM (10) without a bounds check: an 11th overwrites the
-/// statics after it (the HFP callbacks; A2DPWB then calls a NULL
+/// statics after it (the HFP callbacks; BlueCaster then calls a NULL
 /// hfp_ag_callback). Upstream fixed it in fc208fcce0 ("a2dp: ignore
 /// additional stream endpoints", 2026-07-22, not in a release) by ignoring
 /// SEPs beyond the array; that check is added here, and the array holds 62
@@ -204,6 +239,103 @@ fn patched_a2dp(btstack: &Path) -> PathBuf {
         );
     }
     let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("a2dp.c");
+    std::fs::write(&path, source).unwrap();
+    path
+}
+
+fn replace_once(source: &mut String, file: &str, from: &str, to: &str) {
+    assert_eq!(source.matches(from).count(), 1, "{file} patch: `{from}` not found once (BTstack changed?)");
+    *source = source.replacen(from, to, 1);
+}
+
+/// src/ble/sm.c with Cross-Transport Key Derivation from BR/EDR (issue #86),
+/// written to OUT_DIR.
+///
+/// ENABLE_CROSS_TRANSPORT_KEY_DERIVATION is defined for this file only: the
+/// rest of BTstack (L2CAP's fixed channel mask) stays as before, so a
+/// device is never told BlueCaster takes SMP over BR/EDR. Of what the flag
+/// brings, BlueCaster uses one direction: after a classic link is encrypted
+/// with Secure Connections, BlueCaster as Central asks the device over the
+/// BR/EDR security manager channel (CID 7) for its IRK and identity
+/// address, and both sides derive the LE LTK from the link key. That runs
+/// only while the shim says so (bluecaster_ctkd_enabled: developer mode;
+/// SM itself runs only with LE Audio on), after a new pairing (BTstack's
+/// own trigger) or on a connection of a device with no keys from it yet
+/// (bluecaster_ctkd_wanted). A device that does not list CID 7 is not
+/// asked; a failure ends SMP on that link only, never the link.
+///
+/// The other direction (a BR/EDR link key derived from an LE pairing) stays
+/// off, as before: BTstack would derive and store it whether or not the
+/// device distributes one, replacing the device's classic key. LE pairing
+/// keeps its key distribution and AuthReq of today (no LinkKey, no CT2),
+/// and SM never stores a link key.
+fn patched_sm(btstack: &Path) -> PathBuf {
+    const FILE: &str = "sm.c";
+    let mut source = std::fs::read_to_string(btstack.join("src/ble/sm.c")).unwrap();
+    source.insert_str(
+        0,
+        "/* BlueCaster: patched by btstack-sys build.rs (patched_sm) */\n\
+         #define ENABLE_CROSS_TRANSPORT_KEY_DERIVATION\n\
+         int bluecaster_ctkd_enabled(void);\n\
+         int bluecaster_ctkd_wanted(const unsigned char *addr);\n\
+         void bluecaster_ctkd_note(const unsigned char *addr, int what);\n",
+    );
+    // Why a link is not asked over, so the Services dialog can say (issue
+    // #86): 1 not Secure Connections, 2 the device opened it, 3 no CID 7
+    replace_once(
+        &mut source,
+        FILE,
+        "if (sm_conn->sm_connection_encrypted != 2) return;",
+        "if (sm_conn->sm_connection_encrypted != 2) { bluecaster_ctkd_note(sm_conn->sm_peer_address, 1); return; }",
+    );
+    replace_once(
+        &mut source,
+        FILE,
+        "log_info(\"CTKD: SM_BR_EDR_RESPONDER_W4_PAIRING_REQUEST\");",
+        "log_info(\"CTKD: SM_BR_EDR_RESPONDER_W4_PAIRING_REQUEST\"); bluecaster_ctkd_note(sm_conn->sm_peer_address, 2);",
+    );
+    replace_once(
+        &mut source,
+        FILE,
+        "defer = false;",
+        "defer = false; bluecaster_ctkd_note(sm_conn->sm_peer_address, 3);",
+    );
+    replace_once(
+        &mut source,
+        FILE,
+        "hci_dedicated_bonding_defer_disconnect(con_handle, false);",
+        "hci_dedicated_bonding_defer_disconnect(con_handle, false); bluecaster_ctkd_note(sm_conn->sm_peer_address, 3);",
+    );
+    // BTstack 1.8.1 never marks an ask over BR/EDR as a pairing, so its end
+    // (refused, timed out, done) sent no SM_EVENT_PAIRING_COMPLETE
+    let ask = "connection->sm_engine_state = SM_BR_EDR_INITIATOR_W4_PAIRING_RESPONSE;";
+    replace_once(&mut source, FILE, ask, &format!("{ask}\n                sm_pairing_started(connection);"));
+    // Only while enabled; off, the state stays SM_BR_EDR_W4_ENCRYPTION_COMPLETE,
+    // where a Pairing Request from the device is refused
+    let handler =
+        "static void sm_event_handle_classic_encryption_event(sm_connection_t * sm_conn, hci_con_handle_t con_handle){";
+    replace_once(&mut source, FILE, handler, &format!("{handler}\n    if (!bluecaster_ctkd_enabled()) return;"));
+    // Also for a device paired before (BTstack asks only after a pairing)
+    replace_once(
+        &mut source,
+        FILE,
+        "} else if (sm_conn->sm_pairing_requested){",
+        "} else if (sm_conn->sm_pairing_requested || bluecaster_ctkd_wanted(sm_conn->sm_peer_address)){",
+    );
+    // No link key derived from an LE pairing, none offered in it
+    let from_le = "static bool sm_ctkd_from_le(void) {";
+    replace_once(&mut source, FILE, from_le, &format!("{from_le}\n    if (setup != NULL) return false;"));
+    replace_once(&mut source, FILE, "flags |= SM_KEYDIST_LINK_KEY;", "/* BlueCaster: no LinkKey over LE */");
+    replace_once(&mut source, FILE, "auth_req |= SM_AUTHREQ_CT2;", "/* BlueCaster: no CT2 over LE */");
+    // Nor stored: after a derivation from BR/EDR, BTstack 1.8.1 stores the
+    // link key it read for it (setup->sm_link_key, most significant octet
+    // first for h6 / h7) back as a link key, byte-reversed and under the
+    // device's identity address. With a public identity that replaces the
+    // device's link key with a wrong one (the next connection fails
+    // authentication); with a random one it adds a stray key.
+    let store = "static void sm_store_classic_bonding_information(sm_connection_t * sm_conn) {";
+    replace_once(&mut source, FILE, store, &format!("{store}\n    if (sm_conn != NULL) return;"));
+    let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("sm.c");
     std::fs::write(&path, source).unwrap();
     path
 }

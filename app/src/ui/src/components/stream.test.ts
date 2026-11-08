@@ -23,7 +23,19 @@ const run = (n: number, f: (i: number) => Partial<LinkSample> = () => ({})) =>
 describe("link quality", () => {
   it("is good on a link that delivers everything, whatever the RSSI", () => {
     const q = linkQuality(run(60, (i) => ({ rssi: i % 2 ? -27 : -6 })));
-    expect(q).toEqual({ level: 4, status: "good" });
+    expect(q).toEqual({ level: 4, status: "good", pcBusy: false, causes: [] });
+  });
+
+  it("does not blame the radio for audio the PC lost at capture (issue #252)", () => {
+    const q = linkQuality(run(60, (i) => ({ capture_dropped: i < 50 ? 0 : 480 })));
+    expect(q).toEqual({ level: 4, status: "warn", pcBusy: true, causes: [] });
+    const later = run(60, (i) => ({ capture_dropped: i < 10 ? 0 : 480 }));
+    expect(linkQuality(later)?.pcBusy).toBe(false);
+  });
+
+  it("says what the radio does when both go wrong", () => {
+    const q = linkQuality(run(60, (i) => ({ dropped: i < 50 ? 0 : 128, capture_dropped: i < 50 ? 0 : 480 })));
+    expect(q).toEqual({ level: 1, status: "bad", pcBusy: false, causes: ["drops"] });
   });
 
   it("is poor while packets drop, and recovers 10 s later", () => {
@@ -34,8 +46,16 @@ describe("link quality", () => {
   });
 
   it("is fair while the send queue backs up", () => {
-    const q = linkQuality(run(30, (i) => ({ queue_depth: i === 25 ? 40 : 0 })));
+    const q = linkQuality(run(30, (i) => ({ queue_ms: i === 25 ? 200 : 0 })));
     expect(q?.status).toBe("warn");
+    expect(q?.pcBusy).toBe(false);
+    expect(q?.causes).toEqual(["queue"]);
+  });
+
+  it("names every cause that lowered it", () => {
+    const q = linkQuality(run(60, (i) => ({ dropped: i < 55 ? 0 : 2, queue_ms: i === 58 ? 100 : 0, airtime: 0.85 })));
+    expect(q?.causes).toEqual(["drops", "queue", "airtime"]);
+    expect(q?.level).toBe(2);
   });
 
   it("has no data when nothing streams", () => {
@@ -62,6 +82,7 @@ const SBC_ABR: CodecDetails = {
     abr_bitpool: [19, 53],
   },
   aac: null,
+  device: null,
 };
 
 const SBC_INFO: StreamInfo = {
@@ -77,6 +98,7 @@ const SBC_INFO: StreamInfo = {
   requested_in_use: false,
   abr: true,
   bitrate_capped: false,
+  hi_res_set: false,
   source: null,
   le: null,
   details: SBC_ABR,
@@ -86,9 +108,9 @@ describe("codec summary", () => {
   beforeAll(() => setLanguage("en"));
 
   it("shows SBC's bitpool now and its ceiling under ABR", () => {
-    expect(codecDetails(SBC_INFO)).toEqual(["285 kbps", "bitpool 41/53", "48 kHz", "16-bit", "ABR"]);
-    expect(codecDetails(SBC_INFO).join(" | ")).toBe("285 kbps | bitpool 41/53 | 48 kHz | 16-bit | ABR");
-    expect(abrTooltipKey(SBC_INFO)).toBe("tooltip.sbc_abr");
+    expect(codecDetails(SBC_INFO)).toEqual(["285 kbps", "48 kHz", "16-bit", "ABR", "bitpool 41/53"]);
+    expect(codecDetails(SBC_INFO).join(" | ")).toBe("285 kbps | 48 kHz | 16-bit | ABR | bitpool 41/53");
+    expect(abrTooltipKey(SBC_INFO)).toBe("tooltip.abr");
   });
 
   it("shows no bitpool without ABR, nor for other codecs", () => {
@@ -111,6 +133,9 @@ describe("codec summary", () => {
     expect(fallbackNoteKey(opus, "status.connected_fallback")).toBe("ui.codec.fallback_unsupported");
     expect(fallbackNoteKey({ ...opus, requested_in_use: true }, "status.connected_fallback_in_use")).toBe("ui.codec.fallback_in_use");
     expect(fallbackNoteKey(opus, "status.connected_fallback_experimental")).toBe("ui.codec.fallback_experimental");
+    // Opus 05 outside developer mode
+    const opus05: StreamInfo = { ...SBC_INFO, requested_codec: "Opus 05" };
+    expect(fallbackNoteKey(opus05, "status.connected_fallback_developer")).toBe("ui.codec.fallback_developer");
     // A later message (a reconnect) keeps the note
     expect(fallbackNoteKey(opus, "status.reconnected")).toBe("ui.codec.fallback_unsupported");
   });
