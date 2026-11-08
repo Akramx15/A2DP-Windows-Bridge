@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use bluecaster_core::{Service, ServiceOptions};
 use bt_host::HciCapture;
-use ipc::{AclPacket, EncodeLoad, Event, IsoCounters, LinkCounters, LinkSample, LinkTotals};
+use ipc::{AclPacket, EncodeLoad, Event, IsoCounters, LinkCounters, LinkSample, LinkTotals, VoiceRxCounters};
 
 use crate::state::{link_details, remote_chip};
 use tao::event::{Event as TaoEvent, StartCause};
@@ -129,7 +129,10 @@ impl SampleCounters {
 
 /// A link sample from the counters now and those of the last sample; `iso`:
 /// an LE Audio stream's counters (the A2DP media figures are then 0 / None);
-/// `voice`: A2DP suspended for a classic device's call link
+/// `voice`: A2DP suspended for a classic device's call link: the media
+/// figures are its SCO payloads, and what only an ACL stream has (airtime,
+/// the send queue, the adapter's backlog, the A2DP encoder, the device's
+/// delay) is None
 fn link_sample(
     time_ms: u64,
     stats: &bt_host::LinkStats,
@@ -143,7 +146,7 @@ fn link_sample(
     let acl_packets = stats.acl_packets_sent.load(Ordering::Relaxed);
     let encode_totals = stats.encode.totals();
     let encode_peak = stats.encode.peak_ns.take();
-    let encode = last.and_then(|prev| encode_load(&prev.encode, &encode_totals, encode_peak));
+    let encode = last.and_then(|prev| encode_load(&prev.encode, &encode_totals, encode_peak)).filter(|_| !voice);
     let (bps, pps, acl_ps) = match last {
         Some(prev) => {
             let dt = now.duration_since(prev.at).as_secs_f64().max(0.001);
@@ -155,13 +158,13 @@ fn link_sample(
     };
     let (bps, pps) = if iso.is_some() { (0.0, 0.0) } else { (bps, pps) };
     let link = stats.link();
-    let air = bluecaster_core::link::airtime_on(pps, bps, link.remote_features.as_ref());
+    let air = bluecaster_core::link::airtime_on(pps, bps, link.remote_features.as_ref()).filter(|_| !voice);
     let since = total.since(&start);
     let radio = stats.radio();
     // The most the controller held since the last sample: while an A2DP
     // stream sends
     let backlog = stats.controller_backlog_peak.take();
-    let a2dp = iso.is_none() && source_rate > 0;
+    let a2dp = iso.is_none() && source_rate > 0 && !voice;
     let sample = LinkSample {
         time_ms,
         rssi: radio.rssi,
@@ -171,7 +174,7 @@ fn link_sample(
         afh_map: radio.afh_map.map(|m| m.to_vec()),
         bytes_per_second: bps,
         packets_per_second: pps,
-        queue_depth: if iso.is_some() { 0 } else { stats.queue_depth.load(Ordering::Relaxed) },
+        queue_depth: if iso.is_some() || voice { 0 } else { stats.queue_depth.load(Ordering::Relaxed) },
         dropped: since.dropped,
         capture_dropped: since.capture_dropped,
         airtime: air.map_or(0.0, |a| a.airtime),
@@ -182,14 +185,13 @@ fn link_sample(
             from_features: Some(a.from_features),
         }),
         bandwidth_share: air.map(|a| a.bandwidth_share),
-        queue_capacity: iso.is_none().then_some(bt_host::stats::MEDIA_QUEUE_PACKETS as u32),
+        queue_capacity: (iso.is_none() && !voice).then_some(bt_host::stats::MEDIA_QUEUE_PACKETS as u32),
         // With the audio held back unencoded (developer mode), which waits
         // for the radio as well
-        queue_ms: iso
-            .is_none()
+        queue_ms: (iso.is_none() && !voice)
             .then(|| stats.queue_wait_ms.load(Ordering::Relaxed) + stats.held_ms.load(Ordering::Relaxed)),
         encode,
-        sink_delay_ms: if iso.is_some() { None } else { stats.sink_delay().map(|d| d.as_secs_f64() * 1000.0) },
+        sink_delay_ms: if iso.is_some() || voice { None } else { stats.sink_delay().map(|d| d.as_secs_f64() * 1000.0) },
         source_rate: Some(source_rate),
         counters: Some(LinkCounters { total, stream_start: start, stream_starts: starts }),
         iso,
@@ -200,6 +202,11 @@ fn link_sample(
         capture_discontinuities: Some(since.capture_discontinuities),
         capture_lost: Some(since.capture_lost),
         voice: voice.then_some(true),
+        voice_rx: voice.then(|| VoiceRxCounters {
+            packets: stats.voice_rx_packets.load(Ordering::Relaxed),
+            bad: stats.voice_rx_bad.load(Ordering::Relaxed),
+            concealed: stats.voice_rx_concealed.load(Ordering::Relaxed),
+        }),
     };
     (sample, SampleCounters { at: now, totals: total, acl_packets, encode: encode_totals })
 }
@@ -246,11 +253,11 @@ async fn sampler(state: Arc<CoreState>) {
             continue;
         }
         let (source_rate, le_cis, voice) = state.with_snapshot(|s| match (&s.stream.state, &s.stream.info) {
-            (ipc::StreamState::Streaming, Some(i)) => (
-                i.source_sample_rate,
-                i.le.as_ref().map(|l| l.cis),
-                s.stream.voice.as_ref().is_some_and(|v| v.link == "hfp"),
-            ),
+            (ipc::StreamState::Streaming, Some(i)) => {
+                let call = s.stream.voice.as_ref().filter(|v| v.link == "hfp");
+                // The uplink captures at the call link's rate
+                (call.map_or(i.source_sample_rate, |v| v.rate), i.le.as_ref().map(|l| l.cis), call.is_some())
+            }
             _ => (0, None, false),
         });
         // LE Audio (experimental): the sender's counters

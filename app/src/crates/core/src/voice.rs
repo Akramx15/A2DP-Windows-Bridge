@@ -28,14 +28,15 @@
 //! ([`crate::le_stream`]) uses them for its microphone too.
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use audio_capture::{Capture, CaptureOptions, Running, Source};
-use bt_host::{BtHost, HostError, VoiceEvent, VoiceRx, VoiceTx};
+use bt_host::{BtHost, HostError, LinkStats, VoiceEvent, VoiceRx, VoiceTx};
 use voice_link::{
-    MicTap, PcmConsumer, PcmProducer, Renderer, UplinkConsumer, UplinkSink, VoiceCodec, VoiceDecoder, VoiceEncoder,
-    WavSink,
+    MicTap, PcmConsumer, PcmProducer, Renderer, UplinkConsumer, UplinkSink, UplinkStats, VoiceCodec, VoiceDecoder,
+    VoiceEncoder, WavSink,
 };
 
 use crate::messages::Msg;
@@ -294,14 +295,20 @@ struct RxParts {
 
 type Slot<T> = Arc<Mutex<Option<T>>>;
 
-/// The [`VoiceTx`] bt-host holds: silence until armed
-struct ShellTx(Slot<TxParts>);
+/// The [`VoiceTx`] bt-host holds: silence until armed. What it sends while
+/// armed counts as the link's media (Diagnostics shows the call link as it
+/// shows A2DP).
+struct ShellTx(Slot<TxParts>, Arc<LinkStats>);
 
 impl VoiceTx for ShellTx {
     fn fill(&mut self, out: &mut [u8]) {
         match self.0.try_lock() {
             Ok(mut parts) => match parts.as_mut() {
-                Some(p) => p.encoder.fill(&mut p.uplink, out),
+                Some(p) => {
+                    p.encoder.fill(&mut p.uplink, out);
+                    self.1.packets_sent.fetch_add(1, Ordering::Relaxed);
+                    self.1.bytes_sent.fetch_add(out.len() as u64, Ordering::Relaxed);
+                }
                 None => out.fill(0),
             },
             // Being armed or disarmed right now
@@ -310,15 +317,23 @@ impl VoiceTx for ShellTx {
     }
 }
 
-/// The [`VoiceRx`] bt-host holds: drops packets until armed
-struct ShellRx(Slot<RxParts>);
+/// The [`VoiceRx`] bt-host holds: drops packets until armed; counts what
+/// arrives while armed ([`LinkStats::voice_rx_packets`])
+struct ShellRx(Slot<RxParts>, Arc<LinkStats>);
 
 impl VoiceRx for ShellRx {
     fn packet(&mut self, payload: &[u8], status: u8) {
         if let Ok(mut parts) = self.0.try_lock()
             && let Some(p) = parts.as_mut()
         {
+            let concealed = p.decoder.stats().concealed;
             p.decoder.decode(payload, status, &mut p.out);
+            let s = &self.1;
+            s.voice_rx_packets.fetch_add(1, Ordering::Relaxed);
+            if status != 0 {
+                s.voice_rx_bad.fetch_add(1, Ordering::Relaxed);
+            }
+            s.voice_rx_concealed.fetch_add(p.decoder.stats().concealed.saturating_sub(concealed), Ordering::Relaxed);
         }
     }
 }
@@ -402,10 +417,14 @@ struct VoiceLink {
     summary_at: Instant,
     /// The microphone test's tap: on the microphone and the uplink
     tap: MicTap,
+    /// The link's counters: the uplink capture goes there as A2DP's does
+    stats: Arc<LinkStats>,
+    /// The uplink's counters last added to them
+    counted: UplinkStats,
 }
 
 impl VoiceLink {
-    fn new(target: MicTarget, tap: MicTap) -> (VoiceLink, Box<dyn VoiceTx>, Box<dyn VoiceRx>) {
+    fn new(target: MicTarget, tap: MicTap, stats: Arc<LinkStats>) -> (VoiceLink, Box<dyn VoiceTx>, Box<dyn VoiceRx>) {
         let (tx, rx): (Slot<TxParts>, Slot<RxParts>) = Default::default();
         let now = Instant::now();
         let link = VoiceLink {
@@ -421,8 +440,10 @@ impl VoiceLink {
             app_failed_pid: None,
             summary_at: now,
             tap,
+            stats: stats.clone(),
+            counted: UplinkStats::default(),
         };
-        (link, Box::new(ShellTx(tx)), Box::new(ShellRx(rx)))
+        (link, Box::new(ShellTx(tx, stats.clone())), Box::new(ShellRx(rx, stats)))
     }
 
     /// The audio connection is up with `codec`: the microphone output at its
@@ -458,6 +479,9 @@ impl VoiceLink {
         if let Some(r) = self.capture.take() {
             r.stop();
         }
+        // The old uplink's last counts, then the new one's from 0
+        self.count_uplink();
+        self.counted = UplinkStats::default();
         self.uplink_pid = None;
         self.app_checked = Instant::now();
         let (sink, mut consumer) = UplinkSink::new(rate, UPLINK_CAPACITY_MS);
@@ -551,6 +575,24 @@ impl VoiceLink {
         Ok(())
     }
 
+    /// The uplink capture into the link's capture counters, as A2DP's
+    /// capture counts: frames captured, silence sent for want of audio, and
+    /// frames lost (no room, or dropped by the drift control)
+    fn count_uplink(&mut self) {
+        let Some(now) = self.tx.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.uplink.stats()) else {
+            return;
+        };
+        let was = self.counted;
+        let s = &self.stats;
+        let add = |c: &std::sync::atomic::AtomicU64, now: u64, was: u64| {
+            c.fetch_add(now.saturating_sub(was), Ordering::Relaxed);
+        };
+        add(&s.capture_frames, now.captured, was.captured);
+        add(&s.silence_frames, now.zeros, was.zeros);
+        add(&s.capture_dropped_frames, now.overflow + now.dropped, was.overflow + was.dropped);
+        self.counted = now;
+    }
+
     fn status(&self) -> Option<ipc::VoiceStatus> {
         let (codec, _) = self.codec?;
         Some(ipc::VoiceStatus {
@@ -585,6 +627,7 @@ impl VoiceLink {
     /// Everything of the link dropped: the shells bt-host may still hold
     /// send silence and drop packets
     fn disarm(&mut self) {
+        self.count_uplink();
         let tx = self.tx.lock().unwrap_or_else(|e| e.into_inner()).take();
         let rx = self.rx.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(r) = self.capture.take() {
@@ -742,6 +785,9 @@ impl HeadsetMode {
             self.on_event(event, inner, host, source, a2dp)?;
         }
         let r = self.tick_link(inner, host, source, a2dp);
+        if let Some(link) = self.link.as_mut() {
+            link.count_uplink();
+        }
         // The test hears of the link after everything this tick did to it
         match self.link.as_ref().and_then(|l| l.codec) {
             Some((codec, _)) => inner.mic_test.link_up(codec.rate()),
@@ -942,7 +988,7 @@ impl HeadsetMode {
         };
         tracing::info!("voice: the headphones opened the audio connection ({}), taking it over", codec.name());
         a2dp.suspend();
-        let (mut link, tx, rx) = VoiceLink::new(target, inner.mic_test.tap());
+        let (mut link, tx, rx) = VoiceLink::new(target, inner.mic_test.tap(), host.stats().clone());
         if let Err(e) = host.voice_attach(tx, rx) {
             tracing::warn!("voice: cannot take the audio connection over: {e:?}");
             let _ = host.voice_stop();
@@ -1001,7 +1047,7 @@ impl HeadsetMode {
             tracing::info!("voice: headset mode on, suspending A2DP and asking for the audio connection");
         }
         a2dp.suspend();
-        let (link, tx, rx) = VoiceLink::new(target, inner.mic_test.tap());
+        let (link, tx, rx) = VoiceLink::new(target, inner.mic_test.tap(), host.stats().clone());
         match host.voice_start(tx, rx) {
             Ok(()) => {
                 self.link = Some(link);
@@ -1195,11 +1241,32 @@ mod tests {
 
     #[test]
     fn unarmed_shells_send_silence_and_drop_packets() {
-        let (link, mut tx, mut rx) = VoiceLink::new(MicTarget::Wav("unused.wav".into()), MicTap::new());
+        let (link, mut tx, mut rx) = VoiceLink::new(MicTarget::Wav("unused.wav".into()), MicTap::new(), Arc::default());
         let mut out = [0x55u8; 60];
         tx.fill(&mut out);
         assert_eq!(out, [0u8; 60]);
         rx.packet(&[1, 2, 3], 0);
         assert!(link.status().is_none());
+    }
+
+    #[test]
+    fn armed_shells_count_as_the_links_media() {
+        let stats = Arc::<LinkStats>::default();
+        let (mut link, mut tx, mut rx) = VoiceLink::new(MicTarget::Test, MicTap::new(), stats.clone());
+        // Nothing counts before the link is armed
+        tx.fill(&mut [0u8; 60]);
+        rx.packet(&[0u8; 60], 0);
+        assert_eq!(stats.packets_sent.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.voice_rx_packets.load(Ordering::Relaxed), 0);
+        link.arm(VoiceCodec::Msbc, &SourceRequest::TestTone).unwrap();
+        tx.fill(&mut [0u8; 60]);
+        tx.fill(&mut [0u8; 60]);
+        rx.packet(&[0u8; 60], 0);
+        rx.packet(&[0u8; 60], 1);
+        assert_eq!(stats.packets_sent.load(Ordering::Relaxed), 2);
+        assert_eq!(stats.bytes_sent.load(Ordering::Relaxed), 120);
+        assert_eq!(stats.voice_rx_packets.load(Ordering::Relaxed), 2);
+        assert_eq!(stats.voice_rx_bad.load(Ordering::Relaxed), 1);
+        link.disarm();
     }
 }

@@ -5,8 +5,9 @@
 // queue, and the playout delay the device reports. In developer mode the
 // encoder's load: its time per time of audio, and per frame. While a
 // classic device plays over its call link (the headset microphone open,
-// A2DP suspended) the A2DP figures are gaps and dashes, not zeros, and the
-// codec is the voice codec.
+// A2DP suspended) the figures are the call link's, measured the same way
+// (what only an A2DP stream has stays empty), the codec is the voice codec,
+// and the Microphone card counts what comes back.
 
 import { createMemo, Show } from "solid-js";
 import { useApp } from "../../app/context";
@@ -17,7 +18,7 @@ import { t } from "../../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../../lib/codecs";
 import { kbps } from "../../lib/format";
 import type { LinkSample } from "../../ipc/types";
-import { a2dpFigure, dropsPerSample } from "../../lib/linkstats";
+import { dropsPerSample, percent } from "../../lib/linkstats";
 import { DASH, LinkCharts, LossCard, NotStreaming, Row, useLink } from "./shared";
 
 const ms = (v: number) => `${Math.round(v)} ms`;
@@ -29,19 +30,29 @@ export function StreamPanel() {
   const { core } = useApp();
   const developer = () => !!core.state.snap?.settings.developer_mode;
   const link = useLink();
-  const { samples, times, stream, streaming, le, last } = link;
+  const { samples, times, stream, streaming, live, sending, le, last } = link;
   /** The call link of a classic device: A2DP is suspended meanwhile */
   const voice = () => (streaming() && stream().voice?.link === "hfp" ? stream().voice! : null);
-  // The rows' last sample: none while A2DP is suspended
-  const live = () => (link.live()?.voice ? null : link.live());
-  const sending = () => (link.sending()?.voice ? null : link.sending());
-  const drops = createMemo(() => {
+  const drops = createMemo(() => dropsPerSample(samples()));
+  const series = (pick: (s: LinkSample) => number | null | undefined) => samples().map((s) => pick(s) ?? null);
+  /** The microphone's packets per sample, and those damaged on the air */
+  const micBad = createMemo(() =>
+    samples().map((s, i) => {
+      const p = samples()[i - 1];
+      return s.voice_rx && p?.voice_rx ? Math.max(0, s.voice_rx.bad - p.voice_rx.bad) : null;
+    }),
+  );
+  /** The microphone since the call link's samples began (the window shown) */
+  const mic = createMemo(() => {
     const list = samples();
-    return dropsPerSample(list).map((v, i) => a2dpFigure(list[i], v));
+    const last = list[list.length - 1]?.voice_rx;
+    if (!last) return null;
+    let first = list.length - 1;
+    while (first > 0 && list[first - 1].voice_rx) first--;
+    const base = list[first].voice_rx!;
+    const packets = last.packets - base.packets;
+    return { packets, bad: last.bad - base.bad, concealed: last.concealed - base.concealed };
   });
-  /** A2DP figures for a chart: gaps over the call link */
-  const series = (pick: (s: LinkSample) => number | null | undefined) =>
-    samples().map((s) => a2dpFigure(s, pick(s) ?? null));
 
   const codec = () => {
     const i = stream().info;
@@ -105,9 +116,6 @@ export function StreamPanel() {
   return (
     <div>
       <NotStreaming link={link} />
-      <Show when={voice()}>
-        <p class="hint">{t("ui.diag.voice_paused")}</p>
-      </Show>
       <LinkCharts link={link}>
         <TimeChart
           title={t("quality.bitrate")}
@@ -157,6 +165,16 @@ export function StreamPanel() {
           format={count}
           status={(v) => (v === 0 ? "good" : v < 3 ? "warn" : "bad")}
         />
+        <Show when={voice()}>
+          <TimeChart
+            title={t("ui.diag.mic_damaged")}
+            times={times()}
+            series={[{ values: micBad() }]}
+            min={0}
+            format={count}
+            status={(v) => (v === 0 ? "good" : v < 3 ? "warn" : "bad")}
+          />
+        </Show>
         <Show when={developer()}>
           <TimeChart
             title={t("ui.diag.encode_load")}
@@ -190,6 +208,24 @@ export function StreamPanel() {
         {/* What the A2DP codec runs with and what the device offered */}
         <Show when={streaming() && !le() && !voice() && stream().info}>
           {(i) => <Show when={i().details}>{(d) => <CodecDetailsCard info={i()} details={d()} />}</Show>}
+        </Show>
+
+        <Show when={mic()}>
+          {(m) => (
+            <section class="card lq-group" aria-labelledby="lq-mic">
+              <h2 id="lq-mic">{t("ui.diag.mic_title")}</h2>
+              <dl class="lq-rows">
+                <Row label={t("ui.diag.mic_received")} value={String(m().packets)} />
+                <Row
+                  label={t("ui.diag.mic_damaged")}
+                  class={m().bad > 0 ? "st-warn" : ""}
+                  value={`${m().bad} (${percent(m().bad, m().packets).toFixed(1)}%)`}
+                />
+                <Row label={t("ui.diag.mic_concealed")} value={String(m().concealed)} />
+              </dl>
+              <p class="hint">{t("ui.diag.mic_help")}</p>
+            </section>
+          )}
         </Show>
 
         <Show when={le() || iso()}>

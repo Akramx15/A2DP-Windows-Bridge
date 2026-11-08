@@ -653,6 +653,8 @@ export class MockCore implements Transport {
   /** Addresses paired in Windows' Bluetooth (device.windows_paired) */
   windowsPaired: string[] = [];
   windowsPairedThrough: string[] | null = null;
+  /** The call link's microphone packets (link samples) */
+  private voiceRx = { packets: 0, bad: 0, concealed: 0 };
   /** Windows' names of those (device.windows_paired_through) */
   windowsNames: Record<string, string> = {};
   /** LE keys of the saved devices (device.pairing), as derived with LE Audio on */
@@ -1888,13 +1890,23 @@ export class MockCore implements Transport {
     // suspended, as in the core
     const voice = streaming && this.snap.stream.voice?.link === "hfp";
     const a2dp = streaming && !voice;
-    const kbps = a2dp ? (this.snap.stream.info?.bitrate_kbps ?? 0) * (0.96 + 0.06 * Math.sin(t / 2)) : 0;
-    const pps = a2dp ? 120 + Math.random() * 6 : 0;
+    // mSBC over eSCO: a 60-byte payload every 7.5 ms (64 kbps)
+    const kbps = voice ? 64 : a2dp ? (this.snap.stream.info?.bitrate_kbps ?? 0) * (0.96 + 0.06 * Math.sin(t / 2)) : 0;
+    const pps = voice ? 133.3 : a2dp ? 120 + Math.random() * 6 : 0;
     const bps = (kbps * 1000) / 8;
-    const avg = pps > 0 ? bps / pps : null;
+    const avg = a2dp && pps > 0 ? bps / pps : null;
+    if (voice) {
+      const n = 33;
+      const bad = Math.random() < 0.6 ? Math.round(Math.random() * 3) : 0;
+      this.voiceRx = {
+        packets: this.voiceRx.packets + n,
+        bad: this.voiceRx.bad + bad,
+        concealed: this.voiceRx.concealed + bad,
+      };
+    }
     const slots = avg === null ? 0 : avg + 4 <= 83 ? 2 : avg + 4 <= 552 ? 4 : Math.ceil((avg + 4) / 1021) * 6;
     // The controller holds a few ACL packets (one per media packet up to its 1021-byte buffer)
-    const backlog = streaming ? Math.max(1, Math.round(3 + 2 * Math.sin(t / 1.7) + Math.random() * 2)) : null;
+    const backlog = a2dp ? Math.max(1, Math.round(3 + 2 * Math.sin(t / 1.7) + Math.random() * 2)) : null;
     const aclPerSecond = pps * Math.max(1, Math.ceil(((avg ?? 0) + 4) / 1021));
     const rises = streaming && Math.random() < 0.02 ? 1 : 0;
     this.failedContacts += rises;
@@ -1908,21 +1920,21 @@ export class MockCore implements Transport {
       afh_map: streaming ? [0xff, 0xff, 0x3f, 0, 0, 0, 0xfe, 0xff, 0xff, 0x7f] : null,
       bytes_per_second: bps,
       packets_per_second: pps,
-      queue_depth: streaming ? Math.max(0, Math.round(2 + 3 * Math.sin(t) + Math.random() * 2)) : 0,
+      queue_depth: a2dp ? Math.max(0, Math.round(2 + 3 * Math.sin(t) + Math.random() * 2)) : 0,
       dropped: this.since(this.totals, this.streamStart).dropped,
       capture_dropped: this.since(this.totals, this.streamStart).capture_dropped,
-      airtime: streaming ? pps * slots * 625e-6 : 0,
+      airtime: a2dp ? pps * slots * 625e-6 : 0,
       avg_packet_bytes: avg,
       acl_packet:
         avg === null
           ? null
           : { name: avg + 4 <= 83 ? "3-DH1" : avg + 4 <= 552 ? "3-DH3" : "3-DH5", slots, from_features: true },
-      bandwidth_share: streaming ? (pps * ((avg ?? 0) + 4) * 8) / 1000 / 2178.13 : null,
-      queue_capacity: 64,
-      queue_ms: streaming ? Math.max(0, Math.round(10 + 10 * Math.sin(t))) : 0,
-      sink_delay_ms: streaming ? 187.5 : null,
-      encode: streaming ? { load: 0.004 + 0.001 * Math.sin(t), avg_us: 11 + Math.random() * 2, max_us: 30 + Math.random() * 20 } : null,
-      source_rate: streaming ? (this.snap.stream.info?.source_sample_rate ?? 0) : 0,
+      bandwidth_share: a2dp ? (pps * ((avg ?? 0) + 4) * 8) / 1000 / 2178.13 : null,
+      queue_capacity: voice ? null : 64,
+      queue_ms: a2dp ? Math.max(0, Math.round(10 + 10 * Math.sin(t))) : voice ? null : 0,
+      sink_delay_ms: a2dp ? 187.5 : null,
+      encode: a2dp ? { load: 0.004 + 0.001 * Math.sin(t), avg_us: 11 + Math.random() * 2, max_us: 30 + Math.random() * 20 } : null,
+      source_rate: voice ? (this.snap.stream.voice?.rate ?? 0) : streaming ? (this.snap.stream.info?.source_sample_rate ?? 0) : 0,
       counters: { total: { ...this.totals }, stream_start: { ...this.streamStart }, stream_starts: this.streamStarts },
       controller_backlog: backlog,
       controller_backlog_ms: backlog !== null && aclPerSecond > 0 ? (backlog * 1000) / aclPerSecond : null,
@@ -1961,7 +1973,7 @@ export class MockCore implements Transport {
         : null,
       capture_discontinuities: this.since(this.totals, this.streamStart).capture_discontinuities,
       capture_lost: this.since(this.totals, this.streamStart).capture_lost,
-      ...(voice ? { voice: true } : {}),
+      ...(voice ? { voice: true, voice_rx: { ...this.voiceRx } } : {}),
     };
     this.onMessage({ type: "event", rev: this.rev, event: { kind: "link", value: sample } });
   }
