@@ -26,6 +26,8 @@
   --good: #34d399;
   --warn: #fbbf24;
   --bad: #f87171;
+  /* Experimental: amber, text and border (issue #86) */
+  --exp: #f59e0b;
 
   --fs-12: 0.75rem;
   --fs-14: 0.875rem;
@@ -73,6 +75,7 @@
   --disabled-text: rgb(255 255 255 / 0.36);
   --good-text: var(--good);
   --warn-text: var(--warn);
+  --exp-text: var(--warn);
   --bad-text: var(--bad);
   --focus: #eceef3;
   --overlay: rgb(0 0 0 / 0.55);
@@ -97,6 +100,7 @@
   --disabled-text: rgb(0 0 0 / 0.36);
   --good-text: #047857;
   --warn-text: #92400e;
+  --exp-text: #b45309;
   --bad-text: #b91c1c;
   --focus: #15171c;
   --overlay: rgb(20 22 28 / 0.35);
@@ -251,6 +255,11 @@ p {
 .st-running {
   --st: var(--warn);
   --st-text: var(--warn-text);
+}
+/* Experimental: amber, the border in full (issue #86) */
+.st-exp {
+  --st: var(--exp);
+  --st-text: var(--exp-text);
 }
 .st-bad,
 .st-error,
@@ -997,6 +1006,9 @@ option {
   color: var(--st-text);
   border-color: color-mix(in srgb, var(--st) 55%, transparent);
 }
+.tag.st-exp {
+  border-color: var(--exp);
+}
 .tags {
   display: flex;
   gap: var(--s1);
@@ -1024,21 +1036,6 @@ option {
 
 .pairing-part + .pairing-part {
   margin-top: var(--s4);
-}
-/* The byte order switch with what it does beside it, apart from the keys */
-.pairing-order {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  gap: var(--s3);
-  margin: var(--s2) 0 var(--s4);
-}
-.pairing-order .hint {
-  margin: 0;
-}
-/* The key notes run on as one paragraph */
-.pairing-notes > span + span {
-  margin-left: 0.25em;
 }
 .pairing-key {
   overflow-wrap: anywhere;

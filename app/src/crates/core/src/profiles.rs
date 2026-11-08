@@ -396,6 +396,13 @@ impl Profile {
         same == *new && self.bitpools() != new.bitpools()
     }
 
+    /// `new` is this profile with only "Show only options it supports"
+    /// turned
+    pub fn only_unlisted_differs(&self, new: &Profile) -> bool {
+        self.unlisted_options != new.unlisted_options
+            && Profile { unlisted_options: new.unlisted_options, ..self.clone() } == *new
+    }
+
     /// What to stream for this profile. An LE Audio (experimental) profile
     /// gives an LE request (`le` Some: the le_stream session, which refuses
     /// with error.le_audio_disabled while the setting is off); its codec,
@@ -937,6 +944,11 @@ mod tests {
         assert!(p.only_kept_settings_differ(&kept));
         assert!(!p.only_kept_settings_differ(&p));
         assert!(!p.only_kept_settings_differ(&Profile { sbc_bitpool: 30, ..kept }));
+        // "Show only options it supports" turned, nothing else (issue #86)
+        let unlisted = Profile { unlisted_options: !p.unlisted_options, ..p.clone() };
+        assert!(p.only_unlisted_differs(&unlisted));
+        assert!(!p.only_unlisted_differs(&p));
+        assert!(!p.only_unlisted_differs(&Profile { sbc_bitpool: 30, ..unlisted }));
     }
 
     #[test]

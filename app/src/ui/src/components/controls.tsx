@@ -433,6 +433,9 @@ export function Dialog(props: {
   busy?: boolean;
   /** Room for a table whose rows should not wrap */
   wide?: boolean;
+  /** A second way to go on, before the confirm button and the one
+   *  recommended: the confirm button then is a plain one */
+  extra?: { label: string; icon?: IconName; onClick: () => void };
   onConfirm?: () => void;
   onCancel: () => void;
 }) {
@@ -499,7 +502,20 @@ export function Dialog(props: {
                 <Button kind="subtle" disabled={props.busy} onClick={cancel} data-autofocus>
                   {props.cancel}
                 </Button>
-                <Button kind={props.danger ? "danger" : "strong"} busy={props.busy} onClick={() => props.onConfirm?.()}>
+                <Show when={props.extra}>
+                  {(x) => (
+                    <Button kind="strong" icon={x().icon} busy={props.busy} onClick={() => x().onClick()}>
+                      {x().label}
+                    </Button>
+                  )}
+                </Show>
+                {/* With the extra button, busy is the extra's work */}
+                <Button
+                  kind={props.danger ? "danger" : props.extra ? "default" : "strong"}
+                  busy={props.busy && !props.extra}
+                  disabled={props.busy && !!props.extra}
+                  onClick={() => props.onConfirm?.()}
+                >
                   {props.confirm}
                 </Button>
               </div>

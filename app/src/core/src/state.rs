@@ -2418,8 +2418,8 @@ impl CoreState {
             Method::DeviceServices { address } => {
                 blocking(Box::new(move |me| crate::pairing::services(me, &address))).await
             }
-            Method::DeviceImportWindowsPairings { adapter } => {
-                blocking(Box::new(move |me| crate::pairing::import_windows(me, &adapter))).await
+            Method::DeviceImportWindowsPairings { adapter, address } => {
+                blocking(Box::new(move |me| crate::pairing::import_windows(me, &adapter, address.as_deref()))).await
             }
             Method::DeviceForget { address, le_audio } => {
                 blocking(Box::new(move |me| me.forget_device(&address, le_audio == Some(true)))).await
@@ -2512,7 +2512,18 @@ impl CoreState {
                     let bitpools_in_place = !self.service.settings().auto_codec
                         && bitpools_change_in_place(&s.stream, before.as_ref(), &in_order)
                         && self.service.change_bitpools(in_order.bitpools());
-                    if bitpools_in_place {
+                    // "Show only options it supports" turned, the stream
+                    // set up the same either way (issue #86)
+                    let unlisted_in_place = !bitpools_in_place
+                        && !in_place
+                        && before.as_ref().is_some_and(|b| b.only_unlisted_differs(&in_order))
+                        && self.service.change_unlisted(in_order.unlisted_options);
+                    if unlisted_in_place {
+                        tracing::info!(
+                            "profile {} saved while in use: the stream stays as it is",
+                            bluecaster_core::diag::quoted(&key)
+                        );
+                    } else if bitpools_in_place {
                         tracing::debug!(
                             "profile {} saved while in use: new bitpools",
                             bluecaster_core::diag::quoted(&key)
