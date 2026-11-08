@@ -11,7 +11,7 @@ has_toc: false
 Diffusion audio Bluetooth A2DP pour Windows, avec tous les codecs.
 {: .fs-6 .fw-300 }
 
-Diffuse l'audio du système en **LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC** et (à titre expérimental) **Opus** et l'**Opus 05** de PipeWire grâce à un adaptateur Bluetooth USB en mode WinUSB -- sans pilote noyau ni signature de test.
+Transforme un adaptateur Bluetooth ordinaire -- une clé USB bon marché ou, sur de nombreux portables, l'adaptateur intégré -- limité aux codecs de base de Windows en émetteur Hi-Fi : **LHDC V5, LDAC et aptX Adaptive** jusqu'à 96 kHz (LHDC V5 jusqu'à 192 kHz), ainsi que **aptX, AAC, SBC XQ et SBC**. Expérimentaux : **aptX HD, aptX Low Latency, Opus, FastStream et LE Audio (LC3)**. BlueCaster configure l'adaptateur lui-même et le rend à Windows en un clic ([fonctionnement](architecture)).
 
 ![BlueCaster's Codecs screen, streaming LDAC 990 kbps / 48 kHz to Sony WH-1000XM4](../images/app_sample.png)
 
@@ -143,7 +143,7 @@ BlueCaster contourne entièrement la pile Bluetooth de Windows. Il communique di
 
 ## Fonctionnalités
 
-- **Multi-codec** : LHDC V5, LDAC, aptX Adaptive, aptX HD, aptX, aptX Low Latency, AAC, SBC XQ, SBC et (à titre expérimental) Opus / Opus 05 / FastStream, avec négociation automatique
+- **Multi-codec** : LHDC V5, LDAC, aptX Adaptive, aptX, AAC, SBC XQ, SBC et (à titre expérimental) aptX HD / aptX Low Latency / Opus / Opus 05 / FastStream, avec négociation automatique
 - **LE Audio (expérimental)** : LC3 vers des casques et écouteurs LE Audio (BAP unicast, les deux écouteurs d'une paire, volume du casque, boutons multimédia, faible latence GMAP). Nécessite un adaptateur avec canaux isochrones Bluetooth 5.2 ; testé uniquement avec l'émulateur Bluetooth, pas encore avec de vrais casques LE Audio ([Utilisation](usage#le-audio))
 - **Trois modes de capture** : bouclage système, routage via un périphérique audio virtuel, ou sortie d'une seule application
 - **Fenêtre, zone de notification et CLI** : une fenêtre pour la configuration et le diagnostic, un volet et un menu dans la zone de notification pour se connecter au quotidien, et une ligne de commande (voir [Utilisation](usage))

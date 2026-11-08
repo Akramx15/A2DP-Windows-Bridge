@@ -11,7 +11,7 @@ has_toc: false
 Windows 向け Bluetooth A2DP オーディオストリーミングツール（全コーデック対応）
 {: .fs-6 .fw-300 }
 
-USB Bluetooth アダプターを WinUSB モードで使用し、**LHDC V5、LDAC、aptX Adaptive、aptX HD、aptX、aptX Low Latency、AAC、SBC**（および試験的に **Opus**、PipeWire の **Opus 05**）でシステム音声をストリーミングします。カーネルドライバーやテスト署名は不要です。
+安価な USB ドングル、または多くのノート PC に内蔵の、Windows では基本的なコーデックしか使えない普通の Bluetooth アダプターを、Hi-Fi 送信機に変えます。**LHDC V5・LDAC・aptX Adaptive** を最大 96 kHz（LHDC V5 は 192 kHz）で、ほかに **aptX・AAC・SBC XQ・SBC** に対応。試験的に **aptX HD・aptX Low Latency・Opus・FastStream・LE Audio（LC3）**。アダプターの設定は BlueCaster が行い、ワンクリックで Windows に戻せます（[仕組み](architecture)）。
 
 ![BlueCaster's Codecs screen, streaming LDAC 990 kbps / 48 kHz to Sony WH-1000XM4](../images/app_sample.png)
 
@@ -143,7 +143,7 @@ BlueCaster は Windows の Bluetooth スタックを完全にバイパスしま�
 
 ## 主な機能
 
-- **マルチコーデック**: LHDC V5、LDAC、aptX Adaptive、aptX HD、aptX、aptX Low Latency、AAC、SBC XQ、SBC、Opus / Opus 05 / FastStream（試験的）（自動ネゴシエーション対応）
+- **マルチコーデック**: LHDC V5、LDAC、aptX Adaptive、aptX、AAC、SBC XQ、SBC、aptX HD / aptX Low Latency / Opus / Opus 05 / FastStream（試験的）（自動ネゴシエーション対応）
 - **LE Audio（実験的）**: LE Audio のヘッドホン・イヤホンへ LC3 で送信（BAP ユニキャスト、左右一組のイヤホン、ヘッドセットの音量、メディアボタン、GMAP の低遅延）。Bluetooth 5.2 のアイソクロナスチャネルに対応したアダプターが必要です。確かめたのは Bluetooth のエミュレータだけで、実機の LE Audio ヘッドホンではまだ試していません（[使い方](usage#le-audio)を参照）
 - **3 つのキャプチャモード**: システムループバック、仮想オーディオデバイスルーティング、または 1 つのアプリの出力
 - **ウィンドウ・トレイ・CLI**: セットアップと診断はウィンドウ、毎日の接続はトレイのフライアウトとメニュー、ほかにコマンドライン（[使い方](usage)を参照）
