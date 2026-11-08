@@ -10,8 +10,8 @@ import { errorText, useApp } from "../app/context";
 import { t } from "../i18n";
 import { IpcError, type Device, type DeviceService } from "../ipc/types";
 import { copyText } from "../lib/format";
-import { reverseBytes, serviceLabel } from "../lib/pairing";
-import { Check, Dialog, IconButton } from "./controls";
+import { serviceLabel } from "../lib/pairing";
+import { Dialog, IconButton } from "./controls";
 import { Icon } from "./Icon";
 
 /** How often and how long the services are asked again while another
@@ -54,8 +54,6 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
   const copy = async (text: string) =>
     app.notify(t((await copyText(text)) ? "ui.pairing.copied" : "dbgc.copy_failed"));
   const name = () => props.device?.name || t("device.name_unknown");
-  // One switch for every key (issue #86), off: the order Bluetooth sends them
-  const [reversed, setReversed] = createSignal(false);
   return (
     <Dialog
       open={props.device !== null}
@@ -80,31 +78,22 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
           <Show when={keysOpen() && pairing()}>
             {(p) => (
               <Show when={!p().error} fallback={<p class="hint">{p().error}</p>}>
-                <Show when={p().key || p().le}>
-                  <div class="pairing-order">
-                    <Check label={t("ui.pairing.reverse_bytes")} checked={reversed()} onChange={setReversed} />
-                    <p class="hint">{t("ui.pairing.reverse_bytes_hint")}</p>
-                  </div>
-                </Show>
                 <dl class="pairing-keys">
                   <KeyRow
                     name={t("ui.pairing.link_key")}
                     value={p().key?.key}
                     tag={p().key ? t("ui.pairing.key_type", p().key!.key_type) : undefined}
-                    reversed={reversed()}
                     copy={copy}
                   />
                   <KeyRow
                     name={t("ui.pairing.ltk")}
                     value={p().le?.long_term_key}
                     tag={p().le ? t("ui.pairing.key_size", p().le!.key_size) : undefined}
-                    reversed={reversed()}
                     copy={copy}
                   />
                   <KeyRow
                     name={t("ui.pairing.irk")}
                     value={p().le?.identity_resolving_key}
-                    reversed={reversed()}
                     copy={copy}
                   />
                   <Show when={p().le}>
@@ -122,13 +111,9 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
                     )}
                   </Show>
                 </dl>
-                <Show when={p().key}>
-                  <p class="hint pairing-notes">
-                    <span>{t("ui.pairing.secret")}</span>
-                    <Show when={!p().le && p().leMissing}>
-                      {(why) => <span>{t(`ui.pairing.le_missing.${why()}`)}</span>}
-                    </Show>
-                  </p>
+                {/* Why there are no LE keys (issue #86) */}
+                <Show when={p().key && !p().le && p().leMissing}>
+                  {(why) => <p class="hint">{t(`ui.pairing.le_missing.${why()}`)}</p>}
                 </Show>
               </Show>
             )}
@@ -175,14 +160,12 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
   );
 }
 
-/** One key: its hex digits (upper case), in the other byte order with the
- *  dialog's switch on (issue #86: other systems keep some keys the other way
- *  round), with a copy button, or "not available" */
+/** One key: its hex digits (upper case) in the order Bluetooth sends them,
+ *  with a copy button, or "not available" */
 function KeyRow(props: {
   name: string;
   value: string | null | undefined;
   tag?: string;
-  reversed: boolean;
   copy: (text: string) => Promise<unknown>;
 }) {
   return (
@@ -191,7 +174,7 @@ function KeyRow(props: {
       <dd>
         <Show when={props.value} fallback={<span class="muted">{t("ui.pairing.not_available")}</span>}>
           {(v) => {
-            const shown = () => (props.reversed ? reverseBytes(v()) : v()).toUpperCase();
+            const shown = () => v().toUpperCase();
             return (
               <span class="pairing-key-row">
                 <code class="mono pairing-key">{shown()}</code>

@@ -153,7 +153,22 @@ describe("firmware state", () => {
     expect(adapterFirmwareTag(rtl(false), s)).toEqual({ key: "firmware.missing_short", status: "bad" });
     // Not on WinUSB yet (Windows runs it, or it is disabled): amber
     expect(adapterFirmwareTag({ ...rtl(false), driver: "bluetooth" }, s)).toEqual({ key: "firmware.missing_short", status: "warn" });
-    expect(adapterFirmwareTag(other("Intel", "firmware.vendor_intel"), s).key).toBe("ui.adapter.firmware_not_realtek");
+    // Another vendor's: where its firmware comes from (issue #86), how its
+    // loader went once one ran on it
+    expect(adapterFirmwareTag(other("Intel", "firmware.vendor_intel"), s).key).toBe("ui.adapter.firmware_from_folder");
+    const mtk = { ...other("MediaTek", "firmware.vendor_mediatek"), driver: "winusb" as const };
+    expect(adapterFirmwareTag(mtk, s)).toEqual({ key: "ui.adapter.firmware_from_driver", args: ["MediaTek"], status: "good" });
+    expect(adapterFirmwareTag(mtk, s, { vendor: "MediaTek", ok: true }).key).toBe("ui.adapter.firmware_loaded");
+    expect(adapterFirmwareTag(mtk, s, { vendor: "MediaTek", ok: false })).toEqual({
+      key: "ui.adapter.firmware_load_failed",
+      status: "bad",
+    });
+    // Another adapter's loader, or not on WinUSB: not this one's
+    expect(adapterFirmwareTag(mtk, s, { vendor: "Intel", ok: false }).key).toBe("ui.adapter.firmware_from_driver");
+    expect(adapterFirmwareTag({ ...mtk, driver: "bluetooth" }, s, { vendor: "MediaTek", ok: false }).key).toBe(
+      "ui.adapter.firmware_from_driver",
+    );
+    expect(adapterFirmwareTag(other("CSR", "firmware.vendor_csr"), s).key).toBe("ui.adapter.firmware_not_needed");
     expect(adapterFirmwareTag(other("Qualcomm", "firmware.vendor_unsupported"), s)).toEqual({
       key: "ui.adapter.firmware_unsupported",
       status: "bad",

@@ -157,16 +157,24 @@ fn parse_key(v: &Value) -> Option<([u8; 6], [u8; 16])> {
 
 /// device.import_windows_pairings (not developer mode only since issue #86:
 /// it only reads Windows' keys, after an administrator prompt)
-pub fn import_windows(state: &Arc<CoreState>, adapter: &str) -> Result<Value, ErrorInfo> {
+pub fn import_windows(state: &Arc<CoreState>, adapter: &str, only: Option<&str>) -> Result<Value, ErrorInfo> {
     let radio = bt_host::addr_str(&address(adapter)?);
+    // One device's (Connect on a device Windows paired, issue #86)
+    let only = only.map(address).transpose()?;
     let (code, result) = crate::driver::run(&state.config_dir(), &["windows-keys", &radio])?;
     if code != 0 || result.get("ok").and_then(Value::as_bool) != Some(true) {
         tracing::warn!("Windows' keys of {radio}: helper exit {code}");
         return Err(err("adapter.import_failed", "ipc.error.import_failed"));
     }
     let adapter_found = result.get("radio_found").and_then(Value::as_bool) == Some(true);
-    let keys: Vec<([u8; 6], [u8; 16])> =
-        result.get("keys").and_then(Value::as_array).into_iter().flatten().filter_map(parse_key).collect();
+    let keys: Vec<([u8; 6], [u8; 16])> = result
+        .get("keys")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(parse_key)
+        .filter(|(a, _)| only.is_none_or(|o| *a == o))
+        .collect();
     let dir = state.config_dir();
     let have: Vec<[u8; 6]> = link_keys(&dir).entries().iter().map(|e| e.addr).collect();
     let (mut imported, mut kept) = (Vec::new(), Vec::new());

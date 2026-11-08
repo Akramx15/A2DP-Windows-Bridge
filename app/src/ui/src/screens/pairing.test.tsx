@@ -75,7 +75,8 @@ describe("device pairing", () => {
     // Linux file
     const key = await within(dialog).findByText("00112233445566778899AABBCCDDEEFF");
     expect(key.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(dialog).getByText(t("ui.pairing.reverse_bytes_hint"))).toBeInTheDocument();
+    // The keys as Bluetooth sends them, no notes (issue #86)
+    expect(within(dialog).queryByRole("switch")).toBeNull();
     expect(within(dialog).getByText(t("ui.pairing.key_type", 4))).toBeInTheDocument();
     const [copy] = within(dialog).getAllByRole("button", { name: t("ui.pairing.copy_key") });
     expect(within(dialog).getAllByRole("button", { name: t("ui.pairing.copy_key") })).toHaveLength(1);
@@ -123,31 +124,6 @@ describe("device pairing", () => {
     expect(within(dialog).getAllByRole("button", { name: t("ui.pairing.copy_key") })).toHaveLength(3);
     expect(within(dialog).queryByText(t("ui.pairing.not_available"))).toBeNull();
     expect(within(dialog).queryByText(t("ui.pairing.le_missing.not_asked"))).toBeNull();
-  });
-
-  it("reverses every key's byte order with one switch (issue #86)", async () => {
-    await open("#/devices", true);
-    mock!.leKeys = {
-      long_term_key: "0f0e0d0c0b0a09080706050403020100",
-      key_size: 16,
-      identity_resolving_key: null,
-      identity_address: "C0:11:22:33:44:55",
-      identity_random: true,
-    };
-    const [tag] = await screen.findAllByRole("button", { name: t("ui.pairing.services") });
-    fireEvent.click(tag);
-    const dialog = await screen.findByRole("dialog", { name: t("ui.pairing.services") });
-    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.pairing.key_title") }));
-    await within(dialog).findByText("00112233445566778899AABBCCDDEEFF");
-    expect(within(dialog).queryByRole("button", { name: t("ui.pairing.reverse_bytes") })).toBeNull();
-    const reverse = within(dialog).getByRole("switch", { name: t("ui.pairing.reverse_bytes") });
-    expect(reverse).not.toBeChecked();
-    fireEvent.click(reverse);
-    expect(reverse).toBeChecked();
-    expect(within(dialog).getByText("FFEEDDCCBBAA99887766554433221100")).toBeInTheDocument();
-    expect(within(dialog).getByText("000102030405060708090A0B0C0D0E0F")).toBeInTheDocument();
-    fireEvent.click(reverse);
-    expect(within(dialog).getByText("00112233445566778899AABBCCDDEEFF")).toBeInTheDocument();
   });
 
   it("asks for the services again while another query runs (issue #86)", async () => {
