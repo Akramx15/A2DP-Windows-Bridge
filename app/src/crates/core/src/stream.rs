@@ -119,7 +119,7 @@ impl StreamRequest {
 }
 
 /// Where a stream's audio comes from. OutputDevice: loopback of that output
-/// device whichever is the Windows default (developer mode, issue #193),
+/// device whichever is the Windows default (issue #193),
 /// never made the default.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceRequest {

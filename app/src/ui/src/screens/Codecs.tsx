@@ -72,7 +72,6 @@ import {
   headsetMode,
   type HeadsetMode,
   captureDevice,
-  captureInForce,
   codecsOnRequest,
   entryBase,
   entryByKey,
@@ -380,7 +379,7 @@ function DeviceCodecs(props: {
   // The format Windows plays its source in (one app: the default output, as
   // the core reads it)
   const sourceFormat = () => {
-    const p = captureInForce(shown(), snap().settings.developer_mode);
+    const p = shown();
     const d =
       p.capture_mode === "app"
         ? props.audioDevices.find((x) => x.is_default)

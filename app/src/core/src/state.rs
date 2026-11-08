@@ -1986,7 +1986,6 @@ impl CoreState {
         req.volume_sync = effective_volume_sync(settings.volume_sync, req.volume_sync);
         req.mute_output = settings.mutes_output();
         req.sbc = settings.sbc_frame(req.sbc);
-        req.source = settings.capture_source(req.source);
         if auto.is_some() && settings.debug_mode {
             req.codec_values = p.all_codec_values();
         }
@@ -2622,7 +2621,7 @@ impl CoreState {
                 };
                 if restart_after_save(&s.stream, &key) && !order_keeps_codec && !kept_only && !headset_kept {
                     let in_place = source_changes_in_place(&s.stream, before.as_ref(), &in_order)
-                        && self.service.change_source(self.service.settings().capture_source(in_order.source()));
+                        && self.service.change_source(in_order.source());
                     let bitpools_in_place = !self.service.settings().auto_codec
                         && bitpools_change_in_place(&s.stream, before.as_ref(), &in_order)
                         && self.service.change_bitpools(in_order.bitpools());

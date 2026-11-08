@@ -335,15 +335,6 @@ export function captureDevice(
 }
 
 /**
- * The capture source a profile streams: a chosen output device counts in
- * developer mode only (issue #193; the core's Settings::capture_source),
- * System Loopback outside it. The profile keeps its choice.
- */
-export function captureInForce<P extends Pick<Profile, "capture_mode">>(p: P, developer: boolean): P {
-  return p.capture_mode === "output" && !developer ? { ...p, capture_mode: "loopback" } : p;
-}
-
-/**
  * Which of the profile's sample rate and bit depth differ from the capture
  * device's format (v1 update_format_info; Auto never differs)
  */

@@ -102,7 +102,7 @@ pub struct Profile {
     pub bit_depth: u32,
     /// loopback, virtual, output, app. "output": loopback of the output
     /// device `audio_device_id` (Windows' endpoint ID) whichever is the
-    /// default, set in developer mode (issue #193)
+    /// default (issue #193)
     #[serde(default = "loopback")]
     pub capture_mode: String,
     pub audio_device_id: String,

@@ -59,7 +59,7 @@ En coulisses, BlueCaster garde une entrée par appareil dans `profiles.json` (so
 
 Les casques et enceintes vers lesquels BlueCaster peut diffuser, chacun avec ses propres réglages, et en dessous **Ajouter un appareil audio** : **Rechercher** trouve les appareils à proximité avec l'adaptateur USB (30 secondes, listés au fur et à mesure de leur réponse ; **Arrêter la recherche** y met fin ; mettez le casque en mode d'association ; si un appareil est connecté, elle demande d'abord de le déconnecter). **Ajouter** enregistre un appareil trouvé et le connecte. Les appareils déjà associés à BlueCaster portent l'étiquette **Associé**. Si la recherche ne le trouve pas, saisissez l'adresse sous **Manuel :** et cliquez sur **Ajouter** ; les adresses tapées ou collées sont mises en forme au fur et à mesure (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` et `AA BB CC DD EE FF` deviennent toutes `AA:BB:CC:DD:EE:FF`). Les casques voient l'adaptateur sous le nom de votre ordinateur suivi d'BlueCaster, p. ex. *Taro-PC (BlueCaster)*, pour le distinguer du Bluetooth de Windows lui-même. Un appareil que Windows a associé via un autre adaptateur, comme le Bluetooth intégré du PC, demande d'abord (**Associé dans Windows** : supprimez-le là-bas, ou **Ajouter quand même**) ; un appareil que Windows a associé via cet adaptateur propose d'importer cette association (voir [Services et clés d'association](#shared-pairing)). Un appareil enregistré peut être renommé ou supprimé (le supprimer supprime aussi ses réglages et son association : il ne peut plus se connecter avant d'avoir été associé de nouveau), et dispose de :
 
-- **Source de sortie** : Bouclage système (par défaut pour un nouvel appareil), Périphérique virtuel ou Application (voir [Modes de capture](#capture-modes)). À côté, le format dans lequel Windows mixe le périphérique capturé (fréquence d'échantillonnage et profondeur de bits, en lecture seule), en ambre lorsque l'appareil diffuse dans un autre format (ou, s'il n'est pas connecté, que ses réglages de codec en demandent un autre), avec une ligne en dessous donnant les deux formats (la diffusion continue, convertie) ; en dessous, ce que fait la source
+- **Source de sortie** : Bouclage système (par défaut pour un nouvel appareil), Périphérique virtuel, Périphérique de sortie ou Application (voir [Modes de capture](#capture-modes)). À côté, le format dans lequel Windows mixe le périphérique capturé (fréquence d'échantillonnage et profondeur de bits, en lecture seule), en ambre lorsque l'appareil diffuse dans un autre format (ou, s'il n'est pas connecté, que ses réglages de codec en demandent un autre), avec une ligne en dessous donnant les deux formats (la diffusion continue, convertie) ; en dessous, ce que fait la source
 - **Définir comme sortie par défaut de Windows pendant la connexion**, avec un périphérique virtuel
 
 **Tous les appareils audio**, au-dessus de la liste, regroupe les interrupteurs qui s'appliquent à tous les appareils : **Synchro du volume Windows** (voir [Volume](#volume)), **Contrôler la lecture avec les boutons de l'appareil audio** et **Reconnecter automatiquement**. La **Taille max. des paquets média** de chaque appareil se trouve sur l'écran **Développeur** (voir [Taille max. des paquets média](#max-packet)).
@@ -240,15 +240,16 @@ Sans `--cli`, `bluecaster-core.exe` est le programme résident : il démarre aus
 
 ## Modes de capture {#capture-modes}
 
-BlueCaster propose trois modes de capture audio. Chacun enregistre à un endroit différent du trajet audio :
+BlueCaster propose quatre modes de capture audio. Chacun enregistre à un endroit différent du trajet audio :
 
 | Mode | Ce qui est enregistré |
 |:-----|:----------------|
 | Bouclage système | Ce que joue le périphérique de sortie par défaut de Windows : toutes les applications mixées |
 | Périphérique virtuel | Ce que les applications envoient vers le périphérique choisi (p. ex. VB-CABLE) |
+| Périphérique de sortie | Ce que joue un périphérique de sortie (haut-parleurs, casque USB, téléviseur, ...), quelle que soit la sortie par défaut de Windows |
 | Application | Uniquement ce que joue une application (et ses processus enfants), après son propre traitement. Nécessite Windows 11 ou Windows 10 version 2004 (build 19041) ou ultérieure |
 
-**Périphériques audio** affiche la même explication sous **Source de sortie**. Un nouvel appareil capture en Bouclage système, qui fonctionne sans rien installer d'autre ; choisissez-y Périphérique virtuel ou Application pour lui.
+**Périphériques audio** affiche la même explication sous **Source de sortie**. Un nouvel appareil capture en Bouclage système, qui fonctionne sans rien installer d'autre ; choisissez-y une autre source pour lui.
 
 Le bouclage système copie l'audio ; il ne le retire pas du périphérique de sortie par défaut, si bien que l'audio y est aussi joué (haut-parleurs, casque filaire, téléviseur HDMI, ...). Pour ne l'entendre que dans le casque Bluetooth, utilisez un périphérique virtuel comme VB-CABLE.
 
@@ -263,7 +264,7 @@ En mode Périphérique virtuel, **Définir comme sortie par défaut de Windows p
 - Certaines applications continuent de jouer sur le périphérique précédent jusqu'à leur redémarrage.
 - Si BlueCaster se ferme de manière inattendue, le périphérique par défaut n'est pas rétabli. Modifiez-le dans les paramètres Son de Windows.
 
-En mode développeur, la liste **Source de sortie** propose aussi **Périphérique de sortie** : chaque périphérique de sortie de Windows (haut-parleurs, casque USB, téléviseur, ...). BlueCaster enregistre alors ce que joue ce périphérique, quelle que soit la sortie par défaut de Windows, et n'en fait jamais la sortie par défaut ; **Synchro du volume Windows** synchronise le volume de ce périphérique. S'il est absent à la connexion (débranché ou désactivé), BlueCaster envoie le bouclage système à la place et l'état de la connexion l'indique ; **Périphériques audio** l'affiche comme non connecté. Sans le mode développeur, un tel périphérique capture le bouclage système : le choix reste enregistré et compte de nouveau dès que le mode développeur est réactivé.
+Sous **Périphérique de sortie**, la liste **Source de sortie** propose chaque périphérique de sortie de Windows. BlueCaster enregistre ce que joue le périphérique choisi, quelle que soit la sortie par défaut de Windows, et n'en fait jamais la sortie par défaut ; **Synchro du volume Windows** synchronise le volume de ce périphérique. S'il est absent à la connexion (débranché ou désactivé), BlueCaster envoie le bouclage système à la place et l'état de la connexion l'indique ; **Périphériques audio** l'affiche comme non connecté.
 
 ### Mode Application {#application-mode}
 
@@ -279,7 +280,7 @@ Le mode Application envoie l'audio d'une seule application, par exemple un lecte
 
 Pendant la diffusion, le curseur **Volume** de l'Accueil et du volet de la zone de notification fonctionne lorsque le casque prend en charge le volume absolu AVRCP (sinon il reste désactivé). Il règle le volume du casque lui-même, si bien que l'audio envoyé garde toute sa résolution. Le haut-parleur à côté coupe le son (volume 0 sur le casque) et le rétablit (au volume d'avant). Au volume 0, quelle que soit la façon dont il a été réglé (le haut-parleur, le curseur, Windows ou les boutons du casque), BlueCaster envoie du silence, car de nombreux casques jouent encore faiblement à leur volume le plus bas. Le curseur suit aussi les boutons de volume et les commandes tactiles du casque.
 
-**Synchro du volume Windows** (dans **Périphériques audio**, pour tous les appareils ; activée par défaut) fait d'un volume Windows et du volume du casque un seul et même volume pendant la diffusion. Le volume Windows synchronisé est celui du périphérique capturé par BlueCaster : le périphérique de sortie par défaut en mode Bouclage système et Application, le périphérique choisi en mode Périphérique virtuel. Désactivée, le volume Windows et le volume du casque sont indépendants.
+**Synchro du volume Windows** (dans **Périphériques audio**, pour tous les appareils ; activée par défaut) fait d'un volume Windows et du volume du casque un seul et même volume pendant la diffusion. Le volume Windows synchronisé est celui du périphérique capturé par BlueCaster : le périphérique de sortie par défaut en mode Bouclage système et Application, le périphérique choisi en mode Périphérique virtuel et Périphérique de sortie. Désactivée, le volume Windows et le volume du casque sont indépendants.
 
 - Les boutons et gestes de volume du casque, ainsi que le curseur **Volume**, modifient le volume Windows synchronisé, et le curseur de celui-ci dans les paramètres Son modifie le volume du casque.
 - Les touches de volume et le menu volant de volume de Windows agissent toujours sur le périphérique de sortie par défaut : ils ne modifient donc le volume du casque que si le périphérique de sortie par défaut est celui qui est synchronisé (toujours, sauf en mode Périphérique virtuel sans **Définir comme sortie par défaut de Windows pendant la connexion**).

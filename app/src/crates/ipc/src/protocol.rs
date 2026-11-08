@@ -517,9 +517,8 @@ pub struct Profile {
     pub sample_rate: u32,
     /// 0 = auto, 16, 24
     pub bit_depth: u32,
-    /// loopback, virtual, output, app. "output" (developer mode, issue
-    /// #193): the output device audio_device_id, whichever is the Windows
-    /// default; outside developer mode it streams System Loopback
+    /// loopback, virtual, output, app. "output" (issue #193): the output
+    /// device audio_device_id, whichever is the Windows default
     pub capture_mode: String,
     pub audio_device_id: String,
     pub audio_device_name: String,
