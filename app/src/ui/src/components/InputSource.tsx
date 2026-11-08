@@ -4,7 +4,8 @@
 // while an app records from it) or On, with the mode on the right of its
 // label and the device below, always there (disabled while Off) so that
 // switching does not move the page. The list names each device by the side
-// apps pick ("CABLE Output", not "CABLE Input"); the 16-channel cable and
+// apps pick ("CABLE Output", not "CABLE Input"; an output whose recording
+// side another one already names, by its own name); the 16-channel cable and
 // outputs without a recording side only in developer mode. A classic device
 // that has no profile yet shows what its first one gets: Auto with VB-CABLE
 // (the core's default_mic_output).
@@ -77,9 +78,17 @@ export function InputSource(props: {
     const list = props.devices
       .filter((d) => d.id === chosen() || developer() || (d.is_virtual && d.capture_name && !multichannelCable(d)))
       .sort((a, b) => Number(b.is_virtual) - Number(a.is_virtual));
+    // Outputs sharing a recording side ("CABLE Input" and "CABLE In 16ch" both
+    // record as "CABLE Output"): only the first keeps that name, the others
+    // show their own (the 16-channel one last, so the standard cable keeps it)
+    const named = [...list].sort((a, b) => Number(multichannelCable(a)) - Number(multichannelCable(b)));
+    const label = (d: AudioDevice) => {
+      const first = d.capture_name ? named.find((x) => x.capture_name === d.capture_name) : undefined;
+      return d.capture_name && first === d ? d.capture_name : d.name;
+    };
     const out: Option<string>[] = list.map((d) => ({
       value: d.id,
-      label: d.capture_name ?? d.name,
+      label: label(d),
       // Its sound would go to the headphones
       disabled: d.id === looped(),
       group: developer() ? (d.is_virtual ? t("capture.virtual") : t("capture.sound_devices")) : undefined,
