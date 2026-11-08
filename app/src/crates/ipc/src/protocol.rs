@@ -476,6 +476,32 @@ pub struct StreamStatus {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub voice: Option<VoiceStatus>,
+    /// An error state the codec caused (issue #86): the device's status
+    /// line names it in a few words; the message has the whole text
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub codec_stop: Option<CodecStop>,
+}
+
+/// Why the stream stopped over its codec (StreamStatus.codec_stop)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CodecStop {
+    /// Codec key ("ldac", "aac", ...)
+    pub codec: String,
+    pub kind: CodecStopKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum CodecStopKind {
+    /// The device does not support the codec (or refused it, asked anyway)
+    Unsupported,
+    /// The device refused settings of the codec it does not list
+    SettingsUnsupported,
+    /// Another source uses the device's endpoint of the codec
+    InUse,
+    /// The device refused the codec's configuration
+    Refused,
 }
 
 /// The headset microphone's voice link (StreamStatus.voice)
@@ -867,8 +893,8 @@ pub struct Snapshot {
     pub adapter: AdapterState,
     pub devices: Vec<Device>,
     pub scanning: bool,
-    /// The scan's LE Audio part runs (status.le_scanning): after the
-    /// classic inquiry, with LE Audio on
+    /// Only the scan's LE Audio part runs (status.le_scanning): after a
+    /// classic inquiry shorter than the LE scan, with LE Audio on
     #[serde(default)]
     pub le_scanning: bool,
     pub stream: StreamStatus,
