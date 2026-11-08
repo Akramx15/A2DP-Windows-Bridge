@@ -1034,6 +1034,22 @@ option {
   outline-offset: 1px;
 }
 
+/* The keys' heading folds them away (secrets) */
+.pairing-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pairing-fold:focus-visible {
+  outline: 2px solid var(--accent-fill);
+  outline-offset: 2px;
+}
 .pairing-part + .pairing-part {
   margin-top: var(--s4);
 }
