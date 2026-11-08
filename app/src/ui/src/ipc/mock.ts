@@ -638,6 +638,8 @@ export class MockCore implements Transport {
   windowsPaired: string[] = [];
   /** LE keys of the saved devices (device.pairing), as derived with LE Audio on */
   leKeys: DevicePairing["le_keys"] = null;
+  /** Why there are none (device.pairing) */
+  leKeysMissing: NonNullable<DevicePairing["le_keys_missing"]> = "not_asked";
   /** device.services answers "busy" this many times first (another query runs) */
   servicesBusy = 0;
   readonly window: WindowKind;
@@ -754,6 +756,7 @@ export class MockCore implements Transport {
         return {
           link_key: saved ? { key: "00112233445566778899aabbccddeeff", key_type: 4 } : null,
           le_keys: saved ? this.leKeys : null,
+          le_keys_missing: saved && this.leKeys ? null : this.leKeysMissing,
         };
       }
       case "device.services":

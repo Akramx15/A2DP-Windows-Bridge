@@ -913,8 +913,9 @@ option {
   gap: var(--s3);
   animation: rise var(--t-mid) var(--ease);
 }
+/* Room for a one-line GUID beside a service name (issue #86) */
 .dialog-wide {
-  width: min(46rem, 100%);
+  width: min(38rem, 100%);
 }
 .dialog > h2,
 .dialog-actions {
@@ -1024,17 +1025,20 @@ option {
 .pairing-part + .pairing-part {
   margin-top: var(--s4);
 }
-/* The byte order switch and what it does, apart from the keys below */
+/* The byte order switch with what it does beside it, apart from the keys */
 .pairing-order {
   display: grid;
-  gap: var(--s1);
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s3);
   margin: var(--s2) 0 var(--s4);
-}
-.pairing-order .check {
-  justify-self: start;
 }
 .pairing-order .hint {
   margin: 0;
+}
+/* The key notes run on as one paragraph */
+.pairing-notes > span + span {
+  margin-left: 0.25em;
 }
 .pairing-key {
   overflow-wrap: anywhere;

@@ -28,8 +28,8 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
   const [pairing] = createResource(keysOf, (a) =>
     app.core
       .request("device.pairing", { address: a })
-      .then((p) => ({ key: p.link_key, le: p.le_keys, error: null as string | null }))
-      .catch((e: unknown) => ({ key: null, le: null, error: errorText(e) })),
+      .then((p) => ({ key: p.link_key, le: p.le_keys, leMissing: p.le_keys_missing, error: null as string | null }))
+      .catch((e: unknown) => ({ key: null, le: null, leMissing: null, error: errorText(e) })),
   );
   let closed = false;
   onCleanup(() => (closed = true));
@@ -110,10 +110,12 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
                   </Show>
                 </dl>
                 <Show when={p().key}>
-                  <p class="hint">{t("ui.pairing.secret")}</p>
-                  <Show when={!p().le}>
-                    <p class="hint">{t("ui.pairing.le_keys_hint")}</p>
-                  </Show>
+                  <p class="hint pairing-notes">
+                    <span>{t("ui.pairing.secret")}</span>
+                    <Show when={!p().le && p().leMissing}>
+                      {(why) => <span>{t(`ui.pairing.le_missing.${why()}`)}</span>}
+                    </Show>
+                  </p>
                 </Show>
               </Show>
             )}

@@ -242,8 +242,39 @@ fn patched_sm(btstack: &Path) -> PathBuf {
         "/* BlueCaster: patched by btstack-sys build.rs (patched_sm) */\n\
          #define ENABLE_CROSS_TRANSPORT_KEY_DERIVATION\n\
          int bluecaster_ctkd_enabled(void);\n\
-         int bluecaster_ctkd_wanted(const unsigned char *addr);\n",
+         int bluecaster_ctkd_wanted(const unsigned char *addr);\n\
+         void bluecaster_ctkd_note(const unsigned char *addr, int what);\n",
     );
+    // Why a link is not asked over, so the Services dialog can say (issue
+    // #86): 1 not Secure Connections, 2 the device opened it, 3 no CID 7
+    replace_once(
+        &mut source,
+        FILE,
+        "if (sm_conn->sm_connection_encrypted != 2) return;",
+        "if (sm_conn->sm_connection_encrypted != 2) { bluecaster_ctkd_note(sm_conn->sm_peer_address, 1); return; }",
+    );
+    replace_once(
+        &mut source,
+        FILE,
+        "log_info(\"CTKD: SM_BR_EDR_RESPONDER_W4_PAIRING_REQUEST\");",
+        "log_info(\"CTKD: SM_BR_EDR_RESPONDER_W4_PAIRING_REQUEST\"); bluecaster_ctkd_note(sm_conn->sm_peer_address, 2);",
+    );
+    replace_once(
+        &mut source,
+        FILE,
+        "defer = false;",
+        "defer = false; bluecaster_ctkd_note(sm_conn->sm_peer_address, 3);",
+    );
+    replace_once(
+        &mut source,
+        FILE,
+        "hci_dedicated_bonding_defer_disconnect(con_handle, false);",
+        "hci_dedicated_bonding_defer_disconnect(con_handle, false); bluecaster_ctkd_note(sm_conn->sm_peer_address, 3);",
+    );
+    // BTstack 1.8.1 never marks an ask over BR/EDR as a pairing, so its end
+    // (refused, timed out, done) sent no SM_EVENT_PAIRING_COMPLETE
+    let ask = "connection->sm_engine_state = SM_BR_EDR_INITIATOR_W4_PAIRING_RESPONSE;";
+    replace_once(&mut source, FILE, ask, &format!("{ask}\n                sm_pairing_started(connection);"));
     // Only while enabled; off, the state stays SM_BR_EDR_W4_ENCRYPTION_COMPLETE,
     // where a Pairing Request from the device is refused
     let handler =

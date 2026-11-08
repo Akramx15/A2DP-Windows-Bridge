@@ -15,7 +15,9 @@ use std::sync::{Arc, Mutex};
 
 use bt_host::ServicesError;
 use bt_host::link_keys::FileLinkKeyStore;
-use ipc::{DevicePairing, DeviceService, ErrorInfo, LeKeysInfo, LinkKeyInfo, Msg, ServiceList, WindowsImport};
+use ipc::{
+    DevicePairing, DeviceService, ErrorInfo, LeKeysInfo, LeKeysMissing, LinkKeyInfo, Msg, ServiceList, WindowsImport,
+};
 use serde_json::Value;
 
 use crate::state::CoreState;
@@ -60,8 +62,27 @@ pub fn pairing(state: &CoreState, addr: &str) -> Result<Value, ErrorInfo> {
         .find(|e| e.addr == addr)
         .map(|e| LinkKeyInfo { key: hex(&e.key), key_type: e.key_type.clamp(0, 255) as u8 });
     // Held by the running stack (its bond file is open there)
-    let le_keys = state.service.host().and_then(|h| h.le_keys(addr)).map(le_keys_info);
-    Ok(serde_json::to_value(DevicePairing { link_key, le_keys }).unwrap_or(Value::Null))
+    let (le_keys, le_keys_missing) = match state.service.host().and_then(|h| h.le_keys(addr)) {
+        Some(Ok(k)) => (Some(le_keys_info(k)), None),
+        Some(Err(why)) => (None, Some(missing(why))),
+        None => (None, Some(LeKeysMissing::NoStack)),
+    };
+    Ok(serde_json::to_value(DevicePairing { link_key, le_keys, le_keys_missing }).unwrap_or(Value::Null))
+}
+
+fn missing(why: bt_host::CtkdOutcome) -> LeKeysMissing {
+    use bt_host::CtkdOutcome as O;
+    match why {
+        O::NoLe => LeKeysMissing::NoLe,
+        O::NotAsked => LeKeysMissing::NotAsked,
+        O::Asking => LeKeysMissing::Asking,
+        O::NotSecure => LeKeysMissing::NotSecure,
+        O::DeviceLed => LeKeysMissing::DeviceLed,
+        O::NoSupport => LeKeysMissing::NoSupport,
+        O::Refused => LeKeysMissing::Refused,
+        O::NoAnswer => LeKeysMissing::NoAnswer,
+        O::NoneGiven => LeKeysMissing::NoneGiven,
+    }
 }
 
 /// BTstack keeps the LTK and IRK most significant octet first: shown least
