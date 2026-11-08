@@ -473,6 +473,8 @@
   "ui.dev.keys_le": "LE 키: 일치 %d, 불일치 %d, BlueCaster에만 %d, Windows에만 %d",
   "ui.dev.keys_le_busy": "LE 키: BlueCaster의 Bluetooth가 실행 중일 때는 읽을 수 없습니다",
   "ui.dev.keys_no_windows": "Windows에 이 어댑터의 키가 없습니다.",
+  "ui.dev.keys_le_values": "Windows의 LE 값: %s",
+  "ui.dev.keys_radio_values": "Windows의 어댑터 값: %s",
   "ui.dev.off": "끔",
   "ui.dev.auracast_intro": "근처의 이어폰과 스피커가 참여할 수 있는 오디오를 방송합니다.",
   "ui.dev.auracast_name": "이름",

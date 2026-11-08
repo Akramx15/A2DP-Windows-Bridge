@@ -2208,8 +2208,22 @@ pub struct KeyCounts {
     pub only_windows: u32,
 }
 
-/// dev.compare_windows_keys' result: counts, no address or key
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// A value Windows keeps under its keys: its name, type and size, never its
+/// data
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct WindowsValueName {
+    pub name: String,
+    /// "binary", "DWORD", "QWORD", "string" or "type N"
+    pub kind: String,
+    /// Bytes of data
+    pub size: u32,
+    /// How many keys have it (LE devices)
+    pub count: u32,
+}
+
+/// dev.compare_windows_keys' result: counts and value names, no address or
+/// key
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct KeysComparison {
     /// Windows keeps keys for the adapter
     pub adapter_found: bool,
@@ -2218,6 +2232,10 @@ pub struct KeysComparison {
     /// LE keys; None: BlueCaster's could not be read (Bluetooth is running)
     #[ts(optional = nullable)]
     pub le: Option<KeyCounts>,
+    /// The values of the adapter's key in Windows (its own, not the devices')
+    pub radio_values: Vec<WindowsValueName>,
+    /// The values of Windows' LE device keys, counted over the devices
+    pub le_values: Vec<WindowsValueName>,
 }
 
 /// device.import_windows_pairings' result

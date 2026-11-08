@@ -1186,6 +1186,11 @@ export class MockCore implements Transport {
           adapter_found: true,
           classic: { same: 1, differ: 0, only_bluecaster: 0, only_windows: 0 },
           le: { same: 0, differ: 1, only_bluecaster: 0, only_windows: 0 },
+          radio_values: [{ name: "CentralIRK", kind: "binary", size: 16, count: 1 }],
+          le_values: [
+            { name: "LTK", kind: "binary", size: 16, count: 1 },
+            { name: "ERand", kind: "QWORD", size: 8, count: 1 },
+          ],
         };
       case "device.scan_stop":
         this.scanStop?.();

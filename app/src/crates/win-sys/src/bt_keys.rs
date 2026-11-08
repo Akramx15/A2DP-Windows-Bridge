@@ -33,7 +33,7 @@ use windows::Win32::Security::{
 };
 use windows::Win32::System::Registry::{
     HKEY, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, REG_BINARY, REG_DWORD, REG_OPTION_BACKUP_RESTORE, REG_QWORD,
-    REG_VALUE_TYPE, RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
+    REG_SZ, REG_VALUE_TYPE, RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows::core::{HSTRING, PCWSTR};
@@ -70,11 +70,79 @@ pub struct WindowsLeKey {
     pub auth_req: Option<u32>,
 }
 
+/// A value name Windows keeps, with its type and size: what is there, never
+/// what it holds (developer mode's key comparison, issue #86)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueName {
+    pub name: String,
+    /// "binary", "DWORD", "QWORD", "string" or "type N"
+    pub kind: String,
+    /// Bytes of data
+    pub size: u32,
+    /// How many keys have it (LE devices; 1 for the radio's own)
+    pub count: u32,
+}
+
 /// What Windows keeps for one radio
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WindowsKeys {
     pub link_keys: Vec<WindowsLinkKey>,
     pub le_keys: Vec<WindowsLeKey>,
+    /// The radio's own values (not the devices' link keys)
+    pub radio_values: Vec<ValueName>,
+    /// The values of the LE devices' keys, counted over the devices
+    pub le_values: Vec<ValueName>,
+}
+
+fn type_name(ty: REG_VALUE_TYPE) -> String {
+    match ty {
+        REG_BINARY => "binary".into(),
+        REG_DWORD => "DWORD".into(),
+        REG_QWORD => "QWORD".into(),
+        REG_SZ => "string".into(),
+        other => format!("type {}", other.0),
+    }
+}
+
+/// Adds one value to `list`, counting the same name, type and size once
+fn add_value(list: &mut Vec<ValueName>, name: &str, ty: REG_VALUE_TYPE, size: u32) {
+    let kind = type_name(ty);
+    match list.iter_mut().find(|v| v.name == name && v.kind == kind && v.size == size) {
+        Some(v) => v.count += 1,
+        None => list.push(ValueName { name: name.to_string(), kind, size, count: 1 }),
+    }
+}
+
+/// The names, types and sizes of an open key's values (not their data);
+/// `skip` leaves names out
+fn value_names(key: &RegKey, list: &mut Vec<ValueName>, skip: impl Fn(&str) -> bool) {
+    for index in 0.. {
+        let mut name = [0u16; 256];
+        let mut name_len = name.len() as u32;
+        let mut ty = 0u32;
+        let mut size = 0u32;
+        // SAFETY: open key; the name buffer is as long as name_len says; no
+        // data buffer, so only its size is given back.
+        let err = unsafe {
+            RegEnumValueW(
+                key.0,
+                index,
+                Some(windows::core::PWSTR(name.as_mut_ptr())),
+                &mut name_len,
+                None,
+                Some(&mut ty),
+                None,
+                Some(&mut size),
+            )
+        };
+        if err != windows::Win32::Foundation::ERROR_SUCCESS {
+            break;
+        }
+        let name = String::from_utf16_lossy(&name[..name_len as usize]);
+        if !skip(&name) {
+            add_value(list, &name, REG_VALUE_TYPE(ty), size);
+        }
+    }
 }
 
 /// The classic link keys and LE keys Windows keeps for the radio `radio`
@@ -134,13 +202,18 @@ pub fn read_keys(radio: &[u8; 6]) -> windows::core::Result<Option<WindowsKeys>> 
             out.push(k);
         }
     }
-    let le_keys = le_keys(&key);
+    let mut radio_values = Vec::new();
+    // A device's link key is named by its address: not the radio's own
+    value_names(&key, &mut radio_values, |name| address_from_name(name).is_some());
+    let mut le_values = Vec::new();
+    let le_keys = le_keys(&key, &mut le_values);
     tracing::info!("bt_keys: {} link key(s), {} LE device(s) for this radio", out.len(), le_keys.len());
-    Ok(Some(WindowsKeys { link_keys: out, le_keys }))
+    Ok(Some(WindowsKeys { link_keys: out, le_keys, radio_values, le_values }))
 }
 
-/// The LE devices: the subkeys of the radio's key named by an address
-fn le_keys(radio: &RegKey) -> Vec<WindowsLeKey> {
+/// The LE devices: the subkeys of the radio's key named by an address;
+/// their value names go to `values`
+fn le_keys(radio: &RegKey, values: &mut Vec<ValueName>) -> Vec<WindowsLeKey> {
     let mut out = Vec::new();
     for index in 0.. {
         let mut name = [0u16; 256];
@@ -175,10 +248,11 @@ fn le_keys(radio: &RegKey) -> Vec<WindowsLeKey> {
             )
         };
         if check(err).is_err() {
-            tracing::debug!("bt_keys: LE device {name} not readable");
+            tracing::debug!("bt_keys: an LE device's key is not readable");
             continue;
         }
         let device = RegKey(device);
+        value_names(&device, values, |_| false);
         if let Some(k) = le_key(address, |value| query(&device, value)) {
             out.push(k);
         }
@@ -526,6 +600,22 @@ mod tests {
         // Not a link key: left as it is
         assert_eq!(write_action(Some((REG_BINARY, &old[..8])), &ours), WriteAction::NotPaired);
         assert_eq!(write_action(Some((REG_DWORD, &old[..4])), &ours), WriteAction::NotPaired);
+    }
+
+    #[test]
+    fn value_names_are_counted_by_name_type_and_size() {
+        let mut list = Vec::new();
+        add_value(&mut list, "LTK", REG_BINARY, 16);
+        add_value(&mut list, "LTK", REG_BINARY, 16);
+        add_value(&mut list, "ERand", REG_QWORD, 8);
+        add_value(&mut list, "ERand", REG_BINARY, 8);
+        assert_eq!(list.len(), 3);
+        assert_eq!(
+            (list[0].name.as_str(), list[0].kind.as_str(), list[0].size, list[0].count),
+            ("LTK", "binary", 16, 2)
+        );
+        assert_eq!(list[2].kind, "binary");
+        assert_eq!(type_name(REG_VALUE_TYPE(7)), "type 7");
     }
 
     #[test]
