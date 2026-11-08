@@ -35,6 +35,7 @@ import type {
   DevLog,
   KeyCounts,
   KeysComparison,
+  WindowsValueName,
   DevOverrides,
   LogLevel,
   VendorInfo,
@@ -518,6 +519,13 @@ function KeysCompare() {
   };
   const counts = (key: string, c: KeyCounts) =>
     t(key, c.same, c.differ, c.only_bluecaster, c.only_windows);
+  const names = (list: WindowsValueName[]) =>
+    list
+      .map(
+        (v) =>
+          `${v.name} (${v.kind}, ${v.size} B${v.count > 1 ? `, ×${v.count}` : ""})`,
+      )
+      .join(", ");
   return (
     <>
       <Show when={adapters().length > 1}>
@@ -561,6 +569,16 @@ function KeysCompare() {
                 ? counts("ui.dev.keys_le", r().le!)
                 : t("ui.dev.keys_le_busy")}
             </p>
+            <Show when={r().le_values.length > 0}>
+              <p class="muted mono">
+                {t("ui.dev.keys_le_values", names(r().le_values))}
+              </p>
+            </Show>
+            <Show when={r().radio_values.length > 0}>
+              <p class="muted mono">
+                {t("ui.dev.keys_radio_values", names(r().radio_values))}
+              </p>
+            </Show>
           </Show>
         )}
       </Show>

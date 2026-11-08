@@ -312,6 +312,13 @@ fn windows_keys(radio: &[u8; 6]) -> (u8, Value) {
                     })
                 })
                 .collect();
+            // Names, types and sizes only: what Windows keeps, not the data
+            let names = |values: &[win_sys::bt_keys::ValueName]| -> Vec<Value> {
+                values
+                    .iter()
+                    .map(|v| json!({ "name": v.name, "kind": v.kind, "size": v.size, "count": v.count }))
+                    .collect()
+            };
             (
                 exit::OK,
                 json!({
@@ -320,6 +327,8 @@ fn windows_keys(radio: &[u8; 6]) -> (u8, Value) {
                     "radio_found": keys.is_some(),
                     "keys": list,
                     "le_keys": le,
+                    "radio_values": keys.as_ref().map(|k| names(&k.radio_values)).unwrap_or_default(),
+                    "le_values": keys.as_ref().map(|k| names(&k.le_values)).unwrap_or_default(),
                 }),
             )
         }

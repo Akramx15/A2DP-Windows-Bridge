@@ -119,6 +119,15 @@ describe("developer screen", () => {
     );
     await screen.findByText(t("ui.dev.keys_link", 1, 0, 0, 0));
     expect(screen.getByText(t("ui.dev.keys_le", 0, 1, 0, 0))).toBeInTheDocument();
+    // What Windows keeps: names, types and sizes, never the data
+    expect(
+      screen.getByText(
+        t("ui.dev.keys_le_values", "LTK (binary, 16 B), ERand (QWORD, 8 B)"),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(t("ui.dev.keys_radio_values", "CentralIRK (binary, 16 B)")),
+    ).toBeInTheDocument();
     expect(calls.find((c) => c.method === "dev.compare_windows_keys")).toBeTruthy();
 
     // "Reset all" on the app tab clears them too
