@@ -25,7 +25,7 @@ battery: number | null,
  */
 battery_refused: boolean, 
 /**
- * The voice link (headset microphone, developer mode): Some only while
+ * The voice link (headset microphone): Some only while
  * it carries audio, cleared on Idle / Error / Reconnecting like the
  * battery
  */

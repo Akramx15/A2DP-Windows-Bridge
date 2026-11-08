@@ -356,8 +356,8 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
   );
 }
 
-/** The headset microphone's mute at one click (developer mode, Home's card
- *  and the flyout): the mode chosen on Codecs (Auto / On) or Muted, which
+/** The headset microphone's mute at one click (Home's card and the
+ *  flyout): the mode chosen on Codecs (Auto / On) or Muted, which
  *  closes the microphone link as Off does and keeps the mode. Only for a
  *  device with headset mode on and its microphone output chosen. Auto
  *  with no microphone link open waits; the link's codec shows beside the
@@ -367,7 +367,7 @@ export function HeadsetChip(props: { entry: AudioEntry }) {
   const snap = () => app.core.state.snap!;
   const profile = () => props.entry.profile;
   const mode = (): HeadsetMode => (profile() ? headsetMode(profile()!) : "off");
-  const shown = () => snap().settings.developer_mode && !!profile()?.mic_device_id && mode() !== "off";
+  const shown = () => !!profile()?.mic_device_id && mode() !== "off";
   const muted = () => !!profile()?.mic_muted;
   const linked = () => {
     const s = snap().stream;

@@ -51,7 +51,7 @@ export function deviceDefaults(profiles: readonly Profile[], address: string): D
   return p ? deviceFields(p) : null;
 }
 
-/** Headset mode (developer mode, Profile.headset_mic): Auto opens the
+/** Headset mode (Profile.headset_mic): Auto opens the
  *  microphone link only while an app records from the cable; the core
  *  switches it */
 export type HeadsetMode = "off" | "auto" | "on";

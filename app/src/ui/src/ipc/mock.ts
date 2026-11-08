@@ -62,7 +62,7 @@ export type MockScenario =
   | "capped"
   /** Huawei earbuds that list LDAC only once it is asked for (issue #30) */
   | "huawei"
-  /** Developer mode, headset microphone on for the WH-1000XM5 (to CABLE
+  /** Headset microphone on for the WH-1000XM5 (to CABLE
    *  Input) and for the LE Audio earbuds: a stream reports its voice link */
   | "voice";
 
@@ -355,7 +355,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
     profiles,
     active_profile: fresh ? null : long ? LONG_NAME : "WH-1000XM5 (LDAC)",
     settings: sampleSettings(
-      voice ? { le_audio_experimental: true, developer_mode: true } : le ? { le_audio_experimental: true } : long ? { language: "ja" } : {},
+      voice ? { le_audio_experimental: true } : le ? { le_audio_experimental: true } : long ? { language: "ja" } : {},
     ),
     update: {
       checking: false,
@@ -1504,14 +1504,14 @@ export class MockCore implements Transport {
     this.later(500, () => this.sbcAbrStep(step + 1));
   }
 
-  /** The voice link a stream of the profile reports: headset mode on in
-   *  developer mode with an output chosen (mSBC for a classic device, LC3
+  /** The voice link a stream of the profile reports: headset mode on
+   *  with an output chosen (mSBC for a classic device, LC3
    *  at 32 kHz for LE Audio), as W3/W4 report it */
   private voiceOf(name: string | null): VoiceStatus | null {
     const p = this.snap.profiles.find((x) => x.name === name);
     // Auto: no application records from the cable in the mock, so its
     // link waits; muted: no link
-    if (!p || p.headset_mic !== "on" || p.mic_muted || !p.mic_device_id || !this.snap.settings.developer_mode) return null;
+    if (!p || p.headset_mic !== "on" || p.mic_muted || !p.mic_device_id) return null;
     return p.le_audio
       ? { codec: "lc3", link: "le", rate: 32000, mic_device_id: p.mic_device_id }
       : { codec: "msbc", link: "hfp", rate: 16000, mic_device_id: p.mic_device_id };

@@ -470,7 +470,7 @@ pub struct StreamStatus {
     /// the battery shows as unknown
     #[serde(default)]
     pub battery_refused: bool,
-    /// The voice link (headset microphone, developer mode): Some only while
+    /// The voice link (headset microphone): Some only while
     /// it carries audio, cleared on Idle / Error / Reconnecting like the
     /// battery
     #[serde(default)]
@@ -542,7 +542,7 @@ pub struct Profile {
     /// default; other headsets get the media configuration either way)
     #[serde(default = "yes")]
     pub le_low_latency: bool,
-    /// Headset mode (developer mode only): the headphones' microphone is
+    /// Headset mode: the headphones' microphone is
     /// rendered to mic_device_id. "off" (the default) | "on" | "auto";
     /// anything else reads as off. "on": classic devices switch playback to
     /// the voice link (mono call quality) for as long as they stream;

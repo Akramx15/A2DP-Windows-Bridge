@@ -1256,10 +1256,10 @@ fn source_changes_in_place(stream: &StreamStatus, before: Option<&CoreProfile>, 
     stream.state == StreamState::Streaming && !saved.le_audio && before.is_some_and(|b| b.only_source_differs(saved))
 }
 
-/// The headset mode in force for a profile: developer mode, the profile's
-/// mode and an output chosen; Off otherwise
-fn headset_mic_in_force(settings: &CoreSettings, p: &CoreProfile) -> HeadsetMic {
-    if p.mic_device_id.is_empty() { HeadsetMic::Off } else { settings.headset_mic_in_force(p.headset_mic_mode()) }
+/// The headset mode in force for a profile: its mode with an output
+/// chosen; Off otherwise (or while muted)
+fn headset_mic_in_force(p: &CoreProfile) -> HeadsetMic {
+    if p.mic_device_id.is_empty() { HeadsetMic::Off } else { p.headset_mic_mode() }
 }
 
 /// Headset mode in force into a profile's request, for classic and LE Audio
@@ -1277,8 +1277,8 @@ fn set_headset_mic(req: &mut StreamRequest, mode: HeadsetMic, mic_device_id: &st
 /// of the profile in use does to its stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HeadsetChange {
-    /// Nothing the stream uses: outside developer mode, or the microphone
-    /// output changed while headset mode is off
+    /// Nothing the stream uses: the microphone output changed while
+    /// headset mode is off
     Unused,
     /// A classic stream switches its voice link on or off itself
     InPlace,
@@ -1289,14 +1289,9 @@ enum HeadsetChange {
 
 /// The save changed only `headset_mic` / `mic_device_*` (None: something else
 /// changed as well, or nothing)
-fn headset_change(
-    stream: &StreamStatus,
-    before: Option<&CoreProfile>,
-    saved: &CoreProfile,
-    developer_mode: bool,
-) -> Option<HeadsetChange> {
+fn headset_change(stream: &StreamStatus, before: Option<&CoreProfile>, saved: &CoreProfile) -> Option<HeadsetChange> {
     let before = before.filter(|b| b.only_headset_mic_differs(saved))?;
-    Some(if !developer_mode || (!before.headset_mic_mode().is_on() && !saved.headset_mic_mode().is_on()) {
+    Some(if !before.headset_mic_mode().is_on() && !saved.headset_mic_mode().is_on() {
         HeadsetChange::Unused
     } else if stream.state == StreamState::Streaming && !saved.le_audio {
         HeadsetChange::InPlace
@@ -1992,8 +1987,8 @@ impl CoreState {
         if auto.is_some() && settings.debug_mode {
             req.codec_values = p.all_codec_values();
         }
-        // Headset mode (developer mode): on only with an output chosen
-        let headset_mic = headset_mic_in_force(&settings, p);
+        // Headset mode: on only with an output chosen
+        let headset_mic = headset_mic_in_force(p);
         if headset_mic.is_on() {
             tracing::debug!(
                 "profile {}: headset microphone ({}) to {}",
@@ -2605,7 +2600,7 @@ impl CoreState {
                 // The profile in use starts again with what was saved (v1),
                 // but for another source, which needs nothing of the link
                 let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
-                let headset = headset_change(&s.stream, before.as_ref(), &in_order, self.service.settings().debug_mode);
+                let headset = headset_change(&s.stream, before.as_ref(), &in_order);
                 let headset_kept = match headset {
                     Some(HeadsetChange::Unused) => true,
                     Some(HeadsetChange::InPlace) => {
@@ -2617,7 +2612,7 @@ impl CoreState {
                         // The session refuses an output that would feed the
                         // capture; false (no stream, or a stack without
                         // voice): it starts again instead
-                        let mode = headset_mic_in_force(&self.service.settings(), &in_order);
+                        let mode = headset_mic_in_force(&in_order);
                         self.service.set_headset_mic(mode, mode.is_on().then(|| in_order.mic_device_id.clone()))
                     }
                     Some(HeadsetChange::Restart) | None => false,
@@ -3464,34 +3459,28 @@ mod tests {
         };
         let stream = |state| StreamStatus { state, profile: Some("WH".into()), ..StreamStatus::default() };
         let streaming = stream(StreamState::Streaming);
-        assert_eq!(headset_change(&streaming, Some(&before), &on, true), Some(HeadsetChange::InPlace));
-        assert_eq!(headset_change(&streaming, Some(&on), &before, true), Some(HeadsetChange::InPlace));
+        assert_eq!(headset_change(&streaming, Some(&before), &on), Some(HeadsetChange::InPlace));
+        assert_eq!(headset_change(&streaming, Some(&on), &before), Some(HeadsetChange::InPlace));
         // Another output while on: the classic stream takes it in place too
         let other = CoreProfile { mic_device_id: "{cable 2}".into(), ..on.clone() };
-        assert_eq!(headset_change(&streaming, Some(&on), &other, true), Some(HeadsetChange::InPlace));
-        // Nothing the stream uses: outside developer mode, or an output
-        // chosen while headset mode is off
-        assert_eq!(headset_change(&streaming, Some(&before), &on, false), Some(HeadsetChange::Unused));
+        assert_eq!(headset_change(&streaming, Some(&on), &other), Some(HeadsetChange::InPlace));
+        // Nothing the stream uses: an output chosen while headset mode is off
         let output_only = CoreProfile { headset_mic: "off".into(), ..on.clone() };
-        assert_eq!(headset_change(&streaming, Some(&before), &output_only, true), Some(HeadsetChange::Unused));
+        assert_eq!(headset_change(&streaming, Some(&before), &output_only), Some(HeadsetChange::Unused));
         // Auto: on to auto and auto to off switch in place as well
         let auto = CoreProfile { headset_mic: "auto".into(), ..on.clone() };
-        assert_eq!(headset_change(&streaming, Some(&on), &auto, true), Some(HeadsetChange::InPlace));
-        assert_eq!(headset_change(&streaming, Some(&auto), &output_only, true), Some(HeadsetChange::InPlace));
-        assert_eq!(headset_change(&streaming, Some(&before), &auto, false), Some(HeadsetChange::Unused));
+        assert_eq!(headset_change(&streaming, Some(&on), &auto), Some(HeadsetChange::InPlace));
+        assert_eq!(headset_change(&streaming, Some(&auto), &output_only), Some(HeadsetChange::InPlace));
         // LE Audio sets its streams up again, as does a classic one connecting
         let le = CoreProfile { le_audio: true, ..before.clone() };
         let le_on = CoreProfile { le_audio: true, ..on.clone() };
-        assert_eq!(headset_change(&streaming, Some(&le), &le_on, true), Some(HeadsetChange::Restart));
-        assert_eq!(
-            headset_change(&stream(StreamState::Connecting), Some(&before), &on, true),
-            Some(HeadsetChange::Restart)
-        );
+        assert_eq!(headset_change(&streaming, Some(&le), &le_on), Some(HeadsetChange::Restart));
+        assert_eq!(headset_change(&stream(StreamState::Connecting), Some(&before), &on), Some(HeadsetChange::Restart));
         // Saved with something else, or nothing changed
         let codec = CoreProfile { codec: "aac".into(), ..on.clone() };
-        assert_eq!(headset_change(&streaming, Some(&before), &codec, true), None);
-        assert_eq!(headset_change(&streaming, Some(&before), &before, true), None);
-        assert_eq!(headset_change(&streaming, None, &on, true), None);
+        assert_eq!(headset_change(&streaming, Some(&before), &codec), None);
+        assert_eq!(headset_change(&streaming, Some(&before), &before), None);
+        assert_eq!(headset_change(&streaming, None, &on), None);
     }
 
     #[test]
@@ -3521,14 +3510,13 @@ mod tests {
         set_headset_mic(&mut classic, HeadsetMic::Auto, "{cable}");
         assert!(classic.le.is_none() && classic.headset_mic == HeadsetMic::Auto);
         assert_eq!(classic.mic_output.as_deref(), Some("{cable}"));
-        // In force: developer mode and an output chosen
-        let mut settings = CoreSettings::default();
+        // In force: an output chosen and not muted
         let auto = CoreProfile { headset_mic: "auto".into(), mic_device_id: "{cable}".into(), ..le_profile };
-        assert_eq!(headset_mic_in_force(&settings, &auto), HeadsetMic::Off);
-        settings.debug_mode = true;
-        assert_eq!(headset_mic_in_force(&settings, &auto), HeadsetMic::Auto);
+        assert_eq!(headset_mic_in_force(&auto), HeadsetMic::Auto);
+        let muted = CoreProfile { mic_muted: true, ..auto.clone() };
+        assert_eq!(headset_mic_in_force(&muted), HeadsetMic::Off);
         let no_output = CoreProfile { mic_device_id: String::new(), ..auto };
-        assert_eq!(headset_mic_in_force(&settings, &no_output), HeadsetMic::Off);
+        assert_eq!(headset_mic_in_force(&no_output), HeadsetMic::Off);
     }
 
     #[test]
