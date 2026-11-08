@@ -781,6 +781,15 @@ describe("codec cards", () => {
       .closest(".tag")!;
     expect(tag).not.toHaveClass("st-good");
     expect(tag).not.toHaveClass("st-bad");
+    // SBC, which every device has, without it: unsupported codecs hidden or not
+    const sbcTag = () =>
+      within(xb.querySelector<HTMLElement>('[data-codec="sbc"]')!).queryByText(
+        t("ui.profile.codec_support_unknown"),
+      );
+    expect(sbcTag()).toBeNull();
+    fireEvent.click(hideSwitch());
+    await within(xb).findByRole("radio", { name: /aptX HD/ });
+    expect(sbcTag()).toBeNull();
   });
 
   it("are put in the device's own order with Alt+arrow keys, kept in its profile (issue #86 round 8)", async () => {

@@ -723,10 +723,11 @@ function DeviceCodecs(props: {
                 selected={picked() === c.id}
                 disabled={locked()}
                 readOnly={props.auto}
-                // Only supported codecs shown: no "Supported" tag on each,
-                // nor SBC's "Unconfirmed" on a device never connected (every device has it)
+                // Only supported codecs shown: no "Supported" tag on each.
+                // Never SBC's "Unconfirmed" on a device never connected,
+                // whatever is shown (every device has it)
                 support={
-                  props.hide && (support(c.id) === "offered" || (c.id === "sbc" && known().length === 0))
+                  (props.hide && support(c.id) === "offered") || (c.id === "sbc" && known().length === 0)
                     ? null
                     : support(c.id)
                 }
