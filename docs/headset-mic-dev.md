@@ -41,7 +41,7 @@ Per device, in `Profile` (`app/src/crates/ipc/src/protocol.rs`), all with
 | `headset_mic` | `String` | Headset mode for this device: `"off"` (default), `"on"`, `"auto"` (see "Auto mode"); anything else reads as off. |
 | `mic_device_id` | `String` | Render endpoint id that receives the microphone. Empty = none chosen (headset mode stays off and the UI says so). |
 | `mic_device_name` | `String` | Friendly name, for display when the device is missing. |
-| `mic_muted` | `bool` | Muted from the chip: no voice link, as with `"off"`; `headset_mic` is kept for unmuting (`Profile::headset_mic_mode` reads Off). Choosing a mode on Codecs unmutes. |
+| `mic_muted` | `bool` | Muted from the chip: no voice link, as with `"off"`; `headset_mic` is kept for unmuting (`Profile::headset_mic_mode` reads Off). Choosing a mode under Input Source (Audio Devices) unmutes. |
 
 In `StreamStatus`: `voice: Option<VoiceStatus>` (`#[serde(default)]
 #[ts(optional = nullable)]`), where
@@ -771,8 +771,9 @@ LE Audio headsets:
 
 UI:
 
-20. The Codecs screen's switch and output picker with real devices; the
-    "Voice: ..." line on Home, sidebar, flyout and tray for both kinds.
+20. Audio Devices' Input Source (switch and picker) with real devices; the
+    "Voice: ..." line in the sidebar and tray, and the chip's tooltip on
+    Home and in the flyout, for both kinds.
 
 ## Open questions / risks
 
@@ -789,20 +790,30 @@ UI:
 
 ## UI: Off / Auto / On and the mute chip
 
-- Codecs (`screens/Codecs.tsx`, `HeadsetMic`): a `Segmented` Off / Auto /
-  On saves `headset_mic` (and `mic_muted: false`); the output picker and
-  the warnings show for Auto and On, Auto adds `ui.headset_mic_auto_hint`.
+- Audio Devices, each device's Input Source (`components/InputSource.tsx`,
+  issue #86 round 35; it was on Codecs): a `Segmented` Off / Auto / On on
+  the right of its label saves `headset_mic` (and `mic_muted: false`); the
+  picker below is always there (disabled for Off) so switching moves
+  nothing. It names each render endpoint by its paired capture endpoint
+  (`AudioDevice.capture_name`, `audio_policy::paired_capture_names`: "CABLE
+  Output"), lists only virtual ones with a capture side and not the 16-ch
+  cable outside developer mode, and disables the output source's own
+  device (the loop). A classic device without a profile shows Auto with
+  VB-CABLE, what the core's `default_mic_output` gives a new profile.
 - Home's device card and the flyout's state line (`HeadsetChip` in
   `screens/Home.tsx`): a mute toggle, for a profile with `mic_device_id`
-  and Auto / On. It shows the mode chosen (accent
-  outline) or Muted (`mic_off` icon, `muted`); a click saves `mic_muted`.
-  Dashed while Auto has no voice link (`waiting`), `linked` while
-  `StreamStatus.voice` is up for that profile; the voice codec itself stays
-  in `VoiceCodec`. Muting closes the voice link (a classic device goes back
+  and Auto / On, an icon alone of one size (round 35: its text made the
+  card jump). Accent outline, or `mic_off` while muted; a click saves
+  `mic_muted`. Dashed while Auto has no voice link (`waiting`), `linked`
+  while `StreamStatus.voice` is up for that profile, its tooltip then
+  naming the voice codec (`CodecBadge voice={false}` there; the sidebar
+  keeps `VoiceCodec`). A stream message in `MIC_NOTES` (loop, refused,
+  output failed) shows as `warn` with the text as tooltip, and
+  `statusText` keeps the card's status plain. Muting closes the voice link (a classic device goes back
   to A2DP quality) through the same `headset_change` path as Off.
-- All three save through `saveHeadsetMic` (`screens/Codecs.tsx`), i.e.
+- Both save through `saveHeadsetMic` (`screens/Codecs.tsx`), i.e.
   `profile.save` of the device's profile. The mock opens no voice link for
   Auto (no app records from the cable there).
-- Keys: `ui.headset_mic_off` / `_auto` / `_on`, `ui.headset_mic_auto_hint`,
-  `ui.headset_mic_muted` (the chip's text), `ui.headset_mic_mute` /
-  `_unmute` (its name and tooltip).
+- Keys: `capture.input_source`, `ui.headset_mic_off` / `_auto` / `_on`,
+  `ui.mic_output` (the picker's name), `ui.mic_output_hint`,
+  `ui.headset_mic_mute` / `_unmute` (the chip's name and tooltip).

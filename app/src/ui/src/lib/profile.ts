@@ -94,7 +94,7 @@ export function newProfile(): Profile {
     max_media_payload: PACKET_DEFAULT,
     le_audio: false,
     le_low_latency: true,
-    headset_mic: "off",
+    headset_mic: "auto",
     mic_device_id: "",
     mic_device_name: "",
     mic_muted: false,
@@ -300,7 +300,13 @@ export function deviceKey(d: Pick<Device, "address" | "le_audio">): string {
 export function vbCable(devices: readonly AudioDevice[]): AudioDevice | null {
   const cables = devices.filter((d) => d.is_virtual && /cable/i.test(d.name));
   // The standard one before the 16-channel one
-  return cables.find((d) => !/16ch/i.test(d.name)) ?? cables[0] ?? null;
+  return cables.find((d) => !multichannelCable(d)) ?? cables[0] ?? null;
+}
+
+/** A 16-channel cable ("CABLE In 16ch"): no use as a source or a
+ *  microphone for most people (issue #86), listed in developer mode */
+export function multichannelCable(d: Pick<AudioDevice, "name">): boolean {
+  return /16\s*ch/i.test(d.name);
 }
 
 export function listedDevices(devices: readonly Device[], leAudio: boolean): Device[] {

@@ -53,6 +53,7 @@ import type { VoiceStatus as BVoiceStatus } from "./bindings/VoiceStatus";
 import type { UpdateState as BUpdateState } from "./bindings/UpdateState";
 import type { VerboseState as BVerboseState } from "./bindings/VerboseState";
 import type { WindowsImport as BWindowsImport } from "./bindings/WindowsImport";
+import type { WindowsPairedDevice as BWindowsPairedDevice } from "./bindings/WindowsPairedDevice";
 
 export type Wire<T> = T extends bigint
   ? number
@@ -121,6 +122,7 @@ export type DevicePairing = Wire<BDevicePairing>;
 export type DeviceService = Wire<BDeviceService>;
 export type ServiceList = Wire<BServiceList>;
 export type WindowsImport = Wire<BWindowsImport>;
+export type WindowsPairedDevice = Wire<BWindowsPairedDevice>;
 
 export type MethodName = Method["method"];
 
@@ -133,7 +135,7 @@ interface Results {
   "state.snapshot": Snapshot;
   "device.scan": Device[];
   "device.windows_paired": string[];
-  "device.windows_paired_through": string[];
+  "device.windows_paired_through": WindowsPairedDevice[];
   "device.pairing": DevicePairing;
   "device.services": ServiceList;
   "device.import_windows_pairings": WindowsImport;

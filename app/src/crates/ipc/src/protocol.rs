@@ -1540,23 +1540,23 @@ pub enum Method {
     /// since the core started
     #[serde(rename = "device.services")]
     DeviceServices { address: String },
-    /// -> string[]: the addresses of the classic devices Windows' Bluetooth
-    /// paired through the adapter with the Bluetooth address `adapter`
-    /// (what device.import_windows_pairings can take over; no
+    /// -> WindowsPairedDevice[]: the classic audio devices Windows'
+    /// Bluetooth paired through the adapter with the Bluetooth address
+    /// `adapter` (what device.import_windows_pairings can take over; no
     /// administrator prompt, no running radio needed)
     #[serde(rename = "device.windows_paired_through")]
     DeviceWindowsPairedThrough { adapter: String },
     /// -> WindowsImport: takes over the link keys Windows' Bluetooth keeps
     /// for the adapter with the Bluetooth address `adapter`, so the devices
     /// it paired with that adapter connect without pairing again, and saves
-    /// the audio ones (an administrator prompt); `address`: that device's
-    /// only (Connect on a device Windows paired, issue #86)
+    /// the audio ones (an administrator prompt); `addresses`: only those
+    /// devices' (the ones ticked in the setup's list, issue #86)
     #[serde(rename = "device.import_windows_pairings")]
     DeviceImportWindowsPairings {
         adapter: String,
         #[ts(optional = nullable)]
         #[serde(default)]
-        address: Option<String>,
+        addresses: Option<Vec<String>>,
     },
     /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
     /// or false: the classic one)
@@ -1769,6 +1769,11 @@ pub struct AudioDevice {
     pub mix_channels: Option<u16>,
     #[serde(default)]
     pub mix_bits: Option<u16>,
+    /// The recording side apps pick as a microphone when the headset
+    /// microphone is rendered here ("CABLE Output" for "CABLE Input");
+    /// None: it has none
+    #[serde(default)]
+    pub capture_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -2090,6 +2095,16 @@ pub struct ServiceList {
     pub services: Vec<DeviceService>,
     /// Not connected now: the list from its last connection
     pub from_last_connection: bool,
+}
+
+/// A classic audio device Windows' Bluetooth paired through an adapter
+/// (device.windows_paired_through)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+
+pub struct WindowsPairedDevice {
+    pub address: String,
+    /// Windows' name for it (empty when it has none)
+    pub name: String,
 }
 
 /// device.import_windows_pairings' result

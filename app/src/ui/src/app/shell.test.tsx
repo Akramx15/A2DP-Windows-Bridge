@@ -638,7 +638,7 @@ describe("helpers", () => {
   it("source text", () => {
     const p = sampleProfile({ app_exe: "Spotify.exe", app_name: "Spotify" });
     expect(sourceText({ kind: "tone", name: "", waiting: false }, null).text).toBe("Test tone");
-    expect(sourceText({ kind: "loopback", name: "", waiting: false }, null).text).toBe("System Loopback");
+    expect(sourceText({ kind: "loopback", name: "", waiting: false }, null).text).toBe("Default device");
     expect(sourceText({ kind: "virtual", name: "CABLE Input", waiting: false }, null).text).toBe("CABLE Input");
     expect(sourceText({ kind: "app", name: "spotify.exe", waiting: false }, p).text).toBe("Spotify");
     const waiting = sourceText({ kind: "app", name: "foo.exe", waiting: true }, p);

@@ -415,11 +415,12 @@ const LE_SCAN_RESULTS: Device[] = [
 const sameEntry = (a: Pick<Device, "address" | "le_audio">, address: string, le: boolean) =>
   a.address.toUpperCase() === address.toUpperCase() && a.le_audio === le;
 
-const CABLE: AudioDevice = { id: "{0.0.0.00000000}.{cable}", name: "CABLE Input (VB-Audio Virtual Cable)", is_default: false, is_virtual: true, mix_rate: 44100, mix_channels: 2, mix_bits: 24 };
+const CABLE: AudioDevice = { id: "{0.0.0.00000000}.{cable}", name: "CABLE Input (VB-Audio Virtual Cable)", is_default: false, is_virtual: true, mix_rate: 44100, mix_channels: 2, mix_bits: 24, capture_name: "CABLE Output (VB-Audio Virtual Cable)" };
 const AUDIO_DEVICES: AudioDevice[] = [
-  { id: "{0.0.0.00000000}.{speakers}", name: "Speakers (Realtek(R) Audio)", is_default: true, is_virtual: false, mix_rate: 48000, mix_channels: 2, mix_bits: 32 },
+  { id: "{0.0.0.00000000}.{speakers}", name: "Speakers (Realtek(R) Audio)", is_default: true, is_virtual: false, mix_rate: 48000, mix_channels: 2, mix_bits: 32, capture_name: null },
   CABLE,
-  { id: "{0.0.0.00000000}.{voicemeeter}", name: "Voicemeeter Input (VB-Audio Voicemeeter VAIO)", is_default: false, is_virtual: true, mix_rate: 48000, mix_channels: 8, mix_bits: 32 },
+  { id: "{0.0.0.00000000}.{cable16}", name: "CABLE In 16ch (VB-Audio Virtual Cable)", is_default: false, is_virtual: true, mix_rate: 48000, mix_channels: 16, mix_bits: 24, capture_name: "CABLE Output (VB-Audio Virtual Cable)" },
+  { id: "{0.0.0.00000000}.{voicemeeter}", name: "Voicemeeter Input (VB-Audio Voicemeeter VAIO)", is_default: false, is_virtual: true, mix_rate: 48000, mix_channels: 8, mix_bits: 32, capture_name: "Voicemeeter Out B1 (VB-Audio Voicemeeter VAIO)" },
 ];
 
 const MIXER_APPS: MixerApp[] = [
@@ -651,6 +652,8 @@ export class MockCore implements Transport {
   /** Addresses paired in Windows' Bluetooth (device.windows_paired) */
   windowsPaired: string[] = [];
   windowsPairedThrough: string[] | null = null;
+  /** Windows' names of those (device.windows_paired_through) */
+  windowsNames: Record<string, string> = {};
   /** LE keys of the saved devices (device.pairing), as derived with LE Audio on */
   leKeys: DevicePairing["le_keys"] = null;
   /** Why there are none (device.pairing) */
@@ -767,7 +770,10 @@ export class MockCore implements Transport {
       // One radio here: the adapter's pairings are all of Windows', unless
       // a test sets them apart
       case "device.windows_paired_through":
-        return this.windowsPairedThrough ?? this.windowsPaired;
+        return (this.windowsPairedThrough ?? this.windowsPaired).map((address) => ({
+          address,
+          name: this.windowsNames[address] ?? "",
+        }));
       case "device.pairing": {
         const saved = this.snap.devices.some((d) => d.saved && d.address === String(p.address));
         return {
@@ -792,8 +798,10 @@ export class MockCore implements Transport {
           ],
           from_last_connection: false,
         };
-      case "device.import_windows_pairings":
-        return { adapter_found: true, imported: ["00:A2:D0:00:00:02"], kept: [], added: [] };
+      case "device.import_windows_pairings": {
+        const chosen = Array.isArray(p.addresses) ? p.addresses.map(String) : ["00:A2:D0:00:00:02"];
+        return { adapter_found: true, imported: chosen, kept: [], added: [] };
+      }
       case "device.scan_stop":
         this.scanStop?.();
         return null;
@@ -1149,6 +1157,13 @@ export class MockCore implements Transport {
       f();
     }, ms * this.speed);
     this.timers.add(t);
+  }
+
+  /** A message on the running stream, as the core sends one (tests: the
+   *  headset microphone that did not open) */
+  noteStream(key: string) {
+    this.snap.stream = { ...this.snap.stream, message: { key, args: [] } };
+    this.emit({ kind: "stream", value: this.snap.stream });
   }
 
   private emit(event: Event) {
@@ -1989,6 +2004,11 @@ export function mockFromUrl(): MockCore {
   const mock = new MockCore({ scenario, window: win });
   mock.noVirtual = q.has("novirtual");
   mock.captureDrops = q.has("capturedrops");
+  // ?winpaired: headphones Windows paired through the adapter (the setup's import)
+  if (q.has("winpaired")) {
+    mock.windowsPaired = ["00:A2:D0:00:00:02", "38:18:4C:00:00:07"];
+    mock.windowsNames = { "00:A2:D0:00:00:02": "EarFun Air Pro 4", "38:18:4C:00:00:07": "WF-1000XM5" };
+  }
   if (q.has("otherradio")) {
     mock.setOtherRadio({ name: "MediaTek Bluetooth Adapter", paired: q.get("otherradio") === "paired" });
   }

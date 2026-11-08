@@ -384,7 +384,7 @@ describe("Diagnostics", () => {
     ).toHaveTextContent(/\d/);
     expect(
       screen.getByText("Output Source").closest(".lq-row"),
-    ).toHaveTextContent("System Loopback");
+    ).toHaveTextContent("Default device");
     expect(view.container.querySelector(".lq-group .hint")).toHaveTextContent(
       /^Output source format: \d+ Hz/,
     );

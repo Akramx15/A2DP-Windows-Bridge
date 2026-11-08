@@ -24,6 +24,7 @@ use ipc::{
     DiagInfo, DriverKind, ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, LoaderStatus, Method, MixerApp,
     Msg, OtherRadio, ProbeResult, Profile, ReceiverConnection, ReceiverState, ScriptCheck, ScriptResult, Settings,
     SettingsApplied, Snapshot, SourceInfo, StreamState, StreamStatus, UpdateState, WifiAccessPoint,
+    WindowsPairedDevice,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -1325,6 +1326,32 @@ fn source_changes_in_place(stream: &StreamStatus, before: Option<&CoreProfile>, 
     stream.state == StreamState::Streaming && !saved.le_audio && before.is_some_and(|b| b.only_source_differs(saved))
 }
 
+/// A new classic profile left on Auto without a microphone output gets
+/// VB-CABLE's (issue #86), unless its capture source is that cable (the
+/// microphone would loop into the stream). LE Audio takes Auto as On, so
+/// its profiles get none by themselves.
+fn default_mic_output(p: &mut CoreProfile) {
+    if p.le_audio || !p.mic_device_id.is_empty() || HeadsetMic::parse(&p.headset_mic) != HeadsetMic::Auto {
+        return;
+    }
+    let devices = audio_capture::render_devices().unwrap_or_default();
+    let Some(cable) = default_cable(&devices) else { return };
+    let default_output = devices.iter().find(|d| d.is_default).map_or("", |d| d.id.as_str());
+    if profiles::mic_output_conflicts(&p.source(), &cable.id, default_output).is_some() {
+        return;
+    }
+    tracing::info!("profile \"{}\": microphone output {} by default", p.name, cable.name);
+    p.mic_device_id = cable.id.clone();
+    p.mic_device_name = cable.name.clone();
+}
+
+/// VB-CABLE's playback side ("CABLE Input"), the 2-channel one before the
+/// 16-channel one (as the UI's vbCable)
+fn default_cable(devices: &[audio_capture::DeviceInfo]) -> Option<&audio_capture::DeviceInfo> {
+    let cables: Vec<_> = devices.iter().filter(|d| d.is_virtual && d.name.to_lowercase().contains("cable")).collect();
+    cables.iter().find(|d| !d.name.to_lowercase().contains("16ch")).or(cables.first()).copied()
+}
+
 /// The headset mode in force for a profile: its mode with an output
 /// chosen; Off otherwise (or while muted)
 fn headset_mic_in_force(p: &CoreProfile) -> HeadsetMic {
@@ -2589,14 +2616,14 @@ impl CoreState {
             Method::DeviceWindowsPaired => blocking(Box::new(|_| Ok(json(&windows_paired())))).await,
             Method::DeviceWindowsPairedThrough { adapter } => {
                 let Some(instance_id) = self.adapter_instance(&adapter) else {
-                    return Ok(json(&Vec::<String>::new()));
+                    return Ok(json(&Vec::<WindowsPairedDevice>::new()));
                 };
                 // The audio devices: only those are saved by an import
                 blocking(Box::new(move |_| {
-                    let list: Vec<String> = win_sys::bt_paired::paired_through(&instance_id)
+                    let list: Vec<WindowsPairedDevice> = win_sys::bt_paired::paired_through(&instance_id)
                         .iter()
                         .filter(|d| d.is_a2dp_sink())
-                        .map(|d| bt_host::addr_str(&d.address))
+                        .map(|d| WindowsPairedDevice { address: bt_host::addr_str(&d.address), name: d.name.clone() })
                         .collect();
                     Ok(json(&list))
                 }))
@@ -2606,8 +2633,8 @@ impl CoreState {
             Method::DeviceServices { address } => {
                 blocking(Box::new(move |me| crate::pairing::services(me, &address))).await
             }
-            Method::DeviceImportWindowsPairings { adapter, address } => {
-                blocking(Box::new(move |me| crate::pairing::import_windows(me, &adapter, address.as_deref()))).await
+            Method::DeviceImportWindowsPairings { adapter, addresses } => {
+                blocking(Box::new(move |me| crate::pairing::import_windows(me, &adapter, addresses.as_deref()))).await
             }
             Method::DeviceForget { address, le_audio } => {
                 blocking(Box::new(move |me| me.forget_device(&address, le_audio == Some(true)))).await
@@ -2647,7 +2674,10 @@ impl CoreState {
                 let mut list = profiles::load(&dir);
                 let key = original_name.as_deref().unwrap_or(&profile.name).to_string();
                 let pos = list.iter().position(|p| p.name == key);
-                let merged = merge_profile(pos.map(|i| &list[i]), &profile);
+                let mut merged = merge_profile(pos.map(|i| &list[i]), &profile);
+                if pos.is_none() {
+                    default_mic_output(&mut merged);
+                }
                 let before = pos.map(|i| list[i].clone());
                 // Only the device's codec order changed (its cards dragged):
                 // the stream goes on unless the order changes its codec
@@ -3019,6 +3049,7 @@ impl CoreState {
                                 name: d.name,
                                 is_default: d.is_default,
                                 is_virtual: d.is_virtual,
+                                capture_name: d.capture_name,
                             }
                         })
                         .collect();
@@ -3295,6 +3326,26 @@ mod tests {
             bt_version: None,
             windows_name: None,
         }
+    }
+
+    #[test]
+    fn a_new_profile_gets_the_two_channel_cable_for_its_microphone() {
+        let dev = |id: &str, name: &str, virt: bool| audio_capture::DeviceInfo {
+            id: id.into(),
+            name: name.into(),
+            is_default: false,
+            is_virtual: virt,
+            capture_name: None,
+        };
+        let list = [
+            dev("spk", "Speakers (Realtek(R) Audio)", false),
+            dev("c16", "CABLE In 16ch (VB-Audio Virtual Cable)", true),
+            dev("vm", "Voicemeeter Input (VB-Audio Voicemeeter VAIO)", true),
+            dev("cable", "CABLE Input (VB-Audio Virtual Cable)", true),
+        ];
+        assert_eq!(default_cable(&list).map(|d| d.id.as_str()), Some("cable"));
+        assert_eq!(default_cable(&list[..3]).map(|d| d.id.as_str()), Some("c16"));
+        assert!(default_cable(&list[..1]).is_none());
     }
 
     #[test]
