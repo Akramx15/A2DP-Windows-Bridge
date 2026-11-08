@@ -769,6 +769,9 @@ pub struct DevDebug {
     pub mtk_iso_pad: u16,
     /// One HCI command after init, in hex ("FD98 08 01"); empty: none
     pub mtk_command: String,
+    /// Restore original driver hands Windows BlueCaster's LE keys too, for
+    /// the devices Windows keeps LE keys of (issue #86)
+    pub le_keys_to_windows: bool,
 }
 
 /// Developer mode's logging (bluecaster_core::settings::DevLog), in force while
@@ -1619,6 +1622,11 @@ pub enum Method {
         #[serde(default)]
         addresses: Option<Vec<String>>,
     },
+    /// -> KeysComparison (developer mode): BlueCaster's pairing keys against
+    /// the ones Windows keeps for the adapter with the Bluetooth address
+    /// `adapter` (one administrator prompt; numbers only)
+    #[serde(rename = "dev.compare_windows_keys")]
+    DevCompareWindowsKeys { adapter: String },
     /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
     /// or false: the classic one)
     #[serde(rename = "device.forget")]
@@ -2185,6 +2193,31 @@ pub struct WindowsPairedDevice {
     pub address: String,
     /// Windows' name for it (empty when it has none)
     pub name: String,
+}
+
+/// How many devices' keys agree, for one kind of key
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct KeyCounts {
+    /// The same in BlueCaster and Windows
+    pub same: u32,
+    /// Both have keys of the device, but not the same
+    pub differ: u32,
+    /// Only BlueCaster has keys of the device
+    pub only_bluecaster: u32,
+    /// Only Windows has keys of the device (for this adapter)
+    pub only_windows: u32,
+}
+
+/// dev.compare_windows_keys' result: counts, no address or key
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct KeysComparison {
+    /// Windows keeps keys for the adapter
+    pub adapter_found: bool,
+    /// Link keys
+    pub classic: KeyCounts,
+    /// LE keys; None: BlueCaster's could not be read (Bluetooth is running)
+    #[ts(optional = nullable)]
+    pub le: Option<KeyCounts>,
 }
 
 /// device.import_windows_pairings' result

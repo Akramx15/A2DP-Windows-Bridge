@@ -76,7 +76,7 @@ describe("developer screen", () => {
   });
 
   it("keeps the MediaTek experiments on the Debug tab, off by default (issue #86)", async () => {
-    const { core } = await open();
+    const { core, calls } = await open();
     await core.request("settings.set", {
       settings: { ...core.state.snap!.settings, developer_mode: true },
     });
@@ -107,6 +107,19 @@ describe("developer screen", () => {
     await waitFor(() =>
       expect(core.state.snap!.settings.dev_debug.mtk_command).toBe("FC00 01"),
     );
+    fireEvent.click(
+      screen.getByRole("switch", { name: t("ui.dev.le_keys_to_windows") }),
+    );
+    await waitFor(() =>
+      expect(core.state.snap!.settings.dev_debug.le_keys_to_windows).toBe(true),
+    );
+    // The comparison shows numbers only
+    fireEvent.click(
+      screen.getByRole("button", { name: t("ui.dev.keys_compare") }),
+    );
+    await screen.findByText(t("ui.dev.keys_link", 1, 0, 0, 0));
+    expect(screen.getByText(t("ui.dev.keys_le", 0, 1, 0, 0))).toBeInTheDocument();
+    expect(calls.find((c) => c.method === "dev.compare_windows_keys")).toBeTruthy();
 
     // "Reset all" on the app tab clears them too
     fireEvent.click(
@@ -120,6 +133,7 @@ describe("developer screen", () => {
         mtk_iso_interface: false,
         mtk_iso_pad: 0,
         mtk_command: "",
+        le_keys_to_windows: false,
       }),
     );
   });

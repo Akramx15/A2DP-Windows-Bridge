@@ -215,7 +215,12 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
       always_verbose: null,
       health_every_interval: false,
     },
-    dev_debug: { mtk_iso_interface: false, mtk_iso_pad: 0, mtk_command: "" },
+    dev_debug: {
+      mtk_iso_interface: false,
+      mtk_iso_pad: 0,
+      mtk_command: "",
+      le_keys_to_windows: false,
+    },
     bt_chip_pid: 0,
     bt_chip_fw_stem: "",
     afh: "auto",
@@ -1176,6 +1181,12 @@ export class MockCore implements Transport {
           : ["00:A2:D0:00:00:02"];
         return { adapter_found: true, imported: chosen, kept: [], added: [] };
       }
+      case "dev.compare_windows_keys":
+        return {
+          adapter_found: true,
+          classic: { same: 1, differ: 0, only_bluecaster: 0, only_windows: 0 },
+          le: { same: 0, differ: 1, only_bluecaster: 0, only_windows: 0 },
+        };
       case "device.scan_stop":
         this.scanStop?.();
         return null;

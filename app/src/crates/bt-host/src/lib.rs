@@ -18,6 +18,7 @@ pub mod debug_command;
 pub mod events;
 pub mod intel;
 mod le;
+pub mod le_bond_file;
 pub mod le_import;
 pub mod link_details;
 pub mod link_keys;
