@@ -636,6 +636,7 @@ export class MockCore implements Transport {
   private mixer = MIXER_APPS;
   /** Addresses paired in Windows' Bluetooth (device.windows_paired) */
   windowsPaired: string[] = [];
+  windowsPairedThrough: string[] | null = null;
   /** LE keys of the saved devices (device.pairing), as derived with LE Audio on */
   leKeys: DevicePairing["le_keys"] = null;
   /** Why there are none (device.pairing) */
@@ -748,9 +749,11 @@ export class MockCore implements Transport {
       case "device.scan":
         return this.scan(Number(p.seconds ?? 10));
       case "device.windows_paired":
-      // One radio here: the adapter's pairings are all of Windows'
-      case "device.windows_paired_through":
         return this.windowsPaired;
+      // One radio here: the adapter's pairings are all of Windows', unless
+      // a test sets them apart
+      case "device.windows_paired_through":
+        return this.windowsPairedThrough ?? this.windowsPaired;
       case "device.pairing": {
         const saved = this.snap.devices.some((d) => d.saved && d.address === String(p.address));
         return {
@@ -1043,6 +1046,20 @@ export class MockCore implements Transport {
   setOtherRadio(radio: Snapshot["adapter"]["other_radio"]) {
     this.snap.adapter.other_radio = radio;
   }
+  /** The MediaTek adapter of the first run on WinUSB, with its loader */
+  useMediaTek() {
+    const [mtk] = sampleSnapshot("fresh").adapter.adapters;
+    this.snap.adapter.adapters = [
+      {
+        ...mtk,
+        driver: "winusb",
+        driver_service: "WinUSB",
+        display_name: "MT7925 (0x0E8D:0x7925) [experimental]",
+        vendor_note: { key: "firmware.vendor_mediatek", args: [] },
+      },
+    ];
+  }
+
   setLoader(loader: Snapshot["adapter"]["loader"]) {
     this.snap.adapter.loader = loader;
   }
@@ -1939,9 +1956,20 @@ export function mockFromUrl(): MockCore {
   if (q.has("otherradio")) {
     mock.setOtherRadio({ name: "MediaTek Bluetooth Adapter", paired: q.get("otherradio") === "paired" });
   }
+  // ?mediatek: the MediaTek adapter on WinUSB (the loader below is its own)
+  const mediatek = q.has("mediatek");
+  if (mediatek) mock.useMediaTek();
   // ?loader=running|ok|failed: an Intel firmware loader's status on Adapters
   const loader = q.get("loader");
-  if (loader) {
+  if (loader && mediatek) {
+    mock.setLoader(
+      loader === "failed"
+        ? { vendor: "MediaTek", step: "no firmware", ok: false }
+        : loader === "ok"
+          ? { vendor: "MediaTek", step: "loaded", ok: true }
+          : { vendor: "MediaTek", step: "patch", percent: 42 },
+    );
+  } else if (loader) {
     mock.setLoader(
       loader === "failed"
         ? { vendor: "Intel", step: "ibt-0040-0041.sfi and ibt-0040-0041.ddc from linux-firmware (intel/) missing", ok: false }

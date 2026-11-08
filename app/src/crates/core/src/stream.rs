@@ -1164,6 +1164,7 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &Stream
             _ => 0,
         },
         sbc,
+        sbc_unlisted: remote.sbc_unlisted,
         opus_frame_ms,
         opus_channels,
         opus_max_bitrate,
@@ -1526,6 +1527,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     // its settings go by what BlueCaster has, not by what the device lists
     // (never under Auto-select, which keeps to what streams)
     let mut unlisted = (req.unlisted_options && req.codec == Some(kind)).then_some(kind);
+    // What the device lists, to tell later whether the switch matters
+    // ([`Inner::unlisted_keeps`])
+    let mut listed_remote = remote.clone();
     if unlisted.is_some() {
         tracing::warn!("codec: {} settings beyond what the device lists (the user's choice)", kind.name());
         remote = as_asked(remote, None, unlisted);
@@ -1698,6 +1702,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
             Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
         };
+        listed_remote = remote.clone();
         kind = CodecKind::Sbc;
         unlisted = None;
         if req.codec.is_some() && replaced.is_none() {
@@ -1736,6 +1741,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         }
     };
     let kind = kind;
+    // Whether "Show only options it supports" on or off sets up this very
+    // stream: then turning it gives no reconnect (issue #86)
+    let keeps = |on: bool| {
+        let u = (on && req.codec == Some(kind)).then_some(kind);
+        as_asked(listed_remote.clone(), None, u)
+            .configuration_with(kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind))
+            .is_ok_and(|c| c == config)
+    };
+    inner.set_unlisted_keeps([keeps(false), keeps(true)]);
     let fallback_text = replaced.as_ref().map(|(wanted, why)| {
         let key = match why {
             Unavailable::SepInUse { .. } => "status.connected_fallback_in_use",
@@ -2276,6 +2290,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             if pipeline.is_some() && !changed { "reset" } else { "started anew" }
         );
         encoder_config = new_config;
+        if r.config != config {
+            // Set up from what the device lists now: the switch restarts
+            inner.set_unlisted_keeps([false; 2]);
+        }
         config = r.config;
         // Resume with the same encoder when nothing changed; otherwise, and
         // on a new stack (its media sink is new), with a new pipeline

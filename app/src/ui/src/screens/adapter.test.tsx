@@ -134,7 +134,12 @@ describe("Adapter firmware", () => {
     // "[experimental]" is a tag beside the name, not part of it
     const intelCard = screen.getByRole("region", { name: "Intel" });
     expect(intelCard).not.toHaveTextContent("[experimental]");
-    expect(within(intelCard).getByText("Experimental")).toHaveClass("st-warn");
+    // Amber (issue #86)
+    expect(within(intelCard).getByText("Experimental")).toHaveClass("st-exp");
+    // Its firmware from the folder, without the Realtek chip choice
+    const intelFw = within(intelCard).getByRole("group", { name: "Firmware: From the firmware folder" });
+    expect(within(intelFw).queryByLabelText("Bluetooth Chip")).toBeNull();
+    expect(intelFw).toHaveTextContent(t("firmware.intel_files"));
     // WinUSB in one name too (issue #86)
     expect(within(intelCard).getByRole("group", { name: "Driver: WinUSB driver" })).toBeInTheDocument();
     // What is known; why the rest is missing on hover

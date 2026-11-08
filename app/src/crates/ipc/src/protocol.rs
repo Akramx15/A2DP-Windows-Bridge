@@ -1479,9 +1479,15 @@ pub enum Method {
     /// -> WindowsImport: takes over the link keys Windows' Bluetooth keeps
     /// for the adapter with the Bluetooth address `adapter`, so the devices
     /// it paired with that adapter connect without pairing again, and saves
-    /// the audio ones (an administrator prompt)
+    /// the audio ones (an administrator prompt); `address`: that device's
+    /// only (Connect on a device Windows paired, issue #86)
     #[serde(rename = "device.import_windows_pairings")]
-    DeviceImportWindowsPairings { adapter: String },
+    DeviceImportWindowsPairings {
+        adapter: String,
+        #[ts(optional = nullable)]
+        #[serde(default)]
+        address: Option<String>,
+    },
     /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
     /// or false: the classic one)
     #[serde(rename = "device.forget")]
