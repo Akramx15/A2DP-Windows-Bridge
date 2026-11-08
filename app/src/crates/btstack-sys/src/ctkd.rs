@@ -279,8 +279,15 @@ pub(crate) fn on_sm_event(stack: &Stack, p: &[u8]) {
 }
 
 fn on_complete(stack: &Stack, classic: [u8; 6], status: u8, reason: u8) {
+    // Keys given: whatever SM says at the end (issue #86: a device gave its
+    // keys, but SM only ended the pairing at the disconnection, with 0x13)
+    if stack.le_keys_of_classic(&classic).is_some() {
+        if status != ERROR_CODE_SUCCESS {
+            tracing::debug!(target: "le", "CTKD: {} has LE keys; SM ended with status {status:#04x}", addr_str(&classic));
+        }
+        return;
+    }
     let outcome = match status {
-        ERROR_CODE_SUCCESS if stack.le_keys_of_classic(&classic).is_some() => return,
         ERROR_CODE_SUCCESS => CtkdOutcome::NoneGiven,
         ERROR_CODE_CONNECTION_TIMEOUT => CtkdOutcome::NoAnswer,
         // The link went down meanwhile: asked again at its next connection
