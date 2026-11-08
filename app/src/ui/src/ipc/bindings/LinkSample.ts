@@ -5,6 +5,7 @@ import type { IsoCounters } from "./IsoCounters";
 import type { LinkCounters } from "./LinkCounters";
 import type { LinkDetails } from "./LinkDetails";
 import type { RemoteChip } from "./RemoteChip";
+import type { VoiceRxCounters } from "./VoiceRxCounters";
 
 /**
  * Link quality, 4 times a second while subscribed
@@ -124,7 +125,12 @@ capture_lost?: number | null,
 afh_map?: Array<number> | null, 
 /**
  * A classic device plays over its call link (the headset microphone
- * is open): A2DP is suspended, so its media figures are not the
- * stream's (shown as gaps, not as 0). None: not on a call link
+ * is open): A2DP is suspended, and the media figures above are the
+ * call link's (SCO payloads sent, the uplink capture). None: not on a
+ * call link
  */
-voice?: boolean, };
+voice?: boolean, 
+/**
+ * The call link's way back (the microphone), while on it
+ */
+voice_rx?: VoiceRxCounters | null, };

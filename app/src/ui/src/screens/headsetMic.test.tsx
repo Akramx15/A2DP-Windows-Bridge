@@ -160,15 +160,17 @@ describe("status", () => {
     expect(core.state.snap?.stream.state).toBe("streaming");
   });
 
-  it("pauses the A2DP figures on Diagnostics while the call link plays, without zeros", async () => {
+  it("measures the call link on Diagnostics as it measures A2DP, with the microphone's packets", async () => {
     const { core } = start("#/diagnostics", "voice");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(core.state.snap?.stream.voice?.codec).toBe("msbc"));
-    await screen.findByText(t("ui.diag.voice_paused"));
     const row = (label: string) => screen.getByText(label, { selector: "dt" }).closest(".lq-row")!;
     await waitFor(() => expect(row(t("quality.codec"))).toHaveTextContent(t("ui.diag.voice_codec_value", "mSBC", 16)));
-    expect(row(t("quality.bitrate"))).toHaveTextContent("–");
-    expect(row(t("quality.bitrate"))).not.toHaveTextContent("0 kbps");
+    // The SCO payloads sent, not 0
+    await waitFor(() => expect(row(t("quality.bitrate"))).toHaveTextContent(t("quality.bitrate_value", 64)));
+    const mic = await screen.findByRole("heading", { name: t("ui.diag.mic_title") });
+    await waitFor(() => expect(row(t("ui.diag.mic_received"))).not.toHaveTextContent(/^\D*0$/));
+    expect(mic.closest("section")).toHaveTextContent(t("ui.diag.mic_damaged"));
   });
 
   it("shows LE Audio's voice codec without the warning", async () => {

@@ -1178,11 +1178,16 @@ pub struct LinkSample {
     #[serde(default)]
     pub afh_map: Option<Vec<u8>>,
     /// A classic device plays over its call link (the headset microphone
-    /// is open): A2DP is suspended, so its media figures are not the
-    /// stream's (shown as gaps, not as 0). None: not on a call link
+    /// is open): A2DP is suspended, and the media figures above are the
+    /// call link's (SCO payloads sent, the uplink capture). None: not on a
+    /// call link
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub voice: Option<bool>,
+    /// The call link's way back (the microphone), while on it
+    #[ts(optional = nullable)]
+    #[serde(default)]
+    pub voice_rx: Option<VoiceRxCounters>,
 }
 
 /// The connected device's Bluetooth chip, as its controller reports it
@@ -1293,6 +1298,22 @@ pub struct EncodeLoad {
     /// SDU set), in microseconds
     pub avg_us: f64,
     pub max_us: f64,
+}
+
+/// The headset microphone's packets over a classic call link (cumulative
+/// since the core started; the UI takes differences)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+
+pub struct VoiceRxCounters {
+    /// SCO payloads received
+    #[ts(type = "number")]
+    pub packets: u64,
+    /// Of them, flagged by the controller as damaged on the air
+    #[ts(type = "number")]
+    pub bad: u64,
+    /// Codec frames concealed (made up from the ones around them)
+    #[ts(type = "number")]
+    pub concealed: u64,
 }
 
 /// An LE Audio stream's send counters (since the stream was set up; a
