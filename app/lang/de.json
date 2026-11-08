@@ -983,7 +983,6 @@
   "ui.update.release_notes": "Vollständige Versionshinweise",
   "ui.headset_mic": "Headset-Mikrofon",
   "ui.mic_output": "Mikrofon für Apps",
-  "ui.mic_output_hint": "Wähle es in deinen Apps als Mikrofon. Auto öffnet es nur, während eine App aufnimmt.",
   "ui.headset_mic_quality": "Solange das Mikrofon offen ist, ist die Wiedergabe Mono in Telefonqualität.",
   "ui.headset_mic_no_output": "Keine Mikrofonausgabe gewählt: Das Headset-Mikrofon bleibt aus.",
   "ui.headset_mic_off": "Aus",

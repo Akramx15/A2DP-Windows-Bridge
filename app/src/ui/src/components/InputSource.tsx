@@ -119,10 +119,9 @@ export function InputSource(props: {
             onChange={choose}
           />
         </div>
-        <p class="hint">
-          {t("ui.mic_output_hint")}
-          <Show when={!entry()?.le_audio}>{` ${t("ui.headset_mic_quality")}`}</Show>
-        </p>
+        <Show when={!entry()?.le_audio}>
+          <p class="hint">{t("ui.headset_mic_quality")}</p>
+        </Show>
         <Show when={mode() !== "off" && !chosen()}>
           <p class="field-warn">{t("ui.headset_mic_no_output")}</p>
         </Show>

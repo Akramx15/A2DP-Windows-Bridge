@@ -983,7 +983,6 @@
   "ui.update.release_notes": "Notas de la versión completas",
   "ui.headset_mic": "Micrófono del auricular",
   "ui.mic_output": "Micrófono para las apps",
-  "ui.mic_output_hint": "Elígelo como micrófono en tus apps. Auto lo abre solo mientras una app graba.",
   "ui.headset_mic_quality": "Mientras el micrófono esté abierto, la reproducción es mono con calidad de llamada.",
   "ui.headset_mic_no_output": "No se ha elegido una salida del micrófono: el micrófono del auricular sigue desactivado.",
   "ui.headset_mic_off": "Desactivado",

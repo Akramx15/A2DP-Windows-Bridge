@@ -983,7 +983,6 @@
   "ui.update.release_notes": "完整版本資訊",
   "ui.headset_mic": "耳機麥克風",
   "ui.mic_output": "供應用程式使用的麥克風",
-  "ui.mic_output_hint": "在應用程式中將其選為麥克風。自動模式僅在應用程式錄音時開啟。",
   "ui.headset_mic_quality": "麥克風開啟期間，播放為通話音質的單聲道。",
   "ui.headset_mic_no_output": "未選擇麥克風輸出：耳機麥克風保持關閉。",
   "ui.headset_mic_off": "關閉",
