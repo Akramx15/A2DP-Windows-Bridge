@@ -317,7 +317,7 @@ describe("Chip probe (developer mode)", () => {
     const url = new URL(open.mock.calls[0][0] as string);
     expect(url.searchParams.get("template")).toBe("chip_report.yml");
     expect(url.searchParams.get("chip")).toMatch(/^Intel, Bluetooth 5\.3/);
-    expect(url.searchParams.get("title")).toBe("Chip report: Intel");
+    expect(url.searchParams.get("title")).toBe("Chip support: Intel");
     expect(url.searchParams.get("probe")).toMatch(/^probe-\d{8}_\d{6}\.json\n/);
     expect(reveal).toHaveBeenCalledWith(expect.stringMatching(/probe-\d{8}_\d{6}\.json$/));
   });
