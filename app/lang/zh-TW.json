@@ -471,7 +471,7 @@
   "ui.dev.keys_compare": "與 Windows 比較",
   "ui.dev.keys_link": "連結金鑰：相同 %d，不同 %d，僅 BlueCaster %d，僅 Windows %d",
   "ui.dev.keys_le": "LE 金鑰：相同 %d，不同 %d，僅 BlueCaster %d，僅 Windows %d",
-  "ui.dev.keys_le_busy": "LE 金鑰：BlueCaster 的藍牙執行期間無法讀取",
+  "ui.dev.keys_le_unreadable": "LE 金鑰：無法讀取 BlueCaster 的金鑰",
   "ui.dev.keys_no_windows": "Windows 沒有此介面卡的金鑰。",
   "ui.dev.keys_le_values": "Windows 的 LE 值：%s",
   "ui.dev.keys_radio_values": "Windows 的介面卡值：%s",

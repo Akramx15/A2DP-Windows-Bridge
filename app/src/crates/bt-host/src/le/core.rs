@@ -1811,11 +1811,7 @@ impl LeCore {
             .as_ref()
             .and_then(|c| c.bonds_file.clone())
             .unwrap_or_else(|| std::env::temp_dir().join("le_audio_bonds.tlv"));
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        stack.le_init(&path.to_string_lossy());
-        tracing::info!("LE Audio: bonds in {}", path.display());
+        stack.le_init(Box::new(crate::le_bond_file::TlvFile::open(&path)));
         if let Some(imported) = self.config.as_ref().and_then(|c| c.imported_bonds_file.as_deref()) {
             crate::le_import::apply(stack, imported);
         }

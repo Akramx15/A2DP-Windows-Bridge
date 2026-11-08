@@ -471,7 +471,7 @@
   "ui.dev.keys_compare": "与 Windows 比较",
   "ui.dev.keys_link": "链接密钥：相同 %d，不同 %d，仅 BlueCaster %d，仅 Windows %d",
   "ui.dev.keys_le": "LE 密钥：相同 %d，不同 %d，仅 BlueCaster %d，仅 Windows %d",
-  "ui.dev.keys_le_busy": "LE 密钥：BlueCaster 的蓝牙运行期间无法读取",
+  "ui.dev.keys_le_unreadable": "LE 密钥：无法读取 BlueCaster 的密钥",
   "ui.dev.keys_no_windows": "Windows 没有此适配器的密钥。",
   "ui.dev.keys_le_values": "Windows 的 LE 值：%s",
   "ui.dev.keys_radio_values": "Windows 的适配器值：%s",

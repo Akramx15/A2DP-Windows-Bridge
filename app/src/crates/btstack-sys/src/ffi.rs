@@ -204,7 +204,7 @@ pub struct CisParamsC {
 // LE (experimental LE Audio)
 unsafe extern "C" {
     // ---- shim.c: setup ----
-    pub fn bluecaster_le_init(tlv_path: *const c_char) -> c_int;
+    pub fn bluecaster_le_init() -> c_int;
     pub fn bluecaster_le_deinit(att_server_started: c_int);
 
     // ---- shim.c: GAP, HCI ----
