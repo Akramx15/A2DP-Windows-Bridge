@@ -189,10 +189,9 @@ pub struct Profile {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub codec_settings: BTreeMap<String, CodecValues>,
     /// The device's codec order (codec keys), as its cards were dragged on
-    /// the Codecs screen with Auto-select off (issue #86 round 8): Auto, and
-    /// a chosen codec the device does not offer, take the first one in it
-    /// the device offers. Empty: highest sound quality first. Under
-    /// Auto-select it is kept but not used ([`Profile::as_auto`]).
+    /// the Codecs screen (issue #86 round 8): Auto, under Auto-select too,
+    /// and a chosen codec the device does not offer, take the first one in
+    /// it the device offers. Empty: highest sound quality first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub codec_order: Vec<String>,
     #[serde(flatten)]
@@ -380,8 +379,7 @@ impl Profile {
             sbc_channel_mode: d.sbc_channel_mode,
             unlisted_options: false,
             codec_forced: false,
-            // Auto-select's order is the default one
-            codec_order: Vec::new(),
+            // The device's own order stays: Auto takes the first card offered
             ..self.clone()
         }
     }
@@ -893,7 +891,8 @@ mod tests {
         assert_eq!(&order.codecs()[..2], &[CodecKind::SbcXq, CodecKind::Sbc]);
         assert_eq!(order.codecs().len(), CodecKind::AUTO_PRIORITY.len());
         // Auto-select: the default order
-        assert!(p.as_auto().to_request(1023).unwrap().auto_order.is_default());
+        // Under Auto-select too
+        assert_eq!(p.as_auto().to_request(1023).unwrap().auto_order, order);
         assert_eq!(serde_json::to_value(&p).unwrap()["codec_order"], serde_json::json!(["sbcxq", "sbc"]));
         let plain = Profile { codec_order: Vec::new(), ..p };
         assert!(plain.to_request(1023).unwrap().auto_order.is_default());

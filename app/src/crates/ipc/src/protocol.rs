@@ -643,10 +643,9 @@ pub struct Profile {
     #[serde(default)]
     pub codec_settings: std::collections::BTreeMap<String, CodecValues>,
     /// The device's codec order (codec keys) as dragged on the Codecs
-    /// screen with Auto-select off: Auto, and a chosen codec the device
+    /// screen: Auto, under Auto-select too, and a chosen codec the device
     /// does not offer, take the first one in it the device offers (issue
-    /// #86 round 8). Empty: highest sound quality first. Not used under
-    /// Auto-select.
+    /// #86 round 8). Empty: highest sound quality first.
     #[serde(default)]
     pub codec_order: Vec<String>,
 }

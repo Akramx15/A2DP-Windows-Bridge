@@ -2,15 +2,16 @@
 // its codec cards, the codecs it offered when it last connected in green
 // and the others in red (hidden unless asked for), each with its settings
 // behind "...", and a dot beside the device's name that is green while it
-// streams. "Auto-select the codec with the highest quality" is one setting
-// for every device (settings.auto_codec, on by default; each device had its
-// own before): on, the cards only show what Auto picks, in the default
-// order (highest sound quality first), and a click on one, or on its "...",
-// offers to turn Auto-select off; off, choosing a card is choosing that
-// device's codec (a device with none chosen yet, its profile's codec
-// "auto", goes on with Auto's pick), and the cards are dragged (or moved
-// with Alt+arrow keys) into the device's own order (its profile's
-// codec_order, issue #86 round 8). A card the device does not offer is
+// streams. The cards are dragged into the device's own order (its
+// profile's codec_order, issue #86 round 8; with Alt+arrow keys too while
+// Auto-select is off), highest sound quality first unless changed; Auto
+// takes the first card the device offers. "Auto-select the codec with the
+// highest quality" is one setting for every device (settings.auto_codec,
+// on by default; each device had its own before): on, the cards show what
+// Auto picks, and a click on one, or on its "...", offers to turn
+// Auto-select off; off, choosing a card is choosing that device's codec (a
+// device with none chosen yet, its profile's codec "auto", goes on with
+// Auto's pick). A card the device does not offer is
 // chosen like any other (issue #86: without Auto-select the choice is the
 // user's): the core asks for it anyway (the profile's codec_forced) and the
 // stream stops with an error if the device refuses it. A codec chosen while
@@ -50,7 +51,6 @@ import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
 import type { AudioDevice, Profile, Snapshot } from "../ipc/types";
 import {
-  AUTO_ORDER,
   autoKeepsCodecSettings,
   CARD_ORDER,
   cardOrder,
@@ -244,7 +244,7 @@ export function pickedCodec(
     if (blocked) return effectiveCodec(codec, known, true, order);
     return p.codec_forced ? codec : (effectiveCodec(codec, known, true, order) ?? codec);
   }
-  return streamingCodec(snap, entry) ?? effectiveCodec("auto", known, true, autoAll ? AUTO_ORDER : order);
+  return streamingCodec(snap, entry) ?? effectiveCodec("auto", known, true, order);
 }
 
 /** Whether a codec's card shows: the one picked always, the others unless
@@ -392,9 +392,8 @@ function DeviceCodecs(props: {
   const support = (id: string) => codecSupport(id, known(), onRequest());
   // The device's order while it is being dragged (null: the saved one)
   const [dragOrder, setDragOrder] = createSignal<CodecId[] | null>(null);
-  // Its cards' order: Auto-select's is the default one (highest sound
-  // quality first), read-only
-  const order = (): CodecId[] => (props.auto ? [...CARD_ORDER] : (dragOrder() ?? cardOrder(shown().codec_order)));
+  // Its cards' order, which Auto follows under Auto-select too
+  const order = (): CodecId[] => dragOrder() ?? cardOrder(shown().codec_order);
   const picked = () => pickedCodec(snap(), e(), props.auto, order());
   // Opus 05's card only in developer mode (issue #86); hidden, it keeps its
   // place in the order
@@ -563,7 +562,7 @@ function DeviceCodecs(props: {
     el.style.transform = `translate(${dx}px, ${dy}px)`;
   };
   const onPointerDown = (ev: PointerEvent) => {
-    if (props.auto || locked() || ev.button !== 0) return;
+    if (locked() || ev.button !== 0) return;
     const target = ev.target as Element;
     const cell = target.closest<HTMLElement>(".codec-cell[data-codec]");
     if (!cell || target.closest(".codec-more")) return;
@@ -722,11 +721,14 @@ function DeviceCodecs(props: {
                 readOnly={props.auto}
                 // Only supported codecs shown: no "Supported" tag on each
                 support={props.hide && support(c.id) === "offered" ? null : support(c.id)}
-                orderable={!props.auto}
+                orderable
                 dragging={dragging() === c.id}
-                describedBy={hintId}
+                // The keys need a card that takes the focus (not under Auto-select)
+                describedBy={props.auto ? undefined : hintId}
                 onPick={() => void choose(c.id)}
                 onReadOnly={(settings) => {
+                  // The click that ends a drag
+                  if (swallowClick) return;
                   // Developer mode: the codec's settings apply under Auto-select
                   if (settings && autoKeepsCodecSettings(snap().settings)) return setSettingsOf(c);
                   props.onLocked(() => (settings ? setSettingsOf(c) : void choose(c.id)));
@@ -743,15 +745,22 @@ function DeviceCodecs(props: {
         <span class="sr-only" role="status" aria-live="polite">
           {said()}
         </span>
-        <Show when={!props.auto && !shownInDefaultOrder(order(), cards().map((c) => c.id))}>
+        {/* Visible hint for dragging (the cards' description above has the
+            keys too); Reset beside it while the order is changed */}
+        <Show when={cards().length > 1}>
           <div class="codecs-order">
-            <Button
-              icon="arrow_reset"
-              disabled={busy() || ordering()}
-              onClick={() => flip(() => void saveOrder([...CARD_ORDER]))}
-            >
-              {t("ui.codecs.order_reset")}
-            </Button>
+            <p class="hint" aria-hidden="true">
+              {t("ui.codecs.order_hint")}
+            </p>
+            <Show when={!shownInDefaultOrder(order(), cards().map((c) => c.id))}>
+              <Button
+                icon="arrow_reset"
+                disabled={busy() || ordering()}
+                onClick={() => flip(() => void saveOrder([...CARD_ORDER]))}
+              >
+                {t("ui.codecs.order_reset")}
+              </Button>
+            </Show>
           </div>
         </Show>
         <Show when={known().length === 0}>

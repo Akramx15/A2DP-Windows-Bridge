@@ -1919,6 +1919,9 @@ option {
   gap: var(--s2);
   flex-wrap: wrap;
 }
+.codecs-order .hint {
+  margin: 0;
+}
 .device-codecs {
   display: flex;
   flex-direction: column;
@@ -2162,7 +2165,7 @@ option {
 .codec-card.ro:hover:not(.on) {
   border-color: var(--border);
 }
-/* Auto-select off: the cards are dragged into the device's order. The
+/* The cards are dragged into the device's order. The
    pointer as on any card; the hand only while the button is held or a card
    is dragged (issue #86) */
 .codec-card.orderable,
