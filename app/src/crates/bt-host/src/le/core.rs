@@ -1816,6 +1816,9 @@ impl LeCore {
         }
         stack.le_init(&path.to_string_lossy());
         tracing::info!("LE Audio: bonds in {}", path.display());
+        if let Some(imported) = self.config.as_ref().and_then(|c| c.imported_bonds_file.as_deref()) {
+            crate::le_import::apply(stack, imported);
+        }
 
         // The modules (once per BtHost)
         if let Some(cfg) = self.config.take() {
