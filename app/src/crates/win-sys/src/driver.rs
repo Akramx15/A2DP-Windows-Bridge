@@ -37,18 +37,15 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_Parent, CM_LOCATE_DEVNODE_NORMAL, CM_Locate_DevNodeW, CM_REENUMERATE_SYNCHRONOUS, CM_Reenumerate_DevNode,
-    CR_SUCCESS, DI_ENUMSINGLEINF, DI_FLAGSEX_ALLOWEXCLUDEDDRVS, DI_NEEDREBOOT,
-    DI_NEEDRESTART, DICS_FLAG_GLOBAL, DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIIDFLAG_NOFINISHINSTALLUI, DIREG_DEV,
-    DiInstallDevice, DiUninstallDevice, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W,
-    SP_DRVINFO_DATA_V2_W, SP_DRVINFO_DETAIL_DATA_W, SP_PROPCHANGE_PARAMS, SPDIT_CLASSDRIVER, SPDRP_CLASSGUID,
-    SetupDiBuildDriverInfoList, SetupDiCallClassInstaller, SetupDiCreateDevRegKeyW, SetupDiDestroyDriverInfoList,
-    SetupDiEnumDriverInfoW, SetupDiGetDeviceInstallParamsW, SetupDiGetDriverInfoDetailW, SetupDiOpenDevRegKey,
-    SetupDiSetClassInstallParamsW, SetupDiSetDeviceInstallParamsW, SetupDiSetDeviceRegistryPropertyW,
-    SetupDiSetSelectedDriverW,
+    CR_SUCCESS, DI_ENUMSINGLEINF, DI_FLAGSEX_ALLOWEXCLUDEDDRVS, DI_NEEDREBOOT, DI_NEEDRESTART, DICS_FLAG_GLOBAL,
+    DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIIDFLAG_NOFINISHINSTALLUI, DIREG_DEV, DiInstallDevice, DiUninstallDevice,
+    SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W, SP_DRVINFO_DATA_V2_W, SP_DRVINFO_DETAIL_DATA_W,
+    SP_PROPCHANGE_PARAMS, SPDIT_CLASSDRIVER, SPDRP_CLASSGUID, SetupDiBuildDriverInfoList, SetupDiCallClassInstaller,
+    SetupDiCreateDevRegKeyW, SetupDiDestroyDriverInfoList, SetupDiEnumDriverInfoW, SetupDiGetDeviceInstallParamsW,
+    SetupDiGetDriverInfoDetailW, SetupDiOpenDevRegKey, SetupDiSetClassInstallParamsW, SetupDiSetDeviceInstallParamsW,
+    SetupDiSetDeviceRegistryPropertyW, SetupDiSetSelectedDriverW,
 };
-use windows::Win32::Foundation::{
-    ERROR_INVALID_DEVINST_NAME, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, HWND,
-};
+use windows::Win32::Foundation::{ERROR_INVALID_DEVINST_NAME, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, HWND};
 use windows::Win32::System::Registry::{KEY_READ, REG_MULTI_SZ};
 use windows::Win32::System::SystemInformation::GetWindowsDirectoryW;
 use windows::core::{BOOL, GUID, HSTRING, PCWSTR};
