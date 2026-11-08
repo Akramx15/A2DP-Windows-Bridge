@@ -75,6 +75,19 @@ describe("Input Source on Audio Devices", () => {
     expect(micSelect(wh).value).toBe(CABLE);
   });
 
+  it("names the 16-channel cable by its own name in developer mode, not a second CABLE Output", async () => {
+    const { core } = start("#/devices", "voice");
+    const wh = await deviceEntry(/WH-1000XM5/);
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    await waitFor(() => {
+      const labels = [...micSelect(wh).options].map((o) => o.textContent);
+      expect(labels).toContain("CABLE In 16ch (VB-Audio Virtual Cable)");
+      expect(labels.filter((l) => l === "CABLE Output (VB-Audio Virtual Cable)")).toHaveLength(1);
+    });
+    const output = [...micSelect(wh).options].find((o) => o.textContent === "CABLE Output (VB-Audio Virtual Cable)");
+    expect(output?.value).toBe(CABLE);
+  });
+
   it("saves the mode and the device with the device's profile", async () => {
     const { saves } = start("#/devices", "voice");
     const xb = await deviceEntry(/SRS-XB13/);
