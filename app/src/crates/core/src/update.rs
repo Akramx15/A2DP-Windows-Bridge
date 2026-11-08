@@ -26,11 +26,15 @@ use serde_json::Value;
 
 use crate::settings::Settings;
 
-pub const REPO: &str = "SeiyaFunaokaJP/BlueCaster";
+pub const REPO: &str = "Akramx15/A2DP-Windows-Bridge";
 /// Releases page: the link when the API is unreachable
-pub const RELEASES_PAGE: &str = "https://github.com/SeiyaFunaokaJP/BlueCaster/releases";
+pub const RELEASES_PAGE: &str = "https://github.com/Akramx15/A2DP-Windows-Bridge/releases";
 
-const API: &str = "https://api.github.com/repos/SeiyaFunaokaJP/BlueCaster/releases";
+/// The GitHub API's releases of [`REPO`] (the fork: never the official
+/// product, whose updater would replace this build)
+fn api() -> String {
+    format!("https://api.github.com/repos/{REPO}/releases")
+}
 /// Newest first, GitHub's largest page: reaches back past a run of alphas
 const LIST_PER_PAGE: u32 = 100;
 /// /releases/latest is some 15 kB, a list entry as much (with its notes and
@@ -221,10 +225,11 @@ fn get(url: &str) -> Result<String, UpdateError> {
 
 /// The newest release of the channel (blocking)
 pub fn latest_release(channel: Channel) -> Result<Release, UpdateError> {
+    let api = api();
     match channel {
-        Channel::Stable => parse_latest(&get(&format!("{API}/latest"))?),
+        Channel::Stable => parse_latest(&get(&format!("{api}/latest"))?),
         Channel::Beta | Channel::Alpha => {
-            parse_list(&get(&format!("{API}?per_page={LIST_PER_PAGE}"))?, channel == Channel::Alpha)
+            parse_list(&get(&format!("{api}?per_page={LIST_PER_PAGE}"))?, channel == Channel::Alpha)
         }
     }
 }
@@ -314,7 +319,7 @@ mod tests {
     #[test]
     fn parses_latest() {
         let json = r#"{"url":"https://api.github.com/repos/x/y/releases/1","html_url":
-            "https://github.com/SeiyaFunaokaJP/BlueCaster/releases/tag/v1.1.0","tag_name":"v1.1.0",
+            "https://github.com/Akramx15/A2DP-Windows-Bridge/releases/tag/v1.1.0","tag_name":"v1.1.0",
             "name":"BlueCaster 1.1.0","draft":false,"prerelease":false,"assets":[]}"#;
         let r = parse_latest(json).unwrap();
         assert_eq!(
@@ -322,14 +327,14 @@ mod tests {
             Release {
                 version: "1.1.0".into(),
                 tag: "v1.1.0".into(),
-                url: "https://github.com/SeiyaFunaokaJP/BlueCaster/releases/tag/v1.1.0".into(),
+                url: "https://github.com/Akramx15/A2DP-Windows-Bridge/releases/tag/v1.1.0".into(),
                 prerelease: false,
                 notes: String::new(),
             }
         );
         assert_eq!(
             manifest_url(&r.tag),
-            "https://github.com/SeiyaFunaokaJP/BlueCaster/releases/download/v1.1.0/latest.json"
+            "https://github.com/Akramx15/A2DP-Windows-Bridge/releases/download/v1.1.0/latest.json"
         );
         // No html_url: the releases page
         assert_eq!(parse_latest(r#"{"tag_name":"v1.0.0"}"#).unwrap().url, RELEASES_PAGE);

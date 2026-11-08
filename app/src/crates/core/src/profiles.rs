@@ -730,6 +730,42 @@ pub fn use_virtual_device(list: &mut [Profile], id: &str, name: &str) -> usize {
     changed
 }
 
+/// The path of 2.0.x's settings folder in `value`, rebased onto `config`:
+/// `%APPDATA%\A2DPWB\stages\x` -> `<config>\stages\x`. None when `value` is
+/// empty, still exists, names no such folder, or the rebased path is missing
+/// too (the stages are installed by hand).
+fn rebase_old_path(value: &str, config: &Path) -> Option<String> {
+    let path = Path::new(value.trim());
+    if path.as_os_str().is_empty() || path.exists() {
+        return None;
+    }
+    let parts: Vec<_> = path.components().collect();
+    let at = parts
+        .iter()
+        .position(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(crate::paths::OLD_FOLDER_NAME))?;
+    let mut rebased = config.to_path_buf();
+    for part in &parts[at + 1..] {
+        rebased.push(part.as_os_str());
+    }
+    rebased.exists().then(|| rebased.display().to_string())
+}
+
+/// Points a profile's spatial engine path and registry at this version's
+/// settings folder when they still name 2.0.x's (`%APPDATA%\A2DPWB`, renamed
+/// to `%APPDATA%\BlueCaster` at 3.0.0 and gone), so the engine is not
+/// silently left off. True when one was repaired.
+pub fn repair_spatial(profile: &mut Profile, config: &Path) -> bool {
+    let name = profile.name.clone();
+    let mut repaired = false;
+    for slot in [&mut profile.spatial_engine_path, &mut profile.spatial_engine_registry] {
+        let Some(fixed) = rebase_old_path(slot, config) else { continue };
+        tracing::info!("profiles: \"{name}\" spatial path {slot} -> {fixed} (the settings folder was renamed)");
+        *slot = fixed;
+        repaired = true;
+    }
+    repaired
+}
+
 pub fn load(dir: &Path) -> Vec<Profile> {
     load_counted(dir).0
 }
@@ -746,6 +782,15 @@ pub fn load_counted(dir: &Path) -> (Vec<Profile>, usize) {
     match serde_json::from_str::<ProfilesFile>(&text) {
         Ok(mut f) => {
             let renamed = make_names_unique(&mut f.profiles);
+            // A path still naming 2.0.x's folder is repaired, and kept
+            let config = crate::paths::config_dir();
+            let mut repaired = false;
+            for p in &mut f.profiles {
+                repaired |= repair_spatial(p, &config);
+            }
+            if repaired && let Err(e) = save(dir, &f.profiles) {
+                tracing::warn!("profiles: the repaired spatial paths are not saved: {e}");
+            }
             tracing::debug!(
                 "profiles: loaded {} profile(s) from {}, {renamed} renamed",
                 f.profiles.len(),
@@ -1006,6 +1051,38 @@ mod tests {
         save(&dir, &list).unwrap();
         assert_eq!(names(&load(&dir)), ["WH LDAC", "WH LDAC (2)"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_spatial_path_left_in_the_old_folder_follows_the_rename() {
+        // 3.0.0 renamed %APPDATA%\A2DPWB to %APPDATA%\BlueCaster: a profile
+        // saved before that names the folder that is gone
+        let t = std::env::temp_dir().join(format!("bluecaster-spatial-repair-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let (old, new) = (t.join("A2DPWB"), t.join("BlueCaster"));
+        let stage = new.join("stages").join("experimental-stft");
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(stage.join("libxm6_experimental.dll"), b"x").unwrap();
+        let gone = old.join("stages").join("experimental-stft").join("libxm6_experimental.dll");
+        let mut p = Profile {
+            name: "WH LDAC".into(),
+            device_address: "AA:BB:CC:DD:EE:FF".into(),
+            spatial_engine: true,
+            spatial_engine_path: gone.display().to_string(),
+            spatial_engine_registry: old.join("stages").display().to_string(),
+            ..Profile::default()
+        };
+        assert!(repair_spatial(&mut p, &new));
+        assert_eq!(p.spatial_engine_path, stage.join("libxm6_experimental.dll").display().to_string());
+        assert_eq!(p.spatial_engine_registry, new.join("stages").display().to_string());
+        // The engine stays on with the stage it was using
+        assert_eq!(p.to_request(1023).unwrap().spatial, Some(stage.join("libxm6_experimental.dll")));
+        // Repaired once; a folder of the user's own is left alone
+        assert!(!repair_spatial(&mut p, &new));
+        let mut mine = Profile { spatial_engine_path: r"C:\Engines\mine\stage.dll".into(), ..p.clone() };
+        assert!(!repair_spatial(&mut mine, &new));
+        assert_eq!(mine.spatial_engine_path, r"C:\Engines\mine\stage.dll");
+        let _ = std::fs::remove_dir_all(&t);
     }
 
     #[test]

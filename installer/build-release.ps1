@@ -52,7 +52,7 @@ $OutDir = [IO.Path]::GetFullPath($OutDir)
 $triple = @{ x64 = 'x86_64-pc-windows-msvc'; arm64 = 'aarch64-pc-windows-msvc' }[$Arch]
 $platform = @{ x64 = 'windows-x86_64'; arm64 = 'windows-aarch64' }[$Arch]
 $archName = @{ x64 = 'win64'; arm64 = 'arm64' }[$Arch]
-$releaseUrl = 'https://github.com/SeiyaFunaokaJP/BlueCaster/releases/download'
+$releaseUrl = 'https://github.com/Akramx15/A2DP-Windows-Bridge/releases/download'
 
 function Invoke-Checked([string]$what, [scriptblock]$cmd) {
     & $cmd
