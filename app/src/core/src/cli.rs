@@ -90,7 +90,8 @@ Usage: bluecaster-core --cli [-d XX:XX:XX:XX:XX:XX] [options]
   --remote-sink <host[:port]|auto>
                         statistics of a measuring receiver (tools/linux_sink);
                         without -d, stream to that receiver
-  --scan [seconds]      list nearby devices and exit
+  --scan [seconds]      list nearby devices and exit (with --le-audio: the LE
+                        Audio devices too)
   --probe               read what the adapter answers (read commands only, no
                         HCI init; for adapters BlueCaster cannot use yet), save it
                         to logs\\probe and exit
@@ -513,6 +514,40 @@ pub fn run(args: &[String]) -> i32 {
 
     if a.le.broadcast.is_some() {
         let code = le_broadcast(&a, &service, &rx, &running);
+        service.shutdown();
+        capture.stop();
+        return code;
+    }
+
+    if let (Some(secs), true) = (a.scan, a.le.on) {
+        // The app's device scan: the classic devices, and the LE Audio ones
+        // of an LE scan beside it
+        service.set_le_audio_cli(bluecaster_core::LeCliOptions { mcp_dry_run: a.le.mcp_dry_run, ..Default::default() });
+        let code = match service.scan_devices(secs, &mut |_| {}) {
+            Ok(found) => {
+                for d in found {
+                    outln!(
+                        "{}  {:<32} CoD 0x{:06X}  RSSI {}{}",
+                        d.address,
+                        d.name,
+                        d.class_of_device,
+                        d.rssi,
+                        if d.le_audio {
+                            "  (LE Audio)"
+                        } else if d.audio {
+                            "  (audio)"
+                        } else {
+                            ""
+                        }
+                    );
+                }
+                0
+            }
+            Err(m) => {
+                eoutln!("{m}");
+                1
+            }
+        };
         service.shutdown();
         capture.stop();
         return code;

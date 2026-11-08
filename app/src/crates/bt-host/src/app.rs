@@ -92,6 +92,21 @@ fn is_realtek_rom_lmp(lmp_subver: u16) -> bool {
     matches!(lmp_subver, 0x1200 | 0x8723 | 0x8821 | 0x8761 | 0x8822 | 0x8852 | 0x8851)
 }
 
+/// The warning for a controller of a vendor whose chips need a firmware
+/// download (MediaTek, Qualcomm, Atheros) when no loader of ours ran
+/// without error in this run: a chip none of them covers, or a loader that
+/// failed. None after a loader's success (its firmware loaded or running
+/// already) and for the emulator's virtual controller.
+fn missing_loader_warning(company: u16, loader_ok: bool, tcp: bool) -> Option<String> {
+    if loader_ok || tcp || !matches!(company, 0x0046 | 0x001D | 0x0045) {
+        return None;
+    }
+    let name = crate::chips::company_name(company).unwrap_or("unknown");
+    Some(format!(
+        "no firmware loader ran for this {name} controller; it runs the firmware it has (ROM only, unless Windows loaded one)"
+    ))
+}
+
 pub(crate) struct HostApp {
     pub shared: Arc<Shared>,
     pub controls: Arc<Controls>,
@@ -152,6 +167,9 @@ pub(crate) struct HostApp {
     loader: Option<Box<dyn ChipLoader>>,
     /// The step and percent last told to setup.on_loader
     loader_shown: Option<(&'static str, Option<u8>)>,
+    /// A chip loader finished without error in this run (its firmware
+    /// loaded, or running already): no "no loader" warning then
+    loader_ok: bool,
 
     // ---- AVRCP ----
     volume_in_flight: Option<Instant>,
@@ -250,6 +268,7 @@ impl HostApp {
             bcm_checked: false,
             loader: None,
             loader_shown: None,
+            loader_ok: false,
             volume_in_flight: None,
             playback_status: AVRCP_PLAYBACK_STATUS_STOPPED,
             playback_prev_frames: 0,
@@ -457,6 +476,7 @@ impl HostApp {
                     bringup::Outcome::Probed => String::new(),
                 };
                 tracing::info!("{vendor} controller: {said}");
+                self.loader_ok = true;
                 self.show_loader_done(vendor, said, true);
                 self.setup_hci_and_power_on(stack, None);
             }
@@ -1511,10 +1531,8 @@ impl HostApp {
                 }
             }
         }
-        if matches!(manufacturer, 0x0046 | 0x001D | 0x0045) {
-            tracing::warn!(
-                "this vendor needs a firmware download that is not implemented; the controller runs its ROM firmware only"
-            );
+        if let Some(why) = missing_loader_warning(manufacturer, self.loader_ok, self.setup.tcp) {
+            tracing::warn!("{why}");
         }
         // Broadcom (Cypress / Infineon map to it inside BTstack): the
         // PatchRAM goes in during custom init, which follows this command;
@@ -2384,7 +2402,13 @@ impl App for HostApp {
             Source::Hci => {
                 self.handle_hci(stack, packet);
                 if let Some(le) = self.le.as_mut() {
+                    let found = le.scan_found();
                     le.on_hci(stack, packet);
+                    // An LE Audio advertiser listed: a classic scan running
+                    // beside the LE one shows it at once (BtHost::scan_with)
+                    if le.scan_found() != found {
+                        self.shared.update(|s| s.found_rev += 1);
+                    }
                 }
             }
             Source::A2dp => self.handle_a2dp(stack, packet),
@@ -2573,7 +2597,21 @@ fn find_bcm_hcd(dir: &Path, adapters: &[(u16, u16)]) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConnectFailure, remove_alias, signaling_failure};
+    use super::{ConnectFailure, missing_loader_warning, remove_alias, signaling_failure};
+
+    #[test]
+    fn no_loader_warning_after_a_loader_ran() {
+        // MediaTek with our loader done (#86): no warning
+        assert_eq!(missing_loader_warning(0x0046, true, false), None);
+        // No loader for the chip, or it failed: the warning stays
+        let w = missing_loader_warning(0x0046, false, false).unwrap();
+        assert!(w.starts_with("no firmware loader ran for this MediaTek controller"), "{w}");
+        assert!(missing_loader_warning(0x001D, false, false).is_some());
+        assert!(missing_loader_warning(0x0045, false, false).is_some());
+        // Vendors without a download, and the emulator
+        assert_eq!(missing_loader_warning(0x005D, false, false), None);
+        assert_eq!(missing_loader_warning(0x0046, false, true), None);
+    }
 
     #[test]
     fn a_device_that_never_answered_is_not_told_to_pair() {

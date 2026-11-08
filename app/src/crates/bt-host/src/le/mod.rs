@@ -182,6 +182,10 @@ pub struct LeScanResult {
     pub adv: Vec<u8>,
     /// Last raw scan response data
     pub scan_rsp: Vec<u8>,
+    /// The last extended report of `adv` / `scan_rsp` said more data
+    /// follows (the next one is appended)
+    pub adv_more: bool,
+    pub rsp_more: bool,
 }
 
 /// What a stream tries (v1 le_audio::StreamRequest); modules may change it

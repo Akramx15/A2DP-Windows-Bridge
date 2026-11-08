@@ -864,8 +864,8 @@ pub struct Snapshot {
     pub adapter: AdapterState,
     pub devices: Vec<Device>,
     pub scanning: bool,
-    /// The scan's LE Audio part runs (status.le_scanning): after the
-    /// classic inquiry, with LE Audio on
+    /// Only the scan's LE Audio part runs (status.le_scanning): after a
+    /// classic inquiry shorter than the LE scan, with LE Audio on
     #[serde(default)]
     pub le_scanning: bool,
     pub stream: StreamStatus,
