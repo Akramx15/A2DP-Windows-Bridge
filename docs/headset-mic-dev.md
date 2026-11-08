@@ -659,6 +659,12 @@ The first real run, with `bluecaster-core --cli -u 2357:0604 -d <XM4> -c sbc
 - Round trip (`--headset-mic-toggle 4,16`): A2DP suspended, mSBC for 12 s,
   A2DP resumed at SBC 357 kbps.
 
+- Auto (`--headset-mic auto --mic-output "CABLE Input"`, with the
+  `hold_capture` example recording from "CABLE Output" for 12 s, a 3 s
+  pause, then 5 s; `run11.log`): the link came up within a second of the
+  recording starting (mSBC, open in 89 / 71 ms), went back to A2DP 2.3 s
+  after it ended, twice in a row; A2DP resumed at SBC 357 kbps each time.
+
 Two fixes came out of it:
 
 1. **The codec negotiation raced the headphones' own commands.** Right
