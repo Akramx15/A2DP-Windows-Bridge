@@ -288,6 +288,11 @@ pub fn le_bonds_file(config: &Path) -> PathBuf {
     pairing_dir(config).join("le_audio_bonds.tlv")
 }
 
+/// LE keys taken from Windows until a stack with LE adds them (issue #86)
+pub fn windows_le_keys_file(config: &Path) -> PathBuf {
+    pairing_dir(config).join("windows_le_keys.txt")
+}
+
 // ---- adapters\ ---------------------------------------------------------
 
 pub fn adapters_dir(config: &Path) -> PathBuf {

@@ -8,7 +8,9 @@
 //! Windows keeps its keys where only SYSTEM may read them: the elevated
 //! helper reads them (bluecaster-driver.exe `windows-keys`, one administrator
 //! prompt). A key BlueCaster has already is never replaced: the device was
-//! paired with BlueCaster later, so Windows' key is the old one.
+//! paired with BlueCaster later, so Windows' key is the old one. The LE keys
+//! Windows got of a classic device (CTKD) come along when its link key is
+//! Windows' one.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -155,6 +157,89 @@ fn parse_key(v: &Value) -> Option<([u8; 6], [u8; 16])> {
     Some((addr, key))
 }
 
+/// One LE device of the helper's answer (Windows' values), as BTstack keeps
+/// its bond: LTK and IRK reversed (Windows: least significant octet first)
+fn parse_le_key(v: &Value) -> Option<([u8; 6], bt_host::ImportedLeBond)> {
+    let address = bt_host::parse_addr(v.get("address")?.as_str()?)?;
+    let key = |name: &str| -> Option<[u8; 16]> {
+        let text = v.get(name)?.as_str()?;
+        if text.len() != 32 || !text.is_ascii() {
+            return None;
+        }
+        let mut key = [0u8; 16];
+        for (i, k) in key.iter_mut().enumerate() {
+            *k = u8::from_str_radix(&text[i * 2..i * 2 + 2], 16).ok()?;
+        }
+        key.reverse();
+        Some(key)
+    };
+    let number = |name: &str| v.get(name).and_then(Value::as_u64);
+    // 0 public, 1 random (static); Windows writes nothing else
+    let identity_addr_type = match number("address_type").unwrap_or(0) {
+        t @ (0 | 1) => t as u8,
+        _ => return None,
+    };
+    let ltk = key("ltk")?;
+    let key_size = number("key_length").filter(|k| (7..=16).contains(k)).map_or(16, |k| k as u8);
+    let ediv = u16::try_from(number("ediv").unwrap_or(0)).ok()?;
+    let rand = match v.get("erand").and_then(Value::as_str) {
+        Some(text) => u64::from_str_radix(text, 16).ok()?,
+        None => 0,
+    };
+    let auth_req = number("auth_req").unwrap_or(0);
+    Some((
+        address,
+        bt_host::ImportedLeBond {
+            identity_addr_type,
+            identity_addr: address,
+            irk: key("irk").unwrap_or_default(),
+            ltk,
+            key_size,
+            ediv,
+            rand: rand.to_be_bytes(),
+            // SMP AuthReq: MITM, Secure Connections (keys of LE Secure
+            // Connections have no EDIV and Rand)
+            authenticated: auth_req & 0x04 != 0,
+            secure_connection: auth_req & 0x08 != 0 || (ediv == 0 && rand == 0),
+        },
+    ))
+}
+
+/// The classic device among `classic` an LE device of Windows' belongs to:
+/// the same address, else the one Windows' device nodes put it with
+fn classic_of(le: [u8; 6], classic: &[[u8; 6]], pairs: &[([u8; 6], [u8; 6])]) -> Option<[u8; 6]> {
+    if classic.contains(&le) {
+        return Some(le);
+    }
+    pairs.iter().find(|(l, c)| *l == le && classic.contains(c)).map(|(_, c)| *c)
+}
+
+/// Windows' LE keys of the classic devices `same_pairing` (issue #86: a
+/// device that already gave Windows its LE keys may refuse to give them
+/// again on a link it is paired on). Added to the running stack's LE bonds,
+/// else kept until a stack with LE starts.
+fn import_le_keys(state: &CoreState, result: &Value, same_pairing: &[[u8; 6]], pairs: &[([u8; 6], [u8; 6])]) {
+    let le: Vec<([u8; 6], bt_host::ImportedLeBond)> =
+        result.get("le_keys").and_then(Value::as_array).into_iter().flatten().filter_map(parse_le_key).collect();
+    let pending = bluecaster_core::paths::windows_le_keys_file(&state.config_dir());
+    let host = state.service.host();
+    for (le_addr, bond) in le {
+        let Some(classic) = classic_of(le_addr, same_pairing, pairs) else {
+            tracing::info!("Windows' LE keys of {}: no classic device of this pairing", bt_host::addr_str(&le_addr));
+            continue;
+        };
+        match host.as_ref().and_then(|h| h.add_le_bond(classic, bond)) {
+            // Kept: BlueCaster's own are the newer ones
+            Some(bt_host::LeBondAdded::Added | bt_host::LeBondAdded::Kept | bt_host::LeBondAdded::Failed) => {}
+            // LE off (or no stack): added when it starts
+            Some(bt_host::LeBondAdded::NoLe) | None => {
+                bt_host::le_import::add(&pending, bt_host::le_import::PendingLeBond { classic, bond });
+                tracing::info!("Windows' LE keys of {}: kept until LE starts", bt_host::addr_str(&classic));
+            }
+        }
+    }
+}
+
 /// device.import_windows_pairings (not developer mode only since issue #86:
 /// it only reads Windows' keys, after an administrator prompt)
 pub fn import_windows(state: &Arc<CoreState>, adapter: &str, only: Option<&[String]>) -> Result<Value, ErrorInfo> {
@@ -176,12 +261,18 @@ pub fn import_windows(state: &Arc<CoreState>, adapter: &str, only: Option<&[Stri
         .filter(|(a, _)| only.as_ref().is_none_or(|o| o.contains(a)))
         .collect();
     let dir = state.config_dir();
-    let have: Vec<[u8; 6]> = link_keys(&dir).entries().iter().map(|e| e.addr).collect();
+    let have: Vec<([u8; 6], [u8; 16])> = link_keys(&dir).entries().iter().map(|e| (e.addr, e.key)).collect();
     let (mut imported, mut kept) = (Vec::new(), Vec::new());
+    // The devices whose key now is Windows' (taken now or before): Windows'
+    // LE keys of them come from the same pairing
+    let mut same_pairing: Vec<[u8; 6]> = Vec::new();
     let host = state.service.host();
     for (addr, key) in keys {
-        if have.contains(&addr) {
+        if let Some((_, ours)) = have.iter().find(|(a, _)| *a == addr) {
             kept.push(bt_host::addr_str(&addr));
+            if *ours == key {
+                same_pairing.push(addr);
+            }
             continue;
         }
         // A running stack holds the keys in memory and writes them in full
@@ -194,10 +285,13 @@ pub fn import_windows(state: &Arc<CoreState>, adapter: &str, only: Option<&[Stri
         };
         if stored {
             imported.push(bt_host::addr_str(&addr));
+            same_pairing.push(addr);
         } else {
             tracing::warn!("Windows' key of {} not stored: the stack did not answer", bt_host::addr_str(&addr));
         }
     }
+    let le_pairs = state.adapter_instance(adapter).map(|id| win_sys::bt_paired::le_of_classic_through(&id));
+    import_le_keys(state, &result, &same_pairing, le_pairs.as_deref().unwrap_or_default());
     // A kept key (taken before, its device since forgotten) still adds its
     // device: the button stays while one is unsaved
     let have_key: Vec<String> = imported.iter().chain(&kept).cloned().collect();
@@ -274,6 +368,57 @@ mod tests {
         let found: Vec<[u8; 6]> = link_keys(&config).entries().iter().map(|e| e.addr).collect();
         let _ = std::fs::remove_dir_all(&config);
         assert_eq!(found, vec![addr]);
+    }
+
+    #[test]
+    fn windows_le_keys_become_btstack_bonds() {
+        let v = serde_json::json!({
+            "address": "C0:11:22:33:44:55",
+            "address_type": 1,
+            "ltk": "0102030405060708090a0b0c0d0e0f10",
+            "key_length": 0,
+            "ediv": 0,
+            "erand": "0000000000000000",
+            "irk": "ff000000000000000000000000000000",
+            "auth_req": 0x2D,
+        });
+        let (addr, b) = parse_le_key(&v).unwrap();
+        assert_eq!(addr, [0xC0, 0x11, 0x22, 0x33, 0x44, 0x55]);
+        assert_eq!((b.identity_addr_type, b.identity_addr), (1, addr));
+        // Most significant octet first for BTstack
+        assert_eq!((b.ltk[0], b.ltk[15]), (0x10, 0x01));
+        assert_eq!((b.irk[0], b.irk[15]), (0x00, 0xFF));
+        assert_eq!(b.key_size, 16);
+        assert!(b.authenticated && b.secure_connection);
+        // Legacy pairing: EDIV and Rand kept, Rand most significant first
+        let mut legacy = v.clone();
+        legacy["ediv"] = 0x1234.into();
+        legacy["erand"] = "0102030405060708".into();
+        legacy["auth_req"] = 0x01.into();
+        legacy["key_length"] = 7.into();
+        legacy.as_object_mut().unwrap().remove("irk");
+        let (_, b) = parse_le_key(&legacy).unwrap();
+        assert_eq!((b.ediv, b.rand, b.key_size), (0x1234, [1, 2, 3, 4, 5, 6, 7, 8], 7));
+        assert!(!b.authenticated && !b.secure_connection);
+        assert_eq!(b.irk, [0; 16]);
+        // No LTK, an unknown address type
+        let mut bad = v.clone();
+        bad.as_object_mut().unwrap().remove("ltk");
+        assert!(parse_le_key(&bad).is_none());
+        let mut bad = v;
+        bad["address_type"] = 2.into();
+        assert!(parse_le_key(&bad).is_none());
+    }
+
+    #[test]
+    fn le_keys_go_with_their_classic_device() {
+        let classic = [[0x58, 1, 1, 1, 1, 1], [0x58, 2, 2, 2, 2, 2]];
+        let pairs = [([0xC0, 1, 1, 1, 1, 1], [0x58, 1, 1, 1, 1, 1]), ([0xC0, 3, 3, 3, 3, 3], [0x58, 3, 3, 3, 3, 3])];
+        // The same address, a node pair, a device of another pairing
+        assert_eq!(classic_of([0x58, 2, 2, 2, 2, 2], &classic, &pairs), Some([0x58, 2, 2, 2, 2, 2]));
+        assert_eq!(classic_of([0xC0, 1, 1, 1, 1, 1], &classic, &pairs), Some([0x58, 1, 1, 1, 1, 1]));
+        assert_eq!(classic_of([0xC0, 3, 3, 3, 3, 3], &classic, &pairs), None);
+        assert_eq!(classic_of([0xC0, 9, 9, 9, 9, 9], &classic, &pairs), None);
     }
 
     #[test]

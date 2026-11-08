@@ -289,6 +289,7 @@ fn le_config(le_on: bool, cli: Option<&LeCliOptions>, opts: &ServiceOptions) -> 
     let dry_run = cli.is_some_and(|c| c.mcp_dry_run) || opts.hci_tcp.is_some();
     Some(LeConfig {
         bonds_file: Some(crate::paths::le_bonds_file(&opts.config_dir)),
+        imported_bonds_file: Some(crate::paths::windows_le_keys_file(&opts.config_dir)),
         bond_dir: Some(crate::paths::pairing_dir(&opts.config_dir)),
         media: if dry_run { None } else { crate::le_media::windows_backend() },
         ccp_sim: cli.and_then(|c| c.ccp_sim.clone()),
