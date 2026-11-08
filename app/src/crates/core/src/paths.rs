@@ -6,7 +6,7 @@
 //! ```text
 //! BlueCaster\
 //!   settings.json  profiles.json
-//!   devices\    devices.txt  le_audio_devices.txt  device_codecs.json
+//!   devices\    devices.txt  le_audio_devices.txt  device_codecs.json  device_services.json
 //!   pairing\    link_keys.txt  le_audio_bonds.tlv   (the secrets: never in a bundle)
 //!   adapters\   adapter_caps.json  driver\<instance id>.json
 //!   firmware\   *.bin *.hcd *.sfi *.ddc
@@ -271,6 +271,11 @@ pub fn le_devices_file(config: &Path) -> PathBuf {
 
 pub fn device_codecs_file(config: &Path) -> PathBuf {
     devices_dir(config).join("device_codecs.json")
+}
+
+/// The services each classic device listed last (issue #86)
+pub fn device_services_file(config: &Path) -> PathBuf {
+    devices_dir(config).join("device_services.json")
 }
 
 // ---- pairing\ ----------------------------------------------------------
@@ -593,6 +598,7 @@ mod tests {
         assert_eq!(devices_file(c), Path::new(r"C:\cfg\devices\devices.txt"));
         assert_eq!(le_devices_file(c), Path::new(r"C:\cfg\devices\le_audio_devices.txt"));
         assert_eq!(device_codecs_file(c), Path::new(r"C:\cfg\devices\device_codecs.json"));
+        assert_eq!(device_services_file(c), Path::new(r"C:\cfg\devices\device_services.json"));
         assert_eq!(link_keys_file(c), Path::new(r"C:\cfg\pairing\link_keys.txt"));
         assert_eq!(le_bonds_file(c), Path::new(r"C:\cfg\pairing\le_audio_bonds.tlv"));
         assert_eq!(adapter_caps_file(c), Path::new(r"C:\cfg\adapters\adapter_caps.json"));

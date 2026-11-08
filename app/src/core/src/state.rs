@@ -1939,6 +1939,9 @@ impl CoreState {
         let active = s.active_profile.filter(|a| !gone.contains(a));
         self.save_profiles(&list, active)?;
         self.service.forget_device(address, le_audio);
+        if !le_audio {
+            crate::pairing::forget_services(&dir, address);
+        }
         let mut settings = self.service.settings();
         let volume = settings.saved_volumes.remove(&address.to_uppercase()).is_some();
         let last = gone.contains(&settings.last_profile);
