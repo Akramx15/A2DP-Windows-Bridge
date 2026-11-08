@@ -80,6 +80,8 @@ describe("the Codecs screen", () => {
     // allows (round 8); no experimental codecs switch, no "Auto's order"
     // button, nor a way back to the default order while it is the default
     expect(main().queryByRole("button", { name: t("ui.codecs.order_reset") })).toBeNull();
+    // Dragging the cards is said under them
+    expect(within(wh).getByText(t("ui.codecs.order_hint"))).toBeInTheDocument();
     expect(main().queryAllByRole("checkbox")).toHaveLength(0);
     expect(hideSwitch()).toBeChecked();
     // A line between the device and its codecs
@@ -581,7 +583,7 @@ describe("codec cards", () => {
     expect(cardNames(wh)).toEqual([t("codec.ldac"), t("codec.aac"), t("codec.sbc")]);
   });
 
-  it("are in the default order and cannot be moved under Auto-select, which ignores the device's order", async () => {
+  it("keep the device's order under Auto-select, which follows it, and are dragged there too", async () => {
     const { calls, core } = start("#/codecs");
     const wh = await section("WH-1000XM5");
     const p = core.state.snap!.profiles.find((x) => x.device_address === "AC:80:0A:12:34:56")!;
@@ -594,18 +596,37 @@ describe("codec cards", () => {
     expect(within(wh).getByRole("radio", { name: /SBC/ })).toBeChecked();
     calls.length = 0;
     fireEvent.click(autoSwitch());
-    // On: highest sound quality first, LDAC picked
-    await waitFor(() => expect(cardNames(wh)).toEqual([t("codec.ldac"), t("codec.aac"), t("codec.sbc")]));
-    expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked();
-    expect(main().queryByRole("button", { name: t("ui.codecs.order_reset") })).toBeNull();
-    const aac = within(wh).getByRole("radio", { name: /AAC/ });
-    expect(aac).not.toHaveAccessibleDescription();
-    fireEvent.keyDown(aac, { key: "ArrowLeft", altKey: true });
-    fireEvent.pointerDown(aac, { button: 0, pointerId: 1, clientX: 300, clientY: 10 });
-    fireEvent.pointerMove(wh.querySelector(".codec-grid")!, { pointerId: 1, clientX: 20, clientY: 10 });
-    fireEvent.pointerUp(wh.querySelector(".codec-grid")!, { pointerId: 1 });
-    expect(saves(calls)).toHaveLength(0);
-    expect(cardNames(wh)[0]).toBe(t("codec.ldac"));
+    await waitFor(() => expect(within(wh).getByRole("radio", { name: /SBC/ })).toBeDisabled());
+    // On: the same order, the same pick
+    expect(cardNames(wh)).toEqual([t("codec.sbc"), t("codec.aac"), t("codec.ldac")]);
+    expect(within(wh).getByRole("radio", { name: /SBC/ })).toBeChecked();
+    expect(main().getByRole("button", { name: t("ui.codecs.order_reset") })).toBeInTheDocument();
+    expect(within(wh).getByText(t("ui.codecs.order_hint"))).toBeInTheDocument();
+    // No keys: the cards take no focus under Auto-select
+    const ldac = within(wh).getByRole("radio", { name: /LDAC/ });
+    await waitFor(() => expect(ldac).toBeDisabled());
+    expect(ldac).not.toHaveAccessibleDescription();
+    // LDAC dragged first: Auto picks it, and the drag asks nothing
+    const sbc = within(wh).getByRole("radio", { name: /SBC/ });
+    const grid = wh.querySelector(".codec-grid")!;
+    const at = document.elementFromPoint;
+    document.elementFromPoint = () => sbc;
+    try {
+      fireEvent.pointerDown(ldac, { button: 0, pointerId: 1, clientX: 300, clientY: 10 });
+      fireEvent.pointerMove(grid, { pointerId: 1, clientX: 20, clientY: 10 });
+      await waitFor(() => expect(cardNames(wh)[0]).toBe(t("codec.ldac")));
+      document.elementFromPoint = () => ldac;
+      fireEvent.pointerUp(grid, { pointerId: 1, clientX: 20, clientY: 10 });
+      fireEvent.click(ldac.closest("label")!);
+    } finally {
+      document.elementFromPoint = at;
+    }
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    const order = saves(calls)[0].profile.codec_order as string[];
+    expect(order.indexOf("ldac")).toBeLessThan(order.indexOf("sbc"));
+    expect(saves(calls)[0].profile).toMatchObject({ codec: "auto" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked());
   });
 });
 

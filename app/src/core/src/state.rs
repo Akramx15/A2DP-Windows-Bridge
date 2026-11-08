@@ -1425,7 +1425,7 @@ fn bitpools_change_in_place(stream: &StreamStatus, before: Option<&CoreProfile>,
 /// profile left on "auto" in the default order streams as Auto either
 /// way). Not LE Audio (LC3).
 fn restart_for_auto(stream: &StreamStatus, p: &CoreProfile) -> bool {
-    restart_after_save(stream, &p.name) && !p.le_audio && (p.codec != "auto" || !p.order().is_default())
+    restart_after_save(stream, &p.name) && !p.le_audio && p.codec != "auto"
 }
 
 /// A profile streams (or connects) with a codec of developer mode
@@ -1463,7 +1463,7 @@ fn same_after_auto_toggle(
     };
     // The profile's own: its codec when offered, else Auto in its order
     let chosen = codec::CodecKind::from_key(&p.codec).filter(offered).or_else(|| pick(p.order()));
-    let auto = pick(codec::AutoOrder::default());
+    let auto = pick(p.order());
     let next = if auto_now { auto } else { chosen };
     // The settings each side streams that codec with
     let auto_values = own_settings
@@ -1475,11 +1475,11 @@ fn same_after_auto_toggle(
 
 /// Whether a new codec order of the device (its cards dragged, issue #86
 /// round 8) may change the codec of the profile in use (`p` as it streams):
-/// it is Auto or fell back (the fallback takes the first codec in the
-/// order). Not LE Audio.
-fn restart_for_order(stream: &StreamStatus, p: &CoreProfile) -> bool {
+/// it is Auto (`auto_select`: Auto-select is on) or fell back (the fallback
+/// takes the first codec in the order). Not LE Audio.
+fn restart_for_order(stream: &StreamStatus, p: &CoreProfile, auto_select: bool) -> bool {
     let fell_back = stream.info.as_ref().is_some_and(|i| i.requested_codec.is_some());
-    restart_after_save(stream, &p.name) && !p.le_audio && (p.codec == "auto" || fell_back)
+    restart_after_save(stream, &p.name) && !p.le_audio && (auto_select || p.codec == "auto" || fell_back)
 }
 
 fn unix_ms() -> u64 {
@@ -2083,8 +2083,8 @@ impl CoreState {
         let list = profiles::load(&dir);
         let p =
             list.iter().find(|p| p.name == name).ok_or_else(|| err("profile.not_found", "error.profile_not_found"))?;
-        // Auto-select for every device: Auto in the default order, whatever
-        // codec and order the profile chose
+        // Auto-select for every device: Auto in the device's order, whatever
+        // codec the profile chose
         let auto = (settings.auto_codec && !p.le_audio).then(|| p.as_auto());
         if auto.is_some() && p.codec != "auto" {
             tracing::debug!(
@@ -2685,8 +2685,7 @@ impl CoreState {
                     list[i].codec_order != merged.codec_order
                         && CoreProfile { codec_order: merged.codec_order.clone(), ..list[i].clone() } == merged
                 });
-                // Under Auto-select the order is not used
-                let order_unused = self.service.settings().auto_codec || merged.le_audio;
+                let auto_select = self.service.settings().auto_codec;
                 // Settings of a codec not in use: nothing the stream uses
                 let kept_only = pos.is_some_and(|i| list[i].only_kept_settings_differ(&merged));
                 let in_order = merged.clone();
@@ -2723,7 +2722,7 @@ impl CoreState {
                 self.refresh_devices();
                 // The profile in use starts again with what was saved (v1),
                 // but for another source, which needs nothing of the link
-                let order_keeps_codec = order_only && (order_unused || !restart_for_order(&s.stream, &in_order));
+                let order_keeps_codec = order_only && !restart_for_order(&s.stream, &in_order, auto_select);
                 let headset = headset_change(&s.stream, before.as_ref(), &in_order);
                 let headset_kept = match headset {
                     Some(HeadsetChange::Unused) => true,
@@ -3914,11 +3913,13 @@ mod tests {
             }),
             ..StreamStatus::default()
         };
-        assert!(restart_for_order(&streaming(None), &profile("auto")));
-        assert!(restart_for_order(&streaming(Some("aptX HD")), &profile("aptxhd")));
+        assert!(restart_for_order(&streaming(None), &profile("auto"), false));
+        assert!(restart_for_order(&streaming(Some("aptX HD")), &profile("aptxhd"), false));
+        // Auto-select streams Auto in the device's order, whatever codec chosen
+        assert!(restart_for_order(&streaming(None), &profile("aac"), true));
         // Its own codec in use, LE Audio
-        assert!(!restart_for_order(&streaming(None), &profile("aac")));
-        assert!(!restart_for_order(&streaming(None), &CoreProfile { le_audio: true, ..profile("auto") }));
+        assert!(!restart_for_order(&streaming(None), &profile("aac"), false));
+        assert!(!restart_for_order(&streaming(None), &CoreProfile { le_audio: true, ..profile("auto") }, true));
     }
 
     #[test]
@@ -3929,8 +3930,8 @@ mod tests {
         assert!(restart_for_auto(&streaming, &profile("aac")));
         // Auto either way, another profile, nothing running, LE Audio
         assert!(!restart_for_auto(&streaming, &profile("auto")));
-        // Auto in its own order: Auto-select takes the default order
-        assert!(restart_for_auto(&streaming, &CoreProfile { codec_order: vec!["sbc".into()], ..profile("auto") }));
+        // Auto in its own order: Auto-select takes the same order
+        assert!(!restart_for_auto(&streaming, &CoreProfile { codec_order: vec!["sbc".into()], ..profile("auto") }));
         assert!(!restart_for_auto(&streaming, &CoreProfile { name: "Buds".into(), ..profile("aac") }));
         assert!(!restart_for_auto(&StreamStatus::default(), &profile("aac")));
         assert!(!restart_for_auto(&streaming, &CoreProfile { le_audio: true, ..profile("aac") }));
@@ -3979,6 +3980,8 @@ mod tests {
         // A codec not offered falls back to the profile's order
         let order = CoreProfile { codec_order: vec!["aac".into()], ..profile("aptxhd") };
         assert!(same(&streaming("AAC"), &order, false, false));
+        // ... and Auto-select takes the same order
+        assert!(same(&streaming("AAC"), &order, true, false));
         // Unknown codecs, or not streaming yet: restart
         assert!(!same_after_auto_toggle(&streaming("LDAC"), &profile("ldac"), true, None, false));
         let connecting = StreamStatus { state: StreamState::Connecting, ..streaming("LDAC") };

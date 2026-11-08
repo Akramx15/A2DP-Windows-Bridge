@@ -941,6 +941,7 @@
   "ui.codecs.auto_dialog_text": "Para personalizar la configuración y el orden de los códecs, la selección automática debe estar desactivada.",
   "ui.codecs.auto_dialog_disable": "Desactivar la selección automática",
   "ui.codecs.order_reset": "Restablecer el orden de los códecs",
+  "ui.codecs.order_hint": "Arrastre las tarjetas para cambiar el orden.",
   "ui.codecs.order_keys": "Arrastre las tarjetas, o pulse Alt con una flecha, para fijar el orden. Se usa la primera tarjeta que admite el dispositivo.",
   "ui.codecs.moved": "%s: posición %d de %d",
   "ui.devices.none_saved": "Aún no hay dispositivos de audio. Busque el suyo o añádalo por su dirección abajo.",
