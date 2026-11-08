@@ -733,6 +733,8 @@ impl HeadsetMode {
             }
             // The headphones are opening one: its Established decides
             Err(HostError::Busy) => return Ok(()),
+            // Right after the service level connection: next tick
+            Err(HostError::Settling) => return Ok(()),
             Err(e) => {
                 tracing::warn!("voice: the audio connection cannot be asked for: {e:?}");
                 return self.give_up(inner, Msg::new("status.headset_mic_failed"));

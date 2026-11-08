@@ -582,9 +582,57 @@ timing and `set_headset_mic` waiting for `control`. None of the new failure
 paths (short SCO buffer, pipes not running, failed sends, refused release)
 can be reached on the emulator.
 
+### On hardware (2026-11-08): TP-Link UB500 (RTL8761BU, WinUSB) + WH-1000XM4
+
+The first real run, with `bluecaster-core --cli -u 2357:0604 -d <XM4> -c sbc
+--test-tone --headset-mic --mic-output ...` (logs and `.pklg` captures in
+`C:\BC-mic-target\hwun5..run10`):
+
+- HCI init with voice: interface 1 claimed, "controller buffers: ACL 6 x
+  1021 bytes, SCO 12 x 255 bytes"; without voice the same adapter and
+  headphones stream as with beta.3 (`run2-novoice.log`).
+- HFP: the WH-1000XM4 offers CVSD + mSBC (`AT+BAC=1,2`), takes `+BCS:2`,
+  and the eSCO comes up in ~80 ms as **mSBC** (voice setting 0x0043,
+  packet type 0x0040 = EV3, 12 slots, 60-byte air packets, 27-byte HCI
+  packets), with no call state and no call UI on the headphones.
+- USB SCO: alt 1 (9-byte isochronous packets), ~333 packets/s each way,
+  0 USB errors, 0 failed isochronous packets, 0 send errors over 30 s
+  (9872 sent / 9854 received). The eSCO link marks ~4 % of the received
+  packets as possibly invalid / lost (`status != 0`, "N bad"); the mSBC
+  PLC concealed 13-46 frames per run.
+- Microphone: a 16 kHz mono WAV with room noise (`mic1.wav`, 29.4 s) and
+  rendering to "CABLE Input (VB-Audio Virtual Cable)" at 16 kHz, 0
+  underruns / overflows, no drift steps in 12 s.
+- Round trip (`--headset-mic-toggle 4,16`): A2DP suspended, mSBC for 12 s,
+  A2DP resumed at SBC 357 kbps.
+
+Two fixes came out of it:
+
+1. **The codec negotiation raced the headphones' own commands.** Right
+   after the service level connection the XM4 sends `AT+NREC=0`,
+   `AT+CLIP=1`, `AT+XAPL=...`, `AT+VGS=6`, `AT+IPHONEACCEV=...` within
+   ~250 ms. BTstack's AG enforces half duplex: a command that arrives while
+   its own OK is pending gets `ERROR` (hfp_ag.c "Received a command while
+   ok pending"). When `+BCS:2` went out in that burst, the XM4's `AT+BCS=2`
+   got the `ERROR`, no SCO followed and headset mode gave up after
+   `OPEN_TIMEOUT` (`run5.log`). `Voice::check` now answers
+   `HostError::Settling` until the service level connection is `SLC_SETTLE`
+   (1 s) old **and** no HFP event came for `HF_QUIET` (500 ms); the core
+   waits for the next tick. The `AT+IPHONEACCEV` after `+XAPL` still gets
+   an `ERROR` (as in beta.3: BTstack's answer to XAPL keeps OK pending);
+   the XM4 repeats its battery level later.
+2. **SetCurrentAlternateSetting answered ERROR_BUSY (170) once** when the
+   SCO came up 4 s into A2DP streaming (`run8.log`; an HCI command, a
+   control transfer on the same device, was probably in flight).
+   `select_alt` tries up to 10 times 10 ms apart (`SCO_ALT_TRIES`,
+   `SCO_ALT_RETRY`); the next runs did not hit it.
+
 ## Not verified / hardware checklist
 
-Nothing of this has run on real hardware. To check, in this order:
+Checked on the UB500 + WH-1000XM4 (mSBC, full speed, one link) so far: 0
+(Realtek with and without voice), 1, 2, 3, 4, 8, 11 (mSBC only), 12
+(accepted, no call UI), 13 (one on/off cycle), 14 (12 s, not an hour).
+Still open, in this order:
 
 HCI init (every user, `ENABLE_SCO_OVER_HCI` is compiled in):
 
@@ -668,12 +716,12 @@ UI:
 
 ## Open questions / risks
 
-- WinUSB isochronous on real adapters (full vs high speed, alt setting 6 on
-  Intel / Realtek) is unverified; the emulator covers only the TCP
-  transport.
+- WinUSB isochronous is verified on one full speed adapter (RTL8761BU, alt
+  1, one mSBC link); high speed adapters, CVSD (alt 2 / 48-byte packets),
+  two links and the Intel / MediaTek loaders with voice are not.
 - The AG opens HFP audio with `hfp_ag_establish_audio_connection` and no
-  call state; some headphones may refuse or show a call UI, and would need a
-  call state from the AG.
+  call state; the WH-1000XM4 accepts it silently, other headphones may
+  refuse or show a call UI, and would need a call state from the AG.
 - The LE conversational stream does not follow CCP's call state.
 - An LE headset's clock is absorbed only by the renderer's drift control
   (the le-decode thread has no clock of its own); a WAV file has no drift

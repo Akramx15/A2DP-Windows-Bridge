@@ -1943,11 +1943,13 @@ impl HostApp {
     }
 
     fn handle_hfp(&mut self, stack: &Stack, p: &[u8]) {
+        self.voice.on_hf_activity();
         match subevent(p) {
             Some(HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_ESTABLISHED) => {
                 let status = u8_at(p, 5).unwrap_or(0xFF);
                 if status == 0 {
                     self.hfp_acl = le16(p, 3);
+                    self.voice.on_slc_established();
                     tracing::debug!("HFP: service level connection on ACL {:04X?}", self.hfp_acl);
                     tracing::info!("HFP: service level connection established");
                 } else {

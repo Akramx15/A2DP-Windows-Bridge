@@ -139,6 +139,9 @@ const SCO_TRANSFER_MS: u32 = 3;
 /// SCO packets queued or in flight at most (BTstack's SCO_RING_BUFFER_COUNT:
 /// 60 ms)
 const SCO_OUT_SLOTS: usize = 20;
+/// Set-interface retries on a busy device, and the pause between them
+const SCO_ALT_TRIES: u32 = 10;
+const SCO_ALT_RETRY: std::time::Duration = std::time::Duration::from_millis(10);
 /// The longest SCO packet: header and a 255-byte payload
 const SCO_OUT_SLOT_LEN: usize = 3 + 255;
 /// Consecutive failed SCO reads after which the thread logs a warning
@@ -654,9 +657,27 @@ impl Sco {
         Ok((ep_in, ep_out))
     }
 
+    /// Selects alternate setting `alt`. WinUSB answers ERROR_BUSY (170)
+    /// now and then when an HCI command (a control transfer on the same
+    /// device) is in flight: tried again a few times
+    fn select_alt(&self, alt: u8) -> Result<(), String> {
+        let mut tries = 0;
+        loop {
+            match self.interface.set_alt_setting(alt).wait() {
+                Ok(()) => return Ok(()),
+                Err(e) if tries < SCO_ALT_TRIES => {
+                    tries += 1;
+                    tracing::debug!("USB: alt {alt} of interface {SCO_INTERFACE}: {e} (try {tries})");
+                    std::thread::sleep(SCO_ALT_RETRY);
+                }
+                Err(e) => return Err(format!("cannot select alt {alt}: {e}")),
+            }
+        }
+    }
+
     /// Selects alternate setting `alt` and starts the pipes and the thread
     fn start(&mut self, alt: u8, upstream: &Upstream) -> Result<(), String> {
-        self.interface.set_alt_setting(alt).wait().map_err(|e| format!("cannot select alt {alt}: {e}"))?;
+        self.select_alt(alt)?;
         self.alt = Some(alt);
         let (ep_in, ep_out) = self.endpoints(alt)?;
         let packets = usb_isoch::packets_for(self.high_speed, ep_in.interval, SCO_TRANSFER_MS);
@@ -716,7 +737,7 @@ impl Sco {
             self.dropped = 0;
         }
         if self.alt.take().is_some() {
-            match self.interface.set_alt_setting(0).wait() {
+            match self.select_alt(0) {
                 Ok(()) => tracing::info!(target: "hci", "USB: SCO stopped (interface {SCO_INTERFACE} alt 0)"),
                 Err(e) => tracing::warn!(target: "hci", "USB: SCO stopped, but alt 0 failed: {e}"),
             }

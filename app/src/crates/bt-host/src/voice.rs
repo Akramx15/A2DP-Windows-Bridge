@@ -16,6 +16,8 @@
 //! is given up ([`VoiceEvent::Failed`] with [`NO_SCO_PATH`]), and so is one
 //! whose sends keep failing.
 
+use std::time::{Duration, Instant};
+
 use btstack_sys::Stack;
 use btstack_sys::consts::{
     HCI_EVENT_PACKET, HCI_EVENT_SCO_CAN_SEND_NOW, HCI_SCO_DATA_PACKET, HFP_CODEC_CVSD, HFP_CODEC_LC3_SWB,
@@ -31,6 +33,14 @@ pub const NO_SCO_PATH: u8 = 0xFF;
 
 /// Failed SCO sends in a row after which the audio connection is given up
 const SEND_FAILURES: u32 = 10;
+/// How long after the service level connection the audio connection waits,
+/// at least: the headphones send their own commands (NREC, CLIP, XAPL, VGS,
+/// battery) right after it, and BTstack's AG answers ERROR to a command
+/// that arrives while its own +BCS waits for OK (the WH-1000XM4's AT+BCS
+/// then got that ERROR and no SCO followed)
+const SLC_SETTLE: Duration = Duration::from_millis(1000);
+/// ... and since the last command the headphones sent
+const HF_QUIET: Duration = Duration::from_millis(500);
 
 /// What happens to the HFP audio connection ([`crate::HostEvent::Voice`])
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +80,9 @@ pub enum HostError {
     NotConnected,
     /// An audio connection is already open or being opened
     Busy,
+    /// The service level connection is too fresh, or the headphones are
+    /// still sending commands: ask again shortly
+    Settling,
     /// BTstack refused the request (its status)
     Refused(u8),
     /// The BTstack thread did not answer
@@ -127,6 +140,10 @@ pub(crate) struct Voice {
     /// The controller's SCO data packet length (Read Buffer Size)
     controller_sco_len: Option<u8>,
     buf: Vec<u8>,
+    /// When the service level connection came up
+    slc_since: Option<Instant>,
+    /// The last HFP event from the headphones (a command of theirs)
+    hf_activity: Option<Instant>,
     /// Packets sent / failed sends, for the log at the end
     sent: u64,
     send_errors: u64,
@@ -136,6 +153,26 @@ pub(crate) struct Voice {
 }
 
 impl Voice {
+    /// HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_ESTABLISHED
+    pub fn on_slc_established(&mut self) {
+        let now = Instant::now();
+        self.slc_since = Some(now);
+        self.hf_activity = Some(now);
+    }
+
+    /// Any HFP subevent: the headphones are talking
+    pub fn on_hf_activity(&mut self) {
+        self.hf_activity = Some(Instant::now());
+    }
+
+    /// The audio connection may be asked for only once the service level
+    /// connection is [`SLC_SETTLE`] old and the headphones quiet for
+    /// [`HF_QUIET`]
+    fn settling(&self) -> bool {
+        let now = Instant::now();
+        self.slc_since.is_some_and(|t| now < t + SLC_SETTLE) || self.hf_activity.is_some_and(|t| now < t + HF_QUIET)
+    }
+
     /// The answer to Read Buffer Size (HCI init)
     pub fn on_buffer_size(&mut self, b: &BufferSize) {
         if b.status != 0 {
@@ -198,6 +235,9 @@ impl Voice {
         }
         if self.opening.is_some() || self.sco.is_some() {
             return Err(HostError::Busy);
+        }
+        if self.settling() {
+            return Err(HostError::Settling);
         }
         Ok(())
     }
@@ -314,6 +354,7 @@ impl Voice {
     /// being opened
     pub fn on_released(&mut self) -> Option<crate::HostEvent> {
         let was = self.sco.take().is_some() || self.opening.take().is_some();
+        self.slc_since = None;
         self.usable = false;
         self.tx = None;
         self.rx = None;
@@ -443,6 +484,22 @@ mod tests {
         // Not enabled and no service level connection come first / after
         assert_eq!(v.check(false, Some(0x40), true), Err(HostError::NotEnabled));
         assert_eq!(v.check(true, None, true), Err(HostError::NotConnected));
+    }
+
+    #[test]
+    fn audio_connection_waits_for_the_headphones_to_settle() {
+        let mut v = Voice::default();
+        v.on_buffer_size(&buffer_size(60));
+        v.on_slc_established();
+        assert_eq!(v.check(true, Some(0x40), true), Err(HostError::Settling));
+        v.slc_since = Some(Instant::now() - SLC_SETTLE);
+        assert_eq!(v.check(true, Some(0x40), true), Err(HostError::Settling));
+        v.hf_activity = Some(Instant::now() - HF_QUIET);
+        assert_eq!(v.check(true, Some(0x40), true), Ok(()));
+        v.on_hf_activity();
+        assert_eq!(v.check(true, Some(0x40), true), Err(HostError::Settling));
+        assert!(v.on_released().is_none());
+        assert_eq!(v.slc_since, None);
     }
 
     #[test]
