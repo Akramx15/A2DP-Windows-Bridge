@@ -991,5 +991,12 @@
   "codec.lc3_swb": "LC3-SWB",
   "error.headset_mic_loop": "麦克风会进入正在向耳机发送声音的设备。请在“音频设备”的输入源中选择其他设备。",
   "status.headset_mic_failed": "耳机没有打开麦克风。播放照常继续。",
-  "status.headset_mic_output_failed": "无法打开麦克风输出。播放照常继续。"
+  "status.headset_mic_output_failed": "无法打开麦克风输出。播放照常继续。",
+  "ui.diag.tab_mic": "麦克风",
+  "ui.mic_test.record": "录音",
+  "ui.mic_test.stop": "停止",
+  "ui.mic_test.play": "播放",
+  "ui.mic_test.hint": "录几秒钟，然后在耳机上回放。测试期间为通话音质。",
+  "error.mic_test_not_streaming": "请先连接耳机。",
+  "error.mic_test_le_audio": "麦克风测试暂不支持 LE Audio。"
 }

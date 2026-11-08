@@ -902,6 +902,52 @@ impl HostApp {
         status == ERROR_CODE_SUCCESS
     }
 
+    /// While a voice link is open, gives the headphones the volume as their
+    /// HFP speaker gain (+VGS): the voice link plays at that gain, and the
+    /// AVRCP volume does not reach it. `volume` None: the current one.
+    pub fn sync_speaker_gain(&mut self, stack: &Stack, volume: Option<u8>) {
+        let Some(acl) = self.voice.audio_acl() else { return };
+        let c = &self.controls;
+        let volume = volume.or_else(|| {
+            [
+                c.volume_request.load(Ordering::Acquire),
+                c.volume.load(Ordering::Acquire),
+                c.restore_volume.load(Ordering::Acquire),
+            ]
+            .into_iter()
+            .find_map(|v| u8::try_from(v).ok())
+        });
+        let Some(volume) = volume else {
+            tracing::debug!("HFP: volume unknown, the headphones keep their speaker gain");
+            return;
+        };
+        let gain = crate::voice::speaker_gain(volume);
+        let status = stack.hfp_ag_set_speaker_gain(acl, gain);
+        tracing::debug!("HFP: speaker gain {gain} for volume {volume} (0x{status:02x})");
+    }
+
+    /// AT+VGS: the headphones changed their speaker gain on the voice link
+    /// (their buttons): it becomes the volume, so Windows follows and A2DP
+    /// comes back at the same level
+    fn on_speaker_gain(&mut self, stack: &Stack, gain: u8) {
+        if self.voice.audio_acl().is_none() {
+            tracing::debug!("HFP: headphones' speaker gain {gain} (no voice link, AVRCP keeps the volume)");
+            return;
+        }
+        let current = self.controls.volume.load(Ordering::Acquire);
+        if u8::try_from(current).is_ok_and(|v| crate::voice::speaker_gain(v) == gain) {
+            return;
+        }
+        let volume = crate::voice::gain_volume(gain);
+        tracing::info!("HFP: headphones' speaker gain {gain} = volume {volume}");
+        self.controls.volume.store(i32::from(volume), Ordering::Release);
+        let _ = self.events.send(HostEvent::Volume(volume));
+        if self.avrcp_cid != 0 {
+            self.controls.volume_request.store(i32::from(volume), Ordering::Release);
+            self.send_pending_volume(stack);
+        }
+    }
+
     /// Sends the queued volume request, if AVRCP is free
     pub fn send_pending_volume(&mut self, stack: &Stack) {
         if self.avrcp_cid == 0 {
@@ -2008,6 +2054,12 @@ impl HostApp {
                 if let Some(e) = self.voice.on_established(stack, p) {
                     let _ = self.events.send(e);
                 }
+                self.sync_speaker_gain(stack, None);
+            }
+            Some(HFP_SUBEVENT_SPEAKER_VOLUME) => {
+                if let Some(gain) = u8_at(p, 5) {
+                    self.on_speaker_gain(stack, gain);
+                }
             }
             Some(HFP_SUBEVENT_AUDIO_CONNECTION_RELEASED) => {
                 if let Some(e) = self.voice.on_released() {
@@ -2106,6 +2158,7 @@ impl HostApp {
                 let vol = u8_at(p, 6).unwrap_or(0);
                 tracing::info!("AVRCP volume changed to {vol} ({}%)", vol as u32 * 100 / 127);
                 self.controls.volume.store(vol as i32, Ordering::Release);
+                self.sync_speaker_gain(stack, Some(vol));
                 let _ = self.events.send(HostEvent::Volume(vol));
                 // AVRCP needs a new registration after each notification
                 stack.avrcp_enable_notification(self.avrcp_cid, AVRCP_NOTIFICATION_EVENT_VOLUME_CHANGED);

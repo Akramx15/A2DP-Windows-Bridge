@@ -991,5 +991,12 @@
   "codec.lc3_swb": "LC3-SWB",
   "error.headset_mic_loop": "Le micro irait vers le périphérique dont le son part vers le casque. Choisissez-en un autre dans Source d'entrée, sur Appareils audio.",
   "status.headset_mic_failed": "Le casque n'a pas ouvert son micro. La lecture continue comme avant.",
-  "status.headset_mic_output_failed": "Impossible d'ouvrir la sortie du micro. La lecture continue comme avant."
+  "status.headset_mic_output_failed": "Impossible d'ouvrir la sortie du micro. La lecture continue comme avant.",
+  "ui.diag.tab_mic": "Micro",
+  "ui.mic_test.record": "Enregistrer",
+  "ui.mic_test.stop": "Arrêter",
+  "ui.mic_test.play": "Écouter",
+  "ui.mic_test.hint": "Enregistrez quelques secondes, puis écoutez-les sur le casque. Pendant le test, le son a la qualité d'un appel.",
+  "error.mic_test_not_streaming": "Connectez d'abord le casque.",
+  "error.mic_test_le_audio": "Le test du micro ne fonctionne pas encore avec LE Audio."
 }

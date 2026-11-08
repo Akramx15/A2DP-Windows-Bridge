@@ -991,5 +991,12 @@
   "codec.lc3_swb": "LC3-SWB",
   "error.headset_mic_loop": "Das Mikrofon ginge an das Gerät, dessen Ton zum Kopfhörer geht. Wähle unter Audiogeräte bei Eingangsquelle ein anderes.",
   "status.headset_mic_failed": "Der Kopfhörer hat sein Mikrofon nicht geöffnet. Die Wiedergabe läuft wie bisher weiter.",
-  "status.headset_mic_output_failed": "Die Mikrofonausgabe lässt sich nicht öffnen. Die Wiedergabe läuft wie bisher weiter."
+  "status.headset_mic_output_failed": "Die Mikrofonausgabe lässt sich nicht öffnen. Die Wiedergabe läuft wie bisher weiter.",
+  "ui.diag.tab_mic": "Mikrofon",
+  "ui.mic_test.record": "Aufnehmen",
+  "ui.mic_test.stop": "Stopp",
+  "ui.mic_test.play": "Abspielen",
+  "ui.mic_test.hint": "Ein paar Sekunden aufnehmen und auf dem Kopfhörer abspielen. Während des Tests klingt der Ton wie ein Anruf.",
+  "error.mic_test_not_streaming": "Verbinde zuerst den Kopfhörer.",
+  "error.mic_test_le_audio": "Der Mikrofontest funktioniert noch nicht mit LE Audio."
 }

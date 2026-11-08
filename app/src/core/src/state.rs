@@ -3202,6 +3202,46 @@ impl CoreState {
                 Ok(Value::Null)
             }
             Method::ReceiverStatus => Ok(json(&self.receiver_state())),
+            Method::MicTestRecord => {
+                blocking(Box::new(|me| {
+                    let restart = me.service.mic_test_record().map_err(|code| {
+                        let key = if code == "mic_test.le_audio" {
+                            "error.mic_test_le_audio"
+                        } else {
+                            "error.mic_test_not_streaming"
+                        };
+                        err(code, key)
+                    })?;
+                    if restart {
+                        // A stack with voice: the profile in use starts again
+                        let (_, s) = me.snapshot();
+                        let Some(name) = s.stream.profile else {
+                            me.service.mic_test_end();
+                            return Err(err("mic_test.not_streaming", "error.mic_test_not_streaming"));
+                        };
+                        tracing::info!("mic test: {} starts again with voice", bluecaster_core::diag::quoted(&name));
+                        if let Err(e) = me.restart_profile(&name) {
+                            me.service.mic_test_end();
+                            return Err(e);
+                        }
+                    }
+                    Ok(json(&me.service.mic_test_status()))
+                }))
+                .await
+            }
+            Method::MicTestStop => {
+                self.service.mic_test_stop();
+                Ok(json(&self.service.mic_test_status()))
+            }
+            Method::MicTestPlay => {
+                self.service.mic_test_play();
+                Ok(json(&self.service.mic_test_status()))
+            }
+            Method::MicTestStatus => Ok(json(&self.service.mic_test_status())),
+            Method::MicTestEnd => {
+                self.service.mic_test_end();
+                Ok(Value::Null)
+            }
             Method::AppCheckUpdate => blocking(Box::new(|me| me.check_update().map(|u| json(&u)))).await,
             Method::AppHiddenToTray => {
                 self.hidden_to_tray();

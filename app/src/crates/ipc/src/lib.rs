@@ -168,6 +168,7 @@ mod tests {
         Method::export_all(&cfg).unwrap();
         FirmwareFile::export_all(&cfg).unwrap();
         ReceiverState::export_all(&cfg).unwrap();
+        MicTestState::export_all(&cfg).unwrap();
         DiagInfoParams::export_all(&cfg).unwrap();
         SettingsApplied::export_all(&cfg).unwrap();
         DiagBundle::export_all(&cfg).unwrap();

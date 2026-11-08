@@ -817,3 +817,82 @@ UI:
 - Keys: `capture.input_source`, `ui.headset_mic_off` / `_auto` / `_on`,
   `ui.mic_output` (the picker's name), `ui.mic_output_hint`,
   `ui.headset_mic_mute` / `_unmute` (the chip's name and tooltip).
+
+## Volume on the voice link (bt-host `app.rs`, `voice.rs`)
+
+Headphones play the voice link at their HFP speaker gain (0..15), which the
+AVRCP absolute volume of A2DP does not reach: before this, a classic device
+played the call link at whatever gain it last had (often low), and the
+volume keys did nothing to it. Now, while an audio connection is open
+(`Voice::audio_acl`):
+
+- `HostApp::sync_speaker_gain` sends `+VGS` (`hfp_ag_set_speaker_gain`,
+  shim `bluecaster_hfp_ag_set_speaker_gain`) for the volume: when the audio
+  connection comes up (the pending request, the last volume, or the
+  restore volume), on every `BtHost::request_volume` (Windows' volume keys
+  through volume sync) and on every AVRCP volume change. The mapping is
+  `voice::speaker_gain` (0..127 to 0..15, rounded) and back
+  `voice::gain_volume`; one round trip gives the same gain (unit test).
+  BTstack sends `+VGS` only when the gain differs from the last one either
+  side gave.
+- `AT+VGS` from the headphones (`HFP_SUBEVENT_SPEAKER_VOLUME`, their
+  buttons) becomes the volume: `controls.volume`, `HostEvent::Volume`
+  (Windows follows through volume sync) and an AVRCP absolute volume, so
+  A2DP comes back at the same level. A gain that matches the current volume
+  already is ignored; one without an audio connection only logged (the
+  XM4 sends one right after the service level connection).
+
+Not verified on hardware yet: whether a device applies `+VGS` while it
+also takes AVRCP absolute volume during the call link.
+
+Also worth knowing for "the PC's audio is quieter with the microphone on":
+Windows' Sound control panel > Communications ("When Windows detects
+communications activity", default: reduce other sounds by 80 %) lowers
+other apps while an app opens a communications stream, and that lowered
+mix is what loopback captures. BlueCaster does not change that setting.
+
+## Microphone test (Diagnostics > Microphone)
+
+Records up to 10 s (`mic_test::MAX_MS`) of the headset microphone of the
+classic stream and plays it back to the headphones.
+
+- **IPC** (`ipc::Method`): `mic_test.record` / `stop` / `play` / `status`
+  -> `MicTestState { phase, level, recorded_ms, max_ms, played_ms, error }`,
+  `mic_test.end` -> null. `phase`: idle, starting (the voice link opens),
+  recording, recorded, playing. `level` is the peak (0..1) since the last
+  answer: the microphone, or the recording while it plays. Errors of
+  `record`: `mic_test.not_streaming`, `mic_test.le_audio` (keys
+  `error.mic_test_*`). `error` carries why a running test ended (the same
+  status keys as headset mode: `status.headset_mic_failed`, ...).
+- **Core** (`crates/core/src/mic_test.rs`, `MicTest` in `Inner`): the phase
+  machine; `wanted()` makes the classic session's `HeadsetMode` hold the
+  voice link (`wanted() = mode_wanted() || test`). Without headset mode the
+  link opens to `MicTarget::Test` (`MicOutput::Test`: a queue nobody reads,
+  no render device); with it, to its own output as always. A test link that
+  headset mode then wants switches to the mode's output
+  (`change_output`). Every tick reports `link_up(rate)` / `link_down`; the
+  first `link_up` while starting begins the recording; a link lost while
+  recording, recorded or playing ends the test with an error. `give_up` and
+  `leave` with a message also end it (`MicTest::fail`).
+- A stack without voice: `Service::mic_test_record` answers `Ok(true)`,
+  `MicTest::needs_voice` makes `host_config` / `ensure_host` give the next
+  stack voice, and `state.rs` restarts the profile in use (the test waits
+  in starting, up to 45 s). After the test the running stack keeps voice,
+  the next one goes without.
+- **Keepalive**: the window asks `mic_test.status` every 70 ms while a test
+  runs; a test nobody asked about for 5 s ends (window closed). The tab
+  sends `mic_test.end` when it closes.
+- **Tap** (`voice_link::MicTap`): `PcmProducer::set_tap` feeds it every
+  decoded microphone sample (atomic peak, recording `try_lock`ed so the
+  BTstack thread never waits); `UplinkConsumer::set_tap` lets a playback
+  replace the uplink's samples after the capture's own pop (its queue stays
+  primed). The playback is mono at the voice rate, so it plays at call
+  quality, as the headphones would hear a call.
+- **UI** (`screens/diagnostics/MicPanel.tsx`): Record / Stop, Play / Stop,
+  a 48-segment bar on a dB scale (floor -54 dBFS, peak hold), accent while
+  recording, green while playing; `quality.not_streaming` and Record
+  disabled without a stream. The mock simulates the phases
+  (`MockCore.micState`).
+- **Not covered**: LE Audio entries (their microphone path would need its
+  own tap and a playback into the LC3 encoder); the emulator run of the
+  test (only unit tests and the UI test); hardware.

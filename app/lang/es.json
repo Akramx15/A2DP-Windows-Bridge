@@ -991,5 +991,12 @@
   "codec.lc3_swb": "LC3-SWB",
   "error.headset_mic_loop": "El micrófono iría al dispositivo cuyo sonido va a los auriculares. Elige otro en Origen de entrada, en Dispositivos de audio.",
   "status.headset_mic_failed": "Los auriculares no abrieron su micrófono. La reproducción sigue como antes.",
-  "status.headset_mic_output_failed": "No se puede abrir la salida del micrófono. La reproducción sigue como antes."
+  "status.headset_mic_output_failed": "No se puede abrir la salida del micrófono. La reproducción sigue como antes.",
+  "ui.diag.tab_mic": "Micrófono",
+  "ui.mic_test.record": "Grabar",
+  "ui.mic_test.stop": "Detener",
+  "ui.mic_test.play": "Reproducir",
+  "ui.mic_test.hint": "Graba unos segundos y escúchalos en los auriculares. Durante la prueba el audio tiene calidad de llamada.",
+  "error.mic_test_not_streaming": "Conecta primero los auriculares.",
+  "error.mic_test_le_audio": "La prueba de micrófono aún no funciona con LE Audio."
 }

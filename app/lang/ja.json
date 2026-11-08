@@ -991,5 +991,12 @@
   "codec.lc3_swb": "LC3-SWB",
   "error.headset_mic_loop": "マイクの音が、ヘッドホンへ音を送っているデバイスに戻ってしまいます。オーディオデバイス画面の入力ソースで別のデバイスを選んでください。",
   "status.headset_mic_failed": "ヘッドホンがマイクを開きませんでした。再生はそのまま続きます。",
-  "status.headset_mic_output_failed": "マイクの出力先を開けません。再生はそのまま続きます。"
+  "status.headset_mic_output_failed": "マイクの出力先を開けません。再生はそのまま続きます。",
+  "ui.diag.tab_mic": "マイク",
+  "ui.mic_test.record": "録音",
+  "ui.mic_test.stop": "停止",
+  "ui.mic_test.play": "再生",
+  "ui.mic_test.hint": "数秒録音して、ヘッドホンで再生します。テスト中の音声は通話品質になります。",
+  "error.mic_test_not_streaming": "先にヘッドホンを接続してください。",
+  "error.mic_test_le_audio": "マイクテストは LE Audio にはまだ対応していません。"
 }
