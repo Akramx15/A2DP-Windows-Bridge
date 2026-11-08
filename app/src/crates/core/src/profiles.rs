@@ -164,13 +164,11 @@ pub struct Profile {
     /// configuration either way.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub le_low_latency: bool,
-    /// Headset mode (developer mode only, [`Settings::headset_mic_in_force`]):
-    /// "off" | "on" | "auto" ([`HeadsetMic`]; written only when not off).
-    /// The headphones' microphone is rendered to `mic_device_id`; classic
-    /// devices play over the voice link meanwhile (Auto: while an app
-    /// records from its capture side), LE Audio keeps its preset
-    ///
-    /// [`Settings::headset_mic_in_force`]: crate::settings::Settings::headset_mic_in_force
+    /// Headset mode: "off" | "on" | "auto" ([`HeadsetMic`]; written only
+    /// when not off). The headphones' microphone is rendered to
+    /// `mic_device_id`; classic devices play over the voice link meanwhile
+    /// (Auto: while an app records from its capture side), LE Audio keeps
+    /// its preset
     #[serde(default = "headset_off", deserialize_with = "headset_mode", skip_serializing_if = "is_headset_off")]
     pub headset_mic: String,
     /// The render endpoint id that receives the microphone (a virtual
@@ -559,8 +557,8 @@ impl Profile {
             le: self
                 .le_audio
                 .then(|| bt_host::LeRequest { low_latency: self.le_low_latency, ..bt_host::LeRequest::default() }),
-            // Developer mode only: whoever starts the stream decides
-            // (Settings::headset_mic_in_force)
+            // Whoever starts the stream decides (an output chosen, the
+            // app's start_profile)
             headset_mic: HeadsetMic::Off,
             mic_output: None,
         })

@@ -27,9 +27,13 @@ function start(hash: string, scenario: MockScenario = "normal") {
 
 /** A device's section on the Codecs screen */
 const section = (name: string) => screen.findByRole("region", { name });
+/** A section's codec cards (not its headset microphone's modes) */
+const cards = (where: HTMLElement) =>
+  within(where)
+    .getAllByRole("radio")
+    .filter((r) => !r.closest(".headset-mic")) as HTMLInputElement[];
 /** The cards can be chosen again (the last choice saved) */
-const settled = (where: HTMLElement) =>
-  waitFor(() => expect(within(where).getAllByRole("radio").every((r) => !(r as HTMLInputElement).disabled)).toBe(true));
+const settled = (where: HTMLElement) => waitFor(() => expect(cards(where).every((r) => !r.disabled)).toBe(true));
 /** The screen itself (the sidebar names the devices too) */
 const main = () => within(screen.getByRole("main"));
 /** "Auto-select the codec with the highest quality", for every device */
@@ -67,7 +71,7 @@ describe("the Codecs screen", () => {
     expect(within(wh).getByRole("radio", { name: /LDAC/ })).toBeChecked();
     // No Auto card: Auto is one switch for every device (issue #86), off
     // here, not the device's own
-    expect(within(wh).queryByRole("radio", { name: /Auto/ })).toBeNull();
+    expect(cards(wh).some((r) => r.value === "auto")).toBe(false);
     expect(autoSwitch()).not.toBeChecked();
     expect(within(wh).queryByRole("switch", { name: autoName })).toBeNull();
     const xb = await section("SRS-XB13");
@@ -461,7 +465,7 @@ describe("codec cards", () => {
     // The ones it did not support hidden (on by default, issue #86): SBC,
     // AAC and LDAC are supported, and need no "Supported" tag then
     expect(within(wh).queryByRole("radio", { name: /aptX HD/ })).toBeNull();
-    expect(within(wh).getAllByRole("radio")).toHaveLength(3);
+    expect(cards(wh)).toHaveLength(3);
     expect(within(wh).queryByText(t("ui.profile.codec_supported"))).toBeNull();
     const hide = hideSwitch();
     expect(hide).toBeChecked();
@@ -635,12 +639,12 @@ describe("the device's activity (issue #86 round 8)", () => {
     fireEvent.click(within(wh).getByRole("radio", { name: /AAC/ }));
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     // Every card waits
-    await waitFor(() => expect(within(wh).getAllByRole("radio").every((r) => (r as HTMLInputElement).disabled)).toBe(true));
+    await waitFor(() => expect(cards(wh).every((r) => r.disabled)).toBe(true));
     expect(within(wh).getByRole("button", { name: t("ui.profile.codec_settings", t("codec.sbc")) })).toBeDisabled();
     fireEvent.click(within(wh).getByRole("radio", { name: /SBC/ }));
     expect(saves(calls)).toHaveLength(1);
     // Then, once it streams again, they can be chosen again
-    await waitFor(() => expect(within(wh).getAllByRole("radio").some((r) => (r as HTMLInputElement).disabled)).toBe(false), {
+    await waitFor(() => expect(cards(wh).some((r) => r.disabled)).toBe(false), {
       timeout: 5000,
     });
     expect(core.state.snap!.stream.state).toBe("streaming");

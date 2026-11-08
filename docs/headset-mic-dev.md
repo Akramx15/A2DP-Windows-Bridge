@@ -1,8 +1,9 @@
 # Headset microphone (developer note)
 
-Status: in development on `feat/headset-mic`. Not user-facing yet: every part
-of it is behind developer mode. Verified on the emulator only (see
-"Verified" and the hardware checklist at the end).
+Status: user-facing since `feat/headset-mic-for-all` (developer mode no
+longer needed; it was before). Classic HFP (mSBC, Auto) verified on real
+hardware; LE Audio on the emulator only (see "Verified" and the hardware
+checklist at the end).
 
 The feature was written in parallel parts (W1 transport and HFP AG, W2
 voice-link, W3 classic session, W4 LE Audio, W5 UI and settings, W6
@@ -70,9 +71,10 @@ profile (`profiles.json`) keeps the string, written only when not off; a
 and the IPC value is normalized on saving (anything else is stored as
 off).
 
-Headset mode is **in force** when developer mode is on
-(`Settings::headset_mic_in_force(mode) -> HeadsetMic`, Off outside it), the
-profile's mode is not off and `mic_device_id` is not empty. `state.rs`
+Headset mode is **in force** (`state.rs` `headset_mic_in_force`) when the
+profile's mode is not off, it is not muted (`mic_muted`) and
+`mic_device_id` is not empty; developer mode is not needed (it was until
+`feat/headset-mic-for-all`). `state.rs`
 `start_profile` then sets `StreamRequest::headset_mic` (the mode) /
 `mic_output = Some(mic_device_id)` and, for an LE Audio entry, the same in
 `LeRequest::headset_mic` / `mic_output` (`set_headset_mic`; never for a
@@ -83,8 +85,7 @@ stack offers voice (`voice_wanted`) for On and Auto alike.
 `profile.save` of the profile in use that changes only `headset_mic` /
 `mic_device_*` (`headset_change`):
 
-- `Unused` (outside developer mode, or the output changed while headset
-  mode is off): the stream is not touched.
+- `Unused` (the output changed while headset mode is off): the stream is not touched.
 - `InPlace` (a classic stream streaming): `Service::set_headset_mic(mode,
   mic_output) -> bool` (`VoiceChange { mode, mic_output }`); false (no
   classic stream streaming, or a stack started without voice when turning
@@ -100,7 +101,7 @@ Loopback is captured; `Profile::mic_device_conflicts` calls it with the
 profile's source. Both sessions call it through `voice::mic_conflict` with
 the source they really capture.
 
-CLI (`app/src/core/src/cli.rs`, "Headset microphone (developer mode)"):
+CLI (`app/src/core/src/cli.rs`, "Headset microphone"):
 `--headset-mic [on|auto]` (headset mode once streaming, alone: on; on an
 `--le-audio` run, the conversational configuration), `--mic-output <name|path.wav>` (a render
 device by id or part of its friendly name, default the Windows default
@@ -502,10 +503,9 @@ for both speeds.
 - The headphones open the audio connection themselves (a voice assistant
   or call button): with headset mode on (and no conflict) it is taken over
   (`voice_attach`) and armed. Otherwise the decision depends on the stack:
-  - started **with voice** (developer headset mode, `host.voice_enabled()`):
+  - started **with voice** (headset mode in force, `host.voice_enabled()`):
     `voice_stop` closes it, as nothing would carry it;
-  - started **without voice** (every user outside developer mode, and a
-    developer with headset mode off): it is **left alone** and logged once
+  - started **without voice** (headset mode off, or muted): it is **left alone** and logged once
     per session ("no headset mode, left alone"). Before this branch BTstack
     accepted such links and BlueCaster ignored them; closing them would
     break the headphones' own button for every user. Without voice the
@@ -793,8 +793,8 @@ UI:
   On saves `headset_mic` (and `mic_muted: false`); the output picker and
   the warnings show for Auto and On, Auto adds `ui.headset_mic_auto_hint`.
 - Home's device card and the flyout's state line (`HeadsetChip` in
-  `screens/Home.tsx`): a mute toggle, only in developer mode for a profile
-  with `mic_device_id` and Auto / On. It shows the mode chosen (accent
+  `screens/Home.tsx`): a mute toggle, for a profile with `mic_device_id`
+  and Auto / On. It shows the mode chosen (accent
   outline) or Muted (`mic_off` icon, `muted`); a click saves `mic_muted`.
   Dashed while Auto has no voice link (`waiting`), `linked` while
   `StreamStatus.voice` is up for that profile; the voice codec itself stays

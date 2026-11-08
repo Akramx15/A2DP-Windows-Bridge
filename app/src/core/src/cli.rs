@@ -112,7 +112,7 @@ LE Audio (experimental, LC3 over LE isochronous channels):
                         encrypt the broadcast with this code (4-16 bytes)
   --auracast-mono       one mono channel instead of left and right
 
-Headset microphone (developer mode):
+Headset microphone:
   --headset-mic [on|auto]
                         headset mode: once streaming, the headphones'
                         microphone goes to --mic-output; classic devices switch

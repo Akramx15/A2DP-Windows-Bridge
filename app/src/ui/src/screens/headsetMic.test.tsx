@@ -1,4 +1,4 @@
-// Headset microphone (developer mode): Off / Auto / On and the output on
+// Headset microphone (not only in developer mode): Off / Auto / On and the output on
 // each device of the Codecs screen, saved with the device's profile, the
 // mute chip on Home's card and in the flyout, and the voice codec beside
 // the codec while a voice link runs
@@ -42,10 +42,11 @@ const MUTE = () => t("ui.headset_mic_mute");
 const UNMUTE = () => t("ui.headset_mic_unmute");
 
 describe("Codecs screen", () => {
-  it("has no headset microphone outside developer mode", async () => {
-    start("#/codecs");
+  it("is on every device outside developer mode too", async () => {
+    const { core } = start("#/codecs");
     const wh = await screen.findByRole("region", { name: "WH-1000XM5" });
-    expect(micModes(wh)).toBeNull();
+    expect(core.state.snap?.settings.developer_mode).toBe(false);
+    expect(mode(wh, "off")).toBeChecked();
   });
 
   it("saves the mode and the output with the device's profile", async () => {
@@ -151,7 +152,7 @@ describe("status", () => {
 describe("headset chip", () => {
   const homeCard = (name: string) => screen.findByRole("group", { name });
 
-  it("is not on Home outside developer mode", async () => {
+  it("is not on Home with headset mode off", async () => {
     start("#/home");
     const wh = await homeCard("WH-1000XM5");
     expect(wh.querySelector(".headset-chip")).toBeNull();
@@ -230,7 +231,7 @@ describe("headset chip", () => {
     await screen.findByRole("button", { name: UNMUTE() });
   });
 
-  it("is not in the flyout outside developer mode", async () => {
+  it("is not in the flyout with headset mode off", async () => {
     const { core } = start("", "normal", "flyout");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(core.state.snap?.stream.state).not.toBe("idle"));

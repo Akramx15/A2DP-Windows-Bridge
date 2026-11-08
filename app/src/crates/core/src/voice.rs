@@ -824,7 +824,7 @@ impl HeadsetMode {
 
     /// The headphones opened the audio connection themselves: taken over in
     /// headset mode, closed otherwise by a stack that offers voice. A stack
-    /// without voice (every user outside developer mode) leaves it alone,
+    /// without voice (headset mode off) leaves it alone,
     /// as before headset mode existed: a voice assistant button on the
     /// headphones opens one.
     fn adopt(

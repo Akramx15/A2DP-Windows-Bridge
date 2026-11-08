@@ -171,8 +171,8 @@ async function saveEntry(
   return ok ? saved.name : null;
 }
 
-/** Saves a device's headset mode, microphone output (developer mode,
- *  Codecs) or mute (Home's and the flyout's chip). The core opens or
+/** Saves a device's headset mode, microphone output (Codecs) or mute
+ *  (Home's and the flyout's chip). The core opens or
  *  closes the microphone link (Auto: as apps record from the output).
  *  True once saved. */
 export async function saveHeadsetMic(
@@ -288,15 +288,12 @@ export function Codecs() {
   // A card, or its "...", clicked under Auto-select (issue #86 round 8):
   // what follows once it is turned off (null: the dialog is closed)
   const [locked, setLocked] = createSignal<(() => void) | null>(null);
-  // The PC's output devices with their formats, read in developer mode
-  // (Auto matching them, the headset microphone's output), again when the
-  // window comes back (changed in Windows meanwhile)
-  const developer = () => snap().settings.developer_mode;
+  // The PC's output devices with their formats (the headset microphone's
+  // output, Auto matching them in developer mode), again when the window
+  // comes back (changed in Windows meanwhile)
   const [audioDevices, setAudioDevices] = createSignal<AudioDevice[]>([]);
-  const loadDevices = () => {
-    if (developer()) void core.request("audio.devices").then(setAudioDevices, () => {});
-  };
-  createEffect(on(developer, loadDevices));
+  const loadDevices = () => void core.request("audio.devices").then(setAudioDevices, () => {});
+  loadDevices();
   window.addEventListener("focus", loadDevices);
   onCleanup(() => window.removeEventListener("focus", loadDevices));
 
@@ -785,14 +782,12 @@ function DeviceCodecs(props: {
           }}
         />
       </Show>
-      <Show when={snap().settings.developer_mode}>
-        <HeadsetMic entry={e()} audioDevices={props.audioDevices} />
-      </Show>
+      <HeadsetMic entry={e()} audioDevices={props.audioDevices} />
     </section>
   );
 }
 
-/** Headset mode of a device (developer mode): its microphone rendered to
+/** Headset mode of a device: its microphone rendered to
  *  an output device of the PC, a virtual cable whose recording side apps
  *  use as a microphone (the virtual devices listed first). Off, Auto (only
  *  while an app records from it) or On. A classic device plays in call

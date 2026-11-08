@@ -54,7 +54,7 @@ le_audio: boolean,
  */
 le_low_latency: boolean, 
 /**
- * Headset mode (developer mode only): the headphones' microphone is
+ * Headset mode: the headphones' microphone is
  * rendered to mic_device_id. "off" (the default) | "on" | "auto";
  * anything else reads as off. "on": classic devices switch playback to
  * the voice link (mono call quality) for as long as they stream;
