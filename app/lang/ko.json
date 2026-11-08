@@ -197,6 +197,8 @@
   "quality.section_stream": "스트림",
   "quality.codec": "코덱",
   "quality.codec_value": "%s, %.1f kHz, %u ch(인코더 설정 %u kbps)",
+  "ui.diag.voice_codec_value": "%s, %.0f kHz, 모노(통화 연결)",
+  "ui.diag.voice_paused": "마이크가 열려 있습니다. 헤드폰이 통화 연결로 재생하므로 닫힐 때까지 아래 값이 멈춥니다.",
   "quality.codec_abr": " — ABR 켜짐",
   "quality.codec_capped": " — 기기의 최대 비트레이트로 제한됨",
   "quality.section_send": "전송(최근 1초)",

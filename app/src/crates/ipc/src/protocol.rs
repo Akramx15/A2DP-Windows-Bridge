@@ -1177,6 +1177,12 @@ pub struct LinkSample {
     #[ts(optional = nullable)]
     #[serde(default)]
     pub afh_map: Option<Vec<u8>>,
+    /// A classic device plays over its call link (the headset microphone
+    /// is open): A2DP is suspended, so its media figures are not the
+    /// stream's (shown as gaps, not as 0). None: not on a call link
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub voice: Option<bool>,
 }
 
 /// The connected device's Bluetooth chip, as its controller reports it

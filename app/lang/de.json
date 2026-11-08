@@ -197,6 +197,8 @@
   "quality.section_stream": "Stream",
   "quality.codec": "Codec",
   "quality.codec_value": "%s, %.1f kHz, %u Kan. (Encoder auf %u kbps)",
+  "ui.diag.voice_codec_value": "%s, %.0f kHz, mono (Anrufverbindung)",
+  "ui.diag.voice_paused": "Das Mikrofon ist offen: Der Kopfhörer spielt über die Anrufverbindung, die Werte unten pausieren, bis es schließt.",
   "quality.codec_abr": " — ABR aktiv",
   "quality.codec_capped": " — durch die maximale Bitrate des Geräts begrenzt",
   "quality.section_send": "Senden (letzte Sekunde)",

@@ -197,6 +197,8 @@
   "quality.section_stream": "ストリーム",
   "quality.codec": "コーデック",
   "quality.codec_value": "%s、%.1f kHz、%u ch（エンコーダ設定 %u kbps）",
+  "ui.diag.voice_codec_value": "%s、%.0f kHz、モノラル（通話用の接続）",
+  "ui.diag.voice_paused": "マイクが開いています。ヘッドホンは通話用の接続で再生しているため、閉じるまで下の値は止まります。",
   "quality.codec_abr": "（ABR 有効）",
   "quality.codec_capped": "（デバイスの最大ビットレートで制限）",
   "quality.section_send": "送信（直近 1 秒）",

@@ -197,6 +197,8 @@
   "quality.section_stream": "Transmisión",
   "quality.codec": "Códec",
   "quality.codec_value": "%s, %.1f kHz, %u can. (codificador a %u kbps)",
+  "ui.diag.voice_codec_value": "%s, %.0f kHz, mono (enlace de llamada)",
+  "ui.diag.voice_paused": "El micrófono está abierto: los auriculares suenan por el enlace de llamada, así que los valores de abajo se pausan hasta que se cierre.",
   "quality.codec_abr": " — ABR activado",
   "quality.codec_capped": " — limitado por la tasa de bits máxima del dispositivo",
   "quality.section_send": "Envío (último segundo)",

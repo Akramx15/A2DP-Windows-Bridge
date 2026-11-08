@@ -1884,8 +1884,12 @@ export class MockCore implements Transport {
       return;
     }
     const t = Date.now() / 1000;
-    const kbps = streaming ? (this.snap.stream.info?.bitrate_kbps ?? 0) * (0.96 + 0.06 * Math.sin(t / 2)) : 0;
-    const pps = streaming ? 120 + Math.random() * 6 : 0;
+    // A classic device on its call link (headset microphone open): A2DP is
+    // suspended, as in the core
+    const voice = streaming && this.snap.stream.voice?.link === "hfp";
+    const a2dp = streaming && !voice;
+    const kbps = a2dp ? (this.snap.stream.info?.bitrate_kbps ?? 0) * (0.96 + 0.06 * Math.sin(t / 2)) : 0;
+    const pps = a2dp ? 120 + Math.random() * 6 : 0;
     const bps = (kbps * 1000) / 8;
     const avg = pps > 0 ? bps / pps : null;
     const slots = avg === null ? 0 : avg + 4 <= 83 ? 2 : avg + 4 <= 552 ? 4 : Math.ceil((avg + 4) / 1021) * 6;
@@ -1957,6 +1961,7 @@ export class MockCore implements Transport {
         : null,
       capture_discontinuities: this.since(this.totals, this.streamStart).capture_discontinuities,
       capture_lost: this.since(this.totals, this.streamStart).capture_lost,
+      ...(voice ? { voice: true } : {}),
     };
     this.onMessage({ type: "event", rev: this.rev, event: { kind: "link", value: sample } });
   }

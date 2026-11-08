@@ -121,4 +121,10 @@ capture_lost?: number | null,
  * The channels the link hops over: 10 bytes, bit n = Bluetooth
  * channel n (2402 + n MHz). Null while there is no reading.
  */
-afh_map?: Array<number> | null, };
+afh_map?: Array<number> | null, 
+/**
+ * A classic device plays over its call link (the headset microphone
+ * is open): A2DP is suspended, so its media figures are not the
+ * stream's (shown as gaps, not as 0). None: not on a call link
+ */
+voice?: boolean, };

@@ -160,6 +160,17 @@ describe("status", () => {
     expect(core.state.snap?.stream.state).toBe("streaming");
   });
 
+  it("pauses the A2DP figures on Diagnostics while the call link plays, without zeros", async () => {
+    const { core } = start("#/diagnostics", "voice");
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(core.state.snap?.stream.voice?.codec).toBe("msbc"));
+    await screen.findByText(t("ui.diag.voice_paused"));
+    const row = (label: string) => screen.getByText(label, { selector: "dt" }).closest(".lq-row")!;
+    await waitFor(() => expect(row(t("quality.codec"))).toHaveTextContent(t("ui.diag.voice_codec_value", "mSBC", 16)));
+    expect(row(t("quality.bitrate"))).toHaveTextContent("–");
+    expect(row(t("quality.bitrate"))).not.toHaveTextContent("0 kbps");
+  });
+
   it("shows LE Audio's voice codec without the warning", async () => {
     const { core } = start("#/home", "voice");
     await homeCard("Galaxy Buds2 Pro");
