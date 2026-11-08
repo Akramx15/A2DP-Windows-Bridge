@@ -215,6 +215,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
       always_verbose: null,
       health_every_interval: false,
     },
+    dev_debug: { mtk_iso_interface: false, mtk_iso_pad: 0, mtk_command: "" },
     bt_chip_pid: 0,
     bt_chip_fw_stem: "",
     afh: "auto",

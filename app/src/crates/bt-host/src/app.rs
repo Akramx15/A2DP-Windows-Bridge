@@ -156,6 +156,10 @@ pub(crate) struct HostApp {
     init_started: Instant,
     /// Manufacturer the controller reported in this init (Read Local Version)
     controller_company: Option<u16>,
+    /// Developer > Debug's command (crate::debug_command): waiting to be
+    /// sent, then its opcode until the answer comes
+    debug_command: Option<Vec<u8>>,
+    debug_command_sent: Option<u16>,
     rtk_version_seen: bool,
     rtk_lmp_first: u16,
     rtk_verify_pending: bool,
@@ -261,6 +265,8 @@ impl HostApp {
             caps: Default::default(),
             init_started: Instant::now(),
             controller_company: None,
+            debug_command: None,
+            debug_command_sent: None,
             rtk_version_seen: false,
             rtk_lmp_first: 0,
             rtk_verify_pending: false,
@@ -1174,6 +1180,15 @@ impl HostApp {
             },
             HCI_EVENT_COMMAND_STATUS => {
                 if let (Some(status), Some(opcode)) = (u8_at(p, 2), le16(p, 4))
+                    && self.debug_command_sent == Some(opcode)
+                {
+                    self.debug_command_sent = None;
+                    tracing::info!(
+                        "debug command 0x{opcode:04X}: Command Status 0x{status:02X} ({})",
+                        hci_error_string(status)
+                    );
+                }
+                if let (Some(status), Some(opcode)) = (u8_at(p, 2), le16(p, 4))
                     && status != ERROR_CODE_SUCCESS
                 {
                     tracing::debug!("HCI command 0x{opcode:04X} status 0x{status:02X} ({})", hci_error_string(status));
@@ -1187,6 +1202,15 @@ impl HostApp {
             }
             HCI_EVENT_COMMAND_COMPLETE => {
                 let opcode = le16(p, 3).unwrap_or(0);
+                if self.debug_command_sent == Some(opcode) {
+                    self.debug_command_sent = None;
+                    let status = u8_at(p, 5).unwrap_or(0xFF);
+                    tracing::info!(
+                        "debug command 0x{opcode:04X}: Command Complete 0x{status:02X} ({}), return {:02X?}",
+                        hci_error_string(status),
+                        p.get(6..).unwrap_or_default()
+                    );
+                }
                 tracing::trace!("HCI command complete 0x{opcode:04X} status {:?}", u8_at(p, 5));
                 if let Some(status) = u8_at(p, 5)
                     && status != ERROR_CODE_SUCCESS
@@ -1511,6 +1535,10 @@ impl HostApp {
                 self.shared.update(|s| s.realtek_rom = true);
             }
         }
+        // Developer > Debug: MediaTek controllers only
+        self.debug_command_sent = None;
+        self.debug_command = crate::debug_command::get().filter(|_| self.controller_company == Some(0x0046));
+        self.send_debug_command(stack);
         let le_audio_capable = stack.controller_iso() == Some(true);
         tracing::info!(
             "controller: LE Audio isochronous channels {}",
@@ -2298,10 +2326,26 @@ impl HostApp {
             stack.release_command_slot(opcode, ERROR_CODE_UNKNOWN_HCI_COMMAND);
         }
     }
+    /// Developer > Debug's command once BTstack can send one (HCI ready,
+    /// then each AFH tick until it went)
+    fn send_debug_command(&mut self, stack: &Stack) {
+        if self.debug_command.is_none() || !stack.can_send_command_now() {
+            return;
+        }
+        let Some(packet) = self.debug_command.take() else { return };
+        let opcode = u16::from_le_bytes([packet[0], packet[1]]);
+        let status = stack.cmd_raw(&packet);
+        tracing::info!("debug command {packet:02X?} sent (MediaTek controller): 0x{status:02X}");
+        if status == ERROR_CODE_SUCCESS {
+            self.debug_command_sent = Some(opcode);
+        }
+    }
+
     fn afh_tick(&mut self, stack: &Stack) {
         if !self.shared.lock().hci_ready {
             return;
         }
+        self.send_debug_command(stack);
         let version = self.controls.afh_version.load(Ordering::Acquire);
         let classify =
             self.afh_policy_version_seen != Some(version) || self.afh_ticks.is_multiple_of(AFH_CLASSIFY_EVERY_TICKS);

@@ -759,6 +759,18 @@ pub struct VendorInfo {
     pub options: Vec<String>,
 }
 
+/// Developer > Debug (bluecaster_core::settings::DevDebug)
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(default)]
+pub struct DevDebug {
+    /// LE Audio over the MediaTek adapter's interrupt interface
+    pub mtk_iso_interface: bool,
+    /// Outgoing ISO packets zero-padded to this length; 0: none
+    pub mtk_iso_pad: u16,
+    /// One HCI command after init, in hex ("FD98 08 01"); empty: none
+    pub mtk_command: String,
+}
+
 /// Developer mode's logging (bluecaster_core::settings::DevLog), in force while
 /// developer_mode is on
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -850,6 +862,9 @@ pub struct Settings {
     /// that stays on, the stream health line every interval
     #[serde(default)]
     pub dev_log: DevLog,
+    /// Developer > Debug: experiments for one adapter's transport
+    #[serde(default)]
+    pub dev_debug: DevDebug,
     /// 0 = auto, a Realtek PID, 0xFFFE = not Realtek
     pub bt_chip_pid: u16,
     pub bt_chip_fw_stem: String,

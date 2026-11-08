@@ -352,6 +352,11 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
             },
             health_every_interval: s.dev_log.health_every_interval,
         },
+        dev_debug: ipc::DevDebug {
+            mtk_iso_interface: s.dev_debug.mtk_iso_interface,
+            mtk_iso_pad: s.dev_debug.mtk_iso_pad,
+            mtk_command: s.dev_debug.mtk_command.clone(),
+        },
         bt_chip_pid: s.bt_chip_pid,
         bt_chip_fw_stem: s.bt_chip_fw_stem.clone(),
         afh: s.afh.clone(),
@@ -437,6 +442,11 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
         health_every_interval: s.dev_log.health_every_interval,
     }
     .clamped();
+    c.dev_debug = bluecaster_core::settings::DevDebug {
+        mtk_iso_interface: s.dev_debug.mtk_iso_interface,
+        mtk_iso_pad: s.dev_debug.mtk_iso_pad.min(hci_transport::iso_intr::PAD_MAX as u16),
+        mtk_command: s.dev_debug.mtk_command.trim().to_string(),
+    };
     c.bt_chip_pid = s.bt_chip_pid;
     c.bt_chip_fw_stem = s.bt_chip_fw_stem.clone();
     c.afh = s.afh.clone();

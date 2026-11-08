@@ -960,6 +960,17 @@ fn apply_dev_overrides(settings: &Settings) {
     codec::dev::set_overrides(if settings.debug_mode { settings.dev_overrides } else { Default::default() });
     crate::vendor::set_overrides(if settings.debug_mode { settings.dev_vendors.clone() } else { Default::default() });
     crate::health::set_every_interval(settings.log().health_every_interval);
+    // Developer > Debug, read when the adapter opens next
+    let debug = if settings.debug_mode { settings.dev_debug.clone() } else { Default::default() };
+    hci_transport::iso_intr::set_config(hci_transport::iso_intr::IsoInterfaceConfig {
+        enabled: debug.mtk_iso_interface,
+        pad_to: debug.mtk_iso_pad.into(),
+    });
+    let command = bt_host::debug_command::parse(&debug.mtk_command).unwrap_or_else(|e| {
+        tracing::warn!("Developer > Debug: command not sent: {e}");
+        None
+    });
+    bt_host::debug_command::set(command);
 }
 
 impl Service {

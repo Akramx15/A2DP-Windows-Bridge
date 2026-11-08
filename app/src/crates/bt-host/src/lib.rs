@@ -14,6 +14,7 @@ mod app;
 pub mod bringup;
 pub mod capture;
 pub mod chips;
+pub mod debug_command;
 pub mod events;
 pub mod intel;
 mod le;
