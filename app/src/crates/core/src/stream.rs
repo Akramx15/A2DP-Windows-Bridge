@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use audio_capture::{Capture, CaptureOptions, Format, Running, SampleFormat, Sink, Source};
-use bt_host::{BtHost, ConfigureError, ConnectFailure, MediaSink, ReconnectError};
+use bt_host::{BtHost, ConfigureError, ConnectFailure, HeadsetMic, MediaSink, ReconnectError};
 use codec::caps::{self, ConfigError, Configuration, RemoteCaps, Unavailable};
 use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
 use pipeline::{BufferPreset, CaptureInput, InputFormat, Pipeline, PipelineConfig, SampleType};
@@ -72,8 +72,9 @@ pub struct StreamRequest {
     pub le: Option<bt_host::LeRequest>,
     /// Headset mode (developer mode, docs/headset-mic-dev.md): the
     /// headphones' microphone goes to `mic_output`. Classic devices switch
-    /// to the HFP voice link once streaming ([`crate::voice`]).
-    pub headset_mic: bool,
+    /// to the HFP voice link once streaming ([`crate::voice`]); Auto: only
+    /// while an application records from the output's capture side.
+    pub headset_mic: HeadsetMic,
     /// Where the microphone goes: a render endpoint id (the profile's
     /// `mic_device_id`), from the command line also a friendly-name part or
     /// a path ending in ".wav" (written instead of rendered). None or

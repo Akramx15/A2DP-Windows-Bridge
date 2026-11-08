@@ -543,10 +543,15 @@ pub struct Profile {
     #[serde(default = "yes")]
     pub le_low_latency: bool,
     /// Headset mode (developer mode only): the headphones' microphone is
-    /// rendered to mic_device_id. Classic devices switch playback to the
-    /// voice link (mono call quality); LE Audio keeps its media quality
-    #[serde(default)]
-    pub headset_mic: bool,
+    /// rendered to mic_device_id. "off" (the default) | "on" | "auto";
+    /// anything else reads as off. "on": classic devices switch playback to
+    /// the voice link (mono call quality) for as long as they stream;
+    /// "auto": only while an application records from mic_device_id's
+    /// capture side (the cable's "CABLE Output"), full-quality A2DP
+    /// otherwise. LE Audio keeps its media quality either way ("auto" is
+    /// "on" there).
+    #[serde(default = "headset_mic_off")]
+    pub headset_mic: String,
     /// Render endpoint id that receives the microphone (a virtual cable's
     /// input). Empty = none chosen: headset mode stays off
     #[serde(default)]
@@ -638,6 +643,10 @@ impl Default for CodecValues {
 
 fn yes() -> bool {
     true
+}
+
+fn headset_mic_off() -> String {
+    "off".into()
 }
 
 fn battery_low() -> u8 {
@@ -2218,15 +2227,16 @@ mod tests {
             "max_media_payload": 1023}))
         .unwrap();
         assert!(!profile.le_audio);
-        assert!(!profile.headset_mic && profile.mic_device_id.is_empty() && profile.mic_device_name.is_empty());
+        assert!(profile.headset_mic == "off" && profile.mic_device_id.is_empty() && profile.mic_device_name.is_empty());
         let le = Profile {
             le_audio: true,
-            headset_mic: true,
+            headset_mic: "auto".into(),
             mic_device_id: "{cable}".into(),
             mic_device_name: "CABLE Input".into(),
             ..profile
         };
         assert_eq!(serde_json::from_value::<Profile>(serde_json::to_value(&le).unwrap()).unwrap(), le);
+        assert_eq!(serde_json::to_value(&le).unwrap()["headset_mic"], "auto");
 
         // A stream status without voice, and one with it
         let st: StreamStatus = serde_json::from_value(serde_json::json!({

@@ -27,6 +27,44 @@ use btstack_sys::events::BufferSize;
 
 use crate::events::{event_type, le16, u8_at};
 
+/// Headset mode of a stream (the profile's `headset_mic`, developer mode)
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum HeadsetMic {
+    #[default]
+    Off,
+    /// The voice link for as long as the stream runs
+    On,
+    /// Classic devices: the voice link only while an application records
+    /// from the microphone output's capture side, full-quality A2DP
+    /// otherwise. LE Audio treats it as [`HeadsetMic::On`]: its
+    /// conversational stream keeps the media quality anyway.
+    Auto,
+}
+
+impl HeadsetMic {
+    /// "off" | "on" | "auto"; anything else is off
+    pub fn parse(s: &str) -> HeadsetMic {
+        match s {
+            "on" => HeadsetMic::On,
+            "auto" => HeadsetMic::Auto,
+            _ => HeadsetMic::Off,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HeadsetMic::Off => "off",
+            HeadsetMic::On => "on",
+            HeadsetMic::Auto => "auto",
+        }
+    }
+
+    /// Not off: the stack offers voice, the profile's output is needed
+    pub fn is_on(self) -> bool {
+        self != HeadsetMic::Off
+    }
+}
+
 /// The status of [`VoiceEvent::Failed`] and [`HostError::Refused`] when the
 /// transport or the controller cannot carry SCO for the link
 pub const NO_SCO_PATH: u8 = 0xFF;

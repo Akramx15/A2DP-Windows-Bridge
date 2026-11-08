@@ -127,8 +127,13 @@ pub struct LeRequest {
     /// `preset` is a broadcast preset (`le_audio::broadcast::presets`)
     pub broadcast: Option<LeBroadcast>,
     /// Headset microphone: the conversational configuration (a source ASE
-    /// sends the microphone; `--headset-mic`)
-    pub headset_mic: bool,
+    /// sends the microphone; `--headset-mic`). [`HeadsetMic::Auto`] is
+    /// [`HeadsetMic::On`] here: the conversational stream keeps the media
+    /// preset, so there is no quality to win back while nobody records.
+    ///
+    /// [`HeadsetMic::Auto`]: crate::HeadsetMic::Auto
+    /// [`HeadsetMic::On`]: crate::HeadsetMic::On
+    pub headset_mic: crate::HeadsetMic,
     /// Where the microphone goes (the profile's `mic_device_id`,
     /// `--mic-output`): a path ending in ".wav" (a WAV file), else a render
     /// device's id or part of its name; None: the default output

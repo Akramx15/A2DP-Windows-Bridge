@@ -17,8 +17,8 @@ use bluecaster_core::{
     LeStreamDetails, ScannedDevice, Service, ServiceEvent, SourceRequest, StreamRequest,
     StreamState as CoreStreamState, VolumeSync, devices,
 };
-use bt_host::LinkStats;
 use bt_host::chips::{self, ChipVendor};
+use bt_host::{HeadsetMic, LinkStats};
 use ipc::{
     AdapterInfo, AdapterState, AdapterStatus, AudioApp, AudioDevice, CaptureState, DevLog, DevOverrides, Device,
     DiagInfo, DriverKind, ErrorInfo, Event, FirmwareFile, LeStreamInfo, LinkTotals, LoaderStatus, Method, MixerApp,
@@ -184,7 +184,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         max_media_payload: p.max_media_payload.unwrap_or(legacy),
         le_audio: p.le_audio,
         le_low_latency: p.le_low_latency,
-        headset_mic: p.headset_mic,
+        headset_mic: p.headset_mic.clone(),
         mic_device_id: p.mic_device_id.clone(),
         mic_device_name: p.mic_device_name.clone(),
         sbc_bitpool: p.sbc_bitpool,
@@ -262,7 +262,8 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.max_media_payload = Some(bt_host::media::clamp_media_payload_limit(p.max_media_payload as u32));
     c.le_audio = p.le_audio;
     c.le_low_latency = p.le_low_latency;
-    c.headset_mic = p.headset_mic;
+    // Normalized: anything but "on" / "auto" is "off"
+    c.headset_mic = HeadsetMic::parse(&p.headset_mic).as_str().into();
     c.mic_device_id = p.mic_device_id.clone();
     c.mic_device_name = p.mic_device_name.clone();
     c.sbc_bitpool = p.sbc_bitpool;
@@ -1251,14 +1252,19 @@ fn source_changes_in_place(stream: &StreamStatus, before: Option<&CoreProfile>, 
     stream.state == StreamState::Streaming && !saved.le_audio && before.is_some_and(|b| b.only_source_differs(saved))
 }
 
-/// Headset mode in force (`on`: developer mode, the profile's flag and an
-/// output chosen) into a profile's request, for classic and LE Audio
-/// devices alike (not a broadcast)
-fn set_headset_mic(req: &mut StreamRequest, on: bool, mic_device_id: &str) {
-    req.headset_mic = on;
-    req.mic_output = on.then(|| mic_device_id.to_string());
+/// The headset mode in force for a profile: developer mode, the profile's
+/// mode and an output chosen; Off otherwise
+fn headset_mic_in_force(settings: &CoreSettings, p: &CoreProfile) -> HeadsetMic {
+    if p.mic_device_id.is_empty() { HeadsetMic::Off } else { settings.headset_mic_in_force(p.headset_mic_mode()) }
+}
+
+/// Headset mode in force into a profile's request, for classic and LE Audio
+/// devices alike (not a broadcast; LE Audio takes Auto as On)
+fn set_headset_mic(req: &mut StreamRequest, mode: HeadsetMic, mic_device_id: &str) {
+    req.headset_mic = mode;
+    req.mic_output = mode.is_on().then(|| mic_device_id.to_string());
     if let Some(le) = req.le.as_mut().filter(|le| le.broadcast.is_none()) {
-        le.headset_mic = on;
+        le.headset_mic = mode;
         le.mic_output = req.mic_output.clone();
     }
 }
@@ -1286,7 +1292,7 @@ fn headset_change(
     developer_mode: bool,
 ) -> Option<HeadsetChange> {
     let before = before.filter(|b| b.only_headset_mic_differs(saved))?;
-    Some(if !developer_mode || (!before.headset_mic && !saved.headset_mic) {
+    Some(if !developer_mode || (!before.headset_mic_mode().is_on() && !saved.headset_mic_mode().is_on()) {
         HeadsetChange::Unused
     } else if stream.state == StreamState::Streaming && !saved.le_audio {
         HeadsetChange::InPlace
@@ -1983,11 +1989,12 @@ impl CoreState {
             req.codec_values = p.all_codec_values();
         }
         // Headset mode (developer mode): on only with an output chosen
-        let headset_mic = settings.headset_mic_in_force(p.headset_mic) && !p.mic_device_id.is_empty();
-        if headset_mic {
+        let headset_mic = headset_mic_in_force(&settings, p);
+        if headset_mic.is_on() {
             tracing::debug!(
-                "profile {}: headset microphone to {}",
+                "profile {}: headset microphone ({}) to {}",
                 bluecaster_core::diag::quoted(&p.name),
+                headset_mic.as_str(),
                 bluecaster_core::diag::quoted(&p.mic_device_name)
             );
         }
@@ -2601,15 +2608,13 @@ impl CoreState {
                         tracing::info!(
                             "profile {} saved while in use: headset microphone {} in place",
                             bluecaster_core::diag::quoted(&key),
-                            if in_order.headset_mic { "on" } else { "off" }
+                            in_order.headset_mic_mode().as_str()
                         );
                         // The session refuses an output that would feed the
                         // capture; false (no stream, or a stack without
                         // voice): it starts again instead
-                        let settings = self.service.settings();
-                        let on =
-                            settings.headset_mic_in_force(in_order.headset_mic) && !in_order.mic_device_id.is_empty();
-                        self.service.set_headset_mic(on, on.then(|| in_order.mic_device_id.clone()))
+                        let mode = headset_mic_in_force(&self.service.settings(), &in_order);
+                        self.service.set_headset_mic(mode, mode.is_on().then(|| in_order.mic_device_id.clone()))
                     }
                     Some(HeadsetChange::Restart) | None => false,
                 };
@@ -3437,7 +3442,7 @@ mod tests {
     fn headset_mode_switches_in_place_for_classic_and_restarts_le_audio() {
         let before = CoreProfile { name: "WH".into(), ..CoreProfile::default() };
         let on = CoreProfile {
-            headset_mic: true,
+            headset_mic: "on".into(),
             mic_device_id: "{cable}".into(),
             mic_device_name: "CABLE Input".into(),
             ..before.clone()
@@ -3452,8 +3457,13 @@ mod tests {
         // Nothing the stream uses: outside developer mode, or an output
         // chosen while headset mode is off
         assert_eq!(headset_change(&streaming, Some(&before), &on, false), Some(HeadsetChange::Unused));
-        let output_only = CoreProfile { headset_mic: false, ..on.clone() };
+        let output_only = CoreProfile { headset_mic: "off".into(), ..on.clone() };
         assert_eq!(headset_change(&streaming, Some(&before), &output_only, true), Some(HeadsetChange::Unused));
+        // Auto: on to auto and auto to off switch in place as well
+        let auto = CoreProfile { headset_mic: "auto".into(), ..on.clone() };
+        assert_eq!(headset_change(&streaming, Some(&on), &auto, true), Some(HeadsetChange::InPlace));
+        assert_eq!(headset_change(&streaming, Some(&auto), &output_only, true), Some(HeadsetChange::InPlace));
+        assert_eq!(headset_change(&streaming, Some(&before), &auto, false), Some(HeadsetChange::Unused));
         // LE Audio sets its streams up again, as does a classic one connecting
         let le = CoreProfile { le_audio: true, ..before.clone() };
         let le_on = CoreProfile { le_audio: true, ..on.clone() };
@@ -3478,18 +3488,32 @@ mod tests {
             ..CoreProfile::default()
         };
         let mut req = le_profile.to_request(1000).unwrap();
-        set_headset_mic(&mut req, true, "{cable}");
+        assert_eq!(req.headset_mic, HeadsetMic::Off);
+        set_headset_mic(&mut req, HeadsetMic::On, "{cable}");
         let le = req.le.as_ref().unwrap();
-        assert!(req.headset_mic && le.headset_mic);
+        assert_eq!((req.headset_mic, le.headset_mic), (HeadsetMic::On, HeadsetMic::On));
         assert_eq!(le.mic_output.as_deref(), Some("{cable}"));
-        set_headset_mic(&mut req, false, "{cable}");
+        set_headset_mic(&mut req, HeadsetMic::Auto, "{cable}");
         let le = req.le.as_ref().unwrap();
-        assert!(!req.headset_mic && !le.headset_mic && le.mic_output.is_none());
+        assert_eq!((req.headset_mic, le.headset_mic), (HeadsetMic::Auto, HeadsetMic::Auto));
+        assert_eq!(le.mic_output.as_deref(), Some("{cable}"));
+        set_headset_mic(&mut req, HeadsetMic::Off, "{cable}");
+        let le = req.le.as_ref().unwrap();
+        assert_eq!((req.headset_mic, le.headset_mic), (HeadsetMic::Off, HeadsetMic::Off));
+        assert!(le.mic_output.is_none());
         // Classic: the request only
-        let mut classic = CoreProfile { le_audio: false, ..le_profile }.to_request(1000).unwrap();
-        set_headset_mic(&mut classic, true, "{cable}");
-        assert!(classic.le.is_none() && classic.headset_mic);
+        let mut classic = CoreProfile { le_audio: false, ..le_profile.clone() }.to_request(1000).unwrap();
+        set_headset_mic(&mut classic, HeadsetMic::Auto, "{cable}");
+        assert!(classic.le.is_none() && classic.headset_mic == HeadsetMic::Auto);
         assert_eq!(classic.mic_output.as_deref(), Some("{cable}"));
+        // In force: developer mode and an output chosen
+        let mut settings = CoreSettings::default();
+        let auto = CoreProfile { headset_mic: "auto".into(), mic_device_id: "{cable}".into(), ..le_profile };
+        assert_eq!(headset_mic_in_force(&settings, &auto), HeadsetMic::Off);
+        settings.debug_mode = true;
+        assert_eq!(headset_mic_in_force(&settings, &auto), HeadsetMic::Auto);
+        let no_output = CoreProfile { mic_device_id: String::new(), ..auto };
+        assert_eq!(headset_mic_in_force(&settings, &no_output), HeadsetMic::Off);
     }
 
     #[test]
@@ -4072,15 +4096,18 @@ mod tests {
         let classic = Profile { le_audio: false, ..ui };
         assert!(!merge_profile(Some(&core), &classic).le_audio);
         // Headset mode and its output, both ways
-        assert!(!classic.headset_mic && classic.mic_device_id.is_empty());
+        assert!(classic.headset_mic == "off" && classic.mic_device_id.is_empty());
         let mic = Profile {
-            headset_mic: true,
+            headset_mic: "auto".into(),
             mic_device_id: "{cable}".into(),
             mic_device_name: "CABLE Input".into(),
             ..classic
         };
         let stored = merge_profile(Some(&core), &mic);
-        assert!(stored.headset_mic);
+        assert_eq!(stored.headset_mic_mode(), HeadsetMic::Auto);
+        // Anything else from the UI is stored as off
+        let odd = Profile { headset_mic: "maybe".into(), ..mic.clone() };
+        assert_eq!(merge_profile(Some(&core), &odd).headset_mic, "off");
         assert_eq!((stored.mic_device_id.as_str(), stored.mic_device_name.as_str()), ("{cable}", "CABLE Input"));
         assert_eq!(to_ipc_profile(&stored, 679), mic);
 

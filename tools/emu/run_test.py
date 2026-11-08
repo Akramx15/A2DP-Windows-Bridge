@@ -55,7 +55,7 @@ bluecaster-core.exe --cli --scan lists it:
     from a name request after the first inquiry
 Outputs go to tools/emu/out/scan-<case>/.
 
-    python tools/emu/run_test.py --voice [cvsd msbc lc3swb cvsd-roundtrip]
+    python tools/emu/run_test.py --voice [cvsd msbc lc3swb cvsd-roundtrip cvsd-auto]
 
 runs the HFP audio cases instead (headset mode: bluecaster-core --headset-mic
 --mic-output <out>/mic.wav): emu_sink.py --hfp <codec> adds a hands-free
@@ -76,6 +76,8 @@ mSBC / LC3-SWB as frames encoded by BlueCaster's codecs, voice_frames.py):
 cvsd-roundtrip: headset mode on 3 s after streaming starts and off at 6 s
 (--headset-mic-toggle 3,6); also A2DP media after the voice link closed and
 the test tone in the last second the sink decoded.
+cvsd-auto: --headset-mic auto; a WAV output counts as recorded from, so the
+checks are cvsd's, plus Auto's "an application records" in the log.
 Outputs go to tools/emu/out/voice-<case>/.
 """
 
@@ -1096,6 +1098,7 @@ VOICE_CASES = {
     'msbc': ('mSBC', 8000 / 60),
     'lc3swb': ('LC3-SWB', 8000 / 60),
     'cvsd-roundtrip': ('CVSD', 16000 / 60),
+    'cvsd-auto': ('CVSD', 16000 / 60),
 }
 # The hands-free unit's tone (hfp_audio.py TX_TONE_HZ, voice_frames.py) as
 # BlueCaster's mic.wav must hold it: frequency and amplitude
@@ -1164,7 +1167,9 @@ def run_voice_case(args, case, port):
     port = free_port(port)
     src_capture, sink_capture = os.path.join(out, 'bluecaster.pklg'), os.path.join(out, 'sink.pklg')
     mic_wav = os.path.join(out, 'mic.wav')
-    headset = (['--headset-mic-toggle', ','.join(map(str, ROUNDTRIP_TOGGLE))] if roundtrip else ['--headset-mic'])
+    auto = case.endswith('-auto')
+    headset = (['--headset-mic-toggle', ','.join(map(str, ROUNDTRIP_TOGGLE))] if roundtrip
+               else ['--headset-mic', 'auto'] if auto else ['--headset-mic'])
     sink = start_sink(port, sink_capture, os.path.join(out, 'sink.log'), extra=['--hfp', hf_case])
     try:
         env = dict(os.environ, BLUECASTER_CONFIG_DIR=os.path.join(out, 'config'), BLUECASTER_LOG='debug')
@@ -1221,6 +1226,8 @@ def run_voice_case(args, case, port):
             failures.append(f'sink: what BlueCaster sent is not right ({tone})')
     if 'dropped an incoming HCI packet' in bc_log:
         failures.append('bluecaster.log: incoming HCI packets dropped')
+    if auto and 'voice: auto: an application records' not in bc_log:
+        failures.append('bluecaster.log: Auto never saw the WAV output as recorded from')
     if roundtrip:
         failures += roundtrip_checks(args, out, sink_capture, bc_log, detail)
     return failures, ' | '.join(detail)

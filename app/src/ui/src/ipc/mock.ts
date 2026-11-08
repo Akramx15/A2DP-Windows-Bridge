@@ -144,7 +144,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     max_media_payload: 1023,
     le_audio: false,
     le_low_latency: true,
-    headset_mic: false,
+    headset_mic: "off",
     mic_device_id: "",
     mic_device_name: "",
     sbc_bitpool: 0,
@@ -273,7 +273,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   // le_unchecked: one no stack ran on yet
   const voice = scenario === "voice";
   const le = scenario === "le" || scenario === "le_unsupported" || scenario === "le_unchecked" || voice;
-  const mic = voice ? { headset_mic: true, mic_device_id: CABLE.id, mic_device_name: CABLE.name } : {};
+  const mic = voice ? { headset_mic: "on", mic_device_id: CABLE.id, mic_device_name: CABLE.name } : {};
   // Names long enough to wrap or overflow every place that shows them
   const long = scenario === "long";
   const LONG_NAME = "リビングのソニーワイヤレスノイズキャンセリングヘッドホン（LDAC・990kbps・高音質優先）";
@@ -1483,12 +1483,14 @@ export class MockCore implements Transport {
     this.later(500, () => this.sbcAbrStep(step + 1));
   }
 
-  /** The voice link a stream of the profile reports: headset mode in
+  /** The voice link a stream of the profile reports: headset mode on in
    *  developer mode with an output chosen (mSBC for a classic device, LC3
    *  at 32 kHz for LE Audio), as W3/W4 report it */
   private voiceOf(name: string | null): VoiceStatus | null {
     const p = this.snap.profiles.find((x) => x.name === name);
-    if (!p || !p.headset_mic || !p.mic_device_id || !this.snap.settings.developer_mode) return null;
+    // Auto: no application records from the cable in the mock, so its
+    // link waits
+    if (!p || p.headset_mic !== "on" || !p.mic_device_id || !this.snap.settings.developer_mode) return null;
     return p.le_audio
       ? { codec: "lc3", link: "le", rate: 32000, mic_device_id: p.mic_device_id }
       : { codec: "msbc", link: "hfp", rate: 16000, mic_device_id: p.mic_device_id };

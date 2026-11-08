@@ -44,7 +44,7 @@ import { unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecCards";
-import { Banner, Button, Check, Dialog, Field, Select, Toggle, type Option } from "../components/controls";
+import { Banner, Button, Check, Dialog, Field, Segmented, Select, Toggle, type Option } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { stateLabel } from "../components/stream";
 import { t } from "../i18n";
@@ -68,6 +68,9 @@ import {
 } from "../lib/codecs";
 import {
   audioEntries,
+  HEADSET_MODES,
+  headsetMode,
+  type HeadsetMode,
   captureDevice,
   captureInForce,
   codecsOnRequest,
@@ -165,6 +168,18 @@ async function saveEntry(
   const saved = normalizeProfile(next);
   const ok = await app.run(() => app.core.request("profile.save", { profile: saved, original_name: cur?.name ?? null }));
   return ok ? saved.name : null;
+}
+
+/** Saves a device's headset mode or microphone output (developer mode):
+ *  the Codecs screen, Home's and the flyout's chip. The core opens or
+ *  closes the microphone link (Auto: as apps record from the output).
+ *  True once saved. */
+export async function saveHeadsetMic(
+  app: ReturnType<typeof useApp>,
+  entry: AudioEntry,
+  patch: Partial<Pick<Profile, "headset_mic" | "mic_device_id" | "mic_device_name">>,
+): Promise<boolean> {
+  return (await saveEntry(app, entry, (base) => ({ ...base, ...patch }))) !== null;
 }
 
 /** Saves the device's profile with `codec` chosen (`values`: from its "..."
@@ -771,16 +786,18 @@ function DeviceCodecs(props: {
 
 /** Headset mode of a device (developer mode): its microphone rendered to
  *  an output device of the PC, a virtual cable whose recording side apps
- *  use as a microphone (the virtual devices listed first). A classic device
- *  plays in call quality meanwhile; LE Audio keeps its own. */
+ *  use as a microphone (the virtual devices listed first). Off, Auto (only
+ *  while an app records from it) or On. A classic device plays in call
+ *  quality while the microphone is open; LE Audio keeps its own. */
 function HeadsetMic(props: { entry: AudioEntry; audioDevices: readonly AudioDevice[] }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const shown = (): Profile => props.entry.profile ?? entryBase(props.entry, snap().profiles);
+  const mode = () => headsetMode(shown());
   const [busy, setBusy] = createSignal(false);
   const save = async (patch: Partial<Profile>) => {
     setBusy(true);
-    await saveEntry(app, props.entry, (base) => ({ ...base, ...patch }));
+    await saveHeadsetMic(app, props.entry, patch);
     setBusy(false);
   };
   const outputs = (): Option<string>[] => {
@@ -805,14 +822,21 @@ function HeadsetMic(props: { entry: AudioEntry; audioDevices: readonly AudioDevi
   };
   return (
     <div class="headset-mic">
-      <Check
-        label={t("ui.headset_mic")}
-        title={t("ui.headset_mic_hint")}
-        checked={shown().headset_mic}
-        disabled={busy()}
-        onChange={(v) => void save({ headset_mic: v })}
-      />
-      <Show when={shown().headset_mic}>
+      <div class="headset-mic-mode">
+        <span class="row-label" title={t("ui.headset_mic_hint")}>
+          {t("ui.headset_mic")}
+        </span>
+        <Segmented<HeadsetMode>
+          label={t("ui.headset_mic")}
+          value={mode()}
+          options={HEADSET_MODES.map((m) => ({ value: m, label: t(`ui.headset_mic_${m}`), disabled: busy() }))}
+          onChange={(m) => void save({ headset_mic: m })}
+        />
+      </div>
+      <Show when={mode() === "auto"}>
+        <span class="hint">{t("ui.headset_mic_auto_hint")}</span>
+      </Show>
+      <Show when={mode() !== "off"}>
         <Field label={t("ui.mic_output")} hint={t("ui.mic_output_hint")} stacked>
           {(id, describedBy) => (
             <Select

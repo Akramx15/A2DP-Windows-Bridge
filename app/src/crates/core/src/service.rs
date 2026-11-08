@@ -11,8 +11,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use bt_host::{
-    BtHost, DiscoveredDevice, HciCapture, HostConfig, HostEvent, InitFailure, LeConfig, LeScanResult, LinkStats,
-    TransportConfig,
+    BtHost, DiscoveredDevice, HciCapture, HeadsetMic, HostConfig, HostEvent, InitFailure, LeConfig, LeScanResult,
+    LinkStats, TransportConfig,
 };
 use hci_transport::UsbSelector;
 
@@ -239,11 +239,11 @@ pub enum ServiceEvent {
     Voice(Option<ipc::VoiceStatus>),
 }
 
-/// Headset mode switched on or off for the running classic stream
+/// Headset mode switched for the running classic stream
 /// ([`Service::set_headset_mic`])
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoiceChange {
-    pub on: bool,
+    pub mode: HeadsetMic,
     /// As [`StreamRequest::mic_output`]
     pub mic_output: Option<String>,
 }
@@ -299,8 +299,8 @@ pub(crate) struct Inner {
     /// The developer CLI's --headset-mic-toggle: stacks offer HFP audio
     /// from the start, for headset mode switched on later
     voice_offered: AtomicBool,
-    /// The session asks for headset mode (its request's `headset_mic`):
-    /// stacks offer HFP audio
+    /// The session asks for headset mode (its request's `headset_mic` is
+    /// On or Auto): stacks offer HFP audio
     voice_wanted: AtomicBool,
     /// Headset mode switched for the running session's next tick
     voice_change: Mutex<Option<VoiceChange>>,
@@ -1138,10 +1138,10 @@ impl Service {
         true
     }
 
-    /// Headset mode on or off for the classic stream running, the link kept
-    /// (the session's next tick). False when none streams, LE Audio runs,
-    /// or the stack was started without voice (on): the caller starts the
-    /// stream again instead.
+    /// Headset mode off, on or auto for the classic stream running, the
+    /// link kept (the session's next tick). False when none streams, LE
+    /// Audio runs, or the stack was started without voice (on or auto): the
+    /// caller starts the stream again instead.
     ///
     /// Unlike the source and bitpool changes it waits for `control`: a
     /// short holder (another change) must not cost a restart of the
@@ -1149,7 +1149,8 @@ impl Service {
     /// has ended (never the session thread itself, which takes no
     /// `control`), and the stream is then not Streaming; so without a
     /// stream streaming it answers at once.
-    pub fn set_headset_mic(&self, on: bool, mic_output: Option<String>) -> bool {
+    pub fn set_headset_mic(&self, mode: HeadsetMic, mic_output: Option<String>) -> bool {
+        let on = mode.is_on();
         if !self.is_running() || self.state() != StreamState::Streaming {
             return false;
         }
@@ -1163,7 +1164,7 @@ impl Service {
         }
         match self.last_request.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
             Some(req) if req.le.is_none() => {
-                req.headset_mic = on;
+                req.headset_mic = mode;
                 req.mic_output = mic_output.clone();
             }
             _ => return false,
@@ -1172,7 +1173,7 @@ impl Service {
         // voice (ensure_host restarts only for voice wanted and missing), a
         // stack started later goes without it.
         self.inner.voice_wanted.store(on, Ordering::Release);
-        *self.inner.voice_change.lock().unwrap_or_else(|e| e.into_inner()) = Some(VoiceChange { on, mic_output });
+        *self.inner.voice_change.lock().unwrap_or_else(|e| e.into_inner()) = Some(VoiceChange { mode, mic_output });
         self.inner.tick.1.notify_all();
         true
     }
@@ -1382,7 +1383,7 @@ impl Service {
         self.inner.take_voice_change();
         self.inner.take_voice_events();
         // Before the stack starts: one that offers HFP audio
-        self.inner.voice_wanted.store(req.headset_mic && req.le.is_none(), Ordering::Release);
+        self.inner.voice_wanted.store(req.headset_mic.is_on() && req.le.is_none(), Ordering::Release);
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.turned_off.store(false, Ordering::Release);
         self.inner.stop.store(false, Ordering::Release);
@@ -1782,9 +1783,9 @@ mod tests {
     #[test]
     fn headset_mode_waits_for_a_short_control_holder_and_follows_off() {
         let s = std::sync::Arc::new(service());
-        *s.last_request.lock().unwrap() = Some(StreamRequest { headset_mic: true, ..request() });
+        *s.last_request.lock().unwrap() = Some(StreamRequest { headset_mic: HeadsetMic::On, ..request() });
         // No session: at once
-        assert!(!s.set_headset_mic(false, None));
+        assert!(!s.set_headset_mic(HeadsetMic::Off, None));
         s.inner.running.store(true, Ordering::Release);
         s.inner.notify(StreamState::Streaming, Msg::new("status.connected"));
         s.inner.voice_wanted.store(true, Ordering::Release);
@@ -1800,14 +1801,15 @@ mod tests {
             held_rx.recv().unwrap();
             t
         };
-        assert!(s.set_headset_mic(false, None));
+        assert!(s.set_headset_mic(HeadsetMic::Off, None));
         holder.join().unwrap();
         // Off: no longer wanted (the running stack keeps its voice)
         assert!(!s.inner.voice_wanted.load(Ordering::Acquire));
-        assert_eq!(s.inner.take_voice_change(), Some(VoiceChange { on: false, mic_output: None }));
-        assert!(!s.last_request.lock().unwrap().as_ref().unwrap().headset_mic);
-        // On needs a stack with voice: none runs here
-        assert!(!s.set_headset_mic(true, Some("{cable}".into())));
+        assert_eq!(s.inner.take_voice_change(), Some(VoiceChange { mode: HeadsetMic::Off, mic_output: None }));
+        assert_eq!(s.last_request.lock().unwrap().as_ref().unwrap().headset_mic, HeadsetMic::Off);
+        // On and Auto need a stack with voice: none runs here
+        assert!(!s.set_headset_mic(HeadsetMic::On, Some("{cable}".into())));
+        assert!(!s.set_headset_mic(HeadsetMic::Auto, Some("{cable}".into())));
         assert!(!s.inner.voice_wanted.load(Ordering::Acquire));
     }
 

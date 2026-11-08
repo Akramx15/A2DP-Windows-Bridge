@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use bt_host::HeadsetMic;
 use bt_host::media::clamp_media_payload_limit;
 use codec::{CodecKind, Quality};
 
@@ -28,6 +29,35 @@ fn loopback() -> String {
 }
 fn yes() -> bool {
     true
+}
+fn headset_off() -> String {
+    "off".into()
+}
+fn is_headset_off(mode: &str) -> bool {
+    HeadsetMic::parse(mode) == HeadsetMic::Off
+}
+/// `headset_mic` as saved: "off" | "on" | "auto", or the bool of the first
+/// development builds (true: "on"); anything else is "off"
+fn headset_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Saved {
+        Flag(bool),
+        Mode(String),
+        Other(serde::de::IgnoredAny),
+    }
+    let mode = match Saved::deserialize(d)? {
+        Saved::Flag(on) => {
+            if on {
+                HeadsetMic::On
+            } else {
+                HeadsetMic::Off
+            }
+        }
+        Saved::Mode(m) => HeadsetMic::parse(&m),
+        Saved::Other(_) => HeadsetMic::Off,
+    };
+    Ok(mode.as_str().into())
 }
 fn is_true(b: &bool) -> bool {
     *b
@@ -132,12 +162,14 @@ pub struct Profile {
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub le_low_latency: bool,
     /// Headset mode (developer mode only, [`Settings::headset_mic_in_force`]):
-    /// the headphones' microphone is rendered to `mic_device_id`; classic
-    /// devices play over the voice link meanwhile, LE Audio keeps its preset
+    /// "off" | "on" | "auto" ([`HeadsetMic`]; written only when not off).
+    /// The headphones' microphone is rendered to `mic_device_id`; classic
+    /// devices play over the voice link meanwhile (Auto: while an app
+    /// records from its capture side), LE Audio keeps its preset
     ///
     /// [`Settings::headset_mic_in_force`]: crate::settings::Settings::headset_mic_in_force
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub headset_mic: bool,
+    #[serde(default = "headset_off", deserialize_with = "headset_mode", skip_serializing_if = "is_headset_off")]
+    pub headset_mic: String,
     /// The render endpoint id that receives the microphone (a virtual
     /// cable's input). Empty: none chosen, headset mode stays off
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -195,7 +227,7 @@ impl Default for Profile {
             sbc_channel_mode: String::new(),
             le_audio: false,
             le_low_latency: true,
-            headset_mic: false,
+            headset_mic: headset_off(),
             mic_device_id: String::new(),
             mic_device_name: String::new(),
             codec_settings: BTreeMap::new(),
@@ -417,14 +449,19 @@ impl Profile {
     /// and nothing else changed
     pub fn only_headset_mic_differs(&self, new: &Profile) -> bool {
         let same = Profile {
-            headset_mic: new.headset_mic,
+            headset_mic: new.headset_mic.clone(),
             mic_device_id: new.mic_device_id.clone(),
             mic_device_name: new.mic_device_name.clone(),
             ..self.clone()
         };
         same == *new
-            && (self.headset_mic, &self.mic_device_id, &self.mic_device_name)
-                != (new.headset_mic, &new.mic_device_id, &new.mic_device_name)
+            && (&self.headset_mic, &self.mic_device_id, &self.mic_device_name)
+                != (&new.headset_mic, &new.mic_device_id, &new.mic_device_name)
+    }
+
+    /// The saved headset mode
+    pub fn headset_mic_mode(&self) -> HeadsetMic {
+        HeadsetMic::parse(&self.headset_mic)
     }
 
     /// Why headset mode must not run with this profile's microphone output:
@@ -505,7 +542,7 @@ impl Profile {
                 .then(|| bt_host::LeRequest { low_latency: self.le_low_latency, ..bt_host::LeRequest::default() }),
             // Developer mode only: whoever starts the stream decides
             // (Settings::headset_mic_in_force)
-            headset_mic: false,
+            headset_mic: HeadsetMic::Off,
             mic_output: None,
         })
     }
@@ -956,25 +993,44 @@ mod tests {
             assert!(out.get(key).is_none(), "{key}");
         }
         let on = Profile {
-            headset_mic: true,
+            headset_mic: "on".into(),
             mic_device_id: "{cable}".into(),
             mic_device_name: "CABLE Input".into(),
             ..p.clone()
         };
         let out = serde_json::to_value(&on).unwrap();
-        assert_eq!(out["headset_mic"], true);
+        assert_eq!(out["headset_mic"], "on");
         assert_eq!(out["mic_device_id"], "{cable}");
         assert_eq!(serde_json::from_value::<Profile>(out).unwrap(), on);
         assert!(p.only_headset_mic_differs(&on));
         assert!(!p.only_headset_mic_differs(&p));
         assert!(!p.only_headset_mic_differs(&Profile { codec: "sbc".into(), ..on.clone() }));
-        assert!(p.only_headset_mic_differs(&Profile { headset_mic: true, ..p.clone() }));
+        assert!(p.only_headset_mic_differs(&Profile { headset_mic: "on".into(), ..p.clone() }));
+        assert!(on.only_headset_mic_differs(&Profile { headset_mic: "auto".into(), ..on.clone() }));
+        // The modes, the first development builds' bool, anything else off
+        let mut j = serde_json::to_value(&on).unwrap();
+        for (saved, mode) in [
+            (serde_json::json!("on"), HeadsetMic::On),
+            (serde_json::json!("auto"), HeadsetMic::Auto),
+            (serde_json::json!("off"), HeadsetMic::Off),
+            (serde_json::json!(true), HeadsetMic::On),
+            (serde_json::json!(false), HeadsetMic::Off),
+            (serde_json::json!("ON"), HeadsetMic::Off),
+            (serde_json::json!(1), HeadsetMic::Off),
+        ] {
+            j["headset_mic"] = saved.clone();
+            let back: Profile = serde_json::from_value(j.clone()).unwrap();
+            assert_eq!(back.headset_mic_mode(), mode, "{saved}");
+            assert_eq!(back.headset_mic, mode.as_str(), "{saved}");
+        }
+        let auto = Profile { headset_mic: "auto".into(), ..on.clone() };
+        assert_eq!(serde_json::to_value(&auto).unwrap()["headset_mic"], "auto");
     }
 
     #[test]
     fn mic_device_feeding_the_capture_is_refused() {
         let loop_key = Some("error.headset_mic_loop");
-        let p = Profile { headset_mic: true, mic_device_id: "{cable}".into(), ..Profile::default() };
+        let p = Profile { headset_mic: "on".into(), mic_device_id: "{cable}".into(), ..Profile::default() };
         // System Loopback: only when the cable is the default output
         assert_eq!(p.mic_device_conflicts("{speakers}"), None);
         assert_eq!(p.mic_device_conflicts(""), None);

@@ -16,6 +16,11 @@
 //! of a link that is fine, [`HeadsetMode::link_lost`] when the link drops and
 //! [`HeadsetMode::end`] when the session ends.
 //!
+//! [`HeadsetMic::Auto`] opens the voice link only while an application
+//! records from the microphone output's capture side (the cable's "CABLE
+//! Output"; [`audio_capture::mic_capture_active`], polled once a second) and
+//! goes back to A2DP once nobody has recorded for [`AUTO_IDLE`].
+//!
 //! Where the microphone goes is decided here for both kinds of device:
 //! [`resolve_mic_output`] (a render endpoint by id or name, a WAV file, the
 //! default output), [`mic_conflict`] (the feedback-loop refusal) and
@@ -34,6 +39,8 @@ use crate::messages::Msg;
 use crate::service::{Inner, VoiceChange};
 use crate::stream::{SourceRequest, StreamState};
 
+pub use bt_host::HeadsetMic;
+
 /// The microphone render's prefill (HFP and LE Audio alike: the renderer's
 /// drift control absorbs the headset's clock around it)
 const RENDER_PREFILL_MS: u32 = 40;
@@ -49,6 +56,106 @@ const SUMMARY_EVERY: Duration = Duration::from_secs(10);
 /// How often an application source the uplink does not capture is looked
 /// for while the voice link is up
 const APP_RECHECK: Duration = Duration::from_secs(1);
+
+/// How often Auto asks whether an application records from the microphone
+/// output's capture side
+const AUTO_POLL: Duration = Duration::from_secs(1);
+/// How long nobody must record before Auto goes back to A2DP: an app that
+/// opens the device again does not bounce the link
+const AUTO_IDLE: Duration = Duration::from_secs(2);
+
+/// Auto's view of the recording applications: polled at most every
+/// [`AUTO_POLL`]; recording seen once turns it on, not recording for
+/// [`AUTO_IDLE`] off again
+#[derive(Debug, Default)]
+struct AutoWatch {
+    /// The microphone output, resolved at the first poll (a device
+    /// enumeration, not on every poll); None inside: no output device
+    target: Option<Option<MicTarget>>,
+    polled: Option<Instant>,
+    /// Someone records (after the hysteresis)
+    recording: bool,
+    /// Since when the polls see nobody recording while `recording`
+    idle_since: Option<Instant>,
+    /// A missing capture side or a failed look-up was logged
+    warned: bool,
+}
+
+impl AutoWatch {
+    fn due(&self, now: Instant) -> bool {
+        self.polled.is_none_or(|t| now.duration_since(t) >= AUTO_POLL)
+    }
+
+    /// One poll's answer; returns whether someone records now
+    fn seen(&mut self, recording: bool, now: Instant) -> bool {
+        self.polled = Some(now);
+        if recording {
+            self.recording = true;
+            self.idle_since = None;
+        } else if self.recording {
+            let since = *self.idle_since.get_or_insert(now);
+            if now.duration_since(since) >= AUTO_IDLE {
+                self.recording = false;
+                self.idle_since = None;
+            }
+        }
+        self.recording
+    }
+
+    /// Whether an application records from `target`'s capture side: a WAV
+    /// file always (the developer CLI's test path); no capture side or a
+    /// failed look-up count as nobody, logged once
+    fn look(&mut self, target: Option<&MicTarget>) -> bool {
+        let id = match target {
+            Some(MicTarget::Wav(_)) => return true,
+            Some(MicTarget::Device { id, .. }) => id,
+            None => {
+                if !std::mem::replace(&mut self.warned, true) {
+                    tracing::warn!("voice: auto: no output device for the microphone");
+                }
+                return false;
+            }
+        };
+        match audio_capture::mic_capture_active(id) {
+            Ok(Some(on)) => on,
+            Ok(None) => {
+                if !std::mem::replace(&mut self.warned, true) {
+                    tracing::warn!(
+                        "voice: auto: the microphone output {} has no recording side, headset mode stays off",
+                        target.map_or(String::new(), |t| t.to_string())
+                    );
+                }
+                false
+            }
+            Err(e) => {
+                if !std::mem::replace(&mut self.warned, true) {
+                    tracing::warn!("voice: auto: cannot tell whether an app records: {e}");
+                }
+                false
+            }
+        }
+    }
+
+    /// Polls when due; returns whether someone records now
+    fn poll(&mut self, mic_output: Option<&str>, now: Instant) -> bool {
+        if !self.due(now) {
+            return self.recording;
+        }
+        let target = self.target.get_or_insert_with(|| resolve_mic_output(mic_output)).clone();
+        let looked = self.look(target.as_ref());
+        let before = self.recording;
+        let after = self.seen(looked, now);
+        if after != before {
+            let what = target.map_or(String::new(), |t| t.to_string());
+            if after {
+                tracing::info!("voice: auto: an application records from {what}");
+            } else {
+                tracing::info!("voice: auto: nobody recorded from {what} for {} s", AUTO_IDLE.as_secs());
+            }
+        }
+        after
+    }
+}
 
 /// Whether the uplink looks for its application again now: the link is
 /// armed, the source is an application, and the last look is
@@ -493,11 +600,16 @@ impl Drop for VoiceLink {
 /// Headset mode of one session
 pub(crate) struct HeadsetMode {
     /// Asked for (the request, then [`crate::Service::set_headset_mic`])
-    wanted: bool,
+    mode: HeadsetMic,
     mic_output: Option<String>,
     /// Given up for this request (refused, failed): tried again on the next
-    /// change only
+    /// change only (not on Auto's own on and off)
     held_off: bool,
+    /// Auto: whether an application records
+    auto: AutoWatch,
+    /// Auto: the headphones closed the audio connection; opened again only
+    /// after nobody recorded for a while (or on the next change)
+    hung_up: bool,
     /// Until when a missing service level connection is waited for
     slc_deadline: Option<Instant>,
     link: Option<VoiceLink>,
@@ -507,8 +619,43 @@ pub(crate) struct HeadsetMode {
 }
 
 impl HeadsetMode {
-    pub fn new(wanted: bool, mic_output: Option<String>) -> HeadsetMode {
-        HeadsetMode { wanted, mic_output, held_off: false, slc_deadline: None, link: None, foreign_logged: false }
+    pub fn new(mode: HeadsetMic, mic_output: Option<String>) -> HeadsetMode {
+        HeadsetMode {
+            mode,
+            mic_output,
+            held_off: false,
+            auto: AutoWatch::default(),
+            hung_up: false,
+            slc_deadline: None,
+            link: None,
+            foreign_logged: false,
+        }
+    }
+
+    /// Whether the voice link should be up now: On, or Auto while an
+    /// application records (not after the headphones hung up on it)
+    fn wanted(&self) -> bool {
+        match self.mode {
+            HeadsetMic::Off => false,
+            HeadsetMic::On => true,
+            HeadsetMic::Auto => self.auto.recording && !self.hung_up,
+        }
+    }
+
+    /// Auto: polls the recording applications (at most every
+    /// [`AUTO_POLL`])
+    fn poll_auto(&mut self) {
+        if self.mode != HeadsetMic::Auto {
+            return;
+        }
+        if !self.auto.poll(self.mic_output.as_deref(), Instant::now()) {
+            self.hung_up = false;
+            // The next recording waits for the service level connection
+            // afresh
+            if self.link.is_none() {
+                self.slc_deadline = None;
+            }
+        }
     }
 
     /// The voice link carries the stream (A2DP is suspended)
@@ -552,10 +699,16 @@ impl HeadsetMode {
                 return self.leave(true, inner, host, a2dp, Some(Msg::new("status.headset_mic_failed")));
             }
         }
-        match (self.wanted, self.link.is_some()) {
+        self.poll_auto();
+        match (self.wanted(), self.link.is_some()) {
             (true, false) if !self.held_off => self.enter(inner, host, source, a2dp),
             (false, true) => {
-                tracing::info!("voice: headset mode off, back to A2DP");
+                if self.mode == HeadsetMic::Auto {
+                    tracing::info!("voice: auto: nobody records, back to A2DP");
+                } else {
+                    tracing::info!("voice: headset mode off, back to A2DP");
+                }
+                // The plain Streaming status: nothing failed
                 self.leave(true, inner, host, a2dp, None)
             }
             _ => Ok(()),
@@ -565,17 +718,20 @@ impl HeadsetMode {
     fn change(&mut self, c: VoiceChange, inner: &Inner, host: &BtHost, a2dp: &mut dyn A2dp) -> Result<(), Msg> {
         tracing::info!(
             "voice: headset mode {} (microphone output {:?})",
-            if c.on { "on" } else { "off" },
+            c.mode.as_str(),
             c.mic_output.as_deref().unwrap_or("")
         );
         let output_changed = c.mic_output != self.mic_output;
-        if c.on != self.wanted || output_changed {
+        if c.mode != self.mode || output_changed {
             self.held_off = false;
+            self.hung_up = false;
             self.slc_deadline = None;
+            // Auto looks again, at the new output
+            self.auto = AutoWatch::default();
         }
-        self.wanted = c.on;
+        self.mode = c.mode;
         self.mic_output = c.mic_output;
-        if !(c.on && output_changed) {
+        if !(c.mode.is_on() && output_changed) {
             return Ok(());
         }
         let Some(link) = self.link.as_mut() else { return Ok(()) };
@@ -642,9 +798,13 @@ impl HeadsetMode {
                 // The headphones closed it (or the link went): headset mode
                 // ends for this request, as if switched off; a new request
                 // (the setting saved again, the stream started again) opens
-                // it again
+                // it again. Auto: also once nobody has recorded for a while.
                 tracing::info!("voice: the headphones closed the audio connection, back to A2DP");
-                self.wanted = false;
+                if self.mode == HeadsetMic::Auto {
+                    self.hung_up = true;
+                } else {
+                    self.mode = HeadsetMic::Off;
+                }
                 self.leave(false, inner, host, a2dp, None)
             }
             VoiceEvent::Failed { status } => {
@@ -685,7 +845,7 @@ impl HeadsetMode {
             }
             return Ok(());
         }
-        let target = (self.wanted && !self.held_off)
+        let target = (self.wanted() && !self.held_off)
             .then(|| resolve_mic_output(self.mic_output.as_deref()))
             .flatten()
             .filter(|t| mic_conflict(t, source).is_none());
@@ -883,6 +1043,60 @@ mod tests {
         // Other sources reopen nothing here
         assert!(!app_recheck_due(&SourceRequest::SystemLoopback, true, t0, later(5000)));
         assert!(!app_recheck_due(&SourceRequest::TestTone, true, t0, later(5000)));
+    }
+
+    #[test]
+    fn auto_turns_on_at_once_and_off_after_two_idle_seconds() {
+        let t0 = Instant::now();
+        let at = |ms| t0 + Duration::from_millis(ms);
+        let mut w = AutoWatch::default();
+        assert!(w.due(t0));
+        assert!(!w.seen(false, t0));
+        // Polled at most once a second
+        assert!(!w.due(at(999)));
+        assert!(w.due(at(1000)));
+        // Recording: on at the first poll that sees it
+        assert!(w.seen(true, at(1000)));
+        // Nobody for less than two seconds (an app opening the device
+        // again): still on
+        assert!(w.seen(false, at(2000)));
+        assert!(w.seen(false, at(3000)));
+        assert!(w.seen(true, at(3500)));
+        assert!(w.seen(false, at(4500)));
+        assert!(w.seen(false, at(5500)));
+        // Two seconds of nobody: off
+        assert!(!w.seen(false, at(6500)));
+        assert!(!w.seen(false, at(9000)));
+        assert!(w.seen(true, at(10000)));
+    }
+
+    #[test]
+    fn auto_counts_a_wav_file_as_recorded_and_no_output_as_not() {
+        let mut w = AutoWatch::default();
+        assert!(w.look(Some(&MicTarget::Wav("mic.wav".into()))));
+        assert!(!w.look(None));
+        assert!(w.warned);
+        let t0 = Instant::now();
+        let mut w = AutoWatch::default();
+        assert!(w.poll(Some("out\\mic.wav"), t0));
+        assert_eq!(w.target, Some(Some(MicTarget::Wav("out\\mic.wav".into()))));
+    }
+
+    #[test]
+    fn auto_wants_the_link_only_while_someone_records() {
+        let mut h = HeadsetMode::new(HeadsetMic::Auto, Some("mic.wav".into()));
+        assert!(!h.wanted());
+        h.poll_auto();
+        assert!(h.wanted());
+        // Hung up by the headphones: not again until nobody records
+        h.hung_up = true;
+        assert!(!h.wanted());
+        assert!(!HeadsetMode::new(HeadsetMic::Off, Some("mic.wav".into())).wanted());
+        assert!(HeadsetMode::new(HeadsetMic::On, None).wanted());
+        // On and Off do not poll
+        let mut on = HeadsetMode::new(HeadsetMic::On, Some("mic.wav".into()));
+        on.poll_auto();
+        assert!(on.auto.polled.is_none());
     }
 
     #[test]

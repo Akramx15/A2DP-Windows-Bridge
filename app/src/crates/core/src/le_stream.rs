@@ -325,7 +325,9 @@ pub fn start_mic(started: &mut LeStreamStarted, target: &MicTarget, stream: u32)
 }
 
 /// Where the microphone of an LE request goes, checked before the stream is
-/// set up: Ok(None) when none is asked for; Err the status message when it
+/// set up (`headset_mic`: the request's mode is not off; Auto is On for LE
+/// Audio, whose conversational stream keeps the media preset): Ok(None)
+/// when none is asked for; Err the status message when it
 /// cannot be (no output device, or one that feeds the capture: the stream
 /// then plays without the microphone)
 pub fn le_mic_target(
@@ -356,7 +358,7 @@ pub(crate) fn stream_request(le: &LeRequest) -> (LeStreamRequest, bool) {
     if let Some(p) = &le.preset {
         request.preset_order = vec![p.clone()];
     }
-    request.conversational = le.headset_mic;
+    request.conversational = le.headset_mic.is_on();
     // The profile's choice (or --le-low-latency); an explicit preset wins
     let low_latency = le.low_latency && le.preset.is_none();
     (request, low_latency)
@@ -418,11 +420,13 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     // The headset microphone: its output is checked before the stream asks
     // for the conversational configuration; refused, the stream plays
     // without it and the status says why
-    let (mic_target, mic_note) = match le_mic_target(le.headset_mic, le.mic_output.as_deref(), &req.source) {
+    let (mic_target, mic_note) = match le_mic_target(le.headset_mic.is_on(), le.mic_output.as_deref(), &req.source) {
         Ok(t) => (t, None),
         Err(m) => (None, Some(m)),
     };
-    le.headset_mic = mic_target.is_some();
+    if mic_target.is_none() {
+        le.headset_mic = bt_host::HeadsetMic::Off;
+    }
     let mut mic_note = mic_note;
     let (request, low_latency) = stream_request(&le);
     tracing::debug!("le stream: stream request {request:?}, low latency {low_latency}");
@@ -990,7 +994,10 @@ mod tests {
         assert!(!ll);
         assert!(!r.conversational);
         // The headset microphone: the conversational configuration
-        let (r, _) = stream_request(&LeRequest { headset_mic: true, ..LeRequest::default() });
+        let (r, _) = stream_request(&LeRequest { headset_mic: bt_host::HeadsetMic::On, ..LeRequest::default() });
+        assert!(r.conversational);
+        // Auto: the same (the conversational stream keeps the media preset)
+        let (r, _) = stream_request(&LeRequest { headset_mic: bt_host::HeadsetMic::Auto, ..LeRequest::default() });
         assert!(r.conversational);
     }
 

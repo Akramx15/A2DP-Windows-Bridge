@@ -37,7 +37,7 @@ Per device, in `Profile` (`app/src/crates/ipc/src/protocol.rs`), all with
 
 | Field | Type | Meaning |
 |---|---|---|
-| `headset_mic` | `bool` | Headset mode for this device. Default false. |
+| `headset_mic` | `String` | Headset mode for this device: `"off"` (default), `"on"`, `"auto"` (see "Auto mode"); anything else reads as off. |
 | `mic_device_id` | `String` | Render endpoint id that receives the microphone. Empty = none chosen (headset mode stays off and the UI says so). |
 | `mic_device_name` | `String` | Friendly name, for display when the device is missing. |
 
@@ -61,23 +61,33 @@ pub struct VoiceStatus {
 audio connection is up and armed; LE: the microphone path runs). The core
 clears it on Idle / Error / Reconnecting like the battery.
 
+The core's `bt_host::HeadsetMic` (re-exported as
+`bluecaster_core::HeadsetMic`: `Off`, `On`, `Auto`, `parse(&str)`,
+`as_str()`, `is_on()`) carries the mode from there on. The core's stored
+profile (`profiles.json`) keeps the string, written only when not off; a
+`true` / `false` saved by the first development builds reads as on / off,
+and the IPC value is normalized on saving (anything else is stored as
+off).
+
 Headset mode is **in force** when developer mode is on
-(`Settings::headset_mic_in_force(profile_flag)`), the profile's
-`headset_mic` is set and `mic_device_id` is not empty. `state.rs`
-`start_profile` then sets `StreamRequest::headset_mic` / `mic_output =
-Some(mic_device_id)` and, for an LE Audio entry, the same in
+(`Settings::headset_mic_in_force(mode) -> HeadsetMic`, Off outside it), the
+profile's mode is not off and `mic_device_id` is not empty. `state.rs`
+`start_profile` then sets `StreamRequest::headset_mic` (the mode) /
+`mic_output = Some(mic_device_id)` and, for an LE Audio entry, the same in
 `LeRequest::headset_mic` / `mic_output` (`set_headset_mic`; never for a
-broadcast).
+broadcast). LE Audio treats Auto as On: its conversational stream keeps the
+media preset, so there is no quality to win back while nobody records. The
+stack offers voice (`voice_wanted`) for On and Auto alike.
 
 `profile.save` of the profile in use that changes only `headset_mic` /
 `mic_device_*` (`headset_change`):
 
 - `Unused` (outside developer mode, or the output changed while headset
   mode is off): the stream is not touched.
-- `InPlace` (a classic stream streaming): `Service::set_headset_mic(on,
-  mic_output) -> bool`; false (no classic stream streaming, or a stack
-  started without voice when turning on) restarts the profile as for any
-  other change.
+- `InPlace` (a classic stream streaming): `Service::set_headset_mic(mode,
+  mic_output) -> bool` (`VoiceChange { mode, mic_output }`); false (no
+  classic stream streaming, or a stack started without voice when turning
+  on or to auto) restarts the profile as for any other change.
 - `Restart` (LE Audio entries, or a stream still connecting): the stream
   starts again.
 
@@ -90,8 +100,8 @@ profile's source. Both sessions call it through `voice::mic_conflict` with
 the source they really capture.
 
 CLI (`app/src/core/src/cli.rs`, "Headset microphone (developer mode)"):
-`--headset-mic` (headset mode once streaming; on an `--le-audio` run, the
-conversational configuration), `--mic-output <name|path.wav>` (a render
+`--headset-mic [on|auto]` (headset mode once streaming, alone: on; on an
+`--le-audio` run, the conversational configuration), `--mic-output <name|path.wav>` (a render
 device by id or part of its friendly name, default the Windows default
 output, or a WAV file to write). No flag for the codec: the negotiation
 decides. Development / testing: `--headset-mic-toggle <on_s>,<off_s>`
@@ -109,6 +119,49 @@ devices), `ui.headset_mic_no_output` (no output device chosen),
 `error.headset_mic_loop` (the feedback-loop refusal, a status message),
 `status.headset_mic_failed`, `status.headset_mic_output_failed`. Hints stay
 under 120 characters.
+
+## Auto mode
+
+`"auto"` gives classic devices the voice link only while an application
+records the microphone, and full-quality A2DP otherwise.
+
+- **What pairs** (`win_sys::audio_policy::capture_sessions_active(render_id)
+  -> windows::core::Result<Option<bool>>`, through
+  `audio_capture::mic_capture_active(id) -> Result<Option<bool>,
+  CaptureError>`, which initialises COM itself): the active capture
+  endpoints in the microphone output's container (`PKEY_Device_ContainerId`,
+  e.g. a USB headset's own microphone); when none is, those of the same
+  adapter (`PKEY_DeviceInterface_FriendlyName`: "VB-Audio Virtual Cable" for
+  both "CABLE Input" and "CABLE Output"). The null container
+  `{00000000-0000-0000-ffff-ffffffffffff}` (internal and software devices
+  share it) and an all-zero one pair nothing, or every built-in microphone
+  would pair with the cable. `Some(true)`: an audio session on one of them
+  is `AudioSessionStateActive` (an app has its capture started), this
+  process's own left out; `None`: no capture endpoint pairs (logged once as
+  a warning, counted as nobody recording); an error (the output is gone)
+  counts as nobody too, logged once.
+- **The poll** (`voice.rs` `AutoWatch`): on the session tick (200 ms), at
+  most once a second (`AUTO_POLL`); the output is resolved once per mode or
+  output change, not on every poll. A WAV `mic_output` counts as always
+  recorded from (the CLI's test path).
+- **Hysteresis**: the first poll that sees a recording turns the voice link
+  on; it goes back to A2DP only after the polls have seen nobody for 2 s
+  (`AUTO_IDLE`), so an app that opens the device again does not bounce the
+  link. The link going down by Auto leaves the plain Streaming status (no
+  message); `StreamStatus.voice` is None while Auto is idle.
+- `held_off` (after a failure or a refusal) is not cleared by Auto's own on
+  and off, only by a mode or output change. The headphones hanging up in
+  Auto keep the link closed until nobody has recorded (then the next
+  recording opens it again); in On they end headset mode for the request as
+  before.
+- **The emulator** cannot test the detection (no Windows capture sessions
+  there): `run_test.py --voice cvsd-auto` runs `--headset-mic auto` with a
+  WAV output and checks Auto's "an application records" log line plus
+  cvsd's checks. The pairing rule is unit-tested
+  (`capture_endpoints_pair_by_container_then_adapter`), the hysteresis too
+  (`auto_turns_on_at_once_and_off_after_two_idle_seconds`); the ignored
+  `win-sys` test `print_capture_sessions` prints every output's pairing and
+  answer on a real PC (record "CABLE Output" to see `Some(true)`).
 
 ## Voice audio plumbing (crate `app/src/crates/voice-link`)
 
@@ -528,7 +581,7 @@ emu_voice_frames`, checked by `voice-link/tests/emu_frames.rs`).
 - The `cvsd` HF has no codec negotiation, `msbc` offers CVSD + mSBC,
   `lc3swb` CVSD + mSBC + LC3-SWB.
 
-`run_test.py --voice [cvsd|msbc|lc3swb|cvsd-roundtrip]` (base port + 400)
+`run_test.py --voice [cvsd|msbc|lc3swb|cvsd-roundtrip|cvsd-auto]` (base port + 400)
 runs `--headset-mic --mic-output <out>/mic.wav` and checks the negotiated
 codec in both logs, SCO both ways in both captures, "Voice: <codec> at
 <rate> Hz" in BlueCaster's output, the sink's verdict on what BlueCaster
@@ -726,3 +779,21 @@ UI:
 - An LE headset's clock is absorbed only by the renderer's drift control
   (the le-decode thread has no clock of its own); a WAV file has no drift
   control at all (it records what arrives).
+
+## UI: Off / Auto / On and the chip
+
+- Codecs (`screens/Codecs.tsx`, `HeadsetMic`): a `Segmented` Off / Auto /
+  On saves `headset_mic`; the output picker and the warnings show for Auto
+  and On, Auto adds `ui.headset_mic_auto_hint`.
+- Home's device card and the flyout's state line (`HeadsetChip` in
+  `screens/Home.tsx`): a microphone chip with the mode, only in developer
+  mode for a profile with `mic_device_id`; a click saves the next mode
+  (Off -> Auto -> On -> Off, `nextHeadsetMode` in `lib/profile.ts`).
+  Accent outline for Auto / On, dashed while Auto has no voice link
+  (`waiting`), `linked` while `StreamStatus.voice` is up for that profile;
+  the voice codec itself stays in `VoiceCodec`.
+- All three save through `saveHeadsetMic` (`screens/Codecs.tsx`), i.e.
+  `profile.save` of the device's profile. The mock opens no voice link for
+  Auto (no app records from the cable there).
+- Keys: `ui.headset_mic_off` / `_auto` / `_on`, `ui.headset_mic_auto_hint`,
+  `ui.headset_mic_cycle` (the chip's name: mode and the next one).

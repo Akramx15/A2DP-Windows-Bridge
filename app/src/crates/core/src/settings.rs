@@ -435,10 +435,10 @@ impl Settings {
         }
     }
 
-    /// Whether a profile's headset mode (`Profile::headset_mic`) is in
-    /// force: developer mode only; the profile keeps its choice
-    pub fn headset_mic_in_force(&self, profile_flag: bool) -> bool {
-        profile_flag && self.debug_mode
+    /// A profile's headset mode (`Profile::headset_mic`) as in force: off
+    /// outside developer mode; the profile keeps its choice
+    pub fn headset_mic_in_force(&self, mode: bt_host::HeadsetMic) -> bt_host::HeadsetMic {
+        if self.debug_mode { mode } else { bt_host::HeadsetMic::Off }
     }
 
     /// The media packet size limit of a settings file from before v1.1, for
@@ -506,12 +506,15 @@ mod tests {
 
     #[test]
     fn headset_mic_counts_only_in_developer_mode() {
+        use bt_host::HeadsetMic;
         let mut s = Settings::default();
-        assert!(!s.headset_mic_in_force(true));
-        assert!(!s.headset_mic_in_force(false));
+        for mode in [HeadsetMic::Off, HeadsetMic::On, HeadsetMic::Auto] {
+            assert_eq!(s.headset_mic_in_force(mode), HeadsetMic::Off);
+        }
         s.debug_mode = true;
-        assert!(s.headset_mic_in_force(true));
-        assert!(!s.headset_mic_in_force(false));
+        for mode in [HeadsetMic::Off, HeadsetMic::On, HeadsetMic::Auto] {
+            assert_eq!(s.headset_mic_in_force(mode), mode);
+        }
     }
 
     #[test]

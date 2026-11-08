@@ -63,7 +63,7 @@ pub use stats::{
     EncodeTiming, EncodeTotals, LinkDetails, LinkMode, LinkRadio, LinkStats, LiveCodec, MaxGauge, RemoteFeatures,
     RemoteVersion, StreamTiming,
 };
-pub use voice::{HostError, VoiceEvent, VoiceRx, VoiceTx};
+pub use voice::{HeadsetMic, HostError, VoiceEvent, VoiceRx, VoiceTx};
 
 const INIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// No HCI event at all this long after power on: the controller does not
