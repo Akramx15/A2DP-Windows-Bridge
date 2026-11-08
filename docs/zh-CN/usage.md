@@ -97,11 +97,12 @@ BlueCaster 还会一直记录一些内容，这样即使问题只发生过一次
 - **日志**：日志文件的保留时间（默认 7 天）、每日大小上限（默认 100 MB）、保持开启的详细日志（没有 24 小时或 1 小时的限制，并且从核心启动时就开始）、每 10 秒一次的串流健康状况行，以及**添加标记**（在日志中写入一行带编号的标记，便于再次找到某个时刻）。关闭开发者模式后会恢复为默认值
 - **对端接收器测试**：向另一台 PC 上的测量用接收器串流，并比较发送的内容和到达的内容（请参阅[对端接收器测试](#receiver)）
 - **芯片**：在使用 WinUSB 的适配器上运行芯片脚本，即输入或从文件打开的对芯片的请求，供想为某个芯片添加支持的人使用（请参阅[添加芯片支持](chip-support#chip-scripts)）。可能更改芯片的行只有在单击**允许运行**后才会运行；期间蓝牙会停止，下次使用时重新启动
+- **Debug**：实验功能，默认全部关闭。**配对密钥与 Windows**：开启 **恢复原始驱动程序时，也把 LE 密钥交给 Windows** 后，**恢复原始驱动程序** 时会把 BlueCaster 的 LE 密钥（Long Term Key、EDIV、Rand、密钥长度、Identity Resolving Key）写入 Windows，只针对 Windows 已通过该适配器保存了 LE 密钥的设备；Windows 原有的密钥保留在 `pairing\replaced_windows_keys.json` 中。**与 Windows 比较**（需要管理员权限）针对一个适配器，统计链接密钥和 LE 密钥在 BlueCaster 与 Windows 中相同、不同或只存在于一方的设备数量。显示和日志中只有数字，不含地址或密钥，因此可以直接分享结果。BlueCaster 的蓝牙运行期间无法读取其 LE 密钥
 
 ### 适配器
 
 - 检测到的 USB Bluetooth 适配器及其芯片、地址、USB ID、Bluetooth 版本、**驱动程序**和**固件**；插入或拔出适配器时列表会自动更新。驱动程序为**原始驱动程序**（Windows 或制造商安装的驱动程序；将鼠标悬停其上可查看其名称）或 **WinUSB 驱动程序**（BlueCaster 使用的驱动程序）。Realtek 适配器即使尚未使用过，也会显示其地址（来自其 USB 序列号）；其他适配器的地址和 Bluetooth 版本要在 Windows 的 Bluetooth 或 BlueCaster 使用过该适配器后才会显示（将鼠标悬停在该行上可查看原因）。BlueCaster 无法使用的适配器（部分 MediaTek 和 Qualcomm）保留其驱动程序：其 WinUSB 和固件按钮处于禁用状态。Intel、MediaTek MT79xx、Qualcomm ROME / WCN6855 和 Broadcom 适配器带有**实验性**标记。在开发者模式下仍可为其分配 WinUSB；在使用 WinUSB 的适配器上点 **读取芯片信息**，会把芯片对几条读取命令的应答保存到 `logs\probe\`，供想为它添加支持的人使用（期间蓝牙会停止，下次使用时重新启动）；之后**在 GitHub 上报告**会新建一个已填好这些信息的 issue。由 BlueCaster 自行加载固件的适配器（Intel、MediaTek、Qualcomm）启动期间，此页面会显示加载情况以及是否失败
-- **替换为 WinUSB 驱动程序** / **恢复原始驱动程序**（请参阅[安装与设置](setup#winusb)）；每次操作 Windows 都会请求管理员权限（带盾牌图标的按钮都是如此）。恢复时，对于 Windows 也通过此适配器配对过的设备，BlueCaster 会把较新的配对交给 Windows，因此无需在 Windows 中重新配对即可连接。**限制：**不会交出 LE 密钥，因此 Windows 通过 LE（LE Audio）使用的设备需要在 Windows 中重新配对
+- **替换为 WinUSB 驱动程序** / **恢复原始驱动程序**（请参阅[安装与设置](setup#winusb)）；每次操作 Windows 都会请求管理员权限（带盾牌图标的按钮都是如此）。恢复时，对于 Windows 也通过此适配器配对过的设备，BlueCaster 会把较新的配对交给 Windows，因此无需在 Windows 中重新配对即可连接。**限制：**不会交出 LE 密钥，因此 Windows 通过 LE（LE Audio）使用的设备需要在 Windows 中重新配对（开发者模式下可以试用：**开发者 > Debug**）
 - 用于固件的 **Bluetooth 芯片**，以及**下载固件**、**打开下载页面**和**打开固件文件夹**（请参阅[固件](setup#firmware)）。其他厂商的适配器则显示固件的来源，例如**来自 MediaTek 的驱动程序**、**来自固件文件夹**或**不需要**，BlueCaster 加载后显示**已加载**
 - **避开 Wi-Fi 信道**：自动、关或手动，旁边显示 Wi-Fi 信道：自动时为当前避开的信道，关时不显示（两者均为只读），手动时为您输入的信道（请参阅[链路质量与 AFH](#link-quality)）
 - **Bluetooth 堆栈**：已停止（在首次扫描或连接时启动）、正在启动、就绪或错误，以及**重新启动 Bluetooth**

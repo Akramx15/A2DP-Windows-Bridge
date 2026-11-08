@@ -61,79 +61,175 @@ pub(crate) fn run(config: &Path, args: &[&str]) -> Result<(u32, Value), ErrorInf
     let _ = std::fs::remove_file(&out);
     // windows-keys and restore give link keys back: not for the log
     let shown = json.as_ref().map(without_keys);
-    tracing::info!("driver helper {} -> exit {code}: {shown:?}", args.join(" "));
+    tracing::info!("driver helper {} -> exit {code}: {shown:?}", shown_args(args));
     Ok((code, json.unwrap_or(Value::Null)))
+}
+
+/// A helper's command line as the log may show it: the command and the
+/// option names, no address, instance ID or path
+fn shown_args(args: &[&str]) -> String {
+    args.iter()
+        .enumerate()
+        .filter(|(i, a)| *i == 0 || a.starts_with("--"))
+        .map(|(_, a)| *a)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A helper's result as the log may show it: lists of keys by their number
 fn without_keys(result: &Value) -> Value {
     let mut shown = result.clone();
-    for field in ["keys", "le_keys", "replaced_keys"] {
+    for field in
+        ["keys", "le_keys", "replaced_keys", "replaced_le_keys", "keys_written", "keys_same", "le_written", "le_same"]
+    {
         if let Some(list) = result.get(field).and_then(Value::as_array) {
-            shown[field] = Value::String(format!("{} key(s)", list.len()));
+            shown[field] = Value::from(list.len());
+        }
+    }
+    // The adapter's instance ID ends in its USB serial number, often its
+    // Bluetooth address
+    for pointer in ["/instance_id", "/state/instance_id"] {
+        if let Some(id) = shown.pointer_mut(pointer).filter(|id| id.is_string()) {
+            *id = Value::from("<adapter>");
         }
     }
     shown
 }
 
-/// For `restore --keys`: the adapter's address and BlueCaster's link keys,
-/// written to the pairing folder (never in a bundle); None without either
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// BlueCaster's LE bonds as Windows keeps LE keys (`windows-keys`'
+/// format): LTK and IRK least significant octet first, ERand as a number
+fn le_keys_for_windows(bonds: &[bt_host::le_bond_file::StoredLeBond]) -> Vec<Value> {
+    bonds
+        .iter()
+        .map(|b| {
+            let wire = |key: [u8; 16]| {
+                let mut key = key;
+                key.reverse();
+                hex(&key)
+            };
+            serde_json::json!({
+                "address": bt_host::addr_str(&b.addr),
+                "address_type": b.addr_type,
+                "ltk": wire(b.ltk),
+                "key_length": b.key_size,
+                "ediv": b.ediv,
+                "erand": format!("{:016x}", u64::from_be_bytes(b.rand)),
+                "irk": (b.irk != [0; 16]).then(|| wire(b.irk)),
+            })
+        })
+        .collect()
+}
+
+/// Developer > Debug: the restore hands Windows the LE keys too (issue #86)
+fn le_keys_to_windows(state: &CoreState) -> bool {
+    let s = state.service.settings();
+    s.debug_mode && s.dev_debug.le_keys_to_windows
+}
+
+/// BlueCaster's LE bonds from its bond file (no stack may hold it open);
+/// None when it cannot be read
+fn stored_le_bonds(config: &Path) -> Option<Vec<bt_host::le_bond_file::StoredLeBond>> {
+    match bt_host::le_bond_file::read(&bluecaster_core::paths::le_bonds_file(config)) {
+        Ok(bonds) => Some(bonds),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(e) => {
+            tracing::warn!("LE bonds not readable: {}", e.kind());
+            None
+        }
+    }
+}
+
+/// For `restore --keys`: the adapter's address and BlueCaster's link keys
+/// (and its LE keys while developer mode asks for them), written to the
+/// pairing folder (never in a bundle); None without any
 fn keys_for_windows(state: &CoreState, instance_id: &str) -> Option<PathBuf> {
     let (_, s) = state.snapshot();
     let radio = s.adapter.adapters.iter().find(|a| a.instance_id == instance_id)?.address.clone()?;
     let config = state.config_dir();
     let store = bt_host::link_keys::FileLinkKeyStore::open(&bluecaster_core::paths::link_keys_file(&config));
-    if store.entries().is_empty() {
-        return None;
-    }
-    let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
     let keys: Vec<Value> = store
         .entries()
         .iter()
         .map(|e| serde_json::json!({ "address": bt_host::addr_str(&e.addr), "key": hex(&e.key) }))
         .collect();
+    let le = if le_keys_to_windows(state) {
+        let bonds = stored_le_bonds(&config).unwrap_or_default();
+        tracing::info!("driver: developer mode hands Windows {} LE bond(s) as well", bonds.len());
+        le_keys_for_windows(&bonds)
+    } else {
+        Vec::new()
+    };
+    if keys.is_empty() && le.is_empty() {
+        return None;
+    }
     let path = bluecaster_core::paths::keys_for_windows_file(&config);
-    let text = serde_json::to_vec(&serde_json::json!({ "radio": radio, "keys": keys })).ok()?;
+    let text = serde_json::to_vec(&serde_json::json!({ "radio": radio, "keys": keys, "le_keys": le })).ok()?;
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     match std::fs::write(&path, text) {
         Ok(()) => Some(path),
         Err(e) => {
-            tracing::warn!("cannot write {}: {e}; Windows keeps its own keys", path.display());
+            tracing::warn!("the keys for Windows could not be written ({}); Windows keeps its own", e.kind());
             None
         }
     }
 }
 
 /// Windows' keys that BlueCaster's replaced, added to the backup in the
-/// pairing folder (per device the one replaced last)
-fn keep_replaced_keys(config: &Path, instance_id: &str, result: &Value) {
+/// pairing folder (per device and kind the one replaced last). The log
+/// gets numbers only; the LE line only when LE keys were asked for.
+fn keep_replaced_keys(config: &Path, instance_id: &str, result: &Value, le_asked: bool) {
     if let Some(e) = result.get("keys_error").and_then(Value::as_str) {
-        tracing::warn!("driver: link keys not written to Windows: {e}");
+        tracing::warn!("driver: keys not written to Windows: {e}");
     }
-    let written = result.get("keys_written").and_then(Value::as_array).map(Vec::len).unwrap_or(0);
-    let same = result.get("keys_same").and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+    let count = |field: &str| result.get(field).and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+    let number = |field: &str| result.get(field).and_then(Value::as_u64).unwrap_or(0);
     if result.get("keys_written").is_some() {
-        tracing::info!("driver: {written} link key(s) written to Windows for {instance_id}, {same} the same already");
+        tracing::info!(
+            "driver: link keys to Windows: {} written ({} read back as written), {} the same already",
+            count("keys_written"),
+            number("keys_verified"),
+            count("keys_same")
+        );
     }
-    let Some(replaced) = result.get("replaced_keys").and_then(Value::as_array).filter(|r| !r.is_empty()) else {
+    if le_asked && result.get("le_written").is_some() {
+        tracing::info!(
+            "driver: LE keys to Windows: {} written ({} read back as written), {} the same already",
+            count("le_written"),
+            number("le_verified"),
+            count("le_same")
+        );
+    }
+    let entries: Vec<(&str, &Value)> = [("link", "replaced_keys"), ("le", "replaced_le_keys")]
+        .into_iter()
+        .flat_map(|(kind, field)| {
+            result.get(field).and_then(Value::as_array).into_iter().flatten().map(move |k| (kind, k))
+        })
+        .collect();
+    if entries.is_empty() {
         return;
-    };
+    }
     let path = bluecaster_core::paths::replaced_windows_keys_file(config);
     let mut backup: Vec<Value> =
         std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     let date = bluecaster_core::paths::today();
-    for k in replaced {
+    let kind_of = |b: &Value| b.get("kind").and_then(Value::as_str).unwrap_or("link").to_string();
+    for (kind, k) in entries {
         let address = k.get("address").and_then(Value::as_str).unwrap_or_default();
-        backup.retain(|b| b.get("address").and_then(Value::as_str) != Some(address));
+        backup.retain(|b| !(b.get("address").and_then(Value::as_str) == Some(address) && kind_of(b) == kind));
         let mut entry = k.clone();
+        entry["kind"] = Value::String(kind.to_string());
         entry["adapter"] = Value::String(instance_id.to_string());
         entry["date"] = Value::String(date.clone());
         backup.push(entry);
     }
     if let Err(e) = std::fs::write(&path, serde_json::to_vec_pretty(&backup).unwrap_or_default()) {
-        tracing::warn!("cannot keep Windows' replaced keys in {}: {e}", path.display());
+        tracing::warn!("Windows' replaced keys could not be kept ({})", e.kind());
     }
 }
 
@@ -170,6 +266,73 @@ pub fn assign(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, ErrorI
     Ok(serde_json::to_value(adapters).unwrap_or(Value::Null))
 }
 
+/// Devices (upper-case address) and what to compare of their keys
+type KeyList = Vec<(String, String)>;
+
+/// How `ours` and `windows` agree, device by device
+fn count_keys(ours: &KeyList, windows: &KeyList) -> ipc::KeyCounts {
+    let mut c = ipc::KeyCounts::default();
+    for (address, key) in ours {
+        match windows.iter().find(|(a, _)| a == address) {
+            Some((_, k)) if k == key => c.same += 1,
+            Some(_) => c.differ += 1,
+            None => c.only_bluecaster += 1,
+        }
+    }
+    c.only_windows = windows.iter().filter(|(a, _)| !ours.iter().any(|(o, _)| o == a)).count() as u32;
+    c
+}
+
+/// An LE device's keys as compared: LTK, EDIV and ERand in Windows' form
+fn le_entry(v: &Value) -> Option<(String, String)> {
+    let address = v.get("address")?.as_str()?.to_uppercase();
+    let text = |name: &str| v.get(name).and_then(Value::as_str).unwrap_or_default().to_lowercase();
+    let ediv = v.get("ediv").and_then(Value::as_u64).unwrap_or(0);
+    let erand = match text("erand") {
+        e if e.is_empty() => "0000000000000000".to_string(),
+        e => e,
+    };
+    Some((address, format!("{} {ediv} {erand}", text("ltk"))))
+}
+
+/// dev.compare_windows_keys: BlueCaster's keys against Windows' for the
+/// adapter `adapter` (the helper reads Windows', one administrator
+/// prompt). Numbers only, in the answer and in the log.
+pub fn compare_windows_keys(state: &Arc<CoreState>, adapter: &str) -> Result<Value, ErrorInfo> {
+    if !state.service.settings().debug_mode {
+        return Err(err("developer.off", "ipc.error.developer_only"));
+    }
+    let radio = bt_host::parse_addr(adapter)
+        .map(|a| bt_host::addr_str(&a))
+        .ok_or_else(|| err("device.invalid_address", "error.invalid_address_format"))?;
+    let (code, result) = run(&state.config_dir(), &["windows-keys", &radio])?;
+    if code != 0 || result.get("ok").and_then(Value::as_bool) != Some(true) {
+        tracing::warn!("keys compared with Windows: helper exit {code}");
+        return Err(err("adapter.import_failed", "ipc.error.import_failed"));
+    }
+    let list = |field: &str| result.get(field).and_then(Value::as_array).cloned().unwrap_or_default();
+    let windows_classic: KeyList = list("keys")
+        .iter()
+        .filter_map(|k| Some((k.get("address")?.as_str()?.to_uppercase(), k.get("key")?.as_str()?.to_lowercase())))
+        .collect();
+    let windows_le: KeyList = list("le_keys").iter().filter_map(le_entry).collect();
+    let config = state.config_dir();
+    let store = bt_host::link_keys::FileLinkKeyStore::open(&bluecaster_core::paths::link_keys_file(&config));
+    let ours_classic: KeyList =
+        store.entries().iter().map(|e| (bt_host::addr_str(&e.addr).to_uppercase(), hex(&e.key))).collect();
+    let le = stored_le_bonds(&config).map(|bonds| {
+        let ours: KeyList = le_keys_for_windows(&bonds).iter().filter_map(le_entry).collect();
+        count_keys(&ours, &windows_le)
+    });
+    let comparison = ipc::KeysComparison {
+        adapter_found: result.get("radio_found").and_then(Value::as_bool) == Some(true),
+        classic: count_keys(&ours_classic, &windows_classic),
+        le,
+    };
+    tracing::info!("keys compared with Windows: {comparison:?}");
+    Ok(serde_json::to_value(comparison).unwrap_or(Value::Null))
+}
+
 pub fn restore(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, ErrorInfo> {
     state.service.release_adapter();
     let path = record_path(state, instance_id);
@@ -190,7 +353,7 @@ pub fn restore(state: &Arc<CoreState>, instance_id: &str) -> Result<Value, Error
         let _ = std::fs::remove_file(k);
     }
     let (code, result) = ran?;
-    keep_replaced_keys(&state.config_dir(), instance_id, &result);
+    keep_replaced_keys(&state.config_dir(), instance_id, &result, le_keys_to_windows(state));
     state.refresh_adapters();
     match code {
         0 => {
@@ -268,19 +431,64 @@ mod tests {
             })
         };
         let shown = without_keys(&result("11").clone()).to_string();
-        assert!(!shown.contains("\"11\""), "{shown}");
-        assert!(shown.contains("1 key(s)"));
-        keep_replaced_keys(&config, TPLINK, &result("11"));
+        assert!(!shown.contains("\"11\"") && !shown.contains("AA:BB"), "{shown}");
+        keep_replaced_keys(&config, TPLINK, &result("11"), false);
         // Replaced again: the one replaced last is kept
-        keep_replaced_keys(&config, TPLINK, &result("22"));
+        keep_replaced_keys(&config, TPLINK, &result("22"), false);
         // Nothing replaced: the backup stays
-        keep_replaced_keys(&config, TPLINK, &serde_json::json!({ "keys_written": [] }));
+        keep_replaced_keys(&config, TPLINK, &serde_json::json!({ "keys_written": [] }), false);
         let path = bluecaster_core::paths::replaced_windows_keys_file(&config);
         let backup: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let _ = std::fs::remove_dir_all(&config);
         assert_eq!(backup.len(), 1);
         assert_eq!(backup[0]["key"], "22");
         assert_eq!(backup[0]["adapter"], TPLINK);
+        assert_eq!(backup[0]["kind"], "link");
+    }
+
+    #[test]
+    fn keys_are_counted_without_naming_them() {
+        let list = |v: &[(&str, &str)]| v.iter().map(|(a, k)| (a.to_string(), k.to_string())).collect::<KeyList>();
+        let ours = list(&[("A", "1"), ("B", "2"), ("C", "3")]);
+        let windows = list(&[("A", "1"), ("B", "9"), ("D", "4")]);
+        assert_eq!(
+            count_keys(&ours, &windows),
+            ipc::KeyCounts { same: 1, differ: 1, only_bluecaster: 1, only_windows: 1 }
+        );
+        // An LE device: LTK, EDIV and ERand; a missing ERand is 0
+        let w = serde_json::json!({ "address": "c0:11:22:33:44:55", "ltk": "AB", "ediv": 0 });
+        let o =
+            serde_json::json!({ "address": "C0:11:22:33:44:55", "ltk": "ab", "ediv": 0, "erand": "0000000000000000" });
+        assert_eq!(le_entry(&w), le_entry(&o));
+        let other = serde_json::json!({ "address": "C0:11:22:33:44:55", "ltk": "ab", "ediv": 1 });
+        assert_ne!(le_entry(&other), le_entry(&o));
+    }
+
+    #[test]
+    fn le_bonds_go_to_windows_in_its_order() {
+        let mut ltk = [0u8; 16];
+        ltk[0] = 0xAB; // most significant, as BTstack keeps it
+        let bond = bt_host::le_bond_file::StoredLeBond {
+            addr_type: 1,
+            addr: [0xC0, 0x11, 0x22, 0x33, 0x44, 0x55],
+            irk: [0; 16],
+            ltk,
+            ediv: 0x1234,
+            rand: [1, 2, 3, 4, 5, 6, 7, 8],
+            key_size: 16,
+            authenticated: false,
+            secure_connection: false,
+        };
+        let v = &le_keys_for_windows(&[bond])[0];
+        assert_eq!(v["address"], "C0:11:22:33:44:55");
+        assert_eq!(v["ltk"], "000000000000000000000000000000ab");
+        assert_eq!(v["erand"], "0102030405060708");
+        assert_eq!(
+            (v["ediv"].as_u64(), v["key_length"].as_u64(), v["address_type"].as_u64()),
+            (Some(0x1234), Some(16), Some(1))
+        );
+        // No IRK
+        assert!(v["irk"].is_null());
     }
 
     #[test]

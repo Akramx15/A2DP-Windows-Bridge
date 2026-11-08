@@ -17,7 +17,7 @@ import {
   Show,
 } from "solid-js";
 import { unwrap } from "solid-js/store";
-import { useApp } from "../app/context";
+import { errorText, useApp } from "../app/context";
 import { saveSettings } from "../app/settings";
 import {
   Banner,
@@ -33,6 +33,8 @@ import { t } from "../i18n";
 import type {
   DevDebug,
   DevLog,
+  KeyCounts,
+  KeysComparison,
   DevOverrides,
   LogLevel,
   VendorInfo,
@@ -81,6 +83,7 @@ export const NO_DEBUG: DevDebug = {
   mtk_iso_interface: false,
   mtk_iso_pad: 0,
   mtk_command: "",
+  le_keys_to_windows: false,
 };
 
 export function Developer() {
@@ -476,7 +479,92 @@ function Debug(props: {
           )}
         </Field>
       </Section>
+      <Section title={t("ui.dev.keys_section")}>
+        <Toggle
+          label={t("ui.dev.le_keys_to_windows")}
+          checked={props.value.le_keys_to_windows}
+          onChange={(v) => set({ le_keys_to_windows: v })}
+        />
+        <KeysCompare />
+      </Section>
     </div>
+  );
+}
+
+/** BlueCaster's pairing keys against Windows' for one adapter (issue #86):
+ *  numbers only, so the result can be shared without addresses or keys */
+function KeysCompare() {
+  const app = useApp();
+  const adapters = () =>
+    (app.core.state.snap?.adapter.adapters ?? []).filter((a) => a.address);
+  const [chosen, setChosen] = createSignal<string | null>(null);
+  const adapter = () =>
+    adapters().find((a) => a.address === chosen())?.address ??
+    adapters()[0]?.address ??
+    null;
+  const [busy, setBusy] = createSignal(false);
+  const [result, setResult] = createSignal<KeysComparison | null>(null);
+  const compare = async () => {
+    const a = adapter();
+    if (!a) return;
+    setBusy(true);
+    try {
+      setResult(await app.core.request("dev.compare_windows_keys", { adapter: a }));
+    } catch (e) {
+      app.notify(errorText(e), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const counts = (key: string, c: KeyCounts) =>
+    t(key, c.same, c.differ, c.only_bluecaster, c.only_windows);
+  return (
+    <>
+      <Show when={adapters().length > 1}>
+        <Field label={t("ui.dev.keys_adapter")}>
+          {(id, describedBy) => (
+            <Select
+              id={id}
+              describedBy={describedBy}
+              value={adapter() ?? ""}
+              options={adapters().map((a) => ({
+                value: a.address ?? "",
+                label: a.display_name,
+              }))}
+              onChange={(v) => {
+                setChosen(v);
+                setResult(null);
+              }}
+            />
+          )}
+        </Field>
+      </Show>
+      <div class="row">
+        <Button
+          icon="shield"
+          busy={busy()}
+          disabled={!adapter()}
+          onClick={() => void compare()}
+        >
+          {t("ui.dev.keys_compare")}
+        </Button>
+      </div>
+      <Show when={result()}>
+        {(r) => (
+          <Show
+            when={r().adapter_found}
+            fallback={<p class="muted">{t("ui.dev.keys_no_windows")}</p>}
+          >
+            <p>{counts("ui.dev.keys_link", r().classic)}</p>
+            <p>
+              {r().le
+                ? counts("ui.dev.keys_le", r().le!)
+                : t("ui.dev.keys_le_busy")}
+            </p>
+          </Show>
+        )}
+      </Show>
+    </>
   );
 }
 

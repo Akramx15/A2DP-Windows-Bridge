@@ -15,4 +15,9 @@ mtk_iso_pad: number,
 /**
  * One HCI command after init, in hex ("FD98 08 01"); empty: none
  */
-mtk_command: string, };
+mtk_command: string, 
+/**
+ * Restore original driver hands Windows BlueCaster's LE keys too, for
+ * the devices Windows keeps LE keys of (issue #86)
+ */
+le_keys_to_windows: boolean, };

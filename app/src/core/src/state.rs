@@ -356,6 +356,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
             mtk_iso_interface: s.dev_debug.mtk_iso_interface,
             mtk_iso_pad: s.dev_debug.mtk_iso_pad,
             mtk_command: s.dev_debug.mtk_command.clone(),
+            le_keys_to_windows: s.dev_debug.le_keys_to_windows,
         },
         bt_chip_pid: s.bt_chip_pid,
         bt_chip_fw_stem: s.bt_chip_fw_stem.clone(),
@@ -446,6 +447,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
         mtk_iso_interface: s.dev_debug.mtk_iso_interface,
         mtk_iso_pad: s.dev_debug.mtk_iso_pad.min(hci_transport::iso_intr::PAD_MAX as u16),
         mtk_command: s.dev_debug.mtk_command.trim().to_string(),
+        le_keys_to_windows: s.dev_debug.le_keys_to_windows,
     };
     c.bt_chip_pid = s.bt_chip_pid;
     c.bt_chip_fw_stem = s.bt_chip_fw_stem.clone();
@@ -2687,6 +2689,9 @@ impl CoreState {
             }
             Method::DeviceImportWindowsPairings { adapter, addresses } => {
                 blocking(Box::new(move |me| crate::pairing::import_windows(me, &adapter, addresses.as_deref()))).await
+            }
+            Method::DevCompareWindowsKeys { adapter } => {
+                blocking(Box::new(move |me| crate::driver::compare_windows_keys(me, &adapter))).await
             }
             Method::DeviceForget { address, le_audio } => {
                 blocking(Box::new(move |me| me.forget_device(&address, le_audio == Some(true)))).await

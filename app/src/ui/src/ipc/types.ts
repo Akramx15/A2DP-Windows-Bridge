@@ -55,6 +55,8 @@ import type { VoiceStatus as BVoiceStatus } from "./bindings/VoiceStatus";
 import type { UpdateState as BUpdateState } from "./bindings/UpdateState";
 import type { VerboseState as BVerboseState } from "./bindings/VerboseState";
 import type { WindowsImport as BWindowsImport } from "./bindings/WindowsImport";
+import type { KeysComparison as BKeysComparison } from "./bindings/KeysComparison";
+import type { KeyCounts as BKeyCounts } from "./bindings/KeyCounts";
 import type { WindowsPairedDevice as BWindowsPairedDevice } from "./bindings/WindowsPairedDevice";
 
 export type Wire<T> = T extends bigint
@@ -126,6 +128,8 @@ export type DevicePairing = Wire<BDevicePairing>;
 export type DeviceService = Wire<BDeviceService>;
 export type ServiceList = Wire<BServiceList>;
 export type WindowsImport = Wire<BWindowsImport>;
+export type KeysComparison = Wire<BKeysComparison>;
+export type KeyCounts = Wire<BKeyCounts>;
 export type WindowsPairedDevice = Wire<BWindowsPairedDevice>;
 
 export type MethodName = Method["method"];
@@ -143,6 +147,7 @@ interface Results {
   "device.pairing": DevicePairing;
   "device.services": ServiceList;
   "device.import_windows_pairings": WindowsImport;
+  "dev.compare_windows_keys": KeysComparison;
   "adapter.list": AdapterInfo[];
   "adapter.assign_winusb": AdapterInfo[];
   "adapter.restore_driver": AdapterInfo[];

@@ -239,7 +239,8 @@ pub const LOG_DAY_CAP_MB: u32 = 100;
 
 /// Developer > Debug (issue #86): LE Audio on a MediaTek adapter, tried
 /// over its interrupt interface (hci_transport::iso_intr), with optional
-/// zero padding, and one HCI command sent after init (bt_host::debug_command)
+/// zero padding, and one HCI command sent after init (bt_host::debug_command);
+/// the driver restore handing Windows the LE keys too
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DevDebug {
@@ -248,6 +249,9 @@ pub struct DevDebug {
     pub mtk_iso_pad: u16,
     /// "FD98 08 01": opcode, then parameter bytes, in hex; empty: none
     pub mtk_command: String,
+    /// Restore original driver writes BlueCaster's LE keys to Windows too
+    /// (core driver.rs; only where Windows keeps LE keys of the device)
+    pub le_keys_to_windows: bool,
 }
 
 impl DevDebug {
