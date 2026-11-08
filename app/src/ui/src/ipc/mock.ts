@@ -1298,8 +1298,7 @@ export class MockCore implements Transport {
       codec: profile.le_audio ? "lc3" : profile.codec,
       profile: name,
       source: sourceOf(
-        // A chosen output device counts in developer mode only (settings.rs capture_source)
-        profile.capture_mode === "output" && !this.snap.settings.developer_mode ? "loopback" : profile.capture_mode,
+        profile.capture_mode,
         profile.capture_mode === "app" ? profile.app_exe : profile.audio_device_id,
         profile.audio_device_name,
       ),

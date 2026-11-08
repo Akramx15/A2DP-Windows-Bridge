@@ -6,8 +6,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
+import { ICONS } from "../components/icons";
 import { setLanguage, t } from "../i18n";
 import { MockCore, type MockScenario } from "../ipc/mock";
+import type { Device } from "../ipc/types";
 import { createCore } from "../ipc/store";
 import { CARD_ORDER } from "../lib/codecs";
 import { endSettle } from "./Codecs";
@@ -302,13 +304,36 @@ describe("the Codecs screen", () => {
     // Even with the old setting off
     await core.request("settings.set", { settings: { ...core.state.snap!.settings, experimental_codecs: false } });
     const hd = await within(wh).findByRole("radio", { name: /aptX HD/ });
-    for (const name of [/^aptX LL/, /^OpusUnsupported/, /^Opus \(PipeWire\)Unsupported/, /FastStream/]) {
+    for (const name of [/^aptX LL/, /^OpusUnsupported/, /FastStream/]) {
       expect(within(wh).getByRole("radio", { name })).toBeInTheDocument();
     }
+    // PipeWire's Opus only in developer mode (issue #86)
+    expect(within(wh).queryByRole("radio", { name: /^Opus \(PipeWire\)/ })).toBeNull();
     expect(within(wh).queryByRole("radio", { name: /Opus 05/ })).toBeNull();
     expect(wh).not.toHaveTextContent(/Experimental/);
     expect(hd).toBeInTheDocument();
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    expect(await within(wh).findByRole("radio", { name: /^Opus \(PipeWire\)Unsupported/ })).toBeInTheDocument();
     expect(saves(calls)).toHaveLength(0);
+  });
+
+  it("shows PipeWire's Opus only in developer mode, one chosen falls back without it (issue #86)", async () => {
+    const { core } = start("#/codecs");
+    const wh = await section("WH-1000XM5");
+    // A device that lists it, chosen on its card
+    const d = core.state.snap!.devices.find((x) => x.name === "WH-1000XM5")!;
+    const m = mock as unknown as { snap: { devices: Device[] }; emit: (e: unknown) => void };
+    const dev = m.snap.devices.find((x) => x.address === d.address)!;
+    dev.codecs = [...dev.codecs, "opus05"];
+    m.emit({ kind: "devices", value: m.snap.devices });
+    const p = core.state.snap!.profiles.find((x) => x.device_address === d.address)!;
+    await core.request("profile.save", { profile: { ...p, codec: "opus05" }, original_name: p.name });
+    // Off: no card, and the one used instead is the one picked
+    await waitFor(() => expect(within(wh).getByRole("radio", { name: /^LDAC/ })).toBeChecked());
+    expect(within(wh).queryByRole("radio", { name: /^Opus \(PipeWire\)/ })).toBeNull();
+    // On: its card, chosen
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    expect(await within(wh).findByRole("radio", { name: /^Opus \(PipeWire\)/ })).toBeChecked();
   });
 });
 
@@ -389,7 +414,11 @@ describe("saved devices on the Audio Devices screen", () => {
     fireEvent.click(within(row).getByRole("button", { name: t("ui.devices.add") }));
     const dialog = await screen.findByRole("dialog", { name: t("ui.devices.windows_paired_title") });
     expect(dialog).toHaveTextContent(t("ui.devices.windows_import_text", "Galaxy Buds2 Pro"));
-    expect(within(dialog).getByRole("button", { name: t("ui.devices.add_new") })).toBeInTheDocument();
+    // Only the import asks for administrator rights: only it has the shield
+    const shield = (name: string) =>
+      within(dialog).getByRole("button", { name }).querySelector("svg.icon path")?.getAttribute("d") === ICONS.shield;
+    expect(shield(t("ui.devices.add_new"))).toBe(false);
+    expect(shield(t("ui.devices.import_one"))).toBe(true);
     fireEvent.click(within(dialog).getByRole("button", { name: t("ui.devices.import_one") }));
     // That device's key only, then added as usual
     await waitFor(() => expect(calls.some((c) => c.method === "profile.save")).toBe(true));
@@ -1117,15 +1146,10 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(within(entry).getByText(t("capture.hint_loopback"))).toBeInTheDocument();
   });
 
-  it("lists each output device in developer mode only, and keeps the choice outside it (issue #193)", async () => {
+  it("lists each output device (issue #193)", async () => {
     const { calls } = start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
     const select = within(entry).getByLabelText(t("capture.mode"));
-    await within(select).findByRole("group", { name: t("capture.virtual") });
-    expect(within(select).queryByRole("group", { name: t("capture.output") })).toBeNull();
-
-    const settings = (await mock!.call("state.snapshot")) as { settings: Record<string, unknown> };
-    await mock!.call("settings.set", { settings: { ...settings.settings, developer_mode: true } });
     const output = await within(select).findByRole("group", { name: t("capture.output") });
     // Each device once: the virtual ones stay under Virtual Device
     expect(within(output).getAllByRole("option").map((o) => o.textContent)).toEqual(["Speakers (Realtek(R) Audio)"]);
@@ -1142,25 +1166,13 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(await within(entry).findByText(t("capture.hint_output"))).toBeInTheDocument();
     // Never made the default output
     expect(within(entry).queryByRole("switch", { name: (n) => n.startsWith(t("capture.auto_switch")) })).toBeNull();
-
-    // Developer mode off: what streams (System Loopback) is shown, and the
-    // profile keeps its choice
-    calls.length = 0;
-    await mock!.call("settings.set", { settings: { ...settings.settings, developer_mode: false } });
-    await waitFor(() => expect(select).toHaveValue("loopback"));
-    expect(within(select).queryByRole("group", { name: t("capture.output") })).toBeNull();
-    expect(within(entry).getByText(t("capture.hint_loopback"))).toBeInTheDocument();
-    expect(saves(calls)).toHaveLength(0);
-    const after = (await mock!.call("state.snapshot")) as { profiles: { name: string; capture_mode: string }[] };
-    expect(after.profiles.find((x) => x.name === "WH-1000XM5 (LDAC)")?.capture_mode).toBe("output");
   });
 
   it("shows a chosen output device that is not there as not connected (issue #193)", async () => {
     // Saved before the screen opens (the Codecs screen, another window)
     start("#/home");
     await screen.findAllByRole("button", { name: "Connect" });
-    const snap = (await mock!.call("state.snapshot")) as { profiles: { name: string }[]; settings: Record<string, unknown> };
-    await mock!.call("settings.set", { settings: { ...snap.settings, developer_mode: true } });
+    const snap = (await mock!.call("state.snapshot")) as { profiles: { name: string }[] };
     const p = snap.profiles.find((x) => x.name === "WH-1000XM5 (LDAC)")!;
     await mock!.call("profile.save", {
       profile: { ...p, capture_mode: "output", audio_device_id: "{gone}", audio_device_name: "USB Speakers" },

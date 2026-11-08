@@ -21,10 +21,10 @@ Advanced Bluetooth Audio Transmitter for Windows. It adds the codecs Windows lac
 | SBC XQ | up to 552 kbps | 44.1/48 kHz | 16 bit | ❌ | ✅ |
 | SBC | up to ~345 kbps | 44.1/48 kHz | 16 bit | ✅ | ✅ |
 | FastStream | 198/216 kbps | 44.1/48 kHz | 16 bit | ❌ | 🧪 |
-| Opus 05 (PipeWire) | 256 kbps | 48 kHz | 16 bit | ❌ | 🧪 |
+| Opus 05 (PipeWire) | 256 kbps | 48 kHz | 16 bit | ❌ | 🧪 🔧 |
 | LC3 (LE Audio) | 32–124 kbps per channel | 16–48 kHz | 16 bit | Windows 11 | 🧪 |
 
-✅ supported · 🧪 experimental: works against a virtual Bluetooth sink, not yet confirmed with real headphones ([reports welcome](https://github.com/SeiyaFunaokaJP/BlueCaster/issues/11)) · ❌ not supported
+✅ supported · 🧪 experimental: works against a virtual Bluetooth sink, not yet confirmed with real headphones ([reports welcome](https://github.com/SeiyaFunaokaJP/BlueCaster/issues/11)) · 🔧 developer mode only · ❌ not supported
 
 ## Requirements
 

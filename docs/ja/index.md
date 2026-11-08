@@ -54,7 +54,7 @@ USB Bluetooth アダプターを WinUSB モードで使用し、**LHDC V5、LDAC
 | SBC XQ | ❌ | ❌ | ✅ | ✅（SBC でデュアルチャネルと bitpool 29 以上を許すシンク） |
 | SBC | ✅ | ✅ | ✅ | ✅ |
 | FastStream | ❌ | ❌ | ✅ | 🧪 実験的（音楽のみ、明示的に選んだとき） |
-| Opus 05（PipeWire 独自の Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57 以降（`opus_05`、相手も PipeWire のときだけ） | 🧪 実験的（明示的に選んだとき） |
+| Opus 05（PipeWire 独自の Opus） | ❌ | ❌ | ✅ PipeWire 0.3.57 以降（`opus_05`、相手も PipeWire のときだけ） | 🧪 実験的（明示的に選んだとき、開発者モードのみ） |
 | LC3（LE Audio、BAP ユニキャスト） | ❌ | ✅ Bluetooth のハードウェアとドライバーが LE Audio に対応した PC のみ | ✅ PipeWire の BAP `lc3`（BlueZ の LE Audio） | 🧪 実験的（デバイスの LE Audio の項目、ゲーミングヘッドセットでは GMAP の低遅延、ISO 対応の Bluetooth 5.2 アダプターが必要、[使い方](usage#le-audio)） |
 
 ✅ 対応 · 🧪 実験的 · ❌ 非対応。どの列も送信側（PC → ヘッドホン）です。「標準」は BlueCaster を使わない OS 自身の Bluetooth オーディオで、Ubuntu の列は Ubuntu 26.04 の PipeWire（`libspa-0.2-bluetooth`）が持つコーデックです。

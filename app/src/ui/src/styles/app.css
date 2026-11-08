@@ -1034,6 +1034,22 @@ option {
   outline-offset: 1px;
 }
 
+/* The keys' heading folds them away (secrets) */
+.pairing-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pairing-fold:focus-visible {
+  outline: 2px solid var(--accent-fill);
+  outline-offset: 2px;
+}
 .pairing-part + .pairing-part {
   margin-top: var(--s4);
 }
@@ -1048,22 +1064,25 @@ option {
   gap: var(--s2);
   max-width: 100%;
 }
-.pairing-keys {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: var(--s2) var(--s3);
-  align-items: center;
-  margin: var(--s2) 0;
-}
-.pairing-keys dt {
-  color: var(--text-2);
-}
-.pairing-keys dd {
-  margin: 0;
-}
-.pairing-services {
+/* Keys and services: one table look (issue #86) */
+.pairing-table {
   margin-top: var(--s2);
   font-size: var(--fs-14);
+}
+.pairing-keys {
+  margin-bottom: var(--s2);
+}
+/* The names on one line, the value column takes the rest */
+.pairing-keys th[scope="row"] {
+  width: 1%;
+  white-space: nowrap;
+}
+.pairing-keys th,
+.pairing-keys td {
+  vertical-align: middle;
+}
+.pairing-keys .mono {
+  font-size: var(--fs-12);
 }
 .pairing-services td {
   vertical-align: top;

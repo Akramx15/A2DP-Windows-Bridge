@@ -14,7 +14,7 @@ use bluecaster_core::receiver::{self, ReceiverClient};
 use bluecaster_core::settings::Settings as CoreSettings;
 use bluecaster_core::vendor;
 use bluecaster_core::{
-    LeStreamDetails, ScannedDevice, Service, ServiceEvent, SourceRequest, StreamRequest,
+    CodecStopKind, LeStreamDetails, ScannedDevice, Service, ServiceEvent, SourceRequest, StreamRequest,
     StreamState as CoreStreamState, VolumeSync, devices,
 };
 use bt_host::chips::{self, ChipVendor};
@@ -1198,6 +1198,8 @@ fn connected_balloon(lang: &str, device: Option<&str>, stream: &StreamStatus) ->
     if let Some(req) = &i.requested_codec {
         let (key, default) = if stream.message.key == "status.connected_fallback_experimental" {
             ("ui.codec.fallback_experimental", "(%s is experimental)")
+        } else if stream.message.key == "status.connected_fallback_developer" {
+            ("ui.codec.fallback_developer", "(%s needs developer mode)")
         } else if i.requested_in_use {
             ("ui.codec.fallback_in_use", "(%s is in use)")
         } else {
@@ -1220,6 +1222,42 @@ fn tray_tooltip(base: &str, device: Option<&str>, lines: &[String]) -> String {
         t.push_str(l);
     }
     t
+}
+
+/// A codec's name as the UI shows it, by its key ("opus05": "Opus
+/// (PipeWire)")
+fn codec_label(lang: &str, key: &str) -> String {
+    let label = match key {
+        "ldac" => "codec.ldac",
+        "aptx" => "codec.aptx",
+        "aptxhd" => "codec.aptx_hd",
+        "aptxll" => "codec.aptx_ll",
+        "aptxad" => "codec.aptx_adaptive",
+        "aac" => "codec.aac",
+        "sbc" => "codec.sbc",
+        "sbcxq" => "codec.sbc_xq",
+        "faststream" => "codec.faststream",
+        "lhdcv5" => "codec.lhdc_v5",
+        "opus" => "codec.opus",
+        "opus05" => "codec.opus05",
+        _ => return key.to_string(),
+    };
+    bluecaster_core::messages::translate(lang, label, key)
+}
+
+/// The few words that say why the stream stopped over its codec: "LDAC is
+/// unsupported" (the status line on Home, the flyout and the tray)
+fn codec_stop_text(lang: &str, stop: &ipc::CodecStop) -> String {
+    let (key, default) = match stop.kind {
+        ipc::CodecStopKind::Unsupported => ("status.codec_stop_unsupported", "%s is unsupported"),
+        ipc::CodecStopKind::SettingsUnsupported => {
+            ("status.codec_stop_settings_unsupported", "%s settings are unsupported")
+        }
+        ipc::CodecStopKind::InUse => ("status.codec_stop_in_use", "%s is in use"),
+        ipc::CodecStopKind::Refused => ("status.codec_stop_refused", "%s was refused"),
+    };
+    let template = bluecaster_core::messages::translate(lang, key, default);
+    bluecaster_core::messages::format_printf(&template, &[codec_label(lang, &stop.codec)])
 }
 
 /// The headset microphone's line in the tray tooltip: "Voice: mSBC"
@@ -1247,6 +1285,37 @@ fn tray_label(device: &str, le_audio: bool, le_tag: &str) -> String {
 fn restart_after_save(stream: &StreamStatus, saved: &str) -> bool {
     matches!(stream.state, StreamState::Connecting | StreamState::Streaming | StreamState::Reconnecting)
         && stream.profile.as_deref() == Some(saved)
+}
+
+/// The last stream of profile `name` stopped with an error its codec caused
+/// (refused, unsupported, in use; issue #86)
+fn stopped_by_codec(stream: &StreamStatus, name: &str) -> bool {
+    stream.state == StreamState::Error && stream.codec_stop.is_some() && stream.profile.as_deref() == Some(name)
+}
+
+/// A save of profile `saved` (its name before the save) whose last stream
+/// its codec stopped: another codec, or other settings of it, connect the
+/// device again (issue #86; the user did not disconnect it)
+fn reconnect_after_codec_stop(
+    stream: &StreamStatus,
+    saved: &str,
+    before: Option<&CoreProfile>,
+    new: &CoreProfile,
+) -> bool {
+    let setup = |p: &CoreProfile| {
+        (
+            p.codec.clone(),
+            p.codec_forced,
+            p.unlisted_options,
+            p.quality.clone(),
+            p.abr,
+            p.sample_rate,
+            p.bit_depth,
+            [p.sbc_bitpool, p.sbcxq_bitpool, p.sbc_min_bitpool, p.sbcxq_min_bitpool, p.sbc_blocks, p.sbc_subbands],
+            (p.sbc_allocation.clone(), p.sbc_channel_mode.clone()),
+        )
+    };
+    stopped_by_codec(stream, saved) && before.is_some_and(|b| setup(b) != setup(new))
 }
 
 /// The save changed only the source of an A2DP profile streaming: the stream
@@ -1330,6 +1399,15 @@ fn bitpools_change_in_place(stream: &StreamStatus, before: Option<&CoreProfile>,
 /// way). Not LE Audio (LC3).
 fn restart_for_auto(stream: &StreamStatus, p: &CoreProfile) -> bool {
     restart_after_save(stream, &p.name) && !p.le_audio && (p.codec != "auto" || !p.order().is_default())
+}
+
+/// A profile streams (or connects) with a codec of developer mode
+/// ([`codec::CodecKind::developer_only`]): it starts again when developer
+/// mode is turned off (issue #86)
+fn streams_developer_codec(stream: &StreamStatus) -> bool {
+    let developer = |name: &str| codec::CodecKind::ALL.into_iter().any(|k| k.developer_only() && k.name() == name);
+    stream.profile.as_deref().is_some_and(|p| restart_after_save(stream, p))
+        && stream.info.as_ref().is_some_and(|i| developer(&i.codec))
 }
 
 /// Auto-select just turned `auto_now`: whether the profile streaming would
@@ -1567,7 +1645,11 @@ impl CoreState {
         };
         // The streamed profile's device (v1)
         let device = streamed_device(&s);
-        let tooltip = if streaming {
+        let tooltip = if let Some(stop) = s.stream.codec_stop.as_ref().filter(|_| s.stream.state == StreamState::Error)
+        {
+            // What stopped it, in a few words (issue #86)
+            tray_tooltip(&base, device, &[codec_stop_text(&lang, stop)])
+        } else if streaming {
             let mut lines = Vec::new();
             if let Some(i) = &s.stream.info {
                 lines.push(tray_codec_line(&i.codec, i.bitrate_kbps, i.sample_rate, i.bits, i.abr));
@@ -1616,6 +1698,16 @@ impl CoreState {
                     CoreStreamState::Error => StreamState::Error,
                 };
                 stream.message = msg(&m);
+                // The codec that stopped it, for the status line (issue #86)
+                stream.codec_stop = m.codec_stop.filter(|_| state == CoreStreamState::Error).map(|c| ipc::CodecStop {
+                    codec: c.codec.key().into(),
+                    kind: match c.kind {
+                        CodecStopKind::Unsupported => ipc::CodecStopKind::Unsupported,
+                        CodecStopKind::SettingsUnsupported => ipc::CodecStopKind::SettingsUnsupported,
+                        CodecStopKind::InUse => ipc::CodecStopKind::InUse,
+                        CodecStopKind::Refused => ipc::CodecStopKind::Refused,
+                    },
+                });
                 // A new connection may warn about its battery again
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error | CoreStreamState::Connecting) {
                     self.battery_warned.store(false, Ordering::Release);
@@ -1980,10 +2072,10 @@ impl CoreState {
             .to_request(settings.legacy_max_media_payload())
             .map_err(|_| err("profile.invalid_address", "error.invalid_address"))?;
         req.experimental_codecs = settings.experimental_codecs;
+        req.developer_codecs = settings.debug_mode;
         req.volume_sync = effective_volume_sync(settings.volume_sync, req.volume_sync);
         req.mute_output = settings.mutes_output();
         req.sbc = settings.sbc_frame(req.sbc);
-        req.source = settings.capture_source(req.source);
         if auto.is_some() && settings.debug_mode {
             req.codec_values = p.all_codec_values();
         }
@@ -2013,6 +2105,7 @@ impl CoreState {
         let settings = self.service.settings();
         let mut req = custom_request(c, settings.legacy_max_media_payload())?;
         req.experimental_codecs = settings.experimental_codecs;
+        req.developer_codecs = settings.debug_mode;
         req.mute_output = settings.mutes_output();
         tracing::info!("custom stream to {}: codec {}, source {}", c.device, c.codec, req.source);
         self.begin_stream(req, None);
@@ -2043,6 +2136,7 @@ impl CoreState {
             battery: None,
             battery_refused: false,
             voice: None,
+            codec_stop: None,
         }));
         let service = self.service.clone();
         // A restart for a save waits a moment: a request right behind it
@@ -2619,7 +2713,7 @@ impl CoreState {
                 };
                 if restart_after_save(&s.stream, &key) && !order_keeps_codec && !kept_only && !headset_kept {
                     let in_place = source_changes_in_place(&s.stream, before.as_ref(), &in_order)
-                        && self.service.change_source(self.service.settings().capture_source(in_order.source()));
+                        && self.service.change_source(in_order.source());
                     let bitpools_in_place = !self.service.settings().auto_codec
                         && bitpools_change_in_place(&s.stream, before.as_ref(), &in_order)
                         && self.service.change_bitpools(in_order.bitpools());
@@ -2652,6 +2746,13 @@ impl CoreState {
                         );
                         self.restart_profile(&profile.name)?;
                     }
+                } else if reconnect_after_codec_stop(&s.stream, &key, before.as_ref(), &in_order) {
+                    tracing::info!(
+                        "profile {} saved after its codec stopped the stream: connecting again as {}",
+                        bluecaster_core::diag::quoted(&key),
+                        bluecaster_core::diag::quoted(&profile.name)
+                    );
+                    self.start_profile(&profile.name)?;
                 }
                 Ok(Value::Null)
             }
@@ -2680,6 +2781,7 @@ impl CoreState {
                     let chip = chip_changed(&base, &merged);
                     let le_toggled = base.le_audio_experimental != merged.le_audio_experimental;
                     let auto_toggled = base.auto_codec != merged.auto_codec;
+                    let developer_off = base.debug_mode && !merged.debug_mode;
                     let sync_toggled =
                         base.volume_sync != merged.volume_sync || base.mutes_output() != merged.mutes_output();
                     me.save_settings(merged)?;
@@ -2712,7 +2814,18 @@ impl CoreState {
                             (auto_toggled && auto_changes(p))
                                 || (sync_toggled && restart_after_save(&s.stream, &p.name))
                         };
-                        if let Some(p) = in_use.filter(restart) {
+                        // Auto-select turned on after the codec stopped the
+                        // stream: the device connects again with Auto's
+                        // codec (issue #86)
+                        let after_stop = in_use
+                            .filter(|p| auto_toggled && settings.auto_codec && stopped_by_codec(&s.stream, &p.name));
+                        if let Some(p) = after_stop {
+                            tracing::info!(
+                                "Auto-select on after the codec stopped profile {}: connecting again",
+                                bluecaster_core::diag::quoted(&p.name)
+                            );
+                            me.start_profile(&p.name.clone())?;
+                        } else if let Some(p) = in_use.filter(restart) {
                             tracing::info!(
                                 "Auto-select {}, volume sync {}, output mute {}: profile {} starts again",
                                 if settings.auto_codec { "on" } else { "off" },
@@ -2721,6 +2834,18 @@ impl CoreState {
                                 bluecaster_core::diag::quoted(&p.name)
                             );
                             me.restart_profile(&p.name.clone())?;
+                        }
+                    }
+                    // Developer mode off while one of its codecs streams
+                    // (issue #86): the profile starts again without it
+                    if developer_off {
+                        let (_, s) = me.snapshot();
+                        if let Some(name) = s.stream.profile.clone().filter(|_| streams_developer_codec(&s.stream)) {
+                            tracing::info!(
+                                "developer mode off: profile {} streams a codec of developer mode, starts again",
+                                bluecaster_core::diag::quoted(&name)
+                            );
+                            me.restart_profile(&name)?;
                         }
                     }
                     // LE Audio on / off waits for the next scan or connection
@@ -2750,7 +2875,9 @@ impl CoreState {
                     // The device streamed before connects again on the new
                     // stack, with the same profile (issue #86)
                     if let Some(mut req) = again {
-                        req.experimental_codecs = me.service.settings().experimental_codecs;
+                        let settings = me.service.settings();
+                        req.experimental_codecs = settings.experimental_codecs;
+                        req.developer_codecs = settings.debug_mode;
                         let profile = me.starting_profile.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         me.begin_stream(req, profile);
                     }
@@ -3528,6 +3655,128 @@ mod tests {
     }
 
     #[test]
+    fn a_codec_stop_is_named_in_a_few_words() {
+        let stop = |codec: &str, kind| ipc::CodecStop { codec: codec.into(), kind };
+        assert_eq!(codec_stop_text("en", &stop("ldac", ipc::CodecStopKind::Unsupported)), "LDAC is unsupported");
+        assert_eq!(
+            codec_stop_text("en", &stop("sbcxq", ipc::CodecStopKind::SettingsUnsupported)),
+            "Unsupported SBC XQ settings"
+        );
+        assert_eq!(codec_stop_text("en", &stop("aptxhd", ipc::CodecStopKind::InUse)), "aptX HD is in use");
+        assert_eq!(codec_stop_text("en", &stop("opus05", ipc::CodecStopKind::Refused)), "Opus (PipeWire) was refused");
+        assert_eq!(codec_stop_text("ja", &stop("ldac", ipc::CodecStopKind::Unsupported)), "LDAC 非対応");
+        // Every language has all four
+        for lang in ["ja", "de", "fr", "es", "ko", "zh-CN", "zh-TW"] {
+            for key in [
+                "status.codec_stop_unsupported",
+                "status.codec_stop_settings_unsupported",
+                "status.codec_stop_in_use",
+                "status.codec_stop_refused",
+            ] {
+                let text = bluecaster_core::messages::translate(lang, key, "");
+                assert!(
+                    text.contains("%s") && text != bluecaster_core::messages::translate("en", key, ""),
+                    "{lang} {key}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_codec_that_stopped_the_stream_reaches_its_status() {
+        let dir = std::env::temp_dir().join(format!("bluecaster-state-codec-stop-{}", std::process::id()));
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let options = bluecaster_core::ServiceOptions {
+            config_dir: dir.clone(),
+            hci_tcp: None,
+            capture: bt_host::HciCapture::new(),
+            afh: None,
+            usb: Default::default(),
+        };
+        let tooltip = Arc::new(Mutex::new(String::new()));
+        let shown = tooltip.clone();
+        let state = CoreState::new(
+            Arc::new(Service::new(options, tx)),
+            Box::new(move |v: TrayView| *shown.lock().unwrap() = v.tooltip),
+            Box::new(|| {}),
+            Box::new(|_| {}),
+        );
+        let refused = bluecaster_core::Msg::codec_stop(
+            "error.codec_unsupported_refused",
+            codec::CodecKind::Ldac,
+            CodecStopKind::Unsupported,
+        );
+        *state.starting_profile.lock().unwrap() = Some("EarFun | LDAC".into());
+        state.on_service_event(ServiceEvent::State(
+            CoreStreamState::Connecting,
+            bluecaster_core::Msg::new("status.ready"),
+        ));
+        state.on_service_event(ServiceEvent::State(CoreStreamState::Error, refused.clone()));
+        let s = state.snapshot().1.stream;
+        assert_eq!(s.codec_stop, Some(ipc::CodecStop { codec: "ldac".into(), kind: ipc::CodecStopKind::Unsupported }));
+        assert_eq!(s.message.key, "error.codec_unsupported_refused");
+        assert!(stopped_by_codec(&s, "EarFun | LDAC"));
+        // In the settings' language (the system's by default)
+        let lang = state.snapshot().1.settings.language;
+        let line = codec_stop_text(&lang, s.codec_stop.as_ref().unwrap());
+        assert!(tooltip.lock().unwrap().ends_with(&format!("\n{line}")), "{}", tooltip.lock().unwrap());
+        // The next connection clears it; other errors carry none
+        state.on_service_event(ServiceEvent::State(
+            CoreStreamState::Connecting,
+            bluecaster_core::Msg::new("status.ready"),
+        ));
+        assert_eq!(state.snapshot().1.stream.codec_stop, None);
+        state.on_service_event(ServiceEvent::State(
+            CoreStreamState::Error,
+            bluecaster_core::Msg::new("error.reconnect_failed"),
+        ));
+        let s = state.snapshot().1.stream;
+        assert_eq!(s.codec_stop, None);
+        assert!(!stopped_by_codec(&s, "EarFun | LDAC"));
+        assert!(!tooltip.lock().unwrap().contains('\n'));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn choosing_a_codec_after_a_codec_stop_connects_again() {
+        let ldac = CoreProfile {
+            name: "EarFun | LDAC".into(),
+            codec: "ldac".into(),
+            codec_forced: true,
+            ..CoreProfile::default()
+        };
+        let aac = CoreProfile { name: "EarFun | AAC".into(), codec: "aac".into(), ..CoreProfile::default() };
+        let stop = Some(ipc::CodecStop { codec: "ldac".into(), kind: ipc::CodecStopKind::Unsupported });
+        let stopped = StreamStatus {
+            state: StreamState::Error,
+            profile: Some("EarFun | LDAC".into()),
+            codec_stop: stop.clone(),
+            ..StreamStatus::default()
+        };
+        assert!(reconnect_after_codec_stop(&stopped, "EarFun | LDAC", Some(&ldac), &aac));
+        // Its settings changed: "Show only options it supports" on again
+        let listed = CoreProfile { unlisted_options: false, ..CoreProfile { unlisted_options: true, ..ldac.clone() } };
+        assert!(reconnect_after_codec_stop(
+            &stopped,
+            "EarFun | LDAC",
+            Some(&CoreProfile { unlisted_options: true, ..ldac.clone() }),
+            &listed
+        ));
+        // Not for another device, nor for what the stream does not use
+        assert!(!reconnect_after_codec_stop(&stopped, "WH | AAC", Some(&ldac), &aac));
+        let order = CoreProfile { codec_order: vec!["aac".into()], ..ldac.clone() };
+        assert!(!reconnect_after_codec_stop(&stopped, "EarFun | LDAC", Some(&ldac), &order));
+        // Another error (the device out of reach) or the user's own
+        // disconnect: nothing connects by itself
+        let other = StreamStatus { codec_stop: None, ..stopped.clone() };
+        assert!(!reconnect_after_codec_stop(&other, "EarFun | LDAC", Some(&ldac), &aac));
+        let idle = StreamStatus { state: StreamState::Idle, ..stopped.clone() };
+        assert!(!reconnect_after_codec_stop(&idle, "EarFun | LDAC", Some(&ldac), &aac));
+        let streaming = StreamStatus { state: StreamState::Streaming, ..stopped };
+        assert!(!reconnect_after_codec_stop(&streaming, "EarFun | LDAC", Some(&ldac), &aac));
+    }
+
+    #[test]
     fn another_source_changes_in_place_only_alone_and_while_streaming() {
         let before = CoreProfile { name: "WH".into(), ..CoreProfile::default() };
         let app = CoreProfile { capture_mode: "app".into(), app_exe: "Spotify.exe".into(), ..before.clone() };
@@ -3594,6 +3843,20 @@ mod tests {
         assert!(!restart_for_auto(&streaming, &CoreProfile { name: "Buds".into(), ..profile("aac") }));
         assert!(!restart_for_auto(&StreamStatus::default(), &profile("aac")));
         assert!(!restart_for_auto(&streaming, &CoreProfile { le_audio: true, ..profile("aac") }));
+    }
+
+    #[test]
+    fn developer_mode_off_restarts_a_stream_on_opus05() {
+        let streaming = |codec: &str| StreamStatus {
+            state: StreamState::Streaming,
+            profile: Some("WH".into()),
+            info: Some(ipc::StreamInfo { codec: codec.into(), requested_codec: None, ..sbc_abr_info() }),
+            ..StreamStatus::default()
+        };
+        assert!(streams_developer_codec(&streaming("Opus 05")));
+        assert!(!streams_developer_codec(&streaming("Opus")));
+        assert!(!streams_developer_codec(&StreamStatus { state: StreamState::Idle, ..streaming("Opus 05") }));
+        assert!(!streams_developer_codec(&StreamStatus { profile: None, ..streaming("Opus 05") }));
     }
 
     #[test]

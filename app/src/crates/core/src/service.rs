@@ -30,7 +30,8 @@ const RESUME_SETTLE: Duration = Duration::from_secs(3);
 /// sleep ends once on wake, whatever the clock says)
 const RESUME_TICK: Duration = Duration::from_millis(200);
 const RESUME_WAIT_TICKS: u32 = 300;
-/// LE Audio (experimental): the LE scan after the classic one (v1)
+/// LE Audio (experimental): the shortest LE scan of a scan that is not
+/// stopped (v1: 5 s after the classic one)
 const LE_SCAN: Duration = Duration::from_secs(5);
 /// A link younger than this keeps the stack ([`Service::host_for_stream`])
 const FRESH_LINK: Duration = Duration::from_secs(60);
@@ -157,6 +158,24 @@ fn le_scan_entries(results: &[LeScanResult], saved_le: &[SavedDevice], own: &[St
         });
     }
     (out, found)
+}
+
+/// The advertisers without LE Audio that look like the LE side of a classic
+/// device (`known`: address and name of the scan's and the saved ones): the
+/// same address, or the same name. For the log only: such a device is not
+/// listed (many classic headphones advertise over LE for their app).
+fn classic_le_sides<'a>(results: &'a [LeScanResult], known: &[(String, String)]) -> Vec<&'a LeScanResult> {
+    results
+        .iter()
+        .filter(|r| !r.le_audio)
+        .filter(|r| {
+            let addr = r.addr.to_string();
+            let ids = std::iter::once(addr).chain(r.identity.map(|i| i.to_string()));
+            let same_addr = ids.into_iter().any(|a| known.iter().any(|(k, _)| k.eq_ignore_ascii_case(&a)));
+            let same_name = !r.name.trim().is_empty() && known.iter().any(|(_, n)| n.trim() == r.name.trim());
+            same_addr || same_name
+        })
+        .collect()
 }
 
 /// Sleep and resume as the service sees them (set by the power
@@ -1530,11 +1549,15 @@ impl Service {
         Ok(found)
     }
 
-    /// Inquiry for nearby devices, then, when the stack has LE Audio
-    /// (experimental), a 5 s LE scan for LE Audio devices (v1's scan): the
+    /// Inquiry for nearby devices and, when the stack has LE Audio
+    /// (experimental), an LE scan for LE Audio devices beside it: the
     /// classic devices, then the LE Audio ones ([`ScannedDevice`]).
-    /// `on_found` gets the classic devices each time one answers (or its
-    /// name comes), long before the scan ends.
+    /// `on_found` gets the list each time a device answers (or its name
+    /// comes, or an LE Audio advertiser shows up), long before the scan
+    /// ends. The LE scan runs from the start (issue #86: run after the
+    /// inquiry, it never ran when the scan was stopped once the classic
+    /// entry showed, nor in the first-run setup's long scan), and at least
+    /// [`LE_SCAN`] when nobody stops the scan.
     pub fn scan_devices(
         &self,
         seconds: u32,
@@ -1547,9 +1570,31 @@ impl Service {
         let _scanning = ScanningGuard::new(&self.inner.scanning);
         self.inner.notify(StreamState::Idle, Msg::new("status.initializing_scan"));
         let host = self.inner.ensure_host()?;
+        let mut le_scan = false;
+        if self.inner.le_active() {
+            let until = Instant::now() + LE_SCAN_READY_WAIT;
+            while !host.le_ready() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            le_scan = host.le_scan_start();
+            if !le_scan {
+                tracing::warn!("LE Audio not ready, LE scan skipped");
+            }
+        }
+        let le_started = Instant::now();
+        let (saved_le, own) = if le_scan {
+            let own: Vec<String> = win_sys::bt_radios::radios().into_iter().filter_map(|r| r.address).collect();
+            (crate::devices::load_le(&self.inner.opts.config_dir), own)
+        } else {
+            (Vec::new(), Vec::new())
+        };
         self.inner.notify(StreamState::Idle, Msg::new("status.scanning_devices"));
         let classic = host.scan_with(seconds, &mut |found| {
-            on_found(&found.iter().map(ScannedDevice::classic).collect::<Vec<_>>());
+            let mut list: Vec<ScannedDevice> = found.iter().map(ScannedDevice::classic).collect();
+            if le_scan {
+                list.extend(le_scan_entries(&host.le_scan_results(), &saved_le, &own).0);
+            }
+            on_found(&list);
         });
         let mut list: Vec<ScannedDevice> = classic.iter().map(ScannedDevice::classic).collect();
         for d in &list {
@@ -1563,47 +1608,66 @@ impl Service {
             );
         }
         let mut le_found = 0;
-        if self.inner.le_active() && !host.scan_stopped() {
-            let until = Instant::now() + LE_SCAN_READY_WAIT;
-            while !host.le_ready() && Instant::now() < until {
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            if host.le_ready() {
+        if le_scan {
+            let left = LE_SCAN.saturating_sub(le_started.elapsed());
+            if !host.scan_stopped() && !left.is_zero() {
                 self.inner.notify(StreamState::Idle, Msg::new("status.le_scanning"));
-                let results = host.le_scan(LE_SCAN);
-                let saved = crate::devices::load_le(&self.inner.opts.config_dir);
-                let own: Vec<String> = win_sys::bt_radios::radios().into_iter().filter_map(|r| r.address).collect();
-                for r in results.iter().filter(|r| r.le_audio) {
-                    tracing::debug!(
-                        "le scan: advertiser {} {} appearance 0x{:04X}, connectable {}, UUIDs {:04X?}",
-                        r.addr,
-                        crate::diag::quoted(&r.name),
-                        r.appearance,
-                        r.connectable,
-                        r.uuids16
-                    );
+                let until = Instant::now() + left;
+                while Instant::now() < until && !host.scan_stopped() {
+                    std::thread::sleep(Duration::from_millis(100));
                 }
-                let (entries, found) = le_scan_entries(&results, &saved, &own);
-                tracing::debug!(
-                    "le scan: {} result(s), {found} LE Audio advertiser(s), {} listed, {} saved",
-                    results.len(),
-                    entries.len(),
-                    saved.len()
-                );
-                for e in &entries {
-                    tracing::debug!(
-                        "le scan: {} {} rssi {} set {}",
-                        e.address,
-                        crate::diag::quoted(&e.name),
-                        e.rssi,
-                        e.le_audio_set
-                    );
-                }
-                le_found = found;
-                list.extend(entries);
-            } else {
-                tracing::warn!("LE Audio not ready, LE scan skipped");
             }
+            let results = host.le_scan_stop();
+            for r in results.iter().filter(|r| r.le_audio) {
+                tracing::debug!(
+                    "le scan: advertiser {} {} appearance 0x{:04X}, connectable {}, UUIDs {:04X?}",
+                    r.addr,
+                    crate::diag::quoted(&r.name),
+                    r.appearance,
+                    r.connectable,
+                    r.uuids16
+                );
+            }
+            let (entries, found) = le_scan_entries(&results, &saved_le, &own);
+            tracing::info!(
+                "LE scan: {} advertiser(s) in {:.1} s, {found} LE Audio, {} listed",
+                results.len(),
+                le_started.elapsed().as_secs_f32(),
+                entries.len()
+            );
+            // A classic device's LE side without an LE Audio service: what
+            // tells "LE Audio is off on the device" from a missed one
+            let saved = crate::devices::load(&self.inner.opts.config_dir);
+            let known: Vec<(String, String)> = list
+                .iter()
+                .map(|d| (d.address.clone(), d.name.clone()))
+                .chain(saved.into_iter().map(|d| (d.address, d.name)))
+                .collect();
+            for r in classic_le_sides(&results, &known) {
+                tracing::info!(
+                    "LE scan: {} {} advertises over LE without an LE Audio service (type {}, connectable {}, \
+                     appearance 0x{:04X}, UUIDs {:04X?}, {} + {} bytes)",
+                    r.addr,
+                    crate::diag::quoted(&r.name),
+                    r.addr.addr_type,
+                    r.connectable,
+                    r.appearance,
+                    r.uuids16,
+                    r.adv.len(),
+                    r.scan_rsp.len()
+                );
+            }
+            for e in &entries {
+                tracing::debug!(
+                    "le scan: {} {} rssi {} set {}",
+                    e.address,
+                    crate::diag::quoted(&e.name),
+                    e.rssi,
+                    e.le_audio_set
+                );
+            }
+            le_found = found;
+            list.extend(entries);
         }
         self.inner.notify(StreamState::Idle, Msg::with("status.scan_complete", &[&(classic.len() + le_found)]));
         Ok(list)
@@ -1984,6 +2048,27 @@ mod tests {
         assert!(p.suspending() && p.stale());
         assert!(p.resume());
         assert!(p.resumed_at().unwrap() > first);
+    }
+
+    #[test]
+    fn a_classic_devices_le_side_without_le_audio_is_told() {
+        let known = [
+            ("00:A2:D0:00:00:50".to_string(), "EarFun Air Pro 4".to_string()),
+            ("00:A2:D0:00:00:60".to_string(), String::new()),
+        ];
+        let identity = bt_host::LeAddr { addr: bt_host::parse_addr("00:A2:D0:00:00:60").unwrap(), addr_type: 0 };
+        let results = [
+            // Its own address, its name under an RPA, an RPA resolving to it
+            LeScanResult { le_audio: false, ..le("00:A2:D0:00:00:50", "", None) },
+            LeScanResult { le_audio: false, ..le("5A:01:02:03:04:05", "EarFun Air Pro 4", None) },
+            LeScanResult { le_audio: false, identity: Some(identity), ..le("4B:01:02:03:04:05", "", None) },
+            // LE Audio advertisers are listed anyway; others are not its
+            le("00:A2:D0:00:00:50", "EarFun Air Pro 4", None),
+            LeScanResult { le_audio: false, ..le("00:A2:D0:00:00:70", "Mouse", None) },
+            LeScanResult { le_audio: false, ..le("00:A2:D0:00:00:71", "", None) },
+        ];
+        let sides: Vec<String> = classic_le_sides(&results, &known).iter().map(|r| r.addr.to_string()).collect();
+        assert_eq!(sides, ["00:A2:D0:00:00:50", "5A:01:02:03:04:05", "4B:01:02:03:04:05"]);
     }
 
     fn le(addr: &str, name: &str, set: Option<u32>) -> LeScanResult {

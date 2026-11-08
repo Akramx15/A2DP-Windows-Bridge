@@ -105,7 +105,7 @@ pub struct Profile {
     pub bit_depth: u32,
     /// loopback, virtual, output, app. "output": loopback of the output
     /// device `audio_device_id` (Windows' endpoint ID) whichever is the
-    /// default, set in developer mode (issue #193)
+    /// default (issue #193)
     #[serde(default = "loopback")]
     pub capture_mode: String,
     pub audio_device_id: String,
@@ -524,6 +524,8 @@ impl Profile {
             unlisted_options: self.unlisted_options,
             // The setting's, filled in by whoever starts the stream
             experimental_codecs: true,
+            // Settings' developer_mode, filled in the same way
+            developer_codecs: false,
             auto_order: self.order(),
             quality: Quality::from_key(&self.quality),
             abr: self.abr,
