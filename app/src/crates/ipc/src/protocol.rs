@@ -1600,10 +1600,16 @@ pub enum Method {
     #[serde(rename = "device.pairing")]
     DevicePairing { address: String },
     /// -> ServiceList: the services a classic device lists, asked over the
-    /// connection BlueCaster has to it, else the list from its last connection
-    /// since the core started
+    /// connection BlueCaster has to it, else the list from its last
+    /// connection; `le_audio` true: the GATT services its LE Audio entry had
+    /// at its last connection
     #[serde(rename = "device.services")]
-    DeviceServices { address: String },
+    DeviceServices {
+        address: String,
+        #[ts(optional = nullable)]
+        #[serde(default)]
+        le_audio: Option<bool>,
+    },
     /// -> WindowsPairedDevice[]: the classic audio devices Windows'
     /// Bluetooth paired through the adapter with the Bluetooth address
     /// `adapter` (what device.import_windows_pairings can take over; no

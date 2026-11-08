@@ -1977,9 +1977,7 @@ impl CoreState {
         let active = s.active_profile.filter(|a| !gone.contains(a));
         self.save_profiles(&list, active)?;
         self.service.forget_device(address, le_audio);
-        if !le_audio {
-            crate::pairing::forget_services(&dir, address);
-        }
+        crate::pairing::forget_services(&dir, address, le_audio);
         let mut settings = self.service.settings();
         let volume = settings.saved_volumes.remove(&address.to_uppercase()).is_some();
         let last = gone.contains(&settings.last_profile);
@@ -2684,8 +2682,8 @@ impl CoreState {
                 .await
             }
             Method::DevicePairing { address } => crate::pairing::pairing(self, &address),
-            Method::DeviceServices { address } => {
-                blocking(Box::new(move |me| crate::pairing::services(me, &address))).await
+            Method::DeviceServices { address, le_audio } => {
+                blocking(Box::new(move |me| crate::pairing::services(me, &address, le_audio == Some(true)))).await
             }
             Method::DeviceImportWindowsPairings { adapter, addresses } => {
                 blocking(Box::new(move |me| crate::pairing::import_windows(me, &adapter, addresses.as_deref()))).await

@@ -2,7 +2,7 @@
 // and taking over
 // Windows' pairings (Adapter), issue #86
 
-import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../app/App";
 import { ICONS } from "../components/icons";
@@ -44,6 +44,31 @@ describe("device pairing", () => {
     expect(within(dialog).queryByText(t("ui.pairing.key_title"))).toBeNull();
     expect(within(dialog).queryByRole("switch")).toBeNull();
     expect(calls.some((c) => c.method === "device.pairing")).toBe(false);
+  });
+
+  it("lists an LE Audio entry's GATT services, without keys (issue #86)", async () => {
+    location.hash = "#/devices";
+    const calls: { method: string; params: unknown }[] = [];
+    mock = new MockCore({ speed: 0, scenario: "le", onCall: (method, params) => calls.push({ method, params }) });
+    const core = createCore(mock);
+    render(() => <App core={core} />);
+    await screen.findByRole("navigation");
+    await core.request("settings.set", { settings: { ...core.state.snap!.settings, developer_mode: true } });
+    const row = await waitFor(() => {
+      const r = document.querySelector<HTMLElement>('.device-row[data-key$="/le"]');
+      expect(r).not.toBeNull();
+      return r!;
+    });
+    fireEvent.click(within(row).getByRole("button", { name: t("ui.pairing.services") }));
+    const dialog = await screen.findByRole("dialog", { name: t("ui.pairing.services") });
+    const table = await within(dialog).findByRole("table", { name: t("ui.pairing.services") });
+    expect(within(table).getByText("Audio Stream Control")).toBeInTheDocument();
+    expect(within(table).getByText("Published Audio Capabilities")).toBeInTheDocument();
+    expect(within(dialog).getByText(t("ui.pairing.services_last"))).toBeInTheDocument();
+    // LE bonds are not shown as keys here
+    expect(within(dialog).queryByText(t("ui.pairing.key_title"))).toBeNull();
+    const asked = calls.filter((c) => c.method === "device.services").pop()!.params;
+    expect(asked).toEqual({ address: "F4:4E:FD:00:11:22", le_audio: true });
   });
 
   it("lists the keys first, folded, the services as a table below them (issue #86)", async () => {
