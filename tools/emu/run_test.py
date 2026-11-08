@@ -948,7 +948,13 @@ def main_le(args):
 SCAN_CASES = {
     'eir': (['--dual-mode'], 'inquiry result', 3.0),                      # in its extended inquiry response
     'name-request': (['--dual-mode', '--no-eir-name'], 'remote name', 15.0),  # asked after the first inquiry (10.24 s)
+    # Earbuds advertising LE Audio too (issue #86), LE Audio on: both entries,
+    # the LE one found by the LE scan beside the inquiry, not after it
+    'le-audio': (['--dual-mode', '--le-audio-adv'], 'inquiry result', 3.0),
 }
+# Scan cases with LE Audio on: BlueCaster's arguments
+SCAN_LE_CASES = {'le-audio': ['--le-audio', '--mcp-dry-run']}
+SCAN_LE_FOUND_MAX_S = 3.0
 SCAN_SECONDS = 10
 SCAN_LISTED_MAX_S = 3.0
 SINK_NAME = 'BlueCaster Test Sink'
@@ -1036,7 +1042,7 @@ def run_scan_case(args, case, port):
         try:
             r = subprocess.run(
                 [args.bluecaster, '--cli', '--hci-tcp', f'127.0.0.1:{port}', '--scan', str(SCAN_SECONDS),
-                 '--hci-capture', os.path.join(out, 'bluecaster.pklg')],
+                 '--hci-capture', os.path.join(out, 'bluecaster.pklg')] + SCAN_LE_CASES.get(case, []),
                 capture_output=True, text=True, encoding='utf-8', errors='replace', env=env,
                 timeout=SCAN_SECONDS + 60)
             rc, text = r.returncode, r.stdout + r.stderr
@@ -1052,6 +1058,13 @@ def run_scan_case(args, case, port):
     if rc != 0:
         failures.append(f'BlueCaster exited with {rc} (see bluecaster.log)')
     lines = [line for line in text.splitlines() if line.startswith(SINK_ADDRESS)]
+    le_lines = [line for line in lines if '(LE Audio)' in line]
+    lines = [line for line in lines if line not in le_lines]
+    if case in SCAN_LE_CASES:
+        if len(le_lines) != 1 or SINK_NAME not in le_lines[0]:
+            failures.append(f'the LE Audio entry listed {len(le_lines)} times, or without its name: {le_lines}')
+    elif le_lines:
+        failures.append(f'an LE Audio entry with LE Audio off: {le_lines}')
     if len(lines) != 1:
         failures.append(f'the sink listed {len(lines)} times (expected once)')
     elif SINK_NAME not in lines[0]:
@@ -1069,7 +1082,14 @@ def run_scan_case(args, case, port):
         failures.append(f'listed {since(listed)} s after the inquiry started (at most {SCAN_LISTED_MAX_S} s)')
     if since(named) is None or since(named) > name_max_s:
         failures.append(f'name from the {name_from} {since(named)} s after the inquiry started (at most {name_max_s} s)')
-    return failures, f'listed after {since(listed)} s, named after {since(named)} s, scan took {took:.1f} s'
+    detail = f'listed after {since(listed)} s, named after {since(named)} s'
+    if case in SCAN_LE_CASES:
+        le_found = log_time(text, rf'LE Audio: found {SINK_NAME} \({SINK_ADDRESS}')
+        if since(le_found) is None or since(le_found) > SCAN_LE_FOUND_MAX_S:
+            failures.append(f'LE Audio entry found {since(le_found)} s after the inquiry started '
+                            f'(at most {SCAN_LE_FOUND_MAX_S} s)')
+        detail += f', LE Audio found after {since(le_found)} s'
+    return failures, f'{detail}, scan took {took:.1f} s'
 
 
 def main_scan(args):
