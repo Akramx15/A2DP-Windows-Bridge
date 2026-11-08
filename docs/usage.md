@@ -58,7 +58,7 @@ Behind the scenes BlueCaster keeps one entry per device in `profiles.json` (its 
 
 The headphones and speakers BlueCaster can stream to, each with its own settings, and below them **Add an audio device**: **Scan Devices** finds nearby devices with the USB adapter (30 seconds, listed as they answer; **Stop Scanning** ends it; put the headphones into pairing mode; while a device is connected, it asks to disconnect it first). **Add** saves a device found and connects it. Devices BlueCaster paired with before are tagged **Paired**. If the scan does not find them, enter the address under **Manual:** and click **Add**; typed or pasted addresses are formatted as you go (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` and `AA BB CC DD EE FF` all become `AA:BB:CC:DD:EE:FF`). Headphones see the adapter under your computer's name with BlueCaster beside it, e.g. *Taro-PC (BlueCaster)*, so it differs from Windows' own Bluetooth. A device Windows paired through another adapter, such as the PC's built-in Bluetooth, asks first (**Paired in Windows**: remove it there, or **Add anyway**); one Windows paired through this adapter offers to import that pairing (see [Services and Pairing Keys](#shared-pairing)). A saved device can be renamed or removed (removing it also removes its settings and pairing, so it cannot connect again until it is paired again), and has:
 
-- **Output Source**: System Loopback (a new device's default), Virtual Device or Application (see [Capture Modes](#capture-modes)). Beside it, the format Windows mixes the captured device in (sample rate and bit depth, read only), in amber when the device streams (or, not connected, its codec settings ask for) another one, with a line below giving both formats (it still streams, converted); below it, what the source does
+- **Output Source**: System Loopback (a new device's default), Virtual Device, Output Device or Application (see [Capture Modes](#capture-modes)). Beside it, the format Windows mixes the captured device in (sample rate and bit depth, read only), in amber when the device streams (or, not connected, its codec settings ask for) another one, with a line below giving both formats (it still streams, converted); below it, what the source does
 - **Set as Windows default output while connected**, with a virtual device
 
 **All audio devices**, above the list, has the switches that apply to every device: **Windows Volume Sync** (see [Volume](#volume)), **Control playback with the audio device's buttons** and **Reconnect automatically**. Each device's **Max media packet size** is on the **Developer** screen (see [Max Media Packet Size](#max-packet)).
@@ -239,15 +239,16 @@ Without `--cli`, `bluecaster-core.exe` is the resident program: it starts the wi
 
 ## Capture Modes {#capture-modes}
 
-BlueCaster supports three audio capture modes. Each records a different point in the audio path:
+BlueCaster supports four audio capture modes. Each records a different point in the audio path:
 
 | Mode | What it records |
 |:-----|:----------------|
 | System Loopback | What the Windows default output device plays: all apps mixed |
 | Virtual Device | What apps play into the selected device (e.g., VB-CABLE) |
+| Output Device | What one output device plays (speakers, a USB headset, a TV, ...), whichever is the Windows default |
 | Application | Only what one app (and its child processes) plays, after the app's own processing. Needs Windows 11 or Windows 10 version 2004 (build 19041) or later |
 
-**Audio Devices** shows the same explanation under **Output Source**. A new device captures System Loopback, which works with nothing else installed; choose Virtual Device or Application for it there.
+**Audio Devices** shows the same explanation under **Output Source**. A new device captures System Loopback, which works with nothing else installed; choose another source for it there.
 
 System Loopback copies the audio; it does not take it away from the default output device, so the audio also plays there (speakers, wired headphones, an HDMI TV, ...). To hear it only on the Bluetooth headphones, use a virtual device such as VB-CABLE.
 
@@ -262,7 +263,7 @@ In Virtual Device mode, **Set as Windows default output while connected** makes 
 - Some apps keep playing on the previous device until they are restarted.
 - If BlueCaster exits unexpectedly, the default device is not switched back. Change it in Windows Sound settings.
 
-In developer mode, the **Output Source** list also has **Output Device**: each output device Windows has (speakers, a USB headset, a TV, ...). BlueCaster then records what that device plays, whichever device is the Windows default output, and never makes it the default; **Windows Volume Sync** syncs that device's volume. If it is missing when connecting (unplugged or disabled), BlueCaster sends System Loopback instead and the connection status says so; **Audio Devices** shows it as not connected. With developer mode off, such a device captures System Loopback: the choice stays saved and counts again once developer mode is back on.
+Under **Output Device**, the **Output Source** list has each output device Windows has. BlueCaster records what the chosen device plays, whichever device is the Windows default output, and never makes it the default; **Windows Volume Sync** syncs that device's volume. If it is missing when connecting (unplugged or disabled), BlueCaster sends System Loopback instead and the connection status says so; **Audio Devices** shows it as not connected.
 
 ### Application mode {#application-mode}
 
@@ -278,7 +279,7 @@ Application mode sends the audio of one app, for example a music player, a brows
 
 While streaming, the **Volume** slider on Home and in the tray flyout works when the headphones support AVRCP absolute volume (otherwise it stays disabled). It sets the volume on the headphones themselves, so the audio sent keeps its full resolution. The speaker beside it mutes (volume 0 on the headphones) and unmutes (back to the volume before). At volume 0, however it was set (the speaker, the slider, Windows or the headphones' buttons), BlueCaster sends silence, since many headphones still play faintly at their lowest volume. The slider also follows the volume buttons and touch controls on the headphones.
 
-**Windows Volume Sync** (on **Audio Devices**, for every device; on by default) makes a Windows volume and the headphones' volume one volume while streaming. The Windows volume synced is that of the device BlueCaster captures: the default output device in System Loopback and Application mode, the selected device in Virtual Device mode. Off, the Windows volume and the headphones' volume are separate.
+**Windows Volume Sync** (on **Audio Devices**, for every device; on by default) makes a Windows volume and the headphones' volume one volume while streaming. The Windows volume synced is that of the device BlueCaster captures: the default output device in System Loopback and Application mode, the selected device in Virtual Device and Output Device mode. Off, the Windows volume and the headphones' volume are separate.
 
 - The headphones' volume buttons and gestures, and the **Volume** slider, move the synced Windows volume, and its slider in Sound settings moves the headphones' volume.
 - The volume keys and the Windows volume flyout always act on the default output device, so they change the headphones' volume only when the default output device is the one synced (always, except in Virtual Device mode without **Set as Windows default output while connected**).

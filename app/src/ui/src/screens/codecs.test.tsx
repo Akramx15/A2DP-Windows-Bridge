@@ -1113,15 +1113,10 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(within(entry).getByText(t("capture.hint_loopback"))).toBeInTheDocument();
   });
 
-  it("lists each output device in developer mode only, and keeps the choice outside it (issue #193)", async () => {
+  it("lists each output device (issue #193)", async () => {
     const { calls } = start("#/devices");
     const entry = await deviceEntry(/WH-1000XM5/);
     const select = within(entry).getByLabelText(t("capture.mode"));
-    await within(select).findByRole("group", { name: t("capture.virtual") });
-    expect(within(select).queryByRole("group", { name: t("capture.output") })).toBeNull();
-
-    const settings = (await mock!.call("state.snapshot")) as { settings: Record<string, unknown> };
-    await mock!.call("settings.set", { settings: { ...settings.settings, developer_mode: true } });
     const output = await within(select).findByRole("group", { name: t("capture.output") });
     // Each device once: the virtual ones stay under Virtual Device
     expect(within(output).getAllByRole("option").map((o) => o.textContent)).toEqual(["Speakers (Realtek(R) Audio)"]);
@@ -1138,25 +1133,13 @@ describe("a device's capture source (Audio Devices, issue #86)", () => {
     expect(await within(entry).findByText(t("capture.hint_output"))).toBeInTheDocument();
     // Never made the default output
     expect(within(entry).queryByRole("switch", { name: (n) => n.startsWith(t("capture.auto_switch")) })).toBeNull();
-
-    // Developer mode off: what streams (System Loopback) is shown, and the
-    // profile keeps its choice
-    calls.length = 0;
-    await mock!.call("settings.set", { settings: { ...settings.settings, developer_mode: false } });
-    await waitFor(() => expect(select).toHaveValue("loopback"));
-    expect(within(select).queryByRole("group", { name: t("capture.output") })).toBeNull();
-    expect(within(entry).getByText(t("capture.hint_loopback"))).toBeInTheDocument();
-    expect(saves(calls)).toHaveLength(0);
-    const after = (await mock!.call("state.snapshot")) as { profiles: { name: string; capture_mode: string }[] };
-    expect(after.profiles.find((x) => x.name === "WH-1000XM5 (LDAC)")?.capture_mode).toBe("output");
   });
 
   it("shows a chosen output device that is not there as not connected (issue #193)", async () => {
     // Saved before the screen opens (the Codecs screen, another window)
     start("#/home");
     await screen.findAllByRole("button", { name: "Connect" });
-    const snap = (await mock!.call("state.snapshot")) as { profiles: { name: string }[]; settings: Record<string, unknown> };
-    await mock!.call("settings.set", { settings: { ...snap.settings, developer_mode: true } });
+    const snap = (await mock!.call("state.snapshot")) as { profiles: { name: string }[] };
     const p = snap.profiles.find((x) => x.name === "WH-1000XM5 (LDAC)")!;
     await mock!.call("profile.save", {
       profile: { ...p, capture_mode: "output", audio_device_id: "{gone}", audio_device_name: "USB Speakers" },

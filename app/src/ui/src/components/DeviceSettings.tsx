@@ -18,7 +18,6 @@ import { LINKS } from "../lib/links";
 import {
   appCaptureSupport,
   captureDevice,
-  captureInForce,
   deviceFields,
   deviceFieldsComplete,
   entryBase,
@@ -85,11 +84,9 @@ export function DeviceSettings(props: { device: Device }) {
   const noVirtual = () => listed() && virtualDevices().length === 0;
   const [appSupport] = createResource(appCaptureSupport);
   const leOnly = () => leEntry() || (profiles().length > 0 && profiles().every((p) => p.le_audio));
-  const developer = () => snap().settings.developer_mode;
   /** The shown settings as a profile (what Home's capture source list
-   *  takes), with the source it streams: outside developer mode a chosen
-   *  output device is shown as System Loopback, and kept */
-  const shown = (): Profile => captureInForce({ ...newestBase(profiles()), ...f, le_audio: leOnly() }, developer());
+   *  takes) */
+  const shown = (): Profile => ({ ...newestBase(profiles()), ...f, le_audio: leOnly() });
   const mode = () => shown().capture_mode;
 
   /** Changes the device's settings: into each of its profiles once complete
@@ -117,11 +114,11 @@ export function DeviceSettings(props: { device: Device }) {
     setSaving(false);
   };
 
-  /** System Loopback, the virtual devices, the output devices (developer
-   *  mode) and the playing apps in one list */
+  /** System Loopback, the virtual devices, the output devices and the
+   *  playing apps in one list */
   const sources = createMemo((): Option<string>[] => {
     const p = shown();
-    const c = captureChoices(p, devices() ?? [], apps() ?? [], appSupport() !== "no", developer());
+    const c = captureChoices(p, devices() ?? [], apps() ?? [], appSupport() !== "no");
     const virtual: Option<string>[] = c.virtual.map((o) => ({ ...o, group: t("capture.virtual") }));
     if (virtual.length === 0 && noVirtual()) {
       virtual.push({ value: "virtual:", label: t("capture.no_virtual_device"), group: t("capture.virtual"), disabled: true });

@@ -59,7 +59,7 @@ Intern führt BlueCaster einen Eintrag pro Gerät in `profiles.json` (sein Codec
 
 Die Kopfhörer und Lautsprecher, an die BlueCaster streamen kann, jeweils mit eigenen Einstellungen, und darunter **Audiogerät hinzufügen**: **Geräte suchen** findet Geräte in der Nähe mit dem USB-Adapter (30 Sekunden, aufgelistet, sobald sie antworten; **Suche beenden** beendet sie; versetzen Sie die Kopfhörer in den Kopplungsmodus; ist ein Gerät verbunden, fragt sie zuerst, ob es getrennt werden soll). **Hinzufügen** speichert ein gefundenes Gerät und verbindet es. Geräte, mit denen BlueCaster schon einmal gekoppelt war, sind als **Gekoppelt** markiert. Findet die Suche die Kopfhörer nicht, geben Sie die Adresse unter **Manuell:** ein und klicken Sie auf **Hinzufügen**; eingegebene oder eingefügte Adressen werden bei der Eingabe formatiert (`aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` und `AA BB CC DD EE FF` werden alle zu `AA:BB:CC:DD:EE:FF`). Kopfhörer sehen den Adapter unter dem Namen deines Computers mit BlueCaster dahinter, z. B. *Taro-PC (BlueCaster)*, damit er sich vom Bluetooth von Windows selbst unterscheidet. Ein Gerät, das Windows über einen anderen Adapter gekoppelt hat, etwa das eingebaute Bluetooth des PCs, fragt zuerst nach (**In Windows gekoppelt**: dort entfernen oder **Trotzdem hinzufügen**); eines, das Windows über diesen Adapter gekoppelt hat, bietet an, diese Kopplung zu übernehmen (siehe [Dienste und Kopplungsschlüssel](#shared-pairing)). Ein gespeichertes Gerät lässt sich umbenennen oder entfernen (das Entfernen löscht auch seine Einstellungen und seine Kopplung, sodass es sich erst wieder verbinden kann, wenn es erneut gekoppelt ist) und hat:
 
-- **Ausgabequelle**: System-Loopback (Standard für ein neues Gerät), Virtuelles Gerät oder Anwendung (siehe [Aufnahmemodi](#capture-modes)). Daneben das Format, in dem Windows das aufgenommene Gerät mischt (Abtastrate und Bittiefe, schreibgeschützt), in Bernstein, wenn das Gerät ein anderes streamt (oder, nicht verbunden, seine Codec-Einstellungen ein anderes verlangen), mit einer Zeile darunter, die beide Formate nennt (es streamt trotzdem, umgerechnet); darunter, was die Quelle tut
+- **Ausgabequelle**: System-Loopback (Standard für ein neues Gerät), Virtuelles Gerät, Ausgabegerät oder Anwendung (siehe [Aufnahmemodi](#capture-modes)). Daneben das Format, in dem Windows das aufgenommene Gerät mischt (Abtastrate und Bittiefe, schreibgeschützt), in Bernstein, wenn das Gerät ein anderes streamt (oder, nicht verbunden, seine Codec-Einstellungen ein anderes verlangen), mit einer Zeile darunter, die beide Formate nennt (es streamt trotzdem, umgerechnet); darunter, was die Quelle tut
 - **Bei Verbindung als Windows-Standardausgabe festlegen**, mit einem virtuellen Gerät
 
 **Alle Audiogeräte** über der Liste enthält die Schalter, die für jedes Gerät gelten: **Windows-Lautstärke-Sync** (siehe [Lautstärke](#volume)), **Wiedergabe über die Tasten des Audiogeräts steuern** und **Automatisch wieder verbinden**. Die **Max. Mediapaketgröße** jedes Geräts befindet sich auf der Seite **Entwickler** (siehe [Max. Mediapaketgröße](#max-packet)).
@@ -240,15 +240,16 @@ Ohne `--cli` ist `bluecaster-core.exe` das residente Programm: Es startet auch d
 
 ## Aufnahmemodi {#capture-modes}
 
-BlueCaster unterstützt drei Aufnahmemodi. Jeder nimmt an einer anderen Stelle des Audiopfads auf:
+BlueCaster unterstützt vier Aufnahmemodi. Jeder nimmt an einer anderen Stelle des Audiopfads auf:
 
 | Modus | Was aufgenommen wird |
 |:------|:---------------------|
 | System-Loopback | Was das Windows-Standardausgabegerät wiedergibt: alle Apps gemischt |
 | Virtuelles Gerät | Was Apps auf dem ausgewählten Gerät wiedergeben (z. B. VB-CABLE) |
+| Ausgabegerät | Was ein Ausgabegerät wiedergibt (Lautsprecher, ein USB-Headset, ein Fernseher, ...), egal welches die Windows-Standardausgabe ist |
 | Anwendung | Nur was eine App (und ihre untergeordneten Prozesse) wiedergibt, nach der eigenen Verarbeitung der App. Erfordert Windows 11 oder Windows 10 Version 2004 (Build 19041) oder höher |
 
-**Audiogeräte** zeigt dieselbe Erklärung unter **Ausgabequelle**. Ein neues Gerät nimmt mit System-Loopback auf, das ohne weitere Installation funktioniert; wählen Sie dort Virtuelles Gerät oder Anwendung dafür.
+**Audiogeräte** zeigt dieselbe Erklärung unter **Ausgabequelle**. Ein neues Gerät nimmt mit System-Loopback auf, das ohne weitere Installation funktioniert; wählen Sie dort eine andere Quelle dafür.
 
 System-Loopback kopiert das Audio; es nimmt es dem Standardausgabegerät nicht weg, sodass das Audio auch dort wiedergegeben wird (Lautsprecher, kabelgebundene Kopfhörer, ein HDMI-Fernseher, ...). Um es nur auf den Bluetooth-Kopfhörern zu hören, verwenden Sie ein virtuelles Gerät wie VB-CABLE.
 
@@ -263,7 +264,7 @@ Im Modus Virtuelles Gerät macht **Bei Verbindung als Windows-Standardausgabe fe
 - Manche Apps geben weiterhin auf dem vorherigen Gerät wieder, bis sie neu gestartet werden.
 - Wird BlueCaster unerwartet beendet, wird das Standardgerät nicht zurückgestellt. Ändern Sie es dann in den Windows-Soundeinstellungen.
 
-Im Entwicklermodus bietet die Liste **Ausgabequelle** außerdem **Ausgabegerät**: jedes Ausgabegerät von Windows (Lautsprecher, ein USB-Headset, ein Fernseher, ...). BlueCaster nimmt dann auf, was dieses Gerät wiedergibt, egal welches Gerät die Windows-Standardausgabe ist, und macht es nie zum Standard; **Windows-Lautstärke-Sync** gleicht die Lautstärke dieses Geräts ab. Fehlt es beim Verbinden (ausgesteckt oder deaktiviert), sendet BlueCaster stattdessen System-Loopback, und der Verbindungsstatus sagt das; **Audiogeräte** zeigt es als nicht verbunden. Ohne Entwicklermodus nimmt ein solches Gerät System-Loopback auf: Die Auswahl bleibt gespeichert und gilt wieder, sobald der Entwicklermodus an ist.
+Unter **Ausgabegerät** bietet die Liste **Ausgabequelle** jedes Ausgabegerät von Windows. BlueCaster nimmt auf, was das gewählte Gerät wiedergibt, egal welches Gerät die Windows-Standardausgabe ist, und macht es nie zum Standard; **Windows-Lautstärke-Sync** gleicht die Lautstärke dieses Geräts ab. Fehlt es beim Verbinden (ausgesteckt oder deaktiviert), sendet BlueCaster stattdessen System-Loopback, und der Verbindungsstatus sagt das; **Audiogeräte** zeigt es als nicht verbunden.
 
 ### Modus Anwendung {#application-mode}
 
@@ -279,7 +280,7 @@ Der Modus Anwendung sendet das Audio einer einzelnen App, zum Beispiel eines Mus
 
 Während des Streamings funktioniert der Regler **Lautstärke** auf der Seite Start und im Flyout des Infobereichs, wenn die Kopfhörer AVRCP Absolute Volume unterstützen (sonst bleibt er deaktiviert). Er stellt die Lautstärke direkt an den Kopfhörern ein, sodass das gesendete Audio seine volle Auflösung behält. Der Lautsprecher daneben schaltet stumm (Lautstärke 0 an den Kopfhörern) und hebt die Stummschaltung wieder auf (zurück zur vorherigen Lautstärke). Bei Lautstärke 0, gleich wie sie eingestellt wurde (über den Lautsprecher, den Regler, Windows oder die Tasten der Kopfhörer), sendet BlueCaster Stille, da viele Kopfhörer bei ihrer niedrigsten Lautstärke noch leise spielen. Der Regler folgt auch den Lautstärketasten und der Touch-Bedienung der Kopfhörer.
 
-**Windows-Lautstärke-Sync** (unter **Audiogeräte**, für jedes Gerät; standardmäßig an) macht während des Streamings eine Windows-Lautstärke und die Kopfhörerlautstärke zu einer einzigen Lautstärke. Synchronisiert wird die Windows-Lautstärke des Geräts, von dem BlueCaster aufnimmt: in den Modi System-Loopback und Anwendung das Standardausgabegerät, im Modus Virtuelles Gerät das ausgewählte Gerät. Ist es aus, sind Windows-Lautstärke und Kopfhörerlautstärke getrennt.
+**Windows-Lautstärke-Sync** (unter **Audiogeräte**, für jedes Gerät; standardmäßig an) macht während des Streamings eine Windows-Lautstärke und die Kopfhörerlautstärke zu einer einzigen Lautstärke. Synchronisiert wird die Windows-Lautstärke des Geräts, von dem BlueCaster aufnimmt: in den Modi System-Loopback und Anwendung das Standardausgabegerät, in den Modi Virtuelles Gerät und Ausgabegerät das ausgewählte Gerät. Ist es aus, sind Windows-Lautstärke und Kopfhörerlautstärke getrennt.
 
 - Die Lautstärketasten und -gesten der Kopfhörer sowie der Regler **Lautstärke** verändern die synchronisierte Windows-Lautstärke, und deren Regler in den Soundeinstellungen verändert die Kopfhörerlautstärke.
 - Die Lautstärketasten und das Lautstärke-Flyout von Windows wirken immer auf das Standardausgabegerät; sie ändern die Kopfhörerlautstärke also nur, wenn das Standardausgabegerät das synchronisierte ist (immer, außer im Modus Virtuelles Gerät ohne **Bei Verbindung als Windows-Standardausgabe festlegen**).
