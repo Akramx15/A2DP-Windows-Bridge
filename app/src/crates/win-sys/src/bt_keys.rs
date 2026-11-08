@@ -13,6 +13,11 @@
 //! administrator gets in with the backup privilege (REG_OPTION_BACKUP_RESTORE),
 //! so the caller runs elevated (bluecaster-driver.exe `windows-keys`).
 //!
+//! `write_link_keys` goes the other way when the adapter goes back to
+//! Windows: BlueCaster's newer keys of the devices Windows paired too
+//! replace Windows' old ones, so those devices connect in Windows without
+//! pairing again. Writing takes the restore privilege as well.
+//!
 //! The key bytes are in the order of HCI's Link Key Notification, the order
 //! BTstack and BlueZ keep them in too. LTK and IRK are least significant
 //! octet first, as SMP carries them (BlueZ' info file takes them as they
@@ -24,11 +29,11 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_BACKUP_NAME, SE_PRIVILEGE_ENABLED,
-    TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+    SE_RESTORE_NAME, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_BINARY, REG_DWORD, REG_OPTION_BACKUP_RESTORE, REG_QWORD, REG_VALUE_TYPE,
-    RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW, RegQueryValueExW,
+    HKEY, HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, REG_BINARY, REG_DWORD, REG_OPTION_BACKUP_RESTORE, REG_QWORD,
+    REG_VALUE_TYPE, RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows::core::{HSTRING, PCWSTR};
@@ -76,7 +81,7 @@ pub struct WindowsKeys {
 /// (display order). Ok(None): Windows has no keys for that radio (it never
 /// paired a device with it). Needs administrator rights.
 pub fn read_keys(radio: &[u8; 6]) -> windows::core::Result<Option<WindowsKeys>> {
-    enable_backup_privilege()?;
+    enable_privilege(SE_BACKUP_NAME)?;
     let path = format!(r"{KEYS}\{}", hex(radio));
     let mut key = HKEY::default();
     // SAFETY: valid root key, NUL-terminated subkey and out pointer.
@@ -250,17 +255,104 @@ fn hex(a: &[u8; 6]) -> String {
     a.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// SeBackupPrivilege on this process's token (an administrator has it,
-/// disabled): opening a key with REG_OPTION_BACKUP_RESTORE then skips its
-/// access check
-fn enable_backup_privilege() -> windows::core::Result<()> {
+/// What becomes of one of BlueCaster's keys when written to Windows
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WriteAction {
+    /// Windows has no key of that device for this radio (never paired it,
+    /// or through another radio): nothing is added
+    NotPaired,
+    /// Windows has this very key already
+    Same,
+    /// Windows' key differs: replaced, the old one is given back
+    Replace([u8; 16]),
+}
+
+/// `now`: the value Windows keeps under the device's name, if any
+fn write_action(now: Option<(REG_VALUE_TYPE, &[u8])>, ours: &[u8; 16]) -> WriteAction {
+    match now {
+        Some((REG_BINARY, data)) => match <[u8; 16]>::try_from(data) {
+            Ok(old) if old == *ours => WriteAction::Same,
+            Ok(old) => WriteAction::Replace(old),
+            Err(_) => WriteAction::NotPaired,
+        },
+        _ => WriteAction::NotPaired,
+    }
+}
+
+/// What `write_link_keys` did
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WrittenKeys {
+    /// Windows' keys that were replaced, as they were (for a backup)
+    pub replaced: Vec<WindowsLinkKey>,
+    /// Devices Windows had the same key of already
+    pub same: Vec<[u8; 6]>,
+}
+
+/// Writes BlueCaster's link keys `keys` for the radio `radio` (display
+/// order) where Windows keeps a key of that device already, so it uses the
+/// newer pairing; devices Windows never paired with that radio are left
+/// out. Ok(None): Windows has no keys for that radio. To take effect, it
+/// must be written while Windows' Bluetooth does not run the radio (it
+/// reads the keys when the radio starts). Needs administrator rights.
+pub fn write_link_keys(radio: &[u8; 6], keys: &[WindowsLinkKey]) -> windows::core::Result<Option<WrittenKeys>> {
+    enable_privilege(SE_BACKUP_NAME)?;
+    enable_privilege(SE_RESTORE_NAME)?;
+    let path = format!(r"{KEYS}\{}", hex(radio));
+    let mut key = HKEY::default();
+    // SAFETY: valid root key, NUL-terminated subkey and out pointer. With
+    // both privileges the key opens for reading and writing.
+    let err = unsafe {
+        RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            &HSTRING::from(path.as_str()),
+            Some(REG_OPTION_BACKUP_RESTORE.0),
+            KEY_READ | KEY_SET_VALUE,
+            &mut key,
+        )
+    };
+    if err == ERROR_FILE_NOT_FOUND {
+        tracing::info!("bt_keys: Windows has no keys for the radio {}; none written", hex(radio));
+        return Ok(None);
+    }
+    check(err)?;
+    let key = RegKey(key);
+    let mut out = WrittenKeys::default();
+    for k in keys {
+        let name = hex(&k.address);
+        let now = query(&key, &name);
+        match write_action(now.as_ref().map(|(t, d)| (*t, d.as_slice())), &k.key) {
+            WriteAction::NotPaired => {}
+            WriteAction::Same => out.same.push(k.address),
+            WriteAction::Replace(old) => {
+                // SAFETY: open key, NUL-terminated name, 16 bytes of data.
+                let err =
+                    unsafe { RegSetValueExW(key.0, &HSTRING::from(name.as_str()), None, REG_BINARY, Some(&k.key)) };
+                check(err)?;
+                out.replaced.push(WindowsLinkKey { address: k.address, key: old });
+            }
+        }
+    }
+    tracing::info!(
+        "bt_keys: radio {}: {} key(s) written, {} the same already, {} not paired in Windows",
+        hex(radio),
+        out.replaced.len(),
+        out.same.len(),
+        keys.len() - out.replaced.len() - out.same.len()
+    );
+    Ok(Some(out))
+}
+
+/// A privilege on this process's token (an administrator has the backup
+/// and restore privileges, disabled): opening a key with
+/// REG_OPTION_BACKUP_RESTORE then skips its access check
+fn enable_privilege(name: PCWSTR) -> windows::core::Result<()> {
     let mut token = HANDLE::default();
     // SAFETY: GetCurrentProcess is a pseudo handle; `token` is an out pointer.
     unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) }?;
     let mut luid = LUID::default();
-    // SAFETY: SE_BACKUP_NAME is a static NUL-terminated string; `luid` is an
-    // out pointer.
-    let r = unsafe { LookupPrivilegeValueW(PCWSTR::null(), SE_BACKUP_NAME, &mut luid) }.and_then(|()| {
+    // SAFETY: `name` is one of the static NUL-terminated SE_*_NAME strings;
+    // `luid` is an out pointer.
+    let r = unsafe { LookupPrivilegeValueW(PCWSTR::null(), name, &mut luid) }.and_then(|()| {
         let privileges = TOKEN_PRIVILEGES {
             PrivilegeCount: 1,
             Privileges: [LUID_AND_ATTRIBUTES { Luid: luid, Attributes: SE_PRIVILEGE_ENABLED }],
@@ -329,5 +421,18 @@ mod tests {
         assert!(le_key(addr, |n| if n == "LTK" { None } else { values(n) }).is_none());
         assert!(le_key(addr, |n| if n == "LTK" { Some((REG_BINARY, vec![0; 16])) } else { values(n) }).is_none());
         assert!(address_from_name("MasterIRK").is_none());
+    }
+
+    #[test]
+    fn only_keys_windows_has_are_replaced() {
+        let ours = [0x11u8; 16];
+        let old = [0x22u8; 16];
+        assert_eq!(write_action(Some((REG_BINARY, &old)), &ours), WriteAction::Replace(old));
+        assert_eq!(write_action(Some((REG_BINARY, &ours)), &ours), WriteAction::Same);
+        // Never paired with this radio in Windows: nothing is added
+        assert_eq!(write_action(None, &ours), WriteAction::NotPaired);
+        // Not a link key: left as it is
+        assert_eq!(write_action(Some((REG_BINARY, &old[..8])), &ours), WriteAction::NotPaired);
+        assert_eq!(write_action(Some((REG_DWORD, &old[..4])), &ours), WriteAction::NotPaired);
     }
 }
