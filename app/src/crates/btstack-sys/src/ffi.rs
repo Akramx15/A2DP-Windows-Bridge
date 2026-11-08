@@ -7,6 +7,11 @@
 use std::ffi::{c_char, c_int};
 
 unsafe extern "C" {
+    // ---- hci.c ----
+    /// A whole command packet (opcode, length, parameters); BTstack hands
+    /// it to the transport, which copies it
+    pub fn hci_send_cmd_packet(packet: *mut u8, size: c_int) -> u8;
+
     // ---- shim.c: run loop ----
     pub fn bluecaster_runloop_init();
     pub fn bluecaster_wake();

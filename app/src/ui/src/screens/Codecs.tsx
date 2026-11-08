@@ -249,7 +249,9 @@ export function pickedCodec(
 
 /** Whether a codec's card shows: the one picked always, the others unless
  *  `hide` and the device did not offer them (a codec chosen that it does
- *  not offer neither: the one used instead is picked) */
+ *  not offer neither: the one used instead is picked). A device never
+ *  connected shows SBC alone, the codec every device has (issue #86: an
+ *  imported device's cards were a wall of unconfirmed ones). */
 export function codecShown(
   id: string,
   picked: string | null,
@@ -257,7 +259,9 @@ export function codecShown(
   hide: boolean,
   onRequest: readonly string[] = [],
 ) {
-  return !hide || id === picked || codecSupport(id, known, onRequest) !== "not_offered";
+  if (!hide || id === picked) return true;
+  if (known.length === 0) return id === "sbc";
+  return codecSupport(id, known, onRequest) !== "not_offered";
 }
 
 /** Whether `order` puts the cards in `ids` (those shown) in their default
@@ -719,8 +723,13 @@ function DeviceCodecs(props: {
                 selected={picked() === c.id}
                 disabled={locked()}
                 readOnly={props.auto}
-                // Only supported codecs shown: no "Supported" tag on each
-                support={props.hide && support(c.id) === "offered" ? null : support(c.id)}
+                // Only supported codecs shown: no "Supported" tag on each,
+                // nor SBC's "Unconfirmed" on a device never connected (every device has it)
+                support={
+                  props.hide && (support(c.id) === "offered" || (c.id === "sbc" && known().length === 0))
+                    ? null
+                    : support(c.id)
+                }
                 orderable
                 dragging={dragging() === c.id}
                 // The keys need a card that takes the focus (not under Auto-select)

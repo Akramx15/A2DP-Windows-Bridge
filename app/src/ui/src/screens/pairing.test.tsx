@@ -100,7 +100,6 @@ describe("device pairing", () => {
     expect(within(dialog).getAllByText(t("ui.pairing.not_available"))).toHaveLength(2);
     // Why, in place of a bare "not available"
     expect(within(dialog).getByText(t("ui.pairing.le_missing.not_asked"))).toBeInTheDocument();
-    expect(within(dialog).queryByText(t("ui.pairing.identity_address"))).toBeNull();
   });
 
   it("says why there are no LE keys (issue #86)", async () => {
@@ -130,10 +129,8 @@ describe("device pairing", () => {
     expect(await within(dialog).findByText("0F0E0D0C0B0A09080706050403020100")).toBeInTheDocument();
     expect(within(dialog).getByText("A0A1A2A3A4A5A6A7A8A9AAABACADAEAF")).toBeInTheDocument();
     expect(within(dialog).getByText(t("ui.pairing.key_size", 16))).toBeInTheDocument();
-    expect(within(dialog).getByText("C0:11:22:33:44:55")).toBeInTheDocument();
-    const keys = within(dialog).getByRole("table", { name: t("ui.pairing.key_title") });
-    expect(within(keys).getByRole("rowheader", { name: t("ui.pairing.identity_address") })).toBeInTheDocument();
-    expect(within(dialog).getByText(t("ui.pairing.random"))).toBeInTheDocument();
+    // No identity address: BlueZ does not need it (issue #86)
+    expect(within(dialog).queryByText("C0:11:22:33:44:55")).toBeNull();
     expect(within(dialog).getAllByRole("button", { name: t("ui.pairing.copy_key") })).toHaveLength(3);
     expect(within(dialog).queryByText(t("ui.pairing.not_available"))).toBeNull();
     expect(within(dialog).queryByText(t("ui.pairing.le_missing.not_asked"))).toBeNull();
