@@ -280,7 +280,9 @@ pub fn device_services_file(config: &Path) -> PathBuf {
 
 // ---- pairing\ ----------------------------------------------------------
 
-/// The secrets (link keys, LE bonds, CSIP sets): never in a bundle
+/// The secrets (link keys, LE bonds, CSIP sets): never in a bundle. The
+/// key files are encrypted for the Windows user (win_sys::dpapi), except
+/// keys_for_windows.json, which the elevated helper reads.
 pub fn pairing_dir(config: &Path) -> PathBuf {
     config.join("pairing")
 }

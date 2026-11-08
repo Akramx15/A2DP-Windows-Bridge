@@ -476,6 +476,7 @@ dependencies = [
  "le-audio",
  "rtrb",
  "tracing",
+ "win-sys",
 ]
 
 [[package]]

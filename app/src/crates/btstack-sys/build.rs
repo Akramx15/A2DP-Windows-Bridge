@@ -176,9 +176,6 @@ fn main() {
         f => btstack.join("src/classic").join(f),
     }));
     build.file(btstack.join("platform/windows/btstack_run_loop_windows.c"));
-    // LE bonds (le_device_db_tlv) and the GATT server's client
-    // configurations in a TLV file, readable by v1's le_audio_bonds.tlv
-    build.file(btstack.join("platform/windows/btstack_tlv_windows.c"));
     // Software P-256 for LE Secure Connections (ENABLE_MICRO_ECC_P256)
     build.file(btstack.join("3rd-party/micro-ecc/uECC.c"));
     build.file(btstack.join("chipset/bcm/btstack_chipset_bcm.c"));

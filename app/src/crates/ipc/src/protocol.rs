@@ -2235,7 +2235,7 @@ pub struct KeysComparison {
     pub adapter_found: bool,
     /// Link keys
     pub classic: KeyCounts,
-    /// LE keys; None: BlueCaster's could not be read (Bluetooth is running)
+    /// LE keys; None: BlueCaster's could not be read
     #[ts(optional = nullable)]
     pub le: Option<KeyCounts>,
     /// The values of the adapter's key in Windows (its own, not the devices')

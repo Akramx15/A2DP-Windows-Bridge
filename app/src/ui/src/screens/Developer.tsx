@@ -567,7 +567,7 @@ function KeysCompare() {
             <p>
               {r().le
                 ? counts("ui.dev.keys_le", r().le!)
-                : t("ui.dev.keys_le_busy")}
+                : t("ui.dev.keys_le_unreadable")}
             </p>
             <Show when={r().le_values.length > 0}>
               <p class="muted mono">

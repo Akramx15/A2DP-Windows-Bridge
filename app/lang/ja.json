@@ -471,7 +471,7 @@
   "ui.dev.keys_compare": "Windows と比較",
   "ui.dev.keys_link": "リンクキー: 一致 %d、不一致 %d、BlueCaster のみ %d、Windows のみ %d",
   "ui.dev.keys_le": "LE のキー: 一致 %d、不一致 %d、BlueCaster のみ %d、Windows のみ %d",
-  "ui.dev.keys_le_busy": "LE のキー: BlueCaster の Bluetooth が動いている間は読めません",
+  "ui.dev.keys_le_unreadable": "LE のキー: BlueCaster のキーを読めませんでした",
   "ui.dev.keys_no_windows": "Windows はこのアダプターのキーを持っていません。",
   "ui.dev.keys_le_values": "Windows の LE の値: %s",
   "ui.dev.keys_radio_values": "Windows のアダプターの値: %s",

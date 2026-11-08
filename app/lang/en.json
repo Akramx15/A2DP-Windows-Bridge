@@ -471,7 +471,7 @@
   "ui.dev.keys_compare": "Compare with Windows",
   "ui.dev.keys_link": "Link keys: %d the same, %d different, %d only in BlueCaster, %d only in Windows",
   "ui.dev.keys_le": "LE keys: %d the same, %d different, %d only in BlueCaster, %d only in Windows",
-  "ui.dev.keys_le_busy": "LE keys: not readable while Bluetooth runs in BlueCaster",
+  "ui.dev.keys_le_unreadable": "LE keys: BlueCaster's could not be read",
   "ui.dev.keys_no_windows": "Windows has no keys for this adapter.",
   "ui.dev.keys_le_values": "Windows' LE values: %s",
   "ui.dev.keys_radio_values": "Windows' adapter values: %s",

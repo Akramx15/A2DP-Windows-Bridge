@@ -130,8 +130,7 @@ fn le_keys_to_windows(state: &CoreState) -> bool {
     s.debug_mode && s.dev_debug.le_keys_to_windows
 }
 
-/// BlueCaster's LE bonds from its bond file (no stack may hold it open);
-/// None when it cannot be read
+/// BlueCaster's LE bonds from its bond file; None when it cannot be read
 fn stored_le_bonds(config: &Path) -> Option<Vec<bt_host::le_bond_file::StoredLeBond>> {
     match bt_host::le_bond_file::read(&bluecaster_core::paths::le_bonds_file(config)) {
         Ok(bonds) => Some(bonds),
@@ -145,7 +144,9 @@ fn stored_le_bonds(config: &Path) -> Option<Vec<bt_host::le_bond_file::StoredLeB
 
 /// For `restore --keys`: the adapter's address and BlueCaster's link keys
 /// (and its LE keys while developer mode asks for them), written to the
-/// pairing folder (never in a bundle); None without any
+/// pairing folder (never in a bundle); None without any. Plain text: the
+/// elevated helper may run as another administrator, whom the current
+/// user's DPAPI key does not open; the file is there only while it runs.
 fn keys_for_windows(state: &CoreState, instance_id: &str) -> Option<PathBuf> {
     let (_, s) = state.snapshot();
     let radio = s.adapter.adapters.iter().find(|a| a.instance_id == instance_id)?.address.clone()?;
@@ -181,8 +182,9 @@ fn keys_for_windows(state: &CoreState, instance_id: &str) -> Option<PathBuf> {
 }
 
 /// Windows' keys that BlueCaster's replaced, added to the backup in the
-/// pairing folder (per device and kind the one replaced last). The log
-/// gets numbers only; the LE line only when LE keys were asked for.
+/// pairing folder (per device and kind the one replaced last), encrypted
+/// for the Windows user: Windows kept them readable by SYSTEM only. The
+/// log gets numbers only; the LE line only when LE keys were asked for.
 fn keep_replaced_keys(config: &Path, instance_id: &str, result: &Value, le_asked: bool) {
     if let Some(e) = result.get("keys_error").and_then(Value::as_str) {
         tracing::warn!("driver: keys not written to Windows: {e}");
@@ -216,7 +218,7 @@ fn keep_replaced_keys(config: &Path, instance_id: &str, result: &Value, le_asked
     }
     let path = bluecaster_core::paths::replaced_windows_keys_file(config);
     let mut backup: Vec<Value> =
-        std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        win_sys::dpapi::read_secret(&path).ok().and_then(|t| serde_json::from_slice(&t).ok()).unwrap_or_default();
     let date = bluecaster_core::paths::today();
     let kind_of = |b: &Value| b.get("kind").and_then(Value::as_str).unwrap_or("link").to_string();
     for (kind, k) in entries {
@@ -228,7 +230,7 @@ fn keep_replaced_keys(config: &Path, instance_id: &str, result: &Value, le_asked
         entry["date"] = Value::String(date.clone());
         backup.push(entry);
     }
-    if let Err(e) = std::fs::write(&path, serde_json::to_vec_pretty(&backup).unwrap_or_default()) {
+    if let Err(e) = win_sys::dpapi::write_secret(&path, &serde_json::to_vec_pretty(&backup).unwrap_or_default()) {
         tracing::warn!("Windows' replaced keys could not be kept ({})", e.kind());
     }
 }
@@ -443,8 +445,11 @@ mod tests {
         // Nothing replaced: the backup stays
         keep_replaced_keys(&config, TPLINK, &serde_json::json!({ "keys_written": [] }), false);
         let path = bluecaster_core::paths::replaced_windows_keys_file(&config);
-        let backup: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let on_disk = std::fs::read(&path).unwrap();
+        let backup: Vec<Value> = serde_json::from_slice(&win_sys::dpapi::read_secret(&path).unwrap()).unwrap();
         let _ = std::fs::remove_dir_all(&config);
+        assert!(win_sys::dpapi::is_encrypted(&on_disk));
+        assert!(!String::from_utf8_lossy(&on_disk).contains("AA:BB"));
         assert_eq!(backup.len(), 1);
         assert_eq!(backup[0]["key"], "22");
         assert_eq!(backup[0]["adapter"], TPLINK);

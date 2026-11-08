@@ -1,16 +1,18 @@
-//! The LE bonds BTstack keeps in `le_audio_bonds.tlv` (btstack_tlv_windows
-//! with le_device_db_tlv), read without a stack: the driver restore hands
-//! them to Windows (developer mode, issue #86) after the stack let go of the
-//! adapter. A running stack holds the file open without sharing, so it
-//! cannot be read then.
+//! `le_audio_bonds.tlv`: the LE TLV BTstack keeps (the bonds of
+//! le_device_db_tlv, the GATT server's client configurations), held by
+//! [`TlvFile`] while a stack runs and read without one ([`read`]: the
+//! driver restore hands the bonds to Windows, developer mode, issue #86).
 //!
-//! The file: the 8-byte header "BTstack\0", then entries of a big-endian
-//! tag, a big-endian length and the value; a later entry of a tag replaces
-//! an earlier one, length 0 deletes it. A bond is the tag "BTD" + index
-//! with le_device_db_entry_t as its value (60 bytes; 100 with signed
-//! writes, whose extra fields are not read).
+//! The content, as btstack_tlv_windows wrote it in v1 and earlier v3
+//! builds: the 8-byte header "BTstack\0", then entries of a big-endian tag,
+//! a big-endian length and the value; a later entry of a tag replaces an
+//! earlier one, length 0 deletes it. A bond is the tag "BTD" + index with
+//! le_device_db_entry_t as its value (60 bytes; 100 with signed writes,
+//! whose extra fields are not read). On disk it is encrypted for the
+//! Windows user ([`win_sys::dpapi`]); a plain file of those builds is read
+//! and rewritten encrypted.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// One bond as BTstack keeps it: addresses in display order, keys and Rand
 /// most significant octet first
@@ -31,7 +33,7 @@ pub struct StoredLeBond {
 
 const MAGIC: &[u8] = b"BTstack";
 const HEADER_LEN: usize = 8;
-/// btstack_tlv_windows refuses longer values
+/// btstack_tlv_windows refused longer values
 const MAX_VALUE: usize = 2048;
 /// sizeof(le_device_db_entry_t) without ENABLE_LE_SIGNED_WRITE
 const ENTRY_LEN: usize = 60;
@@ -42,18 +44,18 @@ fn is_bond_tag(tag: u32) -> bool {
 }
 
 /// The bonds with an LTK in the file `path`; Err when it cannot be read
-/// (missing, or open in a running stack)
+/// (NotFound also when it cannot be decrypted)
 pub fn read(path: &Path) -> std::io::Result<Vec<StoredLeBond>> {
-    Ok(parse(&std::fs::read(path)?))
+    Ok(parse(&win_sys::dpapi::read_secret(path)?))
 }
 
-/// The bonds of the file's bytes, in tag order (an unreadable tail ends the
-/// list, as it ends BTstack's reading)
-pub fn parse(data: &[u8]) -> Vec<StoredLeBond> {
+/// The entries of the file's bytes in the order they were stored last (an
+/// unreadable tail ends them, as it ended btstack_tlv_windows' reading)
+fn entries(data: &[u8]) -> Vec<(u32, Vec<u8>)> {
     if data.len() < HEADER_LEN || &data[..MAGIC.len()] != MAGIC {
         return Vec::new();
     }
-    let mut entries: Vec<(u32, &[u8])> = Vec::new();
+    let mut entries: Vec<(u32, Vec<u8>)> = Vec::new();
     let mut at = HEADER_LEN;
     while at + 8 <= data.len() {
         let tag = u32::from_be_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
@@ -64,12 +66,88 @@ pub fn parse(data: &[u8]) -> Vec<StoredLeBond> {
         }
         entries.retain(|(t, _)| *t != tag);
         if len > 0 {
-            entries.push((tag, &data[at..at + len]));
+            entries.push((tag, data[at..at + len].to_vec()));
         }
         at += len;
     }
+    entries
+}
+
+/// The file's bytes of `entries` (each once, nothing deleted)
+fn format(entries: &[(u32, Vec<u8>)]) -> Vec<u8> {
+    let mut out = b"BTstack\0".to_vec();
+    for (tag, value) in entries {
+        out.extend(tag.to_be_bytes());
+        out.extend((value.len() as u32).to_be_bytes());
+        out.extend(value);
+    }
+    out
+}
+
+/// The bonds of the file's bytes, in tag order
+pub fn parse(data: &[u8]) -> Vec<StoredLeBond> {
+    let mut entries = entries(data);
     entries.sort_by_key(|(t, _)| *t);
-    entries.into_iter().filter(|(t, _)| is_bond_tag(*t)).filter_map(|(_, v)| entry(v)).collect()
+    entries.into_iter().filter(|(t, _)| is_bond_tag(*t)).filter_map(|(_, v)| entry(&v)).collect()
+}
+
+/// The LE TLV of a running stack: in memory, the whole file rewritten
+/// (encrypted, temp file + rename) on every change
+pub struct TlvFile {
+    path: PathBuf,
+    entries: Vec<(u32, Vec<u8>)>,
+}
+
+impl TlvFile {
+    /// Loads `path` (missing, unreadable or not decryptable: empty)
+    pub fn open(path: &Path) -> TlvFile {
+        let entries = match win_sys::dpapi::read_secret(path) {
+            Ok(data) => entries(&data),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => {
+                tracing::warn!("LE Audio: the bonds file cannot be read ({}), starting without bonds", e.kind());
+                Vec::new()
+            }
+        };
+        let bonds = entries.iter().filter(|(t, _)| is_bond_tag(*t)).count();
+        tracing::info!("LE Audio: {bonds} bond(s) loaded");
+        TlvFile { path: path.to_path_buf(), entries }
+    }
+
+    fn save(&self) {
+        if let Err(e) = win_sys::dpapi::write_secret(&self.path, &format(&self.entries)) {
+            tracing::error!("LE Audio: cannot write the bonds file: {e}");
+        }
+    }
+}
+
+impl btstack_sys::TlvStore for TlvFile {
+    fn get(&mut self, tag: u32) -> Option<Vec<u8>> {
+        self.entries.iter().find(|(t, _)| *t == tag).map(|(_, v)| v.clone())
+    }
+
+    fn store(&mut self, tag: u32, value: &[u8]) {
+        if value.len() > MAX_VALUE {
+            tracing::warn!("LE Audio: TLV value of {} bytes not stored", value.len());
+            return;
+        }
+        if self.entries.iter().any(|(t, v)| *t == tag && v == value) {
+            return;
+        }
+        self.entries.retain(|(t, _)| *t != tag);
+        if !value.is_empty() {
+            self.entries.push((tag, value.to_vec()));
+        }
+        self.save();
+    }
+
+    fn delete(&mut self, tag: u32) {
+        let before = self.entries.len();
+        self.entries.retain(|(t, _)| *t != tag);
+        if self.entries.len() != before {
+            self.save();
+        }
+    }
 }
 
 /// le_device_db_entry_t (little-endian, MSVC layout): seq_nr u32, addr_type
@@ -165,5 +243,37 @@ mod tests {
         let mut cut = tlv(&[(BTD0, bond_value(a, 0x22, false))]);
         cut.truncate(cut.len() - 1);
         assert!(parse(&cut).is_empty());
+    }
+
+    #[test]
+    fn plain_bond_files_are_kept_encrypted() {
+        use btstack_sys::TlvStore;
+        let dir = std::env::temp_dir().join(format!("bluecaster-tlv-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("le_audio_bonds.tlv");
+        let a = [0xC0, 1, 2, 3, 4, 5];
+        let b = [0xD0, 1, 2, 3, 4, 5];
+        let gatt = u32::from_be_bytes(*b"GATT");
+        // As btstack_tlv_windows left it: appended, a tag stored twice
+        let plain = tlv(&[(BTD0, bond_value(a, 0x22, false)), (gatt, vec![1]), (BTD0, bond_value(a, 0x44, false))]);
+        std::fs::write(&file, &plain).unwrap();
+
+        let mut store = TlvFile::open(&file);
+        let on_disk = std::fs::read(&file).unwrap();
+        assert!(win_sys::dpapi::is_encrypted(&on_disk));
+        assert!(!on_disk.windows(16).any(|w| w == [0x44; 16]));
+        assert_eq!(store.get(BTD0).unwrap(), bond_value(a, 0x44, false).as_slice());
+        assert_eq!(store.get(gatt).unwrap(), [1]);
+
+        store.store(BTD1, &bond_value(b, 0x33, false));
+        store.delete(gatt);
+        store.store(BTD0, &[]);
+        assert_eq!(store.get(BTD0), None);
+        let bonds = read(&file).unwrap();
+        assert_eq!(bonds.len(), 1);
+        assert_eq!(bonds[0].ltk, [0x33; 16]);
+        assert_eq!(TlvFile::open(&file).entries, vec![(BTD1, bond_value(b, 0x33, false))]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
