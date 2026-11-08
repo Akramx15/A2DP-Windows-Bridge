@@ -147,6 +147,7 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     headset_mic: "off",
     mic_device_id: "",
     mic_device_name: "",
+    mic_muted: false,
     sbc_bitpool: 0,
     sbcxq_bitpool: 0,
     sbc_min_bitpool: 0,
@@ -1508,8 +1509,8 @@ export class MockCore implements Transport {
   private voiceOf(name: string | null): VoiceStatus | null {
     const p = this.snap.profiles.find((x) => x.name === name);
     // Auto: no application records from the cable in the mock, so its
-    // link waits
-    if (!p || p.headset_mic !== "on" || !p.mic_device_id || !this.snap.settings.developer_mode) return null;
+    // link waits; muted: no link
+    if (!p || p.headset_mic !== "on" || p.mic_muted || !p.mic_device_id || !this.snap.settings.developer_mode) return null;
     return p.le_audio
       ? { codec: "lc3", link: "le", rate: 32000, mic_device_id: p.mic_device_id }
       : { codec: "msbc", link: "hfp", rate: 16000, mic_device_id: p.mic_device_id };

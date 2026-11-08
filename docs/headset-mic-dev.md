@@ -40,6 +40,7 @@ Per device, in `Profile` (`app/src/crates/ipc/src/protocol.rs`), all with
 | `headset_mic` | `String` | Headset mode for this device: `"off"` (default), `"on"`, `"auto"` (see "Auto mode"); anything else reads as off. |
 | `mic_device_id` | `String` | Render endpoint id that receives the microphone. Empty = none chosen (headset mode stays off and the UI says so). |
 | `mic_device_name` | `String` | Friendly name, for display when the device is missing. |
+| `mic_muted` | `bool` | Muted from the chip: no voice link, as with `"off"`; `headset_mic` is kept for unmuting (`Profile::headset_mic_mode` reads Off). Choosing a mode on Codecs unmutes. |
 
 In `StreamStatus`: `voice: Option<VoiceStatus>` (`#[serde(default)]
 #[ts(optional = nullable)]`), where
@@ -786,20 +787,22 @@ UI:
   (the le-decode thread has no clock of its own); a WAV file has no drift
   control at all (it records what arrives).
 
-## UI: Off / Auto / On and the chip
+## UI: Off / Auto / On and the mute chip
 
 - Codecs (`screens/Codecs.tsx`, `HeadsetMic`): a `Segmented` Off / Auto /
-  On saves `headset_mic`; the output picker and the warnings show for Auto
-  and On, Auto adds `ui.headset_mic_auto_hint`.
+  On saves `headset_mic` (and `mic_muted: false`); the output picker and
+  the warnings show for Auto and On, Auto adds `ui.headset_mic_auto_hint`.
 - Home's device card and the flyout's state line (`HeadsetChip` in
-  `screens/Home.tsx`): a microphone chip with the mode, only in developer
-  mode for a profile with `mic_device_id`; a click saves the next mode
-  (Off -> Auto -> On -> Off, `nextHeadsetMode` in `lib/profile.ts`).
-  Accent outline for Auto / On, dashed while Auto has no voice link
-  (`waiting`), `linked` while `StreamStatus.voice` is up for that profile;
-  the voice codec itself stays in `VoiceCodec`.
+  `screens/Home.tsx`): a mute toggle, only in developer mode for a profile
+  with `mic_device_id` and Auto / On. It shows the mode chosen (accent
+  outline) or Muted (`mic_off` icon, `muted`); a click saves `mic_muted`.
+  Dashed while Auto has no voice link (`waiting`), `linked` while
+  `StreamStatus.voice` is up for that profile; the voice codec itself stays
+  in `VoiceCodec`. Muting closes the voice link (a classic device goes back
+  to A2DP quality) through the same `headset_change` path as Off.
 - All three save through `saveHeadsetMic` (`screens/Codecs.tsx`), i.e.
   `profile.save` of the device's profile. The mock opens no voice link for
   Auto (no app records from the cable there).
 - Keys: `ui.headset_mic_off` / `_auto` / `_on`, `ui.headset_mic_auto_hint`,
-  `ui.headset_mic_cycle` (the chip's name: mode and the next one).
+  `ui.headset_mic_muted` (the chip's text), `ui.headset_mic_mute` /
+  `_unmute` (its name and tooltip).

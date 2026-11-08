@@ -169,14 +169,14 @@ async function saveEntry(
   return ok ? saved.name : null;
 }
 
-/** Saves a device's headset mode or microphone output (developer mode):
- *  the Codecs screen, Home's and the flyout's chip. The core opens or
+/** Saves a device's headset mode, microphone output (developer mode,
+ *  Codecs) or mute (Home's and the flyout's chip). The core opens or
  *  closes the microphone link (Auto: as apps record from the output).
  *  True once saved. */
 export async function saveHeadsetMic(
   app: ReturnType<typeof useApp>,
   entry: AudioEntry,
-  patch: Partial<Pick<Profile, "headset_mic" | "mic_device_id" | "mic_device_name">>,
+  patch: Partial<Pick<Profile, "headset_mic" | "mic_device_id" | "mic_device_name" | "mic_muted">>,
 ): Promise<boolean> {
   return (await saveEntry(app, entry, (base) => ({ ...base, ...patch }))) !== null;
 }
@@ -829,7 +829,7 @@ function HeadsetMic(props: { entry: AudioEntry; audioDevices: readonly AudioDevi
           label={t("ui.headset_mic")}
           value={mode()}
           options={HEADSET_MODES.map((m) => ({ value: m, label: t(`ui.headset_mic_${m}`), disabled: busy() }))}
-          onChange={(m) => void save({ headset_mic: m })}
+          onChange={(m) => void save({ headset_mic: m, mic_muted: false })}
         />
       </div>
       <Show when={mode() === "auto"}>
