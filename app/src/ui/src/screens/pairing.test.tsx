@@ -45,12 +45,19 @@ describe("device pairing", () => {
     expect(calls.some((c) => c.method === "device.pairing")).toBe(false);
   });
 
-  it("lists the keys first, the services as a table below them (issue #86)", async () => {
+  it("lists the keys first, folded, the services as a table below them (issue #86)", async () => {
     const { calls } = await open("#/devices", true);
     const [tag] = await screen.findAllByRole("button", { name: t("ui.pairing.services") });
     expect(tag).toHaveClass("tag");
     fireEvent.click(tag);
     const dialog = await screen.findByRole("dialog", { name: t("ui.pairing.services") });
+    // The keys folded, not asked for until unfolded
+    const fold = within(dialog).getByRole("button", { name: t("ui.pairing.key_title") });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    await within(dialog).findByRole("table");
+    expect(calls.some((c) => c.method === "device.pairing")).toBe(false);
+    fireEvent.click(fold);
+    expect(fold).toHaveAttribute("aria-expanded", "true");
     const table = await within(dialog).findByRole("table");
     expect(within(table).getByRole("columnheader", { name: t("ui.pairing.col_name") })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: t("ui.pairing.col_guid") })).toBeInTheDocument();
@@ -90,6 +97,7 @@ describe("device pairing", () => {
     const [tag] = await screen.findAllByRole("button", { name: t("ui.pairing.services") });
     fireEvent.click(tag);
     const dialog = await screen.findByRole("dialog", { name: t("ui.pairing.services") });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.pairing.key_title") }));
     expect(await within(dialog).findByText(t("ui.pairing.le_missing.no_support"))).toBeInTheDocument();
     expect(within(dialog).queryByText(t("ui.pairing.le_missing.not_asked"))).toBeNull();
   });
@@ -106,6 +114,7 @@ describe("device pairing", () => {
     const [tag] = await screen.findAllByRole("button", { name: t("ui.pairing.services") });
     fireEvent.click(tag);
     const dialog = await screen.findByRole("dialog", { name: t("ui.pairing.services") });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.pairing.key_title") }));
     expect(await within(dialog).findByText("0F0E0D0C0B0A09080706050403020100")).toBeInTheDocument();
     expect(within(dialog).getByText("A0A1A2A3A4A5A6A7A8A9AAABACADAEAF")).toBeInTheDocument();
     expect(within(dialog).getByText(t("ui.pairing.key_size", 16))).toBeInTheDocument();
@@ -128,6 +137,7 @@ describe("device pairing", () => {
     const [tag] = await screen.findAllByRole("button", { name: t("ui.pairing.services") });
     fireEvent.click(tag);
     const dialog = await screen.findByRole("dialog", { name: t("ui.pairing.services") });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("ui.pairing.key_title") }));
     await within(dialog).findByText("00112233445566778899AABBCCDDEEFF");
     expect(within(dialog).queryByRole("button", { name: t("ui.pairing.reverse_bytes") })).toBeNull();
     const reverse = within(dialog).getByRole("switch", { name: t("ui.pairing.reverse_bytes") });

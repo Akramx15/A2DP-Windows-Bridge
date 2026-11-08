@@ -1,9 +1,9 @@
 // A saved classic device's services and pairing keys (issue #86), from the
 // Services tag of its row. In developer mode the link key BlueCaster keeps
-// for it and the LE keys derived from it (LE Audio on) come first, each
-// "not available" when BlueCaster has none; below them the services it
-// lists as a table (the last connection's while it is not connected), the
-// part that grows.
+// for it and the LE keys derived from it (LE Audio on) come first, folded
+// until clicked and only then asked for, each "not available" when
+// BlueCaster has none; below them the services it lists as a table (the
+// last connection's while it is not connected), the part that grows.
 
 import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
@@ -12,6 +12,7 @@ import { IpcError, type Device, type DeviceService } from "../ipc/types";
 import { copyText } from "../lib/format";
 import { reverseBytes, serviceLabel } from "../lib/pairing";
 import { Check, Dialog, IconButton } from "./controls";
+import { Icon } from "./Icon";
 
 /** How often and how long the services are asked again while another
  *  query runs (issue #86: the stack's own SDP queries while connecting, or
@@ -23,9 +24,11 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
   const app = useApp();
   const address = () => props.device?.address ?? null;
   // An error is the answer here (not connected, no answer): shown in place
-  // The keys only in developer mode (the core refuses them otherwise)
+  // The keys only in developer mode (the core refuses them otherwise), and
+  // only once unfolded: secrets, not on screen with every opening
   const keysOf = () => (app.core.state.snap?.settings.developer_mode ? address() : null);
-  const [pairing] = createResource(keysOf, (a) =>
+  const [keysOpen, setKeysOpen] = createSignal(false);
+  const [pairing] = createResource(() => (keysOpen() ? keysOf() : null), (a) =>
     app.core
       .request("device.pairing", { address: a })
       .then((p) => ({ key: p.link_key, le: p.le_keys, leMissing: p.le_keys_missing, error: null as string | null }))
@@ -63,8 +66,18 @@ export function PairingDialog(props: { device: Device | null; onClose: () => voi
     >
       <Show when={keysOf()}>
         <section class="pairing-part">
-          <h3 class="field-label">{t("ui.pairing.key_title")}</h3>
-          <Show when={pairing()}>
+          <h3 class="field-label">
+            <button
+              type="button"
+              class="pairing-fold"
+              aria-expanded={keysOpen()}
+              onClick={() => setKeysOpen(!keysOpen())}
+            >
+              <Icon name={keysOpen() ? "chevron_down" : "chevron_right"} />
+              {t("ui.pairing.key_title")}
+            </button>
+          </h3>
+          <Show when={keysOpen() && pairing()}>
             {(p) => (
               <Show when={!p().error} fallback={<p class="hint">{p().error}</p>}>
                 <Show when={p().key || p().le}>
