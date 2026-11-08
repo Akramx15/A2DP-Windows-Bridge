@@ -62,6 +62,9 @@ fn headset_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Err
 fn is_true(b: &bool) -> bool {
     *b
 }
+fn is_false(b: &bool) -> bool {
+    !*b
+}
 fn is_zero(n: &u8) -> bool {
     *n == 0
 }
@@ -177,6 +180,11 @@ pub struct Profile {
     /// Its friendly name, for display while the device is missing
     #[serde(skip_serializing_if = "String::is_empty")]
     pub mic_device_name: String,
+    /// The microphone muted from Home's or the flyout's chip: the voice link
+    /// stays closed as with headset mode off, `headset_mic` is kept for
+    /// unmuting (written only when muted)
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mic_muted: bool,
     /// The settings of the other codecs, by codec key, as they were last
     /// chosen: choosing one of them again brings them back (the codec in
     /// use has its own in the fields above)
@@ -230,6 +238,7 @@ impl Default for Profile {
             headset_mic: headset_off(),
             mic_device_id: String::new(),
             mic_device_name: String::new(),
+            mic_muted: false,
             codec_settings: BTreeMap::new(),
             codec_order: Vec::new(),
             other: BTreeMap::new(),
@@ -445,23 +454,24 @@ impl Profile {
         same == *new && self.bitpools() != new.bitpools()
     }
 
-    /// `new` is this profile with another headset mode or microphone output
-    /// and nothing else changed
+    /// `new` is this profile with another headset mode, microphone output
+    /// or mute and nothing else changed
     pub fn only_headset_mic_differs(&self, new: &Profile) -> bool {
         let same = Profile {
             headset_mic: new.headset_mic.clone(),
             mic_device_id: new.mic_device_id.clone(),
             mic_device_name: new.mic_device_name.clone(),
+            mic_muted: new.mic_muted,
             ..self.clone()
         };
         same == *new
-            && (&self.headset_mic, &self.mic_device_id, &self.mic_device_name)
-                != (&new.headset_mic, &new.mic_device_id, &new.mic_device_name)
+            && (&self.headset_mic, &self.mic_device_id, &self.mic_device_name, self.mic_muted)
+                != (&new.headset_mic, &new.mic_device_id, &new.mic_device_name, new.mic_muted)
     }
 
-    /// The saved headset mode
+    /// The headset mode as saved, Off while the microphone is muted
     pub fn headset_mic_mode(&self) -> HeadsetMic {
-        HeadsetMic::parse(&self.headset_mic)
+        if self.mic_muted { HeadsetMic::Off } else { HeadsetMic::parse(&self.headset_mic) }
     }
 
     /// Why headset mode must not run with this profile's microphone output:
@@ -1032,6 +1042,14 @@ mod tests {
         }
         let auto = Profile { headset_mic: "auto".into(), ..on.clone() };
         assert_eq!(serde_json::to_value(&auto).unwrap()["headset_mic"], "auto");
+        // Muted: Off in force, the mode kept for unmuting; only a change
+        // of the microphone
+        assert!(serde_json::to_value(&auto).unwrap().get("mic_muted").is_none());
+        let muted = Profile { mic_muted: true, ..auto.clone() };
+        assert_eq!(muted.headset_mic_mode(), HeadsetMic::Off);
+        assert!(auto.only_headset_mic_differs(&muted));
+        let back: Profile = serde_json::from_value(serde_json::to_value(&muted).unwrap()).unwrap();
+        assert!(back.mic_muted && back.headset_mic == "auto");
     }
 
     #[test]

@@ -38,7 +38,6 @@ import {
   entryOf,
   headsetMode,
   knownCodecs,
-  nextHeadsetMode,
   type AudioEntry,
   type HeadsetMode,
 } from "../lib/profile";
@@ -357,27 +356,28 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
   );
 }
 
-/** Headset mode at one click (developer mode, Home's card and the flyout):
- *  the microphone and Off / Auto / On, a click goes to the next one. Only
- *  for a device whose microphone output is chosen; it is set up on Codecs.
- *  Auto with no microphone link open is muted; the link's codec shows
- *  beside the codec (VoiceCodec). */
+/** The headset microphone's mute at one click (developer mode, Home's card
+ *  and the flyout): the mode chosen on Codecs (Auto / On) or Muted, which
+ *  closes the microphone link as Off does and keeps the mode. Only for a
+ *  device with headset mode on and its microphone output chosen. Auto
+ *  with no microphone link open waits; the link's codec shows beside the
+ *  codec (VoiceCodec). */
 export function HeadsetChip(props: { entry: AudioEntry }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
   const profile = () => props.entry.profile;
-  const shown = () => snap().settings.developer_mode && !!profile()?.mic_device_id;
-  const mode = () => headsetMode(profile()!);
+  const mode = (): HeadsetMode => (profile() ? headsetMode(profile()!) : "off");
+  const shown = () => snap().settings.developer_mode && !!profile()?.mic_device_id && mode() !== "off";
+  const muted = () => !!profile()?.mic_muted;
   const linked = () => {
     const s = snap().stream;
     return !!s.voice && s.state !== "idle" && s.profile === profile()?.name;
   };
   const [busy, setBusy] = createSignal(false);
-  const label = (m: HeadsetMode) => t(`ui.headset_mic_${m}`);
-  const describe = () => t("ui.headset_mic_cycle", label(mode()), label(nextHeadsetMode(mode())));
-  const cycle = async () => {
+  const action = () => t(muted() ? "ui.headset_mic_unmute" : "ui.headset_mic_mute");
+  const toggle = async () => {
     setBusy(true);
-    await saveHeadsetMic(app, props.entry, { headset_mic: nextHeadsetMode(mode()) });
+    await saveHeadsetMic(app, props.entry, { mic_muted: !muted() });
     setBusy(false);
   };
   return (
@@ -385,14 +385,19 @@ export function HeadsetChip(props: { entry: AudioEntry }) {
       <button
         type="button"
         class="headset-chip"
-        classList={{ on: mode() !== "off", waiting: mode() === "auto" && !linked(), linked: linked() }}
-        aria-label={describe()}
-        title={describe()}
+        classList={{
+          on: !muted(),
+          muted: muted(),
+          waiting: !muted() && mode() === "auto" && !linked(),
+          linked: !muted() && linked(),
+        }}
+        aria-label={action()}
+        title={action()}
         disabled={busy()}
-        onClick={() => void cycle()}
+        onClick={() => void toggle()}
       >
-        <Icon name="mic" />
-        <span>{label(mode())}</span>
+        <Icon name={muted() ? "mic_off" : "mic"} />
+        <span>{muted() ? t("ui.headset_mic_muted") : t(`ui.headset_mic_${mode()}`)}</span>
       </button>
     </Show>
   );

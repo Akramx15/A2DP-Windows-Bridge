@@ -187,6 +187,7 @@ fn to_ipc_profile(p: &CoreProfile, legacy: u16) -> Profile {
         headset_mic: p.headset_mic.clone(),
         mic_device_id: p.mic_device_id.clone(),
         mic_device_name: p.mic_device_name.clone(),
+        mic_muted: p.mic_muted,
         sbc_bitpool: p.sbc_bitpool,
         sbcxq_bitpool: p.sbcxq_bitpool,
         sbc_min_bitpool: p.sbc_min_bitpool,
@@ -266,6 +267,7 @@ fn merge_profile(base: Option<&CoreProfile>, p: &Profile) -> CoreProfile {
     c.headset_mic = HeadsetMic::parse(&p.headset_mic).as_str().into();
     c.mic_device_id = p.mic_device_id.clone();
     c.mic_device_name = p.mic_device_name.clone();
+    c.mic_muted = p.mic_muted;
     c.sbc_bitpool = p.sbc_bitpool;
     c.sbcxq_bitpool = p.sbcxq_bitpool;
     c.sbc_min_bitpool = p.sbc_min_bitpool;

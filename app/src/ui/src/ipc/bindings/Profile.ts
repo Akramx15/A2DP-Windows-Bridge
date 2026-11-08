@@ -75,6 +75,11 @@ mic_device_id: string,
  */
 mic_device_name: string, 
 /**
+ * The microphone muted (Home's and the flyout's chip): no voice link,
+ * as with headset_mic "off"; headset_mic is kept for unmuting
+ */
+mic_muted: boolean, 
+/**
  * SBC / SBC XQ: the bitpool to encode with, within what the device
  * allows (0 = by quality)
  */

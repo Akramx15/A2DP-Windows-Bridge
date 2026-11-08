@@ -1,7 +1,7 @@
 // Headset microphone (developer mode): Off / Auto / On and the output on
 // each device of the Codecs screen, saved with the device's profile, the
-// chip on Home's card and in the flyout, and the voice codec beside the
-// codec while a voice link runs
+// mute chip on Home's card and in the flyout, and the voice codec beside
+// the codec while a voice link runs
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,8 +38,8 @@ const VOICEMEETER = "{0.0.0.00000000}.{voicemeeter}";
 const micModes = (card: HTMLElement) => within(card).queryByRole("radiogroup", { name: t("ui.headset_mic") });
 const mode = (card: HTMLElement, m: "off" | "auto" | "on") =>
   within(micModes(card)!).getByRole("radio", { name: t(`ui.headset_mic_${m}`) });
-const chipName = (cur: string, next: string) =>
-  t("ui.headset_mic_cycle", t(`ui.headset_mic_${cur}`), t(`ui.headset_mic_${next}`));
+const MUTE = () => t("ui.headset_mic_mute");
+const UNMUTE = () => t("ui.headset_mic_unmute");
 
 describe("Codecs screen", () => {
   it("has no headset microphone outside developer mode", async () => {
@@ -160,49 +160,74 @@ describe("headset chip", () => {
   it("is only on the cards of devices with a microphone output", async () => {
     start("#/home", "voice");
     const wh = await homeCard("WH-1000XM5");
-    await within(wh).findByRole("button", { name: chipName("on", "off") });
+    await within(wh).findByRole("button", { name: MUTE() });
     const xb = await homeCard("SRS-XB13");
     expect(xb.querySelector(".headset-chip")).toBeNull();
   });
 
-  it("cycles Off, Auto, On on Home and saves each", async () => {
+  it("mutes and unmutes on Home, keeping the mode chosen on Codecs", async () => {
     const { saves } = start("#/home", "voice");
     const wh = await homeCard("WH-1000XM5");
-    fireEvent.click(await within(wh).findByRole("button", { name: chipName("on", "off") }));
-    await waitFor(() => expect(saves().at(-1)).toMatchObject({ device_name: "WH-1000XM5", headset_mic: "off" }));
-    const off = await within(wh).findByRole("button", { name: chipName("off", "auto") });
-    expect(off).toHaveTextContent(t("ui.headset_mic_off"));
-    expect(off).not.toHaveClass("on");
+    const on = await within(wh).findByRole("button", { name: MUTE() });
+    expect(on).toHaveTextContent(t("ui.headset_mic_on"));
+    expect(on).toHaveClass("on");
+    fireEvent.click(on);
+    await waitFor(() =>
+      expect(saves().at(-1)).toMatchObject({ device_name: "WH-1000XM5", headset_mic: "on", mic_muted: true }),
+    );
+    const muted = await within(wh).findByRole("button", { name: UNMUTE() });
+    expect(muted).toHaveTextContent(t("ui.headset_mic_muted"));
+    expect(muted).toHaveClass("muted");
+    expect(muted).not.toHaveClass("on");
     // Each click once the last save is done
-    await waitFor(() => expect(off).toBeEnabled());
-    fireEvent.click(off);
-    await waitFor(() => expect(saves().at(-1)).toMatchObject({ headset_mic: "auto" }));
-    // Auto with no app recording from the cable: waiting
-    const auto = await within(wh).findByRole("button", { name: chipName("auto", "on") });
-    expect(auto).toHaveClass("waiting");
-    await waitFor(() => expect(auto).toBeEnabled());
-    fireEvent.click(auto);
-    await waitFor(() => expect(saves().at(-1)).toMatchObject({ headset_mic: "on", mic_device_id: CABLE }));
-    await within(wh).findByRole("button", { name: chipName("on", "off") });
+    await waitFor(() => expect(muted).toBeEnabled());
+    fireEvent.click(muted);
+    await waitFor(() => expect(saves().at(-1)).toMatchObject({ headset_mic: "on", mic_muted: false }));
+    await within(wh).findByRole("button", { name: MUTE() });
   });
 
-  it("shows the link once the voice link is up", async () => {
-    const { core } = start("#/home", "voice");
+  it("shows Auto, waiting with no app recording, and is gone for Off", async () => {
+    start("#/codecs", "voice");
+    const card = await screen.findByRole("region", { name: "WH-1000XM5" });
+    fireEvent.click(mode(card, "auto"));
+    await waitFor(() => expect(mode(card, "auto")).toBeChecked());
+    location.hash = "#/home";
+    const wh = await homeCard("WH-1000XM5");
+    const auto = await within(wh).findByRole("button", { name: MUTE() });
+    expect(auto).toHaveTextContent(t("ui.headset_mic_auto"));
+    expect(auto).toHaveClass("waiting");
+    location.hash = "#/codecs";
+    fireEvent.click(mode(await screen.findByRole("region", { name: "WH-1000XM5" }), "off"));
+    location.hash = "#/home";
+    const again = await homeCard("WH-1000XM5");
+    await waitFor(() => expect(again.querySelector(".headset-chip")).toBeNull());
+  });
+
+  it("closes the voice link while muted and unmutes from Codecs", async () => {
+    const { core, saves } = start("#/home", "voice");
     const wh = await homeCard("WH-1000XM5");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     await waitFor(() => expect(core.state.snap?.stream.voice?.codec).toBe("msbc"));
-    const chip = await within(wh).findByRole("button", { name: chipName("on", "off") });
+    const chip = await within(wh).findByRole("button", { name: MUTE() });
     await waitFor(() => expect(chip).toHaveClass("linked"));
+    fireEvent.click(chip);
+    await waitFor(() => expect(core.state.snap?.stream.voice ?? null).toBeNull());
+    expect(core.state.snap?.stream.state).toBe("streaming");
+    // Choosing a mode on Codecs unmutes
+    location.hash = "#/codecs";
+    const card = await screen.findByRole("region", { name: "WH-1000XM5" });
+    fireEvent.click(mode(card, "auto"));
+    await waitFor(() => expect(saves().at(-1)).toMatchObject({ headset_mic: "auto", mic_muted: false }));
   });
 
   it("is in the flyout and saves from there", async () => {
     const { core, saves } = start("", "voice", "flyout");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
-    const chip = await screen.findByRole("button", { name: chipName("on", "off") });
+    const chip = await screen.findByRole("button", { name: MUTE() });
     expect(chip.closest(".fly-state")).not.toBeNull();
     fireEvent.click(chip);
-    await waitFor(() => expect(saves().at(-1)).toMatchObject({ device_name: "WH-1000XM5", headset_mic: "off" }));
-    await screen.findByRole("button", { name: chipName("off", "auto") });
+    await waitFor(() => expect(saves().at(-1)).toMatchObject({ device_name: "WH-1000XM5", mic_muted: true }));
+    await screen.findByRole("button", { name: UNMUTE() });
   });
 
   it("is not in the flyout outside developer mode", async () => {

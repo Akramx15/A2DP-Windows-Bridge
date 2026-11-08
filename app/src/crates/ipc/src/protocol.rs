@@ -559,6 +559,10 @@ pub struct Profile {
     /// Its friendly name, for display when the device is missing
     #[serde(default)]
     pub mic_device_name: String,
+    /// The microphone muted (Home's and the flyout's chip): no voice link,
+    /// as with headset_mic "off"; headset_mic is kept for unmuting
+    #[serde(default)]
+    pub mic_muted: bool,
     /// SBC / SBC XQ: the bitpool to encode with, within what the device
     /// allows (0 = by quality)
     #[serde(default)]
