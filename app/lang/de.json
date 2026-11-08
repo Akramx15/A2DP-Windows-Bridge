@@ -124,6 +124,7 @@
   "firmware.vendor_intel": "Intel-Adapter (experimentell). Startet er im Bootloader-Modus, siehe Einrichtungsanleitung.",
   "firmware.vendor_mediatek": "MediaTek-Adapter (experimentell). Seine Firmware wird aus dem Windows-Treiber von MediaTek gelesen.",
   "firmware.vendor_qualcomm": "Qualcomm-Adapter (experimentell). Seine Firmware wird aus dem Windows-Treiber von Qualcomm gelesen.",
+  "firmware.vendor_realtek_driver": "Realtek-RTL8852BD-Adapter (experimentell). Seine Firmware wird aus dem Windows-Treiber von Realtek gelesen: Lassen Sie diesen Treiber installiert.",
   "firmware.vendor_broadcom": "Broadcom-Adapter (experimentell): keine Realtek-Dateien nötig.",
   "firmware.vendor_csr": "CSR-Adapter: keine Firmwaredateien nötig.",
   "firmware.vendor_barrot": "Barrot-Adapter: keine Firmwaredateien nötig.",

@@ -124,6 +124,7 @@
   "firmware.vendor_intel": "Intel 어댑터(실험적). 부트로더 모드로 시작되는 경우 설정 안내를 참고하세요.",
   "firmware.vendor_mediatek": "MediaTek 어댑터(실험적). 펌웨어는 MediaTek의 Windows 드라이버에서 읽습니다.",
   "firmware.vendor_qualcomm": "Qualcomm 어댑터(실험적). 펌웨어는 Qualcomm의 Windows 드라이버에서 읽습니다.",
+  "firmware.vendor_realtek_driver": "Realtek RTL8852BD 어댑터(실험적). 펌웨어는 Realtek의 Windows 드라이버에서 읽으므로 그 드라이버를 제거하지 마세요.",
   "firmware.vendor_broadcom": "Broadcom 어댑터(실험적): Realtek 파일이 필요 없습니다.",
   "firmware.vendor_csr": "CSR 어댑터: 펌웨어 파일이 필요 없습니다.",
   "firmware.vendor_barrot": "Barrot 어댑터: 펌웨어 파일이 필요 없습니다.",

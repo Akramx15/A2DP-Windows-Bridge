@@ -31,7 +31,7 @@ use crate::sdp_services::SdpServices;
 use crate::shared::Shared;
 use crate::stats::LinkStats;
 use crate::{AfhClassification, ConnectFailure, Controls, DiscoveredDevice, HostEvent, InitFailure, MediaKey};
-use crate::{intel, mediatek, qualcomm};
+use crate::{intel, mediatek, qualcomm, realtek_btnic};
 
 pub(crate) type Job = Box<dyn FnOnce(&mut HostApp, &Stack) + Send>;
 
@@ -314,6 +314,22 @@ impl HostApp {
         let loader = qualcomm::Loader::new(Box::new(move |name| {
             read_firmware_file(&dir, "qca", name).or_else(|| qualcomm::from_windows_driver(name))
         }));
+        self.start_loader(stack, Box::new(loader));
+    }
+
+    /// The download of a Realtek chip whose firmware only Realtek's Windows
+    /// driver has (crate::realtek_btnic), then HCI init: the firmware folder
+    /// first, then the driver
+    pub fn start_realtek_driver_loader(&mut self, stack: &Stack, chip: &'static str, file: &'static str) {
+        let dir = self.setup.firmware_dir.clone();
+        tracing::info!("Realtek {chip}: checking its firmware (experimental), folder {}", dir.display());
+        let loader = realtek_btnic::Loader::new(
+            Box::new(move |name| {
+                read_firmware_file(&dir, "realtek", name).or_else(|| realtek_btnic::from_windows_driver(name))
+            }),
+            chip,
+            file,
+        );
         self.start_loader(stack, Box::new(loader));
     }
 

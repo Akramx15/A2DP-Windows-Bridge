@@ -167,6 +167,7 @@ Qué adaptadores y auriculares se han usado realmente con BlueCaster, con los c�
 | Chipset | Productos de ejemplo | Notas |
 |:--------|:-----------------|:------|
 | Realtek | TP-Link UB500, RTL8761BU | Requiere descargar firmware (ver arriba). El más probado |
+| Realtek | RTL8852BD integrado en portátiles (`0BDA:B853`) | *Experimental.* linux-firmware no tiene firmware para él: BlueCaster lee `rtl8852bd_mp_chip_new.dat` del controlador Bluetooth de Windows de Realtek, así que no desinstale ese controlador (o coloque el archivo en la carpeta de firmware). Aún no se ha probado en el hardware |
 | CSR | Llaves CSR8510 genéricas | Funcionan sin más, no necesitan firmware |
 | Barrot | Llaves Bluetooth 5.4 / 6.0 (`33FA:0010`, `33FA:0012`) | Funcionan con firmware en ROM, no necesitan firmware. Por ahora, un solo informe de usuario |
 | Marvell | Integrado en Microsoft Surface Pro / Surface Book (88W8897) | *Experimental.* Sin archivos de firmware: el controlador de Wi-Fi carga también el firmware de Bluetooth, así que mantenga el Wi-Fi activado. Aún no probado en el hardware |

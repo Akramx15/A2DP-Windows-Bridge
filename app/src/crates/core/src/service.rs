@@ -431,7 +431,7 @@ impl Inner {
             let _ = events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::Loader(p.clone()));
         }));
         tracing::debug!(
-            "host config: transport {:?}, firmware dir {:?}, realtek pid {:04x} files {:?}, intel loader {}, mediatek loader {}, qualcomm loader {}, broadcom ids {}, LE {} (cli {:?})",
+            "host config: transport {:?}, firmware dir {:?}, realtek pid {:04x} files {:?}, intel loader {}, mediatek loader {}, qualcomm loader {}, realtek driver chip {:04X?}, broadcom ids {}, LE {} (cli {:?})",
             c.transport,
             c.firmware_dir,
             c.realtek_pid,
@@ -439,6 +439,7 @@ impl Inner {
             c.intel_loader,
             c.mediatek_loader,
             c.qualcomm_loader,
+            c.realtek_driver_chip,
             c.broadcom_ids.len(),
             c.le_audio.is_some(),
             cli

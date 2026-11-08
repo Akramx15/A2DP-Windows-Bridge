@@ -167,6 +167,7 @@ BlueCaster で実際に使われたアダプターとヘッドホンは、コー
 | チップセット | 製品例 | 備考 |
 |:-------------|:-------|:-----|
 | Realtek | TP-Link UB500、RTL8761BU | ファームウェアのダウンロードが必要（上記参照）。最も検証済み |
+| Realtek | ノート PC 内蔵の RTL8852BD（`0BDA:B853`） | *試験的。* linux-firmware にはこのチップのファームウェアがありません。BlueCaster は Realtek の Windows Bluetooth ドライバーから `rtl8852bd_mp_chip_new.dat` を読むので、そのドライバーは削除しないでください（またはファイルをファームウェアフォルダーに置きます）。実機ではまだ未検証 |
 | CSR | CSR8510 汎用ドングル | そのまま動作、ファームウェア不要 |
 | Barrot | Bluetooth 5.4 / 6.0 ドングル（`33FA:0010`、`33FA:0012`） | ROM ファームウェアで動作、ファームウェア不要。ユーザー報告は今のところ 1 件 |
 | Marvell | Microsoft Surface Pro / Surface Book 内蔵（88W8897） | *試験的。* ファームウェアファイルは不要: Bluetooth のファームウェアも Wi-Fi ドライバーが読み込むため、Wi-Fi はオンのままにしてください。実機では未テスト |

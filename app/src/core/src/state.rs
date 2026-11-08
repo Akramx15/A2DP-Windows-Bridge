@@ -454,6 +454,8 @@ fn vendor_note(vendor: ChipVendor, vid: u16, pid: u16) -> Option<Msg> {
         ChipVendor::Actions => "firmware.vendor_actions",
         ChipVendor::MediaTek => "firmware.vendor_mediatek",
         ChipVendor::Qualcomm => "firmware.vendor_qualcomm",
+        // The RTL8852BD: its firmware comes from Realtek's Windows driver
+        ChipVendor::Realtek if bt_host::realtek_btnic::chip(vid, pid).is_some() => "firmware.vendor_realtek_driver",
         ChipVendor::Realtek | ChipVendor::Unknown => return None,
     };
     Some(Msg::new(key))
