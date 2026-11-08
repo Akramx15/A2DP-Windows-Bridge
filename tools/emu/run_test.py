@@ -17,7 +17,8 @@ The cases of NEGOTIATION run the same way with another sink or command line
 refuses it; Opus and Opus 05 at 48 kHz
 from a 44.1 kHz request, Auto choosing Opus over AAC and LHDC V5 over Opus,
 but never Opus 05; SBC with another frame setup from --sbc-* options;
-LDAC from a sink listing 18 SEPs).
+LDAC from a sink listing 18 SEPs). The cases of EXPECT_ERROR must stop with
+an error instead, naming the codec that caused it (not offered, in use, refused).
 
 Outputs (captures, logs, reports, WAV) go to tools/emu/out/<codec>/.
 Exit code 0 when every codec passed. Uses only the Python standard library;
@@ -172,6 +173,12 @@ NEGOTIATION = {
     # ... unless its card shows more than the sink lists (the profile's
     # unlisted_options, issue #86): BlueCaster's own range
     'sbc-bp35-unlisted': ('sbc', ['--codecs', 'sbc', '--sbc-max-bitpool', '35'], 'sbc', ['--unlisted-options']),
+    # Stops the codec causes (issue #86, EXPECT_ERROR): a chosen codec the
+    # sink does not list, one it holds for another source, a configuration
+    # it refuses (SBC XQ's dual channel, chosen, so no SBC instead)
+    'ldac-not-offered': ('ldac', ['--codecs', 'sbc'], None, []),
+    'ldac-in-use': ('ldac', ['--in-use', 'ldac'], None, []),
+    'sbcxq-chosen-refused': ('sbcxq', ['--codecs', 'sbc', '--sbc-reject-dual'], None, []),
     # Max bitpool 39 with dual channel (Moto buds+, issue #86): Auto takes
     # SBC XQ capped at 39, as PipeWire; below 29 it does not (plain SBC)
     'auto-sbcxq-bp39': ('auto', ['--codecs', 'sbc', '--sbc-max-bitpool', '39'], 'sbcxq-bp39', []),
@@ -313,6 +320,13 @@ NEGOTIATION = {
     'ctkd-refused': ('sbc', CTKD_SINK + ['--ctkd-refuse'], 'sbc', []),
     'ctkd-silent': ('sbc', CTKD_SINK + ['--ctkd-silent'], 'sbc', []),
     'ctkd-developer-off': ('sbc', CTKD_SINK, 'sbc', []),
+}
+# Cases that must stop with an error before streaming: what the CLI's log
+# says of it (its "Codec stop" line carries the structured cause)
+EXPECT_ERROR = {
+    'ldac-not-offered': r'Codec stop: ldac Unsupported',
+    'ldac-in-use': r'Codec stop: ldac InUse',
+    'sbcxq-chosen-refused': r'Codec stop: sbcxq Refused',
 }
 # The settings.json a case starts with (developer mode)
 DEV_SETTINGS = {
@@ -659,11 +673,20 @@ def run_codec(args, codec, port):
                     stdout=log, stderr=subprocess.STDOUT, env=env, timeout=args.duration + 90).returncode
             except subprocess.TimeoutExpired:
                 rc = 'timeout'
-        if rc != 0:
+        if rc != 0 and codec not in EXPECT_ERROR:
             failures.append(f'BlueCaster exited with {rc} (see bluecaster.log)')
     finally:
         sink.terminate()
         sink.wait(10)
+    if codec in EXPECT_ERROR:
+        log_text = read_text(os.path.join(out, 'bluecaster.log'))
+        if rc == 0 or rc == 'timeout':
+            failures.append(f'BlueCaster exited with {rc}, expected an error exit')
+        if not re.search(EXPECT_ERROR[codec], log_text):
+            failures.append(f'no line matching "{EXPECT_ERROR[codec]}" in bluecaster.log')
+        if '[Streaming]' in log_text:
+            failures.append('BlueCaster streamed although the codec should have stopped it')
+        return failures, f'exit {rc}'
     for name, text, present in LOG_CHECKS.get(codec, []):
         found = read_text(os.path.join(out, name)).count(text)
         if isinstance(present, bool) and (found > 0) != present:

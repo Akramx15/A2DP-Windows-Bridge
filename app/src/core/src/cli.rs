@@ -834,6 +834,9 @@ fn stream_session(
         match rx.recv_timeout(Duration::from_millis(200)) {
             Ok(ServiceEvent::State(state, msg)) => {
                 outln!("[{state:?}] {msg}");
+                if let Some(c) = msg.codec_stop {
+                    outln!("Codec stop: {} {:?}", c.codec.key(), c.kind);
+                }
                 match state {
                     StreamState::Streaming if streaming_since.is_none() => {
                         streaming_since = Some(Instant::now());

@@ -314,7 +314,7 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
               <span class="dot" aria-hidden="true" />
               <span>
                 {/* An error's text is in the panel above, with its fix */}
-                {live() ? statusText({ state: state(), message: stream().message }) : t("status.ready")}
+                {live() ? statusText({ ...stream(), state: state() }) : t("status.ready")}
               </span>
             </div>
             <HeadsetChip entry={props.entry} />
