@@ -1520,9 +1520,15 @@ pub enum Method {
     /// -> WindowsImport: takes over the link keys Windows' Bluetooth keeps
     /// for the adapter with the Bluetooth address `adapter`, so the devices
     /// it paired with that adapter connect without pairing again, and saves
-    /// the audio ones (an administrator prompt)
+    /// the audio ones (an administrator prompt); `address`: that device's
+    /// only (Connect on a device Windows paired, issue #86)
     #[serde(rename = "device.import_windows_pairings")]
-    DeviceImportWindowsPairings { adapter: String },
+    DeviceImportWindowsPairings {
+        adapter: String,
+        #[ts(optional = nullable)]
+        #[serde(default)]
+        address: Option<String>,
+    },
     /// Removes a saved device; `le_audio` true: its LE Audio entry (absent
     /// or false: the classic one)
     #[serde(rename = "device.forget")]
@@ -1980,6 +1986,34 @@ pub struct DevicePairing {
     /// while LE Audio and developer mode are on, issue #86), None when it
     /// has none or no stack with LE Audio runs
     pub le_keys: Option<LeKeysInfo>,
+    /// Why there are no LE keys; None when there are
+    pub le_keys_missing: Option<LeKeysMissing>,
+}
+
+/// Why BlueCaster has no LE keys of a classic device (issue #86)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum LeKeysMissing {
+    /// No stack runs
+    NoStack,
+    /// LE Audio is off, so nothing is asked
+    NoLe,
+    /// Not asked since Bluetooth started (no connection since)
+    NotAsked,
+    /// Asked, no answer yet
+    Asking,
+    /// The link is not encrypted with Secure Connections
+    NotSecure,
+    /// The device opened the connection; only one BlueCaster opens asks
+    DeviceLed,
+    /// The device does not support it
+    NoSupport,
+    /// The device refused
+    Refused,
+    /// The device did not answer
+    NoAnswer,
+    /// The device answered without keys
+    NoneGiven,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

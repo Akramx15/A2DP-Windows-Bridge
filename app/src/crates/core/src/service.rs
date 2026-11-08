@@ -329,6 +329,10 @@ pub(crate) struct Inner {
     /// Other bitpools for the session to take in place
     /// ([`Service::change_bitpools`])
     bitpool_change: Mutex<Option<stream::Bitpools>>,
+    /// The running A2DP stream would be set up the same with "Show only
+    /// options it supports" off / on ([`Service::change_unlisted`]); None
+    /// while none is set up
+    unlisted_keeps: Mutex<Option<[bool; 2]>>,
 }
 
 impl Inner {
@@ -356,6 +360,10 @@ impl Inner {
     /// Headset mode's voice link carries audio (Some) or no longer
     pub fn voice_status(&self, status: Option<ipc::VoiceStatus>) {
         let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::Voice(status));
+    }
+
+    pub fn set_unlisted_keeps(&self, keeps: [bool; 2]) {
+        *self.unlisted_keeps.lock().unwrap_or_else(|e| e.into_inner()) = Some(keeps);
     }
 
     /// The session waits for headphones that were turned off
@@ -462,7 +470,7 @@ impl Inner {
             let _ = events.lock().unwrap_or_else(|e| e.into_inner()).send(ServiceEvent::Loader(p.clone()));
         }));
         tracing::debug!(
-            "host config: transport {:?}, firmware dir {:?}, realtek pid {:04x} files {:?}, intel loader {}, mediatek loader {}, qualcomm loader {}, broadcom ids {}, LE {} (cli {:?})",
+            "host config: transport {:?}, firmware dir {:?}, realtek pid {:04x} files {:?}, intel loader {}, mediatek loader {}, qualcomm loader {}, realtek driver chip {:04X?}, broadcom ids {}, LE {} (cli {:?})",
             c.transport,
             c.firmware_dir,
             c.realtek_pid,
@@ -470,6 +478,7 @@ impl Inner {
             c.intel_loader,
             c.mediatek_loader,
             c.qualcomm_loader,
+            c.realtek_driver_chip,
             c.broadcom_ids.len(),
             c.le_audio.is_some(),
             cli
@@ -955,6 +964,7 @@ impl Service {
             turned_off: AtomicBool::new(false),
             source_change: Mutex::new(None),
             bitpool_change: Mutex::new(None),
+            unlisted_keeps: Mutex::new(None),
         });
         // Without a window, also while only the tray runs
         let weak = Arc::downgrade(&inner);
@@ -1195,6 +1205,26 @@ impl Service {
         true
     }
 
+    /// "Show only options it supports" turned for the A2DP stream running:
+    /// taken without touching the link when the stream would be set up the
+    /// same either way (issue #86). False otherwise or when none runs: the
+    /// caller starts it again instead.
+    pub fn change_unlisted(&self, on: bool) -> bool {
+        let Ok(_control) = self.control.try_lock() else { return false };
+        if !self.is_running() || self.state() != StreamState::Streaming {
+            return false;
+        }
+        let keeps = *self.inner.unlisted_keeps.lock().unwrap_or_else(|e| e.into_inner());
+        if !keeps.is_some_and(|k| k[usize::from(on)]) {
+            return false;
+        }
+        match self.last_request.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            Some(req) if req.le.is_none() => req.unlisted_options = on,
+            _ => return false,
+        }
+        true
+    }
+
     /// What the service keeps of a device that is forgotten: no Bluetooth
     /// restart connects it again, and (classic devices) what it offered and
     /// its link key go, so it cannot connect by itself either
@@ -1384,6 +1414,7 @@ impl Service {
         self.inner.take_voice_events();
         // Before the stack starts: one that offers HFP audio
         self.inner.voice_wanted.store(req.headset_mic.is_on() && req.le.is_none(), Ordering::Release);
+        self.inner.unlisted_keeps.lock().unwrap_or_else(|e| e.into_inner()).take();
         *self.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(req.clone());
         self.inner.turned_off.store(false, Ordering::Release);
         self.inner.stop.store(false, Ordering::Release);
@@ -1754,6 +1785,25 @@ mod tests {
         // A Bluetooth restart keeps them
         let last = s.last_request.lock().unwrap().clone().unwrap();
         assert_eq!((last.sbc_bitpool, last.sbc_min_bitpool), (30, 20));
+        s.inner.running.store(false, Ordering::Release);
+    }
+
+    #[test]
+    fn the_unlisted_switch_keeps_a_stream_set_up_the_same_either_way() {
+        let s = service();
+        s.inner.running.store(true, Ordering::Release);
+        *s.inner.state.lock().unwrap() = StreamState::Streaming;
+        *s.last_request.lock().unwrap() = Some(request());
+        // Not known yet (still setting up): started again
+        assert!(!s.change_unlisted(true));
+        // Off gives this stream, on another one
+        s.inner.set_unlisted_keeps([true, false]);
+        assert!(!s.change_unlisted(true));
+        assert!(s.change_unlisted(false));
+        // The same either way (issue #86: no reconnect), kept for a restart
+        s.inner.set_unlisted_keeps([true, true]);
+        assert!(s.change_unlisted(true));
+        assert!(s.last_request.lock().unwrap().as_ref().unwrap().unlisted_options);
         s.inner.running.store(false, Ordering::Release);
     }
 
