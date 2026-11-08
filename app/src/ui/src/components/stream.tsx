@@ -472,6 +472,8 @@ export function linkQuality(
 ): { level: QualityLevel; status: "good" | "warn" | "bad"; pcBusy: boolean; causes: QualityCause[] } | null {
   if (samples.length === 0) return null;
   const last = samples[samples.length - 1];
+  // A2DP suspended for the call link: nothing of the stream to rate
+  if (last.voice) return null;
   if (last.bytes_per_second === 0 && last.rssi === null) return null;
   const caps: QualityLevel[] = [4];
   const causes: QualityCause[] = [];
@@ -504,7 +506,12 @@ export function QualityIndicator() {
   const { core } = useApp();
   // No link to rate unless it streams, whatever the last samples said
   const q = createMemo(() => (core.state.snap?.stream.state === "streaming" ? linkQuality(core.link()) : null));
-  const label = () => qualityLabel(q());
+  // The call link of a classic device (headset microphone open): its codec
+  const voice = () => {
+    const s = core.state.snap?.stream;
+    return s?.state === "streaming" && s.voice?.link === "hfp" ? s.voice : null;
+  };
+  const label = () => (voice() ? t("status.voice_codec", voiceCodecName(voice()!.codec)) : qualityLabel(q()));
   return (
     <span class={`quality ${q() ? `st-${q()!.status}` : ""}`} title={`${t("quality.title")}: ${label()}`}>
       <span class="bars" aria-hidden="true">
@@ -522,10 +529,12 @@ export function LinkSparkline() {
   const { core } = useApp();
   const release = core.wantLink();
   onCleanup(release);
-  const values = createMemo(() => core.link().map((s) => kbps(s.bytes_per_second)));
+  // Gaps while A2DP is suspended for the call link
+  const values = createMemo(() => core.link().map((s) => (s.voice ? null : kbps(s.bytes_per_second))));
   const latest = () => {
     const v = values();
-    return v.length ? Math.round(v[v.length - 1]) : null;
+    const last = v[v.length - 1];
+    return last == null ? null : Math.round(last);
   };
   return (
     <div class="link-mini">

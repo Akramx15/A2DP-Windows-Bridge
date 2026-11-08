@@ -128,7 +128,8 @@ impl SampleCounters {
 }
 
 /// A link sample from the counters now and those of the last sample; `iso`:
-/// an LE Audio stream's counters (the A2DP media figures are then 0 / None)
+/// an LE Audio stream's counters (the A2DP media figures are then 0 / None);
+/// `voice`: A2DP suspended for a classic device's call link
 fn link_sample(
     time_ms: u64,
     stats: &bt_host::LinkStats,
@@ -136,6 +137,7 @@ fn link_sample(
     now: Instant,
     source_rate: u32,
     iso: Option<IsoCounters>,
+    voice: bool,
 ) -> (LinkSample, SampleCounters) {
     let (total, start, starts) = crate::state::link_totals(stats);
     let acl_packets = stats.acl_packets_sent.load(Ordering::Relaxed);
@@ -197,6 +199,7 @@ fn link_sample(
         link_details: link_details(&link).map(Box::new),
         capture_discontinuities: Some(since.capture_discontinuities),
         capture_lost: Some(since.capture_lost),
+        voice: voice.then_some(true),
     };
     (sample, SampleCounters { at: now, totals: total, acl_packets, encode: encode_totals })
 }
@@ -242,14 +245,18 @@ async fn sampler(state: Arc<CoreState>) {
             stats.controller_backlog_peak.take();
             continue;
         }
-        let (source_rate, le_cis) = state.with_snapshot(|s| match (&s.stream.state, &s.stream.info) {
-            (ipc::StreamState::Streaming, Some(i)) => (i.source_sample_rate, i.le.as_ref().map(|l| l.cis)),
-            _ => (0, None),
+        let (source_rate, le_cis, voice) = state.with_snapshot(|s| match (&s.stream.state, &s.stream.info) {
+            (ipc::StreamState::Streaming, Some(i)) => (
+                i.source_sample_rate,
+                i.le.as_ref().map(|l| l.cis),
+                s.stream.voice.as_ref().is_some_and(|v| v.link == "hfp"),
+            ),
+            _ => (0, None, false),
         });
         // LE Audio (experimental): the sender's counters
         let iso = le_cis.and_then(|cis| state.service.host().map(|h| iso_counters(cis, &h.le_stream_stats())));
         let time_ms = state.started.elapsed().as_millis() as u64;
-        let (sample, counters) = link_sample(time_ms, &stats, last_link, now, source_rate, iso);
+        let (sample, counters) = link_sample(time_ms, &stats, last_link, now, source_rate, iso, voice);
         last_link = Some(counters);
         state.publish(Event::Link(sample));
     }
@@ -585,7 +592,7 @@ mod tests {
         let stats = bt_host::LinkStats::default();
         let r = Ordering::Relaxed;
         let t0 = Instant::now();
-        let (first, total) = link_sample(0, &stats, None, t0, 48000, None);
+        let (first, total) = link_sample(0, &stats, None, t0, 48000, None, false);
         assert_eq!(first.packets_per_second, 0.0);
         assert!(first.acl_packet.is_none());
         assert_eq!(first.queue_capacity, Some(64));
@@ -612,7 +619,7 @@ mod tests {
         stats.capture_lost_frames.store(480 + 960, r);
         // 375 SBC frames (1 s at 48 kHz) took 15 ms, the longest 120 us
         stats.encode.add(375, 15_000_000, 1_000_000_000, 120_000);
-        let (s, _) = link_sample(1000, &stats, Some(total), t0 + Duration::from_secs(1), 48000, None);
+        let (s, _) = link_sample(1000, &stats, Some(total), t0 + Duration::from_secs(1), 48000, None, false);
         assert!((s.packets_per_second - 120.0).abs() < 1e-6);
         assert_eq!(s.acl_packet, Some(AclPacket { name: "3-DH5".into(), slots: 6, from_features: Some(false) }));
         assert_eq!(s.controller_backlog, Some(12));
@@ -635,7 +642,7 @@ mod tests {
         let stats = bt_host::LinkStats::default();
         let r = Ordering::Relaxed;
         let t0 = Instant::now();
-        let (_, total) = link_sample(0, &stats, None, t0, 48000, None);
+        let (_, total) = link_sample(0, &stats, None, t0, 48000, None, false);
         stats.packets_sent.store(120, r);
         stats.bytes_sent.store(120 * 1005, r);
         stats.queue_depth.store(5, r);
@@ -650,7 +657,7 @@ mod tests {
             prefill: 6,
         };
         let iso = Some(iso_counters(2, &le));
-        let (s, _) = link_sample(1000, &stats, Some(total), t0 + Duration::from_secs(1), 48000, iso);
+        let (s, _) = link_sample(1000, &stats, Some(total), t0 + Duration::from_secs(1), 48000, iso, false);
         assert_eq!(
             s.iso,
             Some(IsoCounters { cis: 2, sdu_sets: 1000, silence: 12, underruns: 1, dropped: 3, prefill: 6 })

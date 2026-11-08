@@ -197,6 +197,8 @@
   "quality.section_stream": "Stream",
   "quality.codec": "Codec",
   "quality.codec_value": "%s, %.1f kHz, %u ch (encoder set to %u kbps)",
+  "ui.diag.voice_codec_value": "%s, %.0f kHz, mono (call link)",
+  "ui.diag.voice_paused": "The microphone is open: the headphones play over the call link, so the figures below pause until it closes.",
   "quality.codec_abr": " — ABR on",
   "quality.codec_capped": " — limited by the device's maximum bit rate",
   "quality.section_send": "Sending (last second)",

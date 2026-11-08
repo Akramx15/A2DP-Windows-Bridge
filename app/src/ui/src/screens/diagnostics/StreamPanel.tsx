@@ -3,18 +3,21 @@
 // the radio; the codec and its details, an LE Audio stream's ISO counters,
 // the losses, and the backlog the Bluetooth adapter holds after the send
 // queue, and the playout delay the device reports. In developer mode the
-// encoder's load: its time per time of audio, and per frame.
+// encoder's load: its time per time of audio, and per frame. While a
+// classic device plays over its call link (the headset microphone open,
+// A2DP suspended) the A2DP figures are gaps and dashes, not zeros, and the
+// codec is the voice codec.
 
 import { createMemo, Show } from "solid-js";
 import { useApp } from "../../app/context";
 import { TimeChart } from "../../components/charts";
 import { CodecDetailsCard } from "../../components/CodecDetails";
-import { QUALITY_QUEUE_BACKLOG_MS } from "../../components/stream";
+import { QUALITY_QUEUE_BACKLOG_MS, voiceCodecName } from "../../components/stream";
 import { t } from "../../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../../lib/codecs";
 import { kbps } from "../../lib/format";
 import type { LinkSample } from "../../ipc/types";
-import { dropsPerSample } from "../../lib/linkstats";
+import { a2dpFigure, dropsPerSample } from "../../lib/linkstats";
 import { DASH, LinkCharts, LossCard, NotStreaming, Row, useLink } from "./shared";
 
 const ms = (v: number) => `${Math.round(v)} ms`;
@@ -26,11 +29,24 @@ export function StreamPanel() {
   const { core } = useApp();
   const developer = () => !!core.state.snap?.settings.developer_mode;
   const link = useLink();
-  const { samples, times, stream, streaming, live, sending, le, last } = link;
-  const drops = createMemo(() => dropsPerSample(samples()));
+  const { samples, times, stream, streaming, le, last } = link;
+  /** The call link of a classic device: A2DP is suspended meanwhile */
+  const voice = () => (streaming() && stream().voice?.link === "hfp" ? stream().voice! : null);
+  // The rows' last sample: none while A2DP is suspended
+  const live = () => (link.live()?.voice ? null : link.live());
+  const sending = () => (link.sending()?.voice ? null : link.sending());
+  const drops = createMemo(() => {
+    const list = samples();
+    return dropsPerSample(list).map((v, i) => a2dpFigure(list[i], v));
+  });
+  /** A2DP figures for a chart: gaps over the call link */
+  const series = (pick: (s: LinkSample) => number | null | undefined) =>
+    samples().map((s) => a2dpFigure(s, pick(s) ?? null));
 
   const codec = () => {
     const i = stream().info;
+    const v = voice();
+    if (v) return t("ui.diag.voice_codec_value", voiceCodecName(v.codec), v.rate / 1000);
     if (!streaming() || !i) return DASH;
     const key = codecLabelKey(i.codec);
     const note = bitrateNoteKey(i);
@@ -78,7 +94,7 @@ export function StreamPanel() {
   /** The encoder's bitrate: the line the actual bitrate should follow */
   const target = () => {
     const i = stream().info;
-    return streaming() && i && i.bitrate_kbps > 0 ? [{ value: i.bitrate_kbps, kind: "target" as const }] : [];
+    return streaming() && !voice() && i && i.bitrate_kbps > 0 ? [{ value: i.bitrate_kbps, kind: "target" as const }] : [];
   };
   const iso = () => last()?.iso ?? null;
   const isoCount = (pick: (i: NonNullable<ReturnType<typeof iso>>) => number) => {
@@ -89,11 +105,14 @@ export function StreamPanel() {
   return (
     <div>
       <NotStreaming link={link} />
+      <Show when={voice()}>
+        <p class="hint">{t("ui.diag.voice_paused")}</p>
+      </Show>
       <LinkCharts link={link}>
         <TimeChart
           title={t("quality.bitrate")}
           times={times()}
-          series={[{ values: samples().map((s) => kbps(s.bytes_per_second)) }]}
+          series={[{ values: series((s) => kbps(s.bytes_per_second)) }]}
           min={0}
           refs={target()}
           format={(v) => `${Math.round(v)} kbps`}
@@ -101,14 +120,14 @@ export function StreamPanel() {
         <TimeChart
           title={t("quality.packets")}
           times={times()}
-          series={[{ values: samples().map((s) => s.packets_per_second) }]}
+          series={[{ values: series((s) => s.packets_per_second) }]}
           min={0}
           format={(v) => `${Math.round(v)} /s`}
         />
         <TimeChart
           title={t("quality.queue")}
           times={times()}
-          series={[{ values: samples().map((s) => s.queue_depth) }]}
+          series={[{ values: series((s) => s.queue_depth) }]}
           min={0}
           format={count}
           status={(v) => (v < 8 ? "good" : v < 16 ? "warn" : "bad")}
@@ -116,7 +135,7 @@ export function StreamPanel() {
         <TimeChart
           title={t("ui.diag.queue_wait")}
           times={times()}
-          series={[{ values: samples().map((s) => s.queue_ms ?? null) }]}
+          series={[{ values: series((s) => s.queue_ms) }]}
           min={0}
           refs={[{ value: QUALITY_QUEUE_BACKLOG_MS, kind: "limit" }]}
           format={ms}
@@ -125,7 +144,7 @@ export function StreamPanel() {
         <TimeChart
           title={t("ui.diag.backlog")}
           times={times()}
-          series={[{ values: samples().map((s) => s.controller_backlog_ms ?? null) }]}
+          series={[{ values: series((s) => s.controller_backlog_ms) }]}
           min={0}
           format={ms}
           formatValue={(_, i) => backlogText(samples()[i])}
@@ -142,7 +161,7 @@ export function StreamPanel() {
           <TimeChart
             title={t("ui.diag.encode_load")}
             times={times()}
-            series={[{ values: samples().map((s) => (s.encode ? s.encode.load * 100 : null)) }]}
+            series={[{ values: series((s) => (s.encode ? s.encode.load * 100 : null)) }]}
             min={0}
             format={pct}
           />
@@ -169,7 +188,7 @@ export function StreamPanel() {
         </section>
 
         {/* What the A2DP codec runs with and what the device offered */}
-        <Show when={streaming() && !le() && stream().info}>
+        <Show when={streaming() && !le() && !voice() && stream().info}>
           {(i) => <Show when={i().details}>{(d) => <CodecDetailsCard info={i()} details={d()} />}</Show>}
         </Show>
 

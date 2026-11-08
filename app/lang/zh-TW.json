@@ -197,6 +197,8 @@
   "quality.section_stream": "串流",
   "quality.codec": "轉碼器",
   "quality.codec_value": "%s, %.1f kHz, %u 聲道 (編碼器設為 %u kbps)",
+  "ui.diag.voice_codec_value": "%s，%.0f kHz，單聲道（通話連線）",
+  "ui.diag.voice_paused": "麥克風已開啟：耳機透過通話連線播放，下方數值在其關閉前暫停。",
   "quality.codec_abr": " (ABR 已開啟)",
   "quality.codec_capped": " (受裝置最大位元率限制)",
   "quality.section_send": "傳送 (最近一秒)",

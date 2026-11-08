@@ -197,6 +197,8 @@
   "quality.section_stream": "Flux",
   "quality.codec": "Codec",
   "quality.codec_value": "%s, %.1f kHz, %u can. (encodeur réglé sur %u kbps)",
+  "ui.diag.voice_codec_value": "%s, %.0f kHz, mono (liaison d'appel)",
+  "ui.diag.voice_paused": "Le micro est ouvert : le casque joue par la liaison d'appel, les valeurs ci-dessous sont en pause jusqu'à sa fermeture.",
   "quality.codec_abr": " — ABR activé",
   "quality.codec_capped": " — limité par le débit maximal de l'appareil",
   "quality.section_send": "Envoi (dernière seconde)",

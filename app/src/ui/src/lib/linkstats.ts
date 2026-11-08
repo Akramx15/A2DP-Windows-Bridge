@@ -125,6 +125,13 @@ export function lossStats(s: LinkSample, reset: LinkBaseline | null, rate?: numb
 }
 
 /** Packets lost per sample (the first sample: 0), for the drop graph */
+/** An A2DP figure of a sample, null while a classic device plays over its
+ *  call link (the headset microphone is open, A2DP suspended): a gap in
+ *  the charts, not a drop to 0 */
+export function a2dpFigure<T>(s: Pick<LinkSample, "voice">, value: T): T | null {
+  return s.voice ? null : value;
+}
+
 export function dropsPerSample(samples: readonly LinkSample[]): number[] {
   return samples.map((x, i) => {
     if (i === 0) return 0;
