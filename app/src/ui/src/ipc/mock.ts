@@ -39,6 +39,7 @@ import type {
   Snapshot,
   SourceInfo,
   StreamInfo,
+  VoiceStatus,
 } from "./types";
 
 export type MockScenario =
@@ -60,7 +61,10 @@ export type MockScenario =
    *  and two aptX Adaptive ones, with and without 96 kHz */
   | "capped"
   /** Huawei earbuds that list LDAC only once it is asked for (issue #30) */
-  | "huawei";
+  | "huawei"
+  /** Developer mode, headset microphone on for the WH-1000XM5 (to CABLE
+   *  Input) and for the LE Audio earbuds: a stream reports its voice link */
+  | "voice";
 
 export interface MockOptions {
   scenario?: MockScenario;
@@ -140,6 +144,9 @@ export function sampleProfile(over: Partial<Profile> = {}): Profile {
     max_media_payload: 1023,
     le_audio: false,
     le_low_latency: true,
+    headset_mic: "off",
+    mic_device_id: "",
+    mic_device_name: "",
     sbc_bitpool: 0,
     sbcxq_bitpool: 0,
     sbc_min_bitpool: 0,
@@ -264,7 +271,9 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const fresh = scenario === "fresh";
   // LE Audio on; le_unsupported: an adapter without isochronous channels,
   // le_unchecked: one no stack ran on yet
-  const le = scenario === "le" || scenario === "le_unsupported" || scenario === "le_unchecked";
+  const voice = scenario === "voice";
+  const le = scenario === "le" || scenario === "le_unsupported" || scenario === "le_unchecked" || voice;
+  const mic = voice ? { headset_mic: "on", mic_device_id: CABLE.id, mic_device_name: CABLE.name } : {};
   // Names long enough to wrap or overflow every place that shows them
   const long = scenario === "long";
   const LONG_NAME = "リビングのソニーワイヤレスノイズキャンセリングヘッドホン（LDAC・990kbps・高音質優先）";
@@ -272,7 +281,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
   const profiles = fresh
     ? []
     : [
-        long ? sampleProfile({ name: LONG_NAME, device_name: LONG_DEVICE, capture_mode: "app", app_exe: "AVeryLongApplicationExecutableName_With_No_Spaces_Whatsoever.exe", app_name: "" }) : sampleProfile(),
+        long ? sampleProfile({ name: LONG_NAME, device_name: LONG_DEVICE, capture_mode: "app", app_exe: "AVeryLongApplicationExecutableName_With_No_Spaces_Whatsoever.exe", app_name: "" }) : sampleProfile(mic),
         sampleProfile({
           name: "Desk speaker (AAC)",
           device_address: "00:1A:7D:DA:71:13",
@@ -290,6 +299,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
                 device_name: LE_BUDS.name,
                 codec: "auto",
                 le_audio: true,
+                ...mic,
               }),
             ]
           : []),
@@ -343,7 +353,9 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
         : { state: "idle", message: { key: "status.idle", args: [] }, profile: null, info: null, volume: null, battery: null, battery_refused: false },
     profiles,
     active_profile: fresh ? null : long ? LONG_NAME : "WH-1000XM5 (LDAC)",
-    settings: sampleSettings(le ? { le_audio_experimental: true } : long ? { language: "ja" } : {}),
+    settings: sampleSettings(
+      voice ? { le_audio_experimental: true, developer_mode: true } : le ? { le_audio_experimental: true } : long ? { language: "ja" } : {},
+    ),
     update: {
       checking: false,
       available:
@@ -402,9 +414,10 @@ const LE_SCAN_RESULTS: Device[] = [
 const sameEntry = (a: Pick<Device, "address" | "le_audio">, address: string, le: boolean) =>
   a.address.toUpperCase() === address.toUpperCase() && a.le_audio === le;
 
+const CABLE: AudioDevice = { id: "{0.0.0.00000000}.{cable}", name: "CABLE Input (VB-Audio Virtual Cable)", is_default: false, is_virtual: true, mix_rate: 44100, mix_channels: 2, mix_bits: 24 };
 const AUDIO_DEVICES: AudioDevice[] = [
   { id: "{0.0.0.00000000}.{speakers}", name: "Speakers (Realtek(R) Audio)", is_default: true, is_virtual: false, mix_rate: 48000, mix_channels: 2, mix_bits: 32 },
-  { id: "{0.0.0.00000000}.{cable}", name: "CABLE Input (VB-Audio Virtual Cable)", is_default: false, is_virtual: true, mix_rate: 44100, mix_channels: 2, mix_bits: 24 },
+  CABLE,
   { id: "{0.0.0.00000000}.{voicemeeter}", name: "Voicemeeter Input (VB-Audio Voicemeeter VAIO)", is_default: false, is_virtual: true, mix_rate: 48000, mix_channels: 8, mix_bits: 32 },
 ];
 
@@ -834,6 +847,15 @@ export class MockCore implements Transport {
           );
         this.emit({ kind: "devices", value: this.snap.devices });
         this.emitProfiles();
+        // Headset mode of the classic profile streaming switches in place
+        const st = this.snap.stream;
+        if (st.state === "streaming" && st.profile === original && !le) {
+          const voice = this.voiceOf(profile.name);
+          if (JSON.stringify(voice) !== JSON.stringify(st.voice ?? null)) {
+            this.snap.stream = { ...st, profile: profile.name, voice };
+            this.emit({ kind: "stream", value: this.snap.stream });
+          }
+        }
         return null;
       }
       case "profile.delete":
@@ -1441,6 +1463,7 @@ export class MockCore implements Transport {
               battery_refused: false,
             }
           : { state: "streaming", message: { key: "status.connected", args: [] }, profile: name, info: info(), volume: 76, ...(this.scenario === "battery_refused" ? { battery: null, battery_refused: true } : { battery: 80, battery_refused: false }) };
+      this.snap.stream.voice = this.voiceOf(name);
       this.log("info", "bluecaster_core::service", "state Streaming: Streaming");
       this.emit({ kind: "stream", value: this.snap.stream });
       if (this.snap.stream.info?.details?.sbc?.abr_bitpool) this.later(500, () => this.sbcAbrStep(0));
@@ -1478,6 +1501,19 @@ export class MockCore implements Transport {
       this.emit({ kind: "stream", value: this.snap.stream });
     }
     this.later(500, () => this.sbcAbrStep(step + 1));
+  }
+
+  /** The voice link a stream of the profile reports: headset mode on in
+   *  developer mode with an output chosen (mSBC for a classic device, LC3
+   *  at 32 kHz for LE Audio), as W3/W4 report it */
+  private voiceOf(name: string | null): VoiceStatus | null {
+    const p = this.snap.profiles.find((x) => x.name === name);
+    // Auto: no application records from the cable in the mock, so its
+    // link waits
+    if (!p || p.headset_mic !== "on" || !p.mic_device_id || !this.snap.settings.developer_mode) return null;
+    return p.le_audio
+      ? { codec: "lc3", link: "le", rate: 32000, mic_device_id: p.mic_device_id }
+      : { codec: "msbc", link: "hfp", rate: 16000, mic_device_id: p.mic_device_id };
   }
 
   /** A connection learnt what the device offers (and saved it, as the core does) */

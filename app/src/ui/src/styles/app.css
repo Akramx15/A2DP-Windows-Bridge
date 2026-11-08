@@ -1677,6 +1677,62 @@ option {
 .live-bitpool {
   flex-basis: 100%;
 }
+/* The headset microphone's voice codec; a classic link's in the warning colour */
+.voice-codec {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.voice-codec.st-warn {
+  color: var(--st-text);
+}
+/* Headset mode at one click (Home's card, the flyout): the microphone and
+   Off / Auto / On; outlined in the accent while On or Auto, muted while
+   Auto waits for an app */
+.headset-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--s1);
+  padding: 0 var(--s2);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.headset-chip .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.headset-chip:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.headset-chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.headset-chip.on {
+  border-color: var(--accent-fill);
+  color: var(--text);
+}
+.headset-chip.on .icon {
+  color: var(--accent-fill);
+}
+.headset-chip.waiting {
+  border-style: dashed;
+  color: var(--text-2);
+}
+.headset-chip.waiting .icon {
+  color: inherit;
+}
+.headset-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 .codec-line {
   display: flex;
   flex-wrap: wrap;
@@ -2098,6 +2154,25 @@ option {
 }
 .device-codecs .toggle-row {
   padding: 0;
+}
+/* Headset microphone (developer mode): the switch, its output and notes */
+.headset-mic {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-width: 0;
+}
+/* Its label and Off / Auto / On on one line, as a toggle row */
+.headset-mic-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.headset-mic .field {
+  align-self: stretch;
+  max-width: 28rem;
 }
 .codec-card-name {
   font-weight: 600;
@@ -3272,6 +3347,10 @@ html.win-flyout body {
 .fly-title .status-line {
   font-size: var(--fs-12);
   max-width: 100%;
+}
+/* The state gives way (ellipsis) to the headset chip beside it */
+.fly-state .status-line {
+  min-width: 0;
 }
 .flyout .device-switcher .select {
   width: 100%;

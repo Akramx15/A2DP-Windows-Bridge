@@ -50,6 +50,8 @@ The codec of each saved audio device, one section per device (a dot that is gree
 
 The defaults give the best sound; most devices need nothing but **Auto**. An LE Audio device (experimental) has one card, LC3, and **Low latency for gaming audio devices (experimental)** (see [LE Audio](#le-audio)).
 
+**Headset microphone** (developer mode, experimental), on each device: the headphones' microphone reaches Windows, for calls and voice chat. BlueCaster has no audio driver of its own, so it plays the microphone into the **Microphone output** chosen below, a virtual audio cable such as VB-CABLE's *CABLE Input*; apps then use the cable's recording side (*CABLE Output*) as their microphone. **Off**, **Auto** or **On**: **Auto** opens the microphone only while an app records from the cable, so playback keeps its full quality the rest of the time; **On** keeps it open. With no output chosen it stays off, and an output BlueCaster itself captures (the Windows default output with System Loopback, or the virtual or output device chosen as the source) is refused: it would send the microphone back to the headphones. A classic Bluetooth device plays over its call connection while the microphone is open: mono at call quality (CVSD, mSBC or LC3-SWB, the best both sides support), shown as *Voice: mSBC* in amber beside the codec on Home, in the sidebar and in the flyout; when the microphone closes, it goes back to its codec without connecting again. An LE Audio device keeps playing LC3 at its usual quality and sends the microphone alongside (*Voice: LC3*); changing the mode connects it again (Auto keeps the microphone open there). Some headphones may refuse it, or show a call, while no call is going on. Once an output is chosen, a microphone chip beside the device's state on Home and in the flyout shows the mode, and a click moves it on (Off, Auto, On); it is dashed while Auto waits for an app.
+
 Behind the scenes BlueCaster keeps one entry per device in `profiles.json` (its codec, each codec's settings and its codec order), named "*device* | *codec*" there; the window and the tray menu show the device's name. Earlier versions let you make several profiles for one device: the first start of a version with the Codecs screen keeps the one last used (otherwise the first) and folds the others into it, keeping their codec settings (quality, sample rate, bit depth, ABR, SBC setup) for their codecs. Their own names, output sources and packet sizes are not kept; `profiles.json` as it was is saved once as `profiles-before-codecs.json` in the settings folder. The 2.0.2 pre-releases' **Auto's order…** (one order for every device, in developer mode) is no longer used: each device has its own order now.
 
 ### Audio Devices
@@ -93,6 +95,8 @@ Shown while **Settings > Developer mode** is on; most users never need it. It is
 - **Peer Receiver Test**: streams to the measuring receiver on another PC and compares what was sent with what arrived (see [Peer Receiver Test](#receiver))
 - **Chip**: runs a chip script on an adapter with WinUSB: requests to the chip, typed in or opened from a file, for whoever adds support for a chip (see [Adding Chip Support](chip-support#chip-scripts)). Lines that may change the chip run only after **Run them**; Bluetooth stops for it and starts again when next used
 
+Developer mode also adds **Headset microphone** to each device on **Codecs** (experimental; see [Codecs](#codecs)).
+
 ### Adapters
 
 - The detected USB Bluetooth adapters with their chip, address, USB ID, Bluetooth version, **Driver** and **Firmware**; the list updates by itself when an adapter is plugged in or out. The driver is **Original driver** (the one Windows or the manufacturer installed; hover for its name) or **WinUSB driver** (the one BlueCaster uses). A Realtek adapter shows its address, from its USB serial number, even before it was used; for the others the address and Bluetooth version show once Windows' Bluetooth or BlueCaster has used the adapter (hover over the line for why). An adapter BlueCaster cannot use (some MediaTek and Qualcomm) keeps its driver: its WinUSB and firmware buttons are disabled. Intel, MediaTek MT79xx, Qualcomm ROME / WCN6855 and Broadcom adapters are tagged **Experimental**. In developer mode WinUSB can be assigned to it anyway, and **Read chip info** on an adapter with WinUSB saves what its chip answers to a few read commands to `logs\probe\`, for whoever adds support for it (Bluetooth stops for it and starts again when next used); **Report on GitHub** then opens an issue with it filled in. While an adapter whose firmware BlueCaster loads itself (Intel, MediaTek, Qualcomm) starts, the screen shows the loading and whether it failed
@@ -109,7 +113,7 @@ Shown while **Settings > Developer mode** is on; most users never need it. It is
 | Startup | **Start with Windows** and **Start in the tray** (see [Start with Windows](#autostart)), **Minimize to System Tray** and **Open the tray window from** (see [Tray and Flyout](#tray)) |
 | Notifications | **Notify when a device connects** (the device, its battery, the codec and what it runs with; on by default), **Notify when the battery is low**: **Below 20%** (the default), **Below 10%**, **Below 5%** or **Never**, once per connection (again only after the battery was back 5 points above) |
 | Updates | **Check for Updates**, **Check for Updates on Startup**, **Include Pre-releases in Update Checks** (also offer beta releases), **Update now** (see [Updates](#updates)) |
-| Advanced | **Developer mode** (adds the [Developer](#developer) screen, the SBC **Frame setup** in the codec settings, the pairing keys under the **Services** tag on **Audio Devices** (see [Services and Pairing Keys](#shared-pairing)), **Read chip info** on **Adapters**, and more details to the log; no restart needed), **Settings folder** with **Open Settings Folder**, **Run setup** |
+| Advanced | **Developer mode** (adds the [Developer](#developer) screen, the SBC **Frame setup** in the codec settings, the pairing keys under the **Services** tag on **Audio Devices** (see [Services and Pairing Keys](#shared-pairing)), **Headset microphone** on **Codecs** (see [Codecs](#codecs)), **Read chip info** on **Adapters**, and more details to the log; no restart needed), **Settings folder** with **Open Settings Folder**, **Run setup** |
 
 **Quit BlueCaster** is at the bottom. The version, the licenses and **Third-party licenses** are on the **About** screen.
 
@@ -215,6 +219,8 @@ Put the headphones into pairing mode first.
 | `-m <mode>` | Capture mode: `loopback` (default), `virtual`, `app` |
 | `--audio-device <id>` | Render device for `-m virtual` |
 | `--app <exe>` | Executable for `-m app` (e.g. `spotify.exe`) |
+| `--headset-mic` | Headset microphone (see [Codecs](#codecs)): the headphones' microphone plays into `--mic-output`; a classic device plays at call quality meanwhile. With `--le-audio`, the LE Audio setup that carries the microphone too |
+| `--mic-output <name>` | The output device the microphone plays into, by part of its name (e.g. `"CABLE Input"`; default: the Windows default output), or a `.wav` file to write |
 | `--rate <hz>` | Capture sample rate (default: 48 kHz, or another rate the device lists if it has no 48 kHz) |
 | `--bits <16\|24>` | Bit depth (default: 24 where the codec carries it) |
 | `--max-packet <bytes>` | Max media packet size, 679-1679, default 1023 (see [Max Media Packet Size](#max-packet)) |
@@ -559,6 +565,7 @@ How to use it:
 1. Put the headphones into pairing mode and scan for devices on **Audio Devices**. LE Audio devices are listed with an **LE Audio** tag, a pair of earbuds as **LE Audio set** (pick either one: BlueCaster finds the other). A headphone that also does A2DP is listed twice, once per kind.
 2. On **Codecs**, choose the LC3 card of the LE Audio entry. There is no codec or quality choice (BlueCaster picks the best LC3 configuration the headphones accept), and only System Loopback and Virtual Device capture are available.
 3. Under it, **Low latency for gaming audio devices (experimental)** is on by default: with headsets that support GMAP's game role it uses shorter LC3 frames; other headsets get the media configuration either way.
+4. In developer mode, **Headset microphone** under it sends the earbuds' microphone to the PC as well, while playback keeps its LC3 quality (see [Codecs](#codecs); `--headset-mic` in CLI mode).
 
 There is no LE Audio switch in Settings. If the LE side ever disturbs an adapter, `"le_audio_experimental": false` in `settings.json` (**Settings > Settings folder**) turns it off altogether.
 
