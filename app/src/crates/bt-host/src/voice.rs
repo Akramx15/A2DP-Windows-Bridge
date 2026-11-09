@@ -163,6 +163,11 @@ pub fn parse_sco(packet: &[u8]) -> Option<(u16, u8, &[u8])> {
     Some((head & 0x0FFF, ((head >> 12) & 0x03) as u8, payload))
 }
 
+/// The HFP microphone gain (+VGM, 0..15) given on every voice link: the
+/// highest, as the headphones' own default is often low and nothing else
+/// raises the level on its way to apps (issue #86)
+pub const MIC_GAIN: u8 = 15;
+
 /// The volume (AVRCP absolute volume, 0..127) as an HFP speaker gain
 /// (0..15): headphones play the voice link at their HFP gain, not at the
 /// A2DP volume
