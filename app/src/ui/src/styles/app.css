@@ -2204,6 +2204,23 @@ option {
 .codec-card.ro:hover:not(.on) {
   border-color: var(--border);
 }
+/* The call codecs (issue #86): shown only, nothing to click; a red dot on
+   the one open, as on the microphone's line */
+.voice-codecs-title {
+  margin: var(--s3) 0 var(--s2);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+.codec-card.voice {
+  cursor: default;
+}
+.codec-card.voice .mic-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--bad);
+}
 /* The cards are dragged into the device's order. The
    pointer as on any card; the hand only while the button is held or a card
    is dragged (issue #86) */

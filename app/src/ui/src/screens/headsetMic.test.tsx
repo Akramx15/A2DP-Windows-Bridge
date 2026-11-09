@@ -552,3 +552,40 @@ describe("headset chip", () => {
     expect(document.querySelector(".headset-chip")).toBeNull();
   });
 });
+
+describe("call codecs on Codecs (issue #86)", () => {
+  const section = (name: string) =>
+    waitFor(() => {
+      const s = [...document.querySelectorAll<HTMLElement>("section")].find(
+        (e) => e.querySelector("h2")?.textContent === name,
+      );
+      expect(s).toBeTruthy();
+      return s!;
+    });
+
+  it("lists the headphones' voice codecs, read only, the open one in use", async () => {
+    const { core } = start("#/codecs", "voice");
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    await waitFor(() => expect(core.state.snap?.stream.voice?.codec).toBe("msbc"));
+    const wh = await section("WH-1000XM5");
+    const list = await within(wh).findByRole("list", { name: t("ui.codecs.voice_title") });
+    const cards = within(list).getAllByRole("listitem");
+    // Only the supported ones (the toggle is on): CVSD and mSBC
+    expect(cards.map((c) => c.querySelector(".codec-card-name")?.textContent)).toEqual(["CVSD", "mSBC"]);
+    expect(cards[1].querySelector(".codec-card")).toHaveClass("on");
+    expect(cards[1]).toHaveTextContent(t("ui.codecs.voice_in_use"));
+    expect(cards[1]).toHaveTextContent("16 kHz");
+    // Nothing to choose
+    expect(within(list).queryByRole("radio")).toBeNull();
+    // All three with the toggle off, LC3-SWB not supported
+    fireEvent.click(screen.getByRole("switch", { name: t("ui.profile.codecs_hide") }));
+    await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
+    expect(within(list).getAllByRole("listitem")[2]).toHaveTextContent(t("ui.profile.codec_not_supported"));
+  });
+
+  it("is not there for a device not connected", async () => {
+    start("#/codecs", "voice");
+    const wh = await section("WH-1000XM5");
+    expect(within(wh).queryByRole("list", { name: t("ui.codecs.voice_title") })).toBeNull();
+  });
+});

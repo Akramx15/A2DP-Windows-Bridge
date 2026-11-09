@@ -50,6 +50,8 @@ The codec of each saved audio device, one section per device (a dot that is gree
 
 The defaults give the best sound; most devices need nothing but **Auto**. An LE Audio device (experimental) has one card, LC3, and **Low latency for gaming audio devices (experimental)** (see [LE Audio](#le-audio)).
 
+While a device is connected, **Microphone** below its cards shows the call codecs of its microphone link, read only (the link picks the best both sides support): for a classic device, CVSD (8 kHz), mSBC (16 kHz) and LC3-SWB (32 kHz) as the headphones list them, **In use** with a red dot on the one open; for an LE Audio device, LC3 at its rate while the microphone is open. With **Show only supported codecs**, the ones the headphones do not support are left out (see [Audio Devices](#audio-devices) for the microphone itself).
+
 Behind the scenes BlueCaster keeps one entry per device in `profiles.json` (its codec, each codec's settings and its codec order), named "*device* | *codec*" there; the window and the tray menu show the device's name. Earlier versions let you make several profiles for one device: the first start of a version with the Codecs screen keeps the one last used (otherwise the first) and folds the others into it, keeping their codec settings (quality, sample rate, bit depth, ABR, SBC setup) for their codecs. Their own names, output sources and packet sizes are not kept; `profiles.json` as it was is saved once as `profiles-before-codecs.json` in the settings folder. The 2.0.2 pre-releases' **Auto's order…** (one order for every device, in developer mode) is no longer used: each device has its own order now.
 
 ### Audio Devices

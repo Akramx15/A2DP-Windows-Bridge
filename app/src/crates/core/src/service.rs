@@ -260,6 +260,9 @@ pub enum ServiceEvent {
     /// The headphones refused to report their battery level (HFP refused,
     /// another device may hold it)
     BatteryRefused,
+    /// The voice codecs the headphones listed on their HFP connection
+    /// ("cvsd", "msbc", "lc3_swb"; StreamStatus.voice_codecs)
+    VoiceCodecs(Vec<String>),
     /// While the session waited for its headphones that went off, another
     /// saved device connected to the PC (its address): its session may
     /// start instead
@@ -645,6 +648,17 @@ impl Inner {
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner())
                                 .send(ServiceEvent::BatteryRefused);
+                        }
+                    }
+                    HostEvent::VoiceCodecs(codecs) => {
+                        tracing::debug!("host event: voice codecs {codecs:?}");
+                        if let Some(inner) = weak.upgrade() {
+                            let codecs = codecs.into_iter().map(String::from).collect();
+                            let _ = inner
+                                .events
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .send(ServiceEvent::VoiceCodecs(codecs));
                         }
                     }
                     HostEvent::ConnectionLost | HostEvent::TransportFailed => {

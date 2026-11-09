@@ -900,6 +900,7 @@ fn stream_session(
             Ok(ServiceEvent::Volume(v)) => outln!("Headphone volume: {v} ({}%)", v as u32 * 100 / 127),
             Ok(ServiceEvent::Battery(v)) => outln!("Headphone battery: {v}%"),
             Ok(ServiceEvent::BatteryRefused) => outln!("Headphone battery: unknown (HFP refused)"),
+            Ok(ServiceEvent::VoiceCodecs(c)) => outln!("Headphone voice codecs: {}", c.join(", ")),
             Ok(ServiceEvent::OtherDeviceBack(a)) => outln!("Another device connected: {}", bt_host::addr_str(&a)),
             // The loader's own log lines say it
             Ok(ServiceEvent::Loader(_)) => {}

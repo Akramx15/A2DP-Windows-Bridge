@@ -972,6 +972,8 @@
   "ui.codecs.auto_dialog_disable": "自動選択をオフにする",
   "ui.codecs.order_reset": "コーデックの順番をリセット",
   "ui.codecs.order_hint": "カードをドラッグすると順番を変えられます。",
+  "ui.codecs.voice_title": "マイク",
+  "ui.codecs.voice_in_use": "使用中",
   "ui.codecs.order_keys": "カードをドラッグするか、Alt キーと矢印キーを押して順番を変えられます。対応している最初のカードが使われます。",
   "ui.codecs.moved": "%s: %d 番目 (全 %d 個)",
   "ui.devices.none_saved": "オーディオデバイスはまだありません。下でスキャンするか、アドレスを入力して追加してください。",
