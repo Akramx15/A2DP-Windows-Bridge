@@ -21,6 +21,8 @@ import {
   FirmwareDownload,
   LinkSparkline,
   MIC_NOTES,
+  MicBadge,
+  micShown,
   openFirmwareFolder,
   QualityIndicator,
   Ring,
@@ -326,10 +328,10 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
                 {live() ? statusText({ ...stream(), state: state() }) : t("status.ready")}
               </span>
             </div>
-            <HeadsetChip entry={props.entry} />
           </div>
           <Show when={live()}>
-            <CodecBadge picker={<CodecPicker entry={props.entry} />} voice={false} />
+            <CodecBadge picker={<CodecPicker entry={props.entry} />} />
+            <MicRow entry={props.entry} />
           </Show>
           {/* The application it captures is not playing yet (the source is
               chosen on Audio Devices) */}
@@ -368,12 +370,26 @@ function DeviceCard(props: { entry: AudioEntry; onError: (e: unknown) => void })
   );
 }
 
+/** The microphone's button and its line below the codec (Home's card, the
+ *  flyout; issue #86) */
+export function MicRow(props: { entry: AudioEntry }) {
+  const { core } = useApp();
+  return (
+    <Show when={micShown(core.state.snap!, props.entry.profile)}>
+      <div class="mic-row">
+        <HeadsetChip entry={props.entry} />
+        <MicBadge profile={props.entry.profile} />
+      </div>
+    </Show>
+  );
+}
+
 /** The headset microphone's mute at one click (Home's card and the
  *  flyout): a microphone icon, crossed out while muted, which closes the
  *  microphone link as Off does and keeps the mode chosen on Audio Devices
- *  (Auto / On). Only for a device with headset mode on and its microphone
- *  output chosen. An icon alone keeps the card still as it switches (issue
- *  #86); Auto with no microphone link open shows dimmed, and why the
+ *  (Auto / On). Only for a device in use with headset mode on and its
+ *  microphone output chosen. An icon alone keeps the card still as it
+ *  switches (issue #86); Auto with no microphone link open shows dimmed, and why the
  *  microphone did not open (MIC_NOTES) shows on it, not as the card's
  *  status. */
 export function HeadsetChip(props: { entry: AudioEntry }) {
@@ -381,12 +397,13 @@ export function HeadsetChip(props: { entry: AudioEntry }) {
   const snap = () => app.core.state.snap!;
   const profile = () => props.entry.profile;
   const mode = (): HeadsetMode => (profile() ? headsetMode(profile()!) : "off");
-  const shown = () => !!profile()?.mic_device_id && mode() !== "off";
   const muted = () => !!profile()?.mic_muted;
   const ours = () => {
     const s = snap().stream;
     return s.state !== "idle" && s.profile === profile()?.name;
   };
+  // Only while the device is connected or connecting (issue #86)
+  const shown = () => micShown(snap(), profile());
   const linked = () => ours() && !!snap().stream.voice;
   const note = () => {
     const m = snap().stream.message;
@@ -484,15 +501,16 @@ export function CodecPicker(props: { entry: AudioEntry }) {
     if (!ok && select) select.value = value() ?? "";
   };
   return (
-    <div class="select codec-picker">
-      <Show
-        when={!e().le_audio}
-        fallback={
-          <select aria-label={t("quality.codec")} disabled>
-            <option>{t("ui.codec.lc3")}</option>
-          </select>
-        }
-      >
+    <Show
+      when={!e().le_audio}
+      fallback={
+        // LC3 is its only codec: a value, not a list that cannot open (issue #86)
+        <output class="input readonly codec-picker" aria-label={t("quality.codec")}>
+          {t("ui.codec.lc3")}
+        </output>
+      }
+    >
+      <div class="select codec-picker">
         <select
           ref={select}
           aria-label={t("quality.codec")}
@@ -513,8 +531,8 @@ export function CodecPicker(props: { entry: AudioEntry }) {
             )}
           </For>
         </select>
-      </Show>
-      <Icon name="chevron_down" class="select-chevron" />
-    </div>
+        <Icon name="chevron_down" class="select-chevron" />
+      </div>
+    </Show>
   );
 }

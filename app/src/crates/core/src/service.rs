@@ -130,7 +130,10 @@ fn le_scan_entries(results: &[LeScanResult], saved_le: &[SavedDevice], own: &[St
             continue;
         }
         found += 1;
-        let address = r.addr.to_string();
+        // A bonded device advertising under a random address is listed by
+        // its identity: its saved entry and its classic side's name match
+        // it, and its next random address is the same entry (issue #86)
+        let address = r.identity.unwrap_or(r.addr).to_string();
         let set_member = r.rsi.is_some();
         if let Some(e) = out.iter_mut().find(|e| e.address == address) {
             // Seen twice (advertising and scan response)
@@ -158,6 +161,19 @@ fn le_scan_entries(results: &[LeScanResult], saved_le: &[SavedDevice], own: &[St
         });
     }
     (out, found)
+}
+
+/// LE entries whose advertising carries no name (issue #86: an EarFun's LE
+/// side listed by its address) take the name of a device with the same
+/// address in `known` (address and name: the scan's classic devices and the
+/// saved ones), the classic side of the same earbuds
+fn fill_le_names(entries: &mut [ScannedDevice], known: &[(String, String)]) {
+    for e in entries.iter_mut().filter(|e| e.name.trim().is_empty()) {
+        if let Some((_, name)) = known.iter().find(|(a, n)| a.eq_ignore_ascii_case(&e.address) && !n.trim().is_empty())
+        {
+            e.name = name.clone();
+        }
+    }
 }
 
 /// The advertisers without LE Audio that look like the LE side of a classic
@@ -247,6 +263,9 @@ pub enum ServiceEvent {
     /// The headphones refused to report their battery level (HFP refused,
     /// another device may hold it)
     BatteryRefused,
+    /// The voice codecs the headphones listed on their HFP connection
+    /// ("cvsd", "msbc", "lc3_swb"; StreamStatus.voice_codecs)
+    VoiceCodecs(Vec<String>),
     /// While the session waited for its headphones that went off, another
     /// saved device connected to the PC (its address): its session may
     /// start instead
@@ -358,6 +377,11 @@ pub(crate) struct Inner {
 }
 
 impl Inner {
+    /// An event for the state machine (the LE stream's headset volume)
+    pub(crate) fn send_event(&self, e: ServiceEvent) {
+        let _ = self.events.lock().unwrap_or_else(|e| e.into_inner()).send(e);
+    }
+
     pub fn stop_requested(&self) -> bool {
         self.stop.load(Ordering::Acquire)
     }
@@ -636,6 +660,17 @@ impl Inner {
                                 .send(ServiceEvent::BatteryRefused);
                         }
                     }
+                    HostEvent::VoiceCodecs(codecs) => {
+                        tracing::debug!("host event: voice codecs {codecs:?}");
+                        if let Some(inner) = weak.upgrade() {
+                            let codecs = codecs.into_iter().map(String::from).collect();
+                            let _ = inner
+                                .events
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .send(ServiceEvent::VoiceCodecs(codecs));
+                        }
+                    }
                     HostEvent::ConnectionLost | HostEvent::TransportFailed => {
                         tracing::debug!("host event: {e:?}");
                     }
@@ -882,6 +917,33 @@ impl Inner {
         self.save_codecs(&known);
     }
 
+    /// Asks a classic device that just connected for the services it lists
+    /// and keeps them (crate::devices::keep_services): its Services tag
+    /// has them once it disconnects, also when the tag was never opened
+    /// while it was connected (issue #86). On a thread of its own: the
+    /// session does not wait for it. Given up when another services query
+    /// runs (the dialog's, which keeps its answer too) or the link went
+    /// down meanwhile; an answer cut short is never kept.
+    pub fn learn_services(&self, host: Arc<BtHost>, device: [u8; 6]) {
+        let dir = self.opts.config_dir.clone();
+        let spawned =
+            std::thread::Builder::new().name("services".into()).spawn(move || match host.device_services(device) {
+                Ok(records) => {
+                    let services: Vec<ipc::DeviceService> =
+                        records.into_iter().map(|r| ipc::DeviceService { uuids: r.classes, name: r.name }).collect();
+                    let changed = crate::devices::keep_services(&dir, &bt_host::addr_str(&device), &services);
+                    tracing::info!(
+                        "services: {} listed after connecting (kept list changed: {changed})",
+                        services.len()
+                    );
+                }
+                Err(e) => tracing::debug!("services: not asked after connecting ({e:?})"),
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("services: no thread to ask for them ({e})");
+        }
+    }
+
     fn save_codecs(&self, known: &BTreeMap<String, stream::KnownCodecs>) {
         if let Err(e) = crate::devices::save_codecs(&self.opts.config_dir, known) {
             tracing::warn!("cannot save the devices' codecs: {e}");
@@ -949,6 +1011,24 @@ fn apply_dev_overrides(settings: &Settings) {
     codec::dev::set_overrides(if settings.debug_mode { settings.dev_overrides } else { Default::default() });
     crate::vendor::set_overrides(if settings.debug_mode { settings.dev_vendors.clone() } else { Default::default() });
     crate::health::set_every_interval(settings.log().health_every_interval);
+    // Developer > Debug, read when the adapter opens next
+    let debug = if settings.debug_mode { settings.dev_debug.clone() } else { Default::default() };
+    hci_transport::iso_intr::set_config(hci_transport::iso_intr::IsoInterfaceConfig {
+        enabled: debug.mtk_iso_interface,
+        pad_to: debug.mtk_iso_pad.into(),
+    });
+    let command = bt_host::debug_command::parse(&debug.mtk_command).unwrap_or_else(|e| {
+        tracing::warn!("Developer > Debug: command not sent: {e}");
+        None
+    });
+    bt_host::debug_command::set(command);
+    bt_host::debug_command::set_iso_queue(debug.mtk_iso_queue);
+    bt_host::debug_command::set_before_reset(debug.mtk_command_before_reset);
+    let register = bt_host::debug_command::parse_register(&debug.mtk_register).unwrap_or_else(|e| {
+        tracing::warn!("Developer > Debug: register write not sent: {e}");
+        None
+    });
+    bt_host::debug_command::set_register(register);
 }
 
 impl Service {
@@ -1647,7 +1727,14 @@ impl Service {
         let classic = host.scan_with(seconds, &mut |found| {
             let mut list: Vec<ScannedDevice> = found.iter().map(ScannedDevice::classic).collect();
             if le_scan {
-                list.extend(le_scan_entries(&host.le_scan_results(), &saved_le, &own).0);
+                let mut le = le_scan_entries(&host.le_scan_results(), &saved_le, &own).0;
+                let known: Vec<(String, String)> = list
+                    .iter()
+                    .map(|d| (d.address.clone(), d.name.clone()))
+                    .chain(saved_le.iter().map(|d| (d.address.clone(), d.name.clone())))
+                    .collect();
+                fill_le_names(&mut le, &known);
+                list.extend(le);
             }
             on_found(&list);
         });
@@ -1683,7 +1770,7 @@ impl Service {
                     r.uuids16
                 );
             }
-            let (entries, found) = le_scan_entries(&results, &saved_le, &own);
+            let (mut entries, found) = le_scan_entries(&results, &saved_le, &own);
             tracing::info!(
                 "LE scan: {} advertiser(s) in {:.1} s, {found} LE Audio, {} listed",
                 results.len(),
@@ -1697,7 +1784,9 @@ impl Service {
                 .iter()
                 .map(|d| (d.address.clone(), d.name.clone()))
                 .chain(saved.into_iter().map(|d| (d.address, d.name)))
+                .chain(saved_le.iter().map(|d| (d.address.clone(), d.name.clone())))
                 .collect();
+            fill_le_names(&mut entries, &known);
             for r in classic_le_sides(&results, &known) {
                 tracing::info!(
                     "LE scan: {} {} advertises over LE without an LE Audio service (type {}, connectable {}, \
@@ -2210,6 +2299,35 @@ mod tests {
         let (le_list, _) = le_scan_entries(&[le("00:A2:D0:00:00:12", "Buds", None)], &[], &[]);
         assert_eq!(le_list[0].address, c.address);
         assert!(le_list[0].le_audio);
+    }
+
+    #[test]
+    fn an_unnamed_le_entry_takes_its_classic_name() {
+        let (mut list, _) =
+            le_scan_entries(&[le("00:A2:D0:00:00:12", "", None), le("00:A2:D0:00:00:13", "", None)], &[], &[]);
+        let known = vec![("00:a2:d0:00:00:12".to_string(), "Buds".to_string())];
+        fill_le_names(&mut list, &known);
+        assert_eq!(list[0].name, "Buds");
+        // No device with its address: still unnamed (the UI shows the address)
+        assert_eq!(list[1].name, "");
+    }
+
+    #[test]
+    fn a_bonded_device_under_random_addresses_is_listed_by_its_identity() {
+        let identity = bt_host::LeAddr { addr: bt_host::parse_addr("00:A2:D0:00:00:12").unwrap(), addr_type: 0 };
+        let rpa = |a| LeScanResult { identity: Some(identity), ..le(a, "", None) };
+        // Two random addresses of the same earbuds, one entry
+        let (mut list, found) = le_scan_entries(&[rpa("4B:01:02:03:04:05"), rpa("5C:01:02:03:04:05")], &[], &[]);
+        assert_eq!(found, 2);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].address, "00:A2:D0:00:00:12");
+        // It takes the classic side's name
+        fill_le_names(&mut list, &[("00:a2:d0:00:00:12".to_string(), "Buds".to_string())]);
+        assert_eq!(list[0].name, "Buds");
+        // Saved as LE Audio: it is the saved entry, not a new set member
+        let saved = [SavedDevice { address: "00:A2:D0:00:00:12".into(), name: "Buds".into(), le_audio: true }];
+        let (list, _) = le_scan_entries(&[rpa("4B:01:02:03:04:05")], &saved, &[]);
+        assert_eq!(list[0].address, saved[0].address);
     }
 
     #[test]

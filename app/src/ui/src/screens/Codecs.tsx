@@ -48,7 +48,7 @@ import { CodecCard, CodecSettings, type CodecChoice } from "../components/CodecC
 import { Banner, Button, Check, Dialog, Toggle } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { SpatialStage } from "../components/SpatialStage";
-import { stateLabel } from "../components/stream";
+import { stateLabel, voiceCodecName } from "../components/stream";
 import { t } from "../i18n";
 import type { AudioDevice, Profile, Snapshot } from "../ipc/types";
 import {
@@ -82,6 +82,7 @@ import {
   withCodec,
   type AudioEntry,
 } from "../lib/profile";
+import { khz } from "../lib/format";
 import { knownSbcCaps } from "../lib/sbc";
 import { entryState } from "./Home";
 
@@ -250,7 +251,9 @@ export function pickedCodec(
 
 /** Whether a codec's card shows: the one picked always, the others unless
  *  `hide` and the device did not offer them (a codec chosen that it does
- *  not offer neither: the one used instead is picked) */
+ *  not offer neither: the one used instead is picked). A device never
+ *  connected shows SBC alone, the codec every device has (issue #86: an
+ *  imported device's cards were a wall of unconfirmed ones). */
 export function codecShown(
   id: string,
   picked: string | null,
@@ -258,7 +261,9 @@ export function codecShown(
   hide: boolean,
   onRequest: readonly string[] = [],
 ) {
-  return !hide || id === picked || codecSupport(id, known, onRequest) !== "not_offered";
+  if (!hide || id === picked) return true;
+  if (known.length === 0) return id === "sbc";
+  return codecSupport(id, known, onRequest) !== "not_offered";
 }
 
 /** Whether `order` puts the cards in `ids` (those shown) in their default
@@ -391,6 +396,9 @@ function DeviceCodecs(props: {
   const known =() => knownCodecs(snap().devices, e().address);
   const onRequest = () => codecsOnRequest(snap().devices, e().address);
   const support = (id: string) => codecSupport(id, known(), onRequest());
+  // On its card, SBC is supported before the first connection too: every
+  // device has it (SBC XQ needs what the device lists, so not it)
+  const shownSupport = (id: string) => (id === "sbc" && known().length === 0 ? "offered" : support(id));
   // The device's order while it is being dragged (null: the saved one)
   const [dragOrder, setDragOrder] = createSignal<CodecId[] | null>(null);
   // Its cards' order, which Auto follows under Auto-select too
@@ -721,7 +729,7 @@ function DeviceCodecs(props: {
                 disabled={locked()}
                 readOnly={props.auto}
                 // Only supported codecs shown: no "Supported" tag on each
-                support={props.hide && support(c.id) === "offered" ? null : support(c.id)}
+                support={props.hide && shownSupport(c.id) === "offered" ? null : shownSupport(c.id)}
                 orderable
                 dragging={dragging() === c.id}
                 // The keys need a card that takes the focus (not under Auto-select)
@@ -791,6 +799,74 @@ function DeviceCodecs(props: {
           }}
         />
       </Show>
+      <VoiceCodecs entry={e()} hide={props.hide} />
     </section>
+  );
+}
+
+/** The voice codecs a classic device's microphone link uses (issue #86) */
+const VOICE_CODECS = ["cvsd", "msbc", "lc3_swb"] as const;
+const VOICE_RATES: Record<string, number> = { cvsd: 8000, msbc: 16000, lc3_swb: 32000 };
+
+/** The call codecs of the device in use (issue #86), read only: the
+ *  microphone link chooses one by itself, the best both sides support.
+ *  Classic: those the headphones listed, the one open marked; LE Audio:
+ *  LC3 at its rate while the microphone is open. */
+function VoiceCodecs(props: { entry: AudioEntry; hide: boolean }) {
+  const app = useApp();
+  const stream = () => app.core.state.snap!.stream;
+  const ours = () => stream().state !== "idle" && stream().profile === props.entry.profile?.name;
+  const open = () => (ours() ? (stream().voice ?? null) : null);
+  const listed = () => (ours() ? stream().voice_codecs : []);
+  const cards = () => {
+    if (props.entry.le_audio) {
+      const v = open();
+      return v ? [{ id: "lc3", rate: v.rate, supported: true }] : [];
+    }
+    if (listed().length === 0) return [];
+    return VOICE_CODECS.map((id) => ({ id, rate: VOICE_RATES[id], supported: listed().includes(id) })).filter(
+      (c) => c.supported || !props.hide,
+    );
+  };
+  const titleId = createUniqueId();
+  return (
+    <Show when={cards().length > 0}>
+      <h3 id={titleId} class="voice-codecs-title">
+        {t("ui.codecs.voice_title")}
+      </h3>
+      <div class="codec-grid" role="list" aria-labelledby={titleId}>
+        <For each={cards()}>
+          {(c) => (
+            <div class="codec-cell" role="listitem">
+              <div class="codec-card ro voice" classList={{ on: open()?.codec === c.id }}>
+                <span class="codec-card-name">{voiceCodecName(c.id)}</span>
+                <span class="codec-card-tags">
+                  <Show
+                    when={open()?.codec === c.id}
+                    fallback={
+                      <Show when={!props.hide || !c.supported}>
+                        <span class="tag">
+                          <Icon
+                            name={c.supported ? "checkmark" : "dismiss"}
+                            class={c.supported ? "st-good" : "st-bad"}
+                          />
+                          {c.supported ? t("ui.profile.codec_supported") : t("ui.profile.codec_not_supported")}
+                        </span>
+                      </Show>
+                    }
+                  >
+                    <span class="tag">
+                      <span class="mic-dot" aria-hidden="true" />
+                      {t("ui.codecs.voice_in_use")}
+                    </span>
+                  </Show>
+                </span>
+                <span class="muted codec-card-desc">{khz(c.rate)} kHz</span>
+              </div>
+            </div>
+          )}
+        </For>
+      </div>
+    </Show>
   );
 }

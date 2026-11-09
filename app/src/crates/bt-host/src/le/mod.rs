@@ -35,6 +35,7 @@ pub mod api;
 pub mod bap;
 pub mod broadcast;
 pub mod core;
+pub mod gatt_cache;
 pub mod gatt_client;
 pub mod gatt_server;
 pub mod iso_recv;
@@ -213,6 +214,8 @@ pub struct LeStreamStats {
     /// SDU sets sent (audio + silence)
     pub sets_sent: u64,
     pub sdus_sent: u64,
+    /// Bytes of the SDUs sent (Link Quality's bit rate)
+    pub bytes_sent: u64,
     /// Sets sent while the buffer was empty
     pub silence_sets: u64,
     /// Times the buffer ran empty

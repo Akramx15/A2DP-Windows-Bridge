@@ -35,7 +35,7 @@ import { MixerList } from "../components/Mixer";
 import { t, tm } from "../i18n";
 import { IpcError } from "../ipc/types";
 import { audioEntries, entryOf } from "../lib/profile";
-import { CodecPicker, HeadsetChip } from "./Home";
+import { CodecPicker, MicRow } from "./Home";
 import { saveEntry } from "./Codecs";
 
 export function Flyout() {
@@ -118,13 +118,12 @@ export function Flyout() {
                 <span class="dot" aria-hidden="true" />
                 <span class="ellipsis">{statusText(stream())}</span>
               </div>
-              <Show when={entry()}>{(e) => <HeadsetChip entry={e()} />}</Show>
             </div>
             <CodecBadge
               aside={<QualityIndicator />}
               picker={<Show when={entry()}>{(e) => <CodecPicker entry={e()} />}</Show>}
-              voice={false}
             />
+            <Show when={entry()}>{(e) => <MicRow entry={e()} />}</Show>
           </div>
         </header>
 

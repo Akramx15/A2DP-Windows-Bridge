@@ -298,11 +298,29 @@ impl Stack {
         status
     }
 
+    /// The voice codecs the headphones listed on the service level
+    /// connection of `acl` (1 CVSD, 2 mSBC, 3 LC3-SWB; CVSD alone without
+    /// codec negotiation); empty without such a connection
+    pub fn hfp_ag_remote_codecs(&self, acl: u16) -> Vec<u8> {
+        let mut out = [0u8; 8];
+        // SAFETY: on the BTstack thread after hfp_ag_init; at most out.len() written.
+        let n = unsafe { ffi::bluecaster_hfp_ag_remote_codecs(acl, out.as_mut_ptr(), out.len() as u8) };
+        out[..usize::from(n).min(out.len())].to_vec()
+    }
+
     /// Sets the headphones' HFP speaker gain (+VGS, 0..15, clamped)
     pub fn hfp_ag_set_speaker_gain(&self, acl: u16, gain: u8) -> u8 {
         // SAFETY: on the BTstack thread after hfp_ag_init.
         let status = unsafe { ffi::bluecaster_hfp_ag_set_speaker_gain(acl, gain.min(15)) };
         tracing::debug!(target: "btstack", "hfp_ag_set_speaker_gain acl 0x{acl:04X} {gain}: 0x{status:02X}");
+        status
+    }
+
+    /// Sets the headphones' HFP microphone gain (+VGM, 0..15, clamped)
+    pub fn hfp_ag_set_microphone_gain(&self, acl: u16, gain: u8) -> u8 {
+        // SAFETY: on the BTstack thread after hfp_ag_init.
+        let status = unsafe { ffi::bluecaster_hfp_ag_set_microphone_gain(acl, gain.min(15)) };
+        tracing::debug!(target: "btstack", "hfp_ag_set_microphone_gain acl 0x{acl:04X} {gain}: 0x{status:02X}");
         status
     }
 
@@ -535,6 +553,17 @@ impl Stack {
     /// The HCI transport reported a permanent failure ([`crate::Upstream::fail`])
     pub fn transport_failed(&self) -> bool {
         transport::failed()
+    }
+
+    /// A command given whole (opcode, parameter length, parameters), for
+    /// Developer > Debug's vendor command; its answer comes as any other
+    pub fn cmd_raw(&self, packet: &[u8]) -> u8 {
+        let mut copy = packet.to_vec();
+        // SAFETY: on the BTstack thread, after hci_init; the buffer lives for
+        // the call and the transport copies it.
+        let status = unsafe { ffi::hci_send_cmd_packet(copy.as_mut_ptr(), copy.len() as c_int) };
+        tracing::debug!(target: "btstack", "raw command {packet:02X?}: 0x{status:02X}");
+        status
     }
 
     pub fn cmd_set_afh_classification(&self, map: &[u8; 10]) -> u8 {

@@ -7,6 +7,11 @@
 use std::ffi::{c_char, c_int};
 
 unsafe extern "C" {
+    // ---- hci.c ----
+    /// A whole command packet (opcode, length, parameters); BTstack hands
+    /// it to the transport, which copies it
+    pub fn hci_send_cmd_packet(packet: *mut u8, size: c_int) -> u8;
+
     // ---- shim.c: run loop ----
     pub fn bluecaster_runloop_init();
     pub fn bluecaster_wake();
@@ -29,7 +34,9 @@ unsafe extern "C" {
     pub fn bluecaster_hfp_ag_release(acl_handle: u16) -> u8;
     pub fn bluecaster_hfp_ag_audio_connect(acl_handle: u16) -> u8;
     pub fn bluecaster_hfp_ag_audio_release(acl_handle: u16) -> u8;
+    pub fn bluecaster_hfp_ag_remote_codecs(acl_handle: u16, out: *mut u8, max: u8) -> u8;
     pub fn bluecaster_hfp_ag_set_speaker_gain(acl_handle: u16, gain: u8) -> u8;
+    pub fn bluecaster_hfp_ag_set_microphone_gain(acl_handle: u16, gain: u8) -> u8;
     pub fn bluecaster_sco_send(sco_handle: u16, payload: *const u8, len: u16) -> u8;
     pub fn bluecaster_sco_request_can_send_now(sco_handle: u16);
     pub fn bluecaster_sco_packet_length(sco_handle: u16) -> u16;
@@ -199,7 +206,7 @@ pub struct CisParamsC {
 // LE (experimental LE Audio)
 unsafe extern "C" {
     // ---- shim.c: setup ----
-    pub fn bluecaster_le_init(tlv_path: *const c_char) -> c_int;
+    pub fn bluecaster_le_init() -> c_int;
     pub fn bluecaster_le_deinit(att_server_started: c_int);
 
     // ---- shim.c: GAP, HCI ----

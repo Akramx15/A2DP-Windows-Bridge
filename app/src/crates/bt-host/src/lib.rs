@@ -14,14 +14,17 @@ mod app;
 pub mod bringup;
 pub mod capture;
 pub mod chips;
+pub mod debug_command;
 pub mod events;
 pub mod intel;
 mod le;
+pub mod le_bond_file;
 pub mod le_import;
 pub mod link_details;
 pub mod link_keys;
 pub mod media;
 pub mod mediatek;
+mod mtk_debug_steps;
 pub mod probe;
 pub mod qualcomm;
 pub mod realtek_btnic;
@@ -46,6 +49,7 @@ use app::{HostApp, Job, Setup};
 pub use btstack_sys::{CtkdOutcome, ImportedLeBond, LeBondAdded, LeKeys, expect_transport_loss, set_ctkd};
 pub use capture::HciCapture;
 pub use events::{addr_str, parse_addr};
+pub use le::gatt_cache as le_gatt_cache;
 pub use le::iso_recv::{
     ISO_STATUS_LOST, ISO_STATUS_POSSIBLY_INVALID, ISO_STATUS_VALID, LeRxHandle, LeRxStats, LeRxStream, MAX_RX_SDU,
     RxSdu,
@@ -316,6 +320,9 @@ pub enum HostEvent {
     TransportFailed,
     /// The HFP audio connection ([`BtHost::voice_start`])
     Voice(VoiceEvent),
+    /// The voice codecs the headphones listed on their HFP service level
+    /// connection ("cvsd", "msbc", "lc3_swb")
+    VoiceCodecs(Vec<&'static str>),
 }
 
 /// Settings and readings shared with the BTstack thread without locks

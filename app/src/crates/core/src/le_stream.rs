@@ -530,6 +530,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     let mut lost_for_good = false;
     let mut discontinuities = DiscontinuityLog::default();
+    // The headset volume (VCP) for the volume slider (issue #86: disabled
+    // while LE Audio streamed), as AVRCP's reports are for classic devices
+    let mut shown_volume = None;
     while !stopped() {
         inner.wait_tick(Duration::from_millis(200));
         if stopped() {
@@ -537,6 +540,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         }
         if let Some(v) = volume.as_mut() {
             v.tick(sync_volume, &crate::volume_sync::LeHeadphones(&host));
+        }
+        if let Some(level) = host.le_remote_volume().filter(|&l| Some(l) != shown_volume) {
+            shown_volume = Some(level);
+            inner.send_event(crate::service::ServiceEvent::Volume(level));
         }
         output_mute.tick(mutes_output);
         discontinuities.tick(audio.as_ref().map_or(0, LeAudioPath::discontinuities));
@@ -969,6 +976,7 @@ mod tests {
             sets_encoded: 490,
             sets_sent: 500,
             sdus_sent: 1000,
+            bytes_sent: 155000,
             silence_sets: 10,
             underruns: 1,
             overflows: 2,
