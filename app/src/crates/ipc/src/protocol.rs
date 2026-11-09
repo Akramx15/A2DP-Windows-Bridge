@@ -2215,6 +2215,10 @@ pub struct WindowsPairedDevice {
     pub address: String,
     /// Windows' name for it (empty when it has none)
     pub name: String,
+    /// An audio device (headphones, speakers: class of device Audio/Video),
+    /// shown with their icon in the warning before WinUSB (issue #86)
+    #[serde(default)]
+    pub audio: bool,
 }
 
 /// How many devices' keys agree, for one kind of key

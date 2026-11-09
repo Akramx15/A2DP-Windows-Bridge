@@ -438,17 +438,22 @@ describe("every screen renders", () => {
   it("the setup names the devices Windows loses with the adapter, and asks first (issue #86)", async () => {
     const { calls } = start("#/home", { scenario: "fresh" });
     mock!.adapterDevices = [
-      { address: "00:11:22:33:44:01", name: "Logitech K380" },
-      { address: "00:11:22:33:44:02", name: "MX Master 3" },
-      { address: "00:11:22:33:44:03", name: "" },
-      { address: "00:11:22:33:44:04", name: "WH-1000XM4" },
-      { address: "00:11:22:33:44:05", name: "Pixel 8" },
+      { address: "00:11:22:33:44:01", name: "Logitech K380", audio: false },
+      { address: "00:11:22:33:44:02", name: "MX Master 3", audio: false },
+      { address: "00:11:22:33:44:03", name: "", audio: true },
+      { address: "00:11:22:33:44:04", name: "WH-1000XM4", audio: true },
+      { address: "00:11:22:33:44:05", name: "Pixel 8", audio: false },
     ];
     fireEvent.click(await screen.findByRole("button", { name: "Next" }));
     fireEvent.click(await screen.findByRole("button", { name: t("ui.setup.auto_button") }));
     let dialog = await screen.findByRole("dialog", { name: t("ui.adapter.paired_title") });
-    // The first three by name (the address of one without), then how many more
-    expect(dialog).toHaveTextContent(t("ui.adapter.paired_more", "Logitech K380, MX Master 3, 00:11:22:33:44:03", 2));
+    // A warning: the first three by name, one per line (the address of one
+    // without), then how many more; the confirm button in the danger style
+    expect(dialog.querySelector(".dialog-warn")).not.toBeNull();
+    const rows = [...dialog.querySelectorAll(".paired-list li")].map((li) => li.textContent);
+    expect(rows).toEqual(["Logitech K380", "MX Master 3", "00:11:22:33:44:03", t("ui.adapter.paired_more", 2)]);
+    expect(dialog.querySelectorAll(".paired-list li .icon")).toHaveLength(3);
+    expect(dialog).toHaveTextContent(t("ui.adapter.paired_text"));
     expect(dialog).toHaveTextContent(t("ui.adapter.paired_keep"));
     fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -458,6 +463,7 @@ describe("every screen renders", () => {
     dialog = await screen.findByRole("dialog", { name: t("ui.adapter.paired_title") });
     const confirm = within(dialog).getByRole("button", { name: t("ui.setup.auto_button") });
     expect(shielded(confirm)).toBe(true);
+    expect(confirm).toHaveClass("btn-danger");
     fireEvent.click(confirm);
     await screen.findByText("The adapter is ready for BlueCaster", {}, { timeout: 5000 });
     expect(calls.some((c) => c.method === "adapter.assign_winusb")).toBe(true);
@@ -475,15 +481,18 @@ describe("every screen renders", () => {
 
   it("the Adapters screen's driver dialog names the devices Windows loses (issue #86)", async () => {
     start("#/adapter", { scenario: "fresh" });
-    mock!.adapterDevices = [{ address: "00:11:22:33:44:01", name: "Logitech K380" }];
+    mock!.adapterDevices = [{ address: "00:11:22:33:44:01", name: "Logitech K380", audio: false }];
     // The fresh scenario opens the setup: leave it
     fireEvent.click(await screen.findByRole("button", { name: t("ui.setup.skip") }));
     location.hash = "#/adapter";
     await screen.findByRole("heading", { level: 1, name: "Adapters" });
     fireEvent.click((await screen.findAllByRole("button", { name: t("ui.adapter.assign_winusb") }))[0]);
-    const dialog = await screen.findByRole("dialog", { name: t("ui.adapter.assign_title") });
+    // A warning once the list is in, the devices in place of the usual text
+    const dialog = await screen.findByRole("dialog", { name: t("ui.adapter.paired_title") });
     expect(await within(dialog).findByText("Logitech K380")).toBeInTheDocument();
     expect(dialog).toHaveTextContent(t("ui.adapter.paired_receiver"));
+    expect(dialog).not.toHaveTextContent(t("ui.adapter.assign_explain"));
+    expect(within(dialog).getByRole("button", { name: t("ui.adapter.assign_winusb") })).toHaveClass("btn-danger");
   });
 
   it("the flyout", async () => {

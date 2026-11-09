@@ -8,4 +8,9 @@ export type WindowsPairedDevice = { address: string,
 /**
  * Windows' name for it (empty when it has none)
  */
-name: string, };
+name: string, 
+/**
+ * An audio device (headphones, speakers: class of device Audio/Video),
+ * shown with their icon in the warning before WinUSB (issue #86)
+ */
+audio: boolean, };
