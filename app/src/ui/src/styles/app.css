@@ -1697,13 +1697,52 @@ option {
 .live-bitpool {
   flex-basis: 100%;
 }
-/* The headset microphone's voice codec; a classic link's in the warning colour */
-.voice-codec {
+/* A classic device's codec while its microphone is open: paused for the call
+   link (issue #86) */
+.codec-info.codec-paused {
+  opacity: 0.45;
+}
+/* The headset microphone's line below the codec (issue #86): boxed as the
+   sidebar's codec, a red dot while open, dimmed while closed */
+.mic-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+.mic-badge {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+  min-width: 0;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  background: var(--surface-2);
   font-size: var(--fs-12);
   color: var(--text-2);
+  opacity: 0.55;
 }
-.voice-codec.st-warn {
-  color: var(--st-text);
+.mic-badge.open {
+  color: var(--text);
+  opacity: 1;
+}
+.mic-badge strong {
+  color: var(--text);
+}
+.mic-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--text-3, var(--text-2));
+}
+.mic-badge.open .mic-dot {
+  background: var(--bad);
+}
+.status-pill .mic-badge {
+  align-self: stretch;
 }
 /* Headset mode at one click (Home's card, the flyout): the microphone and
    Off / Auto / On; outlined in the accent while On or Auto, muted while
@@ -3678,8 +3717,8 @@ html.win-flyout body {
   flex-shrink: 0;
 }
 /* Its list of Windows' pairings, each ticked to import it: one bordered
-   box, a row per device (icon, name over address), the ticked ones tinted
-   with the accent (issue #86) */
+   box, a row per device (icon, name over address) between lines, no fill,
+   as the paired devices' list (issue #86) */
 .import-list {
   list-style: none;
   margin: 0;
@@ -3688,7 +3727,6 @@ html.win-flyout body {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--r);
-  background: var(--surface-2);
   overflow: hidden;
   min-width: min(22rem, 100%);
 }
@@ -3705,13 +3743,7 @@ html.win-flyout body {
   transition: background var(--t-fast) var(--ease);
 }
 .check-item:hover {
-  background: var(--surface-3);
-}
-.check-item:has(input:checked) {
-  background: color-mix(in srgb, var(--accent-fill) 10%, transparent);
-}
-.check-item:has(input:checked):hover {
-  background: color-mix(in srgb, var(--accent-fill) 16%, transparent);
+  background: var(--surface-2);
 }
 .check-item input {
   flex-shrink: 0;

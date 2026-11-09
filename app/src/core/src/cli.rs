@@ -917,9 +917,19 @@ fn stream_session(
 }
 
 /// --services: asked on a thread of its own, the stream goes on meanwhile
+/// (and after the query each connection makes, Service::learn_services)
 fn print_services(service: &Service, device: Option<&str>) {
     let (Some(host), Some(addr)) = (service.host(), device.and_then(bt_host::parse_addr)) else { return };
-    let _ = std::thread::Builder::new().name("cli-services".into()).spawn(move || match host.device_services(addr) {
+    let ask = move || {
+        for _ in 0..40 {
+            match host.device_services(addr) {
+                Err(bt_host::ServicesError::Busy) => std::thread::sleep(Duration::from_millis(500)),
+                r => return r,
+            }
+        }
+        Err(bt_host::ServicesError::Busy)
+    };
+    let _ = std::thread::Builder::new().name("cli-services".into()).spawn(move || match ask() {
         Ok(records) => {
             outln!("Services: {} record(s)", records.len());
             for r in records {

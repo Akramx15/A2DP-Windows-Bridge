@@ -46,7 +46,7 @@ export function InputSource(props: {
   device: Device;
   devices: readonly AudioDevice[];
   /** The device's output source as shown (a loop is refused) */
-  source: Pick<Profile, "capture_mode" | "audio_device_id">;
+  source: Pick<Profile, "capture_mode" | "audio_device_id"> & Partial<Pick<Profile, "auto_switch_device">>;
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
@@ -83,6 +83,15 @@ export function InputSource(props: {
       id === source.id ||
       (!!d?.capture_name && d.capture_name === source.capture_name)
     );
+  };
+  /** Windows plays its sound into the chosen device (issue #86: the
+   *  microphone's cable left as the default output): apps hear it mixed with
+   *  the microphone, and an Output Source that is another device gets
+   *  nothing. Not while connecting makes the Output Source the default. */
+  const playsDefault = () => {
+    const d = props.devices.find((x) => x.id === chosen());
+    const switches = props.source.capture_mode === "virtual" && props.source.auto_switch_device !== false;
+    return !!d?.is_default && !switches && !usedBySource(d.id);
   };
   const [busy, setBusy] = createSignal(false);
   const save = async (patch: Partial<Profile>) => {
@@ -190,7 +199,13 @@ export function InputSource(props: {
         <Show when={mode() !== "off" && usedBySource(chosen())}>
           <p class="field-warn">
             <Icon name="warning" />
-            <span>{t("error.headset_mic_loop")}</span>
+            <span>{t("capture.mic_loop_here")}</span>
+          </p>
+        </Show>
+        <Show when={mode() !== "off" && playsDefault()}>
+          <p class="field-warn">
+            <Icon name="warning" />
+            <span>{t("capture.mic_is_default_output")}</span>
           </p>
         </Show>
       </div>
