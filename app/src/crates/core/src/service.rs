@@ -893,6 +893,33 @@ impl Inner {
         self.save_codecs(&known);
     }
 
+    /// Asks a classic device that just connected for the services it lists
+    /// and keeps them (crate::devices::keep_services): its Services tag
+    /// has them once it disconnects, also when the tag was never opened
+    /// while it was connected (issue #86). On a thread of its own: the
+    /// session does not wait for it. Given up when another services query
+    /// runs (the dialog's, which keeps its answer too) or the link went
+    /// down meanwhile; an answer cut short is never kept.
+    pub fn learn_services(&self, host: Arc<BtHost>, device: [u8; 6]) {
+        let dir = self.opts.config_dir.clone();
+        let spawned =
+            std::thread::Builder::new().name("services".into()).spawn(move || match host.device_services(device) {
+                Ok(records) => {
+                    let services: Vec<ipc::DeviceService> =
+                        records.into_iter().map(|r| ipc::DeviceService { uuids: r.classes, name: r.name }).collect();
+                    let changed = crate::devices::keep_services(&dir, &bt_host::addr_str(&device), &services);
+                    tracing::info!(
+                        "services: {} listed after connecting (kept list changed: {changed})",
+                        services.len()
+                    );
+                }
+                Err(e) => tracing::debug!("services: not asked after connecting ({e:?})"),
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("services: no thread to ask for them ({e})");
+        }
+    }
+
     fn save_codecs(&self, known: &BTreeMap<String, stream::KnownCodecs>) {
         if let Err(e) = crate::devices::save_codecs(&self.opts.config_dir, known) {
             tracing::warn!("cannot save the devices' codecs: {e}");
