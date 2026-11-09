@@ -19,8 +19,8 @@ pub mod paths;
 pub mod profiles;
 mod service;
 pub mod settings;
-pub mod speakers;
 pub mod spatial;
+pub mod speakers;
 pub mod stream;
 pub mod vendor;
 mod voice;
@@ -31,7 +31,7 @@ pub use le_stream::{
 };
 pub use messages::{CodecStop, CodecStopKind, Msg};
 /// Asks the running stream to start the spatial engine again (its settings changed)
-pub use pipeline::{request_stage, SpatialConfig, StageUpdate};
+pub use pipeline::{SpatialConfig, StageUpdate, request_stage};
 pub use service::{LeCliOptions, ScannedDevice, Service, ServiceEvent, ServiceOptions, VoiceChange};
 pub use stream::{
     AacDetails, AacDeviceCaps, CodecDetails, CodecDeviceCaps, KnownCodecs, SbcDetails, SbcDeviceCaps, SourceInfo,

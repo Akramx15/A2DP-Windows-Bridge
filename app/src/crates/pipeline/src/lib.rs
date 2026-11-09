@@ -18,8 +18,8 @@ pub mod packetizer;
 pub mod resample;
 pub mod spatial;
 
-use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
 

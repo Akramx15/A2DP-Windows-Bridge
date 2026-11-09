@@ -358,12 +358,7 @@ fn stage_config(dir: &Path, p: &CoreProfile) -> Option<bluecaster_core::SpatialC
         Some(config) => command.with_config(config),
         None => command,
     };
-    Some(bluecaster_core::SpatialConfig {
-        exe,
-        program: command.program,
-        args: command.args,
-        cwd: Some(command.cwd),
-    })
+    Some(bluecaster_core::SpatialConfig { exe, program: command.program, args: command.args, cwd: Some(command.cwd) })
 }
 
 /// The controls of the stage a profile uses
@@ -2665,10 +2660,7 @@ impl CoreState {
                     // The stage starts again from the profile as it is now: its
                     // command must name the app's config copy, not the stage's
                     // own file
-                    let next = list
-                        .iter()
-                        .find(|p| p.name == profile)
-                        .and_then(|p| stage_config(&dir, p));
+                    let next = list.iter().find(|p| p.name == profile).and_then(|p| stage_config(&dir, p));
                     tracing::info!("spatial: the controls of \"{profile}\" changed: the engine starts again");
                     bluecaster_core::request_stage(bluecaster_core::StageUpdate::Start(next));
                 }

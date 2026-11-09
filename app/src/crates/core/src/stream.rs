@@ -1432,7 +1432,15 @@ impl crate::voice::A2dp for A2dpSide<'_> {
             }
         };
         self.info.bitrate_kbps = encoder.bitrate_kbps();
-        let (p, new_input) = start_pipeline(encoder, format, self.channels, self.encoder_config.mtu, sink, self.host, self.spatial.clone());
+        let (p, new_input) = start_pipeline(
+            encoder,
+            format,
+            self.channels,
+            self.encoder_config.mtu,
+            sink,
+            self.host,
+            self.spatial.clone(),
+        );
         if let Ok(mut i) = self.input.0.lock() {
             *i = new_input;
         }
@@ -2142,8 +2150,16 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 input_format = new_format;
                 info.source_channels = new_format.channels as u32;
                 info.source_bits = (new_format.sample_format.bytes_per_sample() * 8) as u32;
-                let renewed =
-                    restart_pipeline(&mut pipeline, kind, &encoder_config, input_format, channels, &input, &host, SpatialStage::of(&req, resample_around_engine));
+                let renewed = restart_pipeline(
+                    &mut pipeline,
+                    kind,
+                    &encoder_config,
+                    input_format,
+                    channels,
+                    &input,
+                    &host,
+                    SpatialStage::of(&req, resample_around_engine),
+                );
                 if let Err(m) = renewed {
                     inner.notify(StreamState::Error, m);
                     lost_for_good = true;
@@ -2208,7 +2224,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 encoder_config.mtu,
                 format.sample_rate,
             )));
-            let (p, new_input) = start_pipeline(encoder, input_format, channels, encoder_config.mtu, sink, &host, SpatialStage::of(&req, resample_around_engine));
+            let (p, new_input) = start_pipeline(
+                encoder,
+                input_format,
+                channels,
+                encoder_config.mtu,
+                sink,
+                &host,
+                SpatialStage::of(&req, resample_around_engine),
+            );
             if let Ok(mut i) = input.0.lock() {
                 *i = new_input;
             }
