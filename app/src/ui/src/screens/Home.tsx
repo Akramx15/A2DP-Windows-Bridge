@@ -491,15 +491,16 @@ export function CodecPicker(props: { entry: AudioEntry }) {
     if (!ok && select) select.value = value() ?? "";
   };
   return (
-    <div class="select codec-picker">
-      <Show
-        when={!e().le_audio}
-        fallback={
-          <select aria-label={t("quality.codec")} disabled>
-            <option>{t("ui.codec.lc3")}</option>
-          </select>
-        }
-      >
+    <Show
+      when={!e().le_audio}
+      fallback={
+        // LC3 is its only codec: a value, not a list that cannot open (issue #86)
+        <output class="input readonly codec-picker" aria-label={t("quality.codec")}>
+          {t("ui.codec.lc3")}
+        </output>
+      }
+    >
+      <div class="select codec-picker">
         <select
           ref={select}
           aria-label={t("quality.codec")}
@@ -520,8 +521,8 @@ export function CodecPicker(props: { entry: AudioEntry }) {
             )}
           </For>
         </select>
-      </Show>
-      <Icon name="chevron_down" class="select-chevron" />
-    </div>
+        <Icon name="chevron_down" class="select-chevron" />
+      </div>
+    </Show>
   );
 }

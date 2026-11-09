@@ -130,7 +130,10 @@ fn le_scan_entries(results: &[LeScanResult], saved_le: &[SavedDevice], own: &[St
             continue;
         }
         found += 1;
-        let address = r.addr.to_string();
+        // A bonded device advertising under a random address is listed by
+        // its identity: its saved entry and its classic side's name match
+        // it, and its next random address is the same entry (issue #86)
+        let address = r.identity.unwrap_or(r.addr).to_string();
         let set_member = r.rsi.is_some();
         if let Some(e) = out.iter_mut().find(|e| e.address == address) {
             // Seen twice (advertising and scan response)
@@ -2293,6 +2296,24 @@ mod tests {
         assert_eq!(list[0].name, "Buds");
         // No device with its address: still unnamed (the UI shows the address)
         assert_eq!(list[1].name, "");
+    }
+
+    #[test]
+    fn a_bonded_device_under_random_addresses_is_listed_by_its_identity() {
+        let identity = bt_host::LeAddr { addr: bt_host::parse_addr("00:A2:D0:00:00:12").unwrap(), addr_type: 0 };
+        let rpa = |a| LeScanResult { identity: Some(identity), ..le(a, "", None) };
+        // Two random addresses of the same earbuds, one entry
+        let (mut list, found) = le_scan_entries(&[rpa("4B:01:02:03:04:05"), rpa("5C:01:02:03:04:05")], &[], &[]);
+        assert_eq!(found, 2);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].address, "00:A2:D0:00:00:12");
+        // It takes the classic side's name
+        fill_le_names(&mut list, &[("00:a2:d0:00:00:12".to_string(), "Buds".to_string())]);
+        assert_eq!(list[0].name, "Buds");
+        // Saved as LE Audio: it is the saved entry, not a new set member
+        let saved = [SavedDevice { address: "00:A2:D0:00:00:12".into(), name: "Buds".into(), le_audio: true }];
+        let (list, _) = le_scan_entries(&[rpa("4B:01:02:03:04:05")], &saved, &[]);
+        assert_eq!(list[0].address, saved[0].address);
     }
 
     #[test]

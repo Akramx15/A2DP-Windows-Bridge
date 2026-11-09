@@ -64,13 +64,36 @@ pub fn pairing(state: &CoreState, addr: &str) -> Result<Value, ErrorInfo> {
         .iter()
         .find(|e| e.addr == addr)
         .map(|e| LinkKeyInfo { key: hex(&e.key), key_type: e.key_type.clamp(0, 255) as u8 });
-    // Held by the running stack (its bond file is open there)
+    // Held by the running stack (its bond file is open there); without its
+    // LE side, the bond as kept on disk (issue #86: a classic stream showed
+    // none of the earbuds' LE keys)
     let (le_keys, le_keys_missing) = match state.service.host().and_then(|h| h.le_keys(addr)) {
         Some(Ok(k)) => (Some(le_keys_info(k)), None),
+        Some(Err(bt_host::CtkdOutcome::NoLe)) | None => match stored_le_keys(&state.config_dir(), &addr) {
+            Some(k) => (Some(le_keys_info(k)), None),
+            None if state.service.host().is_some() => (None, Some(LeKeysMissing::NoLe)),
+            None => (None, Some(LeKeysMissing::NoStack)),
+        },
         Some(Err(why)) => (None, Some(missing(why))),
-        None => (None, Some(LeKeysMissing::NoStack)),
     };
     Ok(serde_json::to_value(DevicePairing { link_key, le_keys, le_keys_missing }).unwrap_or(Value::Null))
+}
+
+/// The kept LE bond whose public identity is the classic device `addr`
+/// (what the stack's lookup finds after a key derivation too); None without
+/// one or a readable file
+fn stored_le_keys(config: &Path, addr: &[u8; 6]) -> Option<bt_host::LeKeys> {
+    let bonds = bt_host::le_bond_file::read(&paths::le_bonds_file(config)).ok()?;
+    let b = bonds.into_iter().find(|b| b.addr_type == 0 && b.addr == *addr)?;
+    let nonzero = |k: [u8; 16]| (k != [0; 16]).then_some(k);
+    let ltk = nonzero(b.ltk);
+    Some(bt_host::LeKeys {
+        identity_addr_type: b.addr_type,
+        identity_addr: b.addr,
+        irk: nonzero(b.irk),
+        ltk,
+        key_size: if ltk.is_some() { b.key_size } else { 0 },
+    })
 }
 
 fn missing(why: bt_host::CtkdOutcome) -> LeKeysMissing {

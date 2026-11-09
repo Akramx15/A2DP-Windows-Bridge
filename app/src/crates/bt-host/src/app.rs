@@ -2428,11 +2428,21 @@ impl HostApp {
         // 2. Readings of the current link: RSSI and AFH map in turn
         let handle = self.shared.lock().a2dp_con_handle;
         let Some(handle) = handle else {
+            // An LE Audio stream: the RSSI of its LE link (issue #86: Link
+            // Quality showed nothing); the AFH map is BR/EDR only
+            let le = self.le.as_ref().and_then(|le| le.streaming_acl());
             self.stats.with_radio(|r| {
-                r.rssi = None;
+                if le.is_none() {
+                    r.rssi = None;
+                }
                 r.afh_in_use = None;
                 r.afh_map = None;
             });
+            if let Some(acl) = le
+                && stack.can_send_command_now()
+            {
+                stack.cmd_read_rssi(acl);
+            }
             self.publish_link();
             return;
         };

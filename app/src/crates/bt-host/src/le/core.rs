@@ -1883,6 +1883,13 @@ impl LeCore {
         self.initialized
     }
 
+    /// The LE link of the running stream's first device (its RSSI for Link
+    /// Quality); None while idle
+    pub(crate) fn streaming_acl(&self) -> Option<u16> {
+        let status = self.status.as_ref().filter(|s| s.active)?;
+        status.devices.iter().find_map(|id| self.devices.iter().find(|d| d.id == *id && d.connected())).map(|d| d.acl)
+    }
+
     /// Runs `f` with an LeCtx, then settles (GATT queue, callbacks,
     /// notifications, timer)
     pub(crate) fn run<R>(&mut self, stack: &Stack, f: impl FnOnce(&mut LeCtx<'_>) -> R) -> R {
