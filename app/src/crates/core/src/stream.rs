@@ -762,6 +762,8 @@ fn start_source(
 /// pipeline take over, with the same stream settings. Without a pipeline
 /// (between reconnects) the next one is started with the new format. The
 /// error is what ends the session.
+// The arguments are the running stream's settings; a struct would only be built here to be taken apart again.
+#[allow(clippy::too_many_arguments)]
 fn restart_pipeline(
     pipeline: &mut Option<Pipeline>,
     kind: CodecKind,
