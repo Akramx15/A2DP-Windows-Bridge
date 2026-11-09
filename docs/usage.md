@@ -120,7 +120,7 @@ Shown while **Settings > Developer mode** is on; most users never need it. It is
 
 ### First-Run Setup
 
-The first start (no audio device yet, or no adapter with WinUSB) opens the **Setup Wizard**: choose the adapter, driver and firmware, find your audio devices (Connect saves the device with the best settings for it and connects; a device Windows paired asks first; **Import pairings from Windows** lists the devices Windows paired through this adapter, see [Services and Pairing Keys](#shared-pairing); **Next** works without a device, which can be added later on **Audio Devices**), then **General Settings**: theme, **Start with Windows** and **Start in the tray** (a first setup turns both on), notifications and **Check for Updates on Startup**. See [Setup](setup#first-run). **Settings > Run setup** opens it again.
+The first start (no audio device yet, or no adapter with WinUSB) opens the **Setup Wizard**, until it was finished or skipped once: choose the adapter, driver and firmware (devices Windows paired through the adapter are named first, as they stop working with Windows), find your audio devices (Connect saves the device with the best settings for it and connects; a device Windows paired asks first; **Import pairings from Windows** lists the devices Windows paired through this adapter, see [Services and Pairing Keys](#shared-pairing); **Next** works without a device, which can be added later on **Audio Devices**), then **General Settings**: theme, **Start with Windows** and **Start in the tray** (a first setup turns both on), notifications and **Check for Updates on Startup**. See [Setup](setup#first-run). **Settings > Run setup** opens it again.
 
 ## Tray and Flyout {#tray}
 

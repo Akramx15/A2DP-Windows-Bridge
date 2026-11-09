@@ -2,7 +2,7 @@
 // ring, the Connect / Disconnect button, volume, codec badge, link quality
 // and the error panel with its fix.
 
-import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { errorText, useApp, type AppContext } from "../app/context";
 import { t, tm } from "../i18n";
 import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
@@ -16,6 +16,7 @@ import { Sparkline } from "./charts";
 import { Banner, Button, Dialog } from "./controls";
 import { Icon } from "./Icon";
 import type { IconName } from "./icons";
+import { PairedDevicesNote, windowsDevices } from "./PairedDevices";
 
 /** The profile the big button connects: the one streaming, else the active one */
 export function currentProfile(snap: Snapshot): Profile | null {
@@ -840,6 +841,11 @@ export function ErrorPanel(props: { code?: string | null; message: Msg; title?: 
 export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign" | "restore"; onClose: (done: boolean) => void }) {
   const app = useApp();
   const [busy, setBusy] = createSignal(false);
+  // Assign: the devices Windows loses with the adapter, by name (issue #86)
+  const [paired] = createResource(
+    () => (props.mode === "assign" ? props.adapter : null),
+    (a) => windowsDevices(app, a),
+  );
   // Restore: devices paired in BlueCaster since Windows paired them need no
   // word here; the restore hands Windows the newer keys (issue #86)
   const go = async () => {
@@ -884,6 +890,9 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
         <span class="muted"> · {props.adapter?.device_name}</span>
       </p>
       <p>{props.mode === "assign" ? t("ui.adapter.assign_explain") : t("ui.adapter.restore_explain")}</p>
+      <Show when={props.mode === "assign"}>
+        <PairedDevicesNote devices={paired.latest ?? []} />
+      </Show>
       <p class="muted">{t("ui.adapter.uac_note")}</p>
     </Dialog>
   );

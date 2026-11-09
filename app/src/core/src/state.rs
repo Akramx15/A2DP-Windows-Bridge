@@ -307,6 +307,7 @@ fn to_ipc_settings(s: &CoreSettings) -> Settings {
         flyout_with_quick_settings: s.flyout_with_quick_settings,
         notify_connected: s.notify_connected,
         battery_low_percent: s.battery_low_percent,
+        setup_done: s.setup_done,
         check_updates_on_startup: s.check_updates_on_startup,
         include_prereleases: s.include_prereleases,
         include_alphas: s.include_alphas,
@@ -385,6 +386,7 @@ fn merge_settings(base: &CoreSettings, s: &Settings) -> CoreSettings {
     c.flyout_with_quick_settings = s.flyout_with_quick_settings;
     c.notify_connected = s.notify_connected;
     c.battery_low_percent = s.battery_low_percent;
+    c.setup_done = s.setup_done;
     c.check_updates_on_startup = s.check_updates_on_startup;
     c.include_prereleases = s.include_prereleases;
     c.include_alphas = s.include_alphas;
@@ -2958,6 +2960,21 @@ impl CoreState {
             }
             Method::AdapterRestoreDriver { instance_id } => {
                 blocking(Box::new(move |me| crate::driver::restore(me, &instance_id))).await
+            }
+            Method::AdapterWindowsDevices { instance_id } => {
+                // Only the adapters listed: the ID names a device node to walk
+                if !self.with_snapshot(|s| s.adapter.adapters.iter().any(|a| a.instance_id == instance_id)) {
+                    return Ok(json(&Vec::<WindowsPairedDevice>::new()));
+                }
+                blocking(Box::new(move |_| {
+                    let list: Vec<WindowsPairedDevice> = win_sys::bt_paired::devices_through(&instance_id)
+                        .iter()
+                        .map(|d| WindowsPairedDevice { address: bt_host::addr_str(&d.address), name: d.name.clone() })
+                        .collect();
+                    tracing::info!("adapter: Windows paired {} device(s) through it", list.len());
+                    Ok(json(&list))
+                }))
+                .await
             }
             Method::AdapterRestart => {
                 blocking(Box::new(|me| {

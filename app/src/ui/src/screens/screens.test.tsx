@@ -412,6 +412,80 @@ describe("every screen renders", () => {
     await waitFor(() => expect(calls.filter((c) => c.method === "device.scan")).toHaveLength(scans + 1));
   });
 
+  it("opens the setup by itself only until it was finished or skipped once (issue #86)", async () => {
+    start("#/home", { scenario: "fresh" });
+    // Set up before, every device removed since: Home adds one
+    (mock as unknown as { snap: Snapshot }).snap.settings.setup_done = true;
+    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "Setup Wizard" })).toBeNull();
+  });
+
+  it("skipping the setup keeps it from opening by itself again (issue #86)", async () => {
+    const { core } = start("#/home", { scenario: "fresh" });
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.setup.skip") }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    await waitFor(() => expect(core.state.snap!.settings.setup_done).toBe(true));
+  });
+
+  it("a folder set up without the setup does not get it (issue #86)", async () => {
+    const { calls, core } = start("#/home");
+    (mock as unknown as { snap: Snapshot }).snap.settings.setup_done = false;
+    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    await waitFor(() => expect(core.state.snap!.settings.setup_done).toBe(true));
+    expect(calls.filter((c) => c.method === "settings.set")).toHaveLength(1);
+  });
+
+  it("the setup names the devices Windows loses with the adapter, and asks first (issue #86)", async () => {
+    const { calls } = start("#/home", { scenario: "fresh" });
+    mock!.adapterDevices = [
+      { address: "00:11:22:33:44:01", name: "Logitech K380" },
+      { address: "00:11:22:33:44:02", name: "MX Master 3" },
+      { address: "00:11:22:33:44:03", name: "" },
+      { address: "00:11:22:33:44:04", name: "WH-1000XM4" },
+      { address: "00:11:22:33:44:05", name: "Pixel 8" },
+    ];
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.setup.auto_button") }));
+    let dialog = await screen.findByRole("dialog", { name: t("ui.adapter.paired_title") });
+    // The first three by name (the address of one without), then how many more
+    expect(dialog).toHaveTextContent(t("ui.adapter.paired_more", "Logitech K380, MX Master 3, 00:11:22:33:44:03", 2));
+    expect(dialog).toHaveTextContent(t("ui.adapter.paired_keep"));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("modal.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.some((c) => c.method === "adapter.assign_winusb")).toBe(false);
+    // Confirmed: set up as before
+    fireEvent.click(screen.getByRole("button", { name: t("ui.setup.auto_button") }));
+    dialog = await screen.findByRole("dialog", { name: t("ui.adapter.paired_title") });
+    const confirm = within(dialog).getByRole("button", { name: t("ui.setup.auto_button") });
+    expect(shielded(confirm)).toBe(true);
+    fireEvent.click(confirm);
+    await screen.findByText("The adapter is ready for BlueCaster", {}, { timeout: 5000 });
+    expect(calls.some((c) => c.method === "adapter.assign_winusb")).toBe(true);
+  });
+
+  it("the setup asks nothing when Windows' list cannot be read (issue #86)", async () => {
+    const { calls } = start("#/home", { scenario: "fresh" });
+    mock!.adapterDevices = null;
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.setup.auto_button") }));
+    await screen.findByText("The adapter is ready for BlueCaster", {}, { timeout: 5000 });
+    expect(calls.some((c) => c.method === "adapter.windows_devices")).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("the Adapters screen's driver dialog names the devices Windows loses (issue #86)", async () => {
+    start("#/adapter", { scenario: "fresh" });
+    mock!.adapterDevices = [{ address: "00:11:22:33:44:01", name: "Logitech K380" }];
+    // The fresh scenario opens the setup: leave it
+    fireEvent.click(await screen.findByRole("button", { name: t("ui.setup.skip") }));
+    location.hash = "#/adapter";
+    await screen.findByRole("heading", { level: 1, name: "Adapters" });
+    fireEvent.click((await screen.findAllByRole("button", { name: t("ui.adapter.assign_winusb") }))[0]);
+    const dialog = await screen.findByRole("dialog", { name: t("ui.adapter.assign_title") });
+    expect(await within(dialog).findByText("Logitech K380")).toBeInTheDocument();
+    expect(dialog).toHaveTextContent(t("ui.adapter.paired_receiver"));
+  });
+
   it("the flyout", async () => {
     start("", { window: "flyout" });
     expect(await screen.findByRole("button", { name: "Connect" })).toBeInTheDocument();
