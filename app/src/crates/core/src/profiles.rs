@@ -734,7 +734,7 @@ pub fn use_virtual_device(list: &mut [Profile], id: &str, name: &str) -> usize {
 /// `%APPDATA%\A2DPWB\stages\x` -> `<config>\stages\x`. None when `value` is
 /// empty, still exists, names no such folder, or the rebased path is missing
 /// too (the stages are installed by hand).
-fn rebase_old_path(value: &str, config: &Path) -> Option<String> {
+pub(crate) fn rebase_old_path(value: &str, config: &Path) -> Option<String> {
     let path = Path::new(value.trim());
     if path.as_os_str().is_empty() || path.exists() {
         return None;
