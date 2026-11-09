@@ -969,6 +969,8 @@
   "ui.codecs.auto_dialog_disable": "Automatische Auswahl ausschalten",
   "ui.codecs.order_reset": "Codec-Reihenfolge zurücksetzen",
   "ui.codecs.order_hint": "Ziehen Sie die Karten, um die Reihenfolge zu ändern.",
+  "ui.codecs.voice_title": "Mikrofon",
+  "ui.codecs.voice_in_use": "Aktiv",
   "ui.codecs.order_keys": "Karten ziehen oder Alt mit einer Pfeiltaste drücken, um die Reihenfolge festzulegen. Die erste Karte, die das Gerät unterstützt, wird verwendet.",
   "ui.codecs.moved": "%s: Platz %d von %d",
   "ui.devices.none_saved": "Noch keine Audiogeräte. Suchen Sie Ihres unten oder fügen Sie es über seine Adresse hinzu.",

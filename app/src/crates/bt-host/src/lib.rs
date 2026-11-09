@@ -319,6 +319,9 @@ pub enum HostEvent {
     TransportFailed,
     /// The HFP audio connection ([`BtHost::voice_start`])
     Voice(VoiceEvent),
+    /// The voice codecs the headphones listed on their HFP service level
+    /// connection ("cvsd", "msbc", "lc3_swb")
+    VoiceCodecs(Vec<&'static str>),
 }
 
 /// Settings and readings shared with the BTstack thread without locks

@@ -470,6 +470,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
             volume: null,
             battery: null,
             battery_refused: false,
+            voice_codecs: [],
           }
         : {
             state: "idle",
@@ -479,6 +480,7 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
             volume: null,
             battery: null,
             battery_refused: false,
+            voice_codecs: [],
           },
     profiles,
     active_profile: fresh ? null : long ? LONG_NAME : "WH-1000XM5 (LDAC)",
@@ -1968,6 +1970,7 @@ export class MockCore implements Transport {
           volume: null,
           battery: null,
           battery_refused: false,
+          voice_codecs: [],
         };
         this.log(
           "error",
@@ -2114,6 +2117,7 @@ export class MockCore implements Transport {
         volume: null,
         battery: null,
         battery_refused: false,
+        voice_codecs: [],
       };
       this.emit({ kind: "stream", value: this.snap.stream });
       throw e;
@@ -2127,6 +2131,7 @@ export class MockCore implements Transport {
       volume: null,
       battery: null,
       battery_refused: false,
+      voice_codecs: [],
     };
     this.emit({ kind: "stream", value: this.snap.stream });
     this.log(
@@ -2193,6 +2198,7 @@ export class MockCore implements Transport {
           volume: null,
           battery: null,
           battery_refused: false,
+          voice_codecs: [],
         };
         this.log(
           "info",
@@ -2308,6 +2314,7 @@ export class MockCore implements Transport {
               volume: 76,
               battery: 80,
               battery_refused: false,
+              voice_codecs: [],
             }
           : {
               state: "streaming",
@@ -2318,6 +2325,8 @@ export class MockCore implements Transport {
               ...(this.scenario === "battery_refused"
                 ? { battery: null, battery_refused: true }
                 : { battery: 80, battery_refused: false }),
+              // The headphones' voice codecs (AT+BAC): a classic device lists them
+              voice_codecs: this.snap.profiles.find((p) => p.name === name)?.le_audio ? [] : ["cvsd", "msbc"],
             };
       this.snap.stream.voice = this.voiceOf(name);
       this.log(
@@ -2427,6 +2436,7 @@ export class MockCore implements Transport {
       volume: null,
       battery: null,
       battery_refused: false,
+      voice_codecs: [],
     };
     if (was !== "idle")
       this.log(
@@ -2526,6 +2536,7 @@ export class MockCore implements Transport {
             volume: null,
             battery: null,
             battery_refused: false,
+            voice_codecs: [],
           };
           this.emit({ kind: "stream", value: this.snap.stream });
         }

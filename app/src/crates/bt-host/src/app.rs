@@ -2071,6 +2071,14 @@ impl HostApp {
                     self.voice.on_slc_established();
                     tracing::debug!("HFP: service level connection on ACL {:04X?}", self.hfp_acl);
                     tracing::info!("HFP: service level connection established");
+                    // The voice codecs the headphones listed (AT+BAC): the
+                    // Codecs screen shows them (issue #86)
+                    if let Some(acl) = self.hfp_acl {
+                        let codecs: Vec<&'static str> =
+                            stack.hfp_ag_remote_codecs(acl).into_iter().filter_map(crate::voice::codec_key).collect();
+                        tracing::info!("HFP: the headphones' voice codecs: {}", codecs.join(", "));
+                        let _ = self.events.send(HostEvent::VoiceCodecs(codecs));
+                    }
                 } else {
                     tracing::info!("HFP: service level connection failed (0x{status:02x})");
                     // RFCOMM DM: the headphones have HFP but refuse it to us,

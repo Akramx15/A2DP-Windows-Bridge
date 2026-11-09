@@ -969,6 +969,8 @@
   "ui.codecs.auto_dialog_disable": "자동 선택 끄기",
   "ui.codecs.order_reset": "코덱 순서 초기화",
   "ui.codecs.order_hint": "카드를 끌어서 순서를 바꿀 수 있습니다.",
+  "ui.codecs.voice_title": "마이크",
+  "ui.codecs.voice_in_use": "사용 중",
   "ui.codecs.order_keys": "카드를 드래그하거나 Alt와 화살표 키를 눌러 순서를 정하세요. 장치가 지원하는 첫 번째 카드가 사용됩니다.",
   "ui.codecs.moved": "%s: %d번째 (전체 %d개)",
   "ui.devices.none_saved": "아직 오디오 장치가 없습니다. 아래에서 검색하거나 주소로 추가하세요.",

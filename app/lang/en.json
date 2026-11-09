@@ -970,6 +970,8 @@
   "ui.codecs.auto_dialog_disable": "Disable Auto-select",
   "ui.codecs.order_reset": "Reset codecs order",
   "ui.codecs.order_hint": "Drag the cards to change the order.",
+  "ui.codecs.voice_title": "Microphone",
+  "ui.codecs.voice_in_use": "In use",
   "ui.codecs.order_keys": "Drag the cards, or press Alt with an arrow key, to set the order. The first card the device supports is used.",
   "ui.codecs.moved": "%s: place %d of %d",
   "ui.devices.none_saved": "No audio devices yet. Scan for yours or add it by its address below.",

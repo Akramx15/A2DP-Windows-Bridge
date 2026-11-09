@@ -969,6 +969,8 @@
   "ui.codecs.auto_dialog_disable": "关闭自动选择",
   "ui.codecs.order_reset": "重置编解码器顺序",
   "ui.codecs.order_hint": "拖动卡片即可更改顺序。",
+  "ui.codecs.voice_title": "麦克风",
+  "ui.codecs.voice_in_use": "使用中",
   "ui.codecs.order_keys": "拖动卡片，或在卡片上按 Alt 加方向键，即可设置顺序。将使用设备支持的第一张卡片。",
   "ui.codecs.moved": "%s:第 %d 位，共 %d 个",
   "ui.devices.none_saved": "还没有音频设备。请在下方扫描或按地址添加。",

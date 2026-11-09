@@ -1803,6 +1803,7 @@ impl CoreState {
                     stream.battery = None;
                     stream.battery_refused = false;
                     stream.voice = None;
+                    stream.voice_codecs.clear();
                 }
                 if matches!(state, CoreStreamState::Idle | CoreStreamState::Error) {
                     stream.info = None;
@@ -1810,6 +1811,7 @@ impl CoreState {
                     stream.battery = None;
                     stream.battery_refused = false;
                     stream.voice = None;
+                    stream.voice_codecs.clear();
                     if state == CoreStreamState::Idle {
                         stream.profile = None;
                     }
@@ -1897,11 +1899,12 @@ impl CoreState {
             }
             // A report that arrives after the device went off (HFP still
             // closing) is not shown on a device no longer connected
-            ServiceEvent::Battery(_) | ServiceEvent::BatteryRefused
+            ServiceEvent::Battery(_) | ServiceEvent::BatteryRefused | ServiceEvent::VoiceCodecs(_)
                 if matches!(stream.state, StreamState::Idle | StreamState::Error) =>
             {
                 tracing::debug!("battery report while not connected: ignored");
             }
+            ServiceEvent::VoiceCodecs(codecs) => stream.voice_codecs = codecs,
             ServiceEvent::BatteryRefused => {
                 stream.battery = None;
                 stream.battery_refused = true;
@@ -2213,6 +2216,7 @@ impl CoreState {
             volume: None,
             battery: None,
             battery_refused: false,
+            voice_codecs: Vec::new(),
             voice: None,
             codec_stop: None,
         }));
