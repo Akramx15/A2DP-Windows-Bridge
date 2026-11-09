@@ -470,6 +470,12 @@ uint8_t bluecaster_hfp_ag_set_speaker_gain(uint16_t acl_handle, uint8_t gain) {
     return hfp_ag_set_speaker_gain(acl_handle, gain);
 }
 
+/* +VGM: the headphones' microphone gain (0..15) on the voice link; sent
+ * only when it differs from the last gain either side gave, as +VGS. */
+uint8_t bluecaster_hfp_ag_set_microphone_gain(uint16_t acl_handle, uint8_t gain) {
+    return hfp_ag_set_microphone_gain(acl_handle, gain);
+}
+
 /* ---- SCO data ---- */
 
 /* One SCO packet (header: handle, length; then the payload) in HCI's
