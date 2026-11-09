@@ -185,6 +185,7 @@ export function sampleSettings(over: Partial<Settings> = {}): Settings {
     flyout_with_quick_settings: false,
     notify_connected: true,
     battery_low_percent: 20,
+    setup_done: true,
     check_updates_on_startup: true,
     include_prereleases: false,
     include_alphas: false,
@@ -481,15 +482,17 @@ export function sampleSnapshot(scenario: MockScenario = "normal"): Snapshot {
           },
     profiles,
     active_profile: fresh ? null : long ? LONG_NAME : "WH-1000XM5 (LDAC)",
-    settings: sampleSettings(
-      voice
+    settings: sampleSettings({
+      // The first run: the setup opens by itself
+      setup_done: !fresh,
+      ...(voice
         ? { le_audio_experimental: true }
         : le
           ? { le_audio_experimental: true }
           : long
             ? { language: "ja" }
-            : {},
-    ),
+            : {}),
+    }),
     update: {
       checking: false,
       available:
@@ -981,6 +984,9 @@ export class MockCore implements Transport {
   private voiceRx = { packets: 0, bad: 0, concealed: 0 };
   /** Windows' names of those (device.windows_paired_through) */
   windowsNames: Record<string, string> = {};
+  /** Every device Windows paired through an adapter (adapter.windows_devices);
+   *  null: the request fails */
+  adapterDevices: { address: string; name: string }[] | null = [];
   /** LE keys of the saved devices (device.pairing), as derived with LE Audio on */
   leKeys: DevicePairing["le_keys"] = null;
   /** Why there are none (device.pairing) */
@@ -1334,6 +1340,8 @@ export class MockCore implements Transport {
           // Always on, as the core reads it (issue #86)
           experimental_codecs: true,
           auto_codec: next.auto_codec ?? before.auto_codec,
+          // As the core's serde default for a client that sends none
+          setup_done: next.setup_done ?? true,
         };
         this.emit({ kind: "settings", value: this.snap.settings });
         let le_audio_deferred = false;
@@ -1387,6 +1395,9 @@ export class MockCore implements Transport {
           String(p.instance_id),
           method === "adapter.assign_winusb",
         );
+      case "adapter.windows_devices":
+        if (!this.adapterDevices) throw errorInfo("ipc.timeout", "ipc.error.timeout");
+        return this.adapterDevices;
       case "adapter.restart":
         this.setAdapter("initializing");
         this.later(900, () => this.setAdapter("ready"));

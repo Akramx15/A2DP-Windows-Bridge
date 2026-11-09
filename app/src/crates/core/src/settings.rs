@@ -114,6 +114,12 @@ pub struct Settings {
     /// or 5), 0: never (issue #86)
     #[serde(default = "default_battery_low")]
     pub battery_low_percent: u8,
+    /// The first-run setup was finished or skipped (issue #86): the window
+    /// opens it by itself only before that, not each time no device is
+    /// saved. A file written before this key is a folder in use already:
+    /// true; a new folder starts with false.
+    #[serde(default = "default_true")]
+    pub setup_done: bool,
 
     #[serde(default = "default_true")]
     pub check_updates_on_startup: bool,
@@ -326,6 +332,7 @@ impl Default for Settings {
             flyout_with_quick_settings: false,
             notify_connected: true,
             battery_low_percent: default_battery_low(),
+            setup_done: false,
             check_updates_on_startup: true,
             last_update_check: String::new(),
             include_prereleases: default_prereleases(),
@@ -597,6 +604,21 @@ mod tests {
         assert_eq!(s.update_channel(), Channel::Alpha);
         s.include_alphas = false;
         assert_eq!(s.update_channel(), Channel::Stable);
+    }
+
+    #[test]
+    fn setup_runs_by_itself_in_a_new_folder_only() {
+        // No file yet: the first run
+        assert!(!Settings::default().setup_done);
+        // A file of an earlier version: a folder in use already
+        let s: Settings = serde_json::from_str(r#"{"schema_version":8,"language":"en"}"#).unwrap();
+        assert!(s.setup_done);
+        let s = Settings { setup_done: true, ..Settings::default() };
+        let back: Settings = serde_json::from_value(serde_json::to_value(&s).unwrap()).unwrap();
+        assert!(back.setup_done);
+        // Saved before the setup ended (its last step saves settings)
+        let back: Settings = serde_json::from_value(serde_json::to_value(Settings::default()).unwrap()).unwrap();
+        assert!(!back.setup_done);
     }
 
     #[test]

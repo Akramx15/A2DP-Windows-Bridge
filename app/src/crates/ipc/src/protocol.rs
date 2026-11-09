@@ -824,6 +824,10 @@ pub struct Settings {
     /// The low-battery notification: below this level (percent), 0: never
     #[serde(default = "battery_low")]
     pub battery_low_percent: u8,
+    /// The first-run setup was finished or skipped: the window opens it by
+    /// itself only before that (a client that sends none: true)
+    #[serde(default = "yes")]
+    pub setup_done: bool,
     pub check_updates_on_startup: bool,
     pub include_prereleases: bool,
     /// Developer > alphas too, in force while developer_mode is on (an
@@ -1675,6 +1679,13 @@ pub enum Method {
     /// Back to the previous driver (UAC prompt) -> AdapterInfo[]
     #[serde(rename = "adapter.restore_driver")]
     AdapterRestoreDriver { instance_id: String },
+    /// -> WindowsPairedDevice[]: every device Windows' Bluetooth paired
+    /// through the adapter with this instance ID (classic and LE, audio or
+    /// not, each once; the ones that are not audio first): what stops
+    /// working with Windows once it is on WinUSB. Empty when none or not
+    /// readable; no administrator prompt.
+    #[serde(rename = "adapter.windows_devices")]
+    AdapterWindowsDevices { instance_id: String },
     /// Restarts the Bluetooth stack
     #[serde(rename = "adapter.restart")]
     AdapterRestart,
@@ -2191,8 +2202,8 @@ pub struct ServiceList {
     pub from_last_connection: bool,
 }
 
-/// A classic audio device Windows' Bluetooth paired through an adapter
-/// (device.windows_paired_through)
+/// A device Windows' Bluetooth paired through an adapter: a classic audio
+/// one (device.windows_paired_through) or any (adapter.windows_devices)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 
 pub struct WindowsPairedDevice {

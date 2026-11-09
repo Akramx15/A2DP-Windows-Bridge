@@ -23,7 +23,7 @@ import { Mixer } from "../screens/Mixer";
 import { Setup, needsSetup } from "../screens/Setup";
 import { applyTheme, followAccent } from "../theme";
 import { AppProvider, useApp, type RouteName } from "./context";
-import { mixerShown } from "./settings";
+import { mixerShown, saveSettings } from "./settings";
 import { CaptureSign, CrashNotice, UpdateNotice } from "./indicators";
 import "./shell.css";
 
@@ -114,12 +114,17 @@ function MainWindow() {
 
   // The first-run setup: decided once when the state first arrives (and
   // when asked for with #/setup); it stays until finished or skipped, even
-  // when creating the profile makes it no longer "needed"
+  // when creating the profile makes it no longer "needed". Only until it
+  // was finished or skipped once (issue #86): with every device removed
+  // later, Home adds one. A folder set up without it needs it no more.
   createEffect(
     on(
       () => core.state.snap !== null,
       (has) => {
-        if (has && needsSetup(core.state.snap!)) app.setSetupActive(true);
+        const snap = core.state.snap;
+        if (!has || !snap || snap.settings.setup_done) return;
+        if (needsSetup(snap)) app.setSetupActive(true);
+        else void saveSettings(app, { setup_done: true });
       },
     ),
   );
