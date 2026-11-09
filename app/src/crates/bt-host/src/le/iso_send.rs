@@ -117,6 +117,8 @@ pub struct IsoSender {
     t0_ms: Option<u32>,
     /// sets_sent, sdus_sent, send_errors (the rest is the queue's)
     counters: SendCounters,
+    /// Bytes of the SDUs sent
+    bytes_sent: u64,
     queue_stats: QueueStats,
     /// The jitter buffer's prefill (sets)
     prefill: usize,
@@ -174,6 +176,7 @@ impl IsoSender {
         self.guard = SendGuard::new(self.frame_us, u64::from(queue_depth) + 2);
         self.t0_ms = None;
         self.counters = SendCounters::default();
+        self.bytes_sent = 0;
         self.queue_stats = QueueStats::default();
         self.prefill = self.queue.as_ref().map_or(0, |q| q.lock().unwrap_or_else(|e| e.into_inner()).prefill());
         self.guard_waits = 0;
@@ -271,6 +274,7 @@ impl IsoSender {
             self.seq[index] = self.seq[index].wrapping_add(1);
             if status == ERROR_CODE_SUCCESS {
                 self.counters.sdus_sent += 1;
+                self.bytes_sent += self.current[index].len() as u64;
             } else {
                 self.counters.send_errors += 1;
                 let n = self.counters.send_errors;
@@ -386,6 +390,7 @@ impl IsoSender {
             sets_encoded: c.sets_encoded,
             sets_sent: c.sets_sent,
             sdus_sent: c.sdus_sent,
+            bytes_sent: self.bytes_sent,
             silence_sets: c.silence_sets,
             underruns: c.underruns,
             overflows: c.overflows,
