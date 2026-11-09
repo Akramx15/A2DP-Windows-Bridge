@@ -586,6 +586,18 @@ const CABLE: AudioDevice = {
   mix_bits: 24,
   capture_name: "CABLE Output (VB-Audio Virtual Cable)",
 };
+/** VB-Audio Hi-Fi Cable (MockCore.hifiCable) */
+const HIFI_CABLE: AudioDevice = {
+  id: "{0.0.0.00000000}.{hificable}",
+  name: "Hi-Fi Cable Input (VB-Audio Hi-Fi Cable)",
+  is_default: false,
+  is_virtual: true,
+  mix_rate: 48000,
+  mix_channels: 2,
+  mix_bits: 24,
+  capture_name: "Hi-Fi Cable Output (VB-Audio Hi-Fi Cable)",
+};
+
 const AUDIO_DEVICES: AudioDevice[] = [
   {
     id: "{0.0.0.00000000}.{cable16}",
@@ -1440,9 +1452,8 @@ export class MockCore implements Transport {
       case "adapter.download_firmware":
         return this.downloadFirmware(String(p.file));
       case "audio.devices": {
-        const list = this.noVirtual
-          ? AUDIO_DEVICES.filter((d) => !d.is_virtual)
-          : AUDIO_DEVICES;
+        const all = this.hifiCable ? [...AUDIO_DEVICES, HIFI_CABLE] : AUDIO_DEVICES;
+        const list = this.noVirtual ? all.filter((d) => !d.is_virtual) : all;
         const def = this.defaultOutput;
         return def === null ? list : list.map((d) => ({ ...d, is_default: d.id === def }));
       }
@@ -1652,6 +1663,8 @@ export class MockCore implements Transport {
   async setTheme() {}
   /** Windows has no virtual device (tests) */
   noVirtual = false;
+  /** VB-Audio Hi-Fi Cable installed (?hificable): the microphone's second cable */
+  hifiCable = false;
   /** Now and then the capture falls behind (?capturedrops): audio dropped at capture */
   captureDrops = false;
   /** Windows' default output (audio.devices), if not the speakers */
@@ -3089,6 +3102,7 @@ export function mockFromUrl(): MockCore {
   const win = q.get("window") === "flyout" ? "flyout" : "main";
   const mock = new MockCore({ scenario, window: win });
   mock.noVirtual = q.has("novirtual");
+  mock.hifiCable = q.has("hificable");
   mock.captureDrops = q.has("capturedrops");
   // ?winpaired: headphones Windows paired through the adapter (the setup's import)
   if (q.has("winpaired")) {

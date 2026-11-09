@@ -21,6 +21,8 @@ import {
   entryBase,
   HEADSET_MODES,
   headsetMode,
+  hifiCable,
+  isHifiCable,
   multichannelCable,
   type HeadsetMode,
   vbCable,
@@ -60,8 +62,11 @@ export function InputSource(props: {
     if (!e) return null;
     if (e.profile) return e.profile;
     const base = entryBase(e, snap().profiles);
-    const cable = vbCable(props.devices);
-    return !e.le_audio && cable && cable.id !== looped()
+    // The Hi-Fi Cable first, VB-Cable then stays free for the sound
+    const cable = [hifiCable(props.devices), vbCable(props.devices)].find(
+      (c) => c && c.id !== looped(),
+    );
+    return !e.le_audio && cable
       ? {
           ...base,
           headset_mic: "auto",
@@ -108,10 +113,11 @@ export function InputSource(props: {
     setBusy(false);
   };
   const options = (): Option<string>[] => {
-    // Cables first (the standard one before the 16-channel one), then what
-    // only plays the microphone; a group's options next to each other
+    // Cables first (the Hi-Fi Cable, the microphone's own, then the standard
+    // one before the 16-channel one), then what only plays the microphone; a
+    // group's options next to each other
     const rank = (d: AudioDevice) =>
-      (d.capture_name || d.is_virtual ? 0 : 2) + Number(multichannelCable(d));
+      (d.capture_name || d.is_virtual ? 0 : 2) + Number(multichannelCable(d)) - Number(isHifiCable(d));
     const list = props.devices
       .filter(
         (d) =>
