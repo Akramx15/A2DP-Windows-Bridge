@@ -54,13 +54,21 @@ impl SpatialEngine {
     /// Starts the engine. The child reads the assets next to its executable
     /// ("-"), streams 1024-frame blocks and reports on stderr.
     pub fn start(cfg: &SpatialConfig) -> std::io::Result<Self> {
-        let mut child = Command::new(&cfg.program)
-            .args(&cfg.args)
+        let mut cmd = Command::new(&cfg.program);
+        cmd.args(&cfg.args)
             .current_dir(cfg.cwd.as_deref().unwrap_or_else(|| cfg.exe.parent().unwrap_or(Path::new("."))))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+        // No console window for the engine: it is a filter, not a program the
+        // user asked to see
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let mut child = cmd.spawn()?;
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().map(BufReader::new);
         if let Some(err) = child.stderr.take() {

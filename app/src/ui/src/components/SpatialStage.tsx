@@ -14,7 +14,7 @@ import { t } from "../i18n";
 import type { SpatialEngine } from "../ipc/bindings/SpatialEngine";
 import type { Profile } from "../ipc/types";
 import { normalizeFolder, registryFolder } from "../lib/profile";
-import { spatialEngines } from "../lib/spatial";
+import { choiceLabel, controlLabel, spatialEngines } from "../lib/spatial";
 import { Banner, Button, Dialog, Field, Segmented, Select, Slider, type Option } from "./controls";
 
 /** What the effect runs: a family of stages, or nothing */
@@ -24,32 +24,6 @@ type Mode = "sony" | "upmixer" | "off";
  *  registries had no family) */
 function inFamily(e: SpatialEngine, family: "sony" | "upmixer"): boolean {
   return family === "upmixer" ? e.family === "upmixer" : e.family === "sony" || e.family === "";
-}
-
-/** The labels of the stage controls the app knows, by their config key */
-const CONTROL_KEYS: Record<string, string> = {
-  center_focus: "spatial.control_center_focus",
-  ambience_spread: "spatial.control_ambience_spread",
-  correction: "spatial.control_correction",
-};
-
-/** The labels of the choices the app knows, by their value */
-const CHOICE_KEYS: Record<string, string> = {
-  none: "spatial.correction_none",
-  "sony-xm6-ba": "spatial.correction_sony_xm6_ba",
-  autoeq: "spatial.correction_autoeq",
-};
-
-/** A control's label: the app's own words for the ones it knows, the stage
- *  manifest's otherwise */
-function controlLabel(key: string, label: string): string {
-  const known = CONTROL_KEYS[key];
-  return known ? t(known) : label;
-}
-
-function choiceLabel(value: string): string {
-  const known = CHOICE_KEYS[value];
-  return known ? t(known) : value;
 }
 
 export function SpatialStage(props: {

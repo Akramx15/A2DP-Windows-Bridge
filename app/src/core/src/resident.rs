@@ -395,7 +395,9 @@ pub fn run(args: &[String]) -> i32 {
             }
             TaoEvent::UserEvent(UserEvent::Click) => {
                 win_sys::notify::allow_foreground_for_click();
-                launch_ui(true);
+                // A click on the tray icon opens the app window, not the
+                // flyout: the flyout is the hover/quick panel
+                launch_ui(false);
             }
             TaoEvent::UserEvent(UserEvent::Balloon(b)) => match &notifier {
                 Some(n) => show_balloon(n, b),

@@ -1145,26 +1145,6 @@ option {
   flex-wrap: wrap;
   gap: var(--s3);
 }
-/* Battery | state */
-.device-state {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s2);
-  min-width: 0;
-}
-/* Too narrow for "Battery 80% | Connected" (two devices side by side): the
-   state on its own line, without a "|" left at the end of the first */
-@container (max-width: 13.5rem) {
-  .device-state {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--s1);
-  }
-  .device-state .state-sep {
-    display: none;
-  }
-}
 .status-line {
   display: inline-flex;
   align-items: center;
@@ -1452,6 +1432,58 @@ option {
 }
 .home-device:not(.live) .ring .icon {
   color: var(--text-2);
+}
+
+/* The connection in one line: state, battery, codec and link quality */
+.conn-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  min-width: 0;
+}
+/* The codec's name and its details side by side, not one under the other */
+.conn-line .codec-info {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  min-width: 0;
+}
+
+/* The effect on the card and in the flyout: its shortcuts, the profile it
+   belongs to, and the sliders while the Upmixer runs */
+.effects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+.effect-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.effects .segmented {
+  font-size: var(--fs-12);
+}
+.effects .seg {
+  padding: 0.125rem var(--s2);
+}
+.effects .field {
+  max-width: none;
+  gap: var(--s1);
+}
+.effects .field-label {
+  font-size: var(--fs-12);
+}
+.effect-profile {
+  flex: 1;
+  min-width: 8rem;
+}
+.effect-profile .select {
+  width: 100%;
 }
 .home-grid {
   display: grid;
@@ -2663,11 +2695,7 @@ html.win-flyout body {
   flex-direction: column;
   gap: var(--s2);
 }
-.fly-state {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  min-width: 0;
+.fly-title .conn-line {
   font-size: var(--fs-12);
 }
 /* The chooser is the title */

@@ -17,11 +17,14 @@ pub mod paths;
 pub mod profiles;
 mod service;
 pub mod settings;
+pub mod speakers;
 pub mod spatial;
 pub mod stream;
 
 pub use le_stream::{LeAudioPath, LeStreamDetails, le_silence_set, le_stats_line};
 pub use messages::Msg;
+/// Asks the running stream to start the spatial engine again (its settings changed)
+pub use pipeline::{request_stage, SpatialConfig, StageUpdate};
 pub use service::{LeCliOptions, ScannedDevice, Service, ServiceEvent, ServiceOptions};
 pub use stream::{
     AacDetails, AacDeviceCaps, CodecDetails, CodecDeviceCaps, KnownCodecs, SbcDetails, SbcDeviceCaps, SourceInfo,

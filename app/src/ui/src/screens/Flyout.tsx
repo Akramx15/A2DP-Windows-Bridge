@@ -1,33 +1,23 @@
 // The tray flyout (360×440): everyday control without the main window.
 // As Home's card (issue #86): the ring, and beside it the device chooser
-// in the title's place, battery and state, the codec and link quality;
-// then the volume, the big Connect / Disconnect and "Open app". No close
-// button: the flyout hides on Escape and when it loses the focus.
+// in the title's place and the connection in one line (state, battery,
+// codec, link quality); then the volume, the effect's shortcuts with the
+// profile's own settings, Connect while it does not stream, and "Open app".
+// No close button: the flyout hides on Escape and when it loses the focus.
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { errorText, useApp } from "../app/context";
 import { CaptureSign } from "../app/indicators";
 import { Button, IconButton } from "../components/controls";
+import { DeviceEffects } from "../components/DeviceEffects";
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import { DeviceSwitcher } from "../components/DeviceSwitcher";
-import {
-  BatteryLevel,
-  CodecBadge,
-  ConnectButton,
-  copyError,
-  isAppFault,
-  reportError,
-  currentProfile,
-  QualityIndicator,
-  Ring,
-  showsBattery,
-  statusText,
-  useFixes,
-  VolumeControl,
-} from "../components/stream";
+import { ConnectionLine, ConnectButton, copyError, isAppFault, reportError, currentProfile, Ring, useFixes, VolumeControl } from "../components/stream";
 import { t, tm } from "../i18n";
 import { IpcError } from "../ipc/types";
+import { audioEntries, entryOf } from "../lib/profile";
+import { saveEntry } from "./Codecs";
 
 export function Flyout() {
   const app = useApp();
@@ -35,6 +25,10 @@ export function Flyout() {
   const snap = () => core.state.snap!;
   const stream = () => snap().stream;
   const profile = () => currentProfile(snap());
+  // The device entry the active profile belongs to (null: none selected)
+  const entry = () => entryOf(audioEntries(snap()), profile());
+  const running = () =>
+    stream().state === "streaming" || stream().state === "connecting" || stream().state === "reconnecting";
   const [reqError, setReqError] = createSignal<IpcError | null>(null);
   const { fixFor, dialog } = useFixes();
   onCleanup(core.wantLink());
@@ -68,29 +62,26 @@ export function Flyout() {
           >
             <DeviceSwitcher />
           </Show>
-          {/* As on Home and in the sidebar: battery | state, the codec (issue #86) */}
-          <div class="fly-state">
-            <Show when={showsBattery(stream())}>
-              <BatteryLevel class="fly-battery" percent={stream().battery} />
-              <span class="muted" aria-hidden="true">
-                |
-              </span>
-            </Show>
-            <div class={`status-line st-${stream().state}`} role="status" aria-live="polite">
-              <span class="dot" aria-hidden="true" />
-              <span class="ellipsis">{statusText(stream())}</span>
-            </div>
-          </div>
-          <CodecBadge aside={<QualityIndicator />} />
+          {/* As on Home: the state, battery, codec and link quality in one line */}
+          <ConnectionLine state={stream().state} stream={stream()} />
         </div>
       </header>
 
-      <Show when={profile()} fallback={<p class="muted">{t("profile.empty")}</p>}>
-        {/* As on Home: the volume while a device is in use */}
-        <Show when={stream().state !== "idle"}>
-          <VolumeControl />
-        </Show>
-        <ConnectButton compact onError={(e) => setReqError(IpcError.from(e))} />
+      <Show when={entry()} fallback={<p class="muted">{t("profile.empty")}</p>}>
+        {(e) => (
+          <>
+            {/* As on Home: the volume while a device is in use */}
+            <Show when={stream().state !== "idle"}>
+              <VolumeControl />
+            </Show>
+            {/* The effect's shortcuts, the Upmixer's sliders and the profile */}
+            <DeviceEffects entry={e()} save={(edit) => saveEntry(app, e(), edit)} />
+            {/* Connect only: a streaming device is stopped from the tray menu */}
+            <Show when={!running()}>
+              <ConnectButton compact onError={(err) => setReqError(IpcError.from(err))} />
+            </Show>
+          </>
+        )}
       </Show>
       {/* Kept simple: the capture source is chosen in the main window (issue #86) */}
       <Show when={snap().capture}>
