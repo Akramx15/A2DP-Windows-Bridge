@@ -468,7 +468,7 @@ fn encode_thread(
     // captured audio before it reaches the encoder. If it cannot run, the
     // audio passes through unchanged rather than the stream dying.
     let mut spatial_cfg = spatial.clone();
-    let resample_cfg = resample.clone();
+    let resample_cfg = resample;
     let mut spatial_stage = match spatial {
         Some(cfg) => match SpatialEngine::start(&cfg) {
             Ok(s) => {
@@ -561,19 +561,17 @@ fn encode_thread(
             }
         }
         // The warmed stage takes over here, with no silent gap
-        if let Ok(received) = stage_rx.try_recv() {
-            if let Some(engine) = received {
-                tracing::info!("spatial engine: the warmed stage takes over");
-                spatial_stage = Some(engine);
-                resampler = match resample_cfg {
-                    Some(_) if input.sample_rate == CAPTURE_RATE => Some((Downsample2::new(), Upsample2::new())),
-                    _ => None,
-                };
-                captured.clear();
-                engine_in.clear();
-                engine_out.clear();
-                up_out.clear();
-            }
+        if let Ok(Some(engine)) = stage_rx.try_recv() {
+            tracing::info!("spatial engine: the warmed stage takes over");
+            spatial_stage = Some(engine);
+            resampler = match resample_cfg {
+                Some(_) if input.sample_rate == CAPTURE_RATE => Some((Downsample2::new(), Upsample2::new())),
+                _ => None,
+            };
+            captured.clear();
+            engine_in.clear();
+            engine_out.clear();
+            up_out.clear();
         }
         if control.reset.swap(false, Ordering::AcqRel) {
             tracing::debug!(
