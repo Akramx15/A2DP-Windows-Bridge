@@ -196,8 +196,9 @@ pub struct Settings {
     pub last_profile: String,
 
     /// LE Audio (experimental): BTstack starts with LE (SM, GATT, ISO) and
-    /// LE Audio profiles can stream. On by default since 2.0.1 (schema 3):
-    /// choosing an LE Audio device is the user's call.
+    /// LE Audio profiles can stream. Adapters > "Use LE Audio when
+    /// available" (issue #86): off for new settings since 3.0.0-beta.4;
+    /// settings that have it on keep it (on since 2.0.1, schema 3).
     pub le_audio_experimental: bool,
     /// Before 2.0.1: GMAP low latency for every LE Audio profile. Now a
     /// profile option (`le_low_latency`); kept only so the file round-trips.
@@ -348,7 +349,7 @@ impl Default for Settings {
             afh: default_afh(),
             remote_sink: String::new(),
             last_profile: String::new(),
-            le_audio_experimental: true,
+            le_audio_experimental: false,
             le_audio_low_latency: false,
             experimental_codecs: true,
             auto_codec: true,

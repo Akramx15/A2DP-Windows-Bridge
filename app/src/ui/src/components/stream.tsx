@@ -9,6 +9,7 @@ import { bitrateNoteKey, codecLabelKey } from "../lib/codecs";
 import { liveBitpool } from "../lib/codecdetails";
 import { copyText, khz, kbps, maskIdentifiers, percentToVolume, volumePercent } from "../lib/format";
 import { bugReportUrl, firmwareUrl, type BugReport } from "../lib/links";
+import { headsetMode } from "../lib/profile";
 import { IpcError } from "../ipc/types";
 import type { AdapterInfo, LinkSample, Msg, Profile, Snapshot, SourceInfo, StreamInfo, StreamState, StreamStatus } from "../ipc/types";
 import { Sparkline } from "./charts";
@@ -292,11 +293,12 @@ let noteShown: { key: string; at: number } | null = null;
 /** The codec in two lines (issue #86): its name, then what it runs with in
  *  a badge; `aside` goes beside the badge (the flyout's link quality).
  *  `picker` takes the name's place: the codec chosen right there (Home,
- *  the flyout). */
-/** `voice` false: the headset microphone's codec is on its chip beside
- *  (Home's card, the flyout), so the line does not grow as it opens */
-export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; picker?: JSX.Element; voice?: boolean }) {
+ *  the flyout). Dimmed while a classic device's microphone is open: its
+ *  codec is paused for the call link (issue #86); the microphone has its
+ *  own line (MicBadge). */
+export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; picker?: JSX.Element }) {
   const { core } = useApp();
+  const paused = () => core.state.snap?.stream.voice?.link === "hfp";
   const info = () => core.state.snap?.stream.info ?? null;
   const name = () => {
     const i = info();
@@ -346,7 +348,7 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; pick
   return (
     <Show when={info()}>
       {(i) => (
-        <div class="codec-info">
+        <div class="codec-info" classList={{ "codec-paused": paused() }}>
           <span class="codec-name" title={fallbackHelp() || undefined}>
             <Show when={i().requested_codec}>
               <Icon name="warning" class="st-warn" title={fallbackHelp()} />
@@ -382,9 +384,6 @@ export function CodecBadge(props: { compact?: boolean; aside?: JSX.Element; pick
                 )}
               </Show>
             </span>
-            <Show when={props.voice !== false}>
-              <VoiceCodec />
-            </Show>
             {props.aside}
           </div>
         </div>
@@ -407,22 +406,47 @@ export function voiceCodecName(codec: string): string {
   }
 }
 
-/** The headset microphone's voice link beside the codec ("Voice: mSBC"):
- *  in the warning colour on a classic link, whose playback is call quality */
-export function VoiceCodec() {
-  const { core } = useApp();
-  const voice = () => core.state.snap?.stream.voice ?? null;
+/** The headset microphone of the device in use (`profile`) while its mode
+ *  is Auto or On with an output chosen, the same as its button (Home's
+ *  HeadsetChip) */
+export function micShown(snap: Snapshot, profile: Profile | null | undefined): boolean {
+  const s = snap.stream;
   return (
-    <Show when={voice()}>
-      {(v) => (
-        <span
-          class="voice-codec"
-          classList={{ "st-warn": v().link === "hfp" }}
-          title={v().link === "hfp" ? t("ui.headset_mic_quality") : undefined}
-        >
-          {t("status.voice_codec", voiceCodecName(v().codec))}
-        </span>
-      )}
+    !!profile &&
+    s.state !== "idle" &&
+    s.profile === profile.name &&
+    !!profile.mic_device_id &&
+    headsetMode(profile) !== "off"
+  );
+}
+
+/** The headset microphone's line below the codec (issue #86): "Mic: mSBC
+ *  16 kHz" with a red dot while it is open, else dimmed with its mode
+ *  (Off while disabled on its button) */
+export function MicBadge(props: { profile: Profile | null | undefined }) {
+  const { core } = useApp();
+  const snap = () => core.state.snap!;
+  const voice = () => (micShown(snap(), props.profile) ? (snap().stream.voice ?? null) : null);
+  const idle = () =>
+    props.profile?.mic_muted ? t("ui.headset_mic_off") : t(`ui.headset_mic_${headsetMode(props.profile!)}`);
+  return (
+    <Show when={micShown(snap(), props.profile)}>
+      <div
+        class="mic-badge"
+        classList={{ open: !!voice() }}
+        title={voice()?.link === "hfp" ? t("ui.headset_mic_quality") : undefined}
+      >
+        <span class="mic-dot" aria-hidden="true" />
+        <strong>{t("ui.mic_label")}</strong>
+        <Show when={voice()} fallback={<span>{idle()}</span>}>
+          {(v) => (
+            <>
+              <span>{voiceCodecName(v().codec)}</span>
+              <span class="num">{khz(v().rate)} kHz</span>
+            </>
+          )}
+        </Show>
+      </div>
     </Show>
   );
 }

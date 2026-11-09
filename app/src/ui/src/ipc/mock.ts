@@ -1428,10 +1428,13 @@ export class MockCore implements Transport {
         return this.firmwareFolder();
       case "adapter.download_firmware":
         return this.downloadFirmware(String(p.file));
-      case "audio.devices":
-        return this.noVirtual
+      case "audio.devices": {
+        const list = this.noVirtual
           ? AUDIO_DEVICES.filter((d) => !d.is_virtual)
           : AUDIO_DEVICES;
+        const def = this.defaultOutput;
+        return def === null ? list : list.map((d) => ({ ...d, is_default: d.id === def }));
+      }
       case "audio.apps":
         return AUDIO_APPS;
       case "audio.mixer":
@@ -1640,6 +1643,8 @@ export class MockCore implements Transport {
   noVirtual = false;
   /** Now and then the capture falls behind (?capturedrops): audio dropped at capture */
   captureDrops = false;
+  /** Windows' default output (audio.devices), if not the speakers */
+  defaultOutput: string | null = null;
 
   setOtherRadio(radio: Snapshot["adapter"]["other_radio"]) {
     this.snap.adapter.other_radio = radio;

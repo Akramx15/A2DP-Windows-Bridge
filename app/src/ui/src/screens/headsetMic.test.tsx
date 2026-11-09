@@ -235,11 +235,32 @@ describe("Input Source on Audio Devices", () => {
         [...micSelect(wh).options].find((o) => o.value === CABLE)?.disabled,
       ).toBe(true),
     );
-    await within(wh).findByText(t("error.headset_mic_loop"));
+    await within(wh).findByText(t("capture.mic_loop_here"));
     // Why it cannot be chosen, on the entry itself (issue #86)
     const cable = [...micSelect(wh).options].find((o) => o.value === CABLE);
     expect(cable?.textContent).toBe(
       t("capture.mic_used_by_source", "CABLE Output (VB-Audio Virtual Cable)"),
+    );
+  });
+
+  it("warns when Windows plays into the microphone's device (issue #86)", async () => {
+    start("#/devices", "voice");
+    mock!.defaultOutput = CABLE;
+    const wh = await deviceEntry(/WH-1000XM5/);
+    const source = within(wh).getByLabelText(t("capture.mode")) as HTMLSelectElement;
+    const DISPLAY = "{0.0.0.00000000}.{display}";
+    await waitFor(() =>
+      expect([...source.options].some((o) => o.value === `output:${DISPLAY}`)).toBe(true),
+    );
+    // An output device as the source: Windows still plays into the cable
+    fireEvent.change(source, { target: { value: `output:${DISPLAY}` } });
+    await within(wh).findByText(t("capture.mic_is_default_output"));
+    // A virtual source made the default while connected: no warning
+    fireEvent.change(source, { target: { value: `virtual:${VOICEMEETER}` } });
+    const autoSwitch = (await within(wh).findByRole("switch", { name: t("capture.auto_switch") })) as HTMLInputElement;
+    if (!autoSwitch.checked) fireEvent.click(autoSwitch);
+    await waitFor(() =>
+      expect(within(wh).queryByText(t("capture.mic_is_default_output"))).toBeNull(),
     );
   });
 
@@ -295,26 +316,28 @@ describe("Input Source on Audio Devices", () => {
 describe("status", () => {
   const homeCard = (name: string) => screen.findByRole("group", { name });
 
-  it("shows the voice codec in the sidebar and on the chip, not on Home's card", async () => {
+  it("shows the microphone's line in the sidebar and on Home's card, the codec dimmed", async () => {
     const { core } = start("#/home", "voice");
     const wh = await homeCard("WH-1000XM5");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
-    await waitFor(() =>
-      expect(
-        document.querySelector(".status-pill .voice-codec"),
-      ).toHaveTextContent("Voice: mSBC"),
-    );
-    expect(document.querySelector(".status-pill .voice-codec")).toHaveClass(
-      "st-warn",
-    );
-    // The card keeps its lines as the microphone opens and closes (issue #86)
-    expect(wh.querySelector(".voice-codec")).toBeNull();
+    const pill = () => document.querySelector(".status-pill .mic-badge");
+    await waitFor(() => expect(pill()).toHaveClass("open"));
+    expect(pill()).toHaveTextContent(`${t("ui.mic_label")}mSBC16 kHz`);
+    // A classic device's codec is paused for the call link (issue #86)
+    expect(document.querySelector(".status-pill .codec-info")).toHaveClass("codec-paused");
+    expect(wh.querySelector(".mic-row .mic-badge.open")).not.toBeNull();
+    expect(wh.querySelector(".codec-info")).toHaveClass("codec-paused");
     await waitFor(() =>
       expect(within(wh).getByRole("button", { name: MUTE() })).toHaveAttribute(
         "title",
         `${MUTE()} (mSBC)`,
       ),
     );
+    // Disabled: the line stays, dimmed, and the codec plays again
+    fireEvent.click(within(wh).getByRole("button", { name: MUTE() }));
+    await waitFor(() => expect(wh.querySelector(".mic-badge")).not.toHaveClass("open"));
+    expect(wh.querySelector(".mic-badge")).toHaveTextContent(t("ui.headset_mic_off"));
+    await waitFor(() => expect(wh.querySelector(".codec-info")).not.toHaveClass("codec-paused"));
   });
 
   it("drops the voice codec when headset mode is turned off while streaming", async () => {
@@ -360,17 +383,17 @@ describe("status", () => {
     expect(mic.closest("section")).toHaveTextContent(t("ui.diag.mic_damaged"));
   });
 
-  it("shows LE Audio's voice codec without the warning", async () => {
+  it("keeps LE Audio's codec as it is while the microphone is open", async () => {
     const { core } = start("#/home", "voice");
     await homeCard("Galaxy Buds2 Pro");
     await core.request("stream.start", { profile: "Buds (LE Audio)" });
     const voice = await waitFor(() => {
-      const v = document.querySelector(".status-pill .voice-codec");
+      const v = document.querySelector(".status-pill .mic-badge.open");
       expect(v).not.toBeNull();
       return v!;
     });
-    expect(voice).toHaveTextContent("Voice: LC3");
-    expect(voice).not.toHaveClass("st-warn");
+    expect(voice).toHaveTextContent("LC3");
+    expect(document.querySelector(".status-pill .codec-info")).not.toHaveClass("codec-paused");
   });
 });
 
@@ -497,7 +520,7 @@ describe("headset chip", () => {
     const { core, saves } = start("", "voice", "flyout");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
     const chip = await screen.findByRole("button", { name: MUTE() });
-    expect(chip.closest(".fly-state")).not.toBeNull();
+    expect(chip.closest(".mic-row")).not.toBeNull();
     fireEvent.click(chip);
     await waitFor(() =>
       expect(saves().at(-1)).toMatchObject({
