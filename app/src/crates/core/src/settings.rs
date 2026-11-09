@@ -145,6 +145,11 @@ pub struct Settings {
     /// No VB-Cable when last looked: once it is there, the profiles that
     /// capture System Loopback take it, one time (issue #86)
     pub awaiting_vb_cable: bool,
+    /// No Hi-Fi Cable when last looked: once it is there, the classic
+    /// profiles whose microphone has no working output play it there, one
+    /// time (issue #86)
+    #[serde(default)]
+    pub awaiting_hifi_cable: bool,
     /// Each device's volume (address -> AVRCP volume 0..127), set again when
     /// it connects (issue #86: one device's volume must not carry over to
     /// another)
@@ -341,6 +346,7 @@ impl Default for Settings {
             media_keys: true,
             auto_reconnect: true,
             awaiting_vb_cable: false,
+            awaiting_hifi_cable: false,
             saved_volumes: BTreeMap::new(),
             device_options: None,
             volume_sync: true,

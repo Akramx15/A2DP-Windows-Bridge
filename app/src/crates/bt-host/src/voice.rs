@@ -174,6 +174,11 @@ pub fn codec_key(id: u8) -> Option<&'static str> {
     }
 }
 
+/// The HFP microphone gain (+VGM, 0..15) given on every voice link: the
+/// highest, as the headphones' own default is often low and nothing else
+/// raises the level on its way to apps (issue #86)
+pub const MIC_GAIN: u8 = 15;
+
 /// The volume (AVRCP absolute volume, 0..127) as an HFP speaker gain
 /// (0..15): headphones play the voice link at their HFP gain, not at the
 /// A2DP volume

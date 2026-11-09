@@ -17,7 +17,7 @@ import { errorText, useApp, type AppContext } from "../app/context";
 import { saveSettings } from "../app/settings";
 import { Banner, Button, Dialog, Toggle } from "../components/controls";
 import { PairedDevicesNote, windowsDevices } from "../components/PairedDevices";
-import { VbCableNote } from "../components/DeviceSettings";
+import { HifiCableNote, VbCableNote } from "../components/DeviceSettings";
 import { DevicePicker, saveWithProfile } from "../components/DevicePicker";
 import { ImportPairings } from "../components/ImportPairings";
 import { Icon } from "../components/Icon";
@@ -26,7 +26,7 @@ import { t } from "../i18n";
 import { IpcError } from "../ipc/types";
 import type { AdapterInfo, AudioDevice, Device, Snapshot, WindowsPairedDevice } from "../ipc/types";
 import { firmwareUrl, LINKS } from "../lib/links";
-import { audioEntries, deviceKey, vbCable } from "../lib/profile";
+import { audioEntries, deviceKey, hifiCable, vbCable } from "../lib/profile";
 import {
   adapterExperimental,
   adapterIds,
@@ -457,10 +457,15 @@ function StepDevice() {
   // VB-Cable, when Windows' list was read: new devices capture it, without
   // it the step says why one is wanted (issue #86)
   const [cable, setCable] = createSignal<AudioDevice | null | undefined>(undefined);
+  // And the Hi-Fi Cable for the headphones' microphone, once VB-Cable is there
+  const [hifi, setHifi] = createSignal<AudioDevice | null | undefined>(undefined);
   const load = () =>
     app.core
       .request("audio.devices")
-      .then((list) => setCable(vbCable(list)))
+      .then((list) => {
+        setCable(vbCable(list));
+        setHifi(hifiCable(list));
+      })
       .catch(() => {});
   onMount(() => {
     void load();
@@ -544,6 +549,9 @@ function StepDevice() {
       >
         <Show when={cable() === null}>
           <VbCableNote />
+        </Show>
+        <Show when={!!cable() && hifi() === null}>
+          <HifiCableNote />
         </Show>
         <ImportPairings />
       </DevicePicker>

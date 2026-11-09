@@ -2102,6 +2102,18 @@ impl HostApp {
                     let _ = self.events.send(e);
                 }
                 self.sync_speaker_gain(stack, None);
+                // The microphone at full gain: the headphones otherwise keep
+                // their own default, often low (issue #86); Windows' own
+                // Bluetooth sets it too
+                if let Some(acl) = self.voice.audio_acl() {
+                    let status = stack.hfp_ag_set_microphone_gain(acl, crate::voice::MIC_GAIN);
+                    tracing::debug!("HFP: microphone gain {} (0x{status:02x})", crate::voice::MIC_GAIN);
+                }
+            }
+            Some(HFP_SUBEVENT_MICROPHONE_VOLUME) => {
+                if let Some(gain) = u8_at(p, 5) {
+                    tracing::info!("HFP: headphones' microphone gain {gain}");
+                }
             }
             Some(HFP_SUBEVENT_SPEAKER_VOLUME) => {
                 if let Some(gain) = u8_at(p, 5) {
