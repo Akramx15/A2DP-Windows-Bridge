@@ -380,6 +380,8 @@ function StepDriver(props: { adapter: AdapterInfo | null }) {
                   title={t("ui.adapter.paired_title")}
                   confirm={t("ui.setup.auto_button")}
                   confirmIcon="shield"
+                  danger
+                  warn
                   cancel={t("modal.cancel")}
                   onConfirm={() => {
                     setLosing(null);

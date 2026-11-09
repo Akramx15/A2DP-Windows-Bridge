@@ -1000,7 +1000,7 @@ export class MockCore implements Transport {
   windowsNames: Record<string, string> = {};
   /** Every device Windows paired through an adapter (adapter.windows_devices);
    *  null: the request fails */
-  adapterDevices: { address: string; name: string }[] | null = [];
+  adapterDevices: { address: string; name: string; audio: boolean }[] | null = [];
   /** LE keys of the saved devices (device.pairing), as derived with LE Audio on */
   leKeys: DevicePairing["le_keys"] = null;
   /** Why there are none (device.pairing) */
@@ -3122,6 +3122,13 @@ export function mockFromUrl(): MockCore {
       "00:A2:D0:00:00:02": "EarFun Air Pro 4",
       "38:18:4C:00:00:07": "WF-1000XM5",
     };
+    // And what the adapter would take from Windows (the warning before WinUSB)
+    mock.adapterDevices = [
+      { address: "00:11:22:33:44:01", name: "Logitech K380", audio: false },
+      { address: "00:A2:D0:00:00:02", name: "EarFun Air Pro 4", audio: true },
+      { address: "00:11:22:33:44:02", name: "MX Master 3", audio: false },
+      { address: "38:18:4C:00:00:07", name: "WF-1000XM5", audio: true },
+    ];
   }
   if (q.has("otherradio")) {
     mock.setOtherRadio({

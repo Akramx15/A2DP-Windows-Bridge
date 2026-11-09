@@ -939,6 +939,50 @@ option {
 .dialog-heading {
   align-self: center;
 }
+/* A dialog whose confirmation loses something (issue #86): the sign before
+   its title */
+.dialog-heading h2.dialog-warn {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+/* The devices Windows loses with the adapter (issue #86): one per line, in
+   a box in the warning colour, with what happens to them */
+.paired-warn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.paired-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+.paired-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+.paired-list .icon {
+  flex: none;
+  color: var(--warn-text);
+}
+.paired-warn p {
+  margin: 0;
+  color: var(--warn-text);
+}
+.paired-hints {
+  margin: 0;
+  padding-left: var(--s5);
+}
 .dialog-body {
   display: flex;
   flex-direction: column;

@@ -873,15 +873,24 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
       setBusy(false);
     }
   };
+  // Devices Windows loses: a warning, those devices first (issue #86)
+  const losing = () => props.mode === "assign" && (paired.latest?.length ?? 0) > 0;
   return (
     <Dialog
       open={props.adapter !== null}
-      title={props.mode === "assign" ? t("ui.adapter.assign_title") : t("ui.adapter.restore_title")}
+      title={
+        losing()
+          ? t("ui.adapter.paired_title")
+          : props.mode === "assign"
+            ? t("ui.adapter.assign_title")
+            : t("ui.adapter.restore_title")
+      }
       confirm={props.mode === "assign" ? t("ui.adapter.assign_winusb") : t("ui.adapter.restore_driver")}
       confirmIcon="shield"
       cancel={t("modal.cancel")}
       busy={busy()}
-      danger={props.mode === "restore"}
+      danger={props.mode === "restore" || losing()}
+      warn={losing()}
       onConfirm={go}
       onCancel={() => props.onClose(false)}
     >
@@ -889,8 +898,10 @@ export function WinusbDialog(props: { adapter: AdapterInfo | null; mode: "assign
         <strong>{props.adapter?.display_name}</strong>
         <span class="muted"> · {props.adapter?.device_name}</span>
       </p>
-      <p>{props.mode === "assign" ? t("ui.adapter.assign_explain") : t("ui.adapter.restore_explain")}</p>
-      <Show when={props.mode === "assign"}>
+      <Show
+        when={losing()}
+        fallback={<p>{props.mode === "assign" ? t("ui.adapter.assign_explain") : t("ui.adapter.restore_explain")}</p>}
+      >
         <PairedDevicesNote devices={paired.latest ?? []} />
       </Show>
       <p class="muted">{t("ui.adapter.uac_note")}</p>

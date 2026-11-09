@@ -3,9 +3,10 @@
 // first when there are any; the Adapters screen's dialog names them. A list
 // that cannot be read asks nothing.
 
-import { Show } from "solid-js";
+import { For, Show } from "solid-js";
 import type { AppContext } from "../app/context";
 import { t } from "../i18n";
+import { Icon } from "./Icon";
 import type { AdapterInfo, WindowsPairedDevice } from "../ipc/types";
 
 /** The devices Windows paired through the adapter; none when it is on
@@ -18,33 +19,38 @@ export function windowsDevices(app: AppContext, a: AdapterInfo): Promise<Windows
     .catch(() => []);
 }
 
-/** Names shown before "and N more" */
+/** Devices named before "and N more" */
 export const NAMES_SHOWN = 3;
 
-/** "Keyboard, Mouse, Headphones and 2 more": Windows' names (the address
- *  of one without), the first few */
-export function pairedNames(list: readonly WindowsPairedDevice[], shown = NAMES_SHOWN): string {
-  const names = list.slice(0, shown).map((d) => d.name || d.address);
-  const rest = list.length - names.length;
-  const joined = names.join(", ");
-  return rest > 0 ? t("ui.adapter.paired_more", joined, rest) : joined;
-}
-
-/** The warning: which devices stop working with Windows, and what keeps
- *  them */
+/** The warning (issue #86): the devices first, one per line with what kind
+ *  they are (headphones or another Bluetooth device; Windows' name, else
+ *  the address), in a box in the warning colour with what happens to them;
+ *  then what keeps them */
 export function PairedDevicesNote(props: { devices: readonly WindowsPairedDevice[] }) {
+  const shown = () => props.devices.slice(0, NAMES_SHOWN);
+  const rest = () => props.devices.length - shown().length;
   return (
     <Show when={props.devices.length > 0}>
-      <div class="stack-tight">
-        <p>{t("ui.adapter.paired_text")}</p>
-        <p>
-          <strong>{pairedNames(props.devices)}</strong>
-        </p>
-        <ul class="hint">
-          <li>{t("ui.adapter.paired_receiver")}</li>
-          <li>{t("ui.adapter.paired_keep")}</li>
+      <div class="paired-warn">
+        <ul class="paired-list">
+          <For each={shown()}>
+            {(d) => (
+              <li>
+                <Icon name={d.audio ? "headphones" : "bluetooth"} />
+                <strong class="ellipsis">{d.name || d.address}</strong>
+              </li>
+            )}
+          </For>
+          <Show when={rest() > 0}>
+            <li class="muted">{t("ui.adapter.paired_more", rest())}</li>
+          </Show>
         </ul>
+        <p>{t("ui.adapter.paired_text")}</p>
       </div>
+      <ul class="hint paired-hints">
+        <li>{t("ui.adapter.paired_receiver")}</li>
+        <li>{t("ui.adapter.paired_keep")}</li>
+      </ul>
     </Show>
   );
 }

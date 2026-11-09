@@ -2760,7 +2760,11 @@ impl CoreState {
                     let list: Vec<WindowsPairedDevice> = win_sys::bt_paired::paired_through(&instance_id)
                         .iter()
                         .filter(|d| d.is_a2dp_sink())
-                        .map(|d| WindowsPairedDevice { address: bt_host::addr_str(&d.address), name: d.name.clone() })
+                        .map(|d| WindowsPairedDevice {
+                            address: bt_host::addr_str(&d.address),
+                            name: d.name.clone(),
+                            audio: d.is_a2dp_sink(),
+                        })
                         .collect();
                     Ok(json(&list))
                 }))
@@ -3060,7 +3064,11 @@ impl CoreState {
                 blocking(Box::new(move |_| {
                     let list: Vec<WindowsPairedDevice> = win_sys::bt_paired::devices_through(&instance_id)
                         .iter()
-                        .map(|d| WindowsPairedDevice { address: bt_host::addr_str(&d.address), name: d.name.clone() })
+                        .map(|d| WindowsPairedDevice {
+                            address: bt_host::addr_str(&d.address),
+                            name: d.name.clone(),
+                            audio: d.is_a2dp_sink(),
+                        })
                         .collect();
                     tracing::info!("adapter: Windows paired {} device(s) through it", list.len());
                     Ok(json(&list))
