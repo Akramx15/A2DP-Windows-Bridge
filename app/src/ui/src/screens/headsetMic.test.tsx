@@ -102,6 +102,20 @@ describe("Input Source on Audio Devices", () => {
     expect(micSelect(wh).value).toBe(CABLE);
   });
 
+  it("lists the Hi-Fi Cable first, keeping the device chosen (issue #86)", async () => {
+    start("#/devices", "voice");
+    mock!.hifiCable = true;
+    const wh = await deviceEntry(/WH-1000XM5/);
+    await waitFor(() =>
+      expect([...micSelect(wh).options].map((o) => o.textContent)).toEqual([
+        "Hi-Fi Cable Output (VB-Audio Hi-Fi Cable)",
+        "CABLE Output (VB-Audio Virtual Cable)",
+        "Voicemeeter Out B1 (VB-Audio Voicemeeter VAIO)",
+      ]),
+    );
+    expect(micSelect(wh).value).toBe(CABLE);
+  });
+
   it("adds the 16-channel cable's own name in developer mode, not a second CABLE Output", async () => {
     const { core } = start("#/devices", "voice");
     const wh = await deviceEntry(/WH-1000XM5/);

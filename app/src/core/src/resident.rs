@@ -434,7 +434,7 @@ pub fn run(args: &[String]) -> i32 {
         let state = state.clone();
         std::thread::spawn(move || {
             if let Ok(devices) = audio_capture::render_devices() {
-                state.watch_vb_cable(&devices);
+                state.watch_cables(&devices);
             }
         });
     }
