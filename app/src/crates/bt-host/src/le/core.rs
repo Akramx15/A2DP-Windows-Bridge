@@ -2,7 +2,7 @@
 //! stack init / deinit of the LE part, LE scan (extended scan fallback),
 //! connect with RPA / identity merge, SM LE Secure Connections Just Works
 //! bonding (a bond the device lost is deleted and pairing repeated once),
-//! bonds in <bond_dir>\le_audio_bonds.tlv, GATT discovery (included /
+//! bonds in le_audio_bonds.tlv (LeConfig::bonds_file), GATT discovery (included /
 //! secondary services too), PACS / ASCS reads, refusing a stream without
 //! ISO buffers ("adapter does not support LE Audio (no ISO buffers)"), the
 //! BAP stream, and the module dispatch.
@@ -32,8 +32,10 @@ use le_audio::presets::PresetTable;
 use le_audio::sdu_queue::SduQueue;
 
 use super::bap::{self, Unicast, UnicastEnv, UnicastTimer};
+use super::broadcast::Broadcast;
 use super::gatt_client::{GattChar, GattClient, GattService};
 use super::gatt_server::{AttRead, AttWrite, GattServer, WriteAction};
+use super::iso_recv::{IsoRx, LeRxStats, RxSdu};
 use super::iso_send::IsoSender;
 use super::module::{LeGroupHooks, LeModule, LeModuleSetup};
 use super::modules::tmap_gmap::TmapGmapModule;
@@ -87,6 +89,9 @@ pub struct LeDevice {
     // ---- PACS (sink direction: we are the audio source) ----
     pub sink_pacs: Vec<PacRecord>,
     pub sink_locations: u32,
+    /// Source direction (the headset microphone)
+    pub source_pacs: Vec<PacRecord>,
+    pub source_locations: u32,
     pub available_sink_contexts: u16,
     pub available_source_contexts: u16,
     pub supported_sink_contexts: u16,
@@ -118,6 +123,8 @@ impl LeDevice {
             services: Vec::new(),
             sink_pacs: Vec::new(),
             sink_locations: 0,
+            source_pacs: Vec::new(),
+            source_locations: 0,
             available_sink_contexts: 0,
             available_source_contexts: 0,
             supported_sink_contexts: 0,
@@ -163,6 +170,10 @@ impl LeDevice {
 
     pub fn sink_ase_count(&self) -> usize {
         self.ases.iter().filter(|a| a.sink).count()
+    }
+
+    pub fn source_ase_count(&self) -> usize {
+        self.ases.iter().filter(|a| !a.sink).count()
     }
 }
 
@@ -249,6 +260,8 @@ pub struct LeCore {
     poster: LePoster,
     events: std::sync::mpsc::Sender<crate::HostEvent>,
     battery: bool,
+    /// The GAP Device Name (HostConfig::local_name)
+    local_name: String,
     /// Taken at stack init (the modules get it)
     config: Option<LeConfig>,
     initialized: bool,
@@ -257,6 +270,9 @@ pub struct LeCore {
     devices: Vec<LeDevice>,
     scan_results: Vec<LeScanResult>,
     scanning: bool,
+    /// Counts the LE Audio advertisers a scan listed (HostApp wakes the
+    /// classic scan's waiters on a change: the list shows them at once)
+    scan_found: u64,
     connect: Option<ConnectAttempt>,
     /// By RPA
     rpa_cache: HashMap<[u8; 6], RpaEntry>,
@@ -266,9 +282,11 @@ pub struct LeCore {
     /// None while one of its calls runs, and after stack deinit
     unicast: Option<Unicast>,
     unicast_timers: [Option<LeTimerId>; UnicastTimer::ALL],
-    iso: IsoSender,
-    queue: Option<SharedSduQueue>,
-    status: Option<LeStreamStatus>,
+    pub(crate) iso: IsoSender,
+    pub(crate) queue: Option<SharedSduQueue>,
+    pub(crate) status: Option<LeStreamStatus>,
+    /// The broadcast (Auracast source) while it runs or stops
+    pub(crate) broadcast: Option<Broadcast>,
     timers: Vec<Timer>,
     next_timer: u32,
     timers_changed: bool,
@@ -276,6 +294,13 @@ pub struct LeCore {
     /// Sink PAC records per characteristic (con, value handle): a device may
     /// have several
     pub(crate) sink_pacs_by_char: BTreeMap<(u16, u16), Vec<PacRecord>>,
+    /// Source PAC records per characteristic, as `sink_pacs_by_char`
+    pub(crate) source_pacs_by_char: BTreeMap<(u16, u16), Vec<PacRecord>>,
+    /// The microphone: the ring's producer from le_start_stream until the
+    /// stream receives, then the receiver
+    pub(crate) rx_producer: Option<rtrb::Producer<RxSdu>>,
+    pub(crate) rx_stats: Arc<LeRxStats>,
+    pub(crate) rx: Option<IsoRx>,
 }
 
 /// The LE core for one hook or callback (BTstack thread)
@@ -642,6 +667,8 @@ impl<'a> LeCtx<'a> {
                 if let Some(c) = events::le_connection_complete(p) {
                     let addr = LeAddr { addr: c.peer_addr, addr_type: c.peer_addr_type };
                     self.on_le_connected(c.status, c.handle, addr, c.role);
+                } else if events::big_created(p).is_some() || events::big_terminated(p).is_some() {
+                    self.on_big_event(p);
                 } else if events::cig_created(p).is_some() {
                     self.with_unicast(|u, env| u.on_cig_created(env, p));
                 } else if events::cis_created(p).is_some() {
@@ -681,11 +708,23 @@ impl<'a> LeCtx<'a> {
     // ======================================================================
 
     pub(crate) fn start_scan(&mut self) {
-        tracing::debug!("LE Audio: scan start (active, interval / window 0x0030)");
+        self.start_scan_with(0x0030, 0x0030);
+    }
+
+    /// Active scan with `interval` / `window` (0.625 ms units): a window
+    /// shorter than the interval leaves the radio to a classic inquiry
+    /// running beside it
+    pub(crate) fn start_scan_with(&mut self, interval: u16, window: u16) {
+        tracing::debug!("LE Audio: scan start (active, interval 0x{interval:04X}, window 0x{window:04X})");
         self.core.scan_results.clear();
         self.core.scanning = true;
-        self.stack.le_set_scan_params(true, 0x0030, 0x0030, 0);
+        self.stack.le_set_scan_params(true, interval, window, 0);
         self.stack.le_start_scan();
+    }
+
+    /// The running scan's advertisers so far
+    pub(crate) fn scan_results(&self) -> Vec<LeScanResult> {
+        self.core.scan_results.clone()
     }
 
     pub(crate) fn stop_scan(&mut self) -> Vec<LeScanResult> {
@@ -703,7 +742,9 @@ impl<'a> LeCtx<'a> {
         if !self.core.scanning {
             return;
         }
-        let addr = LeAddr { addr: r.addr, addr_type: if r.extended { r.addr_type & 0x01 } else { r.addr_type } };
+        // 0x02 / 0x03: an identity the controller resolved (also in legacy
+        // reports, which BTstack makes of extended ones with legacy PDUs)
+        let addr = LeAddr { addr: r.addr, addr_type: r.addr_type & 0x01 };
         let (idx, fresh) = match self.core.scan_results.iter().position(|e| e.addr == addr) {
             Some(i) => (i, false),
             None => {
@@ -717,17 +758,7 @@ impl<'a> LeCtx<'a> {
         if res.identity.is_none() {
             res.identity = identity;
         }
-        let (scan_rsp, connectable) = if r.extended {
-            (r.event_type & 0x08 != 0, r.event_type & 0x01 != 0)
-        } else {
-            (r.event_type == 4, r.event_type == 0 || r.event_type == 1)
-        };
-        if scan_rsp {
-            res.scan_rsp = r.data.to_vec();
-        } else {
-            res.adv = r.data.to_vec();
-            res.connectable = connectable;
-        }
+        take_report(&mut res, r);
         res.rssi = r.rssi;
         let was_le_audio = res.le_audio;
         let (adv, rsp) = (res.adv.clone(), res.scan_rsp.clone());
@@ -735,6 +766,7 @@ impl<'a> LeCtx<'a> {
         parse_ad(&mut res, &rsp);
         self.each_module(|m, ctx| m.on_scan_result(ctx, &mut res, r.data));
         if (fresh || !was_le_audio) && res.le_audio {
+            self.core.scan_found += 1;
             tracing::info!(
                 "LE Audio: found {} ({}, type {}) RSSI {}{}{}{}",
                 if res.name.is_empty() { "?" } else { res.name.as_str() },
@@ -898,7 +930,7 @@ impl<'a> LeCtx<'a> {
             }
         };
         if stray {
-            // A2DPWB never advertises: this is the connect of an attempt
+            // BlueCaster never advertises: this is the connect of an attempt
             // given up (timeout / cancel) that completed before the cancel
             // did. Nobody manages the link: drop it.
             if status == ERROR_CODE_SUCCESS {
@@ -1056,6 +1088,7 @@ impl<'a> LeCtx<'a> {
             self.core.gatt.detach(handle);
             self.core.server.on_disconnected(handle);
             self.core.sink_pacs_by_char.retain(|(c, _), _| *c != handle);
+            self.core.source_pacs_by_char.retain(|(c, _), _| *c != handle);
             if let Some(d) = self.device_mut(id) {
                 tracing::info!("LE Audio: {} disconnected (0x{reason:02x})", d.addr);
                 d.acl = CON_HANDLE_INVALID;
@@ -1163,8 +1196,8 @@ impl<'a> LeCtx<'a> {
                 self.stack.sm_numeric_comparison_confirm(handle);
             }
             SM_EVENT_PASSKEY_INPUT_NUMBER => {
-                // No keyboard: such a device cannot pair with A2DPWB
-                tracing::warn!("LE Audio: {addr} asks for a passkey, which A2DPWB cannot enter");
+                // No keyboard: such a device cannot pair with BlueCaster
+                tracing::warn!("LE Audio: {addr} asks for a passkey, which BlueCaster cannot enter");
                 self.stack.sm_bonding_decline(handle);
             }
             SM_EVENT_PAIRING_STARTED => {
@@ -1240,6 +1273,9 @@ impl<'a> LeCtx<'a> {
                 sink_pacs: d.sink_pacs.clone(),
                 sink_locations: d.sink_locations,
                 available_sink_contexts: d.available_sink_contexts,
+                source_pacs: d.source_pacs.clone(),
+                source_locations: d.source_locations,
+                available_source_contexts: d.available_source_contexts,
                 ases: d.ases.clone(),
             });
         }
@@ -1257,6 +1293,7 @@ impl<'a> LeCtx<'a> {
         &mut self,
         plan: StreamPlan,
         queue: SharedSduQueue,
+        rx: Option<(rtrb::Producer<RxSdu>, Arc<LeRxStats>)>,
         status: LeStreamStatus,
         why: Arc<Mutex<String>>,
         done: LeDone,
@@ -1268,6 +1305,11 @@ impl<'a> LeCtx<'a> {
             done(false);
             return;
         };
+        if self.core.broadcast.is_some() {
+            set_why(&why, "a broadcast is running");
+            done(false);
+            return;
+        }
         if u.busy() {
             tracing::debug!("LE Audio: stream start refused, unicast busy");
             set_why(&why, "a stream is still being stopped");
@@ -1277,6 +1319,14 @@ impl<'a> LeCtx<'a> {
         tracing::debug!("LE Audio: unicast start: {}", plan.describe());
         self.core.queue = Some(queue);
         self.core.status = Some(status);
+        self.core.rx = None;
+        match rx {
+            Some((producer, stats)) => {
+                self.core.rx_producer = Some(producer);
+                self.core.rx_stats = stats;
+            }
+            None => self.core.rx_producer = None,
+        }
         self.with_unicast(|u, env| {
             u.start(
                 env,
@@ -1297,6 +1347,8 @@ impl<'a> LeCtx<'a> {
     pub(crate) fn stop_unicast(&mut self, done: LeDone) {
         tracing::debug!("LE Audio: unicast stop (state machine present {})", self.core.unicast.is_some());
         self.core.iso.stop(self.stack);
+        self.core.rx = None;
+        self.core.rx_producer = None;
         if self.core.unicast.is_none() {
             done(true);
             return;
@@ -1319,18 +1371,10 @@ impl<'a> LeCtx<'a> {
                 last_error: d.last_error,
                 sink_locations: d.sink_locations,
                 sink_ases: d.sink_ase_count(),
-                pacs: d
-                    .sink_pacs
-                    .iter()
-                    .filter(|r| r.lc3)
-                    .map(|r| {
-                        format!(
-                            "LC3 rates 0x{:04x} ch 0x{:02x} octets {}-{}",
-                            r.caps.sampling_frequencies, r.caps.channel_counts, r.caps.min_octets, r.caps.max_octets
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; "),
+                pacs: describe_pacs(&d.sink_pacs),
+                source_locations: d.source_locations,
+                source_ases: d.source_ase_count(),
+                source_pacs: describe_pacs(&d.source_pacs),
                 roles: String::new(),
             })
             .collect();
@@ -1398,6 +1442,21 @@ impl<'a> LeCtx<'a> {
     }
 }
 
+/// The LC3 PAC records for LeDeviceInfo, e.g. "LC3 rates 0x00b4 ch 0x03
+/// octets 26-155" (records joined by "; ")
+fn describe_pacs(pacs: &[PacRecord]) -> String {
+    pacs.iter()
+        .filter(|r| r.lc3)
+        .map(|r| {
+            format!(
+                "LC3 rates 0x{:04x} ch 0x{:02x} octets {}-{}",
+                r.caps.sampling_frequencies, r.caps.channel_counts, r.caps.min_octets, r.caps.max_octets
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 /// Polls every 20 ms (at most 2 s) until the device's link is down
 fn poll_disconnected(ctx: &mut LeCtx<'_>, id: LeDeviceId, ticks: u32, done: LeDone) {
     if ticks > 100 || ctx.device(id).is_none_or(|d| !d.connected()) {
@@ -1405,6 +1464,35 @@ fn poll_disconnected(ctx: &mut LeCtx<'_>, id: LeDeviceId, ticks: u32, done: LeDo
         return;
     }
     ctx.run_after(20, Box::new(move |ctx| poll_disconnected(ctx, id, ticks + 1, done)));
+}
+
+/// The report's data into `r`: advertising data or scan response, the
+/// parts of chained extended data joined
+fn take_report(res: &mut LeScanResult, r: &events::AdvReport<'_>) {
+    let (scan_rsp, connectable) = if r.extended {
+        (r.event_type & 0x08 != 0, r.event_type & 0x01 != 0)
+    } else {
+        (r.event_type == 4, r.event_type == 0 || r.event_type == 1)
+    };
+    // Extended advertising data may come in several reports (data
+    // status 01: more follows): the parts are joined, as a new report
+    // that starts mid-way through an AD structure would not parse
+    let more = r.extended && (r.event_type >> 5) & 0x03 == 0x01;
+    let continued = if scan_rsp { res.rsp_more } else { res.adv_more };
+    let target = if scan_rsp { &mut res.scan_rsp } else { &mut res.adv };
+    if continued {
+        target.extend_from_slice(r.data);
+    } else {
+        *target = r.data.to_vec();
+    }
+    if scan_rsp {
+        res.rsp_more = more;
+    } else {
+        res.adv_more = more;
+        if !continued {
+            res.connectable = connectable;
+        }
+    }
 }
 
 /// Fills the parsed fields of `r` from AD data (v1 parse_ad)
@@ -1556,6 +1644,21 @@ impl UnicastEnv for LeCtx<'_> {
         self.core.iso.stop(self.stack);
     }
 
+    fn start_receiving(&mut self, cis_handles: &[u16]) {
+        if self.core.rx.is_some() {
+            return;
+        }
+        let Some(producer) = self.core.rx_producer.take() else {
+            tracing::debug!("LE Audio: CIS {cis_handles:04X?} carry a microphone, no receiver asked for");
+            return;
+        };
+        self.core.rx = Some(IsoRx::new(producer, cis_handles, self.core.rx_stats.clone()));
+    }
+
+    fn stop_receiving(&mut self) {
+        self.core.rx = None;
+    }
+
     fn cis_down(&mut self, handle: u16) {
         tracing::debug!("LE Audio: CIS 0x{handle:04X} down");
         self.core.iso.on_cis_down(self.stack, handle);
@@ -1566,6 +1669,7 @@ impl UnicastEnv for LeCtx<'_> {
             tracing::warn!("LE Audio: stream lost: {why}");
         }
         self.core.iso.stop(self.stack);
+        self.core.rx = None;
     }
 
     fn stream_state(&mut self, plan: &StreamPlan, streaming: bool) {
@@ -1642,10 +1746,12 @@ impl LeCore {
         poster: LePoster,
         events: std::sync::mpsc::Sender<crate::HostEvent>,
         battery: bool,
+        local_name: String,
     ) -> LeCore {
         LeCore {
             events,
             battery,
+            local_name,
             iso: IsoSender::new(shared.stats.clone()),
             shared,
             controls,
@@ -1656,6 +1762,7 @@ impl LeCore {
             devices: Vec::new(),
             scan_results: Vec::new(),
             scanning: false,
+            scan_found: 0,
             connect: None,
             rpa_cache: HashMap::new(),
             gatt: GattClient::new(),
@@ -1665,11 +1772,16 @@ impl LeCore {
             unicast_timers: [None; UnicastTimer::ALL],
             queue: None,
             status: None,
+            broadcast: None,
             timers: Vec::new(),
             next_timer: 1,
             timers_changed: false,
             gatt_retry: None,
             sink_pacs_by_char: BTreeMap::new(),
+            source_pacs_by_char: BTreeMap::new(),
+            rx_producer: None,
+            rx_stats: Arc::default(),
+            rx: None,
         }
     }
 
@@ -1694,10 +1806,19 @@ impl LeCore {
             return;
         }
         tracing::info!("LE Audio (experimental): initializing (SM, GATT client / server, ISO)");
-        let dir: PathBuf = self.config.as_ref().and_then(|c| c.bond_dir.clone()).unwrap_or_else(std::env::temp_dir);
-        let path = dir.join("le_audio_bonds.tlv");
+        let path: PathBuf = self
+            .config
+            .as_ref()
+            .and_then(|c| c.bonds_file.clone())
+            .unwrap_or_else(|| std::env::temp_dir().join("le_audio_bonds.tlv"));
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
         stack.le_init(&path.to_string_lossy());
         tracing::info!("LE Audio: bonds in {}", path.display());
+        if let Some(imported) = self.config.as_ref().and_then(|c| c.imported_bonds_file.as_deref()) {
+            crate::le_import::apply(stack, imported);
+        }
 
         // The modules (once per BtHost)
         if let Some(cfg) = self.config.take() {
@@ -1728,16 +1849,18 @@ impl LeCore {
         self.rpa_cache.clear();
         self.gatt = GattClient::new();
         self.sink_pacs_by_char.clear();
+        self.source_pacs_by_char.clear();
         self.shared.iso_len.store(0, Ordering::Release);
         self.shared.iso_count.store(0, Ordering::Release);
         self.unicast = Some(Unicast::default());
         self.status = None;
+        self.broadcast = None;
         self.initialized = true;
 
         self.run(stack, |ctx| ctx.each_module(|m, ctx| m.on_stack_init(ctx)));
 
         self.server = GattServer::new();
-        self.server.build_base();
+        self.server.build_base(&self.local_name);
         for i in 0..self.modules.len() {
             if let Some(mut m) = self.modules[i].take() {
                 m.add_gatt_services(&mut self.server.builder(i));
@@ -1767,9 +1890,14 @@ impl LeCore {
             m.on_stack_deinit();
         }
         self.iso.stop(stack);
+        self.rx = None;
+        self.rx_producer = None;
         if let Some(c) = self.connect.take() {
             c.result.lock().unwrap_or_else(|e| e.into_inner()).error = "Bluetooth stopped".into();
             (c.done)(false);
+        }
+        if let Some(b) = self.broadcast.take() {
+            b.abandon();
         }
         self.initialized = false;
         self.unicast = None;
@@ -1784,6 +1912,11 @@ impl LeCore {
         self.queue = None;
         self.status = None;
         tracing::info!("LE Audio: stopped");
+    }
+
+    /// Changes when a scan lists another LE Audio advertiser
+    pub(crate) fn scan_found(&self) -> u64 {
+        self.scan_found
     }
 
     pub(crate) fn on_hci(&mut self, stack: &Stack, packet: &[u8]) {
@@ -1822,11 +1955,23 @@ impl LeCore {
         }
     }
 
-    /// The ISO handler: HCI_EVENT_CIS_CAN_SEND_NOW (incoming ISO data of
-    /// source ASEs is not used)
-    pub(crate) fn on_iso(&mut self, stack: &Stack, packet: &[u8]) {
-        if self.initialized {
+    /// The ISO handler: HCI_EVENT_CIS_CAN_SEND_NOW / _BIS_CAN_SEND_NOW, and
+    /// HCI ISO data (the microphone of source ASEs). The packet type comes
+    /// first: an ISO data packet's first byte is the handle's low byte and
+    /// could look like an event code.
+    pub(crate) fn on_iso(&mut self, stack: &Stack, packet_type: u8, packet: &[u8]) {
+        if !self.initialized {
+            return;
+        }
+        if super::iso_recv::is_iso_data(packet_type) {
+            if let Some(rx) = self.rx.as_mut() {
+                rx.on_packet(packet);
+            }
+            return;
+        }
+        if packet_type == HCI_EVENT_PACKET {
             self.iso.on_cis_can_send_now(stack, packet);
+            self.iso.on_bis_can_send_now(stack, packet);
         }
     }
 
@@ -1917,6 +2062,38 @@ pub type SharedSduQueue = Arc<Mutex<SduQueue>>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chained_extended_advertising_data_is_joined() {
+        // CAS service data, then the name; split across two reports (data
+        // status 01, then complete) in the name's middle
+        const AD: [u8; 12] = [3, 0x16, 0x53, 0x18, 7, 0x09, b'E', b'a', b'r', b'F', b'u', b'n'];
+        let report = |event_type: u16, data: &'static [u8]| events::AdvReport {
+            event_type,
+            addr_type: 1,
+            addr: [1, 2, 3, 4, 5, 6],
+            rssi: -50,
+            data,
+            extended: true,
+        };
+        let mut r = LeScanResult::default();
+        // Connectable undirected, more data follows
+        take_report(&mut r, &report(0x0001 | 0x20, &AD[..7]));
+        assert!(r.adv_more && r.connectable);
+        take_report(&mut r, &report(0x0001, &AD[7..]));
+        assert!(!r.adv_more);
+        assert_eq!(r.adv, AD);
+        let adv = r.adv.clone();
+        parse_ad(&mut r, &adv);
+        assert!(r.le_audio);
+        assert_eq!(r.name, "EarFun");
+        // The next advertising event replaces the data
+        take_report(&mut r, &report(0x0001, &AD[..4]));
+        assert_eq!(r.adv, AD[..4]);
+        // A scan response leaves the advertising data alone
+        take_report(&mut r, &report(0x0001 | 0x08, &AD[4..]));
+        assert_eq!((r.adv.as_slice(), r.scan_rsp.as_slice()), (&AD[..4], &AD[4..]));
+    }
 
     #[test]
     fn advertising_data_is_parsed_as_v1() {

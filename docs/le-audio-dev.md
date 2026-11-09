@@ -2,16 +2,17 @@
 title: LE Audio (developer note)
 layout: default
 nav_exclude: true
+english_only: true
 ---
 
 # LE Audio (experimental) - developer note
 
-A2DPWB can stream to LE Audio devices as a **BAP unicast client** (audio
+BlueCaster can stream to LE Audio devices as a **BAP unicast client** (audio
 source): LC3 over Connected Isochronous Streams (CIS), on the same BTstack
-session and WinUSB adapter as A2DP. It is **experimental and off by
-default**: Settings > Advanced > "LE Audio (experimental)"
-(`le_audio_experimental` in `settings.json`), or `--le-audio` in CLI mode.
-With the setting off none of the LE code runs and HCI init is that of a build
+session and WinUSB adapter as A2DP. It is **experimental**, used only for a
+device's LE Audio entry (or `--le-audio` in CLI mode). `le_audio_experimental`
+in `settings.json` (on by default, no switch in the window) turns the LE side
+off altogether. With the setting off none of the LE code runs and HCI init is that of a build
 without LE (see "LE Audio off"). It has only been verified against the Bumble
 emulator (`tools/emu`), not yet with real headphones or a real 5.2
 controller.
@@ -25,29 +26,31 @@ for reference (`git show b819893:app/src/le_audio/<file>`).
 
 | Path | What |
 |------|------|
-| `app/src/crates/le-audio/` | Pure logic, no BTstack, `#![forbid(unsafe_code)]`: `defs` (UUIDs, LTV types, contexts, locations, ASE states), `ltv`, `pacs_ascs` (PAC records, ASE values, Control Point PDUs), `presets` (BAP / GMAP configurations), `plan` (`plan_stream`: preset, ASEs, CIS, channels), `csip_crypto` (AES-128, AES-CMAC, s1 / k1 / sef / sdf / sih, RSI), `vcp_scale`, `ccp_model` (call model, simulation), `mcp_model` (media state, `SimulatedPlayer`), `db_hash` (Database Hash), `sdu_queue` (jitter buffer, send guard, counters and their log lines) |
+| `app/src/crates/le-audio/` | Pure logic, no BTstack, `#![forbid(unsafe_code)]`: `defs` (UUIDs, LTV types, contexts, locations, ASE states), `ltv`, `pacs_ascs` (PAC records, ASE values, Control Point PDUs), `presets` (BAP / GMAP configurations), `plan` (`plan_stream`: preset, ASEs, CIS, channels; the source direction of a conversational stream), `csip_crypto` (AES-128, AES-CMAC, s1 / k1 / sef / sdf / sih, RSI), `vcp_scale`, `ccp_model` (call model, simulation), `mcp_model` (media state, `SimulatedPlayer`), `db_hash` (Database Hash), `sdu_queue` (jitter buffer, send guard, counters and their log lines) |
 | `app/src/crates/lc3-sys/` | liblc3 (`extern/btstack/3rd-party/lc3-google`, Apache-2.0) built with `cc`; `Lc3Encoder` |
 | `app/src/crates/codec/src/lc3.rs` | LC3 behind the `codec` crate's `lc3` feature (not a `CodecKind`) |
 | `app/src/crates/btstack-sys/` | `btstack_config.h` LE block (`ENABLE_BLE`, LE central / peripheral, LE Secure Connections with micro-ecc, extended advertising, `ENABLE_LE_ISOCHRONOUS_STREAMS`, `MAX_NR_CIS 4`, `HCI_ISO_PAYLOAD_SIZE 400`, `NVN_NUM_GATT_SERVER_CCC 256`); `build.rs` adds `src/ble`, micro-ecc and `btstack_tlv_windows.c`; `src/le.rs` (Stack's LE API: scan, connect, SM, LE device DB, TLV, GATT client, att_db_util, att_server, CIG / CIS, ISO send), `src/att.rs` (ATT read / write callbacks, notification queue), `src/events.rs` (event readers), `src/transport.rs` (LE hidden, below), `src/timer_resolution.rs` (`HighTimerResolution`) |
 | `app/src/crates/hci-transport/src/usb.rs` | HCI ISO data on the ACL bulk endpoints (OUT: the bulk ACL slot; IN: passed up as ACL, `hci.c` reclassifies by CIS handle), as v1 and Linux btusb |
-| `app/src/crates/bt-host/src/le/` | The LE core: `mod.rs` (public types), `api.rs` (`BtHost::le_*`, worker side), `core.rs` (`LeCore`, `LeCtx`, scan / connect / SM / discovery, module dispatch), `gatt_client.rs` (per-connection queue), `gatt_server.rs` (the PC's GATT server), `bap.rs` (PACS / ASCS client, `Unicast` state machine), `iso_send.rs` (`IsoSender`), `module.rs` (hook traits) |
-| `app/src/crates/bt-host/src/le/modules/` | The profiles: `csip.rs`, `vcp.rs`, `mcp.rs`, `ccp.rs`, `tmap_gmap.rs`; `mod.rs` registers them (v1's order: CSIP, VCP, MCP, CCP, TMAP / GMAP) |
+| `app/src/crates/bt-host/src/le/` | The LE core: `mod.rs` (public types), `api.rs` (`BtHost::le_*`, worker side), `core.rs` (`LeCore`, `LeCtx`, scan / connect / SM / discovery, module dispatch), `gatt_client.rs` (per-connection queue), `gatt_server.rs` (the PC's GATT server), `bap.rs` (PACS / ASCS client, `Unicast` state machine), `iso_send.rs` (`IsoSender`), `iso_recv.rs` (ISO data of source ASEs: parser, `IsoRx`, `LeRxHandle`), `module.rs` (hook traits) |
+| `app/src/crates/bt-host/src/le/modules/` | The profiles: `csip.rs`, `vcp.rs`, `mcp.rs`, `ccp.rs`, `tmap_gmap.rs`, `bas.rs`; `mod.rs` registers them (v1's order: CSIP, VCP, MCP, CCP, TMAP / GMAP, then BAS) |
 | `app/src/crates/pipeline/src/le.rs` | The LE encode thread: capture -> stereo downmix -> linear resampling to the LC3 rate -> LC3 per channel -> SDU set per frame into the `LeSduSink` |
-| `app/src/crates/core/src/le_stream.rs` | The session of an LE Audio profile (v1 `a2dp_service_le_audio.cpp`): connect, start, VolumeSync, re-setup after a loss (10 times), the `error.le_audio_*` messages |
+| `app/src/crates/pipeline/src/le_rx.rs` | The headset microphone: the "le-decode" thread (jitter buffer by sequence number, LC3 decoding with PLC, mono mix) and its output trait `PcmOut` |
+| `app/src/crates/core/src/le_stream.rs` | The session of an LE Audio profile (v1 `a2dp_service_le_audio.cpp`): connect, start, VolumeSync, re-setup after a loss (3 times), the `error.le_audio_*` messages; the headset microphone (`LeMicPath`) into the output `voice.rs` resolves |
 | `app/src/crates/core/src/le_media.rs` | MCP's Windows backend (System Media Transport Controls, media keys) |
-| `app/src/crates/core/src/service.rs` | `HostConfig.le_audio` from the setting or the CLI, the deferred toggle, `scan_devices` (classic + LE entries), `le_stream()` |
+| `app/src/crates/core/src/service.rs` | `HostConfig.le_audio` from the setting or the CLI, the deferred toggle, `scan_devices` (classic + LE entries; also the CLI's `--scan` with `--le-audio`), `le_stream()` |
 | `app/src/crates/core/src/devices.rs` | `le_audio_devices.txt` (`load_le` / `save_le` / `remove_le`) |
-| `app/src/core/src/cli.rs` | `--le-audio`, `--le-device`, `--le-preset`, `--le-low-latency`, `--le-scan`, `--le-sim-volume`, `--mcp-dry-run`, `--ccp-sim`, `--ccp-console` (v1 `le_audio_cli.cpp`'s flow and lines) |
+| `app/src/core/src/cli.rs` | `--le-audio`, `--le-device`, `--le-preset`, `--le-low-latency`, `--le-scan`, `--le-sim-volume`, `--mcp-dry-run`, `--ccp-sim`, `--ccp-console` (v1 `le_audio_cli.cpp`'s flow and lines); `--headset-mic`, `--mic-output` (the microphone) |
 | `app/src/core/src/state.rs`, `resident.rs` | The UI's state: LE settings, LE devices, `le_scanning`, `StreamInfo.le`, `LinkSample.iso`, `settings.set`'s `le_audio_deferred`; diagnostics section `[LE Audio (experimental)]` (`crates/core/src/diag.rs`) |
-| `app/src/ui/src/` | Settings toggles, ProfileEditor's "LE Audio device" check box, DevicePicker's LE tags, Diagnostics' ISO counters; `?mock=le` mocks LE |
-| `tools/a2dp_decode/le_audio_decode.cpp` | `a2dpwb_decode --le-audio` |
-| `tools/emu/emu_le_audio_sink.py`, `tools/emu/le_audio/` | Bumble LE Audio sink(s); `le_audio/<profile>.py` = the sink side of each profile |
-| `tools/emu/le_audio_tests/` | `run_test.py --le-audio` cases and checks, one file per profile (`core.py`, `privacy.py`, `csip.py`, `vcp.py`, `mcp.py`, `ccp.py`, `tmap_gmap.py`) |
+| `app/src/ui/src/` | The Codecs screen's LC3 card and GMAP low-latency check box (the profile's `le_low_latency`), DevicePicker's LE tags, Diagnostics' ISO counters; `?mock=le` mocks LE |
+| `tools/a2dp_decode/le_audio_decode.cpp` | `bluecaster_decode --le-audio` |
+| `tools/emu/emu_le_audio_sink.py`, `tools/emu/le_audio/` | Bumble LE Audio sink(s); `le_audio/<profile>.py` = the sink side of each profile; `le_audio/mic.py` + `mic_frames.py` the headset microphone (`--mic`) |
+| `tools/emu/le_audio_tests/` | `run_test.py --le-audio` cases and checks, one file per profile (`core.py`, `privacy.py`, `csip.py`, `vcp.py`, `mcp.py`, `ccp.py`, `tmap_gmap.py`, `bas.py`, `mic.py`) |
 
-Files in the config folder (the same as v1): `le_audio_bonds.tlv` (LE bonds
-and the GATT server's persistent CCC values), `le_audio_csip.txt`
-(coordinated sets), `le_audio_devices.txt` (LE Audio entries of the device
-list).
+Files in the config folder (the formats are the same as v1; the paths are
+in [Settings and Files](architecture#settings-and-files)):
+`pairing\le_audio_bonds.tlv` (LE bonds and the GATT server's persistent CCC
+values), `pairing\le_audio_csip.txt` (coordinated sets),
+`devices\le_audio_devices.txt` (LE Audio entries of the device list).
 
 ## Threads - the one rule that matters
 
@@ -103,14 +106,16 @@ the GATT client or the GATT server runs on the **BTstack thread**, through an
    -> **`adjust_stream_request`** (worker) -> `plan_stream` -> `Unicast`:
    Config Codec -> LE Set CIG Parameters -> Config QoS -> Enable (contexts +
    CCID list; waits for an available context) -> LE Create CIS (all CIS at
-   once) -> sink ASEs go Streaming -> `IsoSender` starts ->
+   once) -> sink ASEs go Streaming (source ASEs: Receiver Start Ready, see
+   "Headset microphone") -> `IsoSender` starts ->
    **`on_stream_state(status, true)`**. Returns the `LeSduSink` the encode
-   thread pushes to.
+   thread pushes to, and `rx` (the microphone's SDUs) when the plan has a
+   source direction.
 6. `le_stop_stream()`: Disable -> HCI_Disconnect of the CIS -> Release ->
    remove the CIG -> **`on_stream_state(status, false)`**. Devices stay
    connected (`le_disconnect_all()` drops them).
 7. A link or CIS lost while streaming: `le_stream_lost()` turns true once; the
-   session stops and sets the stream up again (CLI: 3 tries, GUI: 10).
+   session stops and sets the stream up again (3 tries).
    **`on_disconnected(dev, reason)`** for every LE link that goes down.
 8. Stack deinit (run loop stopped): **`on_stack_deinit`**, no BTstack calls.
    Device ids start from 0 again with the next BtHost.
@@ -143,7 +148,7 @@ returning its `LeModule` and, if it has worker / volume hooks, an
 `encrypted`, `ready`, `services` (`find_service`, `find_char`,
 `find_chars`; secondary / included services have `primary == false` and
 `included_by`), PACS (`sink_pacs`, `sink_locations`, available / supported
-contexts), ASCS (`ases`, `ase_cp_handle`). In callbacks check that the
+contexts, `source_pacs`, `source_locations`), ASCS (`ases`, `ase_cp_handle`). In callbacks check that the
 device is still the same link (`LeCtx::device_on(id, con)`), as the BAP
 client does.
 
@@ -214,7 +219,9 @@ the app is busy is answered "pending" and repeated by BTstack).
 ## Stream configuration
 
 `PresetTable::new()` (`le_audio::presets`) holds BAP Table 5.2 by name
-(`16_1_1` ... `48_6_2`) and GMAP's `_gr` presets. `StreamRequest::preset_order`
+(`16_1_1` ... `48_6_2`), GMAP's `_gr` presets and, for a gaming headset's
+microphone, GMAP's `_gs` presets (`32_1_gs` ... `48_2_gs`, presentation delay
+60 ms; written from memory, see the TODO). `StreamRequest::preset_order`
 (default `48_6_2, 48_4_2, 48_2_2, 32_2_2, 24_2_2, 16_2_2`) is tried in order;
 the first preset every device's sink PAC records allow and whose SDU fits
 one HCI ISO data packet (SDU + 4 <= ISO_Data_Packet_Length) wins.
@@ -232,9 +239,72 @@ unframed.
 Streaming Audio Contexts (Enable): the requested contexts available on
 every device, else Unspecified if available; evaluated again right before
 Enable, which waits for an Available Audio Contexts notification when
-nothing is available ("no audio context available for Enable"). The CCID
+nothing is available ("no audio context available for Enable"; with a
+microphone also for an available source context). The CCID
 list comes from the modules' `add_ccids` (log: "Enable metadata: contexts
 0x0004, CCID list 1").
+
+## Headset microphone (source ASEs)
+
+`LeRequest::headset_mic` (`--headset-mic` on an `--le-audio` run) sets
+`StreamRequest::conversational`. `plan_stream` keeps the sink layout and
+preset (C->P) and adds a source direction (P->C) to the CIS plan
+(`CisPlan::source_ase: Option<SourceDir>`, `StreamPlan::source`):
+
+- every device with a source ASE gets one mono source direction (its first
+  source ASE, the Source Audio Location when it is one location, else mono)
+  on its first sink CIS; a set member with source ASEs only gets a CIS of its
+  own that carries P->C only (no SDU of the encode thread, not sent on)
+- the source preset: the first of `source_preset_order` (default `32_2_1,
+  32_1_1, 24_2_1, 24_1_1, 16_2_1, 16_1_1`; those with the sink preset's frame
+  duration first) that every such device's Source PAC records allow;
+  GMAP low latency with UGTs that all have the Source feature puts the `_gs`
+  presets first
+- source contexts: Conversational (GMAP: Game + Conversational), chosen
+  from the Available Source Contexts; the sink ASEs also ask for
+  Conversational next to Media where available (CCP's `add_ccids` then adds
+  GTBS's CCID)
+- no source ASE, no Source PAC match or no CIS left: the plan has no source
+  direction and `source_note` says why; playback goes on ("LE Audio:
+  streaming without the microphone: ...")
+
+BAP: Config Codec / QoS / Enable carry both kinds of ASE; LE Set CIG
+Parameters gets `max_sdu_p_to_c`, `rtn_p_to_c`, the P->C SDU interval and
+latency (BTstack then sets up the controller -> host data path itself); once
+all CIS are up the client (the receiver) writes Receiver Start Ready for the
+source ASEs and starts receiving; `IsoSender` gets only the CIS with a sink
+ASE. Stopping: Disable puts a source ASE in Disabling, the client writes
+Receiver Stop Ready, the ASE goes to QoS Configured, then Release as before.
+
+Receiving (`le/iso_recv.rs`): the ISO handler gets HCI ISO data as
+HCI_ISO_DATA_PACKET (routed on the packet type first: a data packet's first
+byte is the handle's low byte); `IsoRx` parses it (time stamp if flagged,
+sequence number, SDU length, packet status) and pushes `RxSdu`s (fixed size)
+into an `rtrb` ring; `LeStreamStarted::rx` (`LeRxHandle`) is the consumer.
+`pipeline::le_rx` ("le-decode" thread, polled every 2 ms): per source CIS a
+jitter buffer of 16 sequence numbers that releases an SDU once two newer
+ones were seen (out-of-order SDUs are put back in order; a missing or
+invalid one is concealed by liblc3's PLC; a jump past the buffer starts it
+over), one LC3 decoder per channel, all channels of all streams mixed to
+mono, frame by frame into a `PcmOut`. No allocation per frame. At the
+end: "LE Audio: microphone: N frames out (D decoded, C concealed), S SDUs,
+L late, R resyncs, E errors".
+
+The output (core `le_stream.rs`, `LeMicPath`): the `PcmOut` pushes into the
+queue of voice-link's `Renderer` (the render endpoint the request names,
+opened at the source rate, 40 ms prefill; its drift control absorbs the
+headset's clock, the decode thread has none) or `WavSink` (`--mic-output
+x.wav`; a stream set up again writes `x-2.wav`, ...). The output is
+resolved and checked as for a classic device (`crates/core/src/voice.rs`:
+`resolve_mic_output`, `mic_conflict`) before the stream asks for the
+conversational configuration: no output device, or one the stream captures
+(feedback loop), and the stream plays without the microphone, with
+`status.headset_mic_output_failed` / `error.headset_mic_loop` as the
+status. While it runs the session reports `VoiceStatus { codec: "lc3",
+link: "le", rate, mic_device_id }` (`StreamStatus::voice`), None when it
+stops. A profile's request gets `LeRequest::headset_mic` / `mic_output`
+from the same decision as a classic one (developer mode, the profile's
+switch, an output chosen); changing them restarts the LE stream.
 
 ## Audio path
 
@@ -264,7 +334,7 @@ The UI's ISO counters (`LinkSample.iso`) come from `BtHost::le_stream_stats()`
 
 ## Emulator (`tools/emu`)
 
-`emu_le_audio_sink.py --port P --capture sink.pklg --layout L` runs A2DPWB's
+`emu_le_audio_sink.py --port P --capture sink.pklg --layout L` runs BlueCaster's
 controller (H4 over TCP) and one or two sinks on a Bumble `LocalLink`:
 
 | Layout | Sinks |
@@ -276,14 +346,19 @@ controller (H4 over TCP) and one or two sinks on a Bumble `LocalLink`:
 
 It prints `READY 127.0.0.1:P sinks=<addr>[,<addr>]`. Options:
 `--ascs-release-waits-for-cis`, `--drop-link-after S`, `--privacy`,
-`--no-iso-buffers`, and the profiles' own (`--csip-set`, `--vcp`, `--mcp-client`,
+`--no-iso-buffers`, `--mic [SINKS]` / `--mic-rates` (a microphone: Source
+PAC 16 / 32 kHz 10 ms, a source ASE, a 1 kHz tone sent from pre-encoded LC3
+frames in `le_audio/mic_frames.py` once BlueCaster wrote Receiver Start
+Ready), and the profiles' own (`--csip-set`, `--vcp`, `--mcp-client`,
 `--ccp`, `--tmap-role`, `--gmap-role`, ...; see each `le_audio/<profile>.py`).
 
 Emulator facts to know:
 - Legacy advertising, 31 bytes: the name gets what flags + ASCS + CAS
   service data (and a CSIP RSI) leave.
 - `LeEmuController` (`le_audio/controller.py`) carries ISO data between the
-  controllers, one SDU per interval per CIS. An SDU that arrives more than
+  controllers, one SDU per interval per CIS, both ways (P->C with the CIG's
+  P->C interval; a late SDU of the emulated headset's own sender is logged
+  as "late microphone SDU" and does not fail a case). An SDU that arrives more than
   2 ms after its interval began is logged as `late SDU` and fails the case (a
   real controller's queue of 2 SDUs per CIS would have run empty); the
   emulator's own event-loop stalls are not counted. It runs asyncio on the
@@ -303,20 +378,20 @@ Once: `python tools/emu/setup_env.py` (Bumble venv in `tools/emu/.venv`).
 Then:
 
 ```
-pwsh ./build.ps1 -Decoder                       # a2dpwb_decode -> build/a2dp_decode/Release
-cargo build --release -p a2dpwb-core-exe        # target/release/a2dpwb-core.exe
+pwsh ./build.ps1 -Decoder                       # bluecaster_decode -> build/a2dp_decode/Release
+cargo build --release -p bluecaster-core-exe        # target/release/bluecaster-core.exe
 tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py --le-audio
 tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py --le-audio stereo earbuds --base-port 10200 --out $env:TEMP\le
 tools\emu\.venv\Scripts\python.exe tools\emu\run_test.py          # the A2DP codecs: must keep passing
 ```
 
-`--le-audio` without names runs all 41 cases; CI runs them after the A2DP set
+`--le-audio` without names runs all 44 cases; CI runs them after the A2DP set
 (`.github/workflows/ci.yml`, emulator job). Each case gets its own config
-folder (`A2DPWB_CONFIG_DIR=<out>/le-<case>/config`), so nothing touches
-`%APPDATA%\A2DPWB`. Parallel runs need distinct `--base-port`s (each case
+folder (`BLUECASTER_CONFIG_DIR=<out>/le-<case>/config`), so nothing touches
+`%APPDATA%\BlueCaster`. Parallel runs need distinct `--base-port`s (each case
 uses its own port from there). Per case `<out>/le-<case>/` has
-`a2dpwb.log`, `sink.log`, the captures and `sent_report.txt` /
-`received_report.txt` from `a2dpwb_decode --le-audio`.
+`bluecaster.log`, `sink.log`, the captures and `sent_report.txt` /
+`received_report.txt` from `bluecaster_decode --le-audio`.
 
 | File | Cases |
 |------|-------|
@@ -327,28 +402,30 @@ uses its own port from there). Per case `<out>/le-<case>/` has
 | `mcp.py` | `mcp-read`, `mcp-control`, `mcp-unsupported`, `mcp-ccid`, `mcp-long-read`, `mcp-resume` |
 | `ccp.py` | `ccp-read`, `ccp-incoming-accept`, `ccp-terminate`, `ccp-invalid` |
 | `tmap_gmap.py` | `tmap-role`, `gmap-low-latency`, `gmap-earbuds`, `gmap-off`, `gmap-not-ugt`, `gmap-media-context` |
+| `bas.py` | `bas-level`, `bas-earbuds` |
+| `mic.py` | `mic-stereo`, `mic-earbuds`, `mic-mono-16k` (run with `--headset-mic --mic-output <out>/le-<case>/mic.wav`: the planned microphone preset, Receiver Start / Stop Ready, the headset's SDUs in BlueCaster's capture, mic.wav's frame count and the 1 kHz tone in every 100 ms) |
 
-Each case checks: A2DPWB exits 0; one stream of the expected configuration
+Each case checks: BlueCaster exits 0; one stream of the expected configuration
 on both sides; no decoder problems (consecutive SDU sequence numbers,
-lengths, LC3 decoding); the sinks received every SDU A2DPWB sent; decoded
+lengths, LC3 decoding); the sinks received every SDU BlueCaster sent; decoded
 audio identical on both sides and the test tone (1 kHz left, 1.5 kHz right;
 mono: both) in every 100 ms of every stream but a short gap at its start and
-end; no `late SDU`; no underrun in A2DPWB's "stopped sending" counters (one
+end; no `late SDU`; no underrun in BlueCaster's "stopped sending" counters (one
 as the tone stopped is allowed) and most of the duration sent as audio; each
 CIS's channel allocation within the PACS locations of its sink; the
 teardown steps in the log; then the checks of every
 `le_audio_tests/<profile>.py`. `Case` fields: `le_audio_tests/case.py`.
 
-A case runs `a2dpwb-core.exe --cli --hci-tcp 127.0.0.1:<port> --le-audio -d
+A case runs `bluecaster-core.exe --cli --hci-tcp 127.0.0.1:<port> --le-audio -d
 <first sink> --le-device <other sinks> --test-tone --duration N
---hci-capture ...` plus its `a2dpwb_args` (`--hci-tcp` implies
+--hci-capture ...` plus its `bluecaster_args` (`--hci-tcp` implies
 `--mcp-dry-run`: MCP never controls the PC's real players).
 
 Unit tests: `cargo test -p le-audio -p lc3-sys -p bt-host -p pipeline -p
-a2dpwb-core` (BAP phases, GATT queue and server, ISO rounds, each module
+bluecaster-core` (BAP phases, GATT queue and server, ISO rounds, each module
 against a scripted peer, the CLI's parsing); btstack-sys's
 `tests/le_emulator.rs` is ignored by default and runs against a sink given in
-`A2DPWB_EMU_LE=host:port`.
+`BLUECASTER_EMU_LE=host:port`.
 
 ## The profiles
 
@@ -367,7 +444,7 @@ crypto self-check (CSIS appendix A) runs at stack init.
 **VCP (Volume Controller, `vcp.rs`).** Volume State read and notifications,
 Set Absolute Volume / Unmute with the Change Counter (one retry after 0x80),
 one group volume for all connected VCS devices (later members are aligned to
-it), button presses during A2DPWB's own write applied afterwards, 0-127 <->
+it), button presses during BlueCaster's own write applied afterwards, 0-127 <->
 0-255 with `vcp_scale`. `remote_volume` / `request_volume` feed VolumeSync,
 so the profile's volume sync applies as for A2DP. `--le-sim-volume` runs
 VolumeSync against a simulated Windows volume in the CLI.
@@ -381,19 +458,80 @@ of changing text: 0x80; notifications cut to ATT_MTU - 3 at a UTF-8
 boundary.
 
 **CCP (GTBS server, `ccp.rs`).** A spec-correct GTBS (16 characteristics,
-CCID 2) around `ccp_model::CallModel` with the simulation backend: A2DPWB has
+CCID 2) around `ccp_model::CallModel` with the simulation backend: BlueCaster has
 no telephony. `--ccp-sim "<t>:<cmd>;..."` runs commands after the first
 client subscribed to Call State, `--ccp-console` reads them from stdin.
 Notification order as Zephyr's `tbs.c`. Call indices restart at 1 with each
 BTstack session (v1 kept counting).
 
-**TMAP / GMAP (`tmap_gmap.rs`).** The PC serves TMAS (UMS) and GMAS (UGG,
-features 0x03) and reads the headset's roles ("LE Audio: <addr>: TMAP: UMR,
-GMAP: UGT (UGT features 0x3C: ...)"; also in the diagnostics). With "Low
-latency for gaming headsets (GMAP)" (`le_audio_low_latency`, or
-`--le-low-latency`) and a group of UGTs with the Sink feature,
+**TMAP / GMAP (`tmap_gmap.rs`).** The PC serves TMAS (CG + UMS: the
+conversational configuration with source ASEs next to CCP's GTBS) and GMAS
+(UGG, features 0x07: Multiplex, 96 kbps Source, Multisink) and reads the headset's roles ("LE Audio: <addr>: TMAP: UMR,
+GMAP: UGT (UGT features 0x3C: ...)"; also in the diagnostics). With the
+profile's "Low latency for gaming audio devices" (`le_low_latency` in
+`profiles.json`, on by default; the Codecs screen; `--le-low-latency` in the
+CLI) and a group of UGTs with the Sink feature,
 `adjust_stream_request` puts `48_3_gr, 48_4_gr, 48_1_gr, 48_2_gr, 32_1_gr,
 32_2_gr` first with the Game context (Media when Game is not available).
+
+**BAS (Battery Service client, `bas.rs`, experimental).** Reads each
+device's Battery Level and follows its notifications; with a set of earbuds
+the lowest level is reported (`HostEvent::Battery`, "BAS: device N: battery
+X% (reported Y%)"). Emulator option `--bas L[,L2]`, `--bas-change S:L`.
+
+## Broadcast (Auracast source, developer mode)
+
+BlueCaster can also broadcast instead of streaming to a device: any LE Audio
+receiver nearby (earbuds, a speaker, a phone acting as an assistant) can
+pick it up. Started from the Developer screen's Auracast tab (name,
+password, high / standard quality, stereo / mono, test tone or system
+audio; `stream.start_broadcast`, refused with `developer.off` unless
+developer mode is on) or with `--cli --auracast <name> [--auracast-code
+<code>] [--auracast-mono] [--le-preset 24_2_2]`, which goes through the
+same service path (`state::broadcast_request`, `le_stream::run_broadcast`).
+It needs LE Audio on (`le_audio_experimental`, else error.le_audio_disabled)
+and an adapter with ISO buffers and the Isochronous Broadcaster feature.
+Home shows nothing of a running broadcast; starting a device's stream
+replaces it.
+
+- `le_audio::broadcast` (pure): the presets (BAP 1.0.1 Table 6.4, high
+  reliability, written from memory: RTN 4, 60 ms for 16 / 24 / 32 kHz, 65
+  ms for 48 kHz, 10 ms frames, 40 ms presentation delay; "high" = 48_4_2,
+  "standard" = 24_2_2), the extended advertising data (Broadcast Audio
+  Announcement 0x1852 with a random 24-bit Broadcast_ID, Public Broadcast
+  Announcement 0x1856 with the encrypted / standard / high quality bits,
+  Broadcast Name 0x30), the BASE (0x1851, periodic advertising: one
+  subgroup, LC3, Media; BIS 1 Front Left and BIS 2 Front Right, or one mono
+  BIS without a location) and a `StreamPlan` with one entry per BIS, so the
+  encode thread and the ISO sender are the unicast ones.
+- btstack-sys: `ENABLE_LE_PERIODIC_ADVERTISING`, `MAX_NR_BIS 2`; the shim
+  keeps the advertising set, its data and the BIG statically
+  (`bluecaster_broadcast_advertise`, `bluecaster_big_create`, `bluecaster_big_terminate`,
+  `bluecaster_broadcast_advertise_stop`).
+- bt-host `le/broadcast.rs`: advertising + LE Create BIG ->
+  GAP_SUBEVENT_BIG_CREATED -> `IsoSender::start_big`; stop: LE Terminate
+  BIG -> GAP_SUBEVENT_BIG_TERMINATED -> advertising removed ("Auracast:
+  stopped"). A BIG the controller ends counts as a lost stream
+  (error.auracast). `BtHost::le_start_broadcast` / `le_stop_broadcast`.
+- core `le_stream::run_broadcast`: no device; capture as for unicast.
+
+BTstack 1.8.1 pitfalls found on the way:
+- `HCI_EVENT_BIS_CAN_SEND_NOW` is emitted 4 bytes long: the BIS handle it
+  stores is cut off. The sender maps the BIS by its index.
+- LE Create BIG takes the Broadcast_Code in BTstack's `K` format (reversed
+  on the wire). A code is the UTF-8 string with its first character in the
+  first HCI octet, zero padded (as Android and Bumble send it), so
+  `Stack::big_create` hands it to BTstack reversed.
+
+Emulator: `emu_le_audio_sink.py --layout auracast [--broadcast-code CODE]`
+(`le_audio/broadcast.py`: BIG source and synchronized receiver in the
+emulated controllers; `le_audio/broadcast_sink.py`: a Bumble host as the
+broadcast sink, parsing the announcements and the BASE with Bumble's own
+code). Checked by hand on 2026-11-05: open (all SDUs on both BIS, no late
+SDU), encrypted with the right code (synced) and a wrong one (MIC failure,
+no audio), mono 24_2_2. Not yet: `run_test.py` cases and `bluecaster_decode`
+for BIS (the decoder change in `tools/a2dp_decode` is unfinished).
+Real hardware: not tried.
 
 ## LE Audio off
 
@@ -414,6 +552,17 @@ Users with the setting off get the behaviour of a build without LE:
   is stopped at once; while streaming or scanning the change waits for the
   next scan or connection (`Service::le_audio_deferred()`; the UI shows v1's
   note from `settings.set`'s `le_audio_deferred`).
+- **The device scan** (`Service::scan_devices`) runs the LE scan beside the
+  classic inquiry from its start (scan window 30 ms of every 60 ms), so LE
+  Audio entries show up as they are found, also when the scan is stopped
+  once the classic entry shows or in the first-run setup's long scan; a scan
+  nobody stops scans LE for at least 5 s (`status.le_scanning` while only the
+  LE part runs). Chained extended advertising data is joined before it is
+  parsed. The log has one `LE scan: ...` summary line per scan, and an INFO
+  line for each advertiser without an LE Audio service that has the address
+  or name of a classic device of the scan or `devices.txt` (earbuds whose LE
+  Audio is off still advertise over LE for their app). Emulator scan case
+  `le-audio` (`run_test.py --scan le-audio`).
 - **Devices and profiles.** A dual-mode device has two entries (classic and
   LE Audio, same address); an LE scan never marks a classic entry. LE Audio
   entries are saved in `le_audio_devices.txt` so that `devices.txt` stays
@@ -436,14 +585,19 @@ Users with the setting off get the behaviour of a build without LE:
 - LE ACL buffers can be small (27 bytes in the emulator): GATT writes are
   fragmented; BTstack negotiates the ATT MTU before the first query.
 - Connect with the address type the advertisement showed.
-- The device / CIS handles in captures differ between A2DPWB's and the
-  sink's controller; `a2dpwb_decode --le-audio` maps them by CIG / CIS id.
+- The device / CIS handles in captures differ between BlueCaster's and the
+  sink's controller; `bluecaster_decode --le-audio` maps them by CIG / CIS id.
 
 ## Known limitations
 
-- Sink ASEs only (no microphone / source ASE, no conversational streams);
-  ISO data from the controller is ignored.
-- No broadcast (BIS), no BASS, no CAP procedures beyond what BAP needs.
+- The headset microphone (source ASEs) is verified only against the
+  emulator, which writes it to a WAV file (the render to a real cable is
+  not exercised there); one mono source direction per device; the
+  source preset is fixed by the plan (no renegotiation when the headset
+  changes its available contexts); the mix of two earbuds' microphones
+  aligns them by arrival, not by time stamp.
+- Broadcast only as a source (developer mode, see above); no BASS, no CAP
+  procedures beyond what BAP needs.
 - SDUs without time stamps; no LE Read ISO TX Sync; a simple jitter buffer
   (the prefill only grows).
 - Application capture is not supported for LE Audio (system loopback,
@@ -474,7 +628,7 @@ Verification
   read that changed, ATT 0x0D for a wrong length; the notification order
   follows Zephyr's `tbs.c`), MCS (ATT error 0x80 for a long read that
   changed), CSIS error codes (0x80-0x84) and GMAP (Table 3.16 preset values,
-  UGG / UGT feature bits).
+  UGG / UGT feature bits, Table 3.18 `_gs` presets: 60 ms presentation delay).
 - [ ] Service Changed after a database change and the Database Hash were
   only exercised for the hash itself (`mcp-read`); a client bonded with an
   older database has no emulator case.
@@ -488,9 +642,13 @@ Verification
 - [ ] The aarch64 build (`cargo check --target aarch64-pc-windows-msvc`).
 
 Missing features
-- [ ] Source ASEs (microphone): needed for TMAP Call Gateway, real CCP calls
-  and the GMAP `_gs` configurations.
-- [ ] Broadcast (Auracast source, TMAP BMS, GMAP BGS).
+- [ ] Source ASEs (microphone): real headsets; the render to a real
+  virtual cable over hours (the drift control against a headset's clock);
+  GMAP `_gs` values checked against the spec; CCP calls with the
+  microphone (the conversational stream does not follow CCP's call state
+  yet).
+- [ ] Broadcast: emulator cases in `run_test.py`, BIS in `bluecaster_decode`,
+  real hardware; TMAP BMS / GMAP BGS roles.
 - [ ] CSIP: SIRK / size / rank change notifications, OOB-only SIRK; after a
   link loss the CLI reconnects only the address it was given; the 10 s
   member search is fixed.

@@ -25,11 +25,30 @@ pub struct DevOverrides {
     /// AAC: the StreamMuxConfig of 2.0.2 and before (AudioMuxVersion 0,
     /// implicit signaling) instead of Android's and PipeWire's
     pub aac_latm_v0: bool,
-    /// aptX Adaptive may stream at 96 kHz (to an R2 sink that lists it,
-    /// when chosen or under Auto-select); off, always 48 kHz (issue #86:
-    /// 96 kHz did not work on an EarFun yet)
-    pub aptxad_96k: bool,
+    /// Auto-select streams the codec it picks with that codec's own
+    /// settings (its card's "..."), not Auto's defaults (issue #86)
+    pub auto_codec_settings: bool,
+    /// A sample rate and bit depth on Auto follow the captured output's
+    /// format (Windows' default format of the device) instead of 48 kHz,
+    /// as far as the codec and the device take it (issue #86)
+    pub match_source: bool,
+    /// Every codec runs up to the quality's bit rate whatever maximum the
+    /// sink lists (LHDC V5, AAC, Opus 05, the SBC bitpool; issue #237).
+    /// Saved under its old name by 2.0.2-beta.17, when it was LHDC V5's
+    #[serde(alias = "lhdcv5_ignore_sink_max")]
+    pub ignore_sink_max: bool,
+    /// Longest a media packet waits in the send queue before it is dropped,
+    /// in ms (QUEUE_WAIT_MIN..=QUEUE_WAIT_MAX); 0 = the default (350 ms).
+    /// Takes effect when the next stream starts
+    pub queue_max_wait_ms: u32,
+    /// Audio waits unencoded while the send queue is backed up, so it goes
+    /// out at the bit rate ABR has lowered to meanwhile (issue #279)
+    pub encode_at_send: bool,
 }
+
+/// Range of [`DevOverrides::queue_max_wait_ms`] (ms)
+pub const QUEUE_WAIT_MIN: u32 = 50;
+pub const QUEUE_WAIT_MAX: u32 = 2000;
 
 impl DevOverrides {
     pub fn is_default(&self) -> bool {
@@ -45,7 +64,11 @@ static CURRENT: RwLock<DevOverrides> = RwLock::new(DevOverrides {
     aac_no_peak: false,
     aac_no_afterburner: false,
     aac_latm_v0: false,
-    aptxad_96k: false,
+    auto_codec_settings: false,
+    match_source: false,
+    ignore_sink_max: false,
+    queue_max_wait_ms: 0,
+    encode_at_send: false,
 });
 
 /// The overrides in force

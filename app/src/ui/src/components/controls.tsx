@@ -8,6 +8,7 @@ import {
   createUniqueId,
   For,
   onCleanup,
+  onMount,
   Show,
   splitProps,
   untrack,
@@ -54,6 +55,82 @@ export function IconButton(props: JSX.ButtonHTMLAttributes<HTMLButtonElement> & 
   );
 }
 
+/** A page's tabs (WAI-ARIA tabs pattern: arrow keys, Home, End). Tabs that
+ *  do not fit scroll with the arrows beside them, not a scrollbar; the
+ *  arrows are for the mouse, the keys already bring a tab into view. */
+export function TabBar<T extends string>(props: {
+  label: string;
+  tabs: { id: T; label: string; icon: IconName }[];
+  current: T;
+  onSelect: (id: T) => void;
+}) {
+  let list: HTMLDivElement | undefined;
+  const [canLeft, setCanLeft] = createSignal(false);
+  const [canRight, setCanRight] = createSignal(false);
+  const measure = () => {
+    if (!list) return;
+    setCanLeft(list.scrollLeft > 1);
+    setCanRight(list.scrollLeft + list.clientWidth < list.scrollWidth - 1);
+  };
+  const scroll = (dir: -1 | 1) => list?.scrollBy({ left: dir * list.clientWidth * 0.7, behavior: "smooth" });
+  onMount(() => {
+    measure();
+    if (typeof ResizeObserver === "undefined" || !list) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(list);
+    onCleanup(() => ro.disconnect());
+  });
+  const onKey = (e: KeyboardEvent) => {
+    const tabs = props.tabs;
+    const i = tabs.findIndex((x) => x.id === props.current);
+    let n = -1;
+    if (e.key === "ArrowRight") n = (i + 1) % tabs.length;
+    else if (e.key === "ArrowLeft") n = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === "Home") n = 0;
+    else if (e.key === "End") n = tabs.length - 1;
+    if (n < 0) return;
+    e.preventDefault();
+    props.onSelect(tabs[n].id);
+    document.getElementById(`tab-${tabs[n].id}`)?.focus();
+  };
+  const arrow = (dir: -1 | 1) => (
+    <button
+      type="button"
+      class={`tabs-scroll ${dir < 0 ? "left" : "right"}`}
+      tabindex={-1}
+      aria-hidden="true"
+      onClick={() => scroll(dir)}
+    >
+      <Icon name="chevron_right" />
+    </button>
+  );
+  return (
+    <div class="tabs-bar">
+      <Show when={canLeft()}>{arrow(-1)}</Show>
+      <div class="tabs" role="tablist" aria-label={props.label} onKeyDown={onKey} onScroll={measure} ref={list}>
+        <For each={props.tabs}>
+          {(x) => (
+            <button
+              type="button"
+              role="tab"
+              id={`tab-${x.id}`}
+              class="tab"
+              aria-selected={props.current === x.id}
+              aria-controls={`panel-${x.id}`}
+              tabindex={props.current === x.id ? 0 : -1}
+              onClick={() => props.onSelect(x.id)}
+            >
+              <Icon name={x.icon} />
+              {x.label}
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={canRight()}>{arrow(1)}</Show>
+    </div>
+  );
+}
+
 /** A "?" that shows `children` while hovered or focused (short reference
  *  text such as an order; longer explanations go behind Field's info button) */
 export function HelpTip(props: { label: string; children: JSX.Element }) {
@@ -83,7 +160,7 @@ export function Toggle(props: {
   return (
     <div class="row toggle-row">
       <label class="row-text" for={id}>
-        <span class="row-label">
+        <span class="row-label" id={`${id}-label`}>
           {props.label}
           {props.help?.()}
         </span>
@@ -100,6 +177,7 @@ export function Toggle(props: {
         class="switch"
         checked={props.checked}
         disabled={props.disabled}
+        aria-labelledby={`${id}-label`}
         aria-describedby={props.hint ? `${id}-hint` : undefined}
         onChange={(e) => props.onChange(e.currentTarget.checked)}
       />
@@ -165,12 +243,15 @@ export function Segmented<T extends string | number>(props: {
 }
 
 /** A labelled control with an optional hint and error, and the details
- *  behind an info button (the long explanations, issue #86) */
+ *  behind an info button (the long explanations, issue #86). The label and
+ *  hint on the left and the control on the right, as a Toggle (issue #86);
+ *  `stacked`: one below the other, for a control that needs the width. */
 export function Field(props: {
   label: string;
   hint?: string;
   error?: string | null;
   more?: () => JSX.Element;
+  stacked?: boolean;
   children: (id: string, describedBy: string | undefined) => JSX.Element;
 }) {
   const id = createUniqueId();
@@ -179,33 +260,51 @@ export function Field(props: {
   // and the typed text) whenever the error comes or goes. References to an
   // absent hint or error are ignored by assistive technology.
   const control = untrack(() => props.children(id, `${id}-hint ${id}-err`));
-  return (
-    <div class="field" classList={{ invalid: !!props.error }}>
-      <div class="field-head">
-        <label class="field-label" for={id}>
-          {props.label}
-        </label>
-        <Show when={props.more}>
-          <button
-            type="button"
-            class="btn btn-icon field-more-btn"
-            classList={{ on: open() }}
-            aria-label={t("ui.more_info", props.label)}
-            title={t("ui.more_info", props.label)}
-            aria-expanded={open()}
-            aria-controls={`${id}-more`}
-            onClick={() => setOpen(!open())}
-          >
-            <Icon name="info" />
-          </button>
-        </Show>
-      </div>
-      {control}
-      <Show when={props.hint}>
-        <span class="hint" id={`${id}-hint`}>
-          {props.hint}
-        </span>
+  const head = (
+    <div class="field-head">
+      <label class="field-label" for={id}>
+        {props.label}
+      </label>
+      <Show when={props.more}>
+        <button
+          type="button"
+          class="btn btn-icon field-more-btn"
+          classList={{ on: open() }}
+          aria-label={t("ui.more_info", props.label)}
+          title={t("ui.more_info", props.label)}
+          aria-expanded={open()}
+          aria-controls={`${id}-more`}
+          onClick={() => setOpen(!open())}
+        >
+          <Icon name="info" />
+        </button>
       </Show>
+    </div>
+  );
+  const hint = (
+    <Show when={props.hint}>
+      <span class="hint" id={`${id}-hint`}>
+        {props.hint}
+      </span>
+    </Show>
+  );
+  return (
+    <div class="field" classList={{ invalid: !!props.error, side: !props.stacked }}>
+      {props.stacked ? (
+        <>
+          {head}
+          {control}
+          {hint}
+        </>
+      ) : (
+        <div class="row">
+          <div class="row-text">
+            {head}
+            {hint}
+          </div>
+          {control}
+        </div>
+      )}
       <Show when={props.error}>
         <span class="field-error" id={`${id}-err`} role="alert">
           <Icon name="error_circle" />
@@ -340,6 +439,7 @@ export function Banner(props: {
   title?: string;
   children?: JSX.Element;
   actions?: JSX.Element;
+  onDismiss?: () => void;
 }) {
   const icon = (): IconName =>
     props.kind === "error" ? "error_circle" : props.kind === "warn" ? "warning" : props.kind === "good" ? "checkmark_circle" : "info";
@@ -357,6 +457,9 @@ export function Banner(props: {
           <div class="banner-actions">{props.actions}</div>
         </Show>
       </div>
+      <Show when={props.onDismiss}>
+        <IconButton icon="dismiss" label={t("modal.close")} onClick={() => props.onDismiss?.()} />
+      </Show>
     </div>
   );
 }
@@ -365,12 +468,21 @@ export function Banner(props: {
 export function Dialog(props: {
   open: boolean;
   title: string;
+  subtitle?: string;
   children: JSX.Element;
-  confirm: string;
-  cancel: string;
+  /** Without these two the dialog only closes: what is in it applies at once */
+  confirm?: string;
+  /** "shield" when confirming asks for administrator rights */
+  confirmIcon?: IconName;
+  cancel?: string;
   danger?: boolean;
   busy?: boolean;
-  onConfirm: () => void;
+  /** Room for a table whose rows should not wrap */
+  wide?: boolean;
+  /** A second way to go on, before the confirm button and the one
+   *  recommended: the confirm button then is a plain one */
+  extra?: { label: string; icon?: IconName; onClick: () => void };
+  onConfirm?: () => void;
   onCancel: () => void;
 }) {
   const id = createUniqueId();
@@ -411,17 +523,50 @@ export function Dialog(props: {
     <Show when={props.open}>
       <Portal>
         <div class="backdrop" onClick={(e) => e.target === e.currentTarget && cancel()}>
-          <div class="dialog card" role="dialog" aria-modal="true" aria-labelledby={id} ref={box} onKeyDown={onKey}>
-            <h2 id={id}>{props.title}</h2>
-            <div class="dialog-body">{props.children}</div>
-            <div class="dialog-actions">
-              <Button kind="subtle" disabled={props.busy} onClick={cancel} data-autofocus>
-                {props.cancel}
-              </Button>
-              <Button kind={props.danger ? "danger" : "strong"} busy={props.busy} onClick={() => props.onConfirm()}>
-                {props.confirm}
-              </Button>
+          <div
+            class={props.wide ? "dialog dialog-wide card" : "dialog card"}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={id}
+            ref={box}
+            onKeyDown={onKey}
+          >
+            <div class="dialog-head">
+              <div class="dialog-heading">
+                <h2 id={id}>{props.title}</h2>
+                <Show when={props.subtitle}>
+                  <p class="hint">{props.subtitle}</p>
+                </Show>
+              </div>
+              <Show when={!props.confirm}>
+                <IconButton icon="dismiss" label={t("modal.close")} onClick={cancel} data-autofocus />
+              </Show>
             </div>
+            <div class="dialog-body">{props.children}</div>
+            <Show when={props.confirm}>
+              <div class="dialog-actions">
+                <Button kind="subtle" disabled={props.busy} onClick={cancel} data-autofocus>
+                  {props.cancel}
+                </Button>
+                <Show when={props.extra}>
+                  {(x) => (
+                    <Button kind="strong" icon={x().icon} busy={props.busy} onClick={() => x().onClick()}>
+                      {x().label}
+                    </Button>
+                  )}
+                </Show>
+                {/* With the extra button, busy is the extra's work */}
+                <Button
+                  kind={props.danger ? "danger" : props.extra ? "default" : "strong"}
+                  icon={props.confirmIcon}
+                  busy={props.busy && !props.extra}
+                  disabled={props.busy && !!props.extra}
+                  onClick={() => props.onConfirm?.()}
+                >
+                  {props.confirm}
+                </Button>
+              </div>
+            </Show>
           </div>
         </div>
       </Portal>

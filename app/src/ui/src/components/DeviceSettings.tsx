@@ -1,24 +1,23 @@
 // One audio device's own settings on the Audio Devices screen (issue #86):
 // what is captured for it (one list, as on Home) and whether a virtual
-// device becomes the Windows default output; in developer mode also the
-// device its Windows volume follows and the max media packet size (kept in
-// its profile: the core reads them from the profile it streams; a device
-// without one gets it with the first change). Windows Volume Sync, the
-// buttons and the remembered volume are one setting each for every device,
-// above the list (Devices.tsx). Only what matters is spelled out: the long
-// explanations are behind the info buttons.
+// device becomes the Windows default output (kept in its profile: the core
+// reads them from the profile it streams; a device without one gets it with
+// the first change). Windows Volume Sync, the buttons and the remembered
+// volume are one setting each for every device, above the list
+// (Devices.tsx); the max media packet size is on the Developer page. The
+// capture source's format is a box beside it, and what the source does is
+// said below it (issue #86).
 
-import { createEffect, createMemo, createResource, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, on, onCleanup, onMount, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
 import { useApp } from "../app/context";
 import { t } from "../i18n";
-import { codecSpec, PACKET_DEFAULT, PACKET_MAX, PACKET_MIN } from "../lib/codecs";
-import type { AudioApp, AudioDevice, Device, Profile } from "../ipc/types";
+import { codecSpec } from "../lib/codecs";
+import type { AudioApp, AudioDevice, Device, Profile, Snapshot } from "../ipc/types";
 import { LINKS } from "../lib/links";
 import {
   appCaptureSupport,
   captureDevice,
-  defaultCapture,
   deviceFields,
   deviceFieldsComplete,
   entryBase,
@@ -29,6 +28,7 @@ import {
   type DeviceFields,
 } from "../lib/profile";
 import { captureChoices, captureText, captureValue, withCapture } from "./CapturePicker";
+import { InputSource } from "./InputSource";
 import { Banner, Button, Field, IconButton, Select, Toggle, type Option } from "./controls";
 import { Icon } from "./Icon";
 
@@ -37,12 +37,14 @@ export function DeviceSettings(props: { device: Device }) {
   const { core } = app;
   const snap = () => core.state.snap!;
   const profiles = createMemo(() => profilesOf(snap().profiles, props.device.address));
-  // An LE Audio entry: its own profile, and no A2DP packet size
+  // An LE Audio entry: its own profile
   const leEntry = () => props.device.le_audio;
   // What is shown: the first profile's, until changed here
   const [f, setF] = createStore<DeviceFields>(deviceFields(newestBase(profiles())));
   createEffect(on(profiles, (list) => list[0] && setF(deviceFields(list[0])), { defer: true }));
   const [saving, setSaving] = createSignal(false);
+  // What the capture source does, below it
+  const aboutId = createUniqueId();
 
   // ---- Audio devices and apps (asked from the core when needed) ----------
   const [devices, setDevices] = createSignal<AudioDevice[] | null>(null);
@@ -81,25 +83,18 @@ export function DeviceSettings(props: { device: Device }) {
   // VB-Cable is suggested only when Windows has no capture source of that
   // kind at all: no virtual device (issue #86)
   const noVirtual = () => listed() && virtualDevices().length === 0;
-  // A device without a profile has no capture source chosen yet: a virtual
-  // device if one is installed (issue #86), as its first profile gets
-  let chosen = false;
-  createEffect(
-    on(devices, (list) => {
-      if (list && !chosen && profiles().length === 0) setF(defaultCapture(list));
-    }),
-  );
   const [appSupport] = createResource(appCaptureSupport);
   const leOnly = () => leEntry() || (profiles().length > 0 && profiles().every((p) => p.le_audio));
-  /** The shown settings as a profile (what Home's capture source list takes) */
+  /** The shown settings as a profile (what Home's capture source list
+   *  takes) */
   const shown = (): Profile => ({ ...newestBase(profiles()), ...f, le_audio: leOnly() });
+  const mode = () => shown().capture_mode;
 
   /** Changes the device's settings: into each of its profiles once complete
    *  (a virtual device or an app chosen); a profile in use starts again with
    *  them (profile.save in the core). A device without a profile gets one
    *  (Auto, as the Codecs screen would make it). */
   const apply = async (patch: Partial<DeviceFields>) => {
-    chosen = true;
     setF(patch);
     const next = { ...unwrap(f) };
     if (!deviceFieldsComplete(next)) return;
@@ -120,19 +115,29 @@ export function DeviceSettings(props: { device: Device }) {
     setSaving(false);
   };
 
-  /** System Loopback, the virtual devices and the playing apps in one list */
+  /** The sound devices (the Windows default first), the virtual devices
+   *  and the playing apps in one list (issue #86: no "Loopback") */
   const sources = createMemo((): Option<string>[] => {
     const p = shown();
-    const c = captureChoices(p, devices() ?? [], apps() ?? [], appSupport() !== "no");
+    const c = captureChoices(p, devices() ?? [], apps() ?? [], appSupport() !== "no", snap().settings.developer_mode);
     const virtual: Option<string>[] = c.virtual.map((o) => ({ ...o, group: t("capture.virtual") }));
     if (virtual.length === 0 && noVirtual()) {
       virtual.push({ value: "virtual:", label: t("capture.no_virtual_device"), group: t("capture.virtual"), disabled: true });
     }
+    const outputs: Option<string>[] = c.output.map((o) => ({ ...o, group: t("capture.sound_devices") }));
     const list: Option<string>[] = c.apps.map((o) => ({ ...o, group: t("capture.app") }));
     if (list.length === 0 && apps() !== null && !p.le_audio && appSupport() !== "no") {
       list.push({ value: "app:", label: t("capture.no_app_playing"), group: t("capture.app"), disabled: true });
     }
-    return [{ value: "loopback", label: t("capture.loopback") }, ...virtual, ...list];
+    // The Windows default output it records, by name, first among the
+    // sound devices (issue #86)
+    const output = (devices() ?? []).find((d) => d.is_default)?.name;
+    const loopback: Option<string> = {
+      value: "loopback",
+      label: output ? t("capture.loopback_default", output) : t("capture.loopback_default_none"),
+      group: t("capture.sound_devices"),
+    };
+    return [loopback, ...outputs, ...virtual, ...list];
   });
   const chooseSource = (value: string) => {
     const p = shown();
@@ -149,40 +154,31 @@ export function DeviceSettings(props: { device: Device }) {
 
   return (
     <div class="device-settings" aria-busy={saving() ? "true" : undefined}>
-      <Field
-        label={t("capture.mode")}
-        more={() => (
-          <>
-            <p class="hint">
-              {f.capture_mode === "virtual"
-                ? t("capture.hint_virtual")
-                : f.capture_mode === "app"
-                  ? `${t("capture.hint_app")}\n${t("capture.app_hint")}`
-                  : t("capture.hint_loopback")}
-            </p>
-            <Show when={f.capture_mode === "app" && appSupport() !== "yes" && appSupport() !== "no"}>
-              <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
-            </Show>
-            <Show when={noVirtual()}>
-              <div class="inline">
-                <span class="hint">{t("capture.no_virtual_device")}</span>
-                <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
-                  {t("vbcable.download")}
-                </Button>
-              </div>
-            </Show>
-          </>
-        )}
-      >
-        {(id, described) => (
+      <Field label={t("capture.mode")} stacked>
+        {(id) => (
           <div class="inline capture-source">
             <Icon name={captureText(shown()).icon} />
-            <Select id={id} describedBy={described} value={captureValue(shown())} options={sources()} onChange={chooseSource} />
+            <Select id={id} describedBy={aboutId} value={captureValue(shown())} options={sources()} onChange={chooseSource} />
+            <CaptureFormat fields={shown()} profiles={profiles()} devices={devices()} />
             <IconButton icon="arrow_sync" label={t("capture.app_refresh")} onClick={load} />
           </div>
         )}
       </Field>
-      <CaptureFormat fields={f} profiles={profiles()} devices={devices()} />
+      <div class="capture-about" id={aboutId}>
+        <p class="hint">
+          {mode() === "virtual"
+            ? t("capture.hint_virtual")
+            : mode() === "output"
+              ? t("capture.hint_output")
+              : mode() === "app"
+                ? `${t("capture.hint_app")}\n${t("capture.app_hint")}`
+                : t("capture.hint_loopback")}
+        </p>
+        <Show when={mode() === "app" && appSupport() !== "yes" && appSupport() !== "no"}>
+          <p class="hint">{t("ui.profile.app_capture_requirement")}</p>
+        </Show>
+      </div>
+      <FormatWarning fields={shown()} profiles={profiles()} devices={devices()} />
       {/* Whether this Windows can capture one app: only the core knows the
           build for sure (it refuses the stream on an older Windows); the UI
           asks the WebView's client hints */}
@@ -192,49 +188,11 @@ export function DeviceSettings(props: { device: Device }) {
       <Show when={f.capture_mode === "virtual"}>
         <Toggle
           label={t("capture.auto_switch")}
-          hint={t("tooltip.auto_switch")}
           checked={f.auto_switch_device}
           onChange={(v) => void apply({ auto_switch_device: v })}
         />
       </Show>
-      {/* Whether the Windows volume syncs is one switch for every device
-          (Devices.tsx); which device it follows is not one for end users
-          (issue #86): developer mode, or a device chosen earlier, so it can
-          be set back */}
-      <Show when={snap().settings.developer_mode || f.volume_sync === "device"}>
-        <Field label={t("capture.volume_sync")}>
-          {(id, described) => (
-            <Select
-              id={id}
-              describedBy={described}
-              disabled={!snap().settings.volume_sync}
-              value={f.volume_sync === "device" ? `device:${f.volume_device_id}` : "auto"}
-              options={[
-                { value: "auto", label: t("capture.volume_sync_captured") },
-                ...volumeDevices(devices(), f).map((d) => ({
-                  value: `device:${d.id}`,
-                  label: d.name,
-                  group: t("capture.volume_sync_other"),
-                })),
-              ]}
-              onChange={(v) => {
-                if (v.startsWith("device:")) {
-                  const did = v.slice("device:".length);
-                  const d = (devices() ?? []).find((x) => x.id === did);
-                  void apply({ volume_sync: "device", volume_device_id: did, volume_device_name: d?.name ?? f.volume_device_name });
-                } else {
-                  void apply({ volume_sync: "auto" });
-                }
-              }}
-            />
-          )}
-        </Field>
-      </Show>
-      {/* Not one for end users (issue #86): developer mode, or a size
-          changed earlier, so it can be set back */}
-      <Show when={!leOnly() && (snap().settings.developer_mode || f.max_media_payload !== PACKET_DEFAULT)}>
-        <PacketSize value={f.max_media_payload} onChange={(v) => void apply({ max_media_payload: v })} />
-      </Show>
+      <InputSource device={props.device} devices={devices() ?? []} source={shown()} />
     </div>
   );
 }
@@ -250,107 +208,107 @@ function newestBase(list: Profile[]): Profile {
       auto_switch_device: true,
       app_exe: "",
       app_name: "",
-      volume_sync: "auto",
-      volume_device_id: "",
-      volume_device_name: "",
-      max_media_payload: PACKET_DEFAULT,
     }
   );
 }
 
+type CaptureFormatProps = { fields: DeviceFields; profiles: Profile[]; devices: AudioDevice[] | null };
+
+/** The rate and bit depth a profile streams with (0: Auto): what streams
+ *  now while the device is connected, else its own values; Auto-select
+ *  streams Auto's (unless developer mode keeps each codec's, issue #86) */
+function streamedFormat(p: Profile, snap: Snapshot): { sample_rate: number; bit_depth: number } {
+  const info = snap.stream.state === "streaming" && snap.stream.profile === p.name ? snap.stream.info : null;
+  const s = snap.settings;
+  const own = !(s.auto_codec && !p.le_audio) || (s.developer_mode && s.dev_overrides.auto_codec_settings);
+  const chosen = own ? p : { sample_rate: 0, bit_depth: 0 };
+  if (info && !info.le) return { sample_rate: info.sample_rate, bit_depth: chosen.bit_depth };
+  return { sample_rate: chosen.sample_rate, bit_depth: chosen.bit_depth };
+}
+
+/** The format Windows mixes the captured device in (rate, bits; null while
+ *  unknown), and what a profile of the device streams with otherwise */
+function captureFormat(props: CaptureFormatProps, snap: Snapshot) {
+  const d = captureDevice(props.fields, props.devices ?? []);
+  if (!d || d.mix_rate === null || d.mix_bits === null) return null;
+  // The first profile that streams another format
+  const off =
+    props.profiles
+      .map((p) => {
+        const f = streamedFormat(p, snap);
+        return { ...formatMismatch(f, d), ...f };
+      })
+      .find((m) => m.rate || m.bits) ?? null;
+  return { rate: d.mix_rate, bits: d.mix_bits, off };
+}
+
+/** "48000 Hz / 24-bit" */
+function formatText(rate: number, bits: number): string {
+  const depth = bits === 16 || bits === 24 ? t(`bitdepth.${bits}`) : `${bits}-bit`;
+  return bits ? `${rate} Hz / ${depth}` : `${rate} Hz`;
+}
+
 /**
- * The max media packet size (it was the profile's "Advanced" setting: the
- * same for every codec, so the device's, issue #86). Saved when a valid
- * value is left or the recommended one chosen.
+ * The format Windows mixes the captured device in, a read-only box beside
+ * the capture source (issue #86), amber when a profile of the device asks
+ * for another rate or bit depth (v1 capture.device_format).
  */
-function PacketSize(props: { value: number; onChange: (v: number) => void }) {
-  const [text, setText] = createSignal<string | null>(null);
-  createEffect(on(() => props.value, () => setText(null), { defer: true }));
-  const shown = () => text() ?? String(props.value);
-  const valid = (s: string) => {
-    const n = Number(s);
-    return Number.isInteger(n) && n >= PACKET_MIN && n <= PACKET_MAX;
-  };
-  const commit = () => {
-    const s = text();
-    if (s === null || !valid(s)) return;
-    if (Number(s) !== props.value) props.onChange(Number(s));
-  };
+function CaptureFormat(props: CaptureFormatProps) {
+  const { core } = useApp();
   return (
-    <Field
-      label={t("advanced.max_packet")}
-      hint={t("advanced.max_packet_help", PACKET_MIN, PACKET_MAX, PACKET_DEFAULT)}
-      error={text() !== null && !valid(text()!) ? t("ui.profile.err_packet", PACKET_MIN, PACKET_MAX) : null}
-    >
-      {(id, described) => (
-        <div class="inline">
-          <input
-            id={id}
-            class="input num narrow"
-            type="number"
-            inputmode="numeric"
-            min={PACKET_MIN}
-            max={PACKET_MAX}
-            step="1"
-            value={shown()}
-            aria-describedby={described}
-            aria-invalid={text() !== null && !valid(text()!) ? "true" : undefined}
-            onInput={(e) => setText(e.currentTarget.value)}
-            onChange={commit}
-            onKeyDown={(e) => e.key === "Enter" && commit()}
-          />
-          <Button kind="subtle" disabled={props.value === PACKET_DEFAULT && text() === null} onClick={() => props.onChange(PACKET_DEFAULT)}>
-            {t("advanced.max_packet_recommended", PACKET_DEFAULT)}
-          </Button>
-        </div>
+    <Show when={captureFormat(props, core.state.snap!)}>
+      {(c) => (
+        <span
+          class="format-box"
+          classList={{ "st-warn": !!c().off }}
+          role="note"
+          aria-label={t("capture.device_format", c().rate, c().bits)}
+          title={t("capture.device_format", c().rate, c().bits)}
+        >
+          <Show when={c().off}>
+            <Icon name="warning" />
+          </Show>
+          <span class="num">{c().rate} Hz</span>
+          <span class="num">{c().bits === 16 || c().bits === 24 ? t(`bitdepth.${c().bits}`) : `${c().bits}-bit`}</span>
+        </span>
       )}
-    </Field>
+    </Show>
   );
 }
 
-function volumeDevices(devices: AudioDevice[] | null, f: DeviceFields): { id: string; name: string }[] {
-  const list = (devices ?? []).map((d) => ({ id: d.id, name: d.name }));
-  if (f.volume_sync === "device" && f.volume_device_id && !list.some((d) => d.id === f.volume_device_id)) {
-    list.unshift({ id: f.volume_device_id, name: t("capture.volume_sync_missing", f.volume_device_name || f.volume_device_id) });
-  }
-  return list;
+/** Why the format box is amber: it still streams, converted (issue #86),
+ *  with both formats. It speaks of the codec, never of the profile by its
+ *  name. */
+function FormatWarning(props: CaptureFormatProps) {
+  const { core } = useApp();
+  const c = () => captureFormat(props, core.state.snap!);
+  return (
+    <Show when={c()?.off}>
+      {(o) => (
+        <p class="field-warn">
+          <Icon name="warning" />
+          <span>
+            {t(
+              "ui.profile.format_differs",
+              formatText(o().sample_rate || c()!.rate, o().bit_depth),
+              formatText(c()!.rate, c()!.bits),
+            )}
+          </span>
+        </p>
+      )}
+    </Show>
+  );
 }
 
-/**
- * The format Windows mixes the captured device in, red when a profile of the
- * device asks for another rate or bit depth (v1 capture.device_format)
- */
-function CaptureFormat(props: { fields: DeviceFields; profiles: Profile[]; devices: AudioDevice[] | null }) {
-  const device = () => captureDevice(props.fields, props.devices ?? []);
+/** Why a virtual device is wanted, where it is not installed */
+export function VbCableNote() {
+  const { core } = useApp();
   return (
-    <Show when={device()}>
-      {(d) => {
-        // The first profile that asks for another format
-        const off = () => {
-          for (const p of props.profiles) {
-            const m = formatMismatch(p, d());
-            if (m.rate || m.bits) return { ...m, profile: p.name };
-          }
-          return null;
-        };
-        const text = () => t("capture.device_format", d().mix_rate ?? 0, d().mix_bits ?? 0);
-        const which = (o: { rate: boolean; bits: boolean }) =>
-          [o.rate ? t("connection.sample_rate") : "", o.bits ? t("connection.bit_depth") : ""].filter((x) => x).join(", ");
-        return (
-          <Show when={d().mix_rate !== null && d().mix_bits !== null}>
-            <Show when={off()} fallback={<p class="hint">{text()}</p>}>
-              {(o) => (
-                <p class="field-error">
-                  <Icon name="warning" />
-                  <span>
-                    {text()}. {o().profile}: {t("ui.profile.format_differs", which(o()))}
-                  </span>
-                </p>
-              )}
-            </Show>
-          </Show>
-        );
-      }}
-    </Show>
+    <div class="setup-note">
+      <p>{t("ui.setup.vbcable_note")}</p>
+      <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
+        {t("vbcable.download")}
+      </Button>
+    </div>
   );
 }

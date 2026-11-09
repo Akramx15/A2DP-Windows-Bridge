@@ -12,10 +12,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use bt_host::HeadsetMic;
 use bt_host::media::clamp_media_payload_limit;
 use codec::{CodecKind, Quality};
 
-use crate::stream::{SourceRequest, StreamRequest, VolumeSync};
+use crate::stream::{Bitpools, SourceRequest, StreamRequest, VolumeSync};
 
 fn auto() -> String {
     "auto".into()
@@ -29,8 +30,40 @@ fn loopback() -> String {
 fn yes() -> bool {
     true
 }
+fn headset_off() -> String {
+    "off".into()
+}
+fn is_headset_off(mode: &str) -> bool {
+    HeadsetMic::parse(mode) == HeadsetMic::Off
+}
+/// `headset_mic` as saved: "off" | "on" | "auto", or the bool of the first
+/// development builds (true: "on"); anything else is "off"
+fn headset_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Saved {
+        Flag(bool),
+        Mode(String),
+        Other(serde::de::IgnoredAny),
+    }
+    let mode = match Saved::deserialize(d)? {
+        Saved::Flag(on) => {
+            if on {
+                HeadsetMic::On
+            } else {
+                HeadsetMic::Off
+            }
+        }
+        Saved::Mode(m) => HeadsetMic::parse(&m),
+        Saved::Other(_) => HeadsetMic::Off,
+    };
+    Ok(mode.as_str().into())
+}
 fn is_true(b: &bool) -> bool {
     *b
+}
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 fn is_zero(n: &u8) -> bool {
     *n == 0
@@ -59,16 +92,27 @@ pub struct Profile {
     pub abr: bool,
     /// Legacy (v1, and v2 before issue #86's Codecs redesign): whether a
     /// codec the device does not offer falls back to another. Kept in the
-    /// file but no longer used: a profile always falls back, to the first
-    /// codec in its order the device offers (an unsupported codec is never
-    /// tried)
+    /// file but no longer used: a profile falls back to the first codec in
+    /// its order the device offers, unless `codec_forced`
     #[serde(default = "yes")]
     pub codec_fallback: bool,
+    /// The codec was chosen on its card while the device did not offer it
+    /// (issue #86): it is asked for anyway and the stream stops with an
+    /// error if the device refuses it. A codec chosen while offered and no
+    /// longer offered later (earbuds switched to another codec) falls back.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub codec_forced: bool,
+    /// The codec's settings are not held to what the device lists (its
+    /// card's "Show only supported options" off, issue #86)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unlisted_options: bool,
     /// 0 = auto
     pub sample_rate: u32,
     /// 0 = auto, 16, 24
     pub bit_depth: u32,
-    /// loopback, virtual, app
+    /// loopback, virtual, output, app. "output": loopback of the output
+    /// device `audio_device_id` (Windows' endpoint ID) whichever is the
+    /// default (issue #193)
     #[serde(default = "loopback")]
     pub capture_mode: String,
     pub audio_device_id: String,
@@ -79,9 +123,10 @@ pub struct Profile {
     pub auto_switch_device: bool,
     pub app_exe: String,
     pub app_name: String,
-    /// auto, off, device. Streams follow Settings::volume_sync for every
-    /// device (schema 6): off there, none syncs; on, "device" follows
-    /// volume_device_id and the others are Auto (the core's state.rs)
+    /// auto, off, device. Kept as saved, but streams follow
+    /// Settings::volume_sync alone (schema 6; issue #86: no screen sets a
+    /// followed device any more): off, none syncs; on, Auto (the core's
+    /// state.rs)
     #[serde(default = "auto")]
     pub volume_sync: String,
     pub volume_device_id: String,
@@ -108,7 +153,16 @@ pub struct Profile {
     /// The same for SBC XQ (kept apart: XQ is dual channel and goes lower)
     #[serde(skip_serializing_if = "is_zero")]
     pub sbcxq_bitpool: u8,
-    /// SBC / SBC XQ: block length 4, 8, 12, 16 (0 = 16)
+    /// SBC / SBC XQ: the lowest bitpool to use, the SET_CONFIGURATION's
+    /// minimum and the floor of ABR, within what the device allows (0 =
+    /// Auto, issue #86)
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbc_min_bitpool: u8,
+    /// The same for SBC XQ
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbcxq_min_bitpool: u8,
+    /// SBC / SBC XQ: block length 4, 8, 12, 16 (0 = 16). The frame setup
+    /// counts in developer mode only ([`crate::settings::Settings::sbc_frame`])
     #[serde(skip_serializing_if = "is_zero")]
     pub sbc_blocks: u8,
     /// SBC / SBC XQ: subbands 4, 8 (0 = 8)
@@ -128,16 +182,34 @@ pub struct Profile {
     /// configuration either way.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub le_low_latency: bool,
+    /// Headset mode: "off" | "on" | "auto" ([`HeadsetMic`]; written only
+    /// when not off). The headphones' microphone is rendered to
+    /// `mic_device_id`; classic devices play over the voice link meanwhile
+    /// (Auto: while an app records from its capture side), LE Audio keeps
+    /// its preset
+    #[serde(default = "headset_off", deserialize_with = "headset_mode", skip_serializing_if = "is_headset_off")]
+    pub headset_mic: String,
+    /// The render endpoint id that receives the microphone (a virtual
+    /// cable's input). Empty: none chosen, headset mode stays off
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mic_device_id: String,
+    /// Its friendly name, for display while the device is missing
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mic_device_name: String,
+    /// The microphone muted from Home's or the flyout's chip: the voice link
+    /// stays closed as with headset mode off, `headset_mic` is kept for
+    /// unmuting (written only when muted)
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mic_muted: bool,
     /// The settings of the other codecs, by codec key, as they were last
     /// chosen: choosing one of them again brings them back (the codec in
     /// use has its own in the fields above)
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub codec_settings: BTreeMap<String, CodecValues>,
     /// The device's codec order (codec keys), as its cards were dragged on
-    /// the Codecs screen with Auto-select off (issue #86 round 8): Auto, and
-    /// a chosen codec the device does not offer, take the first one in it
-    /// the device offers. Empty: highest sound quality first. Under
-    /// Auto-select it is kept but not used ([`Profile::as_auto`]).
+    /// the Codecs screen (issue #86 round 8): Auto, under Auto-select too,
+    /// and a chosen codec the device does not offer, take the first one in
+    /// it the device offers. Empty: highest sound quality first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub codec_order: Vec<String>,
     #[serde(flatten)]
@@ -156,6 +228,8 @@ impl Default for Profile {
             quality: hq(),
             abr: false,
             codec_fallback: true,
+            codec_forced: false,
+            unlisted_options: false,
             sample_rate: 0,
             bit_depth: 0,
             capture_mode: loopback(),
@@ -173,12 +247,18 @@ impl Default for Profile {
             max_media_payload: None,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
+            sbc_min_bitpool: 0,
+            sbcxq_min_bitpool: 0,
             sbc_blocks: 0,
             sbc_subbands: 0,
             sbc_allocation: String::new(),
             sbc_channel_mode: String::new(),
             le_audio: false,
             le_low_latency: true,
+            headset_mic: headset_off(),
+            mic_device_id: String::new(),
+            mic_device_name: String::new(),
+            mic_muted: false,
             codec_settings: BTreeMap::new(),
             codec_order: Vec::new(),
             other: BTreeMap::new(),
@@ -200,6 +280,10 @@ pub struct CodecValues {
     #[serde(skip_serializing_if = "is_zero")]
     pub sbcxq_bitpool: u8,
     #[serde(skip_serializing_if = "is_zero")]
+    pub sbc_min_bitpool: u8,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub sbcxq_min_bitpool: u8,
+    #[serde(skip_serializing_if = "is_zero")]
     pub sbc_blocks: u8,
     #[serde(skip_serializing_if = "is_zero")]
     pub sbc_subbands: u8,
@@ -207,6 +291,34 @@ pub struct CodecValues {
     pub sbc_allocation: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub sbc_channel_mode: String,
+    /// Not held to what the device lists ([`Profile::unlisted_options`])
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unlisted_options: bool,
+}
+
+impl CodecValues {
+    /// Puts these settings into `req` (one codec's, under Auto-select)
+    pub fn apply_to(&self, req: &mut StreamRequest) {
+        req.quality = Quality::from_key(&self.quality);
+        req.abr = self.abr;
+        req.sbc_bitpool = self.sbc_bitpool;
+        req.sbcxq_bitpool = self.sbcxq_bitpool;
+        req.sbc_min_bitpool = self.sbc_min_bitpool;
+        req.sbcxq_min_bitpool = self.sbcxq_min_bitpool;
+        req.sbc = codec::sbc::SbcParams {
+            blocks: self.sbc_blocks,
+            subbands: self.sbc_subbands,
+            allocation: codec::sbc::Allocation::from_key(&self.sbc_allocation),
+            channel_mode: codec::sbc::ChannelMode::from_key(&self.sbc_channel_mode),
+            min_bitpool: 0,
+        };
+        req.sample_rate = (self.sample_rate != 0).then_some(self.sample_rate);
+        req.bit_depth = match self.bit_depth {
+            16 => Some(16),
+            24 => Some(24),
+            _ => None,
+        };
+    }
 }
 
 impl Default for CodecValues {
@@ -218,10 +330,13 @@ impl Default for CodecValues {
             abr: false,
             sbc_bitpool: 0,
             sbcxq_bitpool: 0,
+            sbc_min_bitpool: 0,
+            sbcxq_min_bitpool: 0,
             sbc_blocks: 0,
             sbc_subbands: 0,
             sbc_allocation: String::new(),
             sbc_channel_mode: String::new(),
+            unlisted_options: false,
         }
     }
 }
@@ -242,11 +357,23 @@ impl Profile {
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,
             sbcxq_bitpool: self.sbcxq_bitpool,
+            sbc_min_bitpool: self.sbc_min_bitpool,
+            sbcxq_min_bitpool: self.sbcxq_min_bitpool,
             sbc_blocks: self.sbc_blocks,
             sbc_subbands: self.sbc_subbands,
             sbc_allocation: self.sbc_allocation.clone(),
             sbc_channel_mode: self.sbc_channel_mode.clone(),
+            unlisted_options: self.unlisted_options,
         }
+    }
+
+    /// Each codec's settings: the codec in use's, then the others' kept
+    /// ones (what Auto-select streams with in developer mode,
+    /// `DevOverrides::auto_codec_settings`)
+    pub fn all_codec_values(&self) -> Vec<(CodecKind, CodecValues)> {
+        let current = CodecKind::from_key(&self.codec);
+        let kept = self.codec_settings.iter().filter_map(|(key, v)| Some((CodecKind::from_key(key)?, v.clone())));
+        current.map(|k| (k, self.codec_values())).into_iter().chain(kept.filter(|(k, _)| Some(*k) != current)).collect()
     }
 
     /// The profile as Auto streams it while "Auto-select" is on for every
@@ -267,12 +394,15 @@ impl Profile {
             abr: d.abr,
             sbc_bitpool: d.sbc_bitpool,
             sbcxq_bitpool: d.sbcxq_bitpool,
+            sbc_min_bitpool: d.sbc_min_bitpool,
+            sbcxq_min_bitpool: d.sbcxq_min_bitpool,
             sbc_blocks: d.sbc_blocks,
             sbc_subbands: d.sbc_subbands,
             sbc_allocation: d.sbc_allocation,
             sbc_channel_mode: d.sbc_channel_mode,
-            // Auto-select's order is the default one
-            codec_order: Vec::new(),
+            unlisted_options: false,
+            codec_forced: false,
+            // The device's own order stays: Auto takes the first card offered
             ..self.clone()
         }
     }
@@ -280,6 +410,104 @@ impl Profile {
     /// The codec order streams use ([`Profile::codec_order`])
     pub fn order(&self) -> codec::AutoOrder {
         codec::AutoOrder::from_keys(&self.codec_order)
+    }
+
+    /// Where the profile's audio comes from
+    pub fn source(&self) -> SourceRequest {
+        match self.capture_mode.as_str() {
+            "virtual" => SourceRequest::VirtualDevice {
+                id: self.audio_device_id.clone(),
+                name: self.audio_device_name.clone(),
+                auto_switch: self.auto_switch_device,
+            },
+            "output" if !self.audio_device_id.is_empty() => {
+                SourceRequest::OutputDevice { id: self.audio_device_id.clone(), name: self.audio_device_name.clone() }
+            }
+            "app" => SourceRequest::Application { exe: self.app_exe.clone() },
+            // "loopback", "output" without a device (none chosen: the
+            // default output), and v1's legacy "apo"
+            _ => SourceRequest::SystemLoopback,
+        }
+    }
+
+    /// `new` is this profile with another source and nothing else changed
+    pub fn only_source_differs(&self, new: &Profile) -> bool {
+        let same_source = Profile {
+            capture_mode: new.capture_mode.clone(),
+            audio_device_id: new.audio_device_id.clone(),
+            audio_device_name: new.audio_device_name.clone(),
+            auto_switch_device: new.auto_switch_device,
+            app_exe: new.app_exe.clone(),
+            app_name: new.app_name.clone(),
+            ..self.clone()
+        };
+        same_source == *new && self.source() != new.source()
+    }
+
+    /// `new` is this profile with only the settings kept for other codecs
+    /// changed: nothing a stream uses
+    pub fn only_kept_settings_differ(&self, new: &Profile) -> bool {
+        self.codec_settings != new.codec_settings
+            && Profile { codec_settings: new.codec_settings.clone(), ..self.clone() } == *new
+    }
+
+    /// The SBC / SBC XQ bitpools, which a stream takes in place
+    pub fn bitpools(&self) -> Bitpools {
+        Bitpools {
+            sbc: self.sbc_bitpool,
+            sbcxq: self.sbcxq_bitpool,
+            sbc_min: self.sbc_min_bitpool,
+            sbcxq_min: self.sbcxq_min_bitpool,
+        }
+    }
+
+    /// `new` is this profile with other bitpools and nothing else changed
+    pub fn only_bitpools_differ(&self, new: &Profile) -> bool {
+        let same = Profile {
+            sbc_bitpool: new.sbc_bitpool,
+            sbcxq_bitpool: new.sbcxq_bitpool,
+            sbc_min_bitpool: new.sbc_min_bitpool,
+            sbcxq_min_bitpool: new.sbcxq_min_bitpool,
+            ..self.clone()
+        };
+        same == *new && self.bitpools() != new.bitpools()
+    }
+
+    /// `new` is this profile with another headset mode, microphone output
+    /// or mute and nothing else changed
+    pub fn only_headset_mic_differs(&self, new: &Profile) -> bool {
+        let same = Profile {
+            headset_mic: new.headset_mic.clone(),
+            mic_device_id: new.mic_device_id.clone(),
+            mic_device_name: new.mic_device_name.clone(),
+            mic_muted: new.mic_muted,
+            ..self.clone()
+        };
+        same == *new
+            && (&self.headset_mic, &self.mic_device_id, &self.mic_device_name, self.mic_muted)
+                != (&new.headset_mic, &new.mic_device_id, &new.mic_device_name, new.mic_muted)
+    }
+
+    /// The headset mode as saved, Off while the microphone is muted
+    pub fn headset_mic_mode(&self) -> HeadsetMic {
+        if self.mic_muted { HeadsetMic::Off } else { HeadsetMic::parse(&self.headset_mic) }
+    }
+
+    /// Why headset mode must not run with this profile's microphone output:
+    /// it would feed the microphone back into the stream. The output is the
+    /// virtual or output device the profile captures, or the Windows
+    /// default output (`default_output_id`) while it captures System
+    /// Loopback. Returns the message key, None when there is no loop (or no
+    /// output chosen, which the UI notes on its own).
+    pub fn mic_device_conflicts(&self, default_output_id: &str) -> Option<&'static str> {
+        mic_output_conflicts(&self.source(), &self.mic_device_id, default_output_id)
+    }
+
+    /// `new` is this profile with only "Show only options it supports"
+    /// turned
+    pub fn only_unlisted_differs(&self, new: &Profile) -> bool {
+        self.unlisted_options != new.unlisted_options
+            && Profile { unlisted_options: new.unlisted_options, ..self.clone() } == *new
     }
 
     /// What to stream for this profile. An LE Audio (experimental) profile
@@ -290,16 +518,7 @@ impl Profile {
     pub fn to_request(&self, legacy_max_media_payload: u16) -> Result<StreamRequest, ProfileError> {
         let device = bt_host::parse_addr(&self.device_address)
             .ok_or_else(|| ProfileError::Address(self.device_address.clone()))?;
-        let source = match self.capture_mode.as_str() {
-            "virtual" => SourceRequest::VirtualDevice {
-                id: self.audio_device_id.clone(),
-                name: self.audio_device_name.clone(),
-                auto_switch: self.auto_switch_device,
-            },
-            "app" => SourceRequest::Application { exe: self.app_exe.clone() },
-            // "loopback", and v1's legacy "apo"
-            _ => SourceRequest::SystemLoopback,
-        };
+        let source = self.source();
         let volume_sync = match self.volume_sync.as_str() {
             "off" => VolumeSync::Off,
             "device" => VolumeSync::Device(self.volume_device_id.clone()),
@@ -322,18 +541,26 @@ impl Profile {
             device_name: self.device_name.clone(),
             codec: CodecKind::from_key(&self.codec),
             codec_fallback: true,
+            codec_forced: self.codec_forced,
+            unlisted_options: self.unlisted_options,
             // The setting's, filled in by whoever starts the stream
             experimental_codecs: true,
+            // Settings' developer_mode, filled in the same way
+            developer_codecs: false,
             auto_order: self.order(),
             quality: Quality::from_key(&self.quality),
             abr: self.abr,
             sbc_bitpool: self.sbc_bitpool,
             sbcxq_bitpool: self.sbcxq_bitpool,
+            sbc_min_bitpool: self.sbc_min_bitpool,
+            sbcxq_min_bitpool: self.sbcxq_min_bitpool,
+            // Whoever starts the stream passes it through Settings::sbc_frame
             sbc: codec::sbc::SbcParams {
                 blocks: self.sbc_blocks,
                 subbands: self.sbc_subbands,
                 allocation: codec::sbc::Allocation::from_key(&self.sbc_allocation),
                 channel_mode: codec::sbc::ChannelMode::from_key(&self.sbc_channel_mode),
+                min_bitpool: 0,
             },
             sample_rate: (self.sample_rate != 0).then_some(self.sample_rate),
             bit_depth: match self.bit_depth {
@@ -341,8 +568,10 @@ impl Profile {
                 24 => Some(24),
                 _ => None,
             },
+            codec_values: Vec::new(),
             source,
             volume_sync,
+            mute_output: false,
             max_media_payload: clamp_media_payload_limit(
                 self.max_media_payload.unwrap_or(legacy_max_media_payload) as u32
             ),
@@ -359,8 +588,27 @@ impl Profile {
             // A profile asking for the high LDAC rate keeps it and the
             // pipeline resamples around the engine
             spatial_keep_rate: self.sample_rate == 96_000,
+            // Whoever starts the stream decides (an output chosen, the
+            // app's start_profile)
+            headset_mic: HeadsetMic::Off,
+            mic_output: None,
         })
     }
+}
+
+/// [`Profile::mic_device_conflicts`] for a stream capturing `source` with
+/// the microphone on render endpoint `mic` (the session checks the source
+/// it captures now, which may stand in for the profile's)
+pub fn mic_output_conflicts(source: &SourceRequest, mic: &str, default_output_id: &str) -> Option<&'static str> {
+    if mic.is_empty() {
+        return None;
+    }
+    let looped = match source {
+        SourceRequest::VirtualDevice { id, .. } | SourceRequest::OutputDevice { id, .. } => id == mic,
+        SourceRequest::SystemLoopback => !default_output_id.is_empty() && default_output_id == mic,
+        _ => false,
+    };
+    looped.then_some("error.headset_mic_loop")
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -372,7 +620,7 @@ struct ProfilesFile {
 }
 
 pub fn path(dir: &Path) -> PathBuf {
-    dir.join("profiles.json")
+    crate::paths::profiles_file(dir)
 }
 
 /// Gives every profile a name of its own: v1 named profiles "<device>
@@ -467,69 +715,92 @@ pub fn consolidate(list: &mut Vec<Profile>, last_profile: &str) -> Vec<String> {
     folded
 }
 
-/// Plain SBC no longer offers dual channel (issue #86: SBC XQ is SBC's dual
-/// channel): a profile that chose it, for the codec in use or kept in
-/// `codec_settings`, gets joint stereo (""). Returns how many profiles
+/// The profiles that capture System Loopback capture this virtual device
+/// instead, and make it the Windows default output while connected. How many
 /// changed.
-pub fn drop_sbc_dual_channel(list: &mut [Profile]) -> usize {
-    let dual = |m: &mut String| {
-        let was = m == "dual_channel";
-        if was {
-            m.clear();
-        }
-        was
-    };
+pub fn use_virtual_device(list: &mut [Profile], id: &str, name: &str) -> usize {
     let mut changed = 0;
-    for p in list {
-        let mut any = dual(&mut p.sbc_channel_mode);
-        for v in p.codec_settings.values_mut() {
-            any |= dual(&mut v.sbc_channel_mode);
-        }
-        if any {
-            tracing::info!("profiles: \"{}\": SBC dual channel is now SBC XQ's, joint stereo instead", p.name);
-            changed += 1;
-        }
+    for p in list.iter_mut().filter(|p| p.capture_mode == "loopback") {
+        p.capture_mode = "virtual".into();
+        p.audio_device_id = id.into();
+        p.audio_device_name = name.into();
+        p.auto_switch_device = true;
+        changed += 1;
     }
     changed
 }
 
-/// The saved profiles, names made unique and SBC's dual channel dropped in
-/// memory (see make_names_unique, drop_sbc_dual_channel; written at the next
-/// save)
+/// The path of 2.0.x's settings folder in `value`, rebased onto `config`:
+/// `%APPDATA%\A2DPWB\stages\x` -> `<config>\stages\x`. None when `value` is
+/// empty, still exists, names no such folder, or the rebased path is missing
+/// too (the stages are installed by hand).
+pub(crate) fn rebase_old_path(value: &str, config: &Path) -> Option<String> {
+    let path = Path::new(value.trim());
+    if path.as_os_str().is_empty() || path.exists() {
+        return None;
+    }
+    let parts: Vec<_> = path.components().collect();
+    let at = parts
+        .iter()
+        .position(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(crate::paths::OLD_FOLDER_NAME))?;
+    let mut rebased = config.to_path_buf();
+    for part in &parts[at + 1..] {
+        rebased.push(part.as_os_str());
+    }
+    rebased.exists().then(|| rebased.display().to_string())
+}
+
+/// Points a profile's spatial engine path and registry at this version's
+/// settings folder when they still name 2.0.x's (`%APPDATA%\A2DPWB`, renamed
+/// to `%APPDATA%\BlueCaster` at 3.0.0 and gone), so the engine is not
+/// silently left off. True when one was repaired.
+pub fn repair_spatial(profile: &mut Profile, config: &Path) -> bool {
+    let name = profile.name.clone();
+    let mut repaired = false;
+    for slot in [&mut profile.spatial_engine_path, &mut profile.spatial_engine_registry] {
+        let Some(fixed) = rebase_old_path(slot, config) else { continue };
+        tracing::info!("profiles: \"{name}\" spatial path {slot} -> {fixed} (the settings folder was renamed)");
+        *slot = fixed;
+        repaired = true;
+    }
+    repaired
+}
+
 pub fn load(dir: &Path) -> Vec<Profile> {
     load_counted(dir).0
 }
 
 /// [`load`], and how many profiles it renamed
 pub fn load_counted(dir: &Path) -> (Vec<Profile>, usize) {
-    let (list, renamed, _) = load_fixed(dir);
-    (list, renamed)
-}
-
-/// [`load`], how many profiles it renamed and how many lost SBC's dual
-/// channel
-pub fn load_fixed(dir: &Path) -> (Vec<Profile>, usize, usize) {
     let text = match std::fs::read_to_string(path(dir)) {
         Ok(t) => t,
         Err(e) => {
             tracing::debug!("profiles: {} not read ({e}), no profiles", path(dir).display());
-            return (Vec::new(), 0, 0);
+            return (Vec::new(), 0);
         }
     };
     match serde_json::from_str::<ProfilesFile>(&text) {
         Ok(mut f) => {
             let renamed = make_names_unique(&mut f.profiles);
-            let dual = drop_sbc_dual_channel(&mut f.profiles);
+            // A path still naming 2.0.x's folder is repaired, and kept
+            let config = crate::paths::config_dir();
+            let mut repaired = false;
+            for p in &mut f.profiles {
+                repaired |= repair_spatial(p, &config);
+            }
+            if repaired && let Err(e) = save(dir, &f.profiles) {
+                tracing::warn!("profiles: the repaired spatial paths are not saved: {e}");
+            }
             tracing::debug!(
-                "profiles: loaded {} profile(s) from {}, {renamed} renamed, {dual} off SBC dual channel",
+                "profiles: loaded {} profile(s) from {}, {renamed} renamed",
                 f.profiles.len(),
                 path(dir).display()
             );
-            (f.profiles, renamed, dual)
+            (f.profiles, renamed)
         }
         Err(e) => {
             tracing::warn!("profiles: {} is not valid ({e})", path(dir).display());
-            (Vec::new(), 0, 0)
+            (Vec::new(), 0)
         }
     }
 }
@@ -547,6 +818,41 @@ pub fn save(dir: &Path, profiles: &[Profile]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_system_loopback_takes_the_virtual_device() {
+        let mut list = vec![Profile::default(), Profile::default()];
+        list[1].capture_mode = "app".into();
+        list[0].auto_switch_device = false;
+        assert_eq!(use_virtual_device(&mut list, "{cable}", "CABLE Input"), 1);
+        assert_eq!(list[0].capture_mode, "virtual");
+        assert_eq!(list[0].audio_device_id, "{cable}");
+        assert_eq!(list[0].audio_device_name, "CABLE Input");
+        assert!(list[0].auto_switch_device);
+        assert_eq!(list[1].capture_mode, "app");
+        // A second time changes nothing
+        assert_eq!(use_virtual_device(&mut list, "{cable}", "CABLE Input"), 0);
+    }
+
+    #[test]
+    fn an_output_device_profile_captures_that_device() {
+        let p = Profile {
+            capture_mode: "output".into(),
+            audio_device_id: "{0.0.0.00000000}.{speakers}".into(),
+            audio_device_name: "Speakers".into(),
+            ..Profile::default()
+        };
+        assert_eq!(
+            p.source(),
+            SourceRequest::OutputDevice { id: "{0.0.0.00000000}.{speakers}".into(), name: "Speakers".into() }
+        );
+        // None chosen: the default output
+        let none = Profile { audio_device_id: String::new(), ..p.clone() };
+        assert_eq!(none.source(), SourceRequest::SystemLoopback);
+        // Kept as saved
+        let back: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back, p);
+    }
 
     #[test]
     fn v1_profile() {
@@ -606,6 +912,55 @@ mod tests {
     }
 
     #[test]
+    fn a_forced_codec_and_unlisted_options_reach_the_request_but_not_auto() {
+        let p = Profile {
+            device_address: "AA:BB:CC:DD:EE:FF".into(),
+            codec: "aptx".into(),
+            codec_forced: true,
+            unlisted_options: true,
+            ..Profile::default()
+        };
+        let r = p.to_request(1023).unwrap();
+        assert!(r.codec_forced && r.unlisted_options);
+        let a = p.as_auto().to_request(1023).unwrap();
+        assert!(!a.codec_forced && !a.unlisted_options);
+        // Written only when set
+        let text = serde_json::to_string(&Profile::default()).unwrap();
+        assert!(!text.contains("codec_forced") && !text.contains("unlisted_options"));
+    }
+
+    #[test]
+    fn every_codec_values_for_auto_select_in_developer_mode() {
+        let aac = CodecValues { quality: "sq".into(), abr: true, ..CodecValues::default() };
+        let p = Profile {
+            device_address: "AA:BB:CC:DD:EE:FF".into(),
+            codec: "ldac".into(),
+            sample_rate: 96000,
+            bit_depth: 24,
+            codec_settings: BTreeMap::from([
+                ("aac".to_string(), aac.clone()),
+                // Stale copy of the codec in use, and a key no codec has
+                ("ldac".to_string(), CodecValues::default()),
+                ("nope".to_string(), CodecValues::default()),
+            ]),
+            ..Profile::default()
+        };
+        let all = p.all_codec_values();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0], (CodecKind::Ldac, p.codec_values()));
+        assert_eq!(all[1], (CodecKind::Aac, aac.clone()));
+
+        // Put into an Auto request, as stream.rs does for the codec picked
+        let mut req = p.as_auto().to_request(1023).unwrap();
+        assert_eq!((req.sample_rate, req.bit_depth), (None, None));
+        all[0].1.apply_to(&mut req);
+        assert_eq!((req.sample_rate, req.bit_depth), (Some(96000), Some(24)));
+        aac.apply_to(&mut req);
+        assert_eq!((req.quality, req.abr, req.sample_rate), (Quality::Standard, true, None));
+        assert_eq!(req.codec, None);
+    }
+
+    #[test]
     fn codec_order_in_the_request_written_only_when_set() {
         let text =
             r#"{"name":"EarFun","device_address":"00:A2:D0:00:00:02","codec":"opus","codec_order":["sbcxq","sbc"]}"#;
@@ -614,7 +969,8 @@ mod tests {
         assert_eq!(&order.codecs()[..2], &[CodecKind::SbcXq, CodecKind::Sbc]);
         assert_eq!(order.codecs().len(), CodecKind::AUTO_PRIORITY.len());
         // Auto-select: the default order
-        assert!(p.as_auto().to_request(1023).unwrap().auto_order.is_default());
+        // Under Auto-select too
+        assert_eq!(p.as_auto().to_request(1023).unwrap().auto_order, order);
         assert_eq!(serde_json::to_value(&p).unwrap()["codec_order"], serde_json::json!(["sbcxq", "sbc"]));
         let plain = Profile { codec_order: Vec::new(), ..p };
         assert!(plain.to_request(1023).unwrap().auto_order.is_default());
@@ -625,6 +981,7 @@ mod tests {
     fn sbc_setup_in_the_request_and_written_only_when_set() {
         use codec::sbc::{Allocation, ChannelMode, SbcParams};
         let text = r#"{"name":"WH","device_address":"00:A2:D0:00:00:02","codec":"sbc","sbc_bitpool":40,
+            "sbc_min_bitpool":20,"sbcxq_min_bitpool":30,
             "sbc_blocks":8,"sbc_subbands":4,"sbc_allocation":"snr","sbc_channel_mode":"stereo"}"#;
         let p: Profile = serde_json::from_str(text).unwrap();
         let r = p.to_request(1023).unwrap();
@@ -635,9 +992,15 @@ mod tests {
                 blocks: 8,
                 subbands: 4,
                 allocation: Some(Allocation::Snr),
-                channel_mode: Some(ChannelMode::Stereo)
+                channel_mode: Some(ChannelMode::Stereo),
+                min_bitpool: 0,
             }
         );
+        // Each codec its own minimum bitpool
+        assert_eq!(r.sbc_params(CodecKind::Sbc), SbcParams { min_bitpool: 20, ..r.sbc });
+        assert_eq!(r.sbc_params(CodecKind::SbcXq).min_bitpool, 30);
+        assert_eq!(r.sbc_params(CodecKind::Aac).min_bitpool, 0);
+        assert_eq!((p.codec_values().sbc_min_bitpool, p.codec_values().sbcxq_min_bitpool), (20, 30));
         // Auto (the defaults) stays out of the file and gives today's setup
         let plain = Profile { device_address: "00:A2:D0:00:00:02".into(), ..Profile::default() };
         let json = serde_json::to_string(&plain).unwrap();
@@ -646,6 +1009,9 @@ mod tests {
         // Unknown values are Auto
         let odd = Profile { sbc_allocation: "max".into(), sbc_channel_mode: "auto".into(), ..plain };
         assert!(odd.to_request(1023).unwrap().sbc.is_default());
+        // Auto-select streams the defaults, the profile keeps its own
+        assert!(p.as_auto().to_request(1023).unwrap().sbc.is_default());
+        assert_eq!(p.sbc_blocks, 8);
     }
 
     fn named(names: &[&str]) -> Vec<Profile> {
@@ -671,7 +1037,7 @@ mod tests {
 
     #[test]
     fn load_makes_names_unique_in_memory() {
-        let dir = std::env::temp_dir().join(format!("a2dpwb-profiles-dup-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bluecaster-profiles-dup-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let text = r#"{"profiles":[{"name":"WH LDAC","device_address":"00:A2:D0:00:00:02","codec":"ldac"},
@@ -688,6 +1054,38 @@ mod tests {
     }
 
     #[test]
+    fn a_spatial_path_left_in_the_old_folder_follows_the_rename() {
+        // 3.0.0 renamed %APPDATA%\A2DPWB to %APPDATA%\BlueCaster: a profile
+        // saved before that names the folder that is gone
+        let t = std::env::temp_dir().join(format!("bluecaster-spatial-repair-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let (old, new) = (t.join("A2DPWB"), t.join("BlueCaster"));
+        let stage = new.join("stages").join("experimental-stft");
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(stage.join("libxm6_experimental.dll"), b"x").unwrap();
+        let gone = old.join("stages").join("experimental-stft").join("libxm6_experimental.dll");
+        let mut p = Profile {
+            name: "WH LDAC".into(),
+            device_address: "AA:BB:CC:DD:EE:FF".into(),
+            spatial_engine: true,
+            spatial_engine_path: gone.display().to_string(),
+            spatial_engine_registry: old.join("stages").display().to_string(),
+            ..Profile::default()
+        };
+        assert!(repair_spatial(&mut p, &new));
+        assert_eq!(p.spatial_engine_path, stage.join("libxm6_experimental.dll").display().to_string());
+        assert_eq!(p.spatial_engine_registry, new.join("stages").display().to_string());
+        // The engine stays on with the stage it was using
+        assert_eq!(p.to_request(1023).unwrap().spatial, Some(stage.join("libxm6_experimental.dll")));
+        // Repaired once; a folder of the user's own is left alone
+        assert!(!repair_spatial(&mut p, &new));
+        let mut mine = Profile { spatial_engine_path: r"C:\Engines\mine\stage.dll".into(), ..p.clone() };
+        assert!(!repair_spatial(&mut mine, &new));
+        assert_eq!(mine.spatial_engine_path, r"C:\Engines\mine\stage.dll");
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
     fn le_audio_profile_gives_an_le_request() {
         let text = r#"{"profiles":[{"name":"Buds LE Audio","device_address":"00:a2:d0:00:00:12","device_name":"Buds",
             "capture_mode":"loopback","le_audio":true}]}"#;
@@ -697,7 +1095,7 @@ mod tests {
         let r = p.to_request(1023).unwrap();
         assert_eq!(r.device, [0x00, 0xA2, 0xD0, 0x00, 0x00, 0x12]);
         // GMAP low latency: on unless the profile says otherwise
-        assert_eq!(r.le, Some(bt_host::LeRequest { extra_devices: Vec::new(), preset: None, low_latency: true }));
+        assert_eq!(r.le, Some(bt_host::LeRequest { low_latency: true, ..bt_host::LeRequest::default() }));
         assert_eq!(r.source, SourceRequest::SystemLoopback);
         // Written back as v1 wrote it; a classic profile has no key
         let out = serde_json::to_value(p).unwrap();
@@ -711,6 +1109,78 @@ mod tests {
         // A bad address is refused as for A2DP
         let bad = Profile { device_address: "nope".into(), ..p.clone() };
         assert_eq!(bad.to_request(1023), Err(ProfileError::Address("nope".into())));
+    }
+
+    #[test]
+    fn headset_mic_round_trips_and_is_written_only_when_set() {
+        let p = Profile::default();
+        let out = serde_json::to_value(&p).unwrap();
+        for key in ["headset_mic", "mic_device_id", "mic_device_name"] {
+            assert!(out.get(key).is_none(), "{key}");
+        }
+        let on = Profile {
+            headset_mic: "on".into(),
+            mic_device_id: "{cable}".into(),
+            mic_device_name: "CABLE Input".into(),
+            ..p.clone()
+        };
+        let out = serde_json::to_value(&on).unwrap();
+        assert_eq!(out["headset_mic"], "on");
+        assert_eq!(out["mic_device_id"], "{cable}");
+        assert_eq!(serde_json::from_value::<Profile>(out).unwrap(), on);
+        assert!(p.only_headset_mic_differs(&on));
+        assert!(!p.only_headset_mic_differs(&p));
+        assert!(!p.only_headset_mic_differs(&Profile { codec: "sbc".into(), ..on.clone() }));
+        assert!(p.only_headset_mic_differs(&Profile { headset_mic: "on".into(), ..p.clone() }));
+        assert!(on.only_headset_mic_differs(&Profile { headset_mic: "auto".into(), ..on.clone() }));
+        // The modes, the first development builds' bool, anything else off
+        let mut j = serde_json::to_value(&on).unwrap();
+        for (saved, mode) in [
+            (serde_json::json!("on"), HeadsetMic::On),
+            (serde_json::json!("auto"), HeadsetMic::Auto),
+            (serde_json::json!("off"), HeadsetMic::Off),
+            (serde_json::json!(true), HeadsetMic::On),
+            (serde_json::json!(false), HeadsetMic::Off),
+            (serde_json::json!("ON"), HeadsetMic::Off),
+            (serde_json::json!(1), HeadsetMic::Off),
+        ] {
+            j["headset_mic"] = saved.clone();
+            let back: Profile = serde_json::from_value(j.clone()).unwrap();
+            assert_eq!(back.headset_mic_mode(), mode, "{saved}");
+            assert_eq!(back.headset_mic, mode.as_str(), "{saved}");
+        }
+        let auto = Profile { headset_mic: "auto".into(), ..on.clone() };
+        assert_eq!(serde_json::to_value(&auto).unwrap()["headset_mic"], "auto");
+        // Muted: Off in force, the mode kept for unmuting; only a change
+        // of the microphone
+        assert!(serde_json::to_value(&auto).unwrap().get("mic_muted").is_none());
+        let muted = Profile { mic_muted: true, ..auto.clone() };
+        assert_eq!(muted.headset_mic_mode(), HeadsetMic::Off);
+        assert!(auto.only_headset_mic_differs(&muted));
+        let back: Profile = serde_json::from_value(serde_json::to_value(&muted).unwrap()).unwrap();
+        assert!(back.mic_muted && back.headset_mic == "auto");
+    }
+
+    #[test]
+    fn mic_device_feeding_the_capture_is_refused() {
+        let loop_key = Some("error.headset_mic_loop");
+        let p = Profile { headset_mic: "on".into(), mic_device_id: "{cable}".into(), ..Profile::default() };
+        // System Loopback: only when the cable is the default output
+        assert_eq!(p.mic_device_conflicts("{speakers}"), None);
+        assert_eq!(p.mic_device_conflicts(""), None);
+        assert_eq!(p.mic_device_conflicts("{cable}"), loop_key);
+        // The captured virtual or output device
+        let virt = Profile { capture_mode: "virtual".into(), audio_device_id: "{cable}".into(), ..p.clone() };
+        assert_eq!(virt.mic_device_conflicts("{speakers}"), loop_key);
+        let other = Profile { audio_device_id: "{cable 2}".into(), ..virt.clone() };
+        assert_eq!(other.mic_device_conflicts("{cable}"), None);
+        let output = Profile { capture_mode: "output".into(), ..virt.clone() };
+        assert_eq!(output.mic_device_conflicts(""), loop_key);
+        // An application, and no output chosen
+        let app = Profile { capture_mode: "app".into(), app_exe: "game.exe".into(), ..p.clone() };
+        assert_eq!(app.mic_device_conflicts("{cable}"), None);
+        let none = Profile { mic_device_id: String::new(), ..p.clone() };
+        assert_eq!(none.mic_device_conflicts(""), None);
     }
 
     fn of(name: &str, address: &str, codec: &str) -> Profile {
@@ -748,6 +1218,25 @@ mod tests {
         assert_eq!(consolidate(&mut list, "Buds | AAC"), ["B"]);
         assert_eq!(names(&list), ["A"]);
         assert!(list[0].codec_settings.contains_key("ldac"));
+    }
+
+    #[test]
+    fn what_a_stream_can_take_without_starting_again() {
+        let p = Profile { name: "A".into(), device_address: "AA:BB:CC:DD:EE:FF".into(), ..Default::default() };
+        let bitpool = Profile { sbc_bitpool: 30, ..p.clone() };
+        assert!(p.only_bitpools_differ(&bitpool));
+        assert!(!p.only_bitpools_differ(&p));
+        assert!(!p.only_bitpools_differ(&Profile { sample_rate: 44100, ..bitpool.clone() }));
+        let mut kept = p.clone();
+        kept.codec_settings.insert("ldac".into(), CodecValues::default());
+        assert!(p.only_kept_settings_differ(&kept));
+        assert!(!p.only_kept_settings_differ(&p));
+        assert!(!p.only_kept_settings_differ(&Profile { sbc_bitpool: 30, ..kept }));
+        // "Show only options it supports" turned, nothing else (issue #86)
+        let unlisted = Profile { unlisted_options: !p.unlisted_options, ..p.clone() };
+        assert!(p.only_unlisted_differs(&unlisted));
+        assert!(!p.only_unlisted_differs(&p));
+        assert!(!p.only_unlisted_differs(&Profile { sbc_bitpool: 30, ..unlisted }));
     }
 
     #[test]

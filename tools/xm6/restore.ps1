@@ -19,12 +19,13 @@ Python and the network.
 
 Steps:
   1. clones both repositories under -Root when they are missing,
-  2. copies the prebuilt stages to %APPDATA%\A2DPWB\stages,
+  2. copies the prebuilt stages to the settings folder (%APPDATA%\BlueCaster,
+     or %APPDATA%\A2DPWB on a pre-3.0 install),
   3. recreates the pinned Upmixer runtime
-     (numpy 2.3.5 / scipy 1.16.3 / soundfile 0.13.1) in
-     %APPDATA%\A2DPWB\runtime\upmixer-venv,
+     (numpy 2.3.5 / scipy 1.16.3 / soundfile 0.13.1) in the settings folder's
+     runtime\upmixer-venv,
   4. points the Upmixer stage command at that interpreter,
-  5. re-points every profile in %APPDATA%\A2DPWB\profiles.json at the new
+  5. re-points every profile in the settings folder's profiles.json at the new
      stage directory,
   6. re-verifies all five stages byte-for-byte.
 
@@ -70,7 +71,9 @@ $engineUrl = 'https://github.com/Akramx15/xm6-spatial-linux.git'
 $forkDir = Join-Path $Root 'A2DP-Windows-Bridge'
 if (-not $EngineDir) { $EngineDir = Join-Path $Root 'xm6-spatial-linux' }
 $engineDir = $EngineDir
-$appData = Join-Path $env:APPDATA 'A2DPWB'
+# 3.0.0 renamed the settings folder; only a pre-3.0 install still has the old one
+$appData = Join-Path $env:APPDATA 'BlueCaster'
+if (-not (Test-Path $appData) -and (Test-Path (Join-Path $env:APPDATA 'A2DPWB'))) { $appData = Join-Path $env:APPDATA 'A2DPWB' }
 $stagesDir = Join-Path $appData 'stages'
 $runtimeDir = Join-Path $appData 'runtime\upmixer-venv'
 $upmixerPython = Join-Path $runtimeDir 'Scripts\python.exe'
@@ -131,7 +134,7 @@ Write-Host "  $((Get-ChildItem $stagesDir -Directory).Count) stages"
 Step 're-pointing the profiles'
 $profilesPath = Join-Path $appData 'profiles.json'
 if (Test-Path $profilesPath) {
-    if (Get-Process a2dpwb, a2dpwb-core -ErrorAction SilentlyContinue) {
+    if (Get-Process a2dpwb, a2dpwb-core, bluecaster, bluecaster-core, bluecaster-ui -ErrorAction SilentlyContinue) {
         Fail 'the application is running; close it and run this script again'
     }
     $raw = [IO.File]::ReadAllText($profilesPath)

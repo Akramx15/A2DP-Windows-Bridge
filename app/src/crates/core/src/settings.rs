@@ -11,8 +11,10 @@ use bt_host::media::{MEDIA_PAYLOAD_LIMIT_DEFAULT, clamp_media_payload_limit};
 /// settings.json's format: 1 is v1's (which wrote no schema_version), 2 is
 /// v2's, 3 has LE Audio on by default, 4 remembers each device's volume by
 /// default, 5 has one Auto-select for every device, 6 one Windows Volume
-/// Sync, media keys and remember volume for every device (see migrate.rs)
-pub const SCHEMA_VERSION: u32 = 6;
+/// Sync, media keys and remember volume for every device, 7 has what
+/// forgetting a device left behind gone, 8 the folder's sub folders (3.0.0;
+/// see migrate.rs)
+pub const SCHEMA_VERSION: u32 = 8;
 /// The first schema_version v2 wrote: a lower one is v1's folder
 pub const FIRST_V2_SCHEMA: u32 = 2;
 
@@ -58,7 +60,10 @@ fn pick_language(tags: &[String]) -> &'static str {
     tags.iter().find_map(|t| app_language_for(t)).unwrap_or("en")
 }
 fn default_theme() -> String {
-    "dark".into()
+    "system".into()
+}
+fn default_battery_low() -> u8 {
+    20
 }
 fn default_true() -> bool {
     true
@@ -73,6 +78,11 @@ fn default_prereleases() -> bool {
 }
 fn is_prerelease(version: &str) -> bool {
     version.contains('-')
+}
+/// An alpha build ("3.0.0-beta.2.alpha.1") offers alphas by default
+/// (developer mode on)
+fn default_alphas() -> bool {
+    crate::update::is_alpha(env!("CARGO_PKG_VERSION"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -90,6 +100,20 @@ pub struct Settings {
     pub start_minimized: bool,
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
+    /// A click on the tray icon opens the main window instead of the tray
+    /// flyout (issue #86; off by default)
+    pub tray_click_opens_window: bool,
+    /// The flyout opens above Windows 11's Quick Settings, along with them,
+    /// and a click on the tray icon opens the main window (off by default)
+    pub flyout_with_quick_settings: bool,
+    /// A notification when a device connects (issue #86): its name, codec,
+    /// what the codec runs with and the battery. On by default.
+    #[serde(default = "default_true")]
+    pub notify_connected: bool,
+    /// The low-battery notification: below this level (percent; 20, 10
+    /// or 5), 0: never (issue #86)
+    #[serde(default = "default_battery_low")]
+    pub battery_low_percent: u8,
 
     #[serde(default = "default_true")]
     pub check_updates_on_startup: bool,
@@ -99,20 +123,29 @@ pub struct Settings {
     /// on by default in a pre-release build
     #[serde(default = "default_prereleases")]
     pub include_prereleases: bool,
+    /// Developer > also offer alphas (in force only while debug_mode is
+    /// on); on by default in an alpha build
+    #[serde(default = "default_alphas")]
+    pub include_alphas: bool,
 
     /// The headphones' buttons act as Windows media keys (every device)
     #[serde(default = "default_true")]
     pub media_keys: bool,
-    /// Remember the headphones' volume per device (address -> AVRCP volume
-    /// 0..127) and set it again when they connect; on by default (issue
-    /// #86: one device's volume must not carry over to another). One switch
-    /// for every device.
+    /// A session whose device went away connects it again by itself, and
+    /// takes it when it comes back. Off: the session ends and the adapter is
+    /// released, so headphones turned off can go to a phone instead.
     #[serde(default = "default_true")]
-    pub remember_volume: bool,
+    pub auto_reconnect: bool,
+    /// No VB-Cable when last looked: once it is there, the profiles that
+    /// capture System Loopback take it, one time (issue #86)
+    pub awaiting_vb_cable: bool,
+    /// Each device's volume (address -> AVRCP volume 0..127), set again when
+    /// it connects (issue #86: one device's volume must not carry over to
+    /// another)
     pub saved_volumes: BTreeMap<String, i32>,
-    /// Before schema 6: per-device overrides of media_keys and
-    /// remember_volume. Those are one setting for every device now (issue
-    /// #86); read (and ignored), not written.
+    /// Before schema 6: per-device overrides of media_keys and of remembering
+    /// the volume. The first is one setting for every device now, the second
+    /// always on (issue #86); read (and ignored), not written.
     #[serde(skip_serializing)]
     pub device_options: Option<serde_json::Value>,
     /// Windows Volume Sync for every device (issue #86; each profile had its
@@ -121,11 +154,24 @@ pub struct Settings {
     /// another device, set in developer mode); off for every stream
     #[serde(default = "default_true")]
     pub volume_sync: bool,
+    /// The default output device is muted while streaming, while debug_mode
+    /// is on too (issues #86, #223). A key of its own: the `mute_output` of
+    /// earlier versions was on by default.
+    #[serde(rename = "output_mute")]
+    pub mute_output: bool,
+    /// Developer > "Volume Mixer" (off by default, issue #86): the mixer
+    /// screen, the flyout's app list and the output mute above are there
+    /// only with this on as well as debug_mode
+    pub volume_mixer: bool,
 
     pub debug_mode: bool,
     /// Developer mode: overrides of the codec and media path (in force only
     /// while debug_mode is on)
     pub dev_overrides: codec::dev::DevOverrides,
+    /// Developer mode: when each vendor's own protocol is used, and its
+    /// options, by vendor id (in force only while debug_mode is on)
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub dev_vendors: crate::vendor::Overrides,
     /// Developer mode: how the core logs (in force only while debug_mode is
     /// on; otherwise [`DevLog::default`])
     pub dev_log: DevLog,
@@ -249,16 +295,25 @@ impl Default for Settings {
             start_with_windows: false,
             start_minimized: false,
             minimize_to_tray: true,
+            tray_click_opens_window: false,
+            flyout_with_quick_settings: false,
+            notify_connected: true,
+            battery_low_percent: default_battery_low(),
             check_updates_on_startup: true,
             last_update_check: String::new(),
             include_prereleases: default_prereleases(),
+            include_alphas: default_alphas(),
             media_keys: true,
-            remember_volume: true,
+            auto_reconnect: true,
+            awaiting_vb_cable: false,
             saved_volumes: BTreeMap::new(),
             device_options: None,
             volume_sync: true,
+            mute_output: false,
+            volume_mixer: false,
             debug_mode: false,
             dev_overrides: codec::dev::DevOverrides::default(),
+            dev_vendors: Default::default(),
             dev_log: DevLog::default(),
             bt_chip_pid: 0,
             bt_chip_fw_stem: String::new(),
@@ -282,7 +337,7 @@ impl Settings {
     }
 
     pub fn path(dir: &Path) -> PathBuf {
-        dir.join("settings.json")
+        crate::paths::settings_file(dir)
     }
 
     /// Missing or unreadable: defaults (a broken file is kept as .bad)
@@ -306,6 +361,9 @@ impl Settings {
                     );
                 }
                 s.theme = normalize_theme(&s.theme).into();
+                s.other.remove("mute_output");
+                // No longer a choice (issue #86)
+                s.other.remove("remember_volume");
                 // No longer a choice (issue #86): a file with it off uses
                 // every codec too
                 s.experimental_codecs = true;
@@ -336,6 +394,30 @@ impl Settings {
         let r = std::fs::rename(&tmp, &path);
         tracing::debug!("settings: saved {}: {r:?}", path.display());
         r
+    }
+
+    /// The releases an update check offers: alphas in developer mode only,
+    /// and they bring the pre-releases with them
+    pub fn update_channel(&self) -> crate::update::Channel {
+        use crate::update::Channel;
+        if self.include_alphas && self.debug_mode {
+            Channel::Alpha
+        } else if self.include_prereleases {
+            Channel::Beta
+        } else {
+            Channel::Stable
+        }
+    }
+
+    /// Whether a stream mutes the default output device
+    pub fn mutes_output(&self) -> bool {
+        self.mute_output && self.volume_mixer && self.debug_mode
+    }
+
+    /// The SBC frame setup a stream takes from its profile: the fixed one
+    /// outside developer mode (issue #86)
+    pub fn sbc_frame(&self, wanted: codec::sbc::SbcParams) -> codec::sbc::SbcParams {
+        if self.debug_mode { wanted } else { Default::default() }
     }
 
     /// The media packet size limit of a settings file from before v1.1, for
@@ -390,6 +472,15 @@ mod tests {
     }
 
     #[test]
+    fn sbc_frame_counts_only_in_developer_mode() {
+        let wanted = codec::sbc::SbcParams { blocks: 8, subbands: 4, ..Default::default() };
+        let mut s = Settings::default();
+        assert!(s.sbc_frame(wanted).is_default());
+        s.debug_mode = true;
+        assert_eq!(s.sbc_frame(wanted), wanted);
+    }
+
+    #[test]
     fn v1_file_round_trips_unknown_keys() {
         let v1 = r#"{"language":"ja","theme":"light","media_keys":false,"saved_volumes":{"AA:BB:CC:DD:EE:FF":64,"X":999},
                     "le_audio_experimental":true,"max_media_payload":1500,"window_x":10}"#;
@@ -397,6 +488,8 @@ mod tests {
         assert_eq!(s.language, "ja");
         assert!(!s.media_keys);
         assert!(s.minimize_to_tray);
+        assert!(s.notify_connected);
+        assert_eq!(s.battery_low_percent, 20);
         assert_eq!(s.legacy_max_media_payload(), 1500);
         assert!(s.le_audio_experimental);
         assert!(!s.le_audio_low_latency);
@@ -423,7 +516,7 @@ mod tests {
     #[test]
     fn old_device_options_are_read_but_not_written() {
         let s: Settings = serde_json::from_str("{}").unwrap();
-        assert!(s.volume_sync && s.media_keys && s.remember_volume);
+        assert!(s.volume_sync && s.media_keys);
         // Schema 5's per-device overrides: read without error, never in force
         // nor written back (nor kept as an unknown key)
         let s: Settings = serde_json::from_str(
@@ -436,6 +529,16 @@ mod tests {
         let out = serde_json::to_value(&s).unwrap();
         assert!(out.get("device_options").is_none());
         assert_eq!(out["volume_sync"], false);
+    }
+
+    #[test]
+    fn lhdcv5_ignore_sink_max_loads_for_every_codec() {
+        // 2.0.2-beta.17 saved it under LHDC V5's name
+        let s: Settings = serde_json::from_str(r#"{"dev_overrides":{"lhdcv5_ignore_sink_max":true}}"#).unwrap();
+        assert!(s.dev_overrides.ignore_sink_max);
+        let out = serde_json::to_value(&s).unwrap();
+        assert_eq!(out["dev_overrides"]["ignore_sink_max"], true);
+        assert!(out["dev_overrides"].get("lhdcv5_ignore_sink_max").is_none());
     }
 
     #[test]
@@ -452,20 +555,52 @@ mod tests {
     }
 
     #[test]
+    fn alphas_only_in_developer_mode() {
+        use crate::update::Channel;
+        let alpha = crate::update::is_alpha(env!("CARGO_PKG_VERSION"));
+        assert_eq!(Settings::default().include_alphas, alpha);
+        let mut s: Settings = serde_json::from_str(r#"{"include_prereleases":false,"include_alphas":true}"#).unwrap();
+        assert_eq!(s.update_channel(), Channel::Stable);
+        s.include_prereleases = true;
+        assert_eq!(s.update_channel(), Channel::Beta);
+        s.debug_mode = true;
+        assert_eq!(s.update_channel(), Channel::Alpha);
+        s.include_prereleases = false;
+        assert_eq!(s.update_channel(), Channel::Alpha);
+        s.include_alphas = false;
+        assert_eq!(s.update_channel(), Channel::Stable);
+    }
+
+    #[test]
     fn unknown_theme_is_dark_as_in_v1() {
-        let dir = std::env::temp_dir().join(format!("a2dpwb-theme-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bluecaster-theme-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         for (v1, v2) in [("white", "dark"), ("light", "light"), ("system", "system"), ("", "dark")] {
             std::fs::write(Settings::path(&dir), format!(r#"{{"theme":"{v1}"}}"#)).unwrap();
             assert_eq!(Settings::load(&dir).theme, v2, "{v1}");
         }
+        // A file without one follows Windows, as a new install does
+        std::fs::write(Settings::path(&dir), "{}").unwrap();
+        assert_eq!(Settings::load(&dir).theme, "system");
+        assert_eq!(Settings::default().theme, "system");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn experimental_codecs_off_loads_as_on() {
-        let dir = std::env::temp_dir().join(format!("a2dpwb-experimental-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("bluecaster-experimental-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            Settings::path(&dir),
+            r#"{"schema_version":7,"mute_output":true,"remember_volume":false,"debug_mode":true}"#,
+        )
+        .unwrap();
+        // The old mute (on by default) does not carry over; neither does
+        // turning the remembered volume off
+        let s = Settings::load(&dir);
+        assert!(!s.mute_output);
+        assert!(s.other.is_empty());
+
         std::fs::write(Settings::path(&dir), r#"{"schema_version":5,"experimental_codecs":false}"#).unwrap();
         assert!(Settings::load(&dir).experimental_codecs);
         let _ = std::fs::remove_dir_all(&dir);

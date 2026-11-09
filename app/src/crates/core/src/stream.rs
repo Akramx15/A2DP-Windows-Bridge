@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use audio_capture::{Capture, CaptureOptions, Format, Running, SampleFormat, Sink, Source};
-use bt_host::{BtHost, ConfigureError, ConnectFailure, MediaSink, ReconnectError};
+use bt_host::{BtHost, ConfigureError, ConnectFailure, HeadsetMic, MediaSink, ReconnectError};
 use codec::caps::{self, ConfigError, Configuration, RemoteCaps, Unavailable};
 use codec::{CodecKind, Encoder, EncoderConfig, PeerParams, Quality};
 use pipeline::resample::CAPTURE_RATE;
@@ -17,8 +17,10 @@ use pipeline::{
 };
 
 use crate::health::{CaptureReading, StreamHealth};
-use crate::messages::Msg;
+use crate::messages::{CodecStopKind, Msg};
+use crate::mute_output::OutputMute;
 use crate::service::Inner;
+use crate::vendor;
 
 /// What to stream (from a profile, or the command line)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,9 +30,19 @@ pub struct StreamRequest {
     /// None = Auto
     pub codec: Option<CodecKind>,
     pub codec_fallback: bool,
+    /// `codec` was chosen though the device did not offer it: it is asked
+    /// for anyway, with no fallback (the profile's `codec_forced`)
+    pub codec_forced: bool,
+    /// `codec`'s settings are not held to what the device lists (the
+    /// profile's `unlisted_options`)
+    pub unlisted_options: bool,
     /// Experimental codecs may be used (settings `experimental_codecs`):
     /// off, Auto and a fallback never pick them and a chosen one falls back
     pub experimental_codecs: bool,
+    /// The codecs of developer mode ([`CodecKind::developer_only`]) may be
+    /// used (developer mode, settings `debug_mode`): off, the device's are left out as
+    /// if it did not offer them and a chosen one falls back
+    pub developer_codecs: bool,
     /// The device's codec order (the profile's `codec_order`; the default
     /// under Auto-select): what Auto picks first, and what a chosen codec
     /// the device does not offer falls back to (the first one it offers)
@@ -41,15 +53,27 @@ pub struct StreamRequest {
     pub sbc_bitpool: u8,
     /// The same for SBC XQ
     pub sbcxq_bitpool: u8,
+    /// SBC / SBC XQ: the lowest bitpool wanted (0 = Auto), each codec its
+    /// own; [`StreamRequest::sbc_params`] puts it in the SBC setup
+    pub sbc_min_bitpool: u8,
+    pub sbcxq_min_bitpool: u8,
     /// SBC / SBC XQ: blocks, subbands, allocation, channel mode wanted (the
-    /// defaults when not set; what the device does not list falls back)
+    /// defaults when not set; what the device does not list falls back).
+    /// Its `min_bitpool` is not used: see [`StreamRequest::sbc_params`].
     pub sbc: codec::sbc::SbcParams,
     /// None = the device's rate
     pub sample_rate: Option<u32>,
     /// None = auto (24-bit where the codec carries it)
     pub bit_depth: Option<u8>,
+    /// Under Auto-select, each codec's own settings (the profile's): used
+    /// for the codec Auto picks while `DevOverrides::auto_codec_settings`
+    /// is on (developer mode), else not
+    pub codec_values: Vec<(CodecKind, crate::profiles::CodecValues)>,
     pub source: SourceRequest,
     pub volume_sync: VolumeSync,
+    /// The default output device is muted while streaming
+    /// (`Settings::mutes_output`)
+    pub mute_output: bool,
     pub max_media_payload: u16,
     /// LE Audio (experimental) instead of A2DP: the le_stream session
     /// streams to `device` and these extra devices. None: A2DP.
@@ -65,23 +89,82 @@ pub struct StreamRequest {
     /// engine's 48 kHz instead of forcing the capture to 48 kHz (the 96 kHz
     /// transport). Only honored when the rate is [`CAPTURE_RATE`].
     pub spatial_keep_rate: bool,
+    /// Headset mode (developer mode, docs/headset-mic-dev.md): the
+    /// headphones' microphone goes to `mic_output`. Classic devices switch
+    /// to the HFP voice link once streaming ([`crate::voice`]); Auto: only
+    /// while an application records from the output's capture side.
+    pub headset_mic: HeadsetMic,
+    /// Where the microphone goes: a render endpoint id (the profile's
+    /// `mic_device_id`), from the command line also a friendly-name part or
+    /// a path ending in ".wav" (written instead of rendered). None or
+    /// empty: the default output device.
+    pub mic_output: Option<String>,
 }
 
+/// The bitpools of a request ([`crate::profiles::Profile::bitpools`]; 0 = Auto)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bitpools {
+    pub sbc: u8,
+    pub sbcxq: u8,
+    pub sbc_min: u8,
+    pub sbcxq_min: u8,
+}
+
+impl StreamRequest {
+    /// The bitpools, as a profile saved while streaming has them
+    pub fn set_bitpools(&mut self, b: Bitpools) {
+        self.sbc_bitpool = b.sbc;
+        self.sbcxq_bitpool = b.sbcxq;
+        self.sbc_min_bitpool = b.sbc_min;
+        self.sbcxq_min_bitpool = b.sbcxq_min;
+    }
+
+    /// The SBC setup of a `kind` stream (SBC or SBC XQ): [`Self::sbc`] with
+    /// that codec's minimum bitpool, as the SET_CONFIGURATION and the
+    /// encoder take it
+    pub fn sbc_params(&self, kind: CodecKind) -> codec::sbc::SbcParams {
+        let min_bitpool = match kind {
+            CodecKind::Sbc => self.sbc_min_bitpool,
+            CodecKind::SbcXq => self.sbcxq_min_bitpool,
+            _ => 0,
+        };
+        codec::sbc::SbcParams { min_bitpool, ..self.sbc }
+    }
+
+    /// Whether a session capturing `source` mutes the default output device
+    pub fn mutes_output(&self, source: &SourceRequest) -> bool {
+        self.mute_output && *source != SourceRequest::TestTone
+    }
+}
+
+/// Where a stream's audio comes from. OutputDevice: loopback of that output
+/// device whichever is the Windows default (issue #193),
+/// never made the default.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceRequest {
     SystemLoopback,
     VirtualDevice { id: String, name: String, auto_switch: bool },
+    OutputDevice { id: String, name: String },
     Application { exe: String },
     TestTone,
 }
 
 impl SourceRequest {
+    /// The output device a session of this source makes Windows' default
+    pub fn default_switch(&self) -> Option<&str> {
+        match self {
+            SourceRequest::VirtualDevice { id, auto_switch: true, .. } if !id.is_empty() => Some(id),
+            _ => None,
+        }
+    }
+
     /// The source as the UI shows it (not waiting: the session says when
     /// an application is not running)
     pub fn info(&self) -> SourceInfo {
         let (kind, name) = match self {
             SourceRequest::SystemLoopback => ("loopback", String::new()),
             SourceRequest::VirtualDevice { name, .. } => ("virtual", name.clone()),
+            SourceRequest::OutputDevice { name, .. } => ("output", name.clone()),
             SourceRequest::Application { exe } => ("app", exe.clone()),
             SourceRequest::TestTone => ("tone", String::new()),
         };
@@ -94,6 +177,7 @@ impl std::fmt::Display for SourceRequest {
         match self {
             SourceRequest::SystemLoopback => f.write_str("system output"),
             SourceRequest::VirtualDevice { name, .. } => write!(f, "virtual device {}", crate::diag::quoted(name)),
+            SourceRequest::OutputDevice { name, .. } => write!(f, "output device {}", crate::diag::quoted(name)),
             SourceRequest::Application { exe } => write!(f, "app {exe}"),
             SourceRequest::TestTone => f.write_str("test tone"),
         }
@@ -130,6 +214,9 @@ pub struct StreamInfo {
     pub abr: bool,
     /// The device's maximum bit rate lowered the profile's (LHDC V5)
     pub bitrate_capped: bool,
+    /// OPPO earbuds turned Hi-Res on for this connection, after one
+    /// reconnect for it (issue #237)
+    pub hi_res_set: bool,
     /// Where the audio comes from (sent again when an application capture
     /// starts or stops waiting for the app)
     pub source: SourceInfo,
@@ -157,6 +244,9 @@ pub struct CodecDetails {
     pub frames_per_packet: Option<u32>,
     pub sbc: Option<SbcDetails>,
     pub aac: Option<AacDetails>,
+    /// Any other codec: what the device's endpoint of it lists, as SBC and
+    /// AAC say theirs (issue #86)
+    pub device: Option<CodecDeviceCaps>,
 }
 
 /// SBC, SBC XQ and FastStream frames
@@ -288,6 +378,9 @@ pub fn codec_details(
         }),
         _ => None,
     };
+    let device = (!matches!(kind, CodecKind::Sbc | CodecKind::SbcXq | CodecKind::Aac | CodecKind::FastStream))
+        .then(|| codec_device_caps(remote).into_iter().find(|c| c.codec == kind.key()))
+        .flatten();
     CodecDetails {
         mtu: raw + kind.media_header_len() as u32,
         rtp: kind.uses_rtp(),
@@ -297,15 +390,17 @@ pub fn codec_details(
         frames_per_packet,
         sbc,
         aac,
+        device,
     }
 }
 
 /// The audio source of a stream
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SourceInfo {
-    /// "loopback", "virtual", "app" (profile capture modes) or "tone"
+    /// "loopback", "virtual", "output", "app" (profile capture modes) or
+    /// "tone"
     pub kind: &'static str,
-    /// The virtual device's name or the application's executable
+    /// The virtual or output device's name, or the application's executable
     pub name: String,
     /// Application capture: the application is not running
     pub waiting: bool,
@@ -324,6 +419,10 @@ pub struct KnownCodecs {
     /// that, issue #86); empty when last recorded by an older version
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub caps: Vec<CodecDeviceCaps>,
+    /// OPPO earbuds took the Hi-Res request once: not asked again until this
+    /// record is cleared (issue #237)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hi_res_asked: bool,
 }
 
 impl KnownCodecs {
@@ -333,6 +432,7 @@ impl KnownCodecs {
             keys: codec_keys(remote),
             sbc: remote.sbc_caps.as_ref().map(sbc_device_caps),
             caps: codec_device_caps(remote),
+            hi_res_asked: false,
         }
     }
 }
@@ -399,6 +499,12 @@ impl Sink for SharedInput {
     fn silence(&mut self, frames: usize, _format: Format) {
         if let Ok(mut input) = self.0.try_lock() {
             input.push_silence(frames);
+        }
+    }
+
+    fn discontinuity(&mut self, lost_frames: Option<u64>) {
+        if let Ok(mut input) = self.0.try_lock() {
+            input.discontinuity(lost_frames);
         }
     }
 }
@@ -543,17 +649,147 @@ impl ActiveSource {
     fn health(&self) -> CaptureReading {
         self.running().map_or_else(CaptureReading::default, |r| CaptureReading {
             filled_frames: r.filled_frames(),
-            discontinuities: r.discontinuities(),
             packet_gap: r.take_packet_gap(),
         })
     }
 
-    fn stop(self) {
+    fn stop(&mut self) {
         match self {
-            ActiveSource::Capture(mut d) => d.detach(),
-            ActiveSource::App(mut a) => a.detach(),
+            ActiveSource::Capture(d) => d.detach(),
+            ActiveSource::App(a) => a.detach(),
         }
     }
+}
+
+/// Opens a source at the stream's rate, not started yet: a device's capture,
+/// or None for an application ([`start_source`] attaches to it). The error is
+/// what ends the session.
+fn open_source(request: &SourceRequest, rate: u32) -> Result<Option<(DeviceSource, Capture)>, Msg> {
+    let source = match request {
+        SourceRequest::TestTone => Source::TestTone,
+        SourceRequest::SystemLoopback => Source::SystemLoopback,
+        SourceRequest::VirtualDevice { id, .. } => {
+            if id.is_empty() {
+                return Err(Msg::new("error.no_virtual_device_selected"));
+            }
+            Source::RenderDevice { id: id.clone() }
+        }
+        // Empty only in a hand-edited request (Profile::source gives System
+        // Loopback for an output device profile without one)
+        SourceRequest::OutputDevice { id, .. } if id.is_empty() => return Err(Msg::new("error.wasapi_init")),
+        SourceRequest::OutputDevice { id, .. } => Source::RenderDevice { id: id.clone() },
+        SourceRequest::Application { exe } => {
+            let build = audio_capture::windows_build();
+            if build < audio_capture::APP_CAPTURE_MIN_BUILD {
+                return Err(Msg::with("error.app_capture_unsupported", &[&build]));
+            }
+            if exe.is_empty() {
+                return Err(Msg::new("error.no_app_selected"));
+            }
+            return Ok(None);
+        }
+    };
+    let options = CaptureOptions { preferred_rate: Some(rate), fill_silence: *request != SourceRequest::TestTone };
+    match Capture::open(&source, &options) {
+        Ok(c) => Ok(Some((DeviceSource { source, options, running: None, failed: false }, c))),
+        Err(e) => {
+            tracing::error!("audio capture: {e}");
+            let key = if matches!(request, SourceRequest::VirtualDevice { .. }) {
+                "error.virtual_capture_init"
+            } else {
+                "error.wasapi_init"
+            };
+            Err(Msg::new(key))
+        }
+    }
+}
+
+/// System Loopback may stand in when `source` cannot be opened: a chosen
+/// virtual or output device only (removed, disabled, held by another app),
+/// an empty choice stays the error it is
+fn loopback_may_replace(source: &SourceRequest) -> bool {
+    matches!(source, SourceRequest::VirtualDevice { id, .. } | SourceRequest::OutputDevice { id, .. } if !id.is_empty())
+}
+
+/// What the session says while System Loopback stands in for `source`
+fn stand_in_text(source: &SourceRequest) -> Msg {
+    match source {
+        SourceRequest::OutputDevice { .. } => Msg::new("status.connected_output_fallback"),
+        _ => Msg::new("status.connected_source_fallback"),
+    }
+}
+
+/// What the source [`open_source`] opened delivers. Application capture:
+/// float stereo at the requested rate, known before the app runs.
+fn source_format(opened: &Option<(DeviceSource, Capture)>, rate: u32) -> Format {
+    opened
+        .as_ref()
+        .map_or(Format { sample_rate: rate, channels: 2, sample_format: SampleFormat::F32 }, |(_, c)| c.format())
+}
+
+/// Starts what [`open_source`] opened, into the running pipeline
+fn start_source(
+    opened: Option<(DeviceSource, Capture)>,
+    request: &SourceRequest,
+    rate: u32,
+    input: &SharedInput,
+) -> Option<ActiveSource> {
+    match (opened, request) {
+        (Some((mut device, capture)), _) => match capture.start(Box::new(input.clone())) {
+            Ok(r) => {
+                device.running = Some(r);
+                Some(ActiveSource::Capture(device))
+            }
+            Err(e) => {
+                tracing::error!("audio capture start: {e}");
+                None
+            }
+        },
+        (None, SourceRequest::Application { exe }) => {
+            let mut app =
+                AppSource { exe: exe.clone(), sample_rate: rate, running: None, process_id: 0, failed_pid: 0 };
+            if !app.attach(input) {
+                // Not running yet is fine: the capture attaches once it is up
+                tracing::info!("{exe} is not running yet, waiting for it");
+            }
+            Some(ActiveSource::App(app))
+        }
+        _ => None,
+    }
+}
+
+/// The capture's format changed under a running stream: a new encoder and
+/// pipeline take over, with the same stream settings. Without a pipeline
+/// (between reconnects) the next one is started with the new format. The
+/// error is what ends the session.
+// The arguments are the running stream's settings; a struct would only be built here to be taken apart again.
+#[allow(clippy::too_many_arguments)]
+fn restart_pipeline(
+    pipeline: &mut Option<Pipeline>,
+    kind: CodecKind,
+    encoder_config: &EncoderConfig,
+    format: Format,
+    channels: u32,
+    input: &SharedInput,
+    host: &BtHost,
+    spatial: Option<SpatialStage>,
+) -> Result<(), Msg> {
+    let Some(p) = pipeline.take() else { return Ok(()) };
+    let Some(sink) = p.stop() else { return Err(Msg::new("error.encode_thread")) };
+    let encoder = match codec::create(kind, encoder_config) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::error!("encoder: {e}");
+            host.return_media_sink(sink);
+            return Err(Msg::new("error.encoder_init"));
+        }
+    };
+    let (p, new_input) = start_pipeline(encoder, format, channels, encoder_config.mtu, sink, host, spatial);
+    if let Ok(mut i) = input.0.lock() {
+        *i = new_input;
+    }
+    *pipeline = Some(p);
+    Ok(())
 }
 
 /// Restores the default output device when the session ends (virtual
@@ -561,23 +797,102 @@ impl ActiveSource {
 pub(crate) struct DefaultDeviceGuard(pub(crate) Option<String>);
 
 impl DefaultDeviceGuard {
+    /// Follows the session's source: its device becomes the default output
+    /// when it asks for that, keeping the device to restore; any other source
+    /// plays through the device from before, restored now. Before the source
+    /// opens: System Loopback captures whatever is the default.
+    fn follow(&mut self, source: &SourceRequest) {
+        match source {
+            SourceRequest::VirtualDevice { id, name, auto_switch: true } if !id.is_empty() => {
+                let restore = self.0.take();
+                *self = DefaultDeviceGuard::switch_to(id, name);
+                self.0 = restore.or(self.0.take());
+            }
+            _ => *self = DefaultDeviceGuard(None),
+        }
+    }
+
     /// Makes `id` the default output device. The device before is restored
     /// at the end even when the switch failed: Windows may have switched
     /// one role (Console, Multimedia) before the other failed.
     pub(crate) fn switch_to(id: &str, name: &str) -> DefaultDeviceGuard {
+        // The session before kept it switched for this one: its device to
+        // restore is this one's
+        let handed = handover().restore.take();
         let before = audio_capture::default_render_device();
         let name = crate::diag::quoted(name);
-        tracing::debug!("default output: switching to {name} ({id}), was {before:?}");
+        tracing::debug!("default output: switching to {name} ({id}), was {before:?}, handed over {handed:?}");
         if let Err(e) = audio_capture::set_default_render_device(id) {
             tracing::warn!("failed to make {name} the default output device: {e}");
         }
-        DefaultDeviceGuard(restore_target(before, id))
+        DefaultDeviceGuard(handed.or_else(|| restore_target(before, id)))
     }
 }
 
 /// The device to restore: the one before, unless that is the one switched to
 fn restore_target(before: Option<String>, switched_to: &str) -> Option<String> {
     before.filter(|b| b != switched_to)
+}
+
+/// A session stopped for one that switches the default output to the same
+/// device (its settings changed, issue #203): Windows stays on that device
+/// through the reconnect instead of playing through the speakers for a few
+/// seconds, and the device to restore passes to the new session
+#[derive(Debug, Default, PartialEq)]
+struct DefaultHandover {
+    /// The device the session about to start switches to (set while the
+    /// running one stops)
+    next: Option<String>,
+    /// The device to restore that the stopped session left to the new one
+    restore: Option<String>,
+}
+
+static HANDOVER: Mutex<DefaultHandover> = Mutex::new(DefaultHandover { next: None, restore: None });
+
+fn handover() -> std::sync::MutexGuard<'static, DefaultHandover> {
+    HANDOVER.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+impl DefaultHandover {
+    /// A session ends with `restore` to restore while `current` is the
+    /// default output: kept for the next session when it switches to the
+    /// current one; otherwise the device to restore now
+    fn end(&mut self, current: Option<&str>, restore: String) -> Option<String> {
+        if self.next.is_some() && self.next.as_deref() == current {
+            self.restore = Some(restore);
+            None
+        } else {
+            Some(restore)
+        }
+    }
+
+    /// The device left to restore that no session took over (the new one
+    /// ended before switching)
+    fn unclaimed(&mut self) -> Option<String> {
+        if self.next.is_some() { None } else { self.restore.take() }
+    }
+}
+
+/// The session about to start switches to `next` (None: it does not, or no
+/// session starts): set while the running one stops
+pub(crate) fn expect_default_switch(next: Option<&str>) {
+    handover().next = next.map(str::to_string);
+}
+
+/// After a session ended: restores the device a stopped session left to
+/// one that never switched
+pub(crate) fn restore_unclaimed_default() {
+    let unclaimed = handover().unclaimed();
+    if let Some(id) = unclaimed {
+        restore_default(&id);
+    }
+}
+
+fn restore_default(id: &str) {
+    tracing::debug!("default output: restoring {id}");
+    if let Err(e) = audio_capture::set_default_render_device(id) {
+        tracing::warn!("could not restore the default output device: {e}");
+    }
 }
 
 /// Logs the gaps WASAPI reports in the captured audio as they increase, at
@@ -619,9 +934,13 @@ impl DiscontinuityLog {
 impl Drop for DefaultDeviceGuard {
     fn drop(&mut self) {
         if let Some(id) = self.0.take() {
-            tracing::debug!("default output: restoring {id}");
-            if let Err(e) = audio_capture::set_default_render_device(&id) {
-                tracing::warn!("could not restore the default output device: {e}");
+            let mut h = handover();
+            let current = h.next.is_some().then(audio_capture::default_render_device).flatten();
+            let now = h.end(current.as_deref(), id);
+            drop(h);
+            match now {
+                Some(id) => restore_default(&id),
+                None => tracing::debug!("default output: kept for the next session"),
             }
         }
     }
@@ -630,6 +949,10 @@ impl Drop for DefaultDeviceGuard {
 /// Why a stack is restarted after sleep (also in the log and the flow)
 pub(crate) const RESUMED: &str = "the PC resumed from sleep";
 const ADAPTER_STOPPED: &str = "the Bluetooth adapter stopped working";
+
+/// The capture rate a profile's Auto sample rate asks for (issue #86)
+const AUTO_SAMPLE_RATE: u32 = 48000;
+
 /// A new stack (sleep, a stopped adapter): the adapter may take a while to
 /// come back
 const RESTART_ATTEMPTS: u32 = 10;
@@ -652,6 +975,13 @@ enum LinkCheck {
     /// The PC is going to sleep and took the adapter (or the link) with it:
     /// stop the stack and wait for the resume, spending no attempt
     SleepThrough,
+}
+
+/// What connects again only with Reconnect automatically on: the device
+/// gone, by itself or through the PC's sleep. A stack that stopped working is
+/// recovered either way.
+fn needs_auto_reconnect(check: LinkCheck) -> bool {
+    matches!(check, LinkCheck::Reconnect | LinkCheck::SleepThrough | LinkCheck::Restart(RESUMED))
 }
 
 fn check_link(lost: bool, stalled: bool, stale: bool, suspending: bool) -> LinkCheck {
@@ -690,7 +1020,10 @@ fn device_turned_off(inner: &Inner, host: &BtHost) -> bool {
 /// The headphones were turned off: nothing is sent until they connect to
 /// the PC again (true). False when the session ends instead: stopped, or
 /// the stack has to start anew (sleep, a stopped adapter), which the next
-/// connection does.
+/// connection does. Another saved device that connects to the PC meanwhile
+/// is announced ([`ServiceEvent::OtherDeviceBack`]): the core starts its
+/// session, which ends this one (issue #86: with two devices, turning on
+/// the other one connected nothing).
 fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6], pipeline: &mut Option<Pipeline>) -> bool {
     inner.waiting_for_device();
     host.device_came_back(device);
@@ -702,16 +1035,33 @@ fn wait_for_device(inner: &Inner, host: &BtHost, device: [u8; 6], pipeline: &mut
     let t = Instant::now();
     let back = loop {
         inner.wait_tick(Duration::from_millis(200));
-        if inner.stop_requested() || inner.power.suspending() || inner.power.stale() || host.stalled() {
+        if inner.stop_requested()
+            || inner.power.suspending()
+            || inner.power.stale()
+            || host.stalled()
+            || !inner.auto_reconnect()
+        {
             break false;
         }
-        if host.device_came_back(device) {
-            break true;
+        match host.link_came_up() {
+            Some(a) if a == device => break true,
+            Some(a) if is_saved(inner, a) => {
+                tracing::info!("device off: {} connected to the PC instead", bt_host::addr_str(&a));
+                inner.other_device_back(a);
+            }
+            Some(a) => tracing::debug!("device off: {} connected, not a saved device", bt_host::addr_str(&a)),
+            None => {}
         }
     };
     tracing::debug!("device off: waited {} s, back {back}", t.elapsed().as_secs());
     inner.done_waiting_for_device(back);
     back
+}
+
+/// A device saved on Audio Devices (classic)
+fn is_saved(inner: &Inner, addr: [u8; 6]) -> bool {
+    let a = bt_host::addr_str(&addr);
+    crate::devices::load(inner.config_dir()).iter().any(|d| d.address.eq_ignore_ascii_case(&a))
 }
 
 /// The PC is going to sleep: the stack is shut down quietly (the pipeline's
@@ -743,6 +1093,38 @@ fn rom_or(host: &BtHost, msg: Msg) -> Msg {
     Msg::new("firmware.rom_running")
 }
 
+/// Earbuds of a vendor's protocol: by the name they give now, asked once a
+/// connection into `given`, unless developer mode says always or never
+fn vendor_named(host: &BtHost, req: &StreamRequest, given: &mut Option<Option<String>>, id: &str) -> bool {
+    let Some(v) = vendor::vendor(id) else { return false };
+    match vendor::mode(id) {
+        vendor::Mode::Never => {
+            tracing::info!("{}: left alone (developer mode)", v.name);
+            return false;
+        }
+        vendor::Mode::Always => {
+            tracing::info!("{}: its protocol whatever the name (developer mode)", v.name);
+            return true;
+        }
+        vendor::Mode::Auto => {}
+    }
+    // The name the device gives: the saved one is the user's to change
+    // (issue #237: an old profile had none). That one only when it does
+    // not answer.
+    let name = match given.get_or_insert_with(|| host.remote_name(req.device)) {
+        Some(name) => name.as_str(),
+        None => {
+            tracing::info!(
+                "{}: no name from the device, the saved one {}",
+                v.name,
+                crate::diag::quoted(&req.device_name)
+            );
+            &req.device_name
+        }
+    };
+    (v.named)(name)
+}
+
 fn connect_error(f: Option<ConnectFailure>) -> Msg {
     Msg::new(match f {
         Some(ConnectFailure::Stalled) => "error.btstack_no_answer",
@@ -759,7 +1141,7 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &Stream
     // The SET_CONFIGURATION took the same (configuration_with)
     let sbc = match kind {
         CodecKind::Sbc | CodecKind::SbcXq => {
-            let (sbc, notes) = remote.sbc_params(kind, req.sbc);
+            let (sbc, notes) = remote.sbc_params(kind, req.sbc_params(kind));
             for n in notes {
                 tracing::warn!("{n}");
             }
@@ -777,20 +1159,48 @@ fn peer_params(remote: &RemoteCaps, kind: CodecKind, channels: u32, req: &Stream
         remote.aac_max_bitrate(),
         remote.lhdcv5_bitrate_limits()
     );
+    // Developer mode: the encoder goes by the quality, not the sink's
+    // maximum (LHDC V5's P7[5:4], AAC's bit rate, Opus 05's, the SBC
+    // bitpool); the SET_CONFIGURATION still echoes the sink's (issue #237)
+    let ignore_max = codec::dev::overrides().ignore_sink_max;
+    let mut lhdcv5_bitrate_limits = remote.lhdcv5_bitrate_limits();
+    let mut sbc_max_bitpool = remote.sbc_max_bitpool();
+    let mut aac_max_bitrate = if kind == CodecKind::Aac { remote.aac_max_bitrate() } else { 0 };
+    let mut opus_max_bitrate = opus_max_bitrate;
+    if ignore_max {
+        let listed = match kind {
+            CodecKind::LhdcV5 => lhdcv5_bitrate_limits & 0x30 != 0,
+            CodecKind::Sbc | CodecKind::SbcXq => sbc_max_bitpool >= 2,
+            CodecKind::Aac => aac_max_bitrate != 0,
+            CodecKind::Opus05 => opus_max_bitrate != 0,
+            _ => false,
+        };
+        if listed {
+            tracing::warn!("{}: ignoring the sink's maximum bit rate (developer mode)", kind.name());
+        }
+        lhdcv5_bitrate_limits &= !0x30;
+        // Above every codec cap; the sink's minimum still applies
+        if sbc_max_bitpool >= 2 {
+            sbc_max_bitpool = u8::MAX;
+        }
+        aac_max_bitrate = 0;
+        opus_max_bitrate = 0;
+    }
     PeerParams {
-        lhdcv5_bitrate_limits: remote.lhdcv5_bitrate_limits(),
+        lhdcv5_bitrate_limits,
         sbc_min_bitpool: remote.sbc_min_bitpool(),
-        sbc_max_bitpool: remote.sbc_max_bitpool(),
+        sbc_max_bitpool,
         sbc_bitpool: match kind {
             CodecKind::Sbc => req.sbc_bitpool,
             CodecKind::SbcXq => req.sbcxq_bitpool,
             _ => 0,
         },
         sbc,
+        sbc_unlisted: remote.sbc_unlisted,
         opus_frame_ms,
         opus_channels,
         opus_max_bitrate,
-        aac_max_bitrate: if kind == CodecKind::Aac { remote.aac_max_bitrate() } else { 0 },
+        aac_max_bitrate,
         aptxad_r2: kind == CodecKind::AptxAdaptive && remote.aptxad_r2(),
     }
 }
@@ -830,6 +1240,50 @@ fn sbc_xq_fallback(kind: CodecKind, failure: &ConfigFailure, requested: Option<C
         && (requested.is_none() || fallback)
 }
 
+/// `remote` as the profile asks for it: `forced` usable, the codec chosen
+/// on its card though the device does not offer it, and `unlisted`'s
+/// settings not held to what the device lists (its card's "Show only
+/// supported options" off; issue #86)
+/// Outside developer mode (`req.developer_codecs` off) its codecs
+/// ([`CodecKind::developer_only`], issue #86) are left out of the device's,
+/// as if it did not offer them. Also the one of them requested, if any.
+fn without_developer_codecs(req: &StreamRequest, remote: RemoteCaps) -> (RemoteCaps, Option<CodecKind>) {
+    if req.developer_codecs {
+        return (remote, None);
+    }
+    (remote.without_developer_codecs(), req.codec.filter(|k| k.developer_only()))
+}
+
+/// The choice with the reason for a codec of developer mode left out
+/// (`blocked`): developer mode, not the device
+fn developer_reason(
+    chosen: Result<caps::Choice, Option<(CodecKind, Unavailable)>>,
+    blocked: Option<CodecKind>,
+) -> Result<caps::Choice, Option<(CodecKind, Unavailable)>> {
+    let why = |r: Option<(CodecKind, Unavailable)>| match r {
+        Some((k, _)) if Some(k) == blocked => Some((k, Unavailable::DeveloperMode)),
+        r => r,
+    };
+    match chosen {
+        Ok(c) => Ok(caps::Choice { replaced: why(c.replaced), ..c }),
+        Err(e) => Err(why(e)),
+    }
+}
+
+fn as_asked(remote: RemoteCaps, forced: Option<CodecKind>, unlisted: Option<CodecKind>) -> RemoteCaps {
+    let remote = match forced.map(|k| (k, remote.forcing(k))) {
+        Some((kind, Some(caps))) => {
+            tracing::warn!("codec: forcing {}, which the device does not list", kind.name());
+            caps
+        }
+        _ => remote,
+    };
+    match unlisted {
+        Some(kind) => remote.unlisted(kind),
+        None => remote,
+    }
+}
+
 /// SBC / SBC XQ adaptive bitpool: only when the profile asks for that codec
 /// itself with ABR on. A profile's ABR was LDAC's and LHDC V5's: Auto, or a
 /// fallback from LDAC, landing on SBC keeps today's fixed bitpool.
@@ -858,6 +1312,19 @@ impl SpatialStage {
             let command = crate::spatial::command_for(&exe);
             SpatialStage { exe, resample, command, config: req.spatial_config.clone() }
         })
+    }
+}
+
+/// The format Windows plays `source` in (the render device's), for matching
+/// it (`DevOverrides::match_source`); None for the test tone or when it
+/// cannot be read
+fn source_mix(source: &SourceRequest) -> Option<audio_capture::MixFormat> {
+    match source {
+        SourceRequest::SystemLoopback | SourceRequest::Application { .. } => audio_capture::mix_format(None),
+        SourceRequest::VirtualDevice { id, .. } | SourceRequest::OutputDevice { id, .. } if !id.is_empty() => {
+            audio_capture::mix_format(Some(id))
+        }
+        _ => None,
     }
 }
 
@@ -893,6 +1360,10 @@ fn start_pipeline(
         }
         None => (None, None),
     };
+    let hold = codec::dev::overrides().encode_at_send;
+    if hold {
+        tracing::info!("encode at send time: audio waits unencoded while the send queue is backed up (developer mode)");
+    }
     Pipeline::start(
         PipelineConfig {
             encoder,
@@ -903,19 +1374,103 @@ fn start_pipeline(
             buffer: BufferPreset::Standard,
             spatial,
             resample,
+            hold,
+            // Volume 0, or Windows' mute key under the output mute
+            mute: Some(Box::new({
+                let zero = host.volume_is_zero();
+                move || zero() || crate::mute_output::key_silenced()
+            })),
         },
         sink,
         host.stats().clone(),
     )
 }
 
-/// Marks the stack as having carried a stream when the session ends (after
-/// any restart during it)
-struct StreamedMark<'a>(&'a Inner);
+/// The A2DP side of headset mode ([`crate::voice::A2dp`]): what the session
+/// stops and starts around the voice link
+struct A2dpSide<'a> {
+    inner: &'a Inner,
+    host: &'a BtHost,
+    pipeline: &'a mut Option<Pipeline>,
+    active: &'a mut ActiveSource,
+    input: &'a SharedInput,
+    input_format: &'a mut Format,
+    info: &'a mut StreamInfo,
+    source: &'a SourceRequest,
+    kind: CodecKind,
+    encoder_config: &'a EncoderConfig,
+    channels: u32,
+    rate: u32,
+    /// The stream's spatial engine, kept across a voice-link round trip
+    spatial: Option<SpatialStage>,
+}
+
+impl crate::voice::A2dp for A2dpSide<'_> {
+    fn suspend(&mut self) {
+        self.active.stop();
+        if let Some(p) = self.pipeline.take()
+            && let Some(s) = p.stop()
+        {
+            self.host.return_media_sink(s);
+        }
+        self.host.stop_stream();
+        tracing::debug!("voice: A2DP suspended");
+    }
+
+    fn resume(&mut self) -> Result<(), Msg> {
+        if !self.host.start_stream() {
+            tracing::warn!("voice: A2DP did not start again");
+            return Err(Msg::new("error.stream_start"));
+        }
+        let opened = open_source(self.source, self.rate)?;
+        let format = source_format(&opened, self.rate);
+        let Some(sink) = self.host.take_media_sink() else { return Err(Msg::new("error.encode_thread")) };
+        let encoder = match codec::create(self.kind, self.encoder_config) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::error!("encoder: {e}");
+                self.host.return_media_sink(sink);
+                return Err(Msg::new("error.encoder_init"));
+            }
+        };
+        self.info.bitrate_kbps = encoder.bitrate_kbps();
+        let (p, new_input) = start_pipeline(
+            encoder,
+            format,
+            self.channels,
+            self.encoder_config.mtu,
+            sink,
+            self.host,
+            self.spatial.clone(),
+        );
+        if let Ok(mut i) = self.input.0.lock() {
+            *i = new_input;
+        }
+        *self.pipeline = Some(p);
+        if format != *self.input_format {
+            tracing::debug!("voice: capture format {:?} -> {format:?}", *self.input_format);
+            *self.input_format = format;
+            self.info.source_channels = format.channels as u32;
+            self.info.source_bits = (format.sample_format.bytes_per_sample() * 8) as u32;
+        }
+        let Some(active) = start_source(opened, self.source, self.rate, self.input) else {
+            return Err(Msg::new("error.audio_capture_start"));
+        };
+        *self.active = active;
+        self.info.source.waiting = self.active.waiting();
+        self.inner.stream_info(self.info.clone());
+        tracing::info!("voice: A2DP resumed ({} {} kbps)", self.kind.name(), self.info.bitrate_kbps);
+        Ok(())
+    }
+}
+
+/// Marks the stack as having carried a stream to the device when the
+/// session ends (after any restart during it)
+struct StreamedMark<'a>(&'a Inner, [u8; 6]);
 
 impl Drop for StreamedMark<'_> {
     fn drop(&mut self) {
-        self.0.mark_streamed();
+        self.0.mark_streamed(self.1);
     }
 }
 
@@ -935,7 +1490,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let session_start = Instant::now();
 
     inner.notify(StreamState::Connecting, Msg::new("status.initializing_btstack"));
-    let mut host = match inner.host_for_stream() {
+    let mut host = match inner.host_for_stream(req.device) {
         Ok(h) => h,
         Err(m) => {
             tracing::debug!("stream: no stack after {} ms: {}", session_start.elapsed().as_millis(), m.english());
@@ -999,7 +1554,107 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
     };
     // However the session ends, the next one starts on a new stack
-    let _streamed = StreamedMark(inner);
+    let _streamed = StreamedMark(inner, req.device);
+    let connect_again = || {
+        host.disconnect();
+        for _ in 0..10 {
+            if !stopped() {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        inner.notify(StreamState::Connecting, Msg::new("status.connecting_device"));
+        connect(&host)
+    };
+    // Huawei earbuds that do not list LDAC: asked for, not for Auto, as the
+    // mode stays set on them and trades connection stability for it. No LDAC
+    // from it: earbuds that had it off get it back, and a connection after it.
+    let mut given_name = None;
+    if req.codec == Some(CodecKind::Ldac)
+        && !remote.has(CodecKind::Ldac)
+        && remote.audio_sinks_in_use == 0
+        && !stopped()
+        && vendor_named(&host, &req, &mut given_name, vendor::HUAWEI)
+    {
+        inner.notify(StreamState::Connecting, Msg::new("status.huawei_ldac"));
+        if let Some(before) = vendor::huawei::ask_for_ldac(&host, req.device) {
+            let mut result = connect_again();
+            if before == 0
+                && result.as_ref().is_ok_and(|caps| !caps.has(CodecKind::Ldac))
+                && !stopped()
+                && vendor::huawei::set_connection_first(&host, req.device)
+            {
+                result = connect_again();
+            }
+            remote = match result {
+                Ok(caps) => caps,
+                Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
+                Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
+            };
+        }
+    }
+    // OPPO earbuds that cap LHDC V5: asked for Hi-Res when LHDC V5 streams,
+    // chosen or by Auto, above the 400 kbps they may give anyway. They list
+    // what it brought only on a new connection: one is made for it. Once per
+    // earbuds, kept with what they offered: the next connections go by what
+    // they list, until that record is cleared (issue #237).
+    let mut hi_res_set = false;
+    let lhdc_streams = match req.codec {
+        Some(k) => k == CodecKind::LhdcV5,
+        None => remote.best_in(&req.auto_order, req.experimental_codecs) == Some(CodecKind::LhdcV5),
+    };
+    let oppo_blocked = if !lhdc_streams {
+        Some("LHDC V5 does not stream")
+    } else if req.quality == Quality::Mobile {
+        Some("quality is Low")
+    } else if req.abr {
+        Some("ABR is on")
+    } else if remote.listed_max_bitrate(CodecKind::LhdcV5) == 0 {
+        Some("they list no peak bit rate")
+    } else if remote.audio_sinks_in_use > 0 {
+        Some("another device streams to them")
+    } else {
+        None
+    };
+    let ask_again = vendor::option(vendor::OPPO, vendor::OPPO_EVERY_CONNECTION);
+    let oppo_candidate = remote.has(CodecKind::LhdcV5) && (ask_again || !inner.hi_res_asked(&addr)) && !stopped();
+    if oppo_candidate
+        && let Some(why) = oppo_blocked
+        && vendor_named(&host, &req, &mut given_name, vendor::OPPO)
+    {
+        tracing::info!("OPPO: Hi-Res not asked for: {why}");
+    }
+    if oppo_candidate && oppo_blocked.is_none() && vendor_named(&host, &req, &mut given_name, vendor::OPPO) {
+        inner.notify(StreamState::Connecting, Msg::new("status.oppo_hi_res"));
+        // Whether they kept the link or not, a new connection follows
+        if let Some((before, _)) = vendor::oppo::ask_for_hi_res(&host, req.device) {
+            inner.set_hi_res_asked(&addr);
+            let listed = remote.listed_max_bitrate(CodecKind::LhdcV5);
+            tracing::info!("OPPO: connecting again for Hi-Res");
+            remote = match connect_again() {
+                Ok(caps) => caps,
+                Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
+                Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
+            };
+            let now = remote.listed_max_bitrate(CodecKind::LhdcV5);
+            if now != listed {
+                tracing::info!("OPPO: LHDC V5's maximum went from {listed} to {now} bps with Hi-Res");
+                hi_res_set = true;
+            } else if before == 0 && !stopped() {
+                // Nothing gained: earbuds that had it off get it back (a new
+                // connection only when they end the link for it)
+                tracing::info!("OPPO: Hi-Res changed nothing, setting it back off");
+                if vendor::oppo::set_hi_res_off(&host, req.device) == Some(vendor::oppo::Taken::LinkClosed) {
+                    remote = match connect_again() {
+                        Ok(caps) => caps,
+                        Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
+                        Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
+                    };
+                }
+            } else {
+                tracing::info!("OPPO: Hi-Res changed nothing, it stays on as it was");
+            }
+        }
+    }
     inner.record_codecs(&addr, KnownCodecs::of(&remote));
     tracing::info!("device connected, choosing the codec");
     tracing::debug!(
@@ -1017,28 +1672,46 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     // ---- codec ----
+    // A codec chosen on its card that the device did not offer: asked for
+    // anyway, and no fallback (issue #86: without Auto-select the choice is
+    // the user's; it stops with an error if the device refuses it)
+    // Outside developer mode its codecs are neither asked for nor used: one
+    // chosen falls back, under Auto-select or not (its card is not shown)
+    let blocked;
+    (remote, blocked) = without_developer_codecs(&req, remote);
+    if let Some(k) = blocked {
+        tracing::info!("codec: {} is used only in developer mode", k.name());
+    }
+    let forced = req.codec.filter(|&k| blocked.is_none() && req.codec_forced && k.available() && !remote.has(k));
+    let fallback = req.codec_fallback && (!req.codec_forced || blocked.is_some());
+    remote = as_asked(remote, forced, None);
     if !req.auto_order.is_default() {
         tracing::info!("codec: the device's order set by the user: {}", req.auto_order.names());
     }
-    let choice = match caps::choose_in(&remote, req.codec, req.codec_fallback, req.experimental_codecs, &req.auto_order)
-    {
+    let chosen = caps::choose_in(&remote, req.codec, fallback, req.experimental_codecs, &req.auto_order);
+    let choice = match developer_reason(chosen, blocked) {
         Ok(c) => c,
         Err(why) => {
             tracing::debug!(
                 "codec: no codec for request {:?} (fallback {}, experimental {}): {why:?}",
                 req.codec.map(CodecKind::name),
-                req.codec_fallback,
+                fallback,
                 req.experimental_codecs
             );
             host.disconnect();
             let msg = match why {
                 None => Msg::new("error.no_compatible_codec"),
-                Some((codec, Unavailable::SepInUse { in_use, total })) => {
-                    Msg::with("error.codec_sep_in_use", &[&codec.name(), &in_use, &total])
+                Some((codec, Unavailable::SepInUse { .. })) => {
+                    Msg::codec_stop("error.codec_sep_in_use", codec, CodecStopKind::InUse)
                 }
-                Some((codec, Unavailable::AdaptiveOnly)) => Msg::with("error.codec_adaptive_only", &[&codec.name()]),
-                Some((codec, Unavailable::NotSupported)) => Msg::with("error.codec_not_supported", &[&codec.name()]),
+                Some((codec, Unavailable::AdaptiveOnly)) => {
+                    Msg::codec_stop("error.codec_adaptive_only", codec, CodecStopKind::Unsupported)
+                }
+                Some((codec, Unavailable::NotSupported)) => {
+                    Msg::codec_stop("error.codec_not_supported", codec, CodecStopKind::Unsupported)
+                }
                 Some((codec, Unavailable::Experimental)) => Msg::with("error.codec_experimental_off", &[&codec.name()]),
+                Some((codec, Unavailable::DeveloperMode)) => Msg::with("error.codec_developer_only", &[&codec.name()]),
             };
             return inner.notify(StreamState::Error, msg);
         }
@@ -1049,10 +1722,33 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         tracing::warn!("codec fallback: {} not available ({why:?}), using {}", wanted.name(), kind.name());
     }
     tracing::info!("codec selected: {}", kind.name());
+    // The codec chosen with its card's "Show only supported options" off:
+    // its settings go by what BlueCaster has, not by what the device lists
+    // (never under Auto-select, which keeps to what streams)
+    let mut unlisted = (req.unlisted_options && req.codec == Some(kind)).then_some(kind);
+    // What the device lists, to tell later whether the switch matters
+    // ([`Inner::unlisted_keeps`])
+    let mut listed_remote = remote.clone();
+    if unlisted.is_some() {
+        tracing::warn!("codec: {} settings beyond what the device lists (the user's choice)", kind.name());
+        remote = as_asked(remote, None, unlisted);
+    }
+    // Developer mode: Auto-select with the picked codec's own settings
+    let own = req.codec_values.iter().find(|(k, _)| *k == kind).map(|(_, v)| v.clone());
+    let req = match own.filter(|_| req.codec.is_none() && codec::dev::overrides().auto_codec_settings) {
+        Some(v) => {
+            tracing::info!("codec: {} with its own settings under Auto-select (developer mode): {v:?}", kind.name());
+            // A copy: the connect closure keeps the request borrowed
+            let mut r = req.clone();
+            v.apply_to(&mut r);
+            r
+        }
+        None => req.clone(),
+    };
     tracing::debug!(
         "codec: requested {:?} (fallback {}), chose {} ({})",
         req.codec.map(CodecKind::name),
-        req.codec_fallback,
+        fallback,
         kind.name(),
         if req.codec.is_none() {
             "auto: best the device offers"
@@ -1065,28 +1761,34 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- audio source ----
     inner.notify(StreamState::Connecting, Msg::new("status.initializing_audio"));
-    let test_tone = req.source == SourceRequest::TestTone;
-    // Auto (Auto-select): the best codec with its best options, so the
-    // highest rate the codec takes, as far as the device lists it (issue
-    // #86), the test tone too; quality (HQ) and bit depth (24-bit where
-    // carried) are already the best by default. WASAPI resamples a lower
-    // mix rate.
-    let best_rate = req.codec.is_none() && req.sample_rate.is_none();
-    let mut preferred = match (&req.source, req.sample_rate) {
-        (_, Some(r)) => r,
-        _ if best_rate => kind.max_sample_rate(),
-        (SourceRequest::TestTone, None) => 48000,
-        (SourceRequest::VirtualDevice { id, .. }, None) => audio_capture::mix_rate(Some(id)).unwrap_or(48000),
-        (_, None) => audio_capture::mix_rate(None).unwrap_or(48000),
-    };
+    // The rate on Auto (the profile's 0, Auto-select too): 48 kHz, each
+    // codec's picker below going to the best the device lists without it
+    // (44.1 kHz, say). Not the highest it lists nor the Windows mix rate
+    // (issue #86: 96 kHz brought latency and trouble with no audible gain,
+    // and Windows mixes at 48 kHz); 96 kHz when chosen. WASAPI resamples.
+    // Developer mode: Auto follows the captured output's format instead, as
+    // near as the rates the device lists for the codec go
+    let mix = (codec::dev::overrides().match_source && (req.sample_rate.is_none() || req.bit_depth.is_none()))
+        .then(|| source_mix(&req.source))
+        .flatten();
+    let matched = mix.map(|m| remote.match_sample_rate(kind, m.rate));
+    if let (Some(m), Some(r)) = (mix, matched) {
+        tracing::info!(
+            "codec: matching the source (developer mode): {} Hz, {}-bit; {r} Hz of {:?} listed",
+            m.rate,
+            m.bits,
+            remote.listed_sample_rates(kind)
+        );
+    }
+    let mut preferred = req.sample_rate.or(matched).unwrap_or(AUTO_SAMPLE_RATE);
     tracing::debug!(
         "capture rate: {preferred} Hz preferred ({})",
         if req.sample_rate.is_some() {
             "profile"
-        } else if best_rate {
-            "Auto: the codec's highest"
+        } else if mix.is_some() {
+            "the source's"
         } else {
-            "source mix rate"
+            "Auto"
         }
     );
     if preferred > kind.max_sample_rate() {
@@ -1100,34 +1802,21 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     // aptX family, AAC: 44.1 / 48 kHz as the sink lists them; LHDC V5, LDAC:
     // their rates;
     // Opus, Opus 05: 48 kHz only; aptX Adaptive: 48 kHz, 96 kHz when the
-    // profile or Auto asks for it (HQ, an R2 sink that lists it), not from
-    // the source's mix rate. WASAPI resamples to the requested rate.
+    // profile asks for it (HQ, an R2 sink that lists it). WASAPI resamples
+    // to the requested rate.
     let picked = match kind {
         CodecKind::Aptx | CodecKind::AptxHd | CodecKind::AptxLl => remote.pick_aptx_sample_rate(kind, preferred),
         CodecKind::LhdcV5 => remote.pick_lhdcv5_sample_rate(preferred),
         CodecKind::Ldac => remote.pick_ldac_sample_rate(preferred),
         CodecKind::FastStream => remote.pick_faststream_sample_rate(preferred),
-        // 96 kHz only while switched on in Developer (issue #86: not yet
-        // working on an EarFun)
-        CodecKind::AptxAdaptive => remote.pick_aptxad_sample_rate(
-            req.sample_rate.unwrap_or(if best_rate { 96000 } else { 48000 }),
-            req.quality.for_codec(kind),
-            codec::dev::overrides().aptxad_96k,
-        ),
+        CodecKind::AptxAdaptive => remote.pick_aptxad_sample_rate(preferred, req.quality.for_codec(kind)),
         CodecKind::Opus | CodecKind::Opus05 => 48000,
         CodecKind::Aac => remote.pick_aac_sample_rate(preferred),
         CodecKind::Sbc | CodecKind::SbcXq if preferred != 44100 => 48000,
         _ => preferred,
     };
     if picked != preferred {
-        // aptX Adaptive takes 96 kHz only when chosen, not from the mix
-        // rate: said so, not "supported" (issue #86)
-        let why = if kind == CodecKind::AptxAdaptive && req.sample_rate.is_none() && !best_rate {
-            "the profile's rate is Auto; 96 kHz only when chosen in the codec's settings"
-        } else {
-            "supported rate"
-        };
-        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz ({why})", kind.name());
+        tracing::info!("{}: capturing at {picked} Hz instead of {preferred} Hz (supported rate)", kind.name());
         preferred = picked;
     }
     // The spatial engine works on 48 kHz stereo float32 and nothing else.
@@ -1142,60 +1831,30 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let mut default_guard = DefaultDeviceGuard(None);
     // Restored while the headphones are off: switched again when they are back
     let mut switch_default_again = false;
-    let options = CaptureOptions { preferred_rate: Some(preferred), fill_silence: !test_tone };
-    let (source, opened): (Option<Source>, Option<Capture>) = match &req.source {
-        SourceRequest::TestTone => (Some(Source::TestTone), None),
-        SourceRequest::SystemLoopback => (Some(Source::SystemLoopback), None),
-        SourceRequest::VirtualDevice { id, name, auto_switch } => {
-            if id.is_empty() {
-                host.disconnect();
-                return inner.notify(StreamState::Error, Msg::new("error.no_virtual_device_selected"));
-            }
-            if *auto_switch {
-                default_guard = DefaultDeviceGuard::switch_to(id, name);
-            }
-            (Some(Source::RenderDevice { id: id.clone() }), None)
-        }
-        SourceRequest::Application { exe } => {
-            let build = audio_capture::windows_build();
-            let msg = if build < audio_capture::APP_CAPTURE_MIN_BUILD {
-                Some(Msg::with("error.app_capture_unsupported", &[&build]))
-            } else if exe.is_empty() {
-                Some(Msg::new("error.no_app_selected"))
-            } else {
-                None
-            };
-            if let Some(m) = msg {
+    default_guard.follow(&req.source);
+    // A virtual device that cannot be opened (another app may hold it), or
+    // an output device that is gone: this session sends what Windows plays,
+    // the profile stays as it is
+    let mut source = req.source.clone();
+    let mut source_text = None;
+    let opened = match open_source(&source, preferred) {
+        Ok(o) => o,
+        Err(m) => {
+            let stand_in = loopback_may_replace(&source).then(|| {
+                tracing::warn!("audio source: {source} cannot be opened, capturing System Loopback instead");
+                default_guard.follow(&SourceRequest::SystemLoopback);
+                open_source(&SourceRequest::SystemLoopback, preferred).ok()
+            });
+            let Some(o) = stand_in.flatten() else {
                 host.disconnect();
                 return inner.notify(StreamState::Error, m);
-            }
-            (None, None)
+            };
+            source_text = Some(stand_in_text(&source));
+            source = SourceRequest::SystemLoopback;
+            o
         }
     };
-    let _ = opened;
-    let capture = match &source {
-        Some(s) => match Capture::open(s, &options) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                tracing::error!("audio capture: {e}");
-                host.disconnect();
-                let key = if matches!(req.source, SourceRequest::VirtualDevice { .. }) {
-                    "error.virtual_capture_init"
-                } else {
-                    "error.wasapi_init"
-                };
-                return inner.notify(StreamState::Error, Msg::new(key));
-            }
-        },
-        None => None,
-    };
-    // Application capture: float stereo at the requested rate, known before
-    // the app runs
-    let format = capture.as_ref().map(|c| c.format()).unwrap_or(Format {
-        sample_rate: preferred,
-        channels: 2,
-        sample_format: SampleFormat::F32,
-    });
+    let format = source_format(&opened, preferred);
     let channels = (format.channels as u32).min(2);
     tracing::info!(
         "capture: {} Hz, {} channel(s), {:?} -> {channels} channel(s)",
@@ -1206,9 +1865,12 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // LDAC, aptX HD and LHDC V5 carry 24-bit unless the profile says 16
     // (LHDC V5 only when the sink has 24-bit); aptX Adaptive always
+    let source_16bit = req.bit_depth.is_none() && mix.is_some_and(|m| m.bits <= 16);
     let bits: u8 = match (kind, req.bit_depth) {
         (CodecKind::AptxAdaptive, _) => 24,
         (_, Some(16)) => 16,
+        // Matching a 16-bit source (developer mode)
+        _ if source_16bit => 16,
         (CodecKind::Ldac | CodecKind::AptxHd, _) => 24,
         (CodecKind::LhdcV5, _) if remote.lhdcv5_24bit() => 24,
         _ => 16,
@@ -1225,13 +1887,15 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- stream configuration ----
     let t = Instant::now();
-    let mut configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+    let mut configured =
+        configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind));
     if let Err(failure) = &configured {
         tracing::debug!("configure: {} failed after {} ms: {failure:?}", kind.name(), t.elapsed().as_millis());
     }
     if let Err(failure) = &configured
         && !stopped()
-        && sbc_xq_fallback(kind, failure, req.codec, req.codec_fallback)
+        && forced.is_none()
+        && sbc_xq_fallback(kind, failure, req.codec, fallback)
     {
         // The sink lists dual channel but refuses it. BTstack's A2DP setup
         // of this connection ends with the refusal: connect again and take
@@ -1245,11 +1909,14 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             Err(_) if stopped() => return inner.notify(StreamState::Idle, Msg::new("status.ready")),
             Err(f) => return inner.notify(StreamState::Error, rom_or(&host, connect_error(Some(f)))),
         };
+        listed_remote = remote.clone();
         kind = CodecKind::Sbc;
+        unlisted = None;
         if req.codec.is_some() && replaced.is_none() {
             replaced = Some((CodecKind::SbcXq, Unavailable::NotSupported));
         }
-        configured = configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc);
+        configured =
+            configure_stream(&host, &remote, kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind));
         if let Err(failure) = &configured {
             tracing::debug!("configure: SBC after SBC XQ failed: {failure:?}");
         }
@@ -1264,18 +1931,40 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                 tracing::error!("{e}");
             }
             host.disconnect();
+            // What the user chose beyond what the device lists: say so, and
+            // how to get sound back (issue #86)
+            let msg = if forced.is_some() {
+                Msg::codec_stop("error.codec_unsupported_refused", kind, CodecStopKind::Unsupported)
+            } else if unlisted.is_some() {
+                Msg::codec_stop("error.codec_unlisted_refused", kind, CodecStopKind::SettingsUnsupported)
+            } else if matches!(e, ConfigFailure::Host(ConfigureError::Refused)) {
+                // The device (or BTstack) refused a codec it lists
+                Msg::codec_stop("error.codec_configure", kind, CodecStopKind::Refused)
+            } else {
+                Msg::new("error.codec_configure")
+            };
             return if stopped() {
                 inner.notify(StreamState::Idle, Msg::new("status.ready"))
             } else {
-                inner.notify(StreamState::Error, rom_or(&host, Msg::new("error.codec_configure")))
+                inner.notify(StreamState::Error, rom_or(&host, msg))
             };
         }
     };
     let kind = kind;
+    // Whether "Show only options it supports" on or off sets up this very
+    // stream: then turning it gives no reconnect (issue #86)
+    let keeps = |on: bool| {
+        let u = (on && req.codec == Some(kind)).then_some(kind);
+        as_asked(listed_remote.clone(), None, u)
+            .configuration_with(kind, format.sample_rate, channels, bits, vbr, req.sbc_params(kind))
+            .is_ok_and(|c| c == config)
+    };
+    inner.set_unlisted_keeps([keeps(false), keeps(true)]);
     let fallback_text = replaced.as_ref().map(|(wanted, why)| {
         let key = match why {
             Unavailable::SepInUse { .. } => "status.connected_fallback_in_use",
             Unavailable::Experimental => "status.connected_fallback_experimental",
+            Unavailable::DeveloperMode => "status.connected_fallback_developer",
             _ => "status.connected_fallback",
         };
         Msg::with(key, &[&wanted.name(), &kind.name()])
@@ -1299,6 +1988,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             || sbc_abr(&req, kind),
         peer: peer_params(&remote, kind, channels, &req),
     };
+    // What the encoder goes by: `req` with the bitpools chosen during the stream
+    let mut encoder_req = req.clone();
     tracing::debug!("encoder config: {encoder_config:?}");
     let encoder = match codec::create(kind, &encoder_config) {
         Ok(e) => e,
@@ -1326,7 +2017,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     }
 
     tracing::debug!("stream: started {} ms after the request", session_start.elapsed().as_millis());
-    inner.notify(StreamState::Streaming, fallback_text.clone().unwrap_or_else(|| Msg::new("status.connected")));
+    let connected = fallback_text.clone().or(source_text);
+    inner.notify(StreamState::Streaming, connected.unwrap_or_else(|| Msg::new("status.connected")));
     let mut info = StreamInfo {
         codec: kind.name().into(),
         bitrate_kbps: bitrate,
@@ -1340,7 +2032,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         requested_in_use: matches!(replaced, Some((_, Unavailable::SepInUse { .. }))),
         abr,
         bitrate_capped,
-        source: req.source.info(),
+        hi_res_set,
+        source: source.info(),
         details: Some(Box::new(codec_details(kind, &config, &remote, &*encoder, mtu, format.sample_rate))),
     };
     inner.save_device(&addr, &req.device_name);
@@ -1353,26 +2046,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let (pipeline, input) =
         start_pipeline(encoder, format, channels, mtu, sink, &host, SpatialStage::of(&req, resample_around_engine));
     let input = SharedInput(Arc::new(Mutex::new(input)));
-    let active = match (capture, source, &req.source) {
-        (Some(c), Some(source), _) => match c.start(Box::new(input.clone())) {
-            Ok(r) => Some(ActiveSource::Capture(DeviceSource { source, options, running: Some(r), failed: false })),
-            Err(e) => {
-                tracing::error!("audio capture start: {e}");
-                None
-            }
-        },
-        (None, _, SourceRequest::Application { exe }) => {
-            let mut app =
-                AppSource { exe: exe.clone(), sample_rate: preferred, running: None, process_id: 0, failed_pid: 0 };
-            if !app.attach(&input) {
-                // Not running yet is fine: the capture attaches once it is up
-                tracing::info!("{exe} is not running yet, waiting for it");
-            }
-            Some(ActiveSource::App(app))
-        }
-        _ => None,
-    };
-    let Some(mut active) = active else {
+    let Some(mut active) = start_source(opened, &source, preferred, &input) else {
         if let Some(s) = pipeline.stop() {
             host.return_media_sink(s);
         }
@@ -1383,12 +2057,21 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     inner.stream_info(info.clone());
 
     // Headphone volume and a Windows volume act as one (volume_sync.rs)
-    let mut volume = crate::volume_sync::EndpointChoice::for_stream(&req.volume_sync, &req.source)
-        .map(crate::volume_sync::VolumeSyncer::new);
+    let mut volume_choice = crate::volume_sync::EndpointChoice::for_stream(&req.volume_sync, &source);
+    let mut volume = volume_choice.clone().map(crate::volume_sync::VolumeSyncer::new);
+    let mut output_mute = OutputMute::new();
+    output_mute.tick(req.mutes_output(&source));
 
     // A reconnect builds the configuration anew from what the device lists
     // then (v1 read its capabilities again)
-    let rebuild = |r: &RemoteCaps| match r.configuration_with(kind, format.sample_rate, channels, bits, vbr, req.sbc) {
+    let rebuild = |r: &RemoteCaps| match as_asked(r.clone(), forced, unlisted).configuration_with(
+        kind,
+        format.sample_rate,
+        channels,
+        bits,
+        vbr,
+        req.sbc_params(kind),
+    ) {
         Ok(c) => Some(c),
         Err(e) => {
             tracing::warn!("reconnect: {e}");
@@ -1398,6 +2081,8 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
 
     // ---- streaming ----
     let mut pipeline = Some(pipeline);
+    // What the session captures: the request's until another source is chosen
+    let mut current_source = source;
     let mut app_ticks = 0u32;
     // What the capture delivers now: a device opened again may come back
     // with other channels or samples (the rate is the stream's, converted
@@ -1406,7 +2091,16 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     let mut reopen_ticks = 0u32;
     let mut lost_for_good = false;
     let mut discontinuities = DiscontinuityLog::default();
+    // Developer mode: another limit on how long a packet waits in the send
+    // queue (0 = the default)
+    let queue_wait = codec::dev::overrides().queue_max_wait_ms;
+    host.stats().queue_max_wait_ms.store(queue_wait, std::sync::atomic::Ordering::Relaxed);
+    if queue_wait > 0 {
+        tracing::info!("send queue: packets dropped after {queue_wait} ms (developer mode)");
+    }
     let mut health = StreamHealth::start(host.stats().clone(), format.sample_rate, active.health());
+    // Headset mode (developer mode): the voice link instead of A2DP
+    let mut headset = crate::voice::HeadsetMode::new(req.headset_mic, req.mic_output.clone());
     while !stopped() {
         inner.wait_tick(Duration::from_millis(200));
         if stopped() {
@@ -1415,10 +2109,144 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         if let Some(v) = volume.as_mut() {
             v.tick(true, &*host);
         }
+        output_mute.tick(req.mutes_output(&current_source));
         inner.remember_volume(&addr, host.remote_volume());
 
+        // Another source chosen: only the capture changes, the encoder (at
+        // the same rate) and the link go on. A source that cannot start ends
+        // the session as it would at its start.
+        if headset.active()
+            && let Some(next) = inner.take_source_change()
+        {
+            // The voice link's uplink captures it; A2DP takes it on resuming
+            tracing::info!("audio source: {current_source} -> {next} (headset mode)");
+            default_guard.follow(&next);
+            headset.change_source(&next);
+            let choice = crate::volume_sync::EndpointChoice::for_stream(&req.volume_sync, &next);
+            if choice != volume_choice {
+                if let Some(mut v) = volume.take() {
+                    v.stop();
+                }
+                volume = choice.clone().map(crate::volume_sync::VolumeSyncer::new);
+                volume_choice = choice;
+            }
+            info.source = next.info();
+            inner.stream_info(info.clone());
+            current_source = next;
+        } else if let Some(next) = inner.take_source_change() {
+            tracing::info!("audio source: {current_source} -> {next}");
+            // Stopped first: a driver's endpoints may not capture side by side
+            active.stop();
+            default_guard.follow(&next);
+            let opened = match open_source(&next, format.sample_rate) {
+                Ok(o) => o,
+                Err(m) => {
+                    inner.notify(StreamState::Error, m);
+                    lost_for_good = true;
+                    break;
+                }
+            };
+            let new_format = source_format(&opened, format.sample_rate);
+            if new_format != input_format {
+                tracing::debug!("audio source: format {input_format:?} -> {new_format:?}, starting the pipeline anew");
+                input_format = new_format;
+                info.source_channels = new_format.channels as u32;
+                info.source_bits = (new_format.sample_format.bytes_per_sample() * 8) as u32;
+                let renewed = restart_pipeline(
+                    &mut pipeline,
+                    kind,
+                    &encoder_config,
+                    input_format,
+                    channels,
+                    &input,
+                    &host,
+                    SpatialStage::of(&req, resample_around_engine),
+                );
+                if let Err(m) = renewed {
+                    inner.notify(StreamState::Error, m);
+                    lost_for_good = true;
+                    break;
+                }
+            }
+            let Some(started) = start_source(opened, &next, format.sample_rate, &input) else {
+                inner.notify(StreamState::Error, Msg::new("error.audio_capture_start"));
+                lost_for_good = true;
+                break;
+            };
+            active = started;
+            reopen_ticks = 0;
+            let choice = crate::volume_sync::EndpointChoice::for_stream(&req.volume_sync, &next);
+            if choice != volume_choice {
+                if let Some(mut v) = volume.take() {
+                    v.stop();
+                }
+                volume = choice.clone().map(crate::volume_sync::VolumeSyncer::new);
+                volume_choice = choice;
+            }
+            info.source = next.info();
+            info.source.waiting = active.waiting();
+            inner.stream_info(info.clone());
+            current_source = next;
+        }
+
+        // Other bitpools chosen: the link allows the whole range, so only
+        // the encoder changes (issue #86: the slider is heard as it moves)
+        if headset.active()
+            && let Some(b) = inner.take_bitpool_change()
+        {
+            // Taken by the encoder A2DP resumes with
+            encoder_req.set_bitpools(b);
+            encoder_config.peer = peer_params(&remote, kind, channels, &encoder_req);
+        } else if let Some(b) = inner.take_bitpool_change() {
+            encoder_req.set_bitpools(b);
+            encoder_config.peer = peer_params(&remote, kind, channels, &encoder_req);
+            let sink = pipeline.take().and_then(Pipeline::stop);
+            let Some(sink) = sink else {
+                inner.notify(StreamState::Error, Msg::new("error.encode_thread"));
+                lost_for_good = true;
+                break;
+            };
+            let encoder = match codec::create(kind, &encoder_config) {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::error!("encoder: {e}");
+                    host.return_media_sink(sink);
+                    inner.notify(StreamState::Error, Msg::new("error.encoder_init"));
+                    lost_for_good = true;
+                    break;
+                }
+            };
+            tracing::info!("{}: bitpool changed, now {} kbps", kind.name(), encoder.bitrate_kbps());
+            info.bitrate_kbps = encoder.bitrate_kbps();
+            info.details = Some(Box::new(codec_details(
+                kind,
+                &config,
+                &remote,
+                &*encoder,
+                encoder_config.mtu,
+                format.sample_rate,
+            )));
+            let (p, new_input) = start_pipeline(
+                encoder,
+                input_format,
+                channels,
+                encoder_config.mtu,
+                sink,
+                &host,
+                SpatialStage::of(&req, resample_around_engine),
+            );
+            if let Ok(mut i) = input.0.lock() {
+                *i = new_input;
+            }
+            pipeline = Some(p);
+            inner.stream_info(info.clone());
+        }
+
         // Application capture follows the app: it may quit and start again
-        if let ActiveSource::App(app) = &mut active {
+        // (A2DP's capture: stopped while the voice link runs)
+        if let ActiveSource::App(app) = &mut active
+            && !headset.active()
+        {
             if app.exited() {
                 tracing::info!("{} exited, waiting for it to start again", app.exe);
                 app.detach();
@@ -1431,7 +2259,9 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         // Device capture that Windows ended (device removed, disabled, its
         // format changed or taken in exclusive mode) is opened again: at
         // once, every second for ten tries, then every ten seconds
-        if let ActiveSource::Capture(dev) = &mut active {
+        if let ActiveSource::Capture(dev) = &mut active
+            && !headset.active()
+        {
             if dev.ended() {
                 let why = dev.running.as_ref().and_then(Running::end_reason);
                 tracing::warn!("audio capture ended ({why:?}), opening the device again");
@@ -1458,37 +2288,20 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                         input_format = new_format;
                         info.source_channels = new_format.channels as u32;
                         info.source_bits = (new_format.sample_format.bytes_per_sample() * 8) as u32;
-                        // Without a pipeline (between reconnects) the next
-                        // one is started with the new format
-                        if let Some(p) = pipeline.take() {
-                            let Some(sink) = p.stop() else {
-                                inner.notify(StreamState::Error, Msg::new("error.encode_thread"));
-                                lost_for_good = true;
-                                break;
-                            };
-                            let encoder = match codec::create(kind, &encoder_config) {
-                                Ok(e) => e,
-                                Err(e) => {
-                                    tracing::error!("encoder: {e}");
-                                    host.return_media_sink(sink);
-                                    inner.notify(StreamState::Error, Msg::new("error.encoder_init"));
-                                    lost_for_good = true;
-                                    break;
-                                }
-                            };
-                            let (p, new_input) = start_pipeline(
-                                encoder,
-                                input_format,
-                                channels,
-                                encoder_config.mtu,
-                                sink,
-                                &host,
-                                SpatialStage::of(&req, resample_around_engine),
-                            );
-                            if let Ok(mut i) = input.0.lock() {
-                                *i = new_input;
-                            }
-                            pipeline = Some(p);
+                        let renewed = restart_pipeline(
+                            &mut pipeline,
+                            kind,
+                            &encoder_config,
+                            input_format,
+                            channels,
+                            &input,
+                            &host,
+                            SpatialStage::of(&req, resample_around_engine),
+                        );
+                        if let Err(m) = renewed {
+                            inner.notify(StreamState::Error, m);
+                            lost_for_good = true;
+                            break;
                         }
                         inner.stream_info(info.clone());
                     }
@@ -1508,6 +2321,54 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         // again on it
         let lost = host.check_disconnected();
         let check = check_link(lost, host.stalled(), inner.power.stale(), inner.power.suspending());
+        if check == LinkCheck::Fine {
+            let mut side = A2dpSide {
+                inner,
+                host: &host,
+                pipeline: &mut pipeline,
+                active: &mut active,
+                input: &input,
+                input_format: &mut input_format,
+                info: &mut info,
+                source: &current_source,
+                kind,
+                encoder_config: &encoder_config,
+                channels,
+                rate: format.sample_rate,
+                spatial: SpatialStage::of(&req, resample_around_engine),
+            };
+            if let Err(m) = headset.tick(inner, &host, &current_source, &mut side) {
+                inner.notify(StreamState::Error, m);
+                lost_for_good = true;
+                break;
+            }
+        } else if headset.link_lost(inner) {
+            // A2DP's capture again, for the pipeline the reconnect starts
+            match open_source(&current_source, format.sample_rate) {
+                Ok(opened) => {
+                    input_format = source_format(&opened, format.sample_rate);
+                    if let Some(a) = start_source(opened, &current_source, format.sample_rate, &input) {
+                        active = a;
+                    }
+                }
+                Err(m) => tracing::warn!("voice: the capture does not open again: {}", m.english()),
+            }
+        }
+        if needs_auto_reconnect(check) && !inner.auto_reconnect() {
+            tracing::info!("link check {check:?}: reconnecting is off, the session ends");
+            if check == LinkCheck::SleepThrough {
+                if let Some(p) = pipeline.take() {
+                    let _ = p.stop();
+                }
+                inner.shutdown_host_for_sleep();
+            }
+            // Not connected again by a Bluetooth restart either
+            inner.waiting_for_device();
+            inner.done_waiting_for_device(false);
+            inner.notify(StreamState::Idle, Msg::new("status.device_off"));
+            lost_for_good = true;
+            break;
+        }
         // Headphones turned back on: connecting to them is no failure
         let mut back_on = false;
         let mut restart_why = match check {
@@ -1524,6 +2385,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
                     default_guard = DefaultDeviceGuard(None);
                     switch_default_again = true;
                 }
+                output_mute.tick(false);
                 if !wait_for_device(inner, &host, req.device, &mut pipeline) {
                     lost_for_good = true;
                     break;
@@ -1687,7 +2549,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             tracing::warn!("reconnect attempt {attempt} failed");
         }
-        let Some(r) = reconnected else {
+        let Some(mut r) = reconnected else {
             tracing::debug!(
                 "reconnect: gave up after {attempt} attempt(s), {} ms (stopped {}, codec gone {codec_gone}, restart pending {restart_why:?})",
                 reconnect_start.elapsed().as_millis(),
@@ -1695,10 +2557,13 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             );
             if !stopped() {
                 if codec_gone {
-                    inner.notify(StreamState::Error, Msg::with("error.codec_not_supported", &[&kind.name()]));
+                    inner.notify(
+                        StreamState::Error,
+                        Msg::codec_stop("error.codec_not_supported", kind, CodecStopKind::Unsupported),
+                    );
                 } else if restart_why.is_none() {
                     // The adapter works, the headphones never answered: off
-                    // or out of range, not an error of A2DPWB
+                    // or out of range, not an error of BlueCaster
                     inner.notify(StreamState::Idle, Msg::new("status.device_unreachable"));
                 } else {
                     inner.notify(StreamState::Error, Msg::new("error.reconnect_failed"));
@@ -1707,10 +2572,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             }
             break;
         };
+        r.remote = as_asked(r.remote, forced, unlisted);
         // The encoder follows the new stream: its MTU and the device's
         // settings (e.g. its SBC bitpool range) may have changed
         let new_config =
-            EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels, &req), ..encoder_config };
+            EncoderConfig { mtu: r.mtu, peer: peer_params(&r.remote, kind, channels, &encoder_req), ..encoder_config };
         if r.mtu != encoder_config.mtu {
             tracing::info!("reconnect: media payload size {} -> {}", encoder_config.mtu, r.mtu);
         }
@@ -1720,6 +2586,10 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             if pipeline.is_some() && !changed { "reset" } else { "started anew" }
         );
         encoder_config = new_config;
+        if r.config != config {
+            // Set up from what the device lists now: the switch restarts
+            inner.set_unlisted_keeps([false; 2]);
+        }
         config = r.config;
         // Resume with the same encoder when nothing changed; otherwise, and
         // on a new stack (its media sink is new), with a new pipeline
@@ -1727,6 +2597,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             && !changed
         {
             p.reset();
+            // The Idle while the headphones were off cleared the stream
+            // info (the UI's, the connected balloon's): the same again
+            if back_on {
+                inner.stream_info(info.clone());
+            }
         } else {
             let sink = match pipeline.take() {
                 Some(p) => p.stop(),
@@ -1776,10 +2651,11 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
             pipeline = Some(p);
             inner.stream_info(info.clone());
         }
-        if switch_default_again && let SourceRequest::VirtualDevice { id, name, .. } = &req.source {
+        if switch_default_again && let SourceRequest::VirtualDevice { id, name, .. } = &current_source {
             default_guard = DefaultDeviceGuard::switch_to(id, name);
             switch_default_again = false;
         }
+        headset.reconnected(inner);
         inner.notify(StreamState::Streaming, Msg::new("status.reconnected"));
     }
 
@@ -1790,6 +2666,7 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
         session_start.elapsed().as_secs(),
         stopped()
     );
+    headset.end(inner, &host);
     health.finish(active.health());
     active.stop();
     if let Some(p) = pipeline.take()
@@ -1803,9 +2680,17 @@ pub(crate) fn run(inner: &Arc<Inner>, req: StreamRequest) {
     host.stop_stream();
     host.disconnect();
     host.set_restore_volume(None);
+    drop(output_mute);
     drop(default_guard);
     if !lost_for_good {
         inner.notify(StreamState::Idle, Msg::new("status.ready"));
+    } else if !inner.auto_reconnect() {
+        // A stack left running would accept the headphones when they are
+        // turned on, which they may mean for a phone
+        inner.shutdown_host();
+    } else {
+        // Nothing follows on this link
+        host.drop_acl_link(crate::service::LINK_RELEASE_WAIT);
     }
 }
 
@@ -1833,6 +2718,15 @@ mod tests {
         assert!(!sbc_abr(&req("ldac", true), CodecKind::Sbc));
         assert!(!sbc_abr(&req("sbcxq", true), CodecKind::Sbc));
         assert!(!sbc_abr(&req("faststream", true), CodecKind::FastStream));
+    }
+
+    #[test]
+    fn only_a_stopped_adapter_recovers_with_reconnecting_off() {
+        assert!(needs_auto_reconnect(LinkCheck::Reconnect));
+        assert!(needs_auto_reconnect(LinkCheck::SleepThrough));
+        assert!(needs_auto_reconnect(LinkCheck::Restart(RESUMED)));
+        assert!(!needs_auto_reconnect(LinkCheck::Restart(ADAPTER_STOPPED)));
+        assert!(!needs_auto_reconnect(LinkCheck::Fine));
     }
 
     #[test]
@@ -1899,6 +2793,60 @@ mod tests {
     }
 
     #[test]
+    fn the_default_output_stays_switched_for_a_session_to_the_same_device() {
+        // Settings changed: the next session switches to the same device
+        let mut h = DefaultHandover { next: Some("{cable}".into()), restore: None };
+        assert_eq!(h.end(Some("{cable}"), "{speakers}".into()), None);
+        assert_eq!(h.restore.as_deref(), Some("{speakers}"));
+        // Not left to restore while the next session starts
+        assert_eq!(h.unclaimed(), None);
+        // It never switched (it failed before): restored when it ends
+        h.next = None;
+        assert_eq!(h.unclaimed().as_deref(), Some("{speakers}"));
+        assert_eq!(h, DefaultHandover::default());
+        // Another device next, or no session next: restored now
+        let mut h = DefaultHandover { next: Some("{other}".into()), restore: None };
+        assert_eq!(h.end(Some("{cable}"), "{speakers}".into()).as_deref(), Some("{speakers}"));
+        let mut h = DefaultHandover::default();
+        assert_eq!(h.end(Some("{cable}"), "{speakers}".into()).as_deref(), Some("{speakers}"));
+        assert_eq!(h, DefaultHandover::default());
+    }
+
+    #[test]
+    fn loopback_stands_in_for_a_missing_output_device() {
+        let out = |id: &str| SourceRequest::OutputDevice { id: id.into(), name: "Speakers".into() };
+        assert!(loopback_may_replace(&out("{speakers}")));
+        assert!(!loopback_may_replace(&out("")));
+        assert_eq!(stand_in_text(&out("{speakers}")).key, "status.connected_output_fallback");
+        let virt = SourceRequest::VirtualDevice { id: "{x}".into(), name: "CABLE".into(), auto_switch: true };
+        assert_eq!(stand_in_text(&virt).key, "status.connected_source_fallback");
+        // Never made the default output
+        assert_eq!(out("{speakers}").default_switch(), None);
+        let info = out("{speakers}").info();
+        assert_eq!((info.kind, info.name.as_str()), ("output", "Speakers"));
+    }
+
+    #[test]
+    fn loopback_stands_in_for_a_chosen_virtual_device_only() {
+        let virt = |id: &str| SourceRequest::VirtualDevice { id: id.into(), name: "CABLE".into(), auto_switch: true };
+        assert!(loopback_may_replace(&virt("{x}")));
+        assert!(!loopback_may_replace(&virt("")));
+        assert!(!loopback_may_replace(&SourceRequest::SystemLoopback));
+        assert!(!loopback_may_replace(&SourceRequest::TestTone));
+        assert!(!loopback_may_replace(&SourceRequest::Application { exe: "x.exe".into() }));
+    }
+
+    #[test]
+    fn only_an_auto_switched_virtual_device_is_made_the_default() {
+        let virt =
+            |id: &str, auto_switch| SourceRequest::VirtualDevice { id: id.into(), name: "CABLE".into(), auto_switch };
+        assert_eq!(virt("{x}", true).default_switch(), Some("{x}"));
+        assert_eq!(virt("{x}", false).default_switch(), None);
+        assert_eq!(virt("", true).default_switch(), None);
+        assert_eq!(SourceRequest::SystemLoopback.default_switch(), None);
+    }
+
+    #[test]
     fn discontinuities_are_logged_as_they_increase_at_most_every_2_s() {
         let t0 = Instant::now();
         let at = |ms: u64| t0 + Duration::from_millis(ms);
@@ -1931,5 +2879,58 @@ mod tests {
         assert!(!sbc_xq_fallback(xq, &ConfigFailure::Build(ConfigError::NotOffered(xq)), None, false));
         // Other codecs are not retried
         assert!(!sbc_xq_fallback(CodecKind::Ldac, &refused, None, true));
+    }
+
+    #[test]
+    fn opus05_only_in_developer_mode() {
+        let Some(ep) = caps::local_endpoints().into_iter().find(|e| e.kind == CodecKind::Opus05) else {
+            return;
+        };
+        // A PipeWire sink: SBC and Opus 05
+        let mut pipewire = RemoteCaps::default();
+        pipewire.add_sbc(1);
+        pipewire.add_vendor(2, &ep.caps);
+        assert!(pipewire.has(CodecKind::Opus05));
+        let request = |codec: &str, developer: bool| {
+            let mut r = crate::profiles::Profile {
+                device_address: "00:11:22:33:44:55".into(),
+                codec: codec.into(),
+                ..Default::default()
+            }
+            .to_request(1000)
+            .unwrap();
+            r.developer_codecs = developer;
+            r
+        };
+        let choose = |req: &StreamRequest| {
+            let (remote, blocked) = without_developer_codecs(req, pipewire.clone());
+            let chosen = caps::choose_in(&remote, req.codec, true, true, &req.auto_order);
+            (remote.has(CodecKind::Opus05), developer_reason(chosen, blocked))
+        };
+        // Developer mode: offered and used as chosen
+        let (offered, c) = choose(&request("opus05", true));
+        assert!(offered);
+        assert_eq!(c.unwrap(), caps::Choice { kind: CodecKind::Opus05, replaced: None });
+        // Off: as if the device did not offer it; the one chosen falls back,
+        // for developer mode's reason
+        let (offered, c) = choose(&request("opus05", false));
+        assert!(!offered);
+        assert_eq!(
+            c.unwrap(),
+            caps::Choice { kind: CodecKind::Sbc, replaced: Some((CodecKind::Opus05, Unavailable::DeveloperMode)) }
+        );
+        // Another codec the device lacks keeps its own reason
+        let (_, c) = choose(&request("ldac", false));
+        assert_eq!(c.unwrap().replaced, Some((CodecKind::Ldac, Unavailable::NotSupported)));
+        // Auto never took it anyway
+        assert_eq!(choose(&request("auto", false)).1.unwrap().kind, CodecKind::Sbc);
+        // Until the stream starts, a profile's request has it off
+        assert!(!request("opus05", false).developer_codecs);
+        assert!(
+            !crate::profiles::Profile { device_address: "00:11:22:33:44:55".into(), ..Default::default() }
+                .to_request(1000)
+                .unwrap()
+                .developer_codecs
+        );
     }
 }

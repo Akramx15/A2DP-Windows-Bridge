@@ -231,8 +231,10 @@ describe("the spatial effect", () => {
   it("runs the effect and its Upmixer sliders from the card itself", async () => {
     const { calls } = start("#/home", undefined, TWO_SLIDERS);
     const card = await screen.findByRole("group", { name: "WH-1000XM5" });
-    // No sliders while the profile runs no effect
-    expect(within(card).queryByRole("slider")).toBeNull();
+    // No effect sliders while the profile runs no effect (the card's own
+    // volume slider is not the effect's)
+    const effectSliders = () => [...card.querySelectorAll<HTMLInputElement>(".effects input[type=range]")];
+    expect(effectSliders()).toHaveLength(0);
     const upmixer = () => within(card).getByRole("radio", { name: t("profile.spatial_upmixer") });
     await waitFor(() => expect(upmixer()).not.toBeDisabled());
     fireEvent.click(upmixer());
@@ -259,7 +261,7 @@ describe("the spatial effect", () => {
     fireEvent.click(within(card).getByRole("radio", { name: t("profile.spatial_off") }));
     await saved(calls, 2);
     expect(saves(calls)[1].profile).toMatchObject({ spatial_engine: false });
-    await waitFor(() => expect(within(card).queryByRole("slider")).toBeNull());
+    await waitFor(() => expect(effectSliders()).toHaveLength(0));
   });
 
   it("shows the stage's own settings and writes them with spatial.set_controls", async () => {

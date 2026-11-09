@@ -10,7 +10,8 @@
 //! (linear interpolation; the capture is normally asked for that rate
 //! already), cut into LC3 frames (10 or 7.5 ms) and encoded once per output
 //! channel: Left / Right take that side, Mono the average of both. The
-//! frames of one interval make one SDU set: one SDU per CIS in plan order,
+//! frames of one interval make one SDU set: one SDU per CIS with a sink
+//! direction in plan order ([`le_audio::plan::StreamPlan::sink_cis`]),
 //! each holding its channels' frames in ascending Audio Location bit order
 //! (BAP: the channels of a CIS's SDU are ordered by location).
 //!
@@ -66,7 +67,8 @@ impl SduSink for Arc<Mutex<SduQueue>> {
 /// Where one output channel's LC3 frame goes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelSlot {
-    /// CIS index (plan order) = SDU index in the set
+    /// Index among the CIS with a sink direction (plan order) = SDU index in
+    /// the set
     pub cis: usize,
     /// Byte offset of the frame in that SDU
     pub offset: usize,
@@ -95,16 +97,15 @@ impl SduLayout {
         let frame_samples = params.frame_samples().map_err(|e| {
             format!("LC3 {} Hz, {} us, {} octets: {e}", params.sample_rate, params.frame_us, params.octets)
         })?;
-        if plan.cis.is_empty() {
+        // The CIS with a sink direction only (a source-only CIS of a
+        // conversational plan carries the microphone the other way)
+        if plan.sink_cis().next().is_none() {
             return Err("no CIS in the stream plan".into());
         }
         let octets = usize::from(params.octets);
         let mut sdu_lens = Vec::with_capacity(plan.cis.len());
         let mut channels = Vec::with_capacity(plan.cis.iter().map(|c| c.channels.len()).sum());
-        for (c, cis) in plan.cis.iter().enumerate() {
-            if cis.channels.is_empty() {
-                return Err(format!("CIS {} has no channel", cis.cis_id));
-            }
+        for (c, cis) in plan.sink_cis().enumerate() {
             // SDU order: ascending location bit (the plan lists them so;
             // sorted again here so the layout never depends on it)
             let mut order: Vec<_> = cis.channels.iter().collect();
@@ -141,7 +142,7 @@ pub fn silence_set(plan: &StreamPlan) -> SduSet {
         Ok(l) => l,
         Err(e) => {
             tracing::error!("LE Audio: no silence SDUs: {e}");
-            return plan.cis.iter().map(|c| vec![0; usize::from(plan.preset.octets) * c.channels.len()]).collect();
+            return plan.sink_cis().map(|c| vec![0; usize::from(plan.preset.octets) * c.channels.len()]).collect();
         }
     };
     let octets = usize::from(layout.params.octets);
@@ -255,6 +256,7 @@ struct FrameEncoder {
     pcm16: Vec<i16>,
     sets: u64,
     errors: u64,
+    clock: crate::EncodeClock,
 }
 
 impl FrameEncoder {
@@ -275,6 +277,7 @@ impl FrameEncoder {
             _ => self.layout.empty_set(),
         };
         let octets = usize::from(self.layout.params.octets);
+        let started = Instant::now();
         for (slot, enc) in self.layout.channels.iter().zip(&mut self.encoders) {
             for (s, (&l, &r)) in self.pcm16.iter_mut().zip(self.l.iter().zip(&self.r)) {
                 *s = to_i16(match slot.source {
@@ -289,6 +292,7 @@ impl FrameEncoder {
                 out.fill(0);
             }
         }
+        self.clock.add(started.elapsed(), u64::from(self.layout.params.frame_us) * 1000);
         self.sets += 1;
         tracing::trace!("LE encode thread: SDU set {} ({} SDUs)", self.sets, set.len());
         sink.push(set);
@@ -372,6 +376,7 @@ impl LeEncoder {
                 pcm16: vec![0; ns],
                 sets: 0,
                 errors: 0,
+                clock: crate::EncodeClock::default(),
             },
         })
     }
@@ -445,9 +450,10 @@ impl LePipeline {
         let control = Control::new();
         let thread = {
             let control = control.clone();
+            let stats = stats.clone();
             std::thread::Builder::new()
                 .name("le-encode".into())
-                .spawn(move || le_encode_thread(encoder, consumer, sink, &control))
+                .spawn(move || le_encode_thread(encoder, consumer, sink, &stats, &control))
                 .map_err(|e| format!("spawning the LE encode thread: {e}"))?
         };
         let capture = CaptureInput {
@@ -494,7 +500,13 @@ impl Drop for LePipeline {
     }
 }
 
-fn le_encode_thread(mut encoder: LeEncoder, mut ring: rtrb::Consumer<u8>, sink: impl SduSink, control: &Control) {
+fn le_encode_thread(
+    mut encoder: LeEncoder,
+    mut ring: rtrb::Consumer<u8>,
+    sink: impl SduSink,
+    stats: &LinkStats,
+    control: &Control,
+) {
     let _priority = crate::thread_priority();
     let frame_bytes = encoder.input.frame_bytes();
     // ~10 ms rounds, at least 128 frames (as the A2DP encode thread)
@@ -548,6 +560,7 @@ fn le_encode_thread(mut encoder: LeEncoder, mut ring: rtrb::Consumer<u8>, sink: 
             chunk.commit_all();
         }
         encoder.push(&read_buf[..bytes], &sink);
+        encoder.frame.clock.flush(stats);
     }
     tracing::debug!(
         "LE encode thread: stopped after {} SDU sets, {} encode errors",
@@ -585,11 +598,22 @@ mod tests {
             acl: 0x40 + u16::from(id),
             cis_handle: 0x60 + u16::from(id),
             channels: channels.iter().map(|&(allocation, source)| ChannelPlan { allocation, source }).collect(),
+            source_ase: None,
         }
     }
 
     fn plan(preset: StreamPreset, cis: Vec<CisPlan>) -> StreamPlan {
-        StreamPlan { preset, cig_id: 1, phy: 2, requested_contexts: 4, contexts: 4, presentation_delay_us: 40000, cis }
+        StreamPlan {
+            preset,
+            cig_id: 1,
+            phy: 2,
+            requested_contexts: 4,
+            contexts: 4,
+            presentation_delay_us: 40000,
+            cis,
+            source: None,
+            source_note: String::new(),
+        }
     }
 
     const L: (u32, ChannelSource) = (LOCATION_FRONT_LEFT, ChannelSource::Left);
@@ -800,6 +824,20 @@ mod tests {
         assert_eq!(silence_set(&bad), vec![vec![0u8; 200]]);
     }
 
+    #[test]
+    fn a_source_only_cis_gets_no_sdu() {
+        // A conversational plan: CIS 2 carries a microphone only
+        let mic = cis(2, &[]);
+        let p = plan(preset(48000, 10000, 100), vec![cis(1, &[L, R]), mic, cis(3, &[MONO])]);
+        let layout = SduLayout::from_plan(&p).unwrap();
+        assert_eq!(layout.sdu_lens, [200, 100]);
+        assert_eq!(layout.channels.iter().map(|c| c.cis).collect::<Vec<_>>(), [0, 0, 1]);
+        assert_eq!(silence_set(&p).len(), 2);
+        // Microphones only: nothing to send
+        let p = plan(preset(48000, 10000, 100), vec![cis(2, &[])]);
+        assert!(SduLayout::from_plan(&p).is_err());
+    }
+
     /// The thread: captured audio in, SDU sets out, stop joins
     #[test]
     fn encode_thread_runs() {
@@ -820,6 +858,10 @@ mod tests {
         pipeline.stop();
         assert_eq!(queue.lock().unwrap().len(), 4);
         assert_eq!(stats.capture_frames.load(Ordering::Relaxed), 4 * 360);
+        // Each set timed against its 7.5 ms of audio
+        let enc = stats.encode.totals();
+        assert_eq!((enc.calls, enc.audio_ns), (4, 4 * 7_500_000));
+        assert!(enc.busy_ns > 0);
         let p = plan(preset(44100, 7500, 75), vec![cis(1, &[L])]);
         let config = LePipelineConfig { plan: p, input, buffer: BufferPreset::Standard };
         assert!(LePipeline::start(config, queue, stats).is_err());

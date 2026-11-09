@@ -1,4 +1,4 @@
-//! The connection to a2dpwb-core.exe: the user's Named Pipe, Hello, every
+//! The connection to bluecaster-core.exe: the user's Named Pipe, Hello, every
 //! server message forwarded to the windows as the `ipc://message` event,
 //! requests matched to their responses by id, and reconnecting when the pipe
 //! breaks (the core restarted or crashed).
@@ -41,7 +41,7 @@ pub enum Status {
     Connected {
         server: String,
     },
-    /// a2dpwb-core.exe is not next to a2dpwb.exe, or did not start
+    /// bluecaster-core.exe is not next to bluecaster.exe, or did not start
     CoreMissing {
         detail: String,
     },
@@ -94,9 +94,11 @@ fn error(code: &str, key: &str, args: &[String]) -> ErrorInfo {
 /// for the user to answer the UAC prompt.
 fn timeout_for(method: &str, params: &Value) -> Duration {
     match method {
+        // The inquiries, the name requests after the last one (~7 s), the
+        // LE Audio scan (~6 s) and the stack's start
         "device.scan" => {
             let seconds = params.get("seconds").and_then(Value::as_u64).unwrap_or(10);
-            Duration::from_secs(30.max(seconds + 10))
+            Duration::from_secs(30.max(seconds + 25))
         }
         "adapter.assign_winusb" | "adapter.restore_driver" => Duration::from_secs(120),
         // Up to two files, each fetched with a 30 s limit, then the
@@ -295,7 +297,9 @@ async fn run(app: AppHandle, ipc: Arc<Ipc>) {
     }
 }
 
-/// Opens the pipe, starting the core when it does not exist
+/// Opens the pipe, starting the core when it does not exist. Only the new
+/// name: a 2.0.x core that still runs (only the old name) is not connected
+/// to; the core started here asks it to exit and takes over (resident.rs).
 async fn connect(app: &AppHandle, ipc: &Ipc, name: &str) -> NamedPipeClient {
     let mut spawned: Option<Instant> = None;
     // The last start failed (its reason is the status already)
@@ -321,7 +325,10 @@ async fn connect(app: &AppHandle, ipc: &Ipc, name: &str) -> NamedPipeClient {
                         }
                     };
                 } else if !spawn_failed && spawned.is_some_and(|t| t.elapsed() >= CORE_START_WAIT) {
-                    ipc.set_status(app, Status::CoreMissing { detail: "a2dpwb-core.exe did not open its pipe".into() });
+                    ipc.set_status(
+                        app,
+                        Status::CoreMissing { detail: "bluecaster-core.exe did not open its pipe".into() },
+                    );
                 }
             }
             Err(_) => {}
@@ -330,7 +337,7 @@ async fn connect(app: &AppHandle, ipc: &Ipc, name: &str) -> NamedPipeClient {
     }
 }
 
-/// Starts `a2dpwb-core.exe --background` from a2dpwb.exe's folder (the
+/// Starts `bluecaster-core.exe --background` from bluecaster.exe's folder (the
 /// installer puts it there as a Tauri sidecar)
 fn spawn_core() -> Result<(), String> {
     use std::os::windows::process::CommandExt;
@@ -339,7 +346,7 @@ fn spawn_core() -> Result<(), String> {
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let core = exe.with_file_name("a2dpwb-core.exe");
+    let core = exe.with_file_name("bluecaster-core.exe");
     if !core.is_file() {
         return Err(format!("{} not found", core.display()));
     }
@@ -356,8 +363,10 @@ fn spawn_core() -> Result<(), String> {
 
 async fn session(app: &AppHandle, ipc: &Ipc, pipe: NamedPipeClient) -> Ended {
     let (mut rd, mut wr) = tokio::io::split(pipe);
-    let hello =
-        ClientMessage::Hello { protocol: PROTOCOL_VERSION, client: format!("a2dpwb-ui/{}", env!("CARGO_PKG_VERSION")) };
+    let hello = ClientMessage::Hello {
+        protocol: PROTOCOL_VERSION,
+        client: format!("bluecaster-ui/{}", env!("CARGO_PKG_VERSION")),
+    };
     if ipc::write_frame(&mut wr, &hello).await.is_err() {
         return Ended::Broken;
     }
@@ -432,8 +441,8 @@ mod tests {
     #[test]
     fn long_calls_get_long_timeouts() {
         assert_eq!(timeout_for("stream.stop", &Value::Null), Duration::from_secs(5));
-        assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 10 })), Duration::from_secs(30));
-        assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 40 })), Duration::from_secs(50));
+        assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 3 })), Duration::from_secs(30));
+        assert_eq!(timeout_for("device.scan", &serde_json::json!({ "seconds": 30 })), Duration::from_secs(55));
         assert!(timeout_for("adapter.assign_winusb", &Value::Null) >= Duration::from_secs(60));
         // Two 30 s fetches and the adapter list
         assert!(timeout_for("adapter.download_firmware", &Value::Null) > Duration::from_secs(60));

@@ -9,7 +9,7 @@ import { engineLabelOf, profileSummary, purposeLabel } from "./profile";
 
 describe("the summary of a profile", () => {
   it("names the device, the codec with its quality and the capture source", () => {
-    expect(profileSummary(sampleProfile(), t)).toBe("WH-1000XM5 · LDAC High (990 kbps) · System Loopback");
+    expect(profileSummary(sampleProfile(), t)).toBe("WH-1000XM5 · LDAC High (990 kbps) · Default device");
   });
 
   it("names the application it captures", () => {
@@ -22,7 +22,7 @@ describe("the summary of a profile", () => {
   });
 
   it("names LC3 for an LE Audio profile (no quality of its own)", () => {
-    expect(profileSummary(sampleProfile({ le_audio: true }), t)).toBe("WH-1000XM5 · LC3 (LE Audio) · System Loopback");
+    expect(profileSummary(sampleProfile({ le_audio: true }), t)).toBe("WH-1000XM5 · LC3 (LE Audio) · Default device");
   });
 });
 

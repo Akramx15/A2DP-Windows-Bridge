@@ -7,6 +7,7 @@ import type { Profile } from "./Profile";
 import type { Settings } from "./Settings";
 import type { StreamStatus } from "./StreamStatus";
 import type { UpdateState } from "./UpdateState";
+import type { VendorInfo } from "./VendorInfo";
 import type { VerboseState } from "./VerboseState";
 
 /**
@@ -14,8 +15,8 @@ import type { VerboseState } from "./VerboseState";
  */
 export type Snapshot = { adapter: AdapterState, devices: Array<Device>, scanning: boolean, 
 /**
- * The scan's LE Audio part runs (status.le_scanning): after the
- * classic inquiry, with LE Audio on
+ * Only the scan's LE Audio part runs (status.le_scanning): after a
+ * classic inquiry shorter than the LE scan, with LE Audio on
  */
 le_scanning: boolean, stream: StreamStatus, profiles: Array<Profile>, active_profile: string | null, settings: Settings, update: UpdateState, 
 /**
@@ -46,7 +47,11 @@ v1_running: boolean,
  */
 verbose?: VerboseState | null, 
 /**
- * Crash reports of A2DPWB's own processes the user has not dismissed
+ * Crash reports of BlueCaster's own processes the user has not dismissed
  * yet (diag.crashes_seen), newest first
  */
-crashes: Array<CrashReport>, };
+crashes: Array<CrashReport>, 
+/**
+ * The vendors with protocols of their own (developer mode's overrides)
+ */
+vendors: Array<VendorInfo>, };

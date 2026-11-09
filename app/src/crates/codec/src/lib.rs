@@ -1,4 +1,4 @@
-//! A2DP codecs for A2DPWB.
+//! A2DP codecs for BlueCaster.
 //!
 //! - [`Encoder`]: what the encode thread drives. One call encodes
 //!   [`Encoder::pcm_frames_per_encode`] PCM frames.
@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod abr;
 pub mod caps;
 pub mod dev;
 pub mod sbc;
@@ -35,7 +36,7 @@ pub mod opus;
 
 use std::fmt;
 
-/// The A2DP codecs A2DPWB can stream
+/// The A2DP codecs BlueCaster can stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CodecKind {
     Sbc,
@@ -249,6 +250,14 @@ impl CodecKind {
         )
     }
 
+    /// Only in developer mode (issue #86): PipeWire's Opus 05, which only
+    /// PipeWire implements and which is not verified with one. Otherwise
+    /// the app neither shows it nor uses it: a device's is left out as if
+    /// it did not offer it ([`caps::RemoteCaps::without_developer_codecs`]).
+    pub fn developer_only(self) -> bool {
+        matches!(self, CodecKind::Opus05)
+    }
+
     /// Whether the encoder for this codec is built in
     pub fn available(self) -> bool {
         match self {
@@ -304,13 +313,15 @@ impl Quality {
     }
 
     /// The quality a `kind` stream runs with (issue #86): LDAC and LHDC V5
-    /// offer High, Medium (Standard) and Low (Mobile), aptX Adaptive High
+    /// offer High, Medium (Standard) and Low (Mobile), LHDC V5 also
+    /// Medium-High (900 kbps, as Android; issue #203), aptX Adaptive High
     /// and Low Latency, every other codec High only (its highest bit rate
     /// the device takes; ABR / VBR does the rest). A quality the codec no
     /// longer offers (a profile saved before, the CLI's -q) is High.
     pub fn for_codec(self, kind: CodecKind) -> Quality {
         match (kind, self) {
             (CodecKind::Ldac | CodecKind::LhdcV5, Quality::Standard | Quality::Mobile) => self,
+            (CodecKind::LhdcV5, Quality::MediumHigh) => self,
             (CodecKind::AptxAdaptive, Quality::LowLatency) => self,
             _ => Quality::High,
         }
@@ -376,6 +387,9 @@ pub struct PeerParams {
     /// SBC / SBC XQ: blocks, subbands, allocation and channel mode, those
     /// of the SET_CONFIGURATION (`caps::RemoteCaps::sbc_params`)
     pub sbc: sbc::SbcParams,
+    /// SBC XQ: settings not held to the sink's list, its bitpool up to
+    /// SBC's 53 instead of [`sbc::xq_max_bitpool`] (issue #86)
+    pub sbc_unlisted: bool,
     /// Opus / Opus 05: the frame duration configured, 10 or 20 ms (0 = 20)
     pub opus_frame_ms: u8,
     /// Opus / Opus 05: the channels configured on the wire, 1 or 2 (0 = as
@@ -558,8 +572,9 @@ mod tests {
             assert_eq!(q.for_codec(CodecKind::Ldac), q);
             assert_eq!(q.for_codec(CodecKind::LhdcV5), q);
         }
-        // LHDC V5's Medium-High is gone (issue #86): High
-        assert_eq!(MediumHigh.for_codec(CodecKind::LhdcV5), High);
+        // LHDC V5's Medium-High is back (issue #203); LDAC has none
+        assert_eq!(MediumHigh.for_codec(CodecKind::LhdcV5), MediumHigh);
+        assert_eq!(MediumHigh.for_codec(CodecKind::Ldac), High);
         assert_eq!(LowLatency.for_codec(CodecKind::AptxAdaptive), LowLatency);
         for q in [Standard, Mobile, MediumHigh] {
             assert_eq!(q.for_codec(CodecKind::AptxAdaptive), High, "{q:?}");

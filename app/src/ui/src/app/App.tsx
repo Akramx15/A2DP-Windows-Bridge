@@ -6,7 +6,7 @@ import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch } f
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import type { IconName } from "../components/icons";
-import { BatteryLevel, CodecBadge, codecDetails, codecName, showsBattery, stateLabel } from "../components/stream";
+import { BatteryLevel, CodecBadge, codecDetails, codecName, codecStopText, showsBattery, stateLabel } from "../components/stream";
 import { lang, setLanguage, t } from "../i18n";
 import type { Core } from "../ipc/store";
 import { About } from "../screens/About";
@@ -19,9 +19,11 @@ import { Flyout } from "../screens/Flyout";
 import { entryState, Home } from "../screens/Home";
 import { audioEntries, entryByKey, type AudioEntry } from "../lib/profile";
 import { Settings } from "../screens/Settings";
+import { Mixer } from "../screens/Mixer";
 import { Setup, needsSetup } from "../screens/Setup";
-import { applyTheme } from "../theme";
+import { applyTheme, followAccent } from "../theme";
 import { AppProvider, useApp, type RouteName } from "./context";
+import { mixerShown } from "./settings";
 import { CaptureSign, CrashNotice, UpdateNotice } from "./indicators";
 import "./shell.css";
 
@@ -33,9 +35,10 @@ export function App(props: { core: Core }) {
     if (l) void setLanguage(l);
   });
   createEffect(() => {
-    const theme = core.state.snap?.settings.theme ?? "dark";
+    const theme = core.state.snap?.settings.theme ?? "system";
     onCleanup(applyTheme(theme, core.transport));
   });
+  followAccent(core.transport);
   if (core.transport.mica) document.documentElement.classList.add("mica");
   document.documentElement.classList.add(`win-${core.transport.window}`);
 
@@ -92,6 +95,7 @@ const NAV: { name: RouteName; icon: IconName; label: string }[] = [
   { name: "codecs", icon: "headphones", label: "ui.nav.codecs" },
   { name: "devices", icon: "bluetooth", label: "ui.nav.devices" },
   { name: "adapter", icon: "usb_stick", label: "ui.nav.adapter" },
+  { name: "mixer", icon: "speaker_2", label: "ui.nav.mixer" },
   { name: "diagnostics", icon: "pulse", label: "ui.nav.diagnostics" },
   { name: "settings", icon: "settings", label: "ui.nav.settings" },
   { name: "about", icon: "info", label: "ui.nav.about" },
@@ -102,6 +106,10 @@ const NAV: { name: RouteName; icon: IconName; label: string }[] = [
 function MainWindow() {
   const app = useApp();
   const { core, route } = app;
+  const shown = (n: { name: RouteName }) => {
+    if (n.name === "mixer") return mixerShown(core.state.snap?.settings);
+    return n.name !== "developer" || core.state.snap?.settings.developer_mode;
+  };
   const [collapsed, setCollapsed] = createSignal<boolean | null>(null);
 
   // The first-run setup: decided once when the state first arrives (and
@@ -136,7 +144,7 @@ function MainWindow() {
 
   // "Minimize to System Tray": the tray icon is the core's, so minimizing
   // only has to take the window off the taskbar. The core says once that
-  // A2DPWB still runs in the tray (closing the window does the same, in
+  // BlueCaster still runs in the tray (closing the window does the same, in
   // src-tauri/src/windows.rs)
   core.transport.onMinimized(() => {
     if (core.state.snap?.settings.minimize_to_tray) void hideToTray(core);
@@ -168,11 +176,9 @@ function MainWindow() {
               >
                 <Icon name="navigation" />
               </button>
-              <img src="/app-icon.png" alt="" class="nav-logo" width="20" height="20" />
-              <span class="nav-title">{t("app.title")}</span>
             </div>
             <ul class="nav-list">
-              <For each={NAV.filter((n) => n.name !== "developer" || core.state.snap?.settings.developer_mode)}>
+              <For each={NAV.filter(shown)}>
                 {(item) => (
                   <li>
                     <a
@@ -209,6 +215,9 @@ function MainWindow() {
               </Match>
               <Match when={route().name === "diagnostics"}>
                 <Diagnostics />
+              </Match>
+              <Match when={route().name === "mixer" && mixerShown(core.state.snap?.settings)}>
+                <Mixer />
               </Match>
               <Match when={route().name === "developer" && core.state.snap?.settings.developer_mode}>
                 <Developer />
@@ -278,10 +287,12 @@ function DevicePill(props: { entry: AudioEntry | null }) {
     return i ? codecDetails(i).join(" ") : "";
   };
   const info = () => (live() ? stream().info : null);
+  // An error the codec caused, named (issue #86)
+  const stateText = () => codecStopText({ ...stream(), state: state() }) ?? stateLabel(state());
   // Also the name while collapsed to the dot
   const label = () => {
     const i = info();
-    return [device(), stateLabel(state()), i ? `${codecName(i)} ${details()}` : ""].filter((x) => x).join(", ");
+    return [device(), stateText(), i ? `${codecName(i)} ${details()}` : ""].filter((x) => x).join(", ");
   };
   return (
     <button
@@ -304,7 +315,7 @@ function DevicePill(props: { entry: AudioEntry | null }) {
               |
             </span>
           </Show>
-          <span class="status-pill-state">{stateLabel(state())}</span>
+          <span class="status-pill-state">{stateText()}</span>
         </span>
         {/* The codec, then its details below it, as on Home and in the tray (issue #86) */}
         <Show when={info()}>

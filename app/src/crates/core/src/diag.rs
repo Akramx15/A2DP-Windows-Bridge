@@ -263,7 +263,7 @@ const fn rule(
 }
 
 const BT: &str = "bt_host";
-const STREAM: &str = "a2dpwb_core::stream";
+const STREAM: &str = "bluecaster_core::stream";
 const CAPTURE: &str = "audio_capture";
 
 use Action as A;
@@ -279,7 +279,7 @@ const RULES: &[Rule] = &[
     rule(BT, Prefix, "HCI init took < 500 ms", Step::Btstack, A::Warning, D::Whole),
     rule(BT, Prefix, "Realtek firmware NOT loaded", Step::Btstack, A::Warning, D::Whole),
     rule(BT, Prefix, "firmware file missing: ", Step::Btstack, A::Warning, D::Whole),
-    rule(BT, Contains, "needs a firmware download that is not implemented", Step::Btstack, A::Warning, D::Whole),
+    rule(BT, Prefix, NO_LOADER, Step::Btstack, A::Warning, D::Whole),
     rule(BT, Prefix, "could not open the Bluetooth adapter", Step::Btstack, A::Failed, D::Whole),
     rule(BT, Prefix, "HCI initialization failed", Step::Btstack, A::Failed, D::Whole),
     rule(BT, Prefix, "HCI initialization timed out", Step::Btstack, A::Failed, D::Whole),
@@ -324,11 +324,15 @@ const RULES: &[Rule] = &[
     rule(STREAM, Prefix, "reconnected on attempt ", Step::Link, A::Warning, D::Whole),
 ];
 
+/// bt_host's warning for a MediaTek / Qualcomm / Atheros controller no loader
+/// of ours ran for
+const NO_LOADER: &str = "no firmware loader ran for this ";
+
 /// Adapter and controller lines kept for the diagnostics (target, message
 /// prefix: a newer line with the same prefix replaces the older one)
 const ADAPTER_LINES: &[(&str, &str)] = &[
-    ("a2dpwb_core::adapter", "chip: "),
-    ("a2dpwb_core::adapter", "no Realtek chip "),
+    ("bluecaster_core::adapter", "chip: "),
+    ("bluecaster_core::adapter", "no Realtek chip "),
     (BT, "controller: "),
     (BT, "Realtek adapter PID "),
     (BT, "no Realtek PID configured"),
@@ -337,7 +341,10 @@ const ADAPTER_LINES: &[(&str, &str)] = &[
     (BT, "HCI init took < 500 ms"),
     (BT, "Intel "),
     (BT, "Broadcom "),
-    (BT, "this vendor needs a firmware download"),
+    (BT, NO_LOADER),
+    (BT, "MediaTek controller: "),
+    (BT, "Qualcomm controller: "),
+    (BT, "Realtek controller: "),
 ];
 
 fn target_matches(target: &str, prefix: &str) -> bool {
@@ -429,7 +436,7 @@ impl ConnectionFlow {
 
         // Service state: "state Connecting: Connecting to the device..."
         let mut state = None;
-        if target_matches(target, "a2dpwb_core::service")
+        if target_matches(target, "bluecaster_core::service")
             && let Some(rest) = message.strip_prefix("state ")
             && let Some((name, text)) = rest.split_once(": ")
             && let Some(s) = state_from_name(name)
@@ -568,6 +575,10 @@ impl ConnectionFlow {
             return;
         };
         self.adapter_lines.retain(|l| !l.starts_with(prefix));
+        // A loader that ran makes an earlier run's "no loader" line stale
+        if prefix.ends_with(" controller: ") {
+            self.adapter_lines.retain(|l| !l.starts_with(NO_LOADER));
+        }
         self.adapter_lines.push(message.to_string());
         if self.adapter_lines.len() > MAX_ADAPTER_LINES {
             self.adapter_lines.remove(0);
@@ -735,11 +746,11 @@ pub fn quoted(name: &str) -> String {
 ///   it was told ([`Masker::know`]: the profile's, the saved devices')
 ///   wherever they appear -> `<device-1>`, `<device-2>`..., the same name
 ///   the same number for the masker's lifetime, so a bundle's files agree.
-/// - Paths: everything above the app's own folder (`A2DPWB`, the settings
-///   folder; `A2DP Windows Bridge`, the installed one) -> `<path>`, so
-///   `C:\Users\taro\AppData\Roaming\A2DPWB\logs\x.log` is
-///   `<path>\A2DPWB\logs\x.log`. A path without the app's folder keeps its
-///   last part only: `<path>\a2dpwb-core.exe`, `<path>\foobar2000.exe`.
+/// - Paths: everything above the app's own folder (`BlueCaster`, the settings
+///   folder; `BlueCaster`, the installed one) -> `<path>`, so
+///   `C:\Users\taro\AppData\Roaming\BlueCaster\logs\x.log` is
+///   `<path>\BlueCaster\logs\x.log`. A path without the app's folder keeps its
+///   last part only: `<path>\bluecaster-core.exe`, `<path>\foobar2000.exe`.
 ///   Drive paths ('/' too, JSON's doubled '\' too, `\\?\` before); the
 ///   drive, the user's folders and whatever else the PC's layout tells are
 ///   gone.
@@ -918,7 +929,7 @@ impl Masker {
 }
 
 /// The app's own folders: a path is kept from one of these on
-const APP_FOLDERS: &[&str] = &["A2DPWB", "A2DP Windows Bridge"];
+const APP_FOLDERS: &[&str] = &["BlueCaster", "A2DPWB", "A2DP Windows Bridge"];
 
 /// `X:\` (or '/') at `i`, not inside a word
 fn path_start_at(b: &[u8], i: usize) -> bool {
@@ -976,7 +987,7 @@ fn mask_path_heads(text: &str) -> String {
 
 /// A SID with a machine or domain part, `S-1-5-21-a-b-c-rid` (`S-1-`, then
 /// five or more numbers) -> `<sid>`; not inside a longer word (a '-' on
-/// either side is fine: the pipe's `a2dpwb-<sid>-<instance>`)
+/// either side is fine: the pipe's `bluecaster-<sid>-<instance>`)
 fn mask_sids(text: &str) -> String {
     let b = text.as_bytes();
     let mut out = String::with_capacity(text.len());
@@ -1230,6 +1241,20 @@ fn codec_details(out: &mut String, c: &crate::CodecDetails) {
             );
         }
     }
+    if let Some(d) = &c.device {
+        let _ = writeln!(
+            out,
+            "  Device {}: {}; {}; peak {}",
+            d.codec,
+            if d.sample_rates.is_empty() { "rates not given".to_string() } else { khz(&d.sample_rates) },
+            if d.bit_depths.is_empty() {
+                "bit depth not given".to_string()
+            } else {
+                format!("{}-bit", joined(&d.bit_depths))
+            },
+            if d.max_bitrate == 0 { "not given".to_string() } else { format!("{} bps", d.max_bitrate) }
+        );
+    }
 }
 
 /// Why the bit rate is below the profile's: ABR, or the device's maximum
@@ -1301,6 +1326,9 @@ pub struct DiagInput<'a> {
     pub le_audio: Option<&'a LeAudioDiag>,
     /// Verbose logging, crash reports, flight recorder files (one line)
     pub logging: Option<&'a str>,
+    /// The IPC clients connected ("encodeck/1.14.0"): other apps that
+    /// drive the device through BlueCaster (issue #86)
+    pub clients: &'a [String],
 }
 
 /// What the diagnostics tell about LE Audio (experimental) of the running
@@ -1346,6 +1374,13 @@ fn le_audio_section(out: &mut String, s: &Settings, le: Option<&LeAudioDiag>) {
             _ => "disconnected",
         };
         let _ = write!(out, "  Device {} {}: {state}, {} sink ASE(s)", d.addr, quoted(&d.name), d.sink_ases);
+        if d.source_ases > 0 {
+            let _ = write!(out, ", {} source ASE(s) (microphone", d.source_ases);
+            if !d.source_pacs.is_empty() {
+                let _ = write!(out, ": {}", d.source_pacs);
+            }
+            out.push(')');
+        }
         if !d.roles.is_empty() {
             let _ = write!(out, ", {}", d.roles);
         }
@@ -1357,28 +1392,83 @@ fn on_off(b: bool) -> &'static str {
     if b { "on" } else { "off" }
 }
 
+/// The A2DP link's details: the remote chip, the link's state, the polled
+/// readings and the controller's backlog (each line only when known)
+fn link_lines(out: &mut String, ls: &LinkStats, rates: Option<AudioRates>) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let link = ls.link();
+    if let Some(chip) = crate::link::remote_chip_text(&link) {
+        let _ = writeln!(out, "  Remote chip: {chip}");
+    }
+    if let Some(state) = crate::link::link_state_text(&link) {
+        let _ = writeln!(
+            out,
+            "  Link: {state}; this stream: {} role change(s), {} sniff entr{}",
+            link.role_changes,
+            link.sniff_entries,
+            if link.sniff_entries == 1 { "y" } else { "ies" }
+        );
+    }
+    let mut readings = Vec::new();
+    if let Some(q) = link.link_quality {
+        readings.push(format!("link quality {q}/255"));
+    }
+    if let Some(n) = link.failed_contacts {
+        let rate = link.failed_contacts_per_second.map(|r| format!(", {r:.2}/s lately")).unwrap_or_default();
+        readings.push(format!("failed contacts {n} now, {} this stream{rate}", link.failed_contacts_stream));
+    }
+    if !readings.is_empty() {
+        let _ = writeln!(out, "  Link readings: {}", readings.join(", "));
+    }
+    let packets = ls.packets_sent.load(Relaxed).saturating_sub(ls.start_packets.load(Relaxed));
+    let acl = ls.acl_packets_sent.load(Relaxed).saturating_sub(ls.start_acl_packets.load(Relaxed));
+    if acl > 0 {
+        let peak = ls.controller_backlog_stream_max.load(Relaxed);
+        // ACL packets a second: the media packet rate in the ACL packets
+        // this stream's media packets took
+        let acl_per_second = rates.map(|r| r.packets_per_second * acl as f64 / packets.max(1) as f64);
+        let ms = acl_per_second
+            .and_then(|a| crate::link::backlog_ms(u64::from(peak), a))
+            .map(|ms| format!(" (~{ms:.0} ms at the current rate)"))
+            .unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "  Controller backlog: {} ACL packet(s) now, peak {peak} this stream{ms}; {acl} ACL packets for {packets} media packets",
+            ls.controller_backlog.load(Relaxed)
+        );
+    }
+}
+
 /// The "copy diagnostic info" text (a fenced block for a bug report)
 pub fn diag_text(d: &DiagInput<'_>) -> String {
     let mut out = String::with_capacity(16 * 1024);
     let s = d.settings;
     out.push_str("```text\n");
-    let _ = writeln!(out, "A2DPWB diagnostics - {}", d.env.generated);
+    let _ = writeln!(out, "BlueCaster diagnostics - {}", d.env.generated);
     let _ = writeln!(out, "Version      : {}", d.env.app_version);
     let _ = writeln!(out, "OS           : Windows build {} ({})", d.env.windows_build, d.env.arch);
     let _ = writeln!(out, "Language     : {}, theme {}", s.language, s.theme);
     let _ = writeln!(
         out,
-        "Settings     : media keys {}, remember volume {}, volume sync {}, auto-select {}, AFH {}, updates {}{}",
+        "Settings     : media keys {}, reconnect {}, volume sync {}, mute output {}, auto-select {}, AFH {}, updates {}{}",
         on_off(s.media_keys),
-        on_off(s.remember_volume),
+        on_off(s.auto_reconnect),
         on_off(s.volume_sync),
+        on_off(s.mute_output),
         on_off(s.auto_codec),
         s.afh,
         on_off(s.check_updates_on_startup),
-        if s.include_prereleases { " (pre-releases too)" } else { "" }
+        match s.update_channel() {
+            crate::update::Channel::Alpha => " (alphas too)",
+            crate::update::Channel::Beta => " (pre-releases too)",
+            crate::update::Channel::Stable => "",
+        }
     );
     if let Some(l) = d.logging {
         let _ = writeln!(out, "Logging      : {l}");
+    }
+    if !d.clients.is_empty() {
+        let _ = writeln!(out, "Clients      : {}", d.clients.join(", "));
     }
     let _ = write!(out, "State        : {}", state_name(d.state));
     if let Some((_, text)) = d.flow.last_state()
@@ -1443,18 +1533,9 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
             }
             let payload = p.max_media_payload.map(|v| v.to_string()).unwrap_or_else(|| "not set".into());
             let _ = writeln!(out, ", auto switch {}, max media packet {payload}", on_off(p.auto_switch_device));
-            // As the stream has it: the setting for every device, the device
-            // the profile follows (developer mode)
-            let sync = match (s.volume_sync, p.volume_sync.as_str()) {
-                (false, _) => "off",
-                (true, "device") => "device",
-                _ => "auto",
-            };
-            let _ = write!(out, "  Volume sync: {sync}");
-            if sync == "device" {
-                let _ = write!(out, " {}", quoted(&p.volume_device_name));
-            }
-            out.push('\n');
+            // As the stream has it: the setting for every device alone (the
+            // profile's own is no longer used, issue #86)
+            let _ = writeln!(out, "  Volume sync: {}", if s.volume_sync { "auto" } else { "off" });
         }
         None => out.push_str("  (none selected - receiver measurement or not connected)\n"),
     }
@@ -1514,17 +1595,27 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         );
         let _ = writeln!(
             out,
-            "  Capture frames {}, dropped {}",
+            "  Capture frames {}, dropped {}, Windows audio gaps {} ({} frames lost)",
             ls.capture_frames.load(Relaxed),
-            ls.capture_dropped_frames.load(Relaxed)
+            ls.capture_dropped_frames.load(Relaxed),
+            ls.capture_discontinuities.load(Relaxed),
+            ls.capture_lost_frames.load(Relaxed)
         );
+        if let Some(d) = ls.sink_delay() {
+            let _ = writeln!(out, "  Device delay report {:.1} ms", d.as_secs_f64() * 1000.0);
+        }
         let radio = ls.radio();
         let mut parts = Vec::new();
         if let Some(rssi) = radio.rssi {
             parts.push(format!("RSSI {rssi:+} dB vs. golden range"));
         }
         if let Some(n) = radio.afh_in_use {
-            parts.push(format!("AFH {n} channels in use"));
+            let unused = radio.afh_map.as_ref().map(bt_host::afh::unused_ranges).unwrap_or_default();
+            if unused.is_empty() {
+                parts.push(format!("AFH {n} channels in use"));
+            } else {
+                parts.push(format!("AFH {n} channels in use (not {unused})"));
+            }
         }
         if let Some(n) = radio.afh_usable {
             let avoiding = if radio.afh_avoided.is_empty() {
@@ -1537,6 +1628,7 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
         if !parts.is_empty() {
             let _ = writeln!(out, "  Radio: {}", parts.join(", "));
         }
+        link_lines(&mut out, ls, d.rates);
     }
     if let Some((path, bytes)) = d.hci_capture {
         let _ = writeln!(out, "  HCI capture running: {} ({:.1} MB)", path.display(), bytes as f64 / (1024.0 * 1024.0));
@@ -1591,7 +1683,7 @@ pub fn diag_text(d: &DiagInput<'_>) -> String {
 mod tests {
     use super::*;
 
-    const SVC: &str = "a2dpwb_core::service";
+    const SVC: &str = "bluecaster_core::service";
     const APP: &str = "bt_host::app";
 
     /// A successful attempt as v2 logs it (abridged)
@@ -1605,7 +1697,7 @@ mod tests {
                 "stream: device 00:1A:7D:DA:71:13 codec Some(Ldac) quality High bit depth None rate None source SystemLoopback",
             ),
             (1002, SVC, Level::INFO, "state Connecting: Initializing Bluetooth..."),
-            (1010, "a2dpwb_core::adapter", Level::INFO, "chip: RTL8761B (0x8771) (auto)"),
+            (1010, "bluecaster_core::adapter", Level::INFO, "chip: RTL8761B (0x8771) (auto)"),
             (1020, APP, Level::INFO, "Realtek adapter PID 0x8771, firmware folder C:\\x"),
             (1030, APP, Level::INFO, "hci_init done, powering on"),
             (
@@ -1655,6 +1747,20 @@ mod tests {
 
     fn status(f: &ConnectionFlow, s: Step) -> StepStatus {
         f.session().step(s).status
+    }
+
+    #[test]
+    fn a_loader_that_ran_clears_the_no_loader_warning() {
+        let mut f = ConnectionFlow::new();
+        let warn = "no firmware loader ran for this MediaTek controller; it runs the firmware it has";
+        let start = "stream: device 00:1A:7D:DA:71:13 codec Some(Sbc) quality High bit depth None rate None source SystemLoopback";
+        feed(&mut f, &[(1000, STREAM, Level::INFO, start), (1010, APP, Level::WARN, warn)]);
+        assert_eq!(status(&f, Step::Btstack), StepStatus::Warning);
+        assert!(f.adapter_lines().iter().any(|l| l == warn));
+        // The next run's loader (#86: the warning showed although it worked)
+        feed(&mut f, &[(2000, APP, Level::INFO, "MediaTek controller: firmware running already")]);
+        assert!(!f.adapter_lines().iter().any(|l| l.starts_with(NO_LOADER)), "{:?}", f.adapter_lines());
+        assert!(f.adapter_lines().iter().any(|l| l == "MediaTek controller: firmware running already"));
     }
 
     #[test]
@@ -1885,7 +1991,7 @@ mod tests {
         let mut f = ConnectionFlow::new();
         f.feed(0, STREAM, Level::INFO, "stream: device AA:BB:CC:DD:EE:FF codec None");
         f.feed(1, "bt_hostile", Level::INFO, "streaming started");
-        f.feed(2, "a2dpwb_core::streamer", Level::INFO, "codec selected: SBC");
+        f.feed(2, "bluecaster_core::streamer", Level::INFO, "codec selected: SBC");
         assert_eq!(status(&f, Step::Stream), StepStatus::Pending);
         assert_eq!(status(&f, Step::Codec), StepStatus::Pending);
     }
@@ -1955,29 +2061,26 @@ mod tests {
         let m = mask_identifiers;
         // From the app's own folder on, whatever is above it
         assert_eq!(
-            m(r"settings folder: C:\Users\Taro Yamada\AppData\Roaming\A2DPWB"),
-            r"settings folder: <path>\A2DPWB"
+            m(r"settings folder: C:\Users\Taro Yamada\AppData\Roaming\BlueCaster"),
+            r"settings folder: <path>\BlueCaster"
         );
         assert_eq!(
-            m(r"dump: C:\Users\admin\AppData\Roaming\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp"),
-            r"dump: <path>\A2DPWB\logs\crash\a2dpwb-core-20261022-235220-831.dmp"
+            m(r"dump: C:\Users\admin\AppData\Roaming\BlueCaster\logs\crash\bluecaster-core-20261022-235220-831.dmp"),
+            r"dump: <path>\BlueCaster\logs\crash\bluecaster-core-20261022-235220-831.dmp"
         );
-        assert_eq!(m(r"D:\Apps\a2dpwb\firmware\x.bin"), r"<path>\a2dpwb\firmware\x.bin");
-        assert_eq!(
-            m(r"C:\Program Files\A2DP Windows Bridge\a2dpwb-ui.exe"),
-            r"<path>\A2DP Windows Bridge\a2dpwb-ui.exe"
-        );
+        assert_eq!(m(r"D:\Apps\bluecaster\firmware\x.bin"), r"<path>\bluecaster\firmware\x.bin");
+        assert_eq!(m(r"C:\Program Files\BlueCaster\bluecaster-ui.exe"), r"<path>\BlueCaster\bluecaster-ui.exe");
         // Without it: the last part only (the executable, an app captured)
         assert_eq!(
-            m(r"starting: pid 1, Windows build 26200, I:\A2DP-Windows-Bridge\target\release\a2dpwb-core.exe"),
-            r"starting: pid 1, Windows build 26200, <path>\a2dpwb-core.exe"
+            m(r"starting: pid 1, Windows build 26200, I:\A2DP-Windows-Bridge\target\release\bluecaster-core.exe"),
+            r"starting: pid 1, Windows build 26200, <path>\bluecaster-core.exe"
         );
         assert_eq!(m(r"C:\Users\山田太郎\Music\foobar2000\foobar2000.exe"), r"<path>\foobar2000.exe");
         // The last part takes the text after it (a path is not delimited),
         // but not another path; a trailing separator keeps the folder
         assert_eq!(
-            m(r"HCI capture running: C:\x\A2DPWB\hci.pklg (3.0 MB)"),
-            r"HCI capture running: <path>\A2DPWB\hci.pklg (3.0 MB)"
+            m(r"HCI capture running: C:\x\BlueCaster\hci.pklg (3.0 MB)"),
+            r"HCI capture running: <path>\BlueCaster\hci.pklg (3.0 MB)"
         );
         assert_eq!(m(r"moved C:\a\b\x.bin to C:\a\c\x.bin"), r"moved <path>\x.bin to <path>\x.bin");
         assert_eq!(m("folder C:\\a\\b\\\n"), "folder <path>\\b\\\n");
@@ -1994,7 +2097,7 @@ mod tests {
             m("at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c"),
             "at 23:52:25 LE Audio: 46 kHz, x:y, C: drive, https://a.b/c"
         );
-        assert_eq!(m(r"\\.\pipe\a2dpwb-x"), r"\\.\pipe\a2dpwb-x");
+        assert_eq!(m(r"\\.\pipe\bluecaster-x"), r"\\.\pipe\bluecaster-x");
     }
 
     #[test]
@@ -2002,7 +2105,10 @@ mod tests {
         // A user's folder in a path without a drive: the name as 'x's,
         // one per character
         let m = mask_identifiers;
-        assert_eq!(m(r"\Users\Taro Yamada\AppData\Roaming\A2DPWB"), r"\Users\xxxxxxxxxxx\AppData\Roaming\A2DPWB");
+        assert_eq!(
+            m(r"\Users\Taro Yamada\AppData\Roaming\BlueCaster"),
+            r"\Users\xxxxxxxxxxx\AppData\Roaming\BlueCaster"
+        );
         assert_eq!(m(r"\Users\山田太郎\AppData"), r"\Users\xxxx\AppData");
         assert_eq!(m(r"/users/taro/x.txt"), r"/users/xxxx/x.txt");
         // Nobody's folders, and "Users" elsewhere
@@ -2020,12 +2126,15 @@ mod tests {
     fn masks_sids() {
         let m = mask_identifiers;
         assert_eq!(
-            m(r"IPC: listening on \\.\pipe\a2dpwb-S-1-5-21-2123068572-4202720387-3275098450-1001"),
-            r"IPC: listening on \\.\pipe\a2dpwb-<sid>"
+            m(r"IPC: listening on \\.\pipe\bluecaster-S-1-5-21-2123068572-4202720387-3275098450-1001"),
+            r"IPC: listening on \\.\pipe\bluecaster-<sid>"
         );
         assert_eq!(m("user S-1-5-21-1-2-3-500, then"), "user <sid>, then");
         // An instance suffix after it (ipc::instance_suffix)
-        assert_eq!(m(r"S-1-5-21-1-2-3-1001\x and a2dpwb-S-1-5-21-1-2-3-1001-dev"), r"<sid>\x and a2dpwb-<sid>-dev");
+        assert_eq!(
+            m(r"S-1-5-21-1-2-3-1001\x and bluecaster-S-1-5-21-1-2-3-1001-dev"),
+            r"<sid>\x and bluecaster-<sid>-dev"
+        );
         // Well-known SIDs, the start of one, a longer word
         assert_eq!(m("S-1-5-18 S-1-5-32-544 S-1-5-21- S-1-"), "S-1-5-18 S-1-5-32-544 S-1-5-21- S-1-");
         assert_eq!(m("xS-1-5-21-1-2-3-4 S-1-5-21-1-2-3-4x"), "xS-1-5-21-1-2-3-4 S-1-5-21-1-2-3-4x");
@@ -2117,7 +2226,7 @@ mod tests {
         let mut log: Vec<LogEntry<'_>> = vec![LogEntry {
             time_ms: 10,
             level: Level::WARN,
-            target: "a2dpwb_core::service",
+            target: "bluecaster_core::service",
             message: "before the attempt",
         }];
         for (t, target, level, msg) in &session {
@@ -2151,6 +2260,7 @@ mod tests {
             requested_in_use: false,
             abr: false,
             bitrate_capped: false,
+            hi_res_set: false,
             source: crate::stream::SourceInfo { kind: "app", name: "Spotify.exe".into(), waiting: true },
             details: Some(Box::new(crate::CodecDetails {
                 mtu: 679,
@@ -2178,12 +2288,37 @@ mod tests {
                     }),
                 }),
                 aac: None,
+                device: None,
             })),
         };
         let stats = LinkStats::default();
         stats.packets_sent.store(1500, std::sync::atomic::Ordering::Relaxed);
+        stats.acl_packets_sent.store(3000, std::sync::atomic::Ordering::Relaxed);
+        stats.controller_backlog.store(3, std::sync::atomic::Ordering::Relaxed);
+        stats.controller_backlog_stream_max.store(8, std::sync::atomic::Ordering::Relaxed);
+        stats.link.lock().unwrap().clone_from(&bt_host::LinkDetails {
+            remote_version: Some(bt_host::RemoteVersion {
+                lmp_version: 11,
+                company_id: 0x000A,
+                lmp_subversion: 0x22BB,
+            }),
+            remote_features: Some(bt_host::RemoteFeatures([0x03, 0, 0, 0x06, 0x80, 0x01, 0, 0])),
+            central: Some(true),
+            role_changes: 1,
+            mode: Some(bt_host::LinkMode::Active),
+            encryption_key_size: Some(16),
+            supervision_timeout_slots: Some(8000),
+            failed_contacts: Some(0),
+            failed_contacts_stream: 2,
+            link_quality: Some(255),
+            ..Default::default()
+        });
+        stats.capture_discontinuities.store(2, std::sync::atomic::Ordering::Relaxed);
+        stats.capture_lost_frames.store(960, std::sync::atomic::Ordering::Relaxed);
+        stats.set_sink_delay(Some(1875));
         let adapters = vec!["Realtek RTL8761B [0BDA:8771], driver WinUsb".to_string()];
         let mut input = DiagInput {
+            clients: &[],
             env: Environment {
                 generated: "2026-10-17 10:00:00".into(),
                 app_version: "2.0.0-alpha.1".into(),
@@ -2197,9 +2332,9 @@ mod tests {
             profile: Some(&profile),
             stream: Some(&info),
             stats: Some(&stats),
-            hci_capture: Some((Path::new("C:\\a2dpwb\\hci.pklg"), 3 * 1024 * 1024)),
+            hci_capture: Some((Path::new("C:\\bluecaster\\hci.pklg"), 3 * 1024 * 1024)),
             flow: &f,
-            rates: None,
+            rates: Some(AudioRates { packets_per_second: 100.0, kbps: 400.0, capture_frames_per_second: 48000.0 }),
             log: &log,
             clock: None,
             mask: true,
@@ -2208,9 +2343,37 @@ mod tests {
             logging: None,
         };
         let text = diag_text(&input);
-        assert!(text.starts_with("```text\nA2DPWB diagnostics - 2026-10-17 10:00:00\n"), "{text}");
+        assert!(text.starts_with("```text\nBlueCaster diagnostics - 2026-10-17 10:00:00\n"), "{text}");
         assert!(text.ends_with("```\n"));
+        // No other app connected: no line
+        assert!(!text.contains("Clients"), "{text}");
+        let clients = ["bluecaster-ui/2.0.2".to_string(), "encodeck/1.14.0".to_string()];
+        input.clients = &clients;
+        let with_clients = diag_text(&input);
+        assert!(with_clients.contains("Clients      : bluecaster-ui/2.0.2, encodeck/1.14.0\n"), "{with_clients}");
+        input.clients = &[];
         assert!(text.contains("OS           : Windows build 26200 (x86_64)\n"));
+        assert!(
+            text.contains(
+                "  Remote chip: Qualcomm (CSR) (0x000A), Bluetooth 5.2, LMP subversion 0x22BB; EDR 2/3 Mbps, up to 3-DH5\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "  Link: central, active, key 16 bytes, supervision timeout 5000 ms; this stream: 1 role change(s), 0 sniff entries\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("  Link readings: link quality 255/255, failed contacts 0 now, 2 this stream\n"),
+            "{text}"
+        );
+        // 2 ACL packets per media packet at 100 a second: 8 hold 40 ms
+        assert!(
+            text.contains("  Controller backlog: 3 ACL packet(s) now, peak 8 this stream (~40 ms at the current rate); 3000 ACL packets for 1500 media packets\n"),
+            "{text}"
+        );
         assert!(text.contains("State        : Streaming (Connected)\n"));
         assert!(text.contains("  Setting: chip PID 0x0000 (auto)\n"), "{text}");
         assert!(text.contains("  Realtek RTL8761B [0BDA:8771], driver WinUsb\n"));
@@ -2230,8 +2393,10 @@ mod tests {
             "  Device SBC: 44.1/48 kHz; mono/joint_stereo; blocks 4/8/12/16; subbands 4/8; snr/loudness; bitpool 2-53\n"
         ));
         assert!(text.contains("  Media packets sent 1500 (0 bytes), queue drops 0, send errors 0\n"));
+        assert!(text.contains("  Capture frames 0, dropped 0, Windows audio gaps 2 (960 frames lost)\n"), "{text}");
+        assert!(text.contains("  Device delay report 187.5 ms\n"), "{text}");
         // Masked: the path from the app's folder on
-        assert!(text.contains("  HCI capture running: <path>\\a2dpwb\\hci.pklg (3.0 MB)\n"), "{text}");
+        assert!(text.contains("  HCI capture running: <path>\\bluecaster\\hci.pklg (3.0 MB)\n"), "{text}");
         assert!(text.contains("[Flow]\nConnection flow: attempt #1, started T+1.001\n"));
         // Issues and lines of the current attempt only
         assert!(!text.contains("before the attempt"));
@@ -2283,6 +2448,9 @@ mod tests {
                 sink_locations: 3,
                 sink_ases: 2,
                 pacs: String::new(),
+                source_locations: 1,
+                source_ases: 1,
+                source_pacs: "LC3 rates 0x0024 ch 0x01 octets 40-80".into(),
                 roles: "TMAP: UMR, GMAP: UGT (UGT features 0x3C: sink)".into(),
             }],
         };
@@ -2296,8 +2464,10 @@ mod tests {
         ));
         // The device's name is masked with the rest
         assert!(
-            text.contains(": ready, 2 sink ASE(s), TMAP: UMR, GMAP: UGT (UGT features 0x3C: sink)\n")
-                && text.contains("  Device <addr-")
+            text.contains(
+                ": ready, 2 sink ASE(s), 1 source ASE(s) (microphone: LC3 rates 0x0024 ch 0x01 octets 40-80), TMAP: \
+                 UMR, GMAP: UGT (UGT features 0x3C: sink)\n"
+            ) && text.contains("  Device <addr-")
                 && !text.contains("Earbuds"),
             "{text}"
         );

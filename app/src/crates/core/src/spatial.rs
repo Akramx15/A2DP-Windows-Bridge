@@ -131,7 +131,16 @@ pub fn command_for(program: &Path) -> StageCommand {
 /// Windows executable suffix when the file carries none
 fn resolve(dir: &Path, name: &str) -> PathBuf {
     let candidate = Path::new(name);
-    let path = if candidate.is_absolute() { candidate.to_path_buf() } else { dir.join(candidate) };
+    let path = if candidate.is_absolute() {
+        // A stage installed before 3.0.0 names the old settings folder
+        // (%APPDATA%\A2DPWB) in its manifest: follow the rename.
+        match crate::profiles::rebase_old_path(name, &crate::paths::config_dir()) {
+            Some(fixed) => PathBuf::from(fixed),
+            None => candidate.to_path_buf(),
+        }
+    } else {
+        dir.join(candidate)
+    };
     if path.extension().is_none() {
         let with_exe = path.with_extension("exe");
         if with_exe.is_file() {

@@ -8,7 +8,7 @@
 //! driver > Browse > Let me pick > Have Disk > winusb.inf > WinUsb Device":
 //!
 //! 1. open the device by its instance ID
-//! 2. write `DeviceInterfaceGUIDs` (REG_MULTI_SZ, A2DPWB's own GUID) into
+//! 2. write `DeviceInterfaceGUIDs` (REG_MULTI_SZ, BlueCaster's own GUID) into
 //!    its `Device Parameters` key, the value Zadig's INF writes: WinUSB
 //!    registers a device interface only for the GUIDs found there
 //! 3. point the device's install parameters at winusb.inf alone
@@ -23,12 +23,12 @@
 //! again. The driver from before (INF name, version, service) is recorded
 //! by `assign_winusb` and compared after the restore.
 //!
-//! Both need administrator rights (`a2dpwb-driver.exe`, started elevated);
+//! Both need administrator rights (`bluecaster-driver.exe`, started elevated);
 //! `driver_state` is read-only and needs none.
 //!
-//! Not yet verified on hardware (design.md phase 0): whether
-//! SetupDiBuildDriverInfoList offers winusb.inf (class USBDevice) for a
-//! device of another class (Bluetooth). If it does not, the device's class
+//! Whether SetupDiBuildDriverInfoList offers winusb.inf (class USBDevice)
+//! for a device of another class (Bluetooth) varies (docs/v2-design.md
+//! phase 0; both paths have run on real adapters). If it does not, the class
 //! is changed to USBDevice first (what installing a driver of another class
 //! does anyway) and the list is built again; if that fails too, the device
 //! is put back as by `restore`.
@@ -37,18 +37,15 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_Parent, CM_LOCATE_DEVNODE_NORMAL, CM_Locate_DevNodeW, CM_REENUMERATE_SYNCHRONOUS, CM_Reenumerate_DevNode,
-    CMP_WaitNoPendingInstallEvents, CR_SUCCESS, DI_ENUMSINGLEINF, DI_FLAGSEX_ALLOWEXCLUDEDDRVS, DI_NEEDREBOOT,
-    DI_NEEDRESTART, DICS_FLAG_GLOBAL, DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIIDFLAG_NOFINISHINSTALLUI, DIREG_DEV,
-    DiInstallDevice, DiUninstallDevice, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W,
-    SP_DRVINFO_DATA_V2_W, SP_DRVINFO_DETAIL_DATA_W, SP_PROPCHANGE_PARAMS, SPDIT_CLASSDRIVER, SPDRP_CLASSGUID,
-    SetupDiBuildDriverInfoList, SetupDiCallClassInstaller, SetupDiCreateDevRegKeyW, SetupDiDestroyDriverInfoList,
-    SetupDiEnumDriverInfoW, SetupDiGetDeviceInstallParamsW, SetupDiGetDriverInfoDetailW, SetupDiOpenDevRegKey,
-    SetupDiSetClassInstallParamsW, SetupDiSetDeviceInstallParamsW, SetupDiSetDeviceRegistryPropertyW,
-    SetupDiSetSelectedDriverW,
+    CR_SUCCESS, DI_ENUMSINGLEINF, DI_FLAGSEX_ALLOWEXCLUDEDDRVS, DI_NEEDREBOOT, DI_NEEDRESTART, DICS_FLAG_GLOBAL,
+    DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIIDFLAG_NOFINISHINSTALLUI, DIREG_DEV, DiInstallDevice, DiUninstallDevice,
+    SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W, SP_DRVINFO_DATA_V2_W, SP_DRVINFO_DETAIL_DATA_W,
+    SP_PROPCHANGE_PARAMS, SPDIT_CLASSDRIVER, SPDRP_CLASSGUID, SetupDiBuildDriverInfoList, SetupDiCallClassInstaller,
+    SetupDiCreateDevRegKeyW, SetupDiDestroyDriverInfoList, SetupDiEnumDriverInfoW, SetupDiGetDeviceInstallParamsW,
+    SetupDiGetDriverInfoDetailW, SetupDiOpenDevRegKey, SetupDiSetClassInstallParamsW, SetupDiSetDeviceInstallParamsW,
+    SetupDiSetDeviceRegistryPropertyW, SetupDiSetSelectedDriverW,
 };
-use windows::Win32::Foundation::{
-    ERROR_INVALID_DEVINST_NAME, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, HWND, WAIT_OBJECT_0,
-};
+use windows::Win32::Foundation::{ERROR_INVALID_DEVINST_NAME, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, HWND};
 use windows::Win32::System::Registry::{KEY_READ, REG_MULTI_SZ};
 use windows::Win32::System::SystemInformation::GetWindowsDirectoryW;
 use windows::core::{BOOL, GUID, HSTRING, PCWSTR};
@@ -57,7 +54,7 @@ use crate::autostart::RegKey;
 use crate::elevation::is_elevated;
 use crate::usb_adapters::{DevInfoSet, format_guid, parse_multi_sz, problem_code};
 
-/// The device interface GUID A2DPWB registers for adapters it puts on
+/// The device interface GUID BlueCaster registers for adapters it puts on
 /// WinUSB (`DeviceInterfaceGUIDs`), so its own adapters can be told apart
 /// from other WinUSB devices
 pub const INTERFACE_GUID: &str = "{03D8E127-01B1-4A98-9F22-AC8E41AA0CFD}";
@@ -70,11 +67,15 @@ pub const USB_DEVICE_CLASS: GUID = GUID::from_u128(0x88BAE032_5A81_49F0_BC3D_A4F
 const WINUSB_SECTION: &str = "WINUSB";
 /// How long a restore waits for Windows to install the adapter again
 const RESTORE_WAIT: Duration = Duration::from_secs(30);
+/// How often the restored device is looked at meanwhile
+const RESTORE_POLL: Duration = Duration::from_millis(250);
+/// How long a restored device's problem code must stay to be the result
+const PROBLEM_SETTLE: Duration = Duration::from_secs(3);
 
 /// Which kind of driver owns a device
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverKind {
-    /// WINUSB: A2DPWB can use the adapter
+    /// WINUSB: BlueCaster can use the adapter
     WinUsb,
     /// BTHUSB or another driver of the Bluetooth class: Windows uses it
     Bluetooth,
@@ -141,8 +142,8 @@ pub struct DriverState {
 }
 
 impl DriverState {
-    /// On WinUSB with A2DPWB's interface GUID
-    pub fn has_a2dpwb_interface(&self) -> bool {
+    /// On WinUSB with BlueCaster's interface GUID
+    pub fn has_bluecaster_interface(&self) -> bool {
         self.interface_guids.iter().any(|g| g.eq_ignore_ascii_case(INTERFACE_GUID))
     }
 }
@@ -183,7 +184,7 @@ impl DriverRecord {
 /// Whether a failed assignment was undone
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rollback {
-    /// Nothing had changed but A2DPWB's interface GUID, which was removed
+    /// Nothing had changed but BlueCaster's interface GUID, which was removed
     NotNeeded,
     /// The device was put back as by `restore`
     Restored,
@@ -241,7 +242,23 @@ pub struct AssignOutcome {
     pub reboot_required: bool,
     /// The driver now
     pub state: DriverState,
+    /// The devices Windows had connected through the adapter, disconnected
+    /// first
+    pub disconnected: Vec<String>,
 }
+
+/// How long installing WinUSB (with the restart of the device) may take.
+/// Windows stops the old driver first; when it cannot (its Bluetooth still
+/// holds the radio), DiInstallDevice does not return until Windows
+/// restarts. Normally it takes under a second, with the restart up to ~15 s.
+const INSTALL_LIMIT: Duration = Duration::from_secs(45);
+
+/// The device set and element, handed to the install thread
+struct InstallJob(DevInfoSet, SP_DEVINFO_DATA);
+// SAFETY: the set is used by one thread at a time: the install thread owns
+// it, and gives it back only when done (or keeps it if Windows never
+// returns; the process then exits with it).
+unsafe impl Send for InstallJob {}
 
 /// What `restore` did
 #[derive(Debug, Clone)]
@@ -292,7 +309,7 @@ pub fn assign_winusb(instance_id: &str) -> Result<AssignOutcome, DriverError> {
         return Err(DriverError::NotElevated);
     }
     require_usb(instance_id)?;
-    let (set, mut data) = open(instance_id)?;
+    let (set, data) = open(instance_id)?;
     // Windows remembers unplugged devices; installing on one would only
     // take effect when it is plugged in, and could not be checked
     if locate(instance_id).is_none() {
@@ -308,9 +325,13 @@ pub fn assign_winusb(instance_id: &str) -> Result<AssignOutcome, DriverError> {
             class_changed: false,
             reboot_required: false,
             state: driver_state(instance_id)?,
+            disconnected: Vec::new(),
         });
     }
     let inf = winusb_inf_path()?;
+    // Windows cannot stop its Bluetooth on a radio with a connected device
+    // (an audio link above all): the install would hang
+    let disconnected = crate::bt_radios::disconnect_through(instance_id);
     tracing::info!(
         "driver: assigning WinUSB to {instance_id} (now {} {} {})",
         before.service,
@@ -330,9 +351,46 @@ pub fn assign_winusb(instance_id: &str) -> Result<AssignOutcome, DriverError> {
     // Step 2: the interface GUID, kept beside any GUIDs already there
     let guids_before = write_interface_guid(&set, &data).map_err(DriverError::win32("writing DeviceInterfaceGUIDs"))?;
 
-    // Steps 3 and 4
-    let mut class_changed = false;
-    let result = install(&set, &mut data, &inf, &mut class_changed);
+    // Steps 3 and 4, on a thread: Windows may not return (INSTALL_LIMIT)
+    let (tx, rx) = std::sync::mpsc::channel();
+    let job = InstallJob(set, data);
+    std::thread::spawn(move || {
+        let InstallJob(set, mut data) = job;
+        let mut class_changed = false;
+        let mut result = install(&set, &mut data, &inf, &mut class_changed);
+        if let Ok(true) = result {
+            // Windows could not stop the device to load WinUSB (issue #81:
+            // the core then fails with "failed to initialize WinUSB (error
+            // 50)" until the adapter is replugged or Windows restarts).
+            // Restart it as Device Manager does; only what still needs a
+            // restart after that is reported
+            result = Ok(restart_device(&set, &mut data));
+        }
+        let _ = tx.send((result, class_changed, InstallJob(set, data)));
+    });
+    let (result, class_changed, InstallJob(set, _)) = match rx.recv_timeout(INSTALL_LIMIT) {
+        Ok(done) => done,
+        Err(_) => {
+            // WinUSB is on the device, but its old driver never stopped:
+            // Windows loads it at the next restart
+            let state = driver_state(instance_id)?;
+            tracing::warn!(
+                "driver: installing WinUSB on {instance_id} did not finish in {INSTALL_LIMIT:?}; now {} ({:?}), problem {:?}: restart needed",
+                state.driver.service,
+                state.kind,
+                state.problem_code
+            );
+            let class_changed = !state.driver.class_guid.eq_ignore_ascii_case(&before.class_guid);
+            return Ok(AssignOutcome {
+                previous,
+                already_winusb: false,
+                class_changed,
+                reboot_required: true,
+                state,
+                disconnected,
+            });
+        }
+    };
     tracing::debug!(
         "driver: install on {instance_id}: {}, class changed {class_changed}",
         match &result {
@@ -343,15 +401,7 @@ pub fn assign_winusb(instance_id: &str) -> Result<AssignOutcome, DriverError> {
         }
     );
     match result {
-        Ok(mut reboot_required) => {
-            if reboot_required {
-                // Windows could not stop the device to load WinUSB (issue
-                // #81: the core then fails with "failed to initialize WinUSB
-                // (error 50)" until the adapter is replugged or Windows
-                // restarts). Restart it as Device Manager does; only what
-                // still needs a restart after that is reported
-                reboot_required = restart_device(&set, &mut data);
-            }
+        Ok(reboot_required) => {
             let state = driver_state(instance_id)?;
             tracing::info!(
                 "driver: {instance_id} is now on {} ({:?}){}",
@@ -359,7 +409,7 @@ pub fn assign_winusb(instance_id: &str) -> Result<AssignOutcome, DriverError> {
                 state.kind,
                 if reboot_required { ", restart needed" } else { "" }
             );
-            Ok(AssignOutcome { previous, already_winusb: false, class_changed, reboot_required, state })
+            Ok(AssignOutcome { previous, already_winusb: false, class_changed, reboot_required, state, disconnected })
         }
         Err(failure) => {
             drop(set); // release the device before putting it back
@@ -633,7 +683,7 @@ fn write_interface_guid(set: &DevInfoSet, data: &SP_DEVINFO_DATA) -> windows::co
         key.set(INTERFACE_GUIDS_VALUE, REG_MULTI_SZ, &multi_sz(&guids))?;
         tracing::debug!("driver: {INTERFACE_GUIDS_VALUE} written: {guids:?}");
     } else {
-        tracing::debug!("driver: {INTERFACE_GUIDS_VALUE} has A2DPWB's GUID already: {guids:?}");
+        tracing::debug!("driver: {INTERFACE_GUIDS_VALUE} has BlueCaster's GUID already: {guids:?}");
     }
     Ok(before)
 }
@@ -751,14 +801,15 @@ fn reenumerate(devinst: u32) -> bool {
 }
 
 /// After a re-enumeration: waits until Windows has installed the device
-/// again and returns its state, None if it did not come back in time
+/// again and returns its state, None if it did not come back in time.
+///
+/// Only the device itself is waited for, not every install it sets off
+/// (issue #86: on a composite adapter, such as MediaTek's, the interfaces,
+/// the radio and a device node per paired device follow it, and waiting
+/// for all of them took most of the restore's time).
 fn wait_for_driver(instance_id: &str) -> Option<DriverState> {
     let start = Instant::now();
-    // SAFETY: plain wait with a timeout in milliseconds.
-    let waited = unsafe { CMP_WaitNoPendingInstallEvents(RESTORE_WAIT.as_millis() as u32) };
-    if waited != WAIT_OBJECT_0.0 {
-        tracing::debug!("driver: CMP_WaitNoPendingInstallEvents returned {waited}");
-    }
+    let mut problem_since: Option<Instant> = None;
     loop {
         // A device back without a driver (problem 28) may only be waiting
         // for its install to start, so that is accepted only at the end
@@ -766,15 +817,33 @@ fn wait_for_driver(instance_id: &str) -> Option<DriverState> {
             && state.present
             && state.kind != DriverKind::None
         {
-            tracing::debug!("driver: {instance_id} back after {:?}", start.elapsed());
-            return Some(state);
+            match state.problem_code {
+                None => {
+                    tracing::debug!("driver: {instance_id} back after {:?}", start.elapsed());
+                    return Some(state);
+                }
+                // A problem may only last while the driver starts; one that
+                // stays is the answer (Code 31: Windows runs another radio)
+                Some(code) => {
+                    let since = *problem_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() >= PROBLEM_SETTLE {
+                        tracing::debug!(
+                            "driver: {instance_id} back after {:?} with problem code {code}",
+                            start.elapsed()
+                        );
+                        return Some(state);
+                    }
+                }
+            }
+        } else {
+            problem_since = None;
         }
         if start.elapsed() >= RESTORE_WAIT {
             let last = driver_state(instance_id);
             tracing::debug!("driver: waited {:?} for {instance_id}; last state {last:?}", start.elapsed());
             return last.ok().filter(|s| s.present);
         }
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(RESTORE_POLL);
     }
 }
 
@@ -906,7 +975,7 @@ mod tests {
 
     #[test]
     fn unknown_device_is_not_found() {
-        assert!(matches!(driver_state(r"USB\VID_FFFF&PID_FFFF\A2DPWB_TEST"), Err(DriverError::DeviceNotFound(_))));
+        assert!(matches!(driver_state(r"USB\VID_FFFF&PID_FFFF\BLUECASTER_TEST"), Err(DriverError::DeviceNotFound(_))));
     }
 
     /// Read-only: the driver state of every present USB device that looks
@@ -918,12 +987,12 @@ mod tests {
             assert!(s.present);
             assert_eq!(s.driver, d.driver);
             eprintln!(
-                "{} -> {:?} {:?} guids={:?} a2dpwb={}",
+                "{} -> {:?} {:?} guids={:?} bluecaster={}",
                 s.instance_id,
                 s.kind,
                 s.driver,
                 s.interface_guids,
-                s.has_a2dpwb_interface()
+                s.has_bluecaster_interface()
             );
         }
     }

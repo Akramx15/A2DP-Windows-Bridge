@@ -1,9 +1,10 @@
-//! a2dpwb.exe: the A2DPWB window process. It shows the state of
-//! a2dpwb-core.exe and sends it the user's requests; the core keeps
+//! bluecaster.exe: the BlueCaster window process. It shows the state of
+//! bluecaster-core.exe and sends it the user's requests; the core keeps
 //! streaming when this process ends.
 //!
 //! Arguments: `--flyout` opens the tray flyout instead of the main window
-//! (the core starts the UI this way when the tray icon is clicked).
+//! (the core starts the UI this way when the tray icon is clicked);
+//! `--quick-settings` opens it above Quick Settings, which just opened.
 
 #![forbid(unsafe_code)]
 // No console window in release builds
@@ -20,10 +21,21 @@ use tauri::Manager;
 use tauri::webview::PageLoadEvent;
 
 fn main() {
+    // The settings folder of 2.0.x is moved by whichever process comes
+    // first, but not under a 2.0.x core or v1 that still writes to it (the
+    // core stops them and moves it then)
+    logging::paths::set_old_app_check(old_app_runs);
     let _log = logging::init();
     let flyout = std::env::args().any(|a| a == "--flyout");
+    let quick_settings = std::env::args().any(|a| a == "--quick-settings");
+    // (not when a core of this version runs already: it holds their
+    // mutexes itself, and has dealt with their folder)
+    fn old_app_runs() -> bool {
+        use win_sys::single_instance::{V1_MUTEX_NAME, is_held};
+        !is_held(&ipc::core_mutex_name()) && (is_held(&ipc::old_core_mutex_name()) || is_held(V1_MUTEX_NAME))
+    }
     tracing::info!(
-        "a2dpwb {} starting{} (WebView2 {})",
+        "bluecaster {} starting{} (WebView2 {})",
         env!("CARGO_PKG_VERSION"),
         if flyout { " with the flyout" } else { "" },
         tauri::webview_version().unwrap_or_else(|e| format!("unknown: {e}"))
@@ -56,7 +68,10 @@ fn main() {
             commands::ui_info,
             commands::show_main,
             commands::show_flyout,
+            commands::fit_flyout,
+            commands::setup_window,
             commands::set_theme,
+            commands::accent_colors,
             commands::open_url,
             commands::open_folder,
             commands::reveal_path,
@@ -68,7 +83,9 @@ fn main() {
             let handle = app.handle().clone();
             app.manage(update::Updates::new(&handle));
             connection::start(handle.clone(), ipc);
-            if flyout {
+            if quick_settings {
+                windows::show_with_quick_settings(&handle);
+            } else if flyout {
                 windows::show_flyout(&handle)?;
             } else {
                 windows::show_main(&handle, None)?;
@@ -81,7 +98,7 @@ fn main() {
         Ok(app) => app,
         Err(e) => {
             tracing::error!("cannot start the window: {e}");
-            eprintln!("a2dpwb: cannot start the window: {e}");
+            eprintln!("bluecaster: cannot start the window: {e}");
             drop(_log);
             std::process::exit(1);
         }
@@ -95,7 +112,7 @@ fn main() {
             api.prevent_exit();
         }
         tauri::RunEvent::Exit => {
-            tracing::info!("a2dpwb exiting");
+            tracing::info!("bluecaster exiting");
             recovery::relaunch_if_due();
         }
         _ => {}

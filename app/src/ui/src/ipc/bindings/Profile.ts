@@ -23,6 +23,16 @@ codec: string,
  */
 quality: string, abr: boolean, codec_fallback: boolean, 
 /**
+ * The codec was chosen on its card while the device did not offer it:
+ * asked for anyway, no fallback (issue #86)
+ */
+codec_forced: boolean, 
+/**
+ * The codec's settings are not held to what the device lists (its
+ * card's "Show only supported options" off, issue #86)
+ */
+unlisted_options: boolean, 
+/**
  * 0 = auto
  */
 sample_rate: number, 
@@ -31,13 +41,13 @@ sample_rate: number,
  */
 bit_depth: number, 
 /**
- * loopback, virtual, app
+ * loopback, virtual, output, app. "output" (issue #193): the output
+ * device audio_device_id, whichever is the Windows default
  */
 capture_mode: string, audio_device_id: string, audio_device_name: string, auto_switch_device: boolean, app_exe: string, app_name: string, 
 /**
- * auto, device (the Windows volume of volume_device_id; set in
- * developer mode); "off" from before Settings.volume_sync counts as
- * auto. Only while Settings.volume_sync is on.
+ * auto, off, device: kept as saved, but not used (issue #86): streams
+ * follow Settings.volume_sync alone.
  */
 volume_sync: string, volume_device_id: string, volume_device_name: string, 
 /**
@@ -67,6 +77,31 @@ le_audio: boolean,
  */
 le_low_latency: boolean, 
 /**
+ * Headset mode: the headphones' microphone is
+ * rendered to mic_device_id. "off" (the default) | "on" | "auto";
+ * anything else reads as off. "on": classic devices switch playback to
+ * the voice link (mono call quality) for as long as they stream;
+ * "auto": only while an application records from mic_device_id's
+ * capture side (the cable's "CABLE Output"), full-quality A2DP
+ * otherwise. LE Audio keeps its media quality either way ("auto" is
+ * "on" there).
+ */
+headset_mic: string, 
+/**
+ * Render endpoint id that receives the microphone (a virtual cable's
+ * input). Empty = none chosen: headset mode stays off
+ */
+mic_device_id: string, 
+/**
+ * Its friendly name, for display when the device is missing
+ */
+mic_device_name: string, 
+/**
+ * The microphone muted (Home's and the flyout's chip): no voice link,
+ * as with headset_mic "off"; headset_mic is kept for unmuting
+ */
+mic_muted: boolean, 
+/**
  * SBC / SBC XQ: the bitpool to encode with, within what the device
  * allows (0 = by quality)
  */
@@ -76,7 +111,18 @@ sbc_bitpool: number,
  */
 sbcxq_bitpool: number, 
 /**
- * SBC / SBC XQ: block length 4, 8, 12, 16 (0 = auto: 16)
+ * SBC / SBC XQ: the lowest bitpool to use (the SET_CONFIGURATION's
+ * minimum and the floor of ABR), within what the device allows and
+ * never above the bitpool (0 = Auto)
+ */
+sbc_min_bitpool: number, 
+/**
+ * The same for SBC XQ
+ */
+sbcxq_min_bitpool: number, 
+/**
+ * SBC / SBC XQ: block length 4, 8, 12, 16 (0 = auto: 16). The frame
+ * setup counts in developer mode only
  */
 sbc_blocks: number, 
 /**
@@ -88,8 +134,8 @@ sbc_subbands: number,
  */
 sbc_allocation: string, 
 /**
- * SBC: "joint_stereo", "stereo", "dual_channel", "mono" ("" = auto:
- * joint stereo; SBC XQ is always dual channel)
+ * SBC: "joint_stereo", "stereo", "mono" ("" = auto: joint stereo; SBC
+ * XQ is always dual channel)
  */
 sbc_channel_mode: string, 
 /**
@@ -100,9 +146,8 @@ sbc_channel_mode: string,
 codec_settings: { [key in string]: CodecValues }, 
 /**
  * The device's codec order (codec keys) as dragged on the Codecs
- * screen with Auto-select off: Auto, and a chosen codec the device
+ * screen: Auto, under Auto-select too, and a chosen codec the device
  * does not offer, take the first one in it the device offers (issue
- * #86 round 8). Empty: highest sound quality first. Not used under
- * Auto-select.
+ * #86 round 8). Empty: highest sound quality first.
  */
 codec_order: Array<string>, };

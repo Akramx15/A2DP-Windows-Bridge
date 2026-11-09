@@ -8,21 +8,25 @@ between the two controllers of a LocalLink. LeEmuController adds that:
     CIS ID), with a time stamp and the sender's sequence number, at the next
     free SDU interval of that CIS (like the air schedule: one SDU per
     interval), and Number Of Completed Packets goes back to the sender then.
-    So A2DPWB is paced by the "controller" as with a real one.
+    So BlueCaster is paced by the "controller" as with a real one. The other
+    way (a source ASE: the headset microphone) the same, with the CIG's
+    P->C SDU interval and latency; a late SDU of that direction comes from
+    the emulated headset's own sender and is logged as "late microphone
+    SDU" (not a BlueCaster problem, run_test.py does not count it).
   - LE CIS Established reports the CIG parameters (ISO interval, max PDU,
     PHY 2M) instead of zeros.
   - pending ISO deliveries are flushed before a CIS disconnects or its CIG
-    is removed, so the sink receives every SDU A2DPWB sent.
+    is removed, so the sink receives every SDU BlueCaster sent.
   - every command gets its Command Complete / Command Status, as from a real
-    controller: Set AFH Host Channel Classification succeeds (A2DPWB sends
+    controller: Set AFH Host Channel Classification succeeds (BlueCaster sends
     it depending on the PC's Wi-Fi), others Bumble does not implement fail
     with Unknown HCI Command. Bumble alone answered nothing to commands it
     has no class for, and BTstack then waited for ever.
-  - with --no-iso-buffers (le_audio/__init__.py) the "A2DPWB" controller
+  - with --no-iso-buffers (le_audio/__init__.py) the "BlueCaster" controller
     reports no ISO buffers in LE Read Buffer Size v2 (LE without ISO).
 
 PacketLoggerSnooper also writes ISO data (PacketLogger types 0x0c / 0x0d),
-which a2dpwb_decode --le-audio reads.
+which bluecaster_decode --le-audio reads.
 """
 
 import asyncio
@@ -76,7 +80,7 @@ LATE_INTERVALS = 3
 LATE_US = 30000      # the same tolerance in time for shorter SDU intervals
 # An SDU that reaches this controller more than HOST_LATE_MS after the start
 # of its SDU interval would have missed it on a real controller (whose queue,
-# 2 SDUs per CIS from A2DPWB, ran empty): logged as "late SDU" (run_test.py
+# 2 SDUs per CIS from BlueCaster, ran empty): logged as "late SDU" (run_test.py
 # fails the case). The time this emulation's own event loop was stalled in
 # between is not counted (see LeEmuController._heartbeat).
 HOST_LATE_MS = 2.0
@@ -105,7 +109,7 @@ class LeEmuController(EmuController):
     def _heartbeat(self, due):
         """Every HEARTBEAT_S while ISO data flows: when this timer fires more
         than STALL_S late, the event loop did not run in between (a stall of
-        this emulation; it delays reading A2DPWB's SDUs as much)."""
+        this emulation; it delays reading BlueCaster's SDUs as much)."""
         loop = asyncio.get_running_loop()
         now = loop.time()
         if now - due > STALL_S:
@@ -175,6 +179,9 @@ class LeEmuController(EmuController):
                 max_sdu_c_to_p=command.max_sdu_c_to_p[i],
                 max_sdu_p_to_c=command.max_sdu_p_to_c[i],
                 rtn=command.rtn_c_to_p[i],
+                sdu_interval_p_to_c=command.sdu_interval_p_to_c,
+                latency_p_to_c_ms=command.max_transport_latency_p_to_c,
+                rtn_p_to_c=command.rtn_p_to_c[i],
             )
         return super().on_hci_le_set_cig_parameters_command(command)
 
@@ -193,7 +200,7 @@ class LeEmuController(EmuController):
                 cig_sync_delay=p['sdu_interval'] // 2,
                 cis_sync_delay=p['sdu_interval'] // 2,
                 transport_latency_c_to_p=p['latency_ms'] * 1000,
-                transport_latency_p_to_c=p['latency_ms'] * 1000,
+                transport_latency_p_to_c=p.get('latency_p_to_c_ms', p['latency_ms']) * 1000,
                 phy_c_to_p=2,
                 phy_p_to_c=2,
                 nse=min(p['rtn'] + 1, 31),
@@ -218,23 +225,39 @@ class LeEmuController(EmuController):
         peer_link = next((x for x in links if x.cig_id == link.cig_id and x.cis_id == link.cis_id), None)
         return peer, peer_link
 
+    def iso_completed(self, handle):
+        self.send_hci_packet(hci.HCI_Number_Of_Completed_Packets_Event(
+            connection_handles=[handle], num_completed_packets=[1]))
+
     def on_hci_iso_data_packet(self, packet):
         handle = packet.connection_handle
         link = self.central_cis_links.get(handle) or self.peripheral_cis_links.get(handle)
-        loop = asyncio.get_running_loop()
-
-        def completed():
-            self.send_hci_packet(hci.HCI_Number_Of_Completed_Packets_Event(
-                connection_handles=[handle], num_completed_packets=[1]))
-
         if link is None:
             log.warning('ISO data for unknown handle 0x%04X', handle)
-            completed()
+            self.iso_completed(handle)
             return
+        params = CIS_PARAMS.get((link.cig_id, link.cis_id), {})
+
+        def receivers():
+            peer, peer_link = self._peer_cis(link)
+            return [(peer, peer_link.handle)] if peer is not None and peer_link is not None else []
+        if handle in self.peripheral_cis_links:
+            # P->C: the headset's microphone (a source ASE)
+            interval = params.get('sdu_interval_p_to_c') or params.get('sdu_interval', 10000)
+            latency = params.get('latency_p_to_c_ms', params.get('latency_ms', 0))
+            self.schedule_iso_sdu(packet, 'CIS', interval, latency, receivers, late_label='late microphone SDU')
+            return
+        self.schedule_iso_sdu(packet, 'CIS', params.get('sdu_interval', 10000), params.get('latency_ms', 0),
+                              receivers)
+
+    def schedule_iso_sdu(self, packet, kind, interval_us, latency_ms, receivers, late_label='late SDU'):
+        """Carries one SDU of a CIS or BIS (kind) at its SDU interval: to the
+        (controller, handle) pairs receivers() returns when it is due, then
+        Number Of Completed Packets to the sender."""
+        handle = packet.connection_handle
+        loop = asyncio.get_running_loop()
         if packet.pb_flag != 0b10:
             log.warning('ISO data with PB flag %s (only complete SDUs are carried)', bin(packet.pb_flag))
-        params = CIS_PARAMS.get((link.cig_id, link.cis_id), {})
-        interval_us = params.get('sdu_interval', 10000)
         interval = interval_us / 1e6
         now = loop.time()
         if self.iso_t0 is None:
@@ -242,21 +265,21 @@ class LeEmuController(EmuController):
         if self.heartbeat is None:
             self.heartbeat_due = now + HEARTBEAT_S
             self.heartbeat = loop.call_at(self.heartbeat_due, self._heartbeat, self.heartbeat_due)
-        # SDU interval n of the CIS: the first SDU takes the next interval,
+        # SDU interval n of the CIS or BIS: the first SDU takes the next interval,
         # then each the next free one. The host's lateness is how long after
         # the start of that interval the SDU arrived, less the time this
         # event loop was stalled (such stalls happen, 60-90 ms): meanwhile,
         # as it delays reading the SDU as much, and while the last completion
         # on the CIS was held up, as the host can only send when its queue
         # has room. More than HOST_LATE_MS is logged as a late SDU (with 2
-        # SDUs queued per CIS, as A2DPWB does, the host has 2 intervals after
+        # SDUs queued per CIS, as BlueCaster does, the host has 2 intervals after
         # a completion). Only when the host is late by more than
         # LATE_INTERVALS does the SDU move to a later interval (a real
         # controller would have flushed it): that is in time, not intervals,
         # at least LATE_US (4 intervals of 7.5 ms, 3 of 10 ms), and as a real
         # controller only flushes an SDU after the CIG's Max Transport
         # Latency, that much too.
-        late_us = max(LATE_US, params.get('latency_ms', 0) * 1000)
+        late_us = max(LATE_US, latency_ms * 1000)
         late = max(LATE_INTERVALS, math.ceil(late_us / interval_us))
         n_now = int(math.ceil((now - self.iso_t0) / interval - 1e-6))
         expected = self.iso_next_slot.get(handle)
@@ -275,10 +298,10 @@ class LeEmuController(EmuController):
                 if host_late * 1000 > HOST_LATE_MS:
                     count = self.iso_late[handle] = self.iso_late.get(handle, 0) + 1
                     if count <= LATE_LOG_MAX or count % 100 == 0:
-                        log.warning('late SDU: CIS 0x%04X seq %d reached the controller %.1f ms after its SDU '
+                        log.warning('%s: %s 0x%04X seq %d reached the controller %.1f ms after its SDU '
                                     'interval began (not counting %.1f ms this emulation stalled); '
-                                    '%d late SDU(s) on this CIS so far', handle,
-                                    packet.packet_sequence_number or 0, host_late * 1000, stalled * 1000, count)
+                                    '%d late SDU(s) on this %s so far', late_label, kind, handle,
+                                    packet.packet_sequence_number or 0, host_late * 1000, stalled * 1000, count, kind)
         self.iso_next_slot[handle] = n + 1
         slot = self.iso_t0 + n * interval
         time_stamp = (n * interval_us) & 0xFFFFFFFF
@@ -292,10 +315,9 @@ class LeEmuController(EmuController):
                 pending.remove(entry[0])
             fired = loop.time()
             self.iso_completion_stall[handle] = self.stalled(slot, fired) if fired - slot > STALL_S else 0.0
-            peer, peer_link = self._peer_cis(link)
-            if peer is not None and peer_link is not None:
+            for peer, peer_handle in receivers():
                 peer.send_hci_packet(hci.HCI_IsoDataPacket(
-                    connection_handle=peer_link.handle,
+                    connection_handle=peer_handle,
                     pb_flag=0b10,
                     data_total_length=8 + len(data),
                     time_stamp=time_stamp,
@@ -304,7 +326,7 @@ class LeEmuController(EmuController):
                     packet_status_flag=0,
                     iso_sdu_fragment=data,
                 ))
-            completed()
+            self.iso_completed(handle)
             self.iso_count += 1
 
         timer = loop.call_at(slot, deliver)
@@ -372,7 +394,7 @@ class LeLocalLink(LocalLink):
 
 
 class PacketLoggerSnooper(Snooper):
-    """Writes HCI packets in PacketLogger format (as A2DPWB's own capture),
+    """Writes HCI packets in PacketLogger format (as BlueCaster's own capture),
     ISO data included."""
 
     def __init__(self, path):

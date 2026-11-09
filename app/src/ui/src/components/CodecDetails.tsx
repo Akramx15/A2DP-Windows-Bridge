@@ -1,9 +1,12 @@
 // Diagnostics' codec details card: what an A2DP stream's codec runs with,
 // next to what the device offered (the SBC bitpool range, channel modes,
-// AAC object types ...), and how the codec frames fill a packet.
+// AAC object types ...; for the other codecs the rates, bit depths and peak
+// bit rate their endpoint lists, issue #86), and how the codec frames fill
+// a packet.
 
 import { For, type JSX, Show } from "solid-js";
 import { t } from "../i18n";
+import type { CodecDeviceCaps } from "../ipc/bindings/CodecDeviceCaps";
 import type { CodecDetails, StreamInfo } from "../ipc/types";
 import {
   AAC_CHANNELS,
@@ -161,6 +164,32 @@ function AacRows(props: { aac: AacDetails; info: StreamInfo }) {
   );
 }
 
+/** Any other codec: what its endpoint lists, as SBC and AAC show theirs */
+function DeviceRows(props: { device: CodecDeviceCaps; info: StreamInfo }) {
+  // The device lists only some of the values: show what it offers
+  const offered = <T,>(list: readonly T[], used: T) => chips(list, list.length ? list : null, used);
+  return (
+    <>
+      <ChipRow label={t("ui.diag.cd_rate")} items={offered(props.device.sample_rates, props.info.sample_rate)} text={khz} />
+      <Show when={props.info.bits > 0}>
+        <ChipRow
+          label={t("connection.bit_depth")}
+          items={offered(props.device.bit_depths, props.info.bits)}
+          text={(b) => `${b}-bit`}
+        />
+      </Show>
+      <Row
+        label={t("ui.diag.cd_peak")}
+        value={
+          props.device.max_bitrate > 0
+            ? t("ui.diag.cd_peak_value", Math.round(props.device.max_bitrate / 1000))
+            : t("ui.diag.cd_peak_none")
+        }
+      />
+    </>
+  );
+}
+
 export function CodecDetailsCard(props: { info: StreamInfo; details: CodecDetails }) {
   const d = () => props.details;
   const headers = () => {
@@ -182,7 +211,7 @@ export function CodecDetailsCard(props: { info: StreamInfo; details: CodecDetail
   };
   // Without the device's capabilities the chips show only what is used
   const noDevice = () => (d().sbc && !d().sbc!.device) || (d().aac && !d().aac!.device);
-  const chipsShown = () => !!(d().sbc?.device || d().aac?.device);
+  const chipsShown = () => !!(d().sbc?.device || d().aac?.device || d().device);
   return (
     <section class="card lq-group cd-card" aria-labelledby="lq-codec">
       <h2 id="lq-codec">
@@ -220,6 +249,16 @@ export function CodecDetailsCard(props: { info: StreamInfo; details: CodecDetail
             <h3 class="cd-sub">AAC</h3>
             <dl class="lq-rows">
               <AacRows aac={a()} info={props.info} />
+            </dl>
+          </>
+        )}
+      </Show>
+      <Show when={d().device}>
+        {(dev) => (
+          <>
+            <h3 class="cd-sub">{props.info.codec}</h3>
+            <dl class="lq-rows">
+              <DeviceRows device={dev()} info={props.info} />
             </dl>
           </>
         )}

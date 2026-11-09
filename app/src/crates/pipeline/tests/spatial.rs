@@ -141,6 +141,8 @@ fn the_encoder_gets_the_engine_output() {
             cwd: None,
         }),
         resample: None,
+        hold: false,
+        mute: None,
     };
     let (_pipeline, mut input) = Pipeline::start(config, sink, stats);
     let block = tone_block();

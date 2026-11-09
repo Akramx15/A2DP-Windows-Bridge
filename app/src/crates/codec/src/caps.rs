@@ -106,7 +106,7 @@ const OPUS_CONFIG_DEFAULT: u8 = OPUS_FREQ_48000 | OPUS_FRAME_20MS | OPUS_CH_STER
 //   +2..+5 audio location (LE; Bluetooth audio location bits), +6 frame
 //   durations (0x01 2.5 ms, 0x02 5, 0x04 10, 0x08 20, 0x10 40), +7..+8
 //   bit rate (LE, units of 1024 bps; 0 = no limit)
-// A2DPWB offers and configures the main direction only: stereo (2
+// BlueCaster offers and configures the main direction only: stereo (2
 // channels, 1 coupled stream, front left + right) or mono, 10 or 20 ms.
 const OPUS05_INFO_LEN: usize = 24;
 const OPUS05_MAIN: usize = 6;
@@ -137,9 +137,10 @@ pub const OPUS05_BITRATE_UNIT: u32 = 1024;
 //   8..13: target latencies (LL0, LL1 in ms; HQ, TWS in 2 ms units)
 //   14: reserved; R1: 15 0x00, 16 0xAA (end marker); R2: 15 the capability
 //      extension version 1, 16..19 the features word (LE), 20..23 setup
-//      preferences, 24..25 the end marker 00 AA
+//      preferences, 24..25 the end marker 00 AA, then in a configuration
+//      26 the bits per sample (0x02: 24)
 // BTstack reports at most 30 bytes of a remote's codec information, enough
-// for all of it (bytes 26..39 are reserved).
+// for all of it (bytes 27..39 are reserved).
 const APTXAD_INFO_LEN: usize = 40;
 /// The R1 layout's end (its end marker), the least a usable SEP reports
 const APTXAD_R1_LEN: usize = 17;
@@ -163,9 +164,10 @@ const APTXAD_R1_DATA: [u8; 9] = [0x50, 0x64, 0x64, 0x64, 0xFF, 0xFF, 0x00, 0x00,
 /// What a source sends to an R2 sink from byte 8 on: its own target
 /// latencies, extension version 1, features 0x0F000092 (R2.0's word with the
 /// low byte a Snapdragon phone sends: a zero low byte makes a Bose QC Ultra 2
-/// restart), setup preferences 02 03 03 03, the end marker
-const APTXAD_R2_DATA: [u8; 18] =
-    [0x50, 0x64, 0x64, 0x64, 0xFF, 0xFF, 0x00, 0x01, 0x92, 0x00, 0x00, 0x0F, 0x02, 0x03, 0x03, 0x03, 0x00, 0xAA];
+/// restart), setup preferences 02 03 03 03, the end marker, 24 bits per
+/// sample (left at 0, a Bose QC Ultra decoder clips)
+const APTXAD_R2_DATA: [u8; 19] =
+    [0x50, 0x64, 0x64, 0x64, 0xFF, 0xFF, 0x00, 0x01, 0x92, 0x00, 0x00, 0x0F, 0x02, 0x03, 0x03, 0x03, 0x00, 0xAA, 0x02];
 
 /// aptX Adaptive codec information: the vendor header, `rate`,
 /// `channel_mode`, then `data` from byte 8 on
@@ -378,7 +380,7 @@ pub fn endpoint_kind(kind: CodecKind) -> CodecKind {
 // FastStream (PipeWire a2dp-codec-caps.h, a2dp_faststream_t): 8 bytes, byte
 // 6 direction (0x01 sink = music to the headset, 0x02 source = voice back),
 // byte 7 low nibble the sink rates (0x02 44.1k, 0x01 48k), high nibble the
-// source rate (0x2 16k). A2DPWB offers and configures the sink direction
+// source rate (0x2 16k). BlueCaster offers and configures the sink direction
 // only.
 const FASTSTREAM_INFO_LEN: usize = 8;
 const FASTSTREAM_DIRECTION_SINK: u8 = 0x01;
@@ -587,6 +589,12 @@ pub struct RemoteCaps {
     /// codec streaming to another device is missing from the above)
     pub audio_sinks: u8,
     pub audio_sinks_in_use: u8,
+    /// Vendor SEPs of a known codec that were not taken
+    /// ([`VendorCapability::Ignored`]): what [`Self::forcing`] asks first
+    pub ignored: Vec<(CodecKind, RemoteSep)>,
+    /// SBC / SBC XQ settings not held to what the sink lists
+    /// ([`Self::unlisted`]): SBC XQ's bitpool then goes up to SBC's 53
+    pub sbc_unlisted: bool,
 }
 
 /// How a vendor codec capability was taken, for the log
@@ -766,6 +774,14 @@ impl RemoteCaps {
 
     /// A vendor codec capability (media codec information) of SEP `seid`
     pub fn add_vendor(&mut self, seid: u8, info: &[u8]) -> VendorCapability {
+        let taken = self.take_vendor(seid, info);
+        if let VendorCapability::Ignored(kind, _) = taken {
+            self.ignored.push((kind, RemoteSep { seid }));
+        }
+        taken
+    }
+
+    fn take_vendor(&mut self, seid: u8, info: &[u8]) -> VendorCapability {
         let Some((vid, cid)) = read_vendor(info) else {
             return VendorCapability::TooShort;
         };
@@ -954,6 +970,13 @@ impl RemoteCaps {
         }
     }
 
+    /// The rate `kind` streams at to match the PC's `source` rate, from
+    /// those the sink lists (developer mode's match_source): see
+    /// [`nearest_rate`]
+    pub fn match_sample_rate(&self, kind: CodecKind, source: u32) -> u32 {
+        nearest_rate(&self.listed_sample_rates(kind), source)
+    }
+
     /// The bit depths the sink lists for `kind` (LHDC V5 only; empty for
     /// the others: no choice, or the sink does not say)
     pub fn listed_bit_depths(&self, kind: CodecKind) -> Vec<u32> {
@@ -1044,12 +1067,11 @@ impl RemoteCaps {
     }
 
     /// Capture rate for aptX Adaptive: 96 kHz when the profile asks for it
-    /// (`wanted`), 96 kHz is allowed (`allow`: Developer > "aptX Adaptive at
-    /// 96 kHz", off by default, issue #86), the stream is high quality (96
-    /// kHz has no low latency bitstream) and the sink can take it
-    /// ([`Self::aptxad_96k`]); else 48 kHz, the rate every sink takes
-    pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality, allow: bool) -> u32 {
-        let no_96k = self.aptxad_no_96k(quality, allow);
+    /// (`wanted`), the stream is high quality (96 kHz has no low latency
+    /// bitstream) and the sink can take it ([`Self::aptxad_96k`]); else 48
+    /// kHz, the rate every sink takes
+    pub fn pick_aptxad_sample_rate(&self, wanted: u32, quality: crate::Quality) -> u32 {
+        let no_96k = self.aptxad_no_96k(quality);
         let rate = if wanted == 96000 && no_96k.is_none() { 96000 } else { 48000 };
         let (r2, rates) = (self.aptxad_r2(), self.aptxad_info.get(6).copied().unwrap_or(0) & 0xF8);
         match no_96k {
@@ -1066,13 +1088,11 @@ impl RemoteCaps {
         rate
     }
 
-    /// Why aptX Adaptive cannot stream at 96 kHz in `quality` (`allow`: 96
-    /// kHz switched on); None when it can
-    pub fn aptxad_no_96k(&self, quality: crate::Quality, allow: bool) -> Option<&'static str> {
+    /// Why aptX Adaptive cannot stream at 96 kHz in `quality`; None when it
+    /// can
+    pub fn aptxad_no_96k(&self, quality: crate::Quality) -> Option<&'static str> {
         if quality == crate::Quality::LowLatency {
             Some("low latency has no 96 kHz bitstream")
-        } else if !allow {
-            Some("96 kHz is off (Developer: aptX Adaptive at 96 kHz)")
         } else if !self.aptxad_r2() {
             Some("the audio device is aptX Adaptive R1 (upstream streams 96 kHz to R2 only)")
         } else if !self.aptxad_96k() {
@@ -1080,6 +1100,124 @@ impl RemoteCaps {
         } else {
             None
         }
+    }
+
+    /// These capabilities with `kind`'s settings no longer held to what the
+    /// sink lists (its codec card's "Show only supported options" off, issue
+    /// #86): every rate and bit depth BlueCaster has for it, no largest bit
+    /// rate or bitpool, SBC's whole frame setup. aptX Adaptive keeps its 96
+    /// kHz to an R2 sink (an R1 bitstream has none), Opus has nothing to
+    /// widen. The sink may refuse what it did not list.
+    pub fn unlisted(&self, kind: CodecKind) -> RemoteCaps {
+        let mut caps = self.clone();
+        match kind {
+            CodecKind::Sbc | CodecKind::SbcXq => {
+                if let Some(c) = caps.sbc_caps.as_mut() {
+                    c.sampling_frequency |= SBC_FREQ_44100 | SBC_FREQ_48000;
+                    c.channel_mode |= 0x0F;
+                    c.block_length |= 0x0F;
+                    c.subbands |= 0x03;
+                    c.allocation_method |= 0x03;
+                    c.min_bitpool = 2;
+                    c.max_bitpool = u8::MAX;
+                }
+                caps.sbc_unlisted = true;
+            }
+            CodecKind::Aac => {
+                if let Some(c) = caps.aac_caps.as_mut() {
+                    c.sampling_frequency |= AAC_FREQ_44100 | AAC_FREQ_48000;
+                    c.bit_rate = 0;
+                    c.vbr = true;
+                }
+            }
+            CodecKind::Ldac => caps.ldac_rates = 0,
+            CodecKind::Aptx => caps.aptx_caps |= APTX_FREQ_44100 | APTX_FREQ_48000,
+            CodecKind::AptxHd => caps.aptxhd_caps |= APTX_FREQ_44100 | APTX_FREQ_48000,
+            CodecKind::AptxLl => caps.aptxll_caps |= APTX_FREQ_44100 | APTX_FREQ_48000,
+            CodecKind::FastStream => caps.faststream_rates |= FASTSTREAM_SINK_44100 | FASTSTREAM_SINK_48000,
+            CodecKind::LhdcV5 => {
+                caps.lhdcv5_info[6] |= LHDCV5_SR_MASK;
+                caps.lhdcv5_info[7] = (caps.lhdcv5_info[7] | LHDCV5_BITS_16 | LHDCV5_BITS_24) & !0x30;
+            }
+            CodecKind::Opus05 => caps.opus05_bitrate = 0,
+            CodecKind::AptxAdaptive | CodecKind::Opus => {}
+        }
+        caps
+    }
+
+    /// These capabilities with `kind` usable even though the sink does not
+    /// list it (a codec chosen on its card that the device does not offer,
+    /// issue #86): it is taken to list what
+    /// BlueCaster offers itself, and the SET_CONFIGURATION goes to the SEP
+    /// that has the codec in a form BlueCaster does not use, else to any SEP
+    /// (SBC's first). None without an encoder for it or a SEP to ask.
+    pub fn forcing(&self, kind: CodecKind) -> Option<RemoteCaps> {
+        if !kind.available() {
+            return None;
+        }
+        if self.has(kind) {
+            return Some(self.clone());
+        }
+        let own = self.ignored.iter().find(|(k, _)| *k == kind).map(|&(_, sep)| sep);
+        let seid = own.or(self.any_sep())?.seid;
+        let mut caps = self.clone();
+        match kind {
+            CodecKind::Sbc => caps.add_sbc(seid),
+            CodecKind::SbcXq => {
+                caps.sbc = Some(RemoteSep { seid });
+                let listed = self.sbc_caps.unwrap_or_default();
+                caps.sbc_caps = Some(SbcCapabilities {
+                    sampling_frequency: listed.sampling_frequency | SBC_FREQ_44100 | SBC_FREQ_48000,
+                    channel_mode: listed.channel_mode | SBC_CH_DUAL,
+                    block_length: listed.block_length | SBC_BLOCKS_16,
+                    subbands: listed.subbands | SBC_SUBBANDS_8,
+                    allocation_method: listed.allocation_method | SBC_ALLOC_LOUDNESS,
+                    min_bitpool: listed.min_bitpool.min(SBC_XQ_MIN_MAX_BITPOOL),
+                    max_bitpool: listed.max_bitpool.max(sbc::xq_max_bitpool(48000)),
+                });
+            }
+            CodecKind::Aac => caps.add_aac(seid),
+            _ => {
+                let ep = local_endpoints().into_iter().find(|e| e.kind == kind)?;
+                caps.add_vendor(seid, &ep.caps);
+            }
+        }
+        caps.has(kind).then_some(caps)
+    }
+
+    /// These capabilities without the codecs of developer mode
+    /// ([`CodecKind::developer_only`]), as if the device did not offer them
+    /// (issue #86: outside developer mode)
+    pub fn without_developer_codecs(mut self) -> RemoteCaps {
+        self.opus05 = None;
+        self.opus05_channels = 0;
+        self.opus05_frames = 0;
+        self.opus05_bitrate = 0;
+        self.opus05_bidi = false;
+        self.ignored.retain(|(k, _)| !k.developer_only());
+        debug_assert!(CodecKind::ALL.iter().all(|&k| !k.developer_only() || !self.has(k)));
+        self
+    }
+
+    /// A SEP of the sink, whatever its codec: SBC's when it has one
+    fn any_sep(&self) -> Option<RemoteSep> {
+        [
+            self.sbc,
+            self.aac,
+            self.ldac,
+            self.aptx,
+            self.aptx_hd,
+            self.aptx_ll,
+            self.aptxad,
+            self.lhdcv5,
+            self.opus,
+            self.opus05,
+            self.faststream,
+        ]
+        .into_iter()
+        .flatten()
+        .next()
+        .or(self.ignored.first().map(|&(_, sep)| sep))
     }
 
     /// The best codec both sides have (Auto)
@@ -1152,12 +1290,13 @@ impl RemoteCaps {
     }
 
     /// Capture rate for LHDC V5: 44.1 / 48 / 96 / 192 kHz as the remote
-    /// lists them, preferring `wanted` (88.2k maps to 96k)
+    /// lists them, preferring `wanted`. LHDC V5 has no 88.2 kHz: a profile
+    /// an earlier version saved with it gets Auto's rate, as any rate the
+    /// sink does not list (issue #86: not 96 kHz behind a "88200 Hz")
     pub fn pick_lhdcv5_sample_rate(&self, wanted: u32) -> u32 {
         let rates = self.lhdcv5_rates();
         tracing::debug!("caps: LHDC V5 rate for {wanted} Hz from rates 0x{rates:02x}");
         let has = |bit: u8| rates & bit != 0;
-        let wanted = if wanted == 88200 { 96000 } else { wanted };
         match wanted {
             44100 if has(LHDCV5_SR_44100) => return 44100,
             48000 if has(LHDCV5_SR_48000) => return 48000,
@@ -1230,9 +1369,18 @@ impl RemoteCaps {
                 // range as PipeWire's select_config: up to the largest XQ
                 // bitpool of the rate, within the sink's range; the encoder's
                 // bitpool (by quality) is never above it.
-                let cap = if kind == CodecKind::SbcXq { sbc::xq_max_bitpool(sample_rate) } else { SBC_MAX_BITPOOL };
+                // Its settings not held to the sink's list: up to 53 as SBC
+                // (issue #86)
+                let cap = if kind == CodecKind::SbcXq && !self.sbc_unlisted {
+                    sbc::xq_max_bitpool(sample_rate)
+                } else {
+                    SBC_MAX_BITPOOL
+                };
+                // The profile's minimum bitpool, when set, raises the
+                // minimum within that range (the encoder never goes below it)
                 let (min_bitpool, max_bitpool) = self.sbc_bitpool_range(cap);
                 let (p, _) = self.sbc_params(kind, sbc);
+                let min_bitpool = p.config_min_bitpool(min_bitpool, max_bitpool);
                 ConfigRequest::Sbc {
                     sampling_frequency: sample_rate as u16,
                     channel_mode: p.channel_mode(kind, channels),
@@ -1398,7 +1546,7 @@ impl RemoteCaps {
             }
             CodecKind::Opus05 => {
                 // The rate is not in the configuration: 48 kHz is the one
-                // PipeWire lists first and the only one A2DPWB encodes
+                // PipeWire lists first and the only one BlueCaster encodes
                 if sample_rate != 48000 {
                     return Err(ConfigError::SampleRate(kind, sample_rate));
                 }
@@ -1423,6 +1571,20 @@ impl RemoteCaps {
         }
         Ok(Configuration { kind, remote_seid, request })
     }
+}
+
+/// Of `listed` (lowest first), the rate nearest the PC's `source` rate:
+/// `source` itself, else one of its family (44.1 kHz multiples or not: no
+/// fractional resampling), the highest below it, else the lowest above it;
+/// else from the other family the lowest above it (nothing lost), else the
+/// highest below it. `source` when none is listed (the encoder's own picker
+/// decides)
+pub fn nearest_rate(listed: &[u32], source: u32) -> u32 {
+    let family = |r: u32| r.is_multiple_of(11025);
+    let (same, other): (Vec<u32>, Vec<u32>) = listed.iter().partition(|&&r| family(r) == family(source));
+    let below = |rates: &[u32]| rates.iter().rev().find(|&&r| r <= source).copied();
+    let above = |rates: &[u32]| rates.iter().find(|&&r| r >= source).copied();
+    below(&same).or_else(|| above(&same)).or_else(|| above(&other)).or_else(|| below(&other)).unwrap_or(source)
 }
 
 fn aptx_freq_bits(kind: CodecKind, remote_caps: u8, sample_rate: u32) -> Result<u8, ConfigError> {
@@ -1492,6 +1654,9 @@ pub enum Unavailable {
     NotSupported,
     /// An experimental codec while experimental codecs are turned off
     Experimental,
+    /// A codec of developer mode ([`CodecKind::developer_only`]) while it
+    /// is off
+    DeveloperMode,
 }
 
 /// The codec to stream with
@@ -1552,6 +1717,83 @@ pub fn choose_in(
 mod tests {
     use super::*;
     use crate::Quality;
+
+    #[test]
+    fn forcing_makes_every_codec_configurable_on_a_sbc_only_sink() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(3);
+        for kind in CodecKind::ALL.into_iter().filter(|k| k.available()) {
+            let forced = caps.forcing(kind).unwrap();
+            assert!(forced.has(kind), "{kind}");
+            assert_eq!(forced.configuration(kind, 48000, 2, 16).unwrap().remote_seid, 3, "{kind}");
+        }
+    }
+
+    #[test]
+    fn unlisted_takes_every_setting_of_the_codec_and_leaves_the_others() {
+        // LHDC V5 at 48 kHz, 16-bit, at most 400 kbps; AAC 44.1 kHz at 128 kbps
+        let mut caps = RemoteCaps { lhdcv5: Some(RemoteSep { seid: 1 }), ..Default::default() };
+        caps.lhdcv5_info[6] = LHDCV5_SR_48000;
+        caps.lhdcv5_info[7] = LHDCV5_BITS_16 | 0x10;
+        caps.add_aac_caps(
+            2,
+            AacCapabilities {
+                object_types: AAC_OBJ_MPEG2_LC,
+                sampling_frequency: AAC_FREQ_44100,
+                channels: AAC_CH_2,
+                bit_rate: 128_000,
+                vbr: false,
+            },
+        );
+        caps.add_sbc_caps(3, SbcCapabilities { sampling_frequency: SBC_FREQ_48000, max_bitpool: 35, ..sbc_all() });
+        let lhdc = caps.unlisted(CodecKind::LhdcV5);
+        assert_eq!(lhdc.listed_sample_rates(CodecKind::LhdcV5), vec![44100, 48000, 96000, 192000]);
+        assert_eq!(lhdc.listed_bit_depths(CodecKind::LhdcV5), vec![16, 24]);
+        assert_eq!(lhdc.listed_max_bitrate(CodecKind::LhdcV5), 0);
+        assert!(lhdc.configuration_with(CodecKind::LhdcV5, 96000, 2, 24, false, Default::default()).is_ok());
+        // The other codecs as listed
+        assert_eq!(lhdc.aac_caps, caps.aac_caps);
+        assert_eq!(lhdc.sbc_caps, caps.sbc_caps);
+        let aac = caps.unlisted(CodecKind::Aac);
+        assert_eq!(aac.listed_sample_rates(CodecKind::Aac), vec![44100, 48000]);
+        assert_eq!(aac.aac_max_bitrate(), AAC_MAX_BITRATE);
+        assert!(aac.aac_vbr());
+        assert_eq!(aac.lhdcv5_info, caps.lhdcv5_info);
+        let sbc = caps.unlisted(CodecKind::Sbc);
+        assert_eq!(sbc.sbc_max_bitpool(), u8::MAX);
+        assert_eq!(sbc.listed_sample_rates(CodecKind::Sbc), vec![44100, 48000]);
+        // The configuration still keeps to what BlueCaster encodes
+        assert_eq!(sbc.sbc_bitpool_range(SBC_MAX_BITPOOL).1, SBC_MAX_BITPOOL);
+    }
+
+    #[test]
+    fn sbc_xq_goes_up_to_53_when_not_held_to_the_list() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, SbcCapabilities { max_bitpool: SBC_MAX_BITPOOL, ..sbc_all() });
+        let xq_max =
+            |c: &RemoteCaps| match c.configuration_with(CodecKind::SbcXq, 48000, 2, 16, false, Default::default()) {
+                Ok(Configuration { request: ConfigRequest::Sbc { max_bitpool, .. }, .. }) => max_bitpool,
+                other => panic!("{other:?}"),
+            };
+        assert_eq!(xq_max(&caps), sbc::xq_max_bitpool(48000));
+        // Issue #86: "Show only options it supports" off
+        assert_eq!(xq_max(&caps.unlisted(CodecKind::SbcXq)), SBC_MAX_BITPOOL);
+    }
+
+    #[test]
+    fn forcing_keeps_what_the_sink_lists_and_asks_the_codec_s_own_sep() {
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        assert_eq!(caps.forcing(CodecKind::Sbc), Some(caps.clone()));
+        // Mono-only aptX: not offered, but its SEP is the one to ask
+        caps.add_vendor(7, &[0x4F, 0, 0, 0, 0x01, 0x00, 0x21]);
+        assert!(!caps.has(CodecKind::Aptx));
+        if CodecKind::Aptx.available() {
+            let c = caps.forcing(CodecKind::Aptx).unwrap().configuration(CodecKind::Aptx, 48000, 2, 16).unwrap();
+            assert_eq!(c.remote_seid, 7);
+        }
+        assert_eq!(RemoteCaps::default().forcing(CodecKind::Sbc), None);
+    }
 
     #[test]
     fn auto_prefers_ldac_then_aptx_family() {
@@ -1715,7 +1957,7 @@ mod tests {
             assert_eq!(caps.add_vendor(1, &info), VendorCapability::Taken(CodecKind::Ldac));
             caps
         };
-        // Every rate: Auto's 96 kHz and the mix rate as asked
+        // Every rate: as asked (96 kHz chosen, Auto's 48 kHz)
         let all = ldac(LDAC_FREQ_ALL);
         assert_eq!((all.pick_ldac_sample_rate(96000), all.pick_ldac_sample_rate(48000)), (96000, 48000));
         // Not reported: as every rate
@@ -1858,6 +2100,25 @@ mod tests {
     }
 
     #[test]
+    fn nearest_rate_keeps_the_family() {
+        let ldac = [44100, 48000, 88200, 96000];
+        assert_eq!(nearest_rate(&ldac, 48000), 48000);
+        assert_eq!(nearest_rate(&ldac, 192000), 96000);
+        assert_eq!(nearest_rate(&ldac, 176400), 88200);
+        // 44.1 kHz family first, even when 48 kHz is closer
+        let lhdc = [44100, 48000, 96000];
+        assert_eq!(nearest_rate(&lhdc, 88200), 44100);
+        assert_eq!(nearest_rate(&lhdc, 192000), 96000);
+        // No rate of its family: the lowest above, else the highest below
+        assert_eq!(nearest_rate(&[48000], 44100), 48000);
+        assert_eq!(nearest_rate(&[44100], 96000), 44100);
+        assert_eq!(nearest_rate(&[16000, 32000, 48000], 44100), 48000);
+        // Below every listed rate of its family
+        assert_eq!(nearest_rate(&[48000, 96000], 32000), 48000);
+        assert_eq!(nearest_rate(&[], 96000), 96000);
+    }
+
+    #[test]
     fn listed_rates_depths_and_bit_rates() {
         // Not offered: nothing listed
         let none = RemoteCaps::default();
@@ -1872,6 +2133,11 @@ mod tests {
         assert_eq!(caps.listed_sample_rates(CodecKind::LhdcV5), vec![44100, 48000]);
         assert_eq!(caps.listed_bit_depths(CodecKind::LhdcV5), vec![16, 24]);
         assert_eq!(caps.listed_max_bitrate(CodecKind::LhdcV5), 900_000);
+        // No 88.2 kHz: a rate not listed falls back to 48 kHz, not 96 kHz
+        caps.lhdcv5_info[6] |= LHDCV5_SR_96000;
+        assert_eq!(caps.listed_sample_rates(CodecKind::LhdcV5), vec![44100, 48000, 96000]);
+        assert_eq!(caps.pick_lhdcv5_sample_rate(88200), 48000);
+        assert_eq!(caps.pick_lhdcv5_sample_rate(96000), 96000);
         caps.lhdcv5_info[7] = LHDCV5_BITS_16;
         assert_eq!(caps.listed_bit_depths(CodecKind::LhdcV5), vec![16]);
         assert_eq!(caps.listed_max_bitrate(CodecKind::LhdcV5), 0);
@@ -2001,6 +2267,7 @@ mod tests {
             subbands: 4,
             allocation: Some(Allocation::Snr),
             channel_mode: Some(ChannelMode::Stereo),
+            min_bitpool: 0,
         };
         let c = caps.configuration_with(CodecKind::Sbc, 44100, 2, 16, false, wanted).unwrap();
         assert_eq!(
@@ -2062,6 +2329,7 @@ mod tests {
             subbands: 4,
             allocation: Some(Allocation::Snr),
             channel_mode: Some(ChannelMode::Stereo),
+            min_bitpool: 0,
         };
         let (p, notes) = caps.sbc_params(CodecKind::Sbc, wanted);
         assert!(p.is_default(), "{p:?}");
@@ -2131,6 +2399,40 @@ mod tests {
             let ConfigRequest::Sbc { min_bitpool, max_bitpool, channel_mode, .. } = c.request else { panic!() };
             assert_eq!(((min_bitpool, max_bitpool), channel_mode), (want, ChannelMode::JointStereo), "{smin}-{smax}");
         }
+    }
+
+    #[test]
+    fn sbc_configuration_takes_the_profiles_minimum_bitpool() {
+        let range = |caps: &RemoteCaps, kind: CodecKind, rate: u32, min: u8| {
+            let p = sbc::SbcParams { min_bitpool: min, ..Default::default() };
+            let c = caps.configuration_with(kind, rate, 2, 16, false, p).unwrap();
+            let ConfigRequest::Sbc { min_bitpool, max_bitpool, .. } = c.request else { panic!() };
+            (min_bitpool, max_bitpool)
+        };
+        // (sink min, sink max, profile min) -> configured (min, max)
+        for ((smin, smax), min, want) in [
+            ((2, 53), 0, (2, 53)), // Auto: as before
+            ((2, 53), 30, (30, 53)),
+            ((2, 53), 60, (53, 53)),  // never above the maximum
+            ((10, 40), 5, (10, 40)),  // never below the sink's minimum
+            ((10, 40), 45, (40, 40)), // nor above its maximum
+            ((2, 250), 53, (53, 53)),
+        ] {
+            let mut caps = RemoteCaps::default();
+            caps.add_sbc_caps(1, SbcCapabilities { min_bitpool: smin, max_bitpool: smax, ..sbc_all() });
+            assert_eq!(range(&caps, CodecKind::Sbc, 44100, min), want, "{smin}-{smax} {min}");
+        }
+        // SBC XQ: within its cap of the rate
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc_caps(1, sbc_all());
+        assert_eq!(range(&caps, CodecKind::SbcXq, 48000, 0), (2, 43));
+        assert_eq!(range(&caps, CodecKind::SbcXq, 48000, 30), (30, 43));
+        assert_eq!(range(&caps, CodecKind::SbcXq, 48000, 50), (43, 43));
+        // Capabilities not known: 2..53 and the minimum in it
+        let mut unknown = RemoteCaps::default();
+        unknown.add_sbc(1);
+        assert_eq!(range(&unknown, CodecKind::Sbc, 44100, 0), (2, 53));
+        assert_eq!(range(&unknown, CodecKind::Sbc, 44100, 20), (20, 53));
     }
 
     #[test]
@@ -2472,8 +2774,8 @@ mod tests {
             };
             assert_eq!(info.len(), 40);
             assert_eq!(info[6..8], [0x12, 0x02]);
-            assert_eq!(info[8..26], APTXAD_R2_DATA);
-            assert!(info[26..].iter().all(|&b| b == 0));
+            assert_eq!(info[8..27], APTXAD_R2_DATA);
+            assert!(info[27..].iter().all(|&b| b == 0));
         }
 
         // 96 kHz: an R2 sink that lists it, asked for by the profile, high
@@ -2482,21 +2784,18 @@ mod tests {
         let mut r2 = RemoteCaps::default();
         r2.add_vendor(4, &r2_aptxad(0x0F00_0000)[..30]);
         assert!(r2.aptxad_96k());
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High, true), 96000);
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::Mobile, true), 96000);
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::LowLatency, true), 48000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::Mobile), 96000);
+        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::LowLatency), 48000);
         for wanted in [44100, 48000, 88200, 192000] {
-            assert_eq!(r2.pick_aptxad_sample_rate(wanted, Quality::High, true), 48000, "{wanted}");
+            assert_eq!(r2.pick_aptxad_sample_rate(wanted, Quality::High), 48000, "{wanted}");
         }
-        // 96 kHz switched off (the default, issue #86): always 48 kHz
-        assert_eq!(r2.pick_aptxad_sample_rate(96000, Quality::High, false), 48000);
-        assert!(r2.aptxad_no_96k(Quality::High, false).is_some_and(|w| w.contains("off")));
         let ConfigRequest::Vendor(info) = r2.configuration(CodecKind::AptxAdaptive, 96000, 2, 24).unwrap().request
         else {
             panic!("not a vendor configuration")
         };
         assert_eq!(info[6..8], [0xA2, 0x02]);
-        assert_eq!(info[8..26], APTXAD_R2_DATA);
+        assert_eq!(info[8..27], APTXAD_R2_DATA);
         // Real sinks (issue #86): an EarFun Air Pro 4+ lists 0xD1 (0x80
         // only), a MOMENTUM 5 0x71 (0x20 only): both take 96 kHz, configured
         // 0xA2 either way, as Android does
@@ -2506,8 +2805,9 @@ mod tests {
             let mut caps = RemoteCaps::default();
             caps.add_vendor(4, &info[..30]);
             assert!(caps.aptxad_96k(), "{byte6:#x}");
-            assert_eq!(caps.aptxad_no_96k(Quality::High, true), None, "{byte6:#x}");
-            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High, true), 96000, "{byte6:#x}");
+            assert_eq!(caps.listed_sample_rates(CodecKind::AptxAdaptive), [48000, 96000], "{byte6:#x}");
+            assert_eq!(caps.aptxad_no_96k(Quality::High), None, "{byte6:#x}");
+            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High), 96000, "{byte6:#x}");
             let ConfigRequest::Vendor(c) = caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24).unwrap().request
             else {
                 panic!("not a vendor configuration")
@@ -2520,14 +2820,16 @@ mod tests {
         no96[6] = 0x51;
         let mut r1_96 = PX7_S2E_APTXAD;
         r1_96[6] |= 0xA0;
-        assert_eq!(r2.aptxad_no_96k(Quality::High, true), None);
-        assert!(r2.aptxad_no_96k(Quality::LowLatency, true).is_some_and(|w| w.contains("low latency")));
+        assert_eq!(r2.aptxad_no_96k(Quality::High), None);
+        assert!(r2.aptxad_no_96k(Quality::LowLatency).is_some_and(|w| w.contains("low latency")));
         for (info, why) in [(&no96[..30], "does not list"), (&r1_96[..], "R1")] {
             let mut caps = RemoteCaps::default();
             caps.add_vendor(4, info);
             assert!(!caps.aptxad_96k());
-            assert!(caps.aptxad_no_96k(Quality::High, true).is_some_and(|w| w.contains(why)), "{why}");
-            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High, true), 48000);
+            // Not offered in the codec's settings either
+            assert_eq!(caps.listed_sample_rates(CodecKind::AptxAdaptive), [48000], "{why}");
+            assert!(caps.aptxad_no_96k(Quality::High).is_some_and(|w| w.contains(why)), "{why}");
+            assert_eq!(caps.pick_aptxad_sample_rate(96000, Quality::High), 48000);
             assert_eq!(
                 caps.configuration(CodecKind::AptxAdaptive, 96000, 2, 24),
                 Err(ConfigError::SampleRate(CodecKind::AptxAdaptive, 96000))
@@ -2569,6 +2871,21 @@ mod tests {
         );
         assert_eq!(choose(&only, Some(CodecKind::AptxAdaptive), false, true).unwrap().kind, CodecKind::AptxAdaptive);
         assert_eq!(CodecKind::from_key("aptxad"), Some(CodecKind::AptxAdaptive));
+    }
+
+    #[test]
+    fn developer_codecs_left_out_as_not_offered() {
+        use CodecKind::*;
+        let developer: Vec<_> = CodecKind::ALL.into_iter().filter(|k| k.developer_only()).collect();
+        assert_eq!(developer, [Opus05]);
+        let mut caps = RemoteCaps::default();
+        caps.add_sbc(1);
+        caps.add_vendor(2, &pipewire_opus05(2, 0x1F, 0, 0));
+        let ignored = RemoteCaps { ignored: vec![(Opus05, RemoteSep { seid: 3 })], ..caps.clone() };
+        let without = ignored.without_developer_codecs();
+        assert!(!without.has(Opus05) && without.has(Sbc));
+        assert!(without.ignored.is_empty());
+        assert_eq!(choose(&without, None, true, true).unwrap().kind, Sbc);
     }
 
     #[test]

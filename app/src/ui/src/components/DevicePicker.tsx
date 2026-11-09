@@ -7,13 +7,12 @@
 // name an entry). Once one is picked, the others are folded away until asked
 // for or a new scan. Used by the profile editor and the first-run setup.
 
-import { createMemo, createSignal, createUniqueId, For, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { useApp, type AppContext } from "../app/context";
 import { t } from "../i18n";
 import type { AudioDevice, Device } from "../ipc/types";
 import { parseAddress } from "../lib/format";
 import {
-  defaultCapture,
   defaultProfileName,
   deviceKey,
   deviceProfile,
@@ -24,15 +23,13 @@ import {
 } from "../lib/profile";
 import { Button, Dialog, Field, IconButton } from "./controls";
 import { Icon } from "./Icon";
+import { PairingDialog } from "./PairingDialog";
 
 /** How long a scan looks for devices (issue #86: 10 s found too few) */
 export const SCAN_SECONDS = 30;
-
-/** Windows' audio devices (none when they cannot be read), for the capture
- *  source of a device's first profile */
-export function audioDevices(app: AppContext): Promise<AudioDevice[]> {
-  return app.core.request("audio.devices").catch((): AudioDevice[] => []);
-}
+/** The first-run setup looks until a device is added (issue #86): scans of
+ *  the core's longest, one after another */
+export const SETUP_SCAN_SECONDS = 600;
 
 export function sortDevices(devices: readonly Device[]): Device[] {
   // Saved first, then audio devices by signal; other kinds (keyboards...) last
@@ -47,9 +44,16 @@ export function sortDevices(devices: readonly Device[]): Device[] {
  * Saves a device found by a scan or typed (the list keeps its name; an
  * unnamed one is saved under its address and can be renamed). A device
  * without a profile gets one that picks the best codec ("<name> | Auto").
- * The profile of the device, or null when saving failed.
+ * The profile of the device, or null when saving failed. `cable`: a new
+ * profile captures that virtual device.
  */
-export async function saveWithProfile(app: AppContext, address: string, name: string, leAudio: boolean): Promise<string | null> {
+export async function saveWithProfile(
+  app: AppContext,
+  address: string,
+  name: string,
+  leAudio: boolean,
+  cable?: AudioDevice | null,
+): Promise<string | null> {
   const snap = () => app.core.state.snap!;
   // A saved device typed by its address keeps its name
   const known = snap().devices.find((d) => d.saved && d.le_audio === leAudio && d.address.toUpperCase() === address.toUpperCase());
@@ -68,8 +72,9 @@ export async function saveWithProfile(app: AppContext, address: string, name: st
   const base = defaultProfileName(saved, address, false, t("codec.auto"));
   let profileName = base;
   for (let n = 2; taken.includes(profileName); n++) profileName = `${base} (${n})`;
-  // Captured from a virtual device if one is installed (issue #86)
-  const capture = defaultCapture(await audioDevices(app));
+  // Captured by System Loopback, as every new device (issue #86), unless
+  // the setup found VB-Cable
+  const capture = cable ? { capture_mode: "virtual", audio_device_id: cable.id, audio_device_name: cable.name } : {};
   const profile = normalizeProfile({ ...newProfile(), ...capture, name: profileName, device_address: address, device_name: saved });
   const made = await app.run(() => app.core.request("profile.save", { profile, original_name: null }));
   return made ? profileName : null;
@@ -96,8 +101,20 @@ export function DevicePicker(props: {
   /** With onConnect: the address being connected (its button spins, the
    *  others wait) */
   connecting?: string | null;
-  /** With onConnect: no connection now (another A2DPWB holds the adapter) */
+  /** With onConnect: no connection now (another BlueCaster holds the adapter) */
   connectDisabled?: boolean;
+  /** With onConnect: the saved devices stand in a list of their own, each
+   *  with its state before its icon (issue #86) */
+  paired?: (d: Device) => JSX.Element;
+  /** With paired: what the scan shows while it runs */
+  scanText?: string;
+  /** With paired: no scan part now (a device is connected) */
+  noScan?: boolean;
+  /** With paired: shown between the saved devices and the scan */
+  children?: JSX.Element;
+  /** The first-run setup: the scan starts by itself and goes on until a
+   *  device connects, Stop is pressed or the step is left (issue #86) */
+  continuous?: boolean;
 }) {
   const app = useApp();
   const snap = () => app.core.state.snap!;
@@ -108,7 +125,8 @@ export function DevicePicker(props: {
     !props.classicOnly;
   const devices = createMemo(() => {
     const all = sortDevices(listedDevices(snap().devices, leListed()));
-    return props.savedOnly ? all.filter((d) => d.saved) : all;
+    if (props.savedOnly) return all.filter((d) => d.saved);
+    return props.paired ? all.filter((d) => !d.saved) : all;
   });
   const chosen = (d: Device) =>
     d.address === props.address && d.le_audio === (props.leAudio ?? false);
@@ -125,12 +143,64 @@ export function DevicePicker(props: {
   };
   const [manual, setManual] = createSignal("");
   const scanning = () => snap().scanning;
-  const scan = () => {
+  // Stop pressed, or the picker gone: a continuous scan ends there
+  let stopped = false;
+  let gone = false;
+  const scan = async () => {
     setFolded(false);
-    return app.run(() =>
-      app.core.request("device.scan", { seconds: SCAN_SECONDS }),
-    );
+    stopped = false;
+    for (;;) {
+      const ok = await app.run(() =>
+        app.core.request("device.scan", { seconds: props.continuous ? SETUP_SCAN_SECONDS : SCAN_SECONDS }),
+      );
+      // A refused scan (a device streams) is not tried again
+      if (!ok || !props.continuous || stopped || gone || props.connecting) return ok;
+    }
   };
+  // The devices show up as they answer: the user stops once theirs is there
+  const stopScan = () => {
+    stopped = true;
+    return app.run(() => app.core.request("device.scan_stop"));
+  };
+  // A device in use: the scan asks to disconnect it first (issue #86)
+  const inUse = () => ["connecting", "reconnecting", "streaming"].includes(snap().stream.state);
+  const inUseName = () => {
+    const profile = snap().stream.profile;
+    return snap().profiles.find((p) => p.name === profile)?.device_name || profile || "";
+  };
+  const [askDisconnect, setAskDisconnect] = createSignal(false);
+  const [disconnecting, setDisconnecting] = createSignal(false);
+  const disconnectAndScan = async () => {
+    setDisconnecting(true);
+    try {
+      await app.run(() => app.core.request("stream.stop"));
+      await new Promise<void>((resolve) => {
+        const check = () => (inUse() ? setTimeout(check, 100) : resolve());
+        check();
+      });
+    } finally {
+      setDisconnecting(false);
+      setAskDisconnect(false);
+    }
+    void scan();
+  };
+  onMount(() => {
+    if (props.continuous && !scanning()) void scan();
+  });
+  // Continuous again (the setup's device disconnected to choose another): the scan resumes
+  createEffect(
+    on(
+      () => props.continuous,
+      (now, before) => {
+        if (now && before === false && !scanning()) void scan();
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => {
+    gone = true;
+    if (props.continuous && scanning()) void app.core.request("device.scan_stop").catch(() => {});
+  });
   const name = "device-pick";
   const uid = createUniqueId();
 
@@ -179,6 +249,29 @@ export function DevicePicker(props: {
     }
     setBusy(false);
   };
+  // A device Windows' Bluetooth has paired too may be taken by both: a
+  // warning first (issue #86; importing Windows' pairings is the setup's
+  // job). LE Audio entries and a list Windows cannot give pass.
+  const [windowsPaired, setWindowsPaired] = createSignal<{ name: string; go: () => void } | null>(null);
+  const unlessWindowsPaired = async (address: string, name: string, leAudio: boolean, go: () => void) => {
+    if (leAudio) return go();
+    const same = (a: string) => a.toUpperCase() === address.toUpperCase();
+    const adapter = snap().adapter.adapters.find((a) => a.driver === "winusb" && a.address)?.address ?? null;
+    const through = adapter
+      ? await app.core
+          .request("device.windows_paired_through", { adapter })
+          .then((list) => list.map((d) => d.address))
+          .catch(() => [] as string[])
+      : [];
+    const paired = (through ?? []).some(same)
+      ? through
+      : await app.core.request("device.windows_paired").catch(() => [] as string[]);
+    if ((paired ?? []).some(same)) setWindowsPaired({ name: name || address, go });
+    else go();
+  };
+  // Developer mode: a saved classic device's services and pairing key, from
+  // its Services tag (issue #86)
+  const [pairingOf, setPairingOf] = createSignal<Device | null>(null);
   const forget = async () => {
     const d = forgetting();
     if (!d || busy()) return;
@@ -194,6 +287,7 @@ export function DevicePicker(props: {
   // settings below it
   const row = (d: Device, i: () => number, prefix: string) => {
     const label = () => d.name || t("device.name_unknown");
+    const paired = props.paired && d.saved ? props.paired(d) : null;
     const nameId = () => `${uid}-${prefix}${i()}`;
     return (
       // The radio covers the row (app.css); the buttons sit above it
@@ -212,12 +306,18 @@ export function DevicePicker(props: {
             onChange={() => pick(d.address, d.name, d.le_audio)}
           />
         </Show>
+        {paired}
         <Icon name={d.audio ? "headphones" : "bluetooth"} />
         <span class="device-row-text" id={nameId()}>
           <span class="device-row-name">{label()}</span>{" "}
           <span class="mono muted">{d.address}</span>
         </span>
         <span class="tags">
+          <Show when={d.saved && !props.savedOnly && !d.le_audio}>
+            <button type="button" class="tag tag-button" onClick={() => setPairingOf(d)}>
+              {t("ui.pairing.services")}
+            </button>
+          </Show>
           <Show when={d.saved}>
             <span class="tag">{t("device.tag_saved")}</span>
           </Show>
@@ -237,11 +337,11 @@ export function DevicePicker(props: {
               )}
             </span>
           </Show>
-          <Show when={d.rssi !== null}>
+          <Show when={d.rssi !== null && !paired}>
             <span class="tag num">{d.rssi} dBm</span>
           </Show>
         </span>
-        <Show when={props.onConnect}>
+        <Show when={!paired && props.onConnect}>
           {(connect) => (
             <span class="inline device-row-actions">
               <Button
@@ -249,7 +349,7 @@ export function DevicePicker(props: {
                 icon="power"
                 busy={props.connecting === d.address}
                 disabled={!!props.connecting || props.connectDisabled}
-                onClick={() => connect()(d.address, d.name)}
+                onClick={() => void unlessWindowsPaired(d.address, d.name, d.le_audio, () => connect()(d.address, d.name))}
               >
                 {t("connection.connect")}
               </Button>
@@ -263,14 +363,14 @@ export function DevicePicker(props: {
               icon="add"
               disabled={busy()}
               onClick={() =>
-                void add(d.address, d.name, d.le_audio)
+                void unlessWindowsPaired(d.address, d.name, d.le_audio, () => void add(d.address, d.name, d.le_audio))
               }
             >
               {t("ui.devices.add")}
             </Button>
           </span>
         </Show>
-        <Show when={d.saved && !props.savedOnly && !props.onConnect}>
+        <Show when={d.saved && !props.savedOnly}>
           <span class="inline device-row-actions">
             <IconButton
               icon="edit"
@@ -296,7 +396,8 @@ export function DevicePicker(props: {
     <div class="picker-head">
       <span class="muted" role="status" aria-live="polite">
         {scanning()
-          ? t(
+          ? props.scanText ??
+            t(
               snap().le_scanning
                 ? "status.le_scanning"
                 : "connection.scanning_hint",
@@ -314,8 +415,15 @@ export function DevicePicker(props: {
           </Button>
         }
       >
-        <Button icon="search" busy={scanning()} onClick={scan}>
-          {scanning() ? t("connection.scanning") : t("connection.scan")}
+        <Button
+          icon={scanning() ? "stop" : "search"}
+          onClick={() => {
+            if (scanning()) void stopScan();
+            else if (inUse()) setAskDisconnect(true);
+            else void scan();
+          }}
+        >
+          {scanning() ? t("connection.scan_stop") : t("connection.scan")}
         </Button>
       </Show>
     </div>
@@ -323,6 +431,7 @@ export function DevicePicker(props: {
 
   const manualField = () => (
     <Field
+      stacked
       label={t("connection.manual")}
       hint={t("ui.devices.manual_hint")}
       error={
@@ -349,9 +458,10 @@ export function DevicePicker(props: {
               const a = parseAddress(manual());
               if (!a) return;
               if (props.onConnect) {
-                props.onConnect(a, "");
+                const connect = props.onConnect;
+                void unlessWindowsPaired(a, "", false, () => connect(a, ""));
               } else if (props.manage) {
-                void add(a, "", false).then(() => setManual(""));
+                void unlessWindowsPaired(a, "", false, () => void add(a, "", false).then(() => setManual("")));
               } else {
                 // A typed address keeps the kind chosen (the profile's check box)
                 pick(a, "", props.leAudio ?? false);
@@ -370,6 +480,8 @@ export function DevicePicker(props: {
   // The Audio Devices screen (issue #86): the saved devices, each with its
   // settings, then a card to add one (scan, or the address by hand)
   const saved = () => devices().filter((d) => d.saved);
+  const pairedList = () =>
+    sortDevices(listedDevices(snap().devices, false)).filter((d) => d.saved);
   const found = () => devices().filter((d) => !d.saved);
   const managed = () => (
     <>
@@ -408,7 +520,16 @@ export function DevicePicker(props: {
 
   return (
     <div class="device-picker">
-      <Show when={!props.manage} fallback={managed()}>
+      <Show when={props.paired && pairedList().length > 0}>
+        <section class="paired-devices" aria-labelledby={`${uid}-paired`}>
+          <h3 id={`${uid}-paired`}>{t("ui.setup.paired_title")}</h3>
+          <div class="device-list saved-devices">
+            <For each={pairedList()}>{(d, i) => row(d, i, "p")}</For>
+          </div>
+        </section>
+      </Show>
+      {props.children}
+      <Show when={!props.manage && !props.noScan} fallback={props.manage ? managed() : null}>
         {head(devices().length)}
         {/* Folded with a typed address: no row, only the button below */}
         <Show when={!folded() || shown().length > 0}>
@@ -453,6 +574,17 @@ export function DevicePicker(props: {
         <Show when={!props.savedOnly}>{manualField()}</Show>
       </Show>
       <Dialog
+        open={askDisconnect()}
+        title={t("modal.confirm_title")}
+        confirm={t("connection.disconnect")}
+        cancel={t("modal.cancel")}
+        busy={disconnecting()}
+        onConfirm={() => void disconnectAndScan()}
+        onCancel={() => setAskDisconnect(false)}
+      >
+        <p>{t("ui.devices.scan_disconnect", inUseName())}</p>
+      </Dialog>
+      <Dialog
         open={renaming() !== null}
         title={t("device.edit_name_title")}
         confirm={t("modal.save")}
@@ -462,6 +594,7 @@ export function DevicePicker(props: {
         onCancel={() => setRenaming(null)}
       >
         <Field
+          stacked
           label={t("device.enter_name")}
           hint={
             renaming()
@@ -489,6 +622,24 @@ export function DevicePicker(props: {
             />
           )}
         </Field>
+      </Dialog>
+      <PairingDialog
+        device={pairingOf()}
+        onClose={() => setPairingOf(null)}
+      />
+      <Dialog
+        open={windowsPaired() !== null}
+        title={t("ui.devices.windows_paired_title")}
+        confirm={t("ui.devices.add_anyway")}
+        cancel={t("modal.cancel")}
+        onConfirm={() => {
+          const w = windowsPaired();
+          setWindowsPaired(null);
+          w?.go();
+        }}
+        onCancel={() => setWindowsPaired(null)}
+      >
+        <p>{t("ui.devices.windows_paired_text", windowsPaired()?.name ?? "")}</p>
       </Dialog>
       <Dialog
         open={forgetting() !== null}
