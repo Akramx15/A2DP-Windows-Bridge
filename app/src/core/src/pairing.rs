@@ -12,9 +12,8 @@
 //! Windows got of a classic device (CTKD) come along when its link key is
 //! Windows' one.
 
-use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bluecaster_core::paths;
 use bt_host::ServicesError;
@@ -65,13 +64,36 @@ pub fn pairing(state: &CoreState, addr: &str) -> Result<Value, ErrorInfo> {
         .iter()
         .find(|e| e.addr == addr)
         .map(|e| LinkKeyInfo { key: hex(&e.key), key_type: e.key_type.clamp(0, 255) as u8 });
-    // Held by the running stack (its bond file is open there)
+    // Held by the running stack (its bond file is open there); without its
+    // LE side, the bond as kept on disk (issue #86: a classic stream showed
+    // none of the earbuds' LE keys)
     let (le_keys, le_keys_missing) = match state.service.host().and_then(|h| h.le_keys(addr)) {
         Some(Ok(k)) => (Some(le_keys_info(k)), None),
+        Some(Err(bt_host::CtkdOutcome::NoLe)) | None => match stored_le_keys(&state.config_dir(), &addr) {
+            Some(k) => (Some(le_keys_info(k)), None),
+            None if state.service.host().is_some() => (None, Some(LeKeysMissing::NoLe)),
+            None => (None, Some(LeKeysMissing::NoStack)),
+        },
         Some(Err(why)) => (None, Some(missing(why))),
-        None => (None, Some(LeKeysMissing::NoStack)),
     };
     Ok(serde_json::to_value(DevicePairing { link_key, le_keys, le_keys_missing }).unwrap_or(Value::Null))
+}
+
+/// The kept LE bond whose public identity is the classic device `addr`
+/// (what the stack's lookup finds after a key derivation too); None without
+/// one or a readable file
+fn stored_le_keys(config: &Path, addr: &[u8; 6]) -> Option<bt_host::LeKeys> {
+    let bonds = bt_host::le_bond_file::read(&paths::le_bonds_file(config)).ok()?;
+    let b = bonds.into_iter().find(|b| b.addr_type == 0 && b.addr == *addr)?;
+    let nonzero = |k: [u8; 16]| (k != [0; 16]).then_some(k);
+    let ltk = nonzero(b.ltk);
+    Some(bt_host::LeKeys {
+        identity_addr_type: b.addr_type,
+        identity_addr: b.addr,
+        irk: nonzero(b.irk),
+        ltk,
+        key_size: if ltk.is_some() { b.key_size } else { 0 },
+    })
 }
 
 fn missing(why: bt_host::CtkdOutcome) -> LeKeysMissing {
@@ -106,66 +128,59 @@ fn le_keys_info(k: bt_host::LeKeys) -> LeKeysInfo {
     }
 }
 
-/// Each device's services from its last answer (by upper-case address),
-/// shown while it is not connected; kept in the settings folder so a
-/// restart keeps them too (issue #86)
-type Seen = BTreeMap<String, Vec<DeviceService>>;
-
-/// One reader or writer of the file at a time (each request runs on a
-/// thread of its own)
-static SEEN_FILE: Mutex<()> = Mutex::new(());
-
-fn load_seen(config: &Path) -> Seen {
-    std::fs::read_to_string(paths::device_services_file(config))
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
-}
-
-fn save_seen(config: &Path, seen: &Seen) {
-    let path = paths::device_services_file(config);
-    let written = serde_json::to_string_pretty(seen).map_err(std::io::Error::other).and_then(|text| {
-        std::fs::create_dir_all(paths::devices_dir(config))?;
-        std::fs::write(&path, text)
-    });
-    if let Err(e) = written {
-        tracing::warn!("cannot keep the services in {}: {e}", path.display());
-    }
-}
-
+/// Each classic device's services from its last answer, shown while it is
+/// not connected (bluecaster_core::devices, device_services.json: a restart
+/// keeps them too, issue #86). Also learned after each connection
+/// (Service::learn_services), not only when the dialog asks.
 fn last_services(config: &Path, addr: &[u8; 6]) -> Option<Vec<DeviceService>> {
-    let _one = SEEN_FILE.lock().unwrap_or_else(|e| e.into_inner());
-    load_seen(config).remove(&bt_host::addr_str(addr).to_uppercase())
+    bluecaster_core::devices::last_services(config, &bt_host::addr_str(addr))
 }
 
 fn keep_services(config: &Path, addr: &[u8; 6], services: &[DeviceService]) {
-    let _one = SEEN_FILE.lock().unwrap_or_else(|e| e.into_inner());
-    let mut seen = load_seen(config);
-    let key = bt_host::addr_str(addr).to_uppercase();
-    if seen.get(&key).map(Vec::as_slice) != Some(services) {
-        seen.insert(key, services.to_vec());
-        save_seen(config, &seen);
-    }
+    bluecaster_core::devices::keep_services(config, &bt_host::addr_str(addr), services);
 }
 
-/// A forgotten device's services go with it
-pub fn forget_services(config: &Path, address: &str) {
-    let _one = SEEN_FILE.lock().unwrap_or_else(|e| e.into_inner());
-    let mut seen = load_seen(config);
-    if seen.remove(&address.to_uppercase()).is_some() {
-        save_seen(config, &seen);
+/// A forgotten device's services go with it (an LE Audio entry's kept
+/// GATT services too)
+pub fn forget_services(config: &Path, address: &str, le_audio: bool) {
+    if le_audio {
+        bt_host::le_gatt_cache::remove(&le_cache_file(config), address);
+        return;
     }
+    bluecaster_core::devices::forget_services(config, address);
 }
 
 fn list(services: Vec<DeviceService>, from_last_connection: bool) -> Value {
     serde_json::to_value(ServiceList { services, from_last_connection }).unwrap_or(Value::Null)
 }
 
+fn le_cache_file(config: &Path) -> std::path::PathBuf {
+    paths::pairing_dir(config).join(bt_host::le_gatt_cache::FILE_NAME)
+}
+
+/// An LE Audio entry's services: the GATT services kept at its last
+/// connection (bt_host::le_gatt_cache), "from the last connection" unless
+/// it is connected now
+fn le_services(state: &CoreState, addr: &[u8; 6]) -> Result<Value, ErrorInfo> {
+    let text = bt_host::addr_str(addr).to_uppercase();
+    let Some(uuids) = bt_host::le_gatt_cache::service_uuids(&le_cache_file(&state.config_dir()), &text) else {
+        return Err(err("device.not_connected", "ipc.error.services_not_connected"));
+    };
+    let connected =
+        state.service.host().is_some_and(|h| h.le_devices().iter().any(|d| d.connected && d.addr.addr == *addr));
+    let services = uuids.into_iter().map(|u| DeviceService { uuids: vec![u], name: None }).collect();
+    Ok(list(services, !connected))
+}
+
 /// device.services: over the link the running stack has to the device; not
 /// connected, the list it gave last (not developer mode only since issue
-/// #86: the tag is out of the way, the keys stay in developer mode)
-pub fn services(state: &CoreState, addr: &str) -> Result<Value, ErrorInfo> {
+/// #86: the tag is out of the way, the keys stay in developer mode). An LE
+/// Audio entry: its kept GATT services
+pub fn services(state: &CoreState, addr: &str, le_audio: bool) -> Result<Value, ErrorInfo> {
     let addr = address(addr)?;
+    if le_audio {
+        return le_services(state, &addr);
+    }
     let config = state.config_dir();
     let not_connected = || match last_services(&config, &addr) {
         Some(last) => Ok(list(last, true)),
@@ -180,7 +195,13 @@ pub fn services(state: &CoreState, addr: &str) -> Result<Value, ErrorInfo> {
         Err(ServicesError::Busy) => return Err(err("device.busy", "ipc.error.services_busy")),
         Err(e @ (ServicesError::NoAnswer | ServicesError::Failed(_))) => {
             tracing::info!("services of {}: {e:?}", bt_host::addr_str(&addr));
-            return Err(err("device.no_answer", "ipc.error.services_no_answer"));
+            // A link going down (a sudden disconnect: the stack still
+            // has it until the supervision timeout) or an answer cut
+            // short: the kept list rather than an error
+            return match last_services(&config, &addr) {
+                Some(last) => Ok(list(last, true)),
+                None => Err(err("device.no_answer", "ipc.error.services_no_answer")),
+            };
         }
     };
     let services: Vec<DeviceService> =
@@ -477,7 +498,10 @@ mod tests {
         keep_services(&config, &addr, &services);
         // Read back from the file, as after a restart
         assert_eq!(last_services(&config, &addr), Some(services));
-        forget_services(&config, "aa:bb:cc:dd:ee:0f");
+        // Forgetting the LE Audio entry leaves the classic one's list
+        forget_services(&config, "aa:bb:cc:dd:ee:0f", true);
+        assert!(last_services(&config, &addr).is_some());
+        forget_services(&config, "aa:bb:cc:dd:ee:0f", false);
         let left = last_services(&config, &addr);
         let _ = std::fs::remove_dir_all(&config);
         assert_eq!(left, None);

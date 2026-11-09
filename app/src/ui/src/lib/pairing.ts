@@ -1,5 +1,5 @@
-// The device's Services dialog (developer mode, issue #86): names of
-// well-known service UUIDs, the Bluetooth SIG's and some vendors'.
+// The device's Services dialog (issue #86): names of well-known service
+// UUIDs, the Bluetooth SIG's (classic and LE GATT services) and some vendors'.
 
 const BASE = "-0000-1000-8000-00805f9b34fb";
 
@@ -30,6 +30,27 @@ const NAMES: Record<number, string> = {
   0x1801: "Generic Attribute",
   0x180a: "Device Information",
   0x180f: "Battery",
+  0x1812: "Human Interface Device",
+  // LE Audio and its neighbours
+  0x1843: "Audio Input Control",
+  0x1844: "Volume Control",
+  0x1845: "Volume Offset Control",
+  0x1846: "Coordinated Set Identification",
+  0x1848: "Media Control",
+  0x1849: "Generic Media Control",
+  0x184b: "Telephone Bearer",
+  0x184c: "Generic Telephone Bearer",
+  0x184d: "Microphone Control",
+  0x184e: "Audio Stream Control",
+  0x184f: "Broadcast Audio Scan",
+  0x1850: "Published Audio Capabilities",
+  0x1853: "Common Audio",
+  0x1854: "Hearing Access",
+  0x1855: "Telephony and Media Audio",
+  0x1858: "Gaming Audio",
+  // Members' 16-bit UUIDs (issue #86, as LE Audio earbuds list them)
+  0xfd92: "Qualcomm Service",
+  0xfe2c: "Google Fast Pair",
 };
 
 /** Vendors' 128-bit service UUIDs that devices list without a name (issue
@@ -46,6 +67,9 @@ const VENDOR_NAMES: Record<string, string> = {
   "0000eb07-d102-11e1-9b23-00025b00a5a5": "Qualcomm GAIA Extension",
   "0000eb10-d102-11e1-9b23-00025b00a5a5": "Qualcomm GAIA OTA/Debug Log",
   "df21fe2c-2515-4fdb-8886-f12c4d67927c": "Google Fast Pair",
+  // LE Audio earbuds' (issue #86, names as a tester reported them)
+  "2587db3c-ce70-4fc9-935f-777ab4188fd7": "Advanced Audio Recording Service",
+  "12994b7e-6d47-4215-8c9e-aae9a1095ba3": "Advanced Audio Gaming Service",
 };
 
 /** The 16-bit form of a UUID of the Bluetooth base, else null */

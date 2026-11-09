@@ -476,6 +476,8 @@ export function Dialog(props: {
   confirmIcon?: IconName;
   cancel?: string;
   danger?: boolean;
+  /** A warning sign before the title: confirming loses something (issue #86) */
+  warn?: boolean;
   busy?: boolean;
   /** Room for a table whose rows should not wrap */
   wide?: boolean;
@@ -533,7 +535,12 @@ export function Dialog(props: {
           >
             <div class="dialog-head">
               <div class="dialog-heading">
-                <h2 id={id}>{props.title}</h2>
+                <h2 id={id} classList={{ "dialog-warn": props.warn }}>
+                  <Show when={props.warn}>
+                    <Icon name="warning" class="st-warn" />
+                  </Show>
+                  {props.title}
+                </h2>
                 <Show when={props.subtitle}>
                   <p class="hint">{props.subtitle}</p>
                 </Show>

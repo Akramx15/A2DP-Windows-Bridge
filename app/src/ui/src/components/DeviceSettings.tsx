@@ -129,13 +129,13 @@ export function DeviceSettings(props: { device: Device }) {
     if (list.length === 0 && apps() !== null && !p.le_audio && appSupport() !== "no") {
       list.push({ value: "app:", label: t("capture.no_app_playing"), group: t("capture.app"), disabled: true });
     }
-    // The Windows default output it records, by name, first among the
-    // sound devices (issue #86)
+    // Whatever Windows' default output is, by its present name, first and
+    // in no group: it follows the default, which may be a virtual device
+    // too (issue #86: under Sound Devices it read as a repeated entry)
     const output = (devices() ?? []).find((d) => d.is_default)?.name;
     const loopback: Option<string> = {
       value: "loopback",
       label: output ? t("capture.loopback_default", output) : t("capture.loopback_default_none"),
-      group: t("capture.sound_devices"),
     };
     return [loopback, ...outputs, ...virtual, ...list];
   });
@@ -308,6 +308,20 @@ export function VbCableNote() {
       <p>{t("ui.setup.vbcable_note")}</p>
       <Button icon="open" onClick={() => core.transport.openUrl(LINKS.vbCable)}>
         {t("vbcable.download")}
+      </Button>
+    </div>
+  );
+}
+
+/** The second cable for the headset microphone (issue #86), where VB-Cable
+ *  is there and the Hi-Fi Cable is not */
+export function HifiCableNote() {
+  const { core } = useApp();
+  return (
+    <div class="setup-note">
+      <p>{t("ui.setup.hificable_note")}</p>
+      <Button icon="open" onClick={() => core.transport.openUrl(LINKS.hifiCable)}>
+        {t("hificable.download")}
       </Button>
     </div>
   );
