@@ -212,7 +212,7 @@ describe("Home", () => {
     const badge = wh.querySelector(".codec-line .codec-badge")!;
     expect(badge).not.toHaveTextContent("LDAC");
     expect([...badge.children].map((c) => c.textContent)).toEqual(["990 kbps", expect.stringMatching(/^[\d.]+ kHz$/), "24-bit"]);
-    expect(wh).toHaveAccessibleName(/^WH-1000XM5, Connected, LDAC 990 kbps/);
+    expect(wh.querySelector(".status-pill-open")).toHaveAccessibleName(/^WH-1000XM5, Connected, LDAC 990 kbps/);
     // The other one: idle, no codec
     expect(xb).toHaveTextContent("Disconnected");
     expect(xb.querySelector(".codec-info")).toBeNull();

@@ -1215,6 +1215,8 @@ option {
   flex: 0 1 auto;
 }
 .status-pill {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: flex-start;
   gap: var(--s2);
@@ -1230,6 +1232,37 @@ option {
 /* Level with the device name's first line */
 .status-pill > .dot {
   margin-top: 0.4rem;
+}
+/* The dot opens Home for the whole block: stretched over it, the
+   microphone's button above it; focus rings the block */
+.status-pill-open {
+  padding: 0;
+  border: none;
+  cursor: pointer;
+}
+.status-pill-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--r);
+}
+.status-pill-open:focus-visible {
+  outline: none;
+}
+.status-pill:has(> .status-pill-open:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The microphone's button under the dot, its line under the codec's box */
+.status-pill .mic-row {
+  margin-left: calc(-1 * var(--s2) - 0.875rem);
+  gap: calc(var(--s2) - 0.375rem);
+}
+.status-pill .headset-chip {
+  position: relative;
+  z-index: 2;
+  width: 1.25rem;
 }
 .status-pill-text {
   display: flex;
