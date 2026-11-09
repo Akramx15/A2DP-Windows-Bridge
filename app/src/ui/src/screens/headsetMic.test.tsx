@@ -340,6 +340,28 @@ describe("status", () => {
     await waitFor(() => expect(wh.querySelector(".codec-info")).not.toHaveClass("codec-paused"));
   });
 
+  it("disables the microphone from its icon in the sidebar, as on Home's card (issue #86)", async () => {
+    const { saves, core } = start("#/settings", "voice");
+    await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });
+    const pill = await waitFor(() => {
+      const p = document.querySelector<HTMLElement>(".status-pill.st-streaming");
+      expect(p).not.toBeNull();
+      expect(p!.querySelector(".mic-badge.open")).not.toBeNull();
+      return p!;
+    });
+    const chip = within(pill).getByRole("button", { name: MUTE() });
+    fireEvent.click(chip);
+    await waitFor(() => expect(pill.querySelector(".mic-badge")).not.toHaveClass("open"));
+    expect(pill.querySelector(".mic-badge")).toHaveTextContent(t("ui.headset_mic_off"));
+    // The icon does not open Home
+    expect(location.hash).toBe("#/settings");
+    const muted = await within(pill).findByRole("button", { name: UNMUTE() });
+    await waitFor(() => expect(muted).toBeEnabled());
+    fireEvent.click(muted);
+    await waitFor(() => expect(saves().at(-1)).toMatchObject({ headset_mic: "on", mic_muted: false }));
+    await within(pill).findByRole("button", { name: MUTE() });
+  });
+
   it("drops the voice codec when headset mode is turned off while streaming", async () => {
     const { core } = start("#/devices", "voice");
     await core.request("stream.start", { profile: "WH-1000XM5 (LDAC)" });

@@ -6,7 +6,7 @@ import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch } f
 import { Icon } from "../components/Icon";
 import { NoticeLine } from "../components/Notice";
 import type { IconName } from "../components/icons";
-import { BatteryLevel, CodecBadge, codecDetails, codecName, codecStopText, MicBadge, showsBattery, stateLabel } from "../components/stream";
+import { BatteryLevel, CodecBadge, codecDetails, codecName, codecStopText, showsBattery, stateLabel } from "../components/stream";
 import { lang, setLanguage, t } from "../i18n";
 import type { Core } from "../ipc/store";
 import { About } from "../screens/About";
@@ -16,7 +16,7 @@ import { Devices } from "../screens/Devices";
 import { Developer } from "../screens/Developer";
 import { Diagnostics } from "../screens/Diagnostics";
 import { Flyout } from "../screens/Flyout";
-import { entryState, Home } from "../screens/Home";
+import { entryState, Home, MicRow } from "../screens/Home";
 import { audioEntries, entryByKey, type AudioEntry } from "../lib/profile";
 import { Settings } from "../screens/Settings";
 import { Mixer } from "../screens/Mixer";
@@ -279,7 +279,10 @@ function StatusPill() {
 }
 
 /** One device's block (issue #86): the device and its state; battery and
- *  codec for the one streaming. Without devices: the state alone. */
+ *  codec for the one streaming, and its microphone's button and line as on
+ *  Home's card. Without devices: the state alone. The whole block opens
+ *  Home (its dot is the button, stretched over it), the microphone's button
+ *  apart. */
 function DevicePill(props: { entry: AudioEntry | null }) {
   const { core, navigate } = useApp();
   const snap = () => core.state.snap!;
@@ -300,14 +303,13 @@ function DevicePill(props: { entry: AudioEntry | null }) {
     return [device(), stateText(), i ? `${codecName(i)} ${details()}` : ""].filter((x) => x).join(", ");
   };
   return (
-    <button
-      type="button"
-      class={`status-pill st-${state()}`}
-      onClick={() => navigate({ name: "home" })}
-      aria-label={label()}
-      title={label()}
-    >
-      <span class="dot" aria-hidden="true" />
+    <div class={`status-pill st-${state()}`} title={label()}>
+      <button
+        type="button"
+        class="status-pill-open dot"
+        onClick={() => navigate({ name: "home" })}
+        aria-label={label()}
+      />
       <span class="status-pill-text">
         {/* As Home's card: the device, battery and state, the codec */}
         <Show when={device()}>
@@ -325,9 +327,9 @@ function DevicePill(props: { entry: AudioEntry | null }) {
         {/* The codec, then its details below it, as on Home and in the tray (issue #86) */}
         <Show when={info()}>
           <CodecBadge />
-          <MicBadge profile={props.entry?.profile} />
+          <Show when={props.entry}>{(e) => <MicRow entry={e()} />}</Show>
         </Show>
       </span>
-    </button>
+    </div>
   );
 }
