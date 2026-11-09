@@ -120,6 +120,9 @@ pub struct CoreState {
     /// The profile the last stream.start asked for: the session stopped for
     /// it reports Idle after it, which clears the snapshot's profile
     starting_profile: Mutex<Option<String>>,
+    /// The message a microphone note replaced (a codec's fallback reason),
+    /// back once the note is out of date
+    mic_note_over: Mutex<Option<Msg>>,
     /// The low-battery balloon was shown for this connection
     battery_warned: AtomicBool,
     /// A new connection started: its balloon is shown once it streams with
@@ -1423,6 +1426,12 @@ enum HeadsetChange {
     Restart,
 }
 
+/// Why the headset microphone did not open (the UI's MIC_NOTES): the stream
+/// plays on with it as its message
+fn is_mic_note(key: &str) -> bool {
+    matches!(key, "error.headset_mic_loop" | "status.headset_mic_failed" | "status.headset_mic_output_failed")
+}
+
 /// The save changed only `headset_mic` / `mic_device_*` (None: something else
 /// changed as well, or nothing)
 fn headset_change(stream: &StreamStatus, before: Option<&CoreProfile>, saved: &CoreProfile) -> Option<HeadsetChange> {
@@ -1588,6 +1597,7 @@ impl CoreState {
             started: Instant::now(),
             rates: Mutex::new(None),
             starting_profile: Mutex::new(None),
+            mic_note_over: Mutex::new(None),
             battery_warned: AtomicBool::new(false),
             connect_announce: AtomicBool::new(false),
             battery_deadline: Mutex::new(None),
@@ -1744,6 +1754,17 @@ impl CoreState {
         });
     }
 
+    /// A microphone note out of date: the message it replaced comes back
+    /// (plain "connected" without one). False when there was none.
+    fn drop_mic_note(&self, stream: &mut StreamStatus) -> bool {
+        if stream.state != StreamState::Streaming || !is_mic_note(&stream.message.key) {
+            return false;
+        }
+        let over = self.mic_note_over.lock().unwrap_or_else(|e| e.into_inner()).take();
+        stream.message = over.unwrap_or_else(|| Msg::new("status.connected"));
+        true
+    }
+
     /// A service event (from its thread)
     pub fn on_service_event(self: &Arc<Self>, e: ServiceEvent) {
         let (_, s) = self.snapshot();
@@ -1764,7 +1785,16 @@ impl CoreState {
                     CoreStreamState::Reconnecting => StreamState::Reconnecting,
                     CoreStreamState::Error => StreamState::Error,
                 };
-                stream.message = msg(&m);
+                let message = msg(&m);
+                {
+                    let mut over = self.mic_note_over.lock().unwrap_or_else(|e| e.into_inner());
+                    if !is_mic_note(&message.key) {
+                        *over = None;
+                    } else if !is_mic_note(&stream.message.key) {
+                        *over = Some(stream.message.clone());
+                    }
+                }
+                stream.message = message;
                 // The codec that stopped it, for the status line (issue #86)
                 stream.codec_stop = m.codec_stop.filter(|_| state == CoreStreamState::Error).map(|c| ipc::CodecStop {
                     codec: c.codec.key().into(),
@@ -1863,7 +1893,13 @@ impl CoreState {
             }
             ServiceEvent::Volume(v) => stream.volume = Some(v),
             // Headset mode: the voice link carries audio, or no longer
-            ServiceEvent::Voice(v) => stream.voice = v,
+            ServiceEvent::Voice(v) => {
+                // The microphone opened: why it did not before is out of date
+                if v.is_some() {
+                    self.drop_mic_note(&mut stream);
+                }
+                stream.voice = v;
+            }
             // The Adapters screen shows the loader while the adapter starts
             ServiceEvent::Loader(p) => {
                 self.publish(Event::Adapter(AdapterState {
@@ -2793,7 +2829,15 @@ impl CoreState {
                         // capture; false (no stream, or a stack without
                         // voice): it starts again instead
                         let mode = headset_mic_in_force(&in_order);
-                        self.service.set_headset_mic(mode, mode.is_on().then(|| in_order.mic_device_id.clone()))
+                        let kept =
+                            self.service.set_headset_mic(mode, mode.is_on().then(|| in_order.mic_device_id.clone()));
+                        // Another output or mode: the session tries again
+                        // and says so anew if it still cannot
+                        let mut stream = self.with_snapshot(|s| s.stream.clone());
+                        if kept && self.drop_mic_note(&mut stream) {
+                            self.publish(Event::Stream(stream));
+                        }
+                        kept
                     }
                     Some(HeadsetChange::Restart) | None => false,
                 };
@@ -4096,6 +4140,54 @@ mod tests {
         assert_eq!(state.snapshot().1.stream.profile.as_deref(), Some("B"));
         event(CoreStreamState::Streaming);
         assert_eq!(state.snapshot().1.stream.profile.as_deref(), Some("B"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_microphone_that_opens_drops_why_it_did_not_before() {
+        let dir = std::env::temp_dir().join(format!("bluecaster-state-micnote-{}", std::process::id()));
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let options = bluecaster_core::ServiceOptions {
+            config_dir: dir.clone(),
+            hci_tcp: None,
+            capture: bt_host::HciCapture::new(),
+            afh: None,
+            usb: Default::default(),
+        };
+        let state =
+            CoreState::new(Arc::new(Service::new(options, tx)), Box::new(|_| {}), Box::new(|| {}), Box::new(|_| {}));
+        let say = |key| {
+            state.on_service_event(ServiceEvent::State(CoreStreamState::Streaming, bluecaster_core::Msg::new(key)))
+        };
+        let key = || state.snapshot().1.stream.message.key;
+        let voice = |on: bool| {
+            state.on_service_event(ServiceEvent::Voice(on.then(|| ipc::VoiceStatus {
+                codec: "msbc".into(),
+                link: "hfp".into(),
+                rate: 16000,
+                mic_device_id: "{other}".into(),
+            })))
+        };
+        say("status.connected_fallback_developer");
+        say("error.headset_mic_loop");
+        assert_eq!(key(), "error.headset_mic_loop");
+        // Closing changes nothing; another output that opens does
+        voice(false);
+        assert_eq!(key(), "error.headset_mic_loop");
+        voice(true);
+        assert_eq!(key(), "status.connected_fallback_developer");
+        // A note over a note keeps the message from before both
+        voice(false);
+        say("error.headset_mic_loop");
+        say("status.headset_mic_failed");
+        voice(true);
+        assert_eq!(key(), "status.connected_fallback_developer");
+        // Another message in between: nothing of the old one comes back
+        say("error.headset_mic_loop");
+        say("status.reconnected");
+        say("status.headset_mic_failed");
+        voice(true);
+        assert_eq!(key(), "status.reconnected");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

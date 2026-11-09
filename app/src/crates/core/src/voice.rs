@@ -151,9 +151,13 @@ impl AutoWatch {
         let before = self.recording;
         let after = self.seen(looked, now);
         if after != before {
+            let who = match &target {
+                Some(MicTarget::Device { id, .. }) if after => audio_capture::mic_recorders(id).join(", "),
+                _ => String::new(),
+            };
             let what = target.map_or(String::new(), |t| t.to_string());
             if after {
-                tracing::info!("voice: auto: an application records from {what}");
+                tracing::info!("voice: auto: an application records from {what}: {who}");
             } else {
                 tracing::info!("voice: auto: nobody recorded from {what} for {} s", AUTO_IDLE.as_secs());
             }
